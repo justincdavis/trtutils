@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import contextlib
+
 import numpy as np
 import pycuda.driver as cuda
-import pycuda.autoinit
 import tensorrt as trt
 
 
 class TRTEngine:
-    """A wrapper around a TensorRT engine that handles the device memory
-    
+    """
+    A wrapper around a TensorRT engine that handles the device memory.
+
     TRTEngines are thread and process safe. They can be used in a multi-threaded
-    or multi-process environment. The only requirement is that each TRTEngine can 
+    or multi-process environment. The only requirement is that each TRTEngine can
     only be accessed by a single thread or process. This is because each TRTEngine
-    has its own CUDA context and there is no safeguards implemented in the class 
+    has its own CUDA context and there is no safeguards implemented in the class
     for datarace conditions.
 
     Parameters
@@ -27,7 +29,8 @@ class TRTEngine:
         The datatype to use for the inputs and outputs, by default np.float32
     device : int, optional
         The device to use, by default 0
-    
+
+
     Attributes
     ----------
     input_shapes : list[tuple[int, ...]]
@@ -40,6 +43,7 @@ class TRTEngine:
     mock_execute()
         Execute the engine with random inputs
     """
+
     def __init__(
         self,
         engine_path: str,
@@ -47,7 +51,7 @@ class TRTEngine:
         warmup_iterations: int = 5,
         dtype: np.number = np.float32,
         device: int = 0,
-    ):
+    ) -> None:
         # get a unique context for thread safe operation
         self._cfx = cuda.Device(device).make_context()
 
@@ -105,8 +109,9 @@ class TRTEngine:
 
     @property
     def input_shapes(self) -> list[tuple[int, ...]]:
-        """The shapes of the inputs
-        
+        """
+        The shapes of the inputs.
+
         Returns
         -------
         list[tuple[int, ...]]
@@ -114,11 +119,10 @@ class TRTEngine:
         """
         return self._input_shapes
 
-    def __del__(self):
-        try:
+    def __del__(self) -> None:
+        with contextlib.suppress(AttributeError):
             self._cfx.pop()
-        except AttributeError:
-            pass
+
         attrs = ["_tegra", "_cfx", "_context", "_engine"]
         for attr in attrs:
             try:
@@ -206,13 +210,15 @@ class TRTEngine:
         return any(dim is None or dim < 0 for dim in shape)
 
     def execute(self, inputs: list[np.ndarray]) -> list[np.ndarray]:
-        """Execute the engine with the given inputs
-        
+        """
+        Execute the engine with the given inputs.
+
         Parameters
         ----------
         inputs : list[np.ndarray]
             The inputs to the engine
-            
+
+
         Returns
         -------
         list[np.ndarray]
@@ -235,7 +241,8 @@ class TRTEngine:
         return self._host_outputs
 
     def mock_execute(self) -> list[np.ndarray]:
-        """Execute the engine with random inputs
+        """
+        Execute the engine with random inputs.
 
         Returns
         -------
