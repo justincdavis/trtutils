@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import contextlib
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pycuda.driver as cuda
 import tensorrt as trt
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 
 class TRTEngine:
@@ -16,20 +20,6 @@ class TRTEngine:
     only be accessed by a single thread or process. This is because each TRTEngine
     has its own CUDA context and there is no safeguards implemented in the class
     for datarace conditions.
-
-    Parameters
-    ----------
-    engine_path : str
-        The path to the serialized engine file
-    warmup : bool, optional
-        Whether to do warmup iterations, by default False
-    warmup_iterations : int, optional
-        The number of warmup iterations to do, by default 5
-    dtype : np.number, optional
-        The datatype to use for the inputs and outputs, by default np.float32
-    device : int, optional
-        The device to use, by default 0
-
 
     Attributes
     ----------
@@ -45,13 +35,30 @@ class TRTEngine:
     """
 
     def __init__(
-        self,
+        self: Self,
         engine_path: str,
-        warmup: bool = False,
+        warmup: bool | None = None,
         warmup_iterations: int = 5,
         dtype: np.number = np.float32,
         device: int = 0,
     ) -> None:
+        """
+        Use to initialize the TRTEngine.
+
+        Parameters
+        ----------
+        engine_path : str
+            The path to the serialized engine file
+        warmup : bool, optional
+            Whether to do warmup iterations, by default None
+            If None, warmup will be set to False
+        warmup_iterations : int, optional
+            The number of warmup iterations to do, by default 5
+        dtype : np.number, optional
+            The datatype to use for the inputs and outputs, by default np.float32
+        device : int, optional
+            The device to use, by default 0
+        """
         # get a unique context for thread safe operation
         self._cfx = cuda.Device(device).make_context()
 
@@ -103,12 +110,14 @@ class TRTEngine:
         self._bindings = self._device_inputs + self._device_outputs
 
         # do any warmup iterations
+        if warmup is None:
+            warmup = False
         if warmup:
             for _ in range(warmup_iterations):
                 self.mock_execute()
 
     @property
-    def input_shapes(self) -> list[tuple[int, ...]]:
+    def input_shapes(self: Self) -> list[tuple[int, ...]]:
         """
         The shapes of the inputs.
 
@@ -119,7 +128,7 @@ class TRTEngine:
         """
         return self._input_shapes
 
-    def __del__(self) -> None:
+    def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError):
             self._cfx.pop()
 
@@ -131,7 +140,7 @@ class TRTEngine:
             except AttributeError:
                 pass
 
-    def _get_binding_idxs(self):
+    def _get_binding_idxs(self: Self) -> tuple[list[int], list[int]]:
         # get the profile_index
         profile_index = self._context.active_optimization_profile
 
@@ -154,14 +163,12 @@ class TRTEngine:
         return input_binding_idxs, output_binding_idxs
 
     def _get_random_inputs(
-        self,
-        seed: int = 1,
-    ):
+        self: Self,
+    ) -> tuple[list[np.ndarray], list[tuple[int, ...]]]:
         # Input data for inference
         host_inputs = []
         input_shapes = []
 
-        np.random.seed(seed)
         for binding_index in self._input_binding_idxs:
             # If input shape is fixed, we'll just use it
             input_shape = self._context.get_binding_shape(binding_index)
@@ -180,7 +187,7 @@ class TRTEngine:
 
         return host_inputs, input_shapes
 
-    def _setup_binding_shapes(self):
+    def _setup_binding_shapes(self: Self) -> tuple[list[np.ndarray], list[int]]:
         # Explicitly set the dynamic input shapes, so the dynamic output
         # shapes can be computed internally
         for host_input, binding_index in zip(
@@ -202,14 +209,14 @@ class TRTEngine:
 
         return host_outputs, device_outputs
 
-    def _is_fixed(self, shape: tuple[int]):
+    def _is_fixed(self: Self, shape: tuple[int]) -> bool:
         return not self._is_dynamic(shape)
 
     @staticmethod
-    def _is_dynamic(shape: tuple[int]):
+    def _is_dynamic(shape: tuple[int]) -> bool:
         return any(dim is None or dim < 0 for dim in shape)
 
-    def execute(self, inputs: list[np.ndarray]) -> list[np.ndarray]:
+    def execute(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
         """
         Execute the engine with the given inputs.
 
@@ -240,7 +247,7 @@ class TRTEngine:
         self._cfx.pop()
         return self._host_outputs
 
-    def mock_execute(self) -> list[np.ndarray]:
+    def mock_execute(self: Self) -> list[np.ndarray]:
         """
         Execute the engine with random inputs.
 
