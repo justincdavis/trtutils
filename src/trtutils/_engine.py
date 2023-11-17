@@ -15,11 +15,11 @@ class TRTEngine:
     """
     A wrapper around a TensorRT engine that handles the device memory.
 
-    TRTEngines are thread and process safe. They can be used in a multi-threaded
-    or multi-process environment. The only requirement is that each TRTEngine can
-    only be accessed by a single thread or process. This is because each TRTEngine
-    has its own CUDA context and there is no safeguards implemented in the class
-    for datarace conditions.
+    It is thread and process safe to create multiple TRTEngines. 
+    It is valid to create a TRTEngine in one thread and use in another.
+    Each TRTEngine has its own CUDA context and there is no safeguards
+    implemented in the class for datarace conditions. As such, a 
+    single TRTEngine should not be used in multiple threads or processes.
 
     Attributes
     ----------
