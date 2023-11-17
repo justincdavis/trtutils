@@ -1,0 +1,37 @@
+name: Publish Package (PyPI)
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build_and_publish:
+    name: "Build and Publish PyPI package - TEST"
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: pypi
+      url: https://test.pypi.org/p/trtutils
+    permissions:
+      id-token: write
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.9
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build
+    - name: Build trtutils
+      run: |
+        python -m build --sdist --wheel --outdir dist/
+    - name: Publish distribution to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        password: ${{ secrets.TEST_PYPI_API_TOKEN }}

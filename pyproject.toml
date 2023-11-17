@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trtutils"
-version = "0.0.0"
+version = "0.0.1"
 authors = [
   {name="Justin Davis", email="davisjustin302@gmail.com"},
 ]
@@ -20,6 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: Implementation :: CPython",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: Microsoft :: Windows",
@@ -43,11 +44,103 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "Typing :: Typed",
 ]
-requires-python=">=3.8, <=3.11"
+requires-python=">=3.8, <=3.12"
 dependencies = [
+    "tensorrt",
+    "pycuda",
+    "numpy",
     "setuptools",
 ]
 
 [project.urls]
 "Homepage" = "https://github.com/justincdavis/trtutils"
 "Bug Tracker" = "https://github.com/justincdavis/trtutils/issues"
+
+[project.optional-dependencies]
+ci = [
+    "pyupgrade",
+    "black",
+    "isort",
+    "ruff",
+    "mypy",
+]
+test = [
+    "pytest",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+]
+dev = [
+    "trtutils[ci]",
+    "trtutils[test]",
+    "trtutils[docs]",
+    "twine",
+    "wheel",
+    "bumpver",
+    "pyclean",
+]
+
+[tool.bumpver]
+current_version = "0.0.1"
+version_pattern = "MAJOR.MINOR.PATCH"
+commit_message  = "Bump version {old_version} -> {new_version}"
+commit          = true
+tag             = true
+push            = false
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = ['current_version = "{version}"', 'version = "{version}"']
+"src/trtutils/__init__.py" = ["{version}"]
+"docs/conf.py" = ["{version}"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+select = ["D", "SLOT", "RUF", "FURB", "PERF", "FLY", "PGH", "INT", "TCH", "TID", "SIM", "PYI", "PIE", "INP", "ISC", "ICN", "ANN", "UP", "YTT", "W", "N", "A", "E", "F", "I", "BLE", "B", "FBT", "C4", "FA", "SLF", "RET", "ARG", "NPY"]
+ignore = ["C901", "E501", "D203", "D212"]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+fix = true
+show-fixes = true
+
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+per-file-ignores = {}
+
+# Same as Black.
+line-length = 88
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+# Assume Python 3.8
+target-version = "py38"
+
+# Other options
+builtins = ["_"]
