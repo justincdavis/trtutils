@@ -15,10 +15,10 @@ class TRTEngine:
     """
     A wrapper around a TensorRT engine that handles the device memory.
 
-    It is thread and process safe to create multiple TRTEngines. 
+    It is thread and process safe to create multiple TRTEngines.
     It is valid to create a TRTEngine in one thread and use in another.
     Each TRTEngine has its own CUDA context and there is no safeguards
-    implemented in the class for datarace conditions. As such, a 
+    implemented in the class for datarace conditions. As such, a
     single TRTEngine should not be used in multiple threads or processes.
 
     Attributes
@@ -129,16 +129,16 @@ class TRTEngine:
         return self._input_shapes
 
     def __del__(self: Self) -> None:
+        def _del(obj: object, attr: str) -> None:
+            with contextlib.suppress(AttributeError):
+                delattr(obj, attr)
+
         with contextlib.suppress(AttributeError):
             self._cfx.pop()
 
         attrs = ["_tegra", "_cfx", "_context", "_engine"]
         for attr in attrs:
-            try:
-                a = getattr(self, attr)
-                del a
-            except AttributeError:
-                pass
+            _del(self, attr)
 
     def _get_binding_idxs(self: Self) -> tuple[list[int], list[int]]:
         # get the profile_index
