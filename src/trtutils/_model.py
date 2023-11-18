@@ -29,6 +29,10 @@ class TRTModel:
 
     Methods
     -------
+    __call__(inputs: list[np.ndarray], preprocessed: bool | None = None)
+        Execute the model with the given inputs
+    preprocess(inputs: list[np.ndarray])
+        Preprocess the inputs
     run(inputs: list[np.ndarray], preprocessed: bool | None = None)
         Execute the model with the given inputs
     mock_run()
@@ -39,7 +43,7 @@ class TRTModel:
         self: Self,
         engine_path: str,
         preprocess: Callable[[list[np.ndarray]], list[np.ndarray]],
-        postprocess: Callable[[list[np.ndarray]], Any],
+        postprocess: Callable[[np.ndarray], Any],
         warmup: bool | None = None,
         warmup_iterations: int = 5,
         dtype: np.number = np.float32,
@@ -103,6 +107,22 @@ class TRTModel:
         """
         outputs = self._engine.mock_execute()
         return self._postprocess(outputs)
+
+    def preprocess(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
+        """
+        Preprocess the inputs.
+
+        Parameters
+        ----------
+        inputs : list[np.ndarray]
+            The inputs to preprocess
+
+        Returns
+        -------
+        list[np.ndarray]
+            The preprocessed inputs
+        """
+        return self._preprocess(inputs)
 
     def run(
         self: Self, inputs: list[np.ndarray], preprocessed: bool | None = None

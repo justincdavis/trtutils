@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pycuda.driver as cuda
@@ -28,6 +28,8 @@ class TRTEngine:
 
     Methods
     -------
+    __call__(inputs: list[np.ndarray])
+        Execute the engine with the given inputs
     execute(inputs: list[np.ndarray])
         Execute the engine with the given inputs
     mock_execute()
@@ -216,7 +218,7 @@ class TRTEngine:
     def _is_dynamic(shape: tuple[int]) -> bool:
         return any(dim is None or dim < 0 for dim in shape)
 
-    def execute(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
+    def __call__(self: Self, inputs: list[np.ndarray]) -> Any:  # noqa: ANN401
         """
         Execute the engine with the given inputs.
 
@@ -228,7 +230,24 @@ class TRTEngine:
 
         Returns
         -------
-        list[np.ndarray]
+        Any
+            The outputs from the engine
+        """
+        return self.execute(inputs)
+
+    def execute(self: Self, inputs: list[np.ndarray]) -> np.ndarray:
+        """
+        Execute the engine with the given inputs.
+
+        Parameters
+        ----------
+        inputs : list[np.ndarray]
+            The inputs to the engine
+
+
+        Returns
+        -------
+        np.ndarray
             The outputs from the engine
         """
         # Get context
@@ -247,13 +266,13 @@ class TRTEngine:
         self._cfx.pop()
         return self._host_outputs
 
-    def mock_execute(self: Self) -> list[np.ndarray]:
+    def mock_execute(self: Self) -> np.ndarray:
         """
         Execute the engine with random inputs.
 
         Returns
         -------
-        list[np.ndarray]
+        np.ndarray
             The outputs from the engine
         """
         mock_inputs = [
