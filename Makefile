@@ -19,6 +19,7 @@ clean:
 	rm -rf trtutils/*.egg-info
 	rm -rf src/trtutils/*.egg-info
 	pyclean .
+	cd docs && make clean
 
 docs:
 	rm -rf docs/source/*

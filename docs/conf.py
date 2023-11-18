@@ -43,11 +43,14 @@ extensions = [
     'sphinx.ext.mathjax',
 ]
 
+autodoc_mock_imports = ["pycuda", "pycuda.driver", "tensorrt"]
+
 intersphinx_mapping = {
     "rtd": ("https://docs.readthedocs.io/en/stable/", None),
     "python": ("https://docs.python.org/3/", None),
     "sphinx": ("https://www.sphinx-doc.org/en/master/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
+    "pycuda": ("https://documen.tician.de/pycuda/", None),
 }
 intersphinx_disabled_domains = ["std"]
 

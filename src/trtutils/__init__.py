@@ -3,8 +3,10 @@
 __author__ = "Justin Davis"
 __version__ = "0.0.2"
 
+import contextlib
 
-import pycuda.autoinit  # noqa: F401
+with contextlib.suppress(ImportError):
+    import pycuda.autoinit  # noqa: F401
 
 from ._engine import TRTEngine
 from ._model import TRTModel

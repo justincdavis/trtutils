@@ -4,8 +4,11 @@ import contextlib
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import pycuda.driver as cuda
-import tensorrt as trt
+
+# suppress pycuda import error for docs build
+with contextlib.suppress(ImportError):
+    import pycuda.driver as cuda
+    import tensorrt as trt
 
 if TYPE_CHECKING:
     from typing_extensions import Self
