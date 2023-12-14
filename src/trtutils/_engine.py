@@ -7,6 +7,7 @@ import numpy as np
 
 # suppress pycuda import error for docs build
 with contextlib.suppress(ImportError):
+    import pycuda.autoinit  # noqa: F401
     import pycuda.driver as cuda
     import tensorrt as trt
 
