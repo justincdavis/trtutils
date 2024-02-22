@@ -153,7 +153,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 python_version = "3.8"
 warn_unused_configs = true
 warn_redundant_casts = true
-warn_unused_ignores = false
+warn_unused_ignores = true
 strict_equality = true
 check_untyped_defs = true
 disallow_subclassing_any = false
@@ -168,6 +168,7 @@ warn_return_any = true
 [[tool.mypy.overrides]]
 module = [  
     'tensorrt',
+    'pycuda',
 ]
 ignore_errors = true
 

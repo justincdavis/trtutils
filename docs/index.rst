@@ -1,4 +1,4 @@
-Welcome to oakutils's Documentation
+Welcome to trtutils's Documentation
 ===================================
 
 **trtutils** is an easy-to-use library for using TensorRT.
@@ -6,21 +6,18 @@ Welcome to oakutils's Documentation
 Check out the :doc:`usage` section for further information, including
 how to :ref:`installation` the project.
 
-.. note::
-
-   This project is under active development. TRTEngine and TRTModel are stable for all versions.
-
-
 Contents
---------
+========
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    Home <self>
    Usage <usage>
    Installation <installation>
+   Examples <examples>
    API <api>
+   Changelog <changelog>
 
 Indices and Tables
 ==================

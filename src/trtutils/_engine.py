@@ -1,15 +1,30 @@
+# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# ruff: noqa: F401
 from __future__ import annotations
 
 import contextlib
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 # suppress pycuda import error for docs build
-with contextlib.suppress(ImportError):
-    import pycuda.autoinit  # noqa: F401
-    import pycuda.driver as cuda
-    import tensorrt as trt
+with contextlib.suppress(Exception):
+    import pycuda.autoinit  # type: ignore[import-untyped]
+    import pycuda.driver as cuda  # type: ignore[import-untyped]
+    import tensorrt as trt  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -38,22 +53,24 @@ class TRTEngine:
         Execute the engine with the given inputs
     mock_execute()
         Execute the engine with random inputs
+
     """
 
     def __init__(
         self: Self,
-        engine_path: str,
-        warmup: bool | None = None,
+        engine_path: str | Path,
         warmup_iterations: int = 5,
-        dtype: np.number = np.float32,
+        dtype: np.number = np.float32,  # type: ignore[assignment]
         device: int = 0,
+        *,
+        warmup: bool | None = None,
     ) -> None:
         """
         Use to initialize the TRTEngine.
 
         Parameters
         ----------
-        engine_path : str
+        engine_path : str | Path
             The path to the serialized engine file
         warmup : bool, optional
             Whether to do warmup iterations, by default None
@@ -64,7 +81,9 @@ class TRTEngine:
             The datatype to use for the inputs and outputs, by default np.float32
         device : int, optional
             The device to use, by default 0
+
         """
+        engine_path = Path(engine_path) if isinstance(engine_path, str) else engine_path
         # get a unique context for thread safe operation
         self._cfx = cuda.Device(device).make_context()
 
@@ -76,11 +95,14 @@ class TRTEngine:
 
         # load the engine from file
         self._trt_logger = trt.Logger(trt.Logger.WARNING)
-        with open(engine_path, "rb") as f, trt.Runtime(self._trt_logger) as runtime:
+        with Path.open(engine_path, "rb") as f, trt.Runtime(
+            self._trt_logger,
+        ) as runtime:
             self._engine = runtime.deserialize_cuda_engine(f.read())
 
         if self._engine is None:
-            raise RuntimeError("Could not serialize engine")
+            err_msg = "Could not serialize engine"
+            raise RuntimeError(err_msg)
 
         # create the execution context
         self._context = self._engine.create_execution_context()
@@ -94,7 +116,7 @@ class TRTEngine:
         ]
 
         # generate the random inputs
-        self._host_inputs, self._input_shapes = self._get_random_inputs(seed=1)
+        self._host_inputs, self._input_shapes = self._get_random_inputs()
 
         # Allocate device memory for inputs. This can be easily re-used if the
         # input shapes don't change
@@ -131,6 +153,7 @@ class TRTEngine:
         -------
         list[tuple[int, ...]]
             The shapes of the inputs
+
         """
         return self._input_shapes
 
@@ -183,7 +206,8 @@ class TRTEngine:
             if self._is_dynamic(input_shape):
                 profile_index = self._context.active_optimization_profile
                 profile_shapes = self._engine.get_profile_shape(
-                    profile_index, binding_index
+                    profile_index,
+                    binding_index,
                 )
                 # 0=min, 1=opt, 2=max, or choose any shape, (min <= shape <= max)
                 input_shape = profile_shapes[1]
@@ -197,11 +221,14 @@ class TRTEngine:
         # Explicitly set the dynamic input shapes, so the dynamic output
         # shapes can be computed internally
         for host_input, binding_index in zip(
-            self._host_inputs, self._input_binding_idxs
+            self._host_inputs,
+            self._input_binding_idxs,
         ):
             self._context.set_binding_shape(binding_index, host_input.shape)
 
-        assert self._context.all_binding_shapes_specified
+        if not self._context.all_binding_shapes_specified:
+            err_msg = "Not all binding shapes are specified"
+            raise RuntimeError(err_msg)
 
         host_outputs = []
         device_outputs = []
@@ -236,10 +263,11 @@ class TRTEngine:
         -------
         Any
             The outputs from the engine
+
         """
         return self.execute(inputs)
 
-    def execute(self: Self, inputs: list[np.ndarray]) -> np.ndarray:
+    def execute(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
         """
         Execute the engine with the given inputs.
 
@@ -253,6 +281,7 @@ class TRTEngine:
         -------
         np.ndarray
             The outputs from the engine
+
         """
         # Get context
         self._cfx.push()
@@ -270,14 +299,15 @@ class TRTEngine:
         self._cfx.pop()
         return self._host_outputs
 
-    def mock_execute(self: Self) -> np.ndarray:
+    def mock_execute(self: Self) -> list[np.ndarray]:
         """
         Execute the engine with random inputs.
 
         Returns
         -------
-        np.ndarray
+        list[np.ndarray]
             The outputs from the engine
+
         """
         mock_inputs = [
             np.random.random(s).astype(self._dtype) for s in self.input_shapes

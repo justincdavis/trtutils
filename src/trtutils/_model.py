@@ -1,3 +1,16 @@
+# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable
@@ -37,17 +50,19 @@ class TRTModel:
         Execute the model with the given inputs
     mock_run()
         Execute the model with random inputs
+
     """
 
     def __init__(
         self: Self,
         engine_path: str,
         preprocess: Callable[[list[np.ndarray]], list[np.ndarray]],
-        postprocess: Callable[[np.ndarray], Any],
-        warmup: bool | None = None,
+        postprocess: Callable[[list[np.ndarray]], Any],
         warmup_iterations: int = 5,
-        dtype: np.number = np.float32,
+        dtype: np.number = np.float32,  # type: ignore[assignment]
         device: int = 0,
+        *,
+        warmup: bool | None = None,
     ) -> None:
         """
         Use to initialize the TRTModel.
@@ -69,13 +84,23 @@ class TRTModel:
             The datatype to use for the inputs and outputs, by default np.float32
         device : int, optional
             The device to use, by default 0
+
         """
-        self._engine = TRTEngine(engine_path, warmup, warmup_iterations, dtype, device)
+        self._engine = TRTEngine(
+            engine_path,
+            warmup_iterations,
+            dtype,
+            device,
+            warmup=warmup,
+        )
         self._preprocess = preprocess
         self._postprocess = postprocess
 
     def __call__(
-        self: Self, inputs: list[np.ndarray], preprocessed: bool | None = None
+        self: Self,
+        inputs: list[np.ndarray],
+        *,
+        preprocessed: bool | None = None,
     ) -> Any:  # noqa: ANN401
         """
         Execute the model with the given inputs.
@@ -93,6 +118,7 @@ class TRTModel:
         -------
         Any
             The outputs of the model
+
         """
         return self.run(inputs, preprocessed=preprocessed)
 
@@ -104,6 +130,7 @@ class TRTModel:
         -------
         Any
             The outputs of the model
+
         """
         outputs = self._engine.mock_execute()
         return self._postprocess(outputs)
@@ -121,11 +148,15 @@ class TRTModel:
         -------
         list[np.ndarray]
             The preprocessed inputs
+
         """
         return self._preprocess(inputs)
 
     def run(
-        self: Self, inputs: list[np.ndarray], preprocessed: bool | None = None
+        self: Self,
+        inputs: list[np.ndarray],
+        *,
+        preprocessed: bool | None = None,
     ) -> Any:  # noqa: ANN401
         """
         Execute the model with the given inputs.
@@ -143,6 +174,7 @@ class TRTModel:
         -------
         Any
             The outputs of the model
+
         """
         if preprocessed is None:
             preprocessed = False
