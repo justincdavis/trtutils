@@ -15,7 +15,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install .[dev]
           pip install mypy
           pip install types-setuptools
 

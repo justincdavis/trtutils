@@ -144,6 +144,9 @@ class TRTEngine:
             for _ in range(warmup_iterations):
                 self.mock_execute()
 
+        # allocate random generator
+        self._rng = np.random.default_rng()
+
     @property
     def input_shapes(self: Self) -> list[tuple[int, ...]]:
         """
@@ -212,7 +215,11 @@ class TRTEngine:
                 # 0=min, 1=opt, 2=max, or choose any shape, (min <= shape <= max)
                 input_shape = profile_shapes[1]
 
-            host_inputs.append(np.random.random(input_shape).astype(self._dtype))
+            host_inputs.append(
+                self._rng.integers(low=0, high=255, size=input_shape).astype(
+                    self._dtype,
+                ),
+            )
             input_shapes.append(input_shape)
 
         return host_inputs, input_shapes
@@ -310,6 +317,7 @@ class TRTEngine:
 
         """
         mock_inputs = [
-            np.random.random(s).astype(self._dtype) for s in self.input_shapes
+            self._rng.integers(low=0, high=255, size=s).astype(self._dtype)
+            for s in self.input_shapes
         ]
         return self.execute(mock_inputs)
