@@ -42,13 +42,13 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "Typing :: Typed",
 ]
-requires-python=">=3.8, <=3.12"
+requires-python=">=3.8, <=3.13"
 dependencies = [
-    "tensorrt",
-    "pycuda",
-    "numpy",
+    "tensorrt>=8.0.0",
+    "pycuda>=2024.0",
+    "numpy>=1.19.0,<2.0.0",
     "typing_extensions>=4.0.0",
-    "setuptools",
+    "setuptools>=57.0.0",
 ]
 
 [project.urls]
@@ -57,27 +57,30 @@ dependencies = [
 
 [project.optional-dependencies]
 ci = [
-    "pyupgrade",
-    "black",
-    "isort",
-    "ruff",
-    "mypy",
+    "pyupgrade>=3.10",
+    "black>=24.0",
+    "isort>=5.10",
+    "ruff>=0.2.1",
+    "mypy>=1.8.0",
+    "types-setuptools>=57.0.0",
 ]
 test = [
-    "pytest",
+    "pytest>=6.2.0",
 ]
 docs = [
-    "sphinx",
-    "sphinx-rtd-theme",
+    "sphinx>=6.1.0",
+    "sphinx-rtd-theme>=1.3.0",
+    "myst_parser>=1.0.0",
 ]
 dev = [
     "trtutils[ci]",
     "trtutils[test]",
     "trtutils[docs]",
-    "twine",
-    "wheel",
-    "bumpver",
-    "pyclean",
+    "twine>=4.0.0",
+    "wheel>=0.37.0",
+    "bumpver>=2023.1126",
+    "pyclean>=2.7.0",
+    "pyright>=1.1.348",
 ]
 
 [tool.bumpver]
@@ -96,15 +99,26 @@ push            = false
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+trtutils = ["src/trtutils/py.typed"]
+
 [tool.ruff]
-select = ["D", "SLOT", "RUF", "FURB", "PERF", "FLY", "PGH", "INT", "TCH", "TID", "SIM", "PYI", "PIE", "INP", "ISC", "ICN", "ANN", "UP", "YTT", "W", "N", "A", "E", "F", "I", "BLE", "B", "FBT", "C4", "FA", "SLF", "RET", "ARG", "NPY"]
-ignore = ["C901", "E501", "D203", "D212"]
+fix = true
+show-fixes = true
+# Same as Black.
+line-length = 88
+# Assume Python 3.8
+target-version = "py38"
+# Other options
+builtins = ["_"]
+
+[tool.ruff.lint]
+select = ["ALL", "PLR2004"]
+ignore = ["PLR", "C901", "E501", "D203", "D212", "ERA"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []
-fix = true
-show-fixes = true
 
 # Exclude a variety of commonly ignored directories.
 exclude = [
@@ -132,14 +146,47 @@ exclude = [
 ]
 per-file-ignores = {}
 
-# Same as Black.
-line-length = 88
-
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
-# Assume Python 3.8
-target-version = "py38"
+[tool.mypy]
+python_version = "3.8"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+strict_equality = true
+check_untyped_defs = true
+disallow_subclassing_any = false
+disallow_untyped_decorators = true
+disallow_any_generics = false
+disallow_untyped_calls = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+no_implicit_reexport = true
+warn_return_any = true
 
-# Other options
-builtins = ["_"]
+[[tool.mypy.overrides]]
+module = [  
+    'tensorrt',
+]
+ignore_errors = true
+
+[tool.pyright]
+include = ["src"]
+exclude = ["**/node_modules",
+    "**/__pycache__",
+]
+
+ignore = ["scripts/*"]
+
+defineConstant = {DEBUG = true}
+stubPath = "typings"
+reportMissingImports = true
+reportMissingTypeStubs = false
+  
+pythonVersion = "3.8"
+pythonPlatform = "Linux"
+
+executionEnvironments = [
+    { root = "src", pythonVersion = "3.8", stubPath = "typings" },
+]
