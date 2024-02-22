@@ -89,7 +89,7 @@ __version__ = "0.0.3"
 import contextlib
 
 with contextlib.suppress(Exception):
-    import pycuda.autoinit  # type: ignore[import-untyped]
+    import pycuda.autoinit  # type: ignore[import-untyped, import-not-found]
 
 from ._engine import TRTEngine
 from ._model import TRTModel

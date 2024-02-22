@@ -15,6 +15,9 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip install numpy>=1.19.0
+          pip install typing_extensions>=4.0.0
+          pip install setuptools>=57.0.0
           pip install mypy
           pip install types-setuptools
 
