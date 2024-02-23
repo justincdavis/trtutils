@@ -84,6 +84,8 @@ class TRTEngine:
 
         """
         engine_path = Path(engine_path) if isinstance(engine_path, str) else engine_path
+        # allocate random generator
+        self._rng = np.random.default_rng()
         # get a unique context for thread safe operation
         self._cfx = cuda.Device(device).make_context()
 
@@ -143,9 +145,6 @@ class TRTEngine:
         if warmup:
             for _ in range(warmup_iterations):
                 self.mock_execute()
-
-        # allocate random generator
-        self._rng = np.random.default_rng()
 
     @property
     def input_shapes(self: Self) -> list[tuple[int, ...]]:
