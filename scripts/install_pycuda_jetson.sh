@@ -8,5 +8,6 @@ echo 'export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/cuda/lib64' >> ~/.bas
 source ~/.bashrc
 sudo ln -s /usr/include/locale.h /usr/include/xlocale.h
 
+python3 -m pip install --upgrade pip
 pip3 install cython
 pip3 install pycuda --user
