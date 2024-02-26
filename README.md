@@ -1,4 +1,13 @@
 # trtutils
+
+[![](https://img.shields.io/pypi/pyversions/trtutils.svg)](https://pypi.org/pypi/trtutils/)
+![PyPI](https://img.shields.io/pypi/v/trtutils.svg?style=plastic)
+
+![MyPy](https://github.com/justincdavis/trtutils/actions/workflows/mypy.yaml/badge.svg?branch=main)
+![Ruff](https://github.com/justincdavis/trtutils/actions/workflows/ruff.yaml/badge.svg?branch=main)
+![Black](https://github.com/justincdavis/trtutils/actions/workflows/black.yaml/badge.svg?branch=main)
+![PyPi Build](https://github.com/justincdavis/trtutils/actions/workflows/build-check.yaml/badge.svg?branch=main)
+
 Utilities for enabling easier high-level usage of TensorRT in Python.
 
 ## TRTEngine
