@@ -1,18 +1,9 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# MIT License
 # ruff: noqa: E402, F401
 """A package for enabling high-level usage of TensorRT in Python."""
+
 from __future__ import annotations
 
 # setup the logger before importing anything else
@@ -84,7 +75,7 @@ if level is not None and level.upper() not in [
     _log.warning(f"Invalid log level: {level}. Using default log level: WARNING")
 
 __author__ = "Justin Davis"
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 
 import contextlib
 
