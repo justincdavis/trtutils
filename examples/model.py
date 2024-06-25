@@ -2,11 +2,11 @@
 #
 # MIT License
 """File showcasing an example usecase of the TRTModel class."""
+
 from __future__ import annotations
 
 import cv2
 import numpy as np
-
 from trtutils import TRTModel
 
 

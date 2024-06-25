@@ -3,6 +3,7 @@
 # MIT License
 # ruff: noqa: E402, F401
 """A package for enabling high-level usage of TensorRT in Python."""
+
 from __future__ import annotations
 
 # setup the logger before importing anything else

@@ -2,11 +2,11 @@
 #
 # MIT License
 """File showcasing the TRTEngine class."""
+
 from __future__ import annotations
 
 import cv2
 import numpy as np
-
 from trtutils import TRTEngine
 
 
