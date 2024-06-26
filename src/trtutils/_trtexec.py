@@ -43,7 +43,7 @@ def find_trtexec() -> Path:
         raise RuntimeError(err_msg) from e
     text_output = output.stdout.decode("utf-8")
     text_lines: list[str] = text_output.split("\n")
-    potential_lines: list[Path] = []
+    potential_paths: list[Path] = []
     for line in text_lines:
         # filter out empty lines and None
         if line is None:
@@ -53,11 +53,18 @@ def find_trtexec() -> Path:
         # identify only lines which contain a trtexec binary
         line_path = Path(line)
         if line_path.stem == "trtexec" and line_path.suffix == "" and line_path.is_file():
-            potential_lines.append(line_path)
+            potential_paths.append(line_path)
     
-    if len(potential_lines) == 0:
+    if len(potential_paths) == 0:
         err_msg = "trtexec binary not found on system"
         raise FileNotFoundError(err_msg)
 
-    trtexec_binaries = sorted(potential_lines, key=lambda x: len(str(x.resolve())))
+    # identify any which are not in the /home directory
+    # if no binaries in non-home directories, utilize rest of search
+    non_home_paths = [line for line in potential_paths if "/home" not in str(line)]
+    if len(non_home_paths) > 0:
+        potential_paths = non_home_paths
+
+    # return the shortest path (shortest is least complicated???)
+    trtexec_binaries = sorted(potential_paths, key=lambda x: len(str(x.resolve())))
     return trtexec_binaries[0]
