@@ -14,10 +14,21 @@ def find_trtexec() -> Path:
     """
     Find an instance of the trtexec binary on the system.
 
+    Requires the locate command to be installed on the system.
+    As such, only works on Unix-like systems.
+
     Returns
     -------
     Path
         The path to the trtexec binary
+
+    Raises
+    ------
+    RuntimeError
+        If the locate command is not found on the system after trtexec
+        could not be found in most likely locations
+    FileNotFoundError
+        If the trtexec binary is not found on the system
 
     """
     # basic_path: Path = Path("/usr/src/tensorrt/bin/trtexec")
@@ -32,13 +43,21 @@ def find_trtexec() -> Path:
         raise RuntimeError(err_msg) from e
     text_output = output.stdout.decode("utf-8")
     text_lines: list[str] = text_output.split("\n")
-    # filter out empty lines and None
-    text_lines = [line for line in text_lines if line and len(line) > 0]
-    # identify only lines which contain a trtexec binary
-    potential_lines: list[str] = []
+    potential_lines: list[Path] = []
     for line in text_lines:
+        # filter out empty lines and None
+        if line is None:
+            continue
+        if len(line) < 1:
+            continue
+        # identify only lines which contain a trtexec binary
         line_path = Path(line)
         if line_path.stem == "trtexec" and line_path.suffix == "" and line_path.is_file():
             potential_lines.append(line_path)
     
-    print(potential_lines)
+    if len(potential_lines) == 0:
+        err_msg = "trtexec binary not found on system"
+        raise FileNotFoundError(err_msg)
+
+    trtexec_binaries = sorted(potential_lines, key=lambda x: len(str(x.resolve())))
+    return trtexec_binaries[0]
