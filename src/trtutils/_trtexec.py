@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=None)
 def find_trtexec() -> Path:
     """
     Find an instance of the trtexec binary on the system.
@@ -20,9 +20,9 @@ def find_trtexec() -> Path:
         The path to the trtexec binary
 
     """
-    basic_path: Path = Path("/usr/src/tensorrt/bin/trtexec")
-    if basic_path.exists():
-        return basic_path
+    # basic_path: Path = Path("/usr/src/tensorrt/bin/trtexec")
+    # if basic_path.exists():
+    #     return basic_path
 
     # If the basic path is not present, use locate and parse
     try:
