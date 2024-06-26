@@ -2,7 +2,25 @@
 #
 # MIT License
 # ruff: noqa: E402, F401
-"""A package for enabling high-level usage of TensorRT in Python."""
+"""
+A package for enabling high-level usage of TensorRT in Python.
+
+This package provides a high-level interface for using TensorRT in Python. It
+provides a class for creating TensorRT engines from serialized engine files,
+a class for running inference on those engines, and a variety of other utilities.
+
+Classes
+-------
+TRTEngine
+    A class for creating TensorRT engines from serialized engine files.
+TRTModel
+    A class for running inference on TensorRT engines.
+
+Functions
+---------
+find_trtexec
+    Find an instance of the trtexec binary on the system.
+"""
 
 from __future__ import annotations
 
@@ -84,8 +102,10 @@ with contextlib.suppress(Exception):
 
 from ._engine import TRTEngine
 from ._model import TRTModel
+from ._trtexec import find_trtexec
 
 __all__ = [
     "TRTEngine",
     "TRTModel",
+    "find_trtexec",
 ]
