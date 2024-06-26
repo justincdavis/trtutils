@@ -38,7 +38,7 @@ def find_trtexec() -> Path:
     potential_lines: list[str] = []
     for line in text_lines:
         line_path = Path(line)
-        if line_path.stem == "trtexec":
+        if line_path.stem == "trtexec" and line_path.suffix == "":
             potential_lines.append(line_path)
     
     print(potential_lines)
