@@ -9,6 +9,11 @@ This package provides a high-level interface for using TensorRT in Python. It
 provides a class for creating TensorRT engines from serialized engine files,
 a class for running inference on those engines, and a variety of other utilities.
 
+Submodules
+----------
+trtexec
+    A module for utilities related to the trtexec tool.
+
 Classes
 -------
 TRTEngine
@@ -100,12 +105,14 @@ import contextlib
 with contextlib.suppress(Exception):
     import pycuda.autoinit  # type: ignore[import-untyped, import-not-found]
 
+from . import trtexec
 from ._engine import TRTEngine
 from ._model import TRTModel
-from ._trtexec import find_trtexec
+from .trtexec import find_trtexec
 
 __all__ = [
     "TRTEngine",
     "TRTModel",
     "find_trtexec",
+    "trtexec",
 ]
