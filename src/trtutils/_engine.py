@@ -82,11 +82,11 @@ class TRTEngine:
         # set the datatype
         self._dtype = dtype
 
-        # load the libnvinfer plugins
-        trt.init_libnvinfer_plugins(None, "")
+        # load the logger and libnvinfer plugins
+        self._trt_logger = trt.Logger(trt.Logger.WARNING)
+        trt.init_libnvinfer_plugins(self._trt_logger, "")
 
         # load the engine from file
-        self._trt_logger = trt.Logger(trt.Logger.WARNING)
         with Path.open(engine_path, "rb") as f, trt.Runtime(
             self._trt_logger,
         ) as runtime:
@@ -245,7 +245,7 @@ class TRTEngine:
     def _is_dynamic(shape: tuple[int]) -> bool:
         return any(dim is None or dim < 0 for dim in shape)
 
-    def __call__(self: Self, inputs: list[np.ndarray]) -> Any:  # noqa: ANN401
+    def __call__(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
         """
         Execute the engine with the given inputs.
 
@@ -257,7 +257,7 @@ class TRTEngine:
 
         Returns
         -------
-        Any
+        list[np.ndarray]
             The outputs from the engine
 
         """
@@ -275,7 +275,7 @@ class TRTEngine:
 
         Returns
         -------
-        np.ndarray
+        list[np.ndarray]
             The outputs from the engine
 
         """
