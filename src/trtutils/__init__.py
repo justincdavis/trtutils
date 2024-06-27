@@ -2,7 +2,30 @@
 #
 # MIT License
 # ruff: noqa: E402, F401
-"""A package for enabling high-level usage of TensorRT in Python."""
+"""
+A package for enabling high-level usage of TensorRT in Python.
+
+This package provides a high-level interface for using TensorRT in Python. It
+provides a class for creating TensorRT engines from serialized engine files,
+a class for running inference on those engines, and a variety of other utilities.
+
+Submodules
+----------
+trtexec
+    A module for utilities related to the trtexec tool.
+
+Classes
+-------
+TRTEngine
+    A class for creating TensorRT engines from serialized engine files.
+TRTModel
+    A class for running inference on TensorRT engines.
+
+Functions
+---------
+find_trtexec
+    Find an instance of the trtexec binary on the system.
+"""
 
 from __future__ import annotations
 
@@ -75,17 +98,21 @@ if level is not None and level.upper() not in [
     _log.warning(f"Invalid log level: {level}. Using default log level: WARNING")
 
 __author__ = "Justin Davis"
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 
 import contextlib
 
 with contextlib.suppress(Exception):
     import pycuda.autoinit  # type: ignore[import-untyped, import-not-found]
 
+from . import trtexec
 from ._engine import TRTEngine
 from ._model import TRTModel
+from .trtexec import find_trtexec
 
 __all__ = [
     "TRTEngine",
     "TRTModel",
+    "find_trtexec",
+    "trtexec",
 ]
