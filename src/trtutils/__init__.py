@@ -66,7 +66,7 @@ def _setup_logger(level: str | None = None) -> None:
 
 def set_log_level(level: str) -> None:
     """
-    Set the log level for the oakutils package.
+    Set the log level for the trtutils package.
 
     Parameters
     ----------
@@ -85,7 +85,7 @@ def set_log_level(level: str) -> None:
     _setup_logger(level)
 
 
-level = os.getenv("OAKUTILS_LOG_LEVEL")
+level = os.getenv("TRTUTILS_LOG_LEVEL")
 _setup_logger(level)
 _log = logging.getLogger(__name__)
 if level is not None and level.upper() not in [

@@ -4,7 +4,7 @@
 submodules=("")
 
 # Iterate over the contents of the directory
-for FILE in src/oakutils/*;
+for FILE in src/trtutils/*;
 do
     # Extract the filename from the full path
     filename=$(basename "$FILE")
