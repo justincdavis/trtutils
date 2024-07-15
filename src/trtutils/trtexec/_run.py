@@ -38,7 +38,7 @@ def run_trtexec(
     """
     if trtexec_path is None:
         trtexec_path = find_trtexec()
-    elif isinstance(trtexec_path, Path):
+    if isinstance(trtexec_path, Path):
         trtexec_path = str(trtexec_path)
     command = f"{trtexec_path} {command}"
     process = subprocess.Popen(
