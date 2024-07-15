@@ -41,15 +41,16 @@ def run_trtexec(
     if isinstance(trtexec_path, Path):
         trtexec_path = str(trtexec_path)
     command = f"{trtexec_path} {command}"
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+    com_list = [p for p in command.split(" ") if len(p) > 0]
+    process = subprocess.run(
+        com_list,
+        capture_output=True,
+        check=True,
     )
     stdout = ""
     if process.stdout is not None:
-        stdout = process.stdout.read().decode()
+        stdout = process.stdout.decode()
     stderr = ""
     if process.stderr is not None:
-        stderr = process.stderr.read().decode()
+        stderr = process.stderr.decode()
     return stdout, stderr
