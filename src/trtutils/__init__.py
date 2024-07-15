@@ -108,11 +108,12 @@ with contextlib.suppress(Exception):
 from . import trtexec
 from ._engine import TRTEngine
 from ._model import TRTModel
-from .trtexec import find_trtexec
+from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
     "TRTEngine",
     "TRTModel",
     "find_trtexec",
+    "run_trtexec",
     "trtexec",
 ]
