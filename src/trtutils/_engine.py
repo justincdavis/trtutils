@@ -29,21 +29,6 @@ class TRTEngine:
     Each TRTEngine has its own CUDA context and there is no safeguards
     implemented in the class for datarace conditions. As such, a
     single TRTEngine should not be used in multiple threads or processes.
-
-    Attributes
-    ----------
-    input_shapes : list[tuple[int, ...]]
-        The shapes of the inputs
-
-    Methods
-    -------
-    __call__(inputs: list[np.ndarray])
-        Execute the engine with the given inputs
-    execute(inputs: list[np.ndarray])
-        Execute the engine with the given inputs
-    mock_execute()
-        Execute the engine with random inputs
-
     """
 
     def __init__(

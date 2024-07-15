@@ -98,7 +98,7 @@ if level is not None and level.upper() not in [
     _log.warning(f"Invalid log level: {level}. Using default log level: WARNING")
 
 __author__ = "Justin Davis"
-__version__ = "0.0.6"
+__version__ = "0.0.7"
 
 import contextlib
 
@@ -108,11 +108,12 @@ with contextlib.suppress(Exception):
 from . import trtexec
 from ._engine import TRTEngine
 from ._model import TRTModel
-from .trtexec import find_trtexec
+from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
     "TRTEngine",
     "TRTModel",
     "find_trtexec",
+    "run_trtexec",
     "trtexec",
 ]

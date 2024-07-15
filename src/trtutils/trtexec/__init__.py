@@ -16,5 +16,6 @@ find_trtexec_binaries
 from __future__ import annotations
 
 from ._find import find_trtexec, find_trtexec_binaries
+from ._run import run_trtexec
 
-__all__ = ["find_trtexec", "find_trtexec_binaries"]
+__all__ = ["find_trtexec", "find_trtexec_binaries", "run_trtexec"]
