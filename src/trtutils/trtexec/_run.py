@@ -4,16 +4,19 @@
 # ruff: noqa: S404, S603
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 
 from ._find import find_trtexec
 
+_log = logging.getLogger(__name__)
+
 
 def run_trtexec(
     command: str,
     trtexec_path: Path | str | None = None,
-) -> tuple[str, str]:
+) -> tuple[bool, str, str]:
     """
     Run a command using trtexec.
 
@@ -32,8 +35,8 @@ def run_trtexec(
 
     Returns
     -------
-    tuple[str, str]
-        A tuple of stdout and stderr TextIOWrappers
+    tuple[bool, str, str]
+        A tuple containing the following elements:  (success, stdout, stderr)
 
     """
     if trtexec_path is None:
@@ -42,15 +45,21 @@ def run_trtexec(
         trtexec_path = str(trtexec_path)
     command = f"{trtexec_path} {command}"
     com_list = [p for p in command.split(" ") if len(p) > 0]
-    process = subprocess.run(
-        com_list,
-        capture_output=True,
-        check=True,
-    )
+    try:
+        process = subprocess.run(
+            com_list,
+            capture_output=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        err_msg = f"Error running trtexec command: {command}"
+        err_msg += f"\n\tReturn value: {e.returncode}"
+        _log.error(err_msg)
+        return False, e.stdout.decode(), e.stderr.decode()
     stdout = ""
     if process.stdout is not None:
         stdout = process.stdout.decode()
     stderr = ""
     if process.stderr is not None:
         stderr = process.stderr.decode()
-    return stdout, stderr
+    return True, stdout, stderr
