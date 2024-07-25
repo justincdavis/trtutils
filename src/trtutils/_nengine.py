@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import contextlib
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
-from functools import cached_property
 
 from .core import (
     allocate_bindings,
@@ -13,9 +13,8 @@ from .core import (
 )
 
 if TYPE_CHECKING:
-    from typing_extensions import Self
-
     import numpy as np
+    from typing_extensions import Self
 
 
 class TRTEngine:
@@ -29,16 +28,18 @@ class TRTEngine:
         ----------
         engine_path : Path | str
             The path to the serialized engine file.
-        
+
         """
         # Load TRT engine
         self._engine, self._context, self._logger = create_engine(engine_path)
 
         # allocate memory for inputs and outputs
-        self._inputs, self._outputs, self._allocations, self._batch_size = allocate_bindings(
-            self._engine,
-            self._context,
-            self._logger,
+        self._inputs, self._outputs, self._allocations, self._batch_size = (
+            allocate_bindings(
+                self._engine,
+                self._context,
+                self._logger,
+            )
         )
 
     def __del__(self: Self) -> None:
@@ -59,12 +60,12 @@ class TRTEngine:
     def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
         """
         Get the specs for the input tensor of the network. Useful to prepare memory allocations.
-        
+
         Returns
         -------
         list[tuple[list[int], np.dtype]]
             A list with two items per element, the shape and (numpy) datatype of each input tensor.
-        
+
         """
         return [(i.shape, i.dtype) for i in self._inputs]
 
@@ -77,9 +78,9 @@ class TRTEngine:
         -------
         list[tuple[list[int], np.dtype]]
             A list with two items per element, the shape and (numpy) datatype of each output tensor.
-        
+
         """
-        return [(o.shape, o.dtype) for o in self._outputs]    
+        return [(o.shape, o.dtype) for o in self._outputs]
 
     def __call__(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
         """
@@ -94,7 +95,7 @@ class TRTEngine:
         -------
         list[np.ndarray]
             The outputs of the network.
-        
+
         """
         return self.execute(data)
 
@@ -111,12 +112,12 @@ class TRTEngine:
         -------
         list[np.ndarray]
             The outputs of the network.
-        
+
         """
         # Copy inputs
         for i_idx in range(len(self._inputs)):
             memcpy_host_to_device(
-                self._inputs[i_idx].allocation, 
+                self._inputs[i_idx].allocation,
                 data[i_idx],
             )
         # execute

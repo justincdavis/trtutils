@@ -26,12 +26,12 @@ class Binding:
     def free(self: Self) -> None:
         """
         Free the memory of the binding.
-        
+
         Raises
         ------
         RuntimeError
             If a CUDA error occurred.
-        
+
         """
         cuda_call(cudart.cudaFree(self.allocation))
 
