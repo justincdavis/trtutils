@@ -30,16 +30,21 @@ memcpy_host_to_device
 
 from __future__ import annotations
 
-from ._bindings import Binding, allocate_bindings
-from ._cuda import cuda_call
-from ._engine import TRTEngine
-from ._memory import memcpy_device_to_host, memcpy_host_to_device
+import contextlib
 
-__all__ = [
-    "Binding",
-    "TRTEngine",
-    "allocate_bindings",
-    "cuda_call",
-    "memcpy_device_to_host",
-    "memcpy_host_to_device",
-]
+__all__ = []
+
+with contextlib.suppress(ImportError):
+    from ._bindings import Binding, allocate_bindings
+    from ._cuda import cuda_call
+    from ._engine import TRTEngine
+    from ._memory import memcpy_device_to_host, memcpy_host_to_device
+
+    __all__ += [
+        "Binding",
+        "TRTEngine",
+        "allocate_bindings",
+        "cuda_call",
+        "memcpy_device_to_host",
+        "memcpy_host_to_device",
+    ]

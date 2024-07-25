@@ -7,8 +7,7 @@ import contextlib
 from functools import cached_property
 from typing import TYPE_CHECKING
 
-import numpy as np
-
+from trtutils.backends import TRTEngineInterface
 from trtutils.core import create_engine
 
 from ._bindings import allocate_bindings
@@ -17,10 +16,11 @@ from ._memory import memcpy_device_to_host, memcpy_host_to_device
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import numpy as np
     from typing_extensions import Self
 
 
-class TRTEngine:
+class TRTEngine(TRTEngineInterface):
     """Implements a generic interface for TensorRT engines."""
 
     def __init__(
@@ -59,22 +59,6 @@ class TRTEngine:
         if warmup:
             for _ in range(warmup_iterations):
                 self.mock_execute()
-
-    @cached_property
-    def _rng(self: Self) -> np.random.Generator:
-        return np.random.default_rng()
-
-    def get_random_input(self: Self) -> list[np.ndarray]:
-        """
-        Generate a random input for the network.
-
-        Returns
-        -------
-        list[np.ndarray]
-            The random input to the network.
-
-        """
-        return [self._rng.random(size=i.shape, dtype=i.dtype) for i in self._inputs]
 
     def __del__(self: Self) -> None:
         def _del(obj: object, attr: str) -> None:
@@ -168,23 +152,6 @@ class TRTEngine:
         """
         return [o.dtype for o in self._outputs]
 
-    def __call__(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
-        """
-        Execute the network with the given inputs.
-
-        Parameters
-        ----------
-        data : list[np.ndarray]
-            The inputs to the network.
-
-        Returns
-        -------
-        list[np.ndarray]
-            The outputs of the network.
-
-        """
-        return self.execute(data)
-
     def execute(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
         """
         Execute the network with the given inputs.
@@ -216,21 +183,3 @@ class TRTEngine:
             )
         # return
         return [o.host_allocation for o in self._outputs]
-
-    def mock_execute(self: Self, data: list[np.ndarray] | None = None) -> None:
-        """
-        Perform a mock execution of the network.
-
-        This call is useful for warming up the network and
-        for testing/benchmarking purposes.
-
-        Parameters
-        ----------
-        data : list[np.ndarray], optional
-            The inputs to the network, by default None
-            If None, random inputs will be generated.
-
-        """
-        if data is None:
-            data = self.get_random_input()
-        return self.execute(data)

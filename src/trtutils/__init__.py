@@ -100,19 +100,16 @@ if level is not None and level.upper() not in [
 __author__ = "Justin Davis"
 __version__ = "0.1.0"
 
-import contextlib
 
-with contextlib.suppress(Exception):
-    import pycuda.autoinit  # type: ignore[import-untyped, import-not-found]
-
-from . import trtexec
-from ._engine import TRTEngine
+from . import backends, trtexec
 from ._model import TRTModel
+from .backends import TRTEngine
 from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
     "TRTEngine",
     "TRTModel",
+    "backends",
     "find_trtexec",
     "run_trtexec",
     "trtexec",

@@ -15,8 +15,11 @@ TRTEngine
 
 from __future__ import annotations
 
-from ._engine import TRTEngine
+import contextlib
 
-__all__ = [
-    "TRTEngine",
-]
+__all__ = []
+
+with contextlib.suppress(ImportError):
+    from ._engine import TRTEngine
+
+    __all__ += ["TRTEngine"]

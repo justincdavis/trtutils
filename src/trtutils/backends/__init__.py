@@ -27,6 +27,8 @@ Classes
 -------
 TRTEngine
     A class for running inference on a TensorRT engine.
+TRTEngineInterface
+    An interface for the TRTEngine class.
 
 """
 
@@ -34,25 +36,21 @@ from __future__ import annotations
 
 import contextlib
 
-__all__ = []
+from . import cuda, pycuda
+from ._interface import TRTEngineInterface
 
-_possible_backends = ["cuda-python", "pycuda"]
+__all__ = ["TRTEngineInterface", "cuda", "pycuda"]
+_start_len = len(__all__)
 
-with contextlib.suppress(ImportError):
-    from . import cuda
+for _backend in [cuda, pycuda]:
+    with contextlib.suppress(AttributeError):
+        TRTEngine: TRTEngineInterface = _backend.TRTEngine
+        __all__ += ["TRTEngine"]
+        break
 
-    __all__ += ["cuda"]
-
-with contextlib.suppress(ImportError):
-    from . import pycuda
-
-    __all__ += ["pycuda"]
-
-if len(__all__) == 0:
-    err_msg = f"No backend found. Please install one of the following backends: {_possible_backends}"
+if len(__all__) == _start_len:
+    _backends = ["cuda-python", "pycuda"]
+    err_msg = (
+        f"No backend found. Please install one of the following backends: {_backends}"
+    )
     raise ImportError(err_msg)
-
-for backend in __all__:
-    globals().update(vars()[backend].__dict__)
-    __all__ += vars()[backend].__all__
-    break
