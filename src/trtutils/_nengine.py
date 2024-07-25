@@ -20,7 +20,13 @@ if TYPE_CHECKING:
 class TRTEngine:
     """Implements a generic interface for TensorRT engines."""
 
-    def __init__(self: Self, engine_path: Path | str):
+    def __init__(
+            self: Self,
+            engine_path: Path | str,
+            warmup_iterations: int = 5,
+            *,
+            warmup: bool | None = None,
+        ):
         """
         Load the TensorRT engine from a file.
 
@@ -28,6 +34,11 @@ class TRTEngine:
         ----------
         engine_path : Path | str
             The path to the serialized engine file.
+        warmup : bool, optional
+            Whether to do warmup iterations, by default None
+            If None, warmup will be set to False
+        warmup_iterations : int, optional
+            The number of warmup iterations to do, by default 5
 
         """
         # Load TRT engine
@@ -41,6 +52,26 @@ class TRTEngine:
                 self._logger,
             )
         )
+
+        if warmup:
+            for _ in range(warmup_iterations):
+                self.mock_execute()
+
+    @cached_property
+    def _rng(self: Self) -> np.random.Generator:
+        return np.random.default_rng()
+    
+    def _get_random_input(self: Self) -> list[np.ndarray]:
+        """
+        Generate a random input for the network.
+        
+        Returns
+        -------
+        list[np.ndarray]
+            The random input to the network.
+        
+        """
+        return [self._rng.integers(low=0, high=255, size=i.shape, dtype=i.dtype) for i in self._inputs]
 
     def __del__(self: Self) -> None:
         def _del(obj: object, attr: str) -> None:
@@ -68,6 +99,32 @@ class TRTEngine:
 
         """
         return [(i.shape, i.dtype) for i in self._inputs]
+    
+    @cached_property
+    def input_shapes(self: Self) -> list[tuple[int, ...]]:
+        """
+        Get the shapes for the input tensors of the network.
+        
+        Returns
+        -------
+        list[tuple[int, ...]]
+            A list with the shape of each input tensor.
+        
+        """
+        return [tuple(i.shape) for i in self._inputs]
+    
+    @cached_property
+    def input_dtypes(self: Self) -> list[np.dtype]:
+        """
+        Get the datatypes for the input tensors of the network.
+        
+        Returns
+        -------
+        list[np.dtype]
+            A list with the datatype of each input tensor.
+        
+        """
+        return [i.dtype for i in self._inputs]
 
     @cached_property
     def output_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
@@ -81,6 +138,32 @@ class TRTEngine:
 
         """
         return [(o.shape, o.dtype) for o in self._outputs]
+    
+    @cached_property
+    def output_shapes(self: Self) -> list[tuple[int, ...]]:
+        """
+        Get the shapes for the output tensors of the network.
+        
+        Returns
+        -------
+        list[tuple[int, ...]]
+            A list with the shape of each output tensor.
+        
+        """
+        return [tuple(o.shape) for o in self._outputs]
+    
+    @cached_property
+    def output_dtypes(self: Self) -> list[np.dtype]:
+        """
+        Get the datatypes for the output tensors of the network.
+        
+        Returns
+        -------
+        list[np.dtype]
+            A list with the datatype of each output tensor.
+        
+        """
+        return [o.dtype for o in self._outputs]
 
     def __call__(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
         """
@@ -130,3 +213,12 @@ class TRTEngine:
             )
         # return
         return [o.host_allocation for o in self._outputs]
+
+    def mock_execute(self: Self) -> None:
+        """
+        Perform a mock execution of the network.
+        
+        This call is useful for warming up the network and
+        for testing/benchmarking purposes.
+        """
+        return self.execute(self._get_random_input())

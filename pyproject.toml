@@ -34,7 +34,6 @@ classifiers = [
     "Topic :: Software Development",
     "Topic :: Software Development :: Embedded Systems",
     "Topic :: Software Development :: Libraries",
-    "Topic :: System :: Hardware",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
@@ -45,8 +44,8 @@ classifiers = [
 requires-python=">=3.8, <=3.13"
 dependencies = [
     "tensorrt>=8.0.0",
-    "pycuda>=2024.0",
-    "numpy>=1.19.0,<2.0.0",
+    "cuda-python>=8.0.0",
+    "numpy>=1.19.0,<1.24.0",
     "typing_extensions>=4.0.0",
     "setuptools>=57.0.0",
 ]
