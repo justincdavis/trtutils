@@ -72,7 +72,7 @@ class TRTEngine:
             The random input to the network.
         
         """
-        return [self._rng.integers(low=0, high=255, size=i.shape, dtype=i.dtype) for i in self._inputs]
+        return [self._rng.random(size=i.shape, dtype=i.dtype) for i in self._inputs]
 
     def __del__(self: Self) -> None:
         def _del(obj: object, attr: str) -> None:
