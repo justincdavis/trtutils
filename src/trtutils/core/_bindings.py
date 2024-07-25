@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -39,7 +40,9 @@ class Binding:
         cuda_call(cudart.cudaFree(self.allocation))
 
     def __del__(self: Self) -> None:
-        self.free()
+        # potentially already had free called on it previously
+        with contextlib.suppress(RuntimeError):
+            self.free()
 
 
 def allocate_bindings(
