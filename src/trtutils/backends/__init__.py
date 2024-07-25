@@ -2,33 +2,20 @@
 #
 # MIT License
 """
-Backend implementations for TRTEngine.
+Alternative backends for TRTEngine.
 
-This module will automatically assign a backend based on the available
-backends. If no backends are available, an ImportError will be raised.
-The available backends are:
-
-        - cuda
-        - pycuda
-
-The backends will be utilized in the order they are listed above.
-As such, if the CUDA backend can be loaded then the TRTEngine
-implemented in the cuda submodule will be used. If the CUDA backend
-cannot be loaded, then the next backend will be attempted.
-
-Submodules
-----------
-cuda
-    The CUDA backend for TRTEngine.
-pycuda
-    The PyCUDA backend for TRTEngine.
+Warning:
+-------
+The alternative implementations for backends may not match the TRTEngineInterface
+defined in the core submodule. As such, they may not be directly interchangeable
+with the core implementation. Work is ongoing to make the backends more consistent
+with the core implementation. Use with caution.
 
 Classes
 -------
-TRTEngine
-    A class for running inference on a TensorRT engine.
-TRTEngineInterface
-    An interface for the TRTEngine class.
+PyCudaTRTEngine
+    A class for creating TensorRT engines from serialized engine files.
+    Memory is managed with PyCUDA.
 
 """
 
@@ -36,21 +23,9 @@ from __future__ import annotations
 
 import contextlib
 
-from . import cuda, pycuda
-from ._interface import TRTEngineInterface
+__all__ = []
 
-__all__ = ["TRTEngineInterface", "cuda", "pycuda"]
-_start_len = len(__all__)
+with contextlib.suppress(ImportError):
+    from ._pycuda import PyCudaTRTEngine
 
-for _backend in [cuda, pycuda]:
-    with contextlib.suppress(AttributeError):
-        TRTEngine: TRTEngineInterface = _backend.TRTEngine
-        __all__ += ["TRTEngine"]
-        break
-
-if len(__all__) == _start_len:
-    _backends = ["cuda-python", "pycuda"]
-    err_msg = (
-        f"No backend found. Please install one of the following backends: {_backends}"
-    )
-    raise ImportError(err_msg)
+    __all__ += ["PyCudaTRTEngine"]

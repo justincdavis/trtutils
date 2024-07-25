@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class TRTEngine:
+class PyCudaTRTEngine:
     """
     A wrapper around a TensorRT engine that handles the device memory.
 
@@ -67,11 +67,11 @@ class TRTEngine:
         # set the datatype
         self._dtype = dtype
 
-        # load the logger and libnvinfer plugins
-        self._trt_logger = trt.Logger(trt.Logger.WARNING)
-        trt.init_libnvinfer_plugins(self._trt_logger, "")
+        # load the libnvinfer plugins
+        trt.init_libnvinfer_plugins(None, "")
 
         # load the engine from file
+        self._trt_logger = trt.Logger(trt.Logger.WARNING)
         with Path.open(engine_path, "rb") as f, trt.Runtime(
             self._trt_logger,
         ) as runtime:
@@ -230,7 +230,7 @@ class TRTEngine:
     def _is_dynamic(shape: tuple[int]) -> bool:
         return any(dim is None or dim < 0 for dim in shape)
 
-    def __call__(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
+    def __call__(self: Self, inputs: list[np.ndarray]) -> Any:  # noqa: ANN401
         """
         Execute the engine with the given inputs.
 
@@ -242,7 +242,7 @@ class TRTEngine:
 
         Returns
         -------
-        list[np.ndarray]
+        Any
             The outputs from the engine
 
         """
@@ -260,7 +260,7 @@ class TRTEngine:
 
         Returns
         -------
-        list[np.ndarray]
+        np.ndarray
             The outputs from the engine
 
         """

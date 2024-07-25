@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import tensorrt as trt
+import tensorrt as trt  # type: ignore[import-untyped]
 
 
 def create_engine(

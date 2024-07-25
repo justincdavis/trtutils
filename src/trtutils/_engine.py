@@ -7,11 +7,13 @@ import contextlib
 from functools import cached_property
 from typing import TYPE_CHECKING
 
-from trtutils.backends import TRTEngineInterface
-from trtutils.core import create_engine
-
-from ._bindings import allocate_bindings
-from ._memory import memcpy_device_to_host, memcpy_host_to_device
+from .core import (
+    TRTEngineInterface,
+    allocate_bindings,
+    create_engine,
+    memcpy_device_to_host,
+    memcpy_host_to_device,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path

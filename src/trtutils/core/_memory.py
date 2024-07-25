@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cuda import cudart
+from cuda import cudart  # type: ignore[import-untyped]
 
 from ._cuda import cuda_call
 

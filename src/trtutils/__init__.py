@@ -11,6 +11,10 @@ a class for running inference on those engines, and a variety of other utilities
 
 Submodules
 ----------
+backends
+    A module providing alternative backends for the TRTEngine class.
+core
+    A module for the core functionality of the package.
 trtexec
     A module for utilities related to the trtexec tool.
 
@@ -101,16 +105,18 @@ __author__ = "Justin Davis"
 __version__ = "0.1.0"
 
 
-from . import backends, trtexec
+from . import backends, core, trtexec
+from ._engine import TRTEngine
 from ._model import TRTModel
-from .backends import TRTEngine
 from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
     "TRTEngine",
     "TRTModel",
     "backends",
+    "core",
     "find_trtexec",
     "run_trtexec",
+    "set_log_level",
     "trtexec",
 ]

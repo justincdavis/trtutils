@@ -174,7 +174,10 @@ class TRTEngineInterface(ABC):
         """
         return self.execute(data)
 
-    def mock_execute(self: Self, data: list[np.ndarray] | None = None) -> None:
+    def mock_execute(
+        self: Self,
+        data: list[np.ndarray] | None = None,
+    ) -> list[np.ndarray]:
         """
         Perform a mock execution of the network.
 
@@ -186,6 +189,11 @@ class TRTEngineInterface(ABC):
         data : list[np.ndarray], optional
             The inputs to the network, by default None
             If None, random inputs will be generated.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The outputs of the network.
 
         """
         if data is None:

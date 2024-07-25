@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TypeVar
 
-from cuda import cuda, cudart
+from cuda import cuda, cudart  # type: ignore[import-untyped]
 
 
 def check_cuda_err(err: cuda.CUresult | cudart.cudaError_t) -> None:
@@ -58,5 +58,5 @@ def cuda_call(call: tuple[cuda.CUresult | cudart.cudaError_t, T]) -> T:
     err, res = call[0], call[1:]
     check_cuda_err(err)
     if len(res) == 1:
-        res = res[0]
+        return res[0]
     return res

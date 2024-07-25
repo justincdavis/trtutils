@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
-import tensorrt as trt
-from cuda import cudart
+import tensorrt as trt  # type: ignore[import-untyped]
+from cuda import cudart  # type: ignore[import-untyped]
 
 from ._cuda import cuda_call
 
@@ -24,7 +24,7 @@ class Binding:
     shape: list[int]
     is_input: bool
     allocation: int
-    host_allocation: np.ndarray | None
+    host_allocation: np.ndarray
 
     def free(self: Self) -> None:
         """
@@ -122,7 +122,9 @@ def allocate_bindings(
             for s in shape:
                 size *= s
             allocation = cuda_call(cudart.cudaMalloc(size))
-            host_allocation = None if is_input else np.zeros(shape, dtype)
+            host_allocation = (
+                np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
+            )
             binding = Binding(
                 index=i,
                 name=name,
@@ -166,7 +168,9 @@ def allocate_bindings(
             for s in shape:
                 size *= s
             allocation = cuda_call(cudart.cudaMalloc(size))
-            host_allocation = None if is_input else np.zeros(shape, dtype)
+            host_allocation = (
+                np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
+            )
             binding = Binding(
                 index=i,
                 name=name,
