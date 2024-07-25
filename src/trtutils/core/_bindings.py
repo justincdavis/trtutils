@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 import tensorrt as trt
 from cuda import cudart
 
 from ._cuda import cuda_call
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 
 @dataclass
@@ -18,6 +22,18 @@ class Binding:
     is_input: bool
     allocation: int
     host_allocation: np.ndarray | None
+
+    def free(self: Self) -> None:
+        """
+        Free the memory of the binding.
+        
+        Raises
+        ------
+        RuntimeError
+            If a CUDA error occurred.
+        
+        """
+        cuda_call(cudart.cudaFree(self.allocation))
 
 
 def allocate_bindings(

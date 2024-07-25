@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import contextlib
+from pathlib import Path
+from typing import TYPE_CHECKING
+from functools import cached_property
+
 from .core import (
     allocate_bindings,
     create_engine,
@@ -7,54 +12,120 @@ from .core import (
     memcpy_host_to_device,
 )
 
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
-class TensorRTInfer:
-    """
-    Implements inference for the EfficientDet TensorRT engine.
-    """
+    import numpy as np
 
-    def __init__(self, engine_path):
+
+class TRTEngine:
+    """Implements a generic interface for TensorRT engines."""
+
+    def __init__(self: Self, engine_path: Path | str):
         """
-        :param engine_path: The path to the serialized engine to load from disk.
+        Load the TensorRT engine from a file.
+
+        Parameters
+        ----------
+        engine_path : Path | str
+            The path to the serialized engine file.
+        
         """
         # Load TRT engine
         self._engine, self._context, self._logger = create_engine(engine_path)
 
-        self._inputs, self._outputs, self._allocations = allocate_bindings(
+        # allocate memory for inputs and outputs
+        self._inputs, self._outputs, self._allocations, self._batch_size = allocate_bindings(
             self._engine,
             self._context,
             self._logger,
         )
 
-    def input_spec(self):
+    def __del__(self: Self) -> None:
+        def _del(obj: object, attr: str) -> None:
+            with contextlib.suppress(AttributeError):
+                delattr(obj, attr)
+
+        for binding in self._inputs + self._outputs:
+            # attempt to free each allocation
+            with contextlib.suppress(RuntimeError):
+                binding.free()
+
+        attrs = ["_context", "_engine"]
+        for attr in attrs:
+            _del(self, attr)
+
+    @cached_property
+    def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
         """
         Get the specs for the input tensor of the network. Useful to prepare memory allocations.
-        :return: Two items, the shape of the input tensor and its (numpy) datatype.
+        
+        Returns
+        -------
+        list[tuple[list[int], np.dtype]]
+            A list with two items per element, the shape and (numpy) datatype of each input tensor.
+        
         """
-        return self._inputs[0].shape, self._inputs[0].dtype
+        return [(i.shape, i.dtype) for i in self._inputs]
 
-    def output_spec(self):
+    @cached_property
+    def output_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
         """
-        Get the specs for the output tensors of the network. Useful to prepare memory allocations.
-        :return: A list with two items per element, the shape and (numpy) datatype of each output tensor.
-        """
-        specs = []
-        for o in self._outputs:
-            specs.append((o.shape, o.dtype))
-        return specs
+        Get the specs for the output tensor of the network. Useful to prepare memory allocations.
 
-    def infer(self, batch):
+        Returns
+        -------
+        list[tuple[list[int], np.dtype]]
+            A list with two items per element, the shape and (numpy) datatype of each output tensor.
+        
         """
-        Execute inference on a batch of images.
-        :param batch: A numpy array holding the image batch.
-        :return A list of outputs as numpy arrays.
+        return [(o.shape, o.dtype) for o in self._outputs]    
+
+    def __call__(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
         """
-        # Copy I/O and Execute
-        memcpy_host_to_device(self._inputs[0].allocation, batch)
+        Execute the network with the given inputs.
+
+        Parameters
+        ----------
+        data : list[np.ndarray]
+            The inputs to the network.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The outputs of the network.
+        
+        """
+        return self.execute(data)
+
+    def execute(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
+        """
+        Execute the network with the given inputs.
+
+        Parameters
+        ----------
+        data : list[np.ndarray]
+            The inputs to the network.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The outputs of the network.
+        
+        """
+        # Copy inputs
+        for i_idx in range(len(self._inputs)):
+            memcpy_host_to_device(
+                self._inputs[i_idx].allocation, 
+                data[i_idx],
+            )
+        # execute
         self._context.execute_v2(self._allocations)
+        # Copy outputs
         for o_idx in range(len(self._outputs)):
             memcpy_device_to_host(
                 self._outputs[o_idx].host_allocation,
                 self._outputs[o_idx].allocation,
             )
+        # return
         return [o.host_allocation for o in self._outputs]
