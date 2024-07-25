@@ -1,20 +1,22 @@
+# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 from __future__ import annotations
 
 import contextlib
 from functools import cached_property
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .core import (
-    allocate_bindings,
-    create_engine,
-    memcpy_device_to_host,
-    memcpy_host_to_device,
-)
+from trtutils.core import create_engine
+
+from ._bindings import allocate_bindings
+from ._memory import memcpy_device_to_host, memcpy_host_to_device
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from typing_extensions import Self
 
 
@@ -22,12 +24,12 @@ class TRTEngine:
     """Implements a generic interface for TensorRT engines."""
 
     def __init__(
-            self: Self,
-            engine_path: Path | str,
-            warmup_iterations: int = 5,
-            *,
-            warmup: bool | None = None,
-        ):
+        self: Self,
+        engine_path: Path | str,
+        warmup_iterations: int = 5,
+        *,
+        warmup: bool | None = None,
+    ) -> None:
         """
         Load the TensorRT engine from a file.
 
@@ -61,16 +63,16 @@ class TRTEngine:
     @cached_property
     def _rng(self: Self) -> np.random.Generator:
         return np.random.default_rng()
-    
-    def _get_random_input(self: Self) -> list[np.ndarray]:
+
+    def get_random_input(self: Self) -> list[np.ndarray]:
         """
         Generate a random input for the network.
-        
+
         Returns
         -------
         list[np.ndarray]
             The random input to the network.
-        
+
         """
         return [self._rng.random(size=i.shape, dtype=i.dtype) for i in self._inputs]
 
@@ -100,30 +102,30 @@ class TRTEngine:
 
         """
         return [(i.shape, i.dtype) for i in self._inputs]
-    
+
     @cached_property
     def input_shapes(self: Self) -> list[tuple[int, ...]]:
         """
         Get the shapes for the input tensors of the network.
-        
+
         Returns
         -------
         list[tuple[int, ...]]
             A list with the shape of each input tensor.
-        
+
         """
         return [tuple(i.shape) for i in self._inputs]
-    
+
     @cached_property
     def input_dtypes(self: Self) -> list[np.dtype]:
         """
         Get the datatypes for the input tensors of the network.
-        
+
         Returns
         -------
         list[np.dtype]
             A list with the datatype of each input tensor.
-        
+
         """
         return [i.dtype for i in self._inputs]
 
@@ -139,30 +141,30 @@ class TRTEngine:
 
         """
         return [(o.shape, o.dtype) for o in self._outputs]
-    
+
     @cached_property
     def output_shapes(self: Self) -> list[tuple[int, ...]]:
         """
         Get the shapes for the output tensors of the network.
-        
+
         Returns
         -------
         list[tuple[int, ...]]
             A list with the shape of each output tensor.
-        
+
         """
         return [tuple(o.shape) for o in self._outputs]
-    
+
     @cached_property
     def output_dtypes(self: Self) -> list[np.dtype]:
         """
         Get the datatypes for the output tensors of the network.
-        
+
         Returns
         -------
         list[np.dtype]
             A list with the datatype of each output tensor.
-        
+
         """
         return [o.dtype for o in self._outputs]
 
@@ -215,11 +217,20 @@ class TRTEngine:
         # return
         return [o.host_allocation for o in self._outputs]
 
-    def mock_execute(self: Self) -> None:
+    def mock_execute(self: Self, data: list[np.ndarray] | None = None) -> None:
         """
         Perform a mock execution of the network.
-        
+
         This call is useful for warming up the network and
         for testing/benchmarking purposes.
+
+        Parameters
+        ----------
+        data : list[np.ndarray], optional
+            The inputs to the network, by default None
+            If None, random inputs will be generated.
+
         """
-        return self.execute(self._get_random_input())
+        if data is None:
+            data = self.get_random_input()
+        return self.execute(data)

@@ -1,3 +1,6 @@
+# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -63,6 +66,9 @@ def allocate_bindings(
 
     Raises
     ------
+    RuntimeError
+        If no optimization profiles are found.
+        If the profile shape is not correct.
     ValueError
         If the batch size is 0.
         If no input tensors are found.
@@ -70,13 +76,27 @@ def allocate_bindings(
         If no memory allocations are found
 
     """
+    # lists for allocations
     inputs = []
     outputs = []
     allocations = []
     batch_size = 0
 
+    # magic numbers
+    correct_profile_shape = 3
+
+    # version information to compare againist
+    # >= 8.5 must use tensor API, otherwise binding
+    major_version = int(trt.__version__.split(".")[0])
+    minor_version = int(trt.__version__.split(".")[1])
+    split_major = 8
+    split_minor = 5
+
     # based on the version of tensorrt, num_io_tensors is not available in IEngine
-    if int(trt.__version__.split(".")[1]) >= 5:
+    # first case: version 9 or higher OR version 8.5 and higher
+    if major_version > split_major or (
+        major_version == split_major and minor_version >= split_minor
+    ):
         for i in range(engine.num_io_tensors):
             name = engine.get_tensor_name(i)
             is_input = False
@@ -85,9 +105,14 @@ def allocate_bindings(
             dtype = np.dtype(trt.nptype(engine.get_tensor_dtype(name)))
             shape = context.get_tensor_shape(name)
             if is_input and shape[0] < 0:
-                assert engine.num_optimization_profiles > 0
+                if not engine.num_optimization_profiles > 0:
+                    err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
+                    raise RuntimeError(err_msg)
                 profile_shape = engine.get_tensor_profile_shape(name, 0)
-                assert len(profile_shape) == 3  # min,opt,max
+                # ensure that profile shape is min,opt,max
+                if len(profile_shape) != correct_profile_shape:
+                    err_msg = f"Profile shape for tensor '{name}' has {len(profile_shape)} elements, expected {correct_profile_shape}"
+                    raise RuntimeError(err_msg)
                 # Set the *max* profile as binding shape
                 context.set_input_shape(name, profile_shape[2])
                 shape = context.get_tensor_shape(name)
@@ -98,14 +123,6 @@ def allocate_bindings(
                 size *= s
             allocation = cuda_call(cudart.cudaMalloc(size))
             host_allocation = None if is_input else np.zeros(shape, dtype)
-            # binding = {
-            #     "index": i,
-            #     "name": name,
-            #     "dtype": dtype,
-            #     "shape": list(shape),
-            #     "allocation": allocation,
-            #     "host_allocation": host_allocation,
-            # }
             binding = Binding(
                 index=i,
                 name=name,
@@ -121,10 +138,8 @@ def allocate_bindings(
             else:
                 outputs.append(binding)
             input_str = "Input" if is_input else "Output"
-            logger.log(
-                trt.Logger.INFO,
-                f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}",
-            )
+            log_msg = f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
+            logger.log(trt.Logger.INFO, log_msg)
     else:
         for i in range(engine.num_bindings):
             is_input = False
@@ -134,9 +149,14 @@ def allocate_bindings(
             dtype = np.dtype(trt.nptype(engine.get_binding_dtype(i)))
             shape = context.get_binding_shape(i)
             if is_input and shape[0] < 0:
-                assert engine.num_optimization_profiles > 0
+                if not engine.num_optimization_profiles > 0:
+                    err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
+                    raise RuntimeError(err_msg)
                 profile_shape = engine.get_profile_shape(0, name)
-                assert len(profile_shape) == 3  # min,opt,max
+                # ensure that profile shape is min,opt,max
+                if len(profile_shape) != correct_profile_shape:
+                    err_msg = f"Profile shape for tensor '{name}' has {len(profile_shape)} elements, expected {correct_profile_shape}"
+                    raise RuntimeError(err_msg)
                 # Set the *max* profile as binding shape
                 context.set_binding_shape(i, profile_shape[2])
                 shape = context.get_binding_shape(i)
@@ -147,14 +167,6 @@ def allocate_bindings(
                 size *= s
             allocation = cuda_call(cudart.cudaMalloc(size))
             host_allocation = None if is_input else np.zeros(shape, dtype)
-            # binding = {
-            #     "index": i,
-            #     "name": name,
-            #     "dtype": dtype,
-            #     "shape": list(shape),
-            #     "allocation": allocation,
-            #     "host_allocation": host_allocation,
-            # }
             binding = Binding(
                 index=i,
                 name=name,
@@ -170,10 +182,9 @@ def allocate_bindings(
             else:
                 outputs.append(binding)
             input_str = "Input" if is_input else "Output"
-            logger.log(
-                trt.Logger.INFO,
-                f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}",
-            )
+            input_str = "Input" if is_input else "Output"
+            log_msg = f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
+            logger.log(trt.Logger.INFO, log_msg)
 
     if batch_size == 0:
         err_msg = "Batch size is 0. Ensure that the engine has an input tensor with a valid batch size."
