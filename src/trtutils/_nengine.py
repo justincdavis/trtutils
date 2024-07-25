@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from .core import allocate_bindings, create_engine, memcpy_host_to_device, memcpy_device_to_host
+from .core import (
+    allocate_bindings,
+    create_engine,
+    memcpy_device_to_host,
+    memcpy_host_to_device,
+)
 
 
 class TensorRTInfer:
@@ -16,9 +21,10 @@ class TensorRTInfer:
         self._engine, self._context, self._logger = create_engine(engine_path)
 
         self._inputs, self._outputs, self._allocations = allocate_bindings(
-            self._engine, self._context, self._logger
+            self._engine,
+            self._context,
+            self._logger,
         )
-
 
     def input_spec(self):
         """
@@ -48,6 +54,7 @@ class TensorRTInfer:
         self._context.execute_v2(self._allocations)
         for o_idx in range(len(self._outputs)):
             memcpy_device_to_host(
-                self._outputs[o_idx].host_allocation, self._outputs[o_idx].allocation
+                self._outputs[o_idx].host_allocation,
+                self._outputs[o_idx].allocation,
             )
         return [o.host_allocation for o in self._outputs]

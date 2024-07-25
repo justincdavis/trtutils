@@ -8,17 +8,17 @@ from cuda import cuda, cudart
 def check_cuda_err(err: cuda.CUresult | cudart.cudaError_t) -> None:
     """
     Check if a CUDA error occurred and raise an exception if so.
-    
+
     Parameters
     ----------
     err : cuda.CUresult | cudart.cudaError_t
         The CUDA error to check.
-        
+
     Raises
     ------
     RuntimeError
         If a CUDA or CUDA Runtime error occurred.
-    
+
     """
     if isinstance(err, cuda.CUresult):
         if err != cuda.CUresult.CUDA_SUCCESS:
@@ -34,20 +34,22 @@ def check_cuda_err(err: cuda.CUresult | cudart.cudaError_t) -> None:
 
 
 T = TypeVar("T")
+
+
 def cuda_call(call: tuple[cuda.CUresult | cudart.cudaError_t, T]) -> T:
     """
     Call a CUDA function and check for errors.
-    
+
     Parameters
     ----------
     call : tuple[cuda.CUresult | cudart.cudaError_t, T]
         The CUDA function to call and its arguments.
-    
+
     Returns
     -------
     T
         The result of the CUDA function call.
-    
+
     """
     err, res = call[0], call[1:]
     check_cuda_err(err)

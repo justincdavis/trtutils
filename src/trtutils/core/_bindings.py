@@ -20,10 +20,14 @@ class Binding:
     host_allocation: np.ndarray | None
 
 
-def allocate_bindings(engine: trt.IEngine, context: trt.IExecutionContext, logger: trt.ILogger) -> tuple[list[Binding], list[Binding], list[int], int]:
+def allocate_bindings(
+    engine: trt.IEngine,
+    context: trt.IExecutionContext,
+    logger: trt.ILogger,
+) -> tuple[list[Binding], list[Binding], list[int], int]:
     """
     Allocate memory for the input and output tensors of a TensorRT engine.
-    
+
     Parameters
     ----------
     engine : trt.IEngine
@@ -32,12 +36,12 @@ def allocate_bindings(engine: trt.IEngine, context: trt.IExecutionContext, logge
         The execution context to use.
     logger : trt.ILogger
         The logger to use.
-        
+
     Returns
     -------
     tuple[list[Binding], list[Binding], list[int], int]
         A tuple containing the input bindings, output bindings, allocations, and batch size.
-    
+
     Raises
     ------
     ValueError
@@ -97,7 +101,11 @@ def allocate_bindings(engine: trt.IEngine, context: trt.IExecutionContext, logge
                 inputs.append(binding)
             else:
                 outputs.append(binding)
-            logger.log(trt.Logger.INFO, f"{'Input' if is_input else 'Output'} '{binding["name"]}' with shape {binding["shape"]} and dtype {binding["dtype"]}")
+            input_str = "Input" if is_input else "Output"
+            logger.log(
+                trt.Logger.INFO,
+                f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}",
+            )
     else:
         for i in range(engine.num_bindings):
             is_input = False
@@ -142,7 +150,11 @@ def allocate_bindings(engine: trt.IEngine, context: trt.IExecutionContext, logge
                 inputs.append(binding)
             else:
                 outputs.append(binding)
-            logger.log(trt.Logger.INFO, f"{'Input' if is_input else 'Output'} '{binding["name"]}' with shape {binding["shape"]} and dtype {binding["dtype"]}")
+            input_str = "Input" if is_input else "Output"
+            logger.log(
+                trt.Logger.INFO,
+                f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}",
+            )
 
     if batch_size == 0:
         err_msg = "Batch size is 0. Ensure that the engine has an input tensor with a valid batch size."
