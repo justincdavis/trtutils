@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from .core import (
     TRTEngineInterface,
     allocate_bindings,
-    create_engine,
     memcpy_device_to_host,
     memcpy_host_to_device,
 )
@@ -46,8 +45,7 @@ class TRTEngine(TRTEngineInterface):
             The number of warmup iterations to do, by default 5
 
         """
-        # Load TRT engine
-        self._engine, self._context, self._logger = create_engine(engine_path)
+        super().__init__(engine_path)
 
         # allocate memory for inputs and outputs
         self._inputs, self._outputs, self._allocations, self._batch_size = (

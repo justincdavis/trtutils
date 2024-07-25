@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from ._engine import create_engine
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -16,13 +18,9 @@ if TYPE_CHECKING:
 
 
 class TRTEngineInterface(ABC):
-    @abstractmethod
     def __init__(
         self: Self,
         engine_path: Path | str,
-        warmup_iterations: int = 5,
-        *,
-        warmup: bool | None = None,
     ) -> None:
         """
         Load the TensorRT engine from a file.
@@ -31,13 +29,9 @@ class TRTEngineInterface(ABC):
         ----------
         engine_path : Path | str
             The path to the serialized engine file.
-        warmup : bool, optional
-            Whether to do warmup iterations, by default None
-            If None, warmup will be set to False
-        warmup_iterations : int, optional
-            The number of warmup iterations to do, by default 5
 
         """
+        self._engine, self._context, self._logger = create_engine(engine_path)
 
     @abstractmethod
     def __del__(self) -> None:
@@ -199,3 +193,16 @@ class TRTEngineInterface(ABC):
         if data is None:
             data = self.get_random_input()
         return self.execute(data)
+
+    def warmup(self: Self, iterations: int) -> None:
+        """
+        Warmup the network for a given number of iterations.
+
+        Parameters
+        ----------
+        iterations : int
+            The number of iterations to warmup the network.
+
+        """
+        for _ in range(iterations):
+            self.mock_execute()
