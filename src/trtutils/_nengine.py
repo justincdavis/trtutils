@@ -5,6 +5,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from .core import (
     allocate_bindings,
     create_engine,
@@ -13,7 +15,6 @@ from .core import (
 )
 
 if TYPE_CHECKING:
-    import numpy as np
     from typing_extensions import Self
 
 
