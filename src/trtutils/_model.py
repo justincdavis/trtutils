@@ -13,8 +13,6 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
-    from .core import TRTEngineInterface
-
 
 class TRTModel:
     """
@@ -33,7 +31,7 @@ class TRTModel:
         preprocess: Callable[[list[np.ndarray]], list[np.ndarray]],
         postprocess: Callable[[list[np.ndarray]], list[np.ndarray]],
         warmup_iterations: int = 5,
-        alternative_engine_type: type[TRTEngineInterface] | None = None,
+        alternative_engine_type: type[TRTEngine] | None = None,
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -57,7 +55,7 @@ class TRTModel:
             An alternative engine type to use, by default None
 
         """
-        engine_type: type[TRTEngineInterface] = TRTEngine
+        engine_type: type[TRTEngine] = TRTEngine
         if alternative_engine_type is not None:
             engine_type = alternative_engine_type
         self._engine = engine_type(
