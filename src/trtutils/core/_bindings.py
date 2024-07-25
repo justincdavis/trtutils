@@ -35,6 +35,9 @@ class Binding:
         """
         cuda_call(cudart.cudaFree(self.allocation))
 
+    def __del__(self: Self) -> None:
+        self.free()
+
 
 def allocate_bindings(
     engine: trt.IEngine,
