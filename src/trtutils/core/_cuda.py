@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TypeVar
 
-from cuda import cuda, cudart  # type: ignore[import-untyped]
+from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
 
 
 def check_cuda_err(err: cuda.CUresult | cudart.cudaError_t) -> None:

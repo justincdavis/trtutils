@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cuda import cudart  # type: ignore[import-untyped]
+from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
 
@@ -23,11 +23,6 @@ def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
         The device pointer to copy to.
     host_arr : np.ndarray
         The numpy array to copy.
-
-    Raises
-    ------
-    RuntimeError
-        If a CUDA error occurred.
 
     """
     nbytes = host_arr.size * host_arr.itemsize
@@ -51,11 +46,6 @@ def memcpy_device_to_host(host_arr: np.ndarray, device_ptr: int) -> None:
         The numpy array to copy to.
     device_ptr : int
         The device pointer to copy.
-
-    Raises
-    ------
-    RuntimeError
-        If a CUDA error occurred.
 
     """
     nbytes = host_arr.size * host_arr.itemsize

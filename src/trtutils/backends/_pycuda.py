@@ -57,6 +57,11 @@ class PyCudaTRTEngine:
         device : int, optional
             The device to use, by default 0
 
+        Raises
+        ------
+        RuntimeError
+            If the engine could not be serialized
+
         """
         engine_path = Path(engine_path) if isinstance(engine_path, str) else engine_path
         # allocate random generator

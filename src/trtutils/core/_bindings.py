@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
-import tensorrt as trt  # type: ignore[import-untyped]
-from cuda import cudart  # type: ignore[import-untyped]
+import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
 
@@ -28,15 +28,7 @@ class Binding:
     host_allocation: np.ndarray
 
     def free(self: Self) -> None:
-        """
-        Free the memory of the binding.
-
-        Raises
-        ------
-        RuntimeError
-            If a CUDA error occurred.
-
-        """
+        """Free the memory of the binding."""
         cuda_call(cudart.cudaFree(self.allocation))
 
     def __del__(self: Self) -> None:
