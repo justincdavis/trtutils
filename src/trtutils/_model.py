@@ -3,13 +3,14 @@
 # MIT License
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from ._engine import TRTEngine
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import numpy as np
     from typing_extensions import Self
 
 
@@ -28,10 +29,9 @@ class TRTModel:
         self: Self,
         engine_path: str,
         preprocess: Callable[[list[np.ndarray]], list[np.ndarray]],
-        postprocess: Callable[[list[np.ndarray]], Any],
+        postprocess: Callable[[list[np.ndarray]], list[np.ndarray]],
         warmup_iterations: int = 5,
-        dtype: np.number = np.float32,  # type: ignore[assignment]
-        device: int = 0,
+        alternative_engine_type: type[TRTEngine] | None = None,
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -44,24 +44,23 @@ class TRTModel:
             The path to the serialized engine file
         preprocess : callable[[list[np.ndarray]], list[np.ndarray]]
             The function to preprocess the inputs
-        postprocess : callable[[list[np.ndarray]], Any]
+        postprocess : callable[[list[np.ndarray]], list[np.ndarray]]
             The function to postprocess the outputs
         warmup : bool, optional
             Whether to do warmup iterations, by default None
             If None, warmup will be set to False
         warmup_iterations : int, optional
             The number of warmup iterations to do, by default 5
-        dtype : np.number, optional
-            The datatype to use for the inputs and outputs, by default np.float32
-        device : int, optional
-            The device to use, by default 0
+        alternative_engine_type : TRTEngineInterface, optional
+            An alternative engine type to use, by default None
 
         """
-        self._engine = TRTEngine(
-            engine_path,
-            warmup_iterations,
-            dtype,
-            device,
+        engine_type: type[TRTEngine] = TRTEngine
+        if alternative_engine_type is not None:
+            engine_type = alternative_engine_type
+        self._engine = engine_type(
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
             warmup=warmup,
         )
         self._preprocess = preprocess
@@ -72,7 +71,7 @@ class TRTModel:
         inputs: list[np.ndarray],
         *,
         preprocessed: bool | None = None,
-    ) -> Any:  # noqa: ANN401
+    ) -> list[np.ndarray]:
         """
         Execute the model with the given inputs.
 
@@ -87,23 +86,39 @@ class TRTModel:
 
         Returns
         -------
-        Any
+        list[np.ndarray]
             The outputs of the model
 
         """
         return self.run(inputs, preprocessed=preprocessed)
 
-    def mock_run(self: Self) -> Any:  # noqa: ANN401
+    def mock_run(
+        self: Self,
+        data: list[np.ndarray] | None = None,
+        *,
+        preprocessed: bool | None = None,
+    ) -> list[np.ndarray]:
         """
         Execute the model with random inputs.
 
+        Parameters
+        ----------
+        data : list[np.ndarray], optional
+            The inputs to the model, by default None
+            If None, random inputs will be used
+        preprocessed : bool, optional
+            Whether the inputs are already preprocessed, by default None
+            If None, the inputs will be preprocessed.
+
         Returns
         -------
-        Any
+        list[np.ndarray]
             The outputs of the model
 
         """
-        outputs = self._engine.mock_execute()
+        if data is None:
+            data = self._engine.get_random_input()
+        outputs = self.run(data, preprocessed=preprocessed)
         return self._postprocess(outputs)
 
     def preprocess(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
@@ -128,7 +143,7 @@ class TRTModel:
         inputs: list[np.ndarray],
         *,
         preprocessed: bool | None = None,
-    ) -> Any:  # noqa: ANN401
+    ) -> list[np.ndarray]:
         """
         Execute the model with the given inputs.
 
@@ -143,7 +158,7 @@ class TRTModel:
 
         Returns
         -------
-        Any
+        list[np.ndarray]
             The outputs of the model
 
         """

@@ -11,6 +11,10 @@ a class for running inference on those engines, and a variety of other utilities
 
 Submodules
 ----------
+backends
+    A module providing alternative backends for the TRTEngine class.
+core
+    A module for the core functionality of the package.
 trtexec
     A module for utilities related to the trtexec tool.
 
@@ -98,14 +102,10 @@ if level is not None and level.upper() not in [
     _log.warning(f"Invalid log level: {level}. Using default log level: WARNING")
 
 __author__ = "Justin Davis"
-__version__ = "0.0.8"
+__version__ = "0.1.0"
 
-import contextlib
 
-with contextlib.suppress(Exception):
-    import pycuda.autoinit  # type: ignore[import-untyped, import-not-found]
-
-from . import trtexec
+from . import backends, core, trtexec
 from ._engine import TRTEngine
 from ._model import TRTModel
 from .trtexec import find_trtexec, run_trtexec
@@ -113,7 +113,10 @@ from .trtexec import find_trtexec, run_trtexec
 __all__ = [
     "TRTEngine",
     "TRTModel",
+    "backends",
+    "core",
     "find_trtexec",
     "run_trtexec",
+    "set_log_level",
     "trtexec",
 ]

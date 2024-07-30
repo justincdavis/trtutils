@@ -3,33 +3,24 @@
 # MIT License
 from __future__ import annotations
 
-import contextlib
+from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import TYPE_CHECKING
 
-from .core import (
-    TRTEngineInterface,
-    allocate_bindings,
-    memcpy_device_to_host,
-    memcpy_host_to_device,
-)
+import numpy as np
+
+from ._engine import create_engine
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import numpy as np
     from typing_extensions import Self
 
 
-class TRTEngine(TRTEngineInterface):
-    """Implements a generic interface for TensorRT engines."""
-
+class TRTEngineInterface(ABC):
     def __init__(
         self: Self,
         engine_path: Path | str,
-        warmup_iterations: int = 5,
-        *,
-        warmup: bool | None = None,
     ) -> None:
         """
         Load the TensorRT engine from a file.
@@ -38,43 +29,33 @@ class TRTEngine(TRTEngineInterface):
         ----------
         engine_path : Path | str
             The path to the serialized engine file.
-        warmup : bool, optional
-            Whether to do warmup iterations, by default None
-            If None, warmup will be set to False
-        warmup_iterations : int, optional
-            The number of warmup iterations to do, by default 5
 
         """
-        super().__init__(engine_path)
+        self._engine, self._context, self._logger = create_engine(engine_path)
 
-        # allocate memory for inputs and outputs
-        self._inputs, self._outputs, self._allocations, self._batch_size = (
-            allocate_bindings(
-                self._engine,
-                self._context,
-                self._logger,
-            )
-        )
+    @abstractmethod
+    def __del__(self) -> None:
+        """Free the engine resources."""
 
-        if warmup:
-            for _ in range(warmup_iterations):
-                self.mock_execute()
+    @abstractmethod
+    def execute(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
+        """
+        Execute the engine on the given data.
 
-    def __del__(self: Self) -> None:
-        def _del(obj: object, attr: str) -> None:
-            with contextlib.suppress(AttributeError):
-                delattr(obj, attr)
+        Parameters
+        ----------
+        data : list[np.ndarray]
+            The input data.
 
-        for binding in self._inputs + self._outputs:
-            # attempt to free each allocation
-            with contextlib.suppress(RuntimeError):
-                binding.free()
+        Returns
+        -------
+        list[np.ndarray]
+            The output data.
 
-        attrs = ["_context", "_engine"]
-        for attr in attrs:
-            _del(self, attr)
+        """
 
-    @cached_property
+    @property
+    @abstractmethod
     def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
         """
         Get the specs for the input tensor of the network. Useful to prepare memory allocations.
@@ -85,9 +66,9 @@ class TRTEngine(TRTEngineInterface):
             A list with two items per element, the shape and (numpy) datatype of each input tensor.
 
         """
-        return [(i.shape, i.dtype) for i in self._inputs]
 
-    @cached_property
+    @property
+    @abstractmethod
     def input_shapes(self: Self) -> list[tuple[int, ...]]:
         """
         Get the shapes for the input tensors of the network.
@@ -98,9 +79,9 @@ class TRTEngine(TRTEngineInterface):
             A list with the shape of each input tensor.
 
         """
-        return [tuple(i.shape) for i in self._inputs]
 
-    @cached_property
+    @property
+    @abstractmethod
     def input_dtypes(self: Self) -> list[np.dtype]:
         """
         Get the datatypes for the input tensors of the network.
@@ -111,9 +92,9 @@ class TRTEngine(TRTEngineInterface):
             A list with the datatype of each input tensor.
 
         """
-        return [i.dtype for i in self._inputs]
 
-    @cached_property
+    @property
+    @abstractmethod
     def output_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
         """
         Get the specs for the output tensor of the network. Useful to prepare memory allocations.
@@ -124,9 +105,9 @@ class TRTEngine(TRTEngineInterface):
             A list with two items per element, the shape and (numpy) datatype of each output tensor.
 
         """
-        return [(o.shape, o.dtype) for o in self._outputs]
 
-    @cached_property
+    @property
+    @abstractmethod
     def output_shapes(self: Self) -> list[tuple[int, ...]]:
         """
         Get the shapes for the output tensors of the network.
@@ -137,9 +118,9 @@ class TRTEngine(TRTEngineInterface):
             A list with the shape of each output tensor.
 
         """
-        return [tuple(o.shape) for o in self._outputs]
 
-    @cached_property
+    @property
+    @abstractmethod
     def output_dtypes(self: Self) -> list[np.dtype]:
         """
         Get the datatypes for the output tensors of the network.
@@ -150,9 +131,27 @@ class TRTEngine(TRTEngineInterface):
             A list with the datatype of each output tensor.
 
         """
-        return [o.dtype for o in self._outputs]
 
-    def execute(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
+    @cached_property
+    def _rng(self: Self) -> np.random.Generator:
+        return np.random.default_rng()
+
+    def get_random_input(self: Self) -> list[np.ndarray]:
+        """
+        Generate a random input for the network.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The random input to the network.
+
+        """
+        return [
+            self._rng.random(size=shape, dtype=dtype)
+            for (shape, dtype) in self.input_spec
+        ]
+
+    def __call__(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
         """
         Execute the network with the given inputs.
 
@@ -167,19 +166,43 @@ class TRTEngine(TRTEngineInterface):
             The outputs of the network.
 
         """
-        # Copy inputs
-        for i_idx in range(len(self._inputs)):
-            memcpy_host_to_device(
-                self._inputs[i_idx].allocation,
-                data[i_idx],
-            )
-        # execute
-        self._context.execute_v2(self._allocations)
-        # Copy outputs
-        for o_idx in range(len(self._outputs)):
-            memcpy_device_to_host(
-                self._outputs[o_idx].host_allocation,
-                self._outputs[o_idx].allocation,
-            )
-        # return
-        return [o.host_allocation for o in self._outputs]
+        return self.execute(data)
+
+    def mock_execute(
+        self: Self,
+        data: list[np.ndarray] | None = None,
+    ) -> list[np.ndarray]:
+        """
+        Perform a mock execution of the network.
+
+        This call is useful for warming up the network and
+        for testing/benchmarking purposes.
+
+        Parameters
+        ----------
+        data : list[np.ndarray], optional
+            The inputs to the network, by default None
+            If None, random inputs will be generated.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The outputs of the network.
+
+        """
+        if data is None:
+            data = self.get_random_input()
+        return self.execute(data)
+
+    def warmup(self: Self, iterations: int) -> None:
+        """
+        Warmup the network for a given number of iterations.
+
+        Parameters
+        ----------
+        iterations : int
+            The number of iterations to warmup the network.
+
+        """
+        for _ in range(iterations):
+            self.mock_execute()

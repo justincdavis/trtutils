@@ -68,9 +68,6 @@ def find_trtexec() -> Path:
 
     Raises
     ------
-    RuntimeError
-        If the locate command is not found on the system after trtexec
-        could not be found in most likely locations
     FileNotFoundError
         If the trtexec binary is not found on the system
 

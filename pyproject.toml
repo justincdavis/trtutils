@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trtutils"
-version = "0.0.8"
+version = "0.1.0"
 authors = [
   {name="Justin Davis", email="davisjustin302@gmail.com"},
 ]
@@ -34,7 +34,6 @@ classifiers = [
     "Topic :: Software Development",
     "Topic :: Software Development :: Embedded Systems",
     "Topic :: Software Development :: Libraries",
-    "Topic :: System :: Hardware",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
@@ -45,8 +44,8 @@ classifiers = [
 requires-python=">=3.8, <=3.13"
 dependencies = [
     "tensorrt>=8.0.0",
-    "pycuda>=2024.0",
-    "numpy>=1.19.0,<2.0.0",
+    "cuda-python>=8.0.0",
+    "numpy>=1.19.0,<1.24.0",
     "typing_extensions>=4.0.0",
     "setuptools>=57.0.0",
 ]
@@ -56,6 +55,9 @@ dependencies = [
 "Bug Tracker" = "https://github.com/justincdavis/trtutils/issues"
 
 [project.optional-dependencies]
+pycuda = [
+    "pycuda>=2023",
+]
 ci = [
     "pyupgrade>=3.10",
     "black>=24.0",
@@ -84,7 +86,7 @@ dev = [
 ]
 
 [tool.bumpver]
-current_version = "0.0.8"
+current_version = "0.1.0"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message  = "Bump version {old_version} -> {new_version}"
 commit          = true
@@ -165,10 +167,14 @@ disallow_untyped_defs = true
 no_implicit_reexport = true
 warn_return_any = true
 
+# # set stub directory
+# mypy_path = "$MYPY_CONFIG_FILE_DIR/typings"
+
 [[tool.mypy.overrides]]
 module = [  
     'tensorrt',
     'pycuda',
+    'cuda',
 ]
 ignore_errors = true
 
