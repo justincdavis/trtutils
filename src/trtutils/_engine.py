@@ -65,10 +65,14 @@ class TRTEngine(TRTEngineInterface):
             with contextlib.suppress(AttributeError):
                 delattr(obj, attr)
 
-        for binding in self._inputs + self._outputs:
-            # attempt to free each allocation
-            with contextlib.suppress(RuntimeError):
-                binding.free()
+        with contextlib.suppress(AttributeError):
+            for binding in self._inputs:
+                with contextlib.suppress(RuntimeError):
+                    binding.free()
+        with contextlib.suppress(AttributeError):
+            for binding in self._outputs:
+                with contextlib.suppress(RuntimeError):
+                    binding.free()
 
         attrs = ["_context", "_engine"]
         for attr in attrs:

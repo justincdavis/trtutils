@@ -1,3 +1,13 @@
+## 0.1.1 (07-30-2024)
+
+### Fixed
+
+- During crash, AttributeError could be raised since
+    some portions could already be de-allocated.
+    Now the error will be caught and removed silently
+    if a de-allocation occurs before manual freeing
+    of memory.
+
 ## 0.1.0 (07-30-2024)
 
 ### Changed
