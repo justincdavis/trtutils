@@ -11,6 +11,7 @@ authors = [
 maintainers = [
   {name="Justin Davis", email="davisjustin302@gmail.com"},
 ]
+description = "Utilities for making TensorRT easier to use"
 readme = "README.md"
 classifiers = [
     "Development Status :: 4 - Beta",
