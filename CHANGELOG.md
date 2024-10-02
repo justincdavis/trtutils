@@ -1,3 +1,18 @@
+## 0.2.0 (10-02-2024)
+
+### Added
+
+- benchmark_engine
+    Function for benchmarking a TensorRT engine file.
+    Measures the host latency of the engine.
+
+### Changed
+
+- trtexec.build_from_onnx is now trtexec.build_engine
+    With this change also comes some added functionality.
+    Can now use .prototxt files to build engines.
+    More options available.
+
 ## 0.1.1 (07-30-2024)
 
 ### Fixed
