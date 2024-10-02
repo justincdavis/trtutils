@@ -27,8 +27,11 @@ TRTModel
 
 Functions
 ---------
+benchmark_engine
+    Benchmark a TensorRT engine.
 find_trtexec
     Find an instance of the trtexec binary on the system.
+
 """
 
 from __future__ import annotations
@@ -106,6 +109,7 @@ __version__ = "0.1.1"
 
 
 from . import backends, core, trtexec
+from ._benchmark import benchmark_engine
 from ._engine import TRTEngine
 from ._model import TRTModel
 from .trtexec import find_trtexec, run_trtexec
@@ -114,6 +118,7 @@ __all__ = [
     "TRTEngine",
     "TRTModel",
     "backends",
+    "benchmark_engine",
     "core",
     "find_trtexec",
     "run_trtexec",
