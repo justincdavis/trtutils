@@ -77,9 +77,9 @@ def benchmark_engine(
     false_data = engine.get_random_input()
 
     for _ in range(iterations):
-        t0 = time.perf_counter()
+        t0 = time.time()
         engine.mock_execute(false_data)
-        t1 = time.perf_counter()
+        t1 = time.time()
 
         raw["latency"].append(t1 - t0)
 
