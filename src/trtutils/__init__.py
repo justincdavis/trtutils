@@ -15,6 +15,8 @@ backends
     A module providing alternative backends for the TRTEngine class.
 core
     A module for the core functionality of the package.
+jetson
+    A module implementating additional functionality for Jetson devices.
 trtexec
     A module for utilities related to the trtexec tool.
 
@@ -108,7 +110,7 @@ __author__ = "Justin Davis"
 __version__ = "0.2.0"
 
 
-from . import backends, core, trtexec
+from . import backends, core, jetson, trtexec
 from ._benchmark import benchmark_engine
 from ._engine import TRTEngine
 from ._model import TRTModel
@@ -123,5 +125,6 @@ __all__ = [
     "find_trtexec",
     "run_trtexec",
     "set_log_level",
+    "jetson",
     "trtexec",
 ]

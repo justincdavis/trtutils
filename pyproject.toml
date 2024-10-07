@@ -59,6 +59,10 @@ dependencies = [
 pycuda = [
     "pycuda>=2023",
 ]
+jetson = [
+    "jetson-stats>=4.2.0",
+    "jetsontools>=0.0.1",
+]
 ci = [
     "pyupgrade>=3.10",
     "black>=24.0",
