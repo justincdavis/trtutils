@@ -24,6 +24,14 @@ TRTEngine
     A class for creating TensorRT engines from serialized engine files.
 TRTModel
     A class for running inference on TensorRT engines.
+ParallelTRTEngines
+    A class for running many TRTEngines in parallel.
+ParallelTRTModels
+    A class for running many TRTModels in parallel.
+QueuedTRTEngine
+    A class for running a TRTEngine in a seperate thread asynchronously.
+QueuedTRTModel
+    A class for running a TRTModel in a seperate thread asynchronously.
 
 Functions
 ---------
@@ -102,15 +110,19 @@ if level is not None and level.upper() not in [
     _log.warning(f"Invalid log level: {level}. Using default log level: WARNING")
 
 __author__ = "Justin Davis"
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 
 from . import backends, core, trtexec
-from ._engine import TRTEngine
-from ._model import TRTModel
+from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
+from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
 from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
+    "ParallelTRTEngines",
+    "ParallelTRTModels",
+    "QueuedTRTEngine",
+    "QueuedTRTModel",
     "TRTEngine",
     "TRTModel",
     "backends",
