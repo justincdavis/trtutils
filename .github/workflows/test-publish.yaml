@@ -43,7 +43,7 @@ jobs:
         # Create a unique version using GitHub run number and short SHA
         run_number = os.environ['GITHUB_RUN_NUMBER']
         sha = os.environ['GITHUB_SHA'][:7]
-        new_version = f"{current_version}.dev{run_number}+{sha}"
+        new_version = f"{current_version}.dev{run_number}.{sha}"
         
         # Update the version in the config
         config['project']['version'] = new_version
