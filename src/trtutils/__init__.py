@@ -114,17 +114,17 @@ __version__ = "0.1.2"
 
 
 from . import backends, core, trtexec
-from ._engine import TRTEngine, QueuedTRTEngine, ParallelTRTEngines
-from ._model import TRTModel, QueuedTRTModel, ParallelTRTModels
+from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
+from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
 from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
-    "TRTEngine",
-    "TRTModel",
     "ParallelTRTEngines",
     "ParallelTRTModels",
     "QueuedTRTEngine",
     "QueuedTRTModel",
+    "TRTEngine",
+    "TRTModel",
     "backends",
     "core",
     "find_trtexec",

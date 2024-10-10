@@ -61,7 +61,7 @@ class TRTModel:
             If None, warmup will be set to False
         warmup_iterations : int, optional
             The number of warmup iterations to do, by default 5
-        alternative_engine_type : TRTEngine, optional
+        engine_type : TRTEngine, optional
             An alternative engine type to use, by default None
 
         """
@@ -239,7 +239,10 @@ class QueuedTRTModel:
         self._thread.join()
 
     def submit(
-        self: Self, data: list[np.ndarray], *, preprocessed: bool | None = None,
+        self: Self,
+        data: list[np.ndarray],
+        *,
+        preprocessed: bool | None = None,
     ) -> None:
         """
         Put data in the input queue.
@@ -248,6 +251,8 @@ class QueuedTRTModel:
         ----------
         data : list[np.ndarray]
             The data to have the engine run.
+        preprocessed : bool, optional
+            Whether or not the input is already preprocessed.
 
         """
         self._input_queue.put((data, preprocessed))
@@ -310,8 +315,10 @@ class ParallelTRTModels:
     def __init__(
         self: Self,
         engine_paths: Sequence[Path | str],
-        preprocess: Callable[[list[np.ndarray]], list[np.ndarray]] | list[Callable[[list[np.ndarray]], list[np.ndarray]]] = _identity,
-        postprocess: Callable[[list[np.ndarray]], list[np.ndarray]] | list[Callable[[list[np.ndarray]], list[np.ndarray]]] = _identity,
+        preprocess: Callable[[list[np.ndarray]], list[np.ndarray]]
+        | list[Callable[[list[np.ndarray]], list[np.ndarray]]] = _identity,
+        postprocess: Callable[[list[np.ndarray]], list[np.ndarray]]
+        | list[Callable[[list[np.ndarray]], list[np.ndarray]]] = _identity,
         warmup_iterations: int = 5,
         *,
         warmup: bool | None = None,
@@ -323,6 +330,10 @@ class ParallelTRTModels:
         ----------
         engine_paths : Sequence[Path | str]
             The Paths to the compiled engines to use.
+        preprocess : Callable[[list[np.ndarray]], list[np.ndarray]] | list[Callable[[list[np.ndarray]], list[np.ndarray]]]
+            The preprocessing function(s)
+        postprocess : Callable[[list[np.ndarray]], list[np.ndarray]] | list[Callable[[list[np.ndarray]], list[np.ndarray]]]
+            The postprocessing function(s)
         warmup_iterations : int
             The number of iteratiosn to perform warmup for.
             By default 5
@@ -330,11 +341,23 @@ class ParallelTRTModels:
             Whether or not to run warmup iterations on the engines.
 
         """
-        preprocessors = preprocess if isinstance(preprocess, list) else [preprocess] * len(engine_paths)
-        postprocessors = postprocess if isinstance(postprocess, list) else [postprocess] * len(engine_paths)
+        preprocessors = (
+            preprocess
+            if isinstance(preprocess, list)
+            else [preprocess] * len(engine_paths)
+        )
+        postprocessors = (
+            postprocess
+            if isinstance(postprocess, list)
+            else [postprocess] * len(engine_paths)
+        )
         self._engines: list[QueuedTRTModel] = [
             QueuedTRTModel(
-                engine_path=epath, preprocess=pre, postprocess=post, warmup_iterations=warmup_iterations, warmup=warmup,
+                engine_path=epath,
+                preprocess=pre,
+                postprocess=post,
+                warmup_iterations=warmup_iterations,
+                warmup=warmup,
             )
             for epath, pre, post in zip(engine_paths, preprocessors, postprocessors)
         ]

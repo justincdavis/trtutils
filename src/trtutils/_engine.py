@@ -383,16 +383,16 @@ class QueuedTRTEngine:
         self._input_queue.put(data)
 
     def mock_submit(
-            self: Self,
+        self: Self,
     ) -> None:
         """
-        Sends a random input to the engine.
-        
+        Send a random input to the engine.
+
         Raises
         ------
-        RunetimeError
+        RuntimeError
             If the engine has not been created
-        
+
         """
         if self._engine is None:
             err_msg = "Engine has not been created."
@@ -472,7 +472,9 @@ class ParallelTRTEngines:
         """
         self._engines: list[QueuedTRTEngine] = [
             QueuedTRTEngine(
-                engine_path=epath, warmup_iterations=warmup_iterations, warmup=warmup,
+                engine_path=epath,
+                warmup_iterations=warmup_iterations,
+                warmup=warmup,
             )
             for epath in engine_paths
         ]
@@ -510,9 +512,9 @@ class ParallelTRTEngines:
             engine.submit(data)
 
     def mock_submit(
-            self: Self,
+        self: Self,
     ) -> None:
-        """Sends random data to the engines."""
+        """Send random data to the engines."""
         for engine in self._engines:
             engine.mock_submit()
 
