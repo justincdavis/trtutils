@@ -8,9 +8,7 @@ on:
 jobs:
   build_and_publish:
     name: "Build and Publish PyPI package - TEST"
-
     runs-on: ubuntu-latest
-
     environment:
       name: pypi
       url: https://test.pypi.org/p/trtutils
@@ -18,20 +16,21 @@ jobs:
       id-token: write
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v3
     - name: Set up Python 3.9
-      uses: actions/setup-python@v1
+      uses: actions/setup-python@v4
       with:
         python-version: 3.9
     - name: Install dependencies
       run: |
-        python3 -m pip install --upgrade pip
-        pip install build
-        pip install toml
+        python -m pip install --upgrade pip
+        pip install build toml
     - name: Update version in pyproject.toml
       run: |
+        python3 << END
         import toml
         import os
+        from datetime import datetime
         
         # Read the current pyproject.toml
         with open('pyproject.toml', 'r') as f:
@@ -40,10 +39,10 @@ jobs:
         # Get the current version
         current_version = config['project']['version']
         
-        # Create a unique version using GitHub run number and short SHA
+        # Create a unique version using GitHub run number and current date
         run_number = os.environ['GITHUB_RUN_NUMBER']
-        sha = os.environ['GITHUB_SHA'][:7]
-        new_version = f"{current_version}.dev{run_number}.{sha}"
+        current_date = datetime.now().strftime("%Y%m%d")
+        new_version = f"{current_version}.dev{current_date}{run_number}"
         
         # Update the version in the config
         config['project']['version'] = new_version
@@ -53,10 +52,10 @@ jobs:
             toml.dump(config, f)
         
         print(f"Updated version to {new_version}")
-      shell: python
+        END
     - name: Build trtutils
       run: |
-        python3 -m build --sdist --wheel --outdir dist/
+        python -m build --sdist --wheel --outdir dist/
     - name: Publish distribution to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
