@@ -27,6 +27,32 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install build
+    - name: Update version in pyproject.toml
+      run: |
+        import toml
+        import os
+        
+        # Read the current pyproject.toml
+        with open('pyproject.toml', 'r') as f:
+            config = toml.load(f)
+        
+        # Get the current version
+        current_version = config['project']['version']
+        
+        # Create a unique version using GitHub run number and short SHA
+        run_number = os.environ['GITHUB_RUN_NUMBER']
+        sha = os.environ['GITHUB_SHA'][:7]
+        new_version = f"{current_version}.dev{run_number}+{sha}"
+        
+        # Update the version in the config
+        config['project']['version'] = new_version
+        
+        # Write the updated config back to pyproject.toml
+        with open('pyproject.toml', 'w') as f:
+            toml.dump(config, f)
+        
+        print(f"Updated version to {new_version}")
+      shell: python
     - name: Build trtutils
       run: |
         python -m build --sdist --wheel --outdir dist/

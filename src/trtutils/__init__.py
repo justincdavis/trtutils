@@ -24,6 +24,14 @@ TRTEngine
     A class for creating TensorRT engines from serialized engine files.
 TRTModel
     A class for running inference on TensorRT engines.
+ParallelTRTEngines
+    A class for running many TRTEngines in parallel.
+ParallelTRTModels
+    A class for running many TRTModels in parallel.
+QueuedTRTEngine
+    A class for running a TRTEngine in a seperate thread asynchronously.
+QueuedTRTModel
+    A class for running a TRTModel in a seperate thread asynchronously.
 
 Functions
 ---------
@@ -106,13 +114,17 @@ __version__ = "0.1.1"
 
 
 from . import backends, core, trtexec
-from ._engine import TRTEngine
-from ._model import TRTModel
+from ._engine import TRTEngine, QueuedTRTEngine, ParallelTRTEngines
+from ._model import TRTModel, QueuedTRTModel, ParallelTRTModels
 from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
     "TRTEngine",
     "TRTModel",
+    "ParallelTRTEngines",
+    "ParallelTRTModels",
+    "QueuedTRTEngine",
+    "QueuedTRTModel",
     "backends",
     "core",
     "find_trtexec",

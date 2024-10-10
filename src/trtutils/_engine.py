@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import contextlib
 from functools import cached_property
+from queue import Empty, Queue
+from threading import Thread
 from typing import TYPE_CHECKING
 
 from .core import (
@@ -15,6 +17,7 @@ from .core import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     import numpy as np
@@ -187,3 +190,348 @@ class TRTEngine(TRTEngineInterface):
             )
         # return
         return [o.host_allocation for o in self._outputs]
+
+
+class QueuedTRTEngine:
+    """Interact with TRTEngine over Thread and Queue."""
+
+    def __init__(
+        self: Self,
+        engine_path: Path | str,
+        warmup_iterations: int = 5,
+        *,
+        warmup: bool | None = None,
+    ) -> None:
+        """
+        Create a QueuedTRTEngine.
+
+        Parameters
+        ----------
+        engine_path : Path, str
+            The Path to the compiled TensorRT engine.
+        warmup_iterations : int
+            The number of iterations to warmup the engine.
+            By default 5
+        warmup : bool, optional
+            Whether or not to perform warmup iterations.
+
+        """
+        self._stopped = False  # flag for if user stopped thread
+        self._engine: TRTEngine | None = None  # storage for engine data
+        self._input_queue: Queue[list[np.ndarray]] = Queue()
+        self._output_queue: Queue[list[np.ndarray]] = Queue()
+        self._thread = Thread(
+            target=self._run,
+            kwargs={
+                "engine_path": engine_path,
+                "warmup_iterations": warmup_iterations,
+                "warmup": warmup,
+            },
+            daemon=True,
+        )
+        self._thread.start()
+
+    def __del__(self: Self) -> None:
+        self.stop()
+
+    @property
+    def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
+        """
+        Get the specs for the input tensor of the network. Useful to prepare memory allocations.
+
+        Returns
+        -------
+        list[tuple[list[int], np.dtype]]
+            A list with two items per element, the shape and (numpy) datatype of each input tensor.
+
+        Raises
+        ------
+        RuntimeError
+            The engine has not been created yet.
+
+        """
+        if self._engine is None:
+            err_msg = "Engine has not been created yet."
+            raise RuntimeError(err_msg)
+        return self._engine.input_spec
+
+    @property
+    def input_shapes(self: Self) -> list[tuple[int, ...]]:
+        """
+        Get the shapes for the input tensors of the network.
+
+        Returns
+        -------
+        list[tuple[int, ...]]
+            A list with the shape of each input tensor.
+
+        Raises
+        ------
+        RuntimeError
+            The engine has not been created yet.
+
+        """
+        if self._engine is None:
+            err_msg = "Engine has not been created yet."
+            raise RuntimeError(err_msg)
+        return self._engine.input_shapes
+
+    @property
+    def input_dtypes(self: Self) -> list[np.dtype]:
+        """
+        Get the datatypes for the input tensors of the network.
+
+        Returns
+        -------
+        list[np.dtype]
+            A list with the datatype of each input tensor.
+
+        Raises
+        ------
+        RuntimeError
+            The engine has not been created yet.
+
+        """
+        if self._engine is None:
+            err_msg = "Engine has not been created yet."
+            raise RuntimeError(err_msg)
+        return self._engine.input_dtypes
+
+    @property
+    def output_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
+        """
+        Get the specs for the output tensor of the network. Useful to prepare memory allocations.
+
+        Returns
+        -------
+        list[tuple[list[int], np.dtype]]
+            A list with two items per element, the shape and (numpy) datatype of each output tensor.
+
+        Raises
+        ------
+        RuntimeError
+            The engine has not been created yet.
+
+        """
+        if self._engine is None:
+            err_msg = "Engine has not been created yet."
+            raise RuntimeError(err_msg)
+        return self._engine.output_spec
+
+    @property
+    def output_shapes(self: Self) -> list[tuple[int, ...]]:
+        """
+        Get the shapes for the output tensors of the network.
+
+        Returns
+        -------
+        list[tuple[int, ...]]
+            A list with the shape of each output tensor.
+
+        Raises
+        ------
+        RuntimeError
+            The engine has not been created yet.
+
+        """
+        if self._engine is None:
+            err_msg = "Engine has not been created yet."
+            raise RuntimeError(err_msg)
+        return self._engine.output_shapes
+
+    @property
+    def output_dtypes(self: Self) -> list[np.dtype]:
+        """
+        Get the datatypes for the output tensors of the network.
+
+        Returns
+        -------
+        list[np.dtype]
+            A list with the datatype of each output tensor.
+
+        Raises
+        ------
+        RuntimeError
+            The engine has not been created yet.
+
+        """
+        if self._engine is None:
+            err_msg = "Engine has not been created yet."
+            raise RuntimeError(err_msg)
+        return self._engine.output_dtypes
+
+    def stop(
+        self: Self,
+    ) -> None:
+        """Stop the thread containing the TRTEngine."""
+        self._stopped = True
+        self._thread.join()
+
+    def submit(
+        self: Self,
+        data: list[np.ndarray],
+    ) -> None:
+        """
+        Put data in the input queue.
+
+        Parameters
+        ----------
+        data : list[np.ndarray]
+            The data to have the engine run.
+
+        """
+        self._input_queue.put(data)
+
+    def mock_submit(
+            self: Self,
+    ) -> None:
+        """
+        Sends a random input to the engine.
+        
+        Raises
+        ------
+        RunetimeError
+            If the engine has not been created
+        
+        """
+        if self._engine is None:
+            err_msg = "Engine has not been created."
+            raise RuntimeError(err_msg)
+        data = self._engine.get_random_input()
+        self._input_queue.put(data)
+
+    def retrieve(
+        self: Self,
+        timeout: float | None = None,
+    ) -> list[np.ndarray] | None:
+        """
+        Get an output from the engine thread.
+
+        Parameters
+        ----------
+        timeout : float, optional
+            Timeout for waiting for data.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The output from the engine.
+
+        """
+        with contextlib.suppress(Empty):
+            return self._output_queue.get(timeout=timeout)
+        return None
+
+    def _run(
+        self: Self,
+        engine_path: Path,
+        warmup_iterations: int,
+        *,
+        warmup: bool,
+    ) -> None:
+        self._engine = TRTEngine(
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            warmup=warmup,
+        )
+
+        while not self._stopped:
+            try:
+                inputs = self._input_queue.get(timeout=0.1)
+            except Empty:
+                continue
+
+            result = self._engine(inputs)
+
+            self._output_queue.put(result)
+
+
+class ParallelTRTEngines:
+    """Handle many TRTEngines in parallel."""
+
+    def __init__(
+        self: Self,
+        engine_paths: Sequence[Path | str],
+        warmup_iterations: int = 5,
+        *,
+        warmup: bool | None = None,
+    ) -> None:
+        """
+        Create a ParallelTRTEngines instance.
+
+        Parameters
+        ----------
+        engine_paths : Sequence[Path | str]
+            The Paths to the compiled engines to use.
+        warmup_iterations : int
+            The number of iteratiosn to perform warmup for.
+            By default 5
+        warmup : bool, optional
+            Whether or not to run warmup iterations on the engines.
+
+        """
+        self._engines: list[QueuedTRTEngine] = [
+            QueuedTRTEngine(
+                engine_path=epath, warmup_iterations=warmup_iterations, warmup=warmup,
+            )
+            for epath in engine_paths
+        ]
+
+    def stop(self: Self) -> None:
+        """Stop the underlying engine threads."""
+        for engine in self._engines:
+            engine.stop()
+
+    def submit(
+        self: Self,
+        inputs: list[list[np.ndarray]],
+    ) -> None:
+        """
+        Submit data to be processed by the engines.
+
+        Parameters
+        ----------
+        inputs : list[list[np.ndarray]]
+            The inputs to pass to the engines.
+            Should be a list of the same lenght of engines created.
+
+        Raises
+        ------
+        ValueError
+            If the inputs are not the same size as the engines.
+
+        """
+        if len(inputs) != len(self._engines):
+            err_msg = (
+                f"Cannot match {len(inputs)} inputs to {len(self._engines)} engines."
+            )
+            raise ValueError(err_msg)
+        for data, engine in zip(inputs, self._engines):
+            engine.submit(data)
+
+    def mock_submit(
+            self: Self,
+    ) -> None:
+        """Sends random data to the engines."""
+        for engine in self._engines:
+            engine.mock_submit()
+
+    def retrieve(
+        self: Self,
+        timeout: float | None = None,
+    ) -> list[list[np.ndarray] | None]:
+        """
+        Get the outputs from the engines.
+
+        Parameters
+        ----------
+        timeout : float, optional
+            Timeout for waiting for data.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The output from the engines.
+
+        """
+        return [engine.retrieve(timeout=timeout) for engine in self._engines]
