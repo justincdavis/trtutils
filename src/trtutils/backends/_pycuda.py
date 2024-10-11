@@ -12,7 +12,6 @@ import numpy as np
 
 # suppress pycuda import error for docs build
 with contextlib.suppress(Exception):
-    import pycuda.autoinit  # type: ignore[import-untyped, import-not-found]
     import pycuda.driver as cuda  # type: ignore[import-untyped, import-not-found]
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 

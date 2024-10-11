@@ -5,7 +5,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+# suppress pycuda import error for docs build
+with contextlib.suppress(Exception):
+    from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
 

@@ -112,6 +112,11 @@ if level is not None and level.upper() not in [
 __author__ = "Justin Davis"
 __version__ = "0.1.2"
 
+import contextlib
+
+# suppress import for readthedocs
+with contextlib.suppress(ImportError):
+    import pycuda.autoinit  # type: ignore[import-untyped, import-not-found]
 
 from . import backends, core, trtexec
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine

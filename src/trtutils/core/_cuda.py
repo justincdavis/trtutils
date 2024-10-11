@@ -4,9 +4,12 @@
 # ruff: noqa: TRY004
 from __future__ import annotations
 
+import contextlib
 from typing import TypeVar
 
-from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
+# suppress pycuda import error for docs build
+with contextlib.suppress(Exception):
+    from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
 
 
 def check_cuda_err(err: cuda.CUresult | cudart.cudaError_t) -> None:
