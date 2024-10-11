@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: F401
 from __future__ import annotations
 
 import contextlib
@@ -9,6 +10,9 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import TYPE_CHECKING
 
+# # suppress pycuda import error for docs build
+# with contextlib.suppress(Exception):
+#     import pycuda.driver as cuda
 from .core import (
     TRTEngineInterface,
     allocate_bindings,
@@ -50,6 +54,9 @@ class TRTEngine(TRTEngineInterface):
         """
         super().__init__(engine_path)
 
+        # # create device/execution contexts
+        # self._cfx = cuda.Device(0).make_context()
+
         # allocate memory for inputs and outputs
         self._inputs, self._outputs, self._allocations, self._batch_size = (
             allocate_bindings(
@@ -63,11 +70,19 @@ class TRTEngine(TRTEngineInterface):
             for _ in range(warmup_iterations):
                 self.mock_execute()
 
+        # # need to manage a final pop
+        # self._cfx.pop()
+
     def __del__(self: Self) -> None:
         def _del(obj: object, attr: str) -> None:
             with contextlib.suppress(AttributeError):
                 delattr(obj, attr)
 
+        # # pop final context
+        # with contextlib.suppress(AttributeError):
+        #     self._cfx.pop()
+
+        # remove bindings
         with contextlib.suppress(AttributeError):
             for binding in self._inputs:
                 with contextlib.suppress(RuntimeError):
@@ -174,6 +189,9 @@ class TRTEngine(TRTEngineInterface):
             The outputs of the network.
 
         """
+        # # add to context stack
+        # self._cfx.push()
+
         # Copy inputs
         for i_idx in range(len(self._inputs)):
             memcpy_host_to_device(
@@ -188,6 +206,10 @@ class TRTEngine(TRTEngineInterface):
                 self._outputs[o_idx].host_allocation,
                 self._outputs[o_idx].allocation,
             )
+
+        # # remove from context stack
+        # self._cfx.pop()
+
         # return
         return [o.host_allocation for o in self._outputs]
 
