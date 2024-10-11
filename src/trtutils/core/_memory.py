@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 # suppress pycuda import error for docs build
