@@ -8,23 +8,36 @@ import numpy as np
 from cv2ext.image import letterbox
 
 
-def preprocess(inputs: list[np.ndarray], input_shape: list[tuple[int, int]] | tuple[int, int]) -> list[np.ndarray]:
+def preprocess(inputs: list[np.ndarray], input_shape: tuple[int, int], dtype: np.dtype) -> list[np.ndarray]:
+    """
+    Preprocess inputs for a YOLO network.
+    
+    Parameters
+    ----------
+    inputs : list[np.ndarray]
+        The inputs to be preprocessed.
+    input_shape : tuple[int, int]
+        The shape to resize the inputs.
+    dtype : np.dtype
+        The datatype of the inputs to the network.
+    
+    Returns
+    -------
+    list[np.ndarray]
+        The preprocessed data.
+
+    """
     # store preprocessed inputs
     preprocessed: list[np.ndarray] = []
-    # ensure input shapes exist for letter boxing
-    if not isinstance(input_shape, list):
-        input_shapes = [input_shape] * len(inputs)
-    else:
-        input_shapes = input_shape
     # process each input
-    for img, imgsz in zip(inputs, input_shapes):
-        img = letterbox(img, new_shape=imgsz)
+    for img in inputs:
+        img = letterbox(img, new_shape=input_shape)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = img / 255.0
         img = img[np.newaxis, :]
         img = np.transpose(img, (0, 3, 1, 2))
         # large performance hit to assemble contiguous array
-        img = np.ascontiguousarray(img)
+        img = np.ascontiguousarray(img).astype(dtype)
         # save in array
         preprocessed.append(img)
 
@@ -67,41 +80,51 @@ def postprocess_v10(outputs: list[np.ndarray]) -> list[np.ndarray]:
     return outputs
 
 
-def get_detections(outputs: list[np.ndarray]) -> list[tuple[tuple[int, int, int, int], float, int]]:
+def _get_detections_789(outputs: list[np.ndarray]) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    results: list[list[tuple[tuple[int, int, int, int], float, int]]] = []
+    for output in outputs:
+        num_dects = int(output[0][0])
+        bboxes = output[1][0][0]
+        scores = output[2][0]
+        classes = output[3][0]
+
+        frame_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
+        for idx in range(num_dects):
+            y1, x1, y2, x2 = bboxes[idx]
+            score = scores[idx]
+            classid = classes[idx]
+
+            entry = ((x1, y1, x2, y2), score, classid)
+            frame_dects.append(entry)
+
+        results.append(frame_dects)
+
+    return results
+
+
+def _get_detections_v10(outputs: list[np.ndarray]) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    # TODO impl
+    return []
+
+
+def get_detections(outputs: list[np.ndarray], version: int) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
     """
-    Get the detections from the output of a YOLO V7/8/9 network.
+    Get the detections from the output of a YOLO network.
     
     Parameters
     ----------
     outputs : list[np.ndarray]
         The outputs from a YOLO networks.
+    version : int
+        Which version of YOLO used to generate the outputs.
     
     Returns
     -------
-    list[tuple[tuple[int, int, int, int], float, int]]
+    list[list[tuple[tuple[int, int, int, int], float, int]]]
         The detections from the YOLO netowrk.
         Each detection is a bounding box in form x1, y1, x2, y2, a confidence score and a class id.
     
     """
-    # TODO impl
-    return []
-
-
-def get_detections_v10(outputs: list[np.ndarray]) -> list[tuple[tuple[int, int, int, int], float, int]]:
-    """
-    Get the detections from the output of a YOLO V10 network.
-    
-    Parameters
-    ----------
-    outputs : list[np.ndarray]
-        The outputs from a YOLO networks.
-    
-    Returns
-    -------
-    list[tuple[tuple[int, int, int, int], float, int]]
-        The detections from the YOLO netowrk.
-        Each detection is a bounding box in form x1, y1, x2, y2, a confidence score and a class id.
-    
-    """
-    # TODO impl
-    return []
+    if version < 10:
+        return _get_detections_789(outputs)
+    return _get_detections_v10(outputs)
