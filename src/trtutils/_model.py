@@ -73,8 +73,28 @@ class TRTModel:
             warmup_iterations=warmup_iterations,
             warmup=warmup,
         )
-        self._preprocess = preprocess
-        self._postprocess = postprocess
+        self._preprocess: Callable[[list[np.ndarray]], list[np.ndarray]] = preprocess
+        self._postprocess: Callable[[list[np.ndarray]], list[np.ndarray]] = postprocess
+
+    @property
+    def preprocessor(self: Self) -> Callable[[list[np.ndarray]], list[np.ndarray]]:
+        """The preprocessing function used in this model."""
+        return self._preprocess
+
+    @preprocessor.setter
+    def preprocessor(self: Self, new_preprocess: Callable[[list[np.ndarray]], list[np.ndarray]]) -> None:
+        """
+        Set the preprocessing function used in this model.
+        
+        Useful in case the preprocessor need information which is only
+        accessible after loading the engine.
+        """
+        self._preprocess = new_preprocess
+
+    @property
+    def postprocessor(self: Self) -> Callable[[list[np.ndarray]], list[np.ndarray]]:
+        """The postprocessing function used in this model."""
+        return self._postprocess
 
     def __call__(
         self: Self,
