@@ -12,26 +12,20 @@ YOLO
 Functions
 ---------
 get_detections
-    Get the detections from a YOLO V7/8/9 network.
-get_detections_v10
-    Get the detections from a YOLO V10 network.
+    Get the detections from a YOLO network.
 preprocess
     Preprocess some input for a YOLO network.
 postprocess
-    Postprocess the output for a YOLO V7/8/9 network.
-postprocess_v10
-    Postprocess the output for a YOLO V10 network.
+    Postprocess the output for a YOLO network.
 
 """
 
 from __future__ import annotations
 
-from ._process import get_detections, get_detections_v10, preprocess, postprocess, postprocess_v10
+from ._process import get_detections, preprocess, postprocess
 
 __all__ = [
     "get_detections",
-    "get_detections_v10",
     "preprocess",
     "postprocess",
-    "postprocess_v10",
 ]

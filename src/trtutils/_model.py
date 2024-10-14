@@ -101,6 +101,7 @@ class TRTModel:
         inputs: list[np.ndarray],
         *,
         preprocessed: bool | None = None,
+        postprocess: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the model with the given inputs.
@@ -112,7 +113,9 @@ class TRTModel:
         preprocessed : bool, optional
             Whether the inputs are already preprocessed, by default None
             If None, the inputs will be preprocessed
-
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs, by default None
+            If None, the outputs will be postprocessed
 
         Returns
         -------
@@ -120,13 +123,14 @@ class TRTModel:
             The outputs of the model
 
         """
-        return self.run(inputs, preprocessed=preprocessed)
+        return self.run(inputs, preprocessed=preprocessed, postprocess=postprocess)
 
     def mock_run(
         self: Self,
         data: list[np.ndarray] | None = None,
         *,
         preprocessed: bool | None = None,
+        postprocess: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the model with random inputs.
@@ -139,7 +143,10 @@ class TRTModel:
         preprocessed : bool, optional
             Whether the inputs are already preprocessed, by default None
             If None, the inputs will be preprocessed.
-
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs, by default None
+            If None, the outputs will be postprocessed
+            
         Returns
         -------
         list[np.ndarray]
@@ -148,8 +155,7 @@ class TRTModel:
         """
         if data is None:
             data = self._engine.get_random_input()
-        outputs = self.run(data, preprocessed=preprocessed)
-        return self._postprocess(outputs)
+        return self.run(data, preprocessed=preprocessed, postprocess=postprocess)
 
     def preprocess(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
         """
@@ -167,12 +173,30 @@ class TRTModel:
 
         """
         return self._preprocess(inputs)
+    
+    def postprocess(self: Self, outputs: list[np.ndarray]) -> list[np.ndarray]:
+        """
+        Postprocess the outputs.
+        
+        Parameters
+        ----------
+        outputs : list[np.ndarray]
+            The outputs to postprocess
+            
+        Returns
+        -------
+        list[np.ndarray]
+            The postprocessed outputs
+
+        """
+        return self._postprocess(outputs)
 
     def run(
         self: Self,
         inputs: list[np.ndarray],
         *,
         preprocessed: bool | None = None,
+        postprocess: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the model with the given inputs.
@@ -184,7 +208,9 @@ class TRTModel:
         preprocessed : bool, optional
             Whether the inputs are already preprocessed, by default None
             If None, the inputs will be preprocessed
-
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs, by default None
+            If None, the outputs will be postprocessed
 
         Returns
         -------
@@ -194,10 +220,14 @@ class TRTModel:
         """
         if preprocessed is None:
             preprocessed = False
+        if postprocess is None:
+            postprocess = True
         if not preprocessed:
             inputs = self._preprocess(inputs)
         outputs = self._engine.execute(inputs)
-        return self._postprocess(outputs)
+        if postprocess:
+            outputs = self._postprocess(outputs)
+        return outputs
 
 
 class QueuedTRTModel:

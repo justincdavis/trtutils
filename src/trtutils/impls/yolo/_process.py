@@ -44,14 +44,24 @@ def preprocess(inputs: list[np.ndarray], input_shape: tuple[int, int], dtype: np
     return preprocessed
 
 
-def postprocess(outputs: list[np.ndarray]) -> list[np.ndarray]:
+def _postprocess_v_7_8_9(outputs: list[np.ndarray]) -> list[np.ndarray]:
+    return outputs
+
+
+def _postprocess_v_10(outputs: list[np.ndarray]) -> list[np.ndarray]:
+    return outputs
+
+
+def postprocess(outputs: list[np.ndarray], version: int) -> list[np.ndarray]:
     """
-    Postprocess outputs from a YOLO V7/8/9 network.
+    Postprocess outputs from a YOLO network.
     
     Parameters
     ----------
     outputs : list[np.ndarray]
         The outputs from a YOLO network.
+    version : int
+        The version of the YOLO networks.
         
     Returns
     -------
@@ -59,28 +69,12 @@ def postprocess(outputs: list[np.ndarray]) -> list[np.ndarray]:
         The postprocessed outputs.
 
     """
-    return outputs
+    if version < 10:
+        return _postprocess_v_7_8_9(outputs)
+    return _postprocess_v_10(outputs)
 
 
-def postprocess_v10(outputs: list[np.ndarray]) -> list[np.ndarray]:
-    """
-    Postprocess outputs from a YOLO V10 network.
-    
-    Parameters
-    ----------
-    outputs : list[np.ndarray]
-        The outputs from a YOLO network.
-        
-    Returns
-    -------
-    list[np.ndarray]
-        The postprocessed outputs.
-
-    """
-    return outputs
-
-
-def _get_detections_789(outputs: list[np.ndarray]) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+def _get_detections_v_7_8_9(outputs: list[np.ndarray]) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
     results: list[list[tuple[tuple[int, int, int, int], float, int]]] = []
     for output in outputs:
         num_dects = int(output[0][0])
@@ -102,7 +96,7 @@ def _get_detections_789(outputs: list[np.ndarray]) -> list[list[tuple[tuple[int,
     return results
 
 
-def _get_detections_v10(outputs: list[np.ndarray]) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+def _get_detections_v_10(outputs: list[np.ndarray]) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
     # TODO impl
     return []
 
@@ -126,5 +120,5 @@ def get_detections(outputs: list[np.ndarray], version: int) -> list[list[tuple[t
     
     """
     if version < 10:
-        return _get_detections_789(outputs)
-    return _get_detections_v10(outputs)
+        return _get_detections_v_7_8_9(outputs)
+    return _get_detections_v_10(outputs)

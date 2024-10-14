@@ -7,7 +7,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 from trtutils._model import TRTModel
-from ._process import preprocess, postprocess, postprocess_v10
+from ._process import preprocess, postprocess, get_detections
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -54,7 +54,8 @@ class YOLO:
         if version not in valid_versions:
             err_msg = f"Invalid version of YOLO given. Received {version}, valid options: {valid_versions}"
             raise ValueError(err_msg)
-        postprocessor: Callable[[list[np.ndarray]], list[np.ndarray]] = postprocess_v10 if version >= 10 else postprocess
+        self._version = version
+        postprocessor: Callable[[list[np.ndarray]], list[np.ndarray]] = partial(postprocess, version=self._version)
         self._model = TRTModel(
             engine_path=engine_path,
             postprocess=postprocessor,
@@ -70,3 +71,135 @@ class YOLO:
             dtype=dtype,
         )
         self._model.preprocessor = preprocessor
+
+        # storage for last retrived output
+        self._last_output: list[np.ndarray] | None = None
+
+    def preprocess(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
+        """
+        Preprocess the inputs.
+
+        Parameters
+        ----------
+        inputs : list[np.ndarray]
+            The inputs to preprocess
+
+        Returns
+        -------
+        list[np.ndarray]
+            The preprocessed inputs
+
+        """
+        return self._model.preprocess(inputs)
+    
+    def postprocess(self: Self, outputs: list[np.ndarray]) -> list[np.ndarray]:
+        """
+        Postprocess the outputs.
+        
+        Parameters
+        ----------
+        outputs : list[np.ndarray]
+            The outputs to postprocess
+            
+        Returns
+        -------
+        list[np.ndarray]
+            The postprocessed outputs
+
+        """
+        return self._model.postprocess(outputs)
+
+    def __call__(
+        self: Self,
+        inputs: list[np.ndarray],
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+    ) -> list[np.ndarray]:
+        """
+        Run the YOLO network on input.
+        
+        Parameters
+        ----------
+        inputs : list[np.ndarray]
+            The data to run the YOLO network on.
+        preprocessed : bool, optional
+            Whether or not the inputs have been preprocessed.
+            If None, will preprocess inputs.
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs.
+            If None, will postprocess outputs.
+        
+        Returns
+        -------
+        list[np.ndarray]
+            The outputs of the YOLO network.
+
+        """
+        return self.run(inputs, preprocessed=preprocessed, postprocess=postprocess)
+
+    def run(
+        self: Self,
+        inputs: list[np.ndarray],
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+    ) -> list[np.ndarray]:
+        """
+        Run the YOLO network on input.
+        
+        Parameters
+        ----------
+        inputs : list[np.ndarray]
+            The data to run the YOLO network on.
+        preprocessed : bool, optional
+            Whether or not the inputs have been preprocessed.
+            If None, will preprocess inputs.
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs.
+            If None, will postprocess outputs.
+        
+        Returns
+        -------
+        list[np.ndarray]
+            The outputs of the YOLO network.
+
+        """
+        if preprocessed is None:
+            preprocessed = False
+        if postprocess is None:
+            postprocess = True
+
+        outputs = self._model(inputs, preprocessed=preprocessed, postprocess=postprocess)
+        self._last_output = outputs
+        return outputs
+
+    def get_detections(
+        self: Self,
+        outputs: list[np.ndarray] | None = None,
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+        """
+        The the bounding boxes of the last output or provided output.
+        
+        Parameters
+        ----------
+        outputs : list[np.ndarray], optional
+            The outputs to process. If None, will use the last outputs of the model.
+        
+        Returns
+        -------
+        list[list[tuple[tuple[int, int, int, int], float, int]]]
+            The detections
+
+        Raises
+        ------
+        ValueError
+            If no output is provided and no output has been generated yet.
+            
+        """
+        if outputs:
+            return get_detections(outputs, version=self._version)
+        if self._last_output:
+            return get_detections(self._last_output, version=self._version)
+        err_msg = "No output provided, and no output generated yet."
+        raise ValueError(err_msg)
