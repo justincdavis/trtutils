@@ -8,10 +8,12 @@ import numpy as np
 from cv2ext.image import letterbox
 
 
-def preprocess(inputs: list[np.ndarray], input_shape: tuple[int, int], dtype: np.dtype) -> list[np.ndarray]:
+def preprocess(
+    inputs: list[np.ndarray], input_shape: tuple[int, int], dtype: np.dtype
+) -> list[np.ndarray]:
     """
     Preprocess inputs for a YOLO network.
-    
+
     Parameters
     ----------
     inputs : list[np.ndarray]
@@ -20,7 +22,7 @@ def preprocess(inputs: list[np.ndarray], input_shape: tuple[int, int], dtype: np
         The shape to resize the inputs.
     dtype : np.dtype
         The datatype of the inputs to the network.
-    
+
     Returns
     -------
     list[np.ndarray]
@@ -55,14 +57,14 @@ def _postprocess_v_10(outputs: list[np.ndarray]) -> list[np.ndarray]:
 def postprocess(outputs: list[np.ndarray], version: int) -> list[np.ndarray]:
     """
     Postprocess outputs from a YOLO network.
-    
+
     Parameters
     ----------
     outputs : list[np.ndarray]
         The outputs from a YOLO network.
     version : int
         The version of the YOLO networks.
-        
+
     Returns
     -------
     list[np.ndarray]
@@ -74,7 +76,9 @@ def postprocess(outputs: list[np.ndarray], version: int) -> list[np.ndarray]:
     return _postprocess_v_10(outputs)
 
 
-def _get_detections_v_7_8_9(outputs: list[np.ndarray]) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+def _get_detections_v_7_8_9(
+    outputs: list[np.ndarray],
+) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
     results: list[list[tuple[tuple[int, int, int, int], float, int]]] = []
     for output in outputs:
         num_dects = int(output[0][0])
@@ -96,28 +100,32 @@ def _get_detections_v_7_8_9(outputs: list[np.ndarray]) -> list[list[tuple[tuple[
     return results
 
 
-def _get_detections_v_10(outputs: list[np.ndarray]) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+def _get_detections_v_10(
+    outputs: list[np.ndarray],
+) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
     # TODO impl
     return []
 
 
-def get_detections(outputs: list[np.ndarray], version: int) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+def get_detections(
+    outputs: list[np.ndarray], version: int
+) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
     """
     Get the detections from the output of a YOLO network.
-    
+
     Parameters
     ----------
     outputs : list[np.ndarray]
         The outputs from a YOLO networks.
     version : int
         Which version of YOLO used to generate the outputs.
-    
+
     Returns
     -------
     list[list[tuple[tuple[int, int, int, int], float, int]]]
         The detections from the YOLO netowrk.
         Each detection is a bounding box in form x1, y1, x2, y2, a confidence score and a class id.
-    
+
     """
     if version < 10:
         return _get_detections_v_7_8_9(outputs)

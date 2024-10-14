@@ -9,12 +9,14 @@ from threading import Thread
 import trtutils
 
 
-ENGINE_PATH = engine_path = Path(__file__).parent / "simple.engine"
+ENGINE_PATH = engine_path = (
+    Path(__file__).parent.parent / "data" / "engines" / "simple.engine"
+)
 
 
 def build_engine() -> Path:
     simple_path = Path(__file__).parent.parent / "data" / "simple.onnx"
-    
+
     if ENGINE_PATH.exists():
         return ENGINE_PATH
 
@@ -42,14 +44,9 @@ def test_engine_run() -> None:
 def test_multiple_engines_run() -> None:
     engine_path = build_engine()
 
-    engines = [
-        trtutils.TRTEngine(engine_path, warmup=False)
-        for _ in range(4)
-    ]
+    engines = [trtutils.TRTEngine(engine_path, warmup=False) for _ in range(4)]
 
-    outputs = [
-        engine.mock_execute() for engine in engines
-    ]
+    outputs = [engine.mock_execute() for engine in engines]
 
     for o in outputs:
         assert o is not None

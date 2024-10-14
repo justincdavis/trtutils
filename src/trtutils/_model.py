@@ -82,10 +82,12 @@ class TRTModel:
         return self._preprocess
 
     @preprocessor.setter
-    def preprocessor(self: Self, new_preprocess: Callable[[list[np.ndarray]], list[np.ndarray]]) -> None:
+    def preprocessor(
+        self: Self, new_preprocess: Callable[[list[np.ndarray]], list[np.ndarray]]
+    ) -> None:
         """
         Set the preprocessing function used in this model.
-        
+
         Useful in case the preprocessor need information which is only
         accessible after loading the engine.
         """
@@ -128,9 +130,6 @@ class TRTModel:
     def mock_run(
         self: Self,
         data: list[np.ndarray] | None = None,
-        *,
-        preprocessed: bool | None = None,
-        postprocess: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the model with random inputs.
@@ -140,13 +139,7 @@ class TRTModel:
         data : list[np.ndarray], optional
             The inputs to the model, by default None
             If None, random inputs will be used
-        preprocessed : bool, optional
-            Whether the inputs are already preprocessed, by default None
-            If None, the inputs will be preprocessed.
-        postprocess : bool, optional
-            Whether or not to postprocess the outputs, by default None
-            If None, the outputs will be postprocessed
-            
+
         Returns
         -------
         list[np.ndarray]
@@ -155,7 +148,7 @@ class TRTModel:
         """
         if data is None:
             data = self._engine.get_random_input()
-        return self.run(data, preprocessed=preprocessed, postprocess=postprocess)
+        return self.run(data, preprocessed=True, postprocess=False)
 
     def preprocess(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
         """
@@ -173,16 +166,16 @@ class TRTModel:
 
         """
         return self._preprocess(inputs)
-    
+
     def postprocess(self: Self, outputs: list[np.ndarray]) -> list[np.ndarray]:
         """
         Postprocess the outputs.
-        
+
         Parameters
         ----------
         outputs : list[np.ndarray]
             The outputs to postprocess
-            
+
         Returns
         -------
         list[np.ndarray]

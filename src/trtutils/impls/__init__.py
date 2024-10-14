@@ -10,6 +10,7 @@ yolo
     Implementations of YOLO object detectors.
 
 """
+
 from __future__ import annotations
 
 import contextlib
