@@ -130,8 +130,8 @@ __all__ = [
     "backends",
     "core",
     "find_trtexec",
+    "impls",
     "run_trtexec",
     "set_log_level",
-    "impls",
     "trtexec",
 ]

@@ -3,18 +3,21 @@
 # MIT License
 from __future__ import annotations
 
-from functools import partial
+import logging
 from typing import TYPE_CHECKING
 
-from trtutils._model import TRTModel
-from ._process import preprocess, postprocess, get_detections
+from trtutils._engine import TRTEngine
+
+from ._process import get_detections, postprocess, preprocess
+from ._version import VALID_VERSIONS
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from pathlib import Path
 
     import numpy as np
     from typing_extensions import Self
+
+_log = logging.getLogger(__name__)
 
 
 class YOLO:
@@ -35,7 +38,7 @@ class YOLO:
         ----------
         engine_path : Path, str
             The Path or str to the compiled TensorRT engine.
-        verison : int
+        version : int
             What version of YOLO the compiled engine is.
             Options are: [7, 8, 9, 10]
         warmup_iterations : int
@@ -48,53 +51,60 @@ class YOLO:
         ------
         ValueError
             If the version number given is not valid
+            If input size format is incorrect
+            If model does not take 3 channel input
 
         """
-        valid_versions = [7, 8, 9, 10]
-        if version not in valid_versions:
-            err_msg = f"Invalid version of YOLO given. Received {version}, valid options: {valid_versions}"
+        if version not in VALID_VERSIONS:
+            err_msg = f"Invalid version of YOLO given. Received {version}, valid options: {VALID_VERSIONS}"
             raise ValueError(err_msg)
         self._version = version
-        postprocessor: Callable[[list[np.ndarray]], list[np.ndarray]] = partial(
-            postprocess, version=self._version
-        )
-        self._model = TRTModel(
+        self._engine = TRTEngine(
             engine_path=engine_path,
-            postprocess=postprocessor,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
         )
-        input_spec = self._model._engine.input_spec[0]
-        input_size: tuple[int, int] = tuple(input_spec[0])
-        dtype = input_spec[1]
-        preprocessor: Callable[[list[np.ndarray]], list[np.ndarray]] = partial(
-            preprocess,
-            input_shape=input_size,
-            dtype=dtype,
-        )
-        self._model.preprocessor = preprocessor
+        input_spec = self._engine.input_spec[0]
+        input_size: tuple[int, ...] = tuple(input_spec[0])
+        yolo_input_size = 4
+        if len(input_size) != yolo_input_size:
+            err_msg = "Expected YOLO model to have input size of form: (batch, channels, height, width)"
+            err_msg += f", found {input_size}"
+            raise ValueError(err_msg)
+        rgb_channels = 3
+        if input_size[1] != rgb_channels:
+            err_msg = f"Expected YOLO model to take {rgb_channels} channel input, found {input_size[1]}"
+            raise ValueError(err_msg)
+        self._input_size: tuple[int, int] = (input_size[3], input_size[2])
+        self._dtype = input_spec[1]
 
         # storage for last retrived output
         self._last_output: list[np.ndarray] | None = None
 
-    def preprocess(self: Self, inputs: list[np.ndarray]) -> list[np.ndarray]:
+    @property
+    def input_shape(self: Self) -> tuple[int, int]:
+        """Get the width, height input shape."""
+        return self._input_size
+
+    def preprocess(self: Self, image: np.ndarray) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
-        Preprocess the inputs.
+        Preprocess the input.
 
         Parameters
         ----------
-        inputs : list[np.ndarray]
-            The inputs to preprocess
+        image : np.ndarray
+            The image to preprocess
 
         Returns
         -------
-        list[np.ndarray]
-            The preprocessed inputs
+        tuple[list[np.ndarray], tuple[float, float], tuple[float, float]]
+            The preprocessed inputs, rescale ratios, and padding values
 
         """
-        return self._model.preprocess(inputs)
+        _log.debug("Running preprocess")
+        return preprocess(image, self._input_size, self._dtype)
 
-    def postprocess(self: Self, outputs: list[np.ndarray]) -> list[np.ndarray]:
+    def postprocess(self: Self, outputs: list[np.ndarray], ratios: tuple[float, float], padding: tuple[float, float]) -> list[np.ndarray]:
         """
         Postprocess the outputs.
 
@@ -102,18 +112,23 @@ class YOLO:
         ----------
         outputs : list[np.ndarray]
             The outputs to postprocess
-
+        ratios : tuple[float, float]
+            The rescale ratios used during preprocessing
+        padding : tuple[float, float]
+            The padding values used during preprocessing
+            
         Returns
         -------
         list[np.ndarray]
             The postprocessed outputs
 
         """
-        return self._model.postprocess(outputs)
+        _log.debug("Running postprocess")
+        return postprocess(outputs, self._version, ratios, padding)
 
     def __call__(
         self: Self,
-        inputs: list[np.ndarray],
+        image: np.ndarray,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -123,7 +138,7 @@ class YOLO:
 
         Parameters
         ----------
-        inputs : list[np.ndarray]
+        image : np.ndarray
             The data to run the YOLO network on.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
@@ -138,11 +153,13 @@ class YOLO:
             The outputs of the YOLO network.
 
         """
-        return self.run(inputs, preprocessed=preprocessed, postprocess=postprocess)
+        return self.run(image, preprocessed=preprocessed, postprocess=postprocess)
 
     def run(
         self: Self,
-        inputs: list[np.ndarray],
+        image: np.ndarray,
+        ratios: tuple[float, float] | None = None,
+        padding: tuple[float, float] | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -152,19 +169,31 @@ class YOLO:
 
         Parameters
         ----------
-        inputs : list[np.ndarray]
+        image: np.ndarray
             The data to run the YOLO network on.
+        ratios : tuple[float, float], optional
+            The ratios generated during preprocessing.
+        padding : tuple[float, float], optional
+            The padding values used during preprocessing.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
         postprocess : bool, optional
             Whether or not to postprocess the outputs.
             If None, will postprocess outputs.
-
+            If postprocessing will occur and the inputs were
+            passed already preprocessed, then the ratios and
+            padding must be passed for postprocessing.
+            
         Returns
         -------
         list[np.ndarray]
             The outputs of the YOLO network.
+
+        Raises
+        ------
+        RuntimeError
+            If postprocessing is running, but ratios/padding not found
 
         """
         if preprocessed is None:
@@ -172,9 +201,27 @@ class YOLO:
         if postprocess is None:
             postprocess = True
 
-        outputs = self._model(
-            inputs, preprocessed=preprocessed, postprocess=postprocess
-        )
+        _log.debug(f"Running YOLO, preprocessed: {preprocessed}, postprocess: {postprocess}")
+
+        # handle preprocessing
+        if not preprocessed:
+            _log.debug("Preprocessing inputs")
+            tensor, ratios, padding = self.preprocess(image)
+        else:
+            tensor = image
+
+        # execute
+        outputs = self._engine([tensor])
+
+        # handle postprocessing
+        if postprocess:
+            _log.debug("Postprocessing outputs")
+            if ratios is None or padding is None:
+                err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
+                raise RuntimeError(err_msg)
+            outputs = self.postprocess(outputs, ratios, padding)
+
+        # store and return
         self._last_output = outputs
         return outputs
 
@@ -197,14 +244,14 @@ class YOLO:
             The outputs of the model
 
         """
-        return self._model.mock_run(data=inputs)
+        return self._engine.mock_execute(data=inputs)
 
     def get_detections(
         self: Self,
         outputs: list[np.ndarray] | None = None,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    ) -> list[tuple[tuple[int, int, int, int], float, int]]:
         """
-        The the bounding boxes of the last output or provided output.
+        Get the bounding boxes of the last output or provided output.
 
         Parameters
         ----------
@@ -213,7 +260,7 @@ class YOLO:
 
         Returns
         -------
-        list[list[tuple[tuple[int, int, int, int], float, int]]]
+        list[tuple[tuple[int, int, int, int], float, int]]
             The detections
 
         Raises
@@ -223,8 +270,8 @@ class YOLO:
 
         """
         if outputs:
-            return get_detections(outputs, version=self._version)
+            return get_detections(outputs, version=self._version, img_width=self._input_size[0], img_height=self._input_size[1])
         if self._last_output:
-            return get_detections(self._last_output, version=self._version)
+            return get_detections(self._last_output, version=self._version, img_width=self._input_size[0], img_height=self._input_size[1])
         err_msg = "No output provided, and no output generated yet."
         raise ValueError(err_msg)

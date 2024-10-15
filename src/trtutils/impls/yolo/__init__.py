@@ -22,12 +22,12 @@ postprocess
 
 from __future__ import annotations
 
-from ._process import get_detections, preprocess, postprocess
+from ._process import get_detections, postprocess, preprocess
 from ._yolo import YOLO
 
 __all__ = [
     "YOLO",
     "get_detections",
-    "preprocess",
     "postprocess",
+    "preprocess",
 ]
