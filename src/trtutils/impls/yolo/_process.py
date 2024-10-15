@@ -33,7 +33,7 @@ def preprocess(
     preprocessed: list[np.ndarray] = []
     # process each input
     for img in inputs:
-        img = letterbox(img, new_shape=input_shape)
+        img, _, _ = letterbox(img, new_shape=input_shape)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = img / 255.0
         img = img[np.newaxis, :]
@@ -78,38 +78,34 @@ def postprocess(outputs: list[np.ndarray], version: int) -> list[np.ndarray]:
 
 def _get_detections_v_7_8_9(
     outputs: list[np.ndarray],
-) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
-    results: list[list[tuple[tuple[int, int, int, int], float, int]]] = []
-    for output in outputs:
-        num_dects = int(output[0][0])
-        bboxes = output[1][0][0]
-        scores = output[2][0]
-        classes = output[3][0]
+) -> list[tuple[tuple[int, int, int, int], float, int]]:
+    num_dects = int(outputs[0][0])                 
+    bboxes = outputs[1]
+    scores = outputs[2]
+    classes = outputs[3]
 
-        frame_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
-        for idx in range(num_dects):
-            y1, x1, y2, x2 = bboxes[idx]
-            score = scores[idx]
-            classid = classes[idx]
+    frame_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
+    for idx in range(num_dects):
+        y1, x1, y2, x2 = bboxes[idx]
+        score = scores[idx]
+        classid = classes[idx]
 
-            entry = ((x1, y1, x2, y2), score, classid)
-            frame_dects.append(entry)
+        entry = ((x1, y1, x2, y2), score, classid)
+        frame_dects.append(entry)
 
-        results.append(frame_dects)
-
-    return results
+    return frame_dects
 
 
 def _get_detections_v_10(
     outputs: list[np.ndarray],
-) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+) -> list[tuple[tuple[int, int, int, int], float, int]]:
     # TODO impl
     return []
 
 
 def get_detections(
     outputs: list[np.ndarray], version: int
-) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+) -> list[tuple[tuple[int, int, int, int], float, int]]:
     """
     Get the detections from the output of a YOLO network.
 
@@ -122,7 +118,7 @@ def get_detections(
 
     Returns
     -------
-    list[list[tuple[tuple[int, int, int, int], float, int]]]
+    list[tuple[tuple[int, int, int, int], float, int]]
         The detections from the YOLO netowrk.
         Each detection is a bounding box in form x1, y1, x2, y2, a confidence score and a class id.
 
