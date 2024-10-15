@@ -77,6 +77,11 @@ class TRTModel:
         self._postprocess: Callable[[list[np.ndarray]], list[np.ndarray]] = postprocess
 
     @property
+    def engine(self: Self) -> TRTEngine:
+        """Access the underlying TRTEngine"""
+        return self._engine
+
+    @property
     def preprocessor(self: Self) -> Callable[[list[np.ndarray]], list[np.ndarray]]:
         """The preprocessing function used in this model."""
         return self._preprocess
