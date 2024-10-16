@@ -60,6 +60,8 @@ def preprocess(
 
 
 def _postprocess_v_7_8_9(outputs: list[np.ndarray], ratios: tuple[float, float], padding: tuple[float, float]) -> list[np.ndarray]:
+    # efficient NMS postprocessor essentially
+    # inputs are list[num_dets, bboxes, scores, classes]
     num_dets, bboxes, scores, class_ids = outputs
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
@@ -76,8 +78,28 @@ def _postprocess_v_7_8_9(outputs: list[np.ndarray], ratios: tuple[float, float],
 
 
 def _postprocess_v_10(outputs: list[np.ndarray], ratios: tuple[float, float], padding: tuple[float, float]) -> list[np.ndarray]:
-    # TODO: implement scaling for ratio/padding
-    return outputs
+    # V10 outputs (1, 300, 6)
+    # each final entry is (bbox (4 parts), score, classid)
+    ratio_width, ratio_height = ratios
+    pad_x, pad_y = padding
+
+    output = outputs[0]
+
+    bboxes = output[0, :, :4]
+    scores = output[0, :, 4]
+    class_ids = output[0, :, 5].astype(int)
+
+    # each bounding box is cx, cy, dx, dy
+    adjusted_bboxes = bboxes.copy()
+    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width  # x1
+    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height  # y1
+    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width  # x2
+    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height  # y2
+
+    # Clip the bounding boxes to ensure they're within valid ranges
+    adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
+
+    return [adjusted_bboxes, scores, class_ids]
 
 
 def postprocess(outputs: list[np.ndarray], version: int, ratios: tuple[float, float] = (1.0, 1.0), padding: tuple[float, float] = (0.0, 0.0)) -> list[np.ndarray]:
@@ -108,54 +130,41 @@ def postprocess(outputs: list[np.ndarray], version: int, ratios: tuple[float, fl
 
 def _get_detections_v_7_8_9(
     outputs: list[np.ndarray],
+    conf_thres: float | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
-    return decode_efficient_nms(outputs)
+    return decode_efficient_nms(outputs, conf_thres=conf_thres)
 
 
 def _get_detections_v_10(
     outputs: list[np.ndarray],
-    img_width: int,
-    img_height: int,
+    conf_thres: float | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
-    output = outputs[0]  # yolov10 has a single output
-    detections = output.reshape(-1, 6)  # remove batch dimension
-
-    boxes = detections[:, :4]
-    confs = detections[:, 4]
-    class_ids = detections[:, 5].astype(int)
-
-    # convert to pixel
-    boxes[:, 0] *= img_width   # x_center
-    boxes[:, 1] *= img_height  # y_center
-    boxes[:, 2] *= img_width   # width
-    boxes[:, 3] *= img_height  # height
-
-    # convert to xyxy
-    x1 = boxes[:, 0] - boxes[:, 2] / 2
-    x1 = x1.astype(int)
-    y1 = boxes[:, 1] - boxes[:, 3] / 2
-    y1 = y1.astype(int)
-    x2 = boxes[:, 0] + boxes[:, 2] / 2
-    x1 = x2.astype(int)
-    y2 = boxes[:, 1] + boxes[:, 3] / 2
-    y2 = y2.astype(int)
+    # set conf_thres to zero if not provided (include all bboxes)
+    if conf_thres is None:
+        conf_thres = 0.0
+    
+    # unpack
+    bboxes = outputs[0]
+    scores = outputs[1]
+    class_ids = outputs[2]
 
     # convert to output format
     results: list[tuple[tuple[int, int, int, int], float, int]] = []
-    for idx in range(len(x1)):
-        entry = (
-            (x1[idx], y1[idx], x2[idx], y2[idx]),
-            confs[idx],
-            class_ids[idx],
-        )
-        results.append(entry)
+    for idx in range(len(bboxes)):
+        if scores[idx] >= conf_thres:
+            x1, y1, x2, y2 = bboxes[idx]
+            entry = (
+                (int(x1), int(y1), int(x2), int(y2)),
+                scores[idx],
+                class_ids[idx],
+            )
+            results.append(entry)
     return results
 
 def get_detections(
     outputs: list[np.ndarray],
     version: int,
-    img_width: int | None = None,
-    img_height: int | None = None,
+    conf_thres: float | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
     """
     Get the detections from the output of a YOLO network.
@@ -166,10 +175,8 @@ def get_detections(
         The outputs from a YOLO networks.
     version : int
         Which version of YOLO used to generate the outputs.
-    img_width : int, optional
-        The image width, needed for V10 decode.
-    img_height : int, optional
-        The image height, needed for V10 decode.
+    conf_thres : float, optional
+        The confidence threshold to use for getting detections.
     
     Returns
     -------
@@ -187,9 +194,10 @@ def get_detections(
     if version not in VALID_VERSIONS:
         err_msg = f"Invalid version provided. Found: {version}, not in: {VALID_VERSIONS}"
         raise ValueError(err_msg)
+    # Handle YoloV 7/8/9
     if version < _VERSION_CUTOFF:
-        return _get_detections_v_7_8_9(outputs)
-    if img_width is None or img_height is None:
-        err_msg = "Image width and height must be provided for V10 decode."
-        raise ValueError(err_msg)
-    return _get_detections_v_10(outputs, img_width, img_height)
+        return _get_detections_v_7_8_9(outputs, conf_thres=conf_thres)
+    # Handle YoloV10
+    if conf_thres is None:
+        return _get_detections_v_10(outputs, conf_thres=conf_thres)
+    return _get_detections_v_10(outputs, conf_thres=conf_thres)

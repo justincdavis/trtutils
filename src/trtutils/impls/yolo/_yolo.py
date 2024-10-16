@@ -249,6 +249,7 @@ class YOLO:
     def get_detections(
         self: Self,
         outputs: list[np.ndarray] | None = None,
+        conf_thres: float = 0.15,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
         """
         Get the bounding boxes of the last output or provided output.
@@ -257,6 +258,9 @@ class YOLO:
         ----------
         outputs : list[np.ndarray], optional
             The outputs to process. If None, will use the last outputs of the model.
+        conf_thres : float
+            The confidence threshold with which to retrieve bounding boxes.
+            By default 0.15
 
         Returns
         -------
@@ -270,8 +274,8 @@ class YOLO:
 
         """
         if outputs:
-            return get_detections(outputs, version=self._version, img_width=self._input_size[0], img_height=self._input_size[1])
+            return get_detections(outputs, version=self._version, conf_thres=conf_thres)
         if self._last_output:
-            return get_detections(self._last_output, version=self._version, img_width=self._input_size[0], img_height=self._input_size[1])
+            return get_detections(self._last_output, version=self._version, conf_thres=conf_thres)
         err_msg = "No output provided, and no output generated yet."
         raise ValueError(err_msg)
