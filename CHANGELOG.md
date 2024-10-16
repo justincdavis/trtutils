@@ -1,3 +1,25 @@
+## 0.2.0 (10-02-2024)
+
+### Added
+
+- benchmark_engine
+    Function for benchmarking a TensorRT engine file.
+    Measures the host latency of the engine.
+- jetson submoudle
+    - Currently empty
+- impls submodule
+- impls.yolo submodule
+    YOLO class and associated functions available
+    Allows YOLO V7/8/9 exported with EfficientNMS
+    to be used and V10 as is.
+
+### Changed
+
+- trtexec.build_from_onnx is now trtexec.build_engine
+    With this change also comes some added functionality.
+    Can now use .prototxt files to build engines.
+    More options available.
+
 ## 0.1.2 (10-10-2024)
 
 ### Added

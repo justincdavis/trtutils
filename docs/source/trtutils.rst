@@ -9,6 +9,8 @@ Subpackages
 
    trtutils.backends
    trtutils.core
+   trtutils.impls
+   trtutils.jetson
    trtutils.trtexec
 
 Module contents
