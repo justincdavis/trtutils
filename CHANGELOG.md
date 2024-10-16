@@ -13,6 +13,13 @@
     Can now use .prototxt files to build engines.
     More options available.
 
+## 0.1.2 (10-10-2024)
+
+### Added
+
+- QueuedTRTEngine, QueuedTRTModel, ParallelTRTEngine, ParallelTRTMOdel
+    Enable async and parallel execution for engines and models.
+
 ## 0.1.1 (07-30-2024)
 
 ### Fixed
