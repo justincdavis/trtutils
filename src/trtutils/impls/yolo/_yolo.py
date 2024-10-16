@@ -86,7 +86,10 @@ class YOLO:
         """Get the width, height input shape."""
         return self._input_size
 
-    def preprocess(self: Self, image: np.ndarray) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    def preprocess(
+        self: Self,
+        image: np.ndarray,
+    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
         Preprocess the input.
 
@@ -104,7 +107,12 @@ class YOLO:
         _log.debug("Running preprocess")
         return preprocess(image, self._input_size, self._dtype)
 
-    def postprocess(self: Self, outputs: list[np.ndarray], ratios: tuple[float, float], padding: tuple[float, float]) -> list[np.ndarray]:
+    def postprocess(
+        self: Self,
+        outputs: list[np.ndarray],
+        ratios: tuple[float, float],
+        padding: tuple[float, float],
+    ) -> list[np.ndarray]:
         """
         Postprocess the outputs.
 
@@ -116,7 +124,7 @@ class YOLO:
             The rescale ratios used during preprocessing
         padding : tuple[float, float]
             The padding values used during preprocessing
-            
+
         Returns
         -------
         list[np.ndarray]
@@ -184,7 +192,7 @@ class YOLO:
             If postprocessing will occur and the inputs were
             passed already preprocessed, then the ratios and
             padding must be passed for postprocessing.
-            
+
         Returns
         -------
         list[np.ndarray]
@@ -201,7 +209,9 @@ class YOLO:
         if postprocess is None:
             postprocess = True
 
-        _log.debug(f"Running YOLO, preprocessed: {preprocessed}, postprocess: {postprocess}")
+        _log.debug(
+            f"Running YOLO, preprocessed: {preprocessed}, postprocess: {postprocess}",
+        )
 
         # handle preprocessing
         if not preprocessed:
@@ -276,6 +286,10 @@ class YOLO:
         if outputs:
             return get_detections(outputs, version=self._version, conf_thres=conf_thres)
         if self._last_output:
-            return get_detections(self._last_output, version=self._version, conf_thres=conf_thres)
+            return get_detections(
+                self._last_output,
+                version=self._version,
+                conf_thres=conf_thres,
+            )
         err_msg = "No output provided, and no output generated yet."
         raise ValueError(err_msg)

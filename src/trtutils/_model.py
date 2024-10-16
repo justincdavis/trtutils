@@ -78,7 +78,7 @@ class TRTModel:
 
     @property
     def engine(self: Self) -> TRTEngine:
-        """Access the underlying TRTEngine"""
+        """Access the underlying TRTEngine."""
         return self._engine
 
     @property
@@ -88,7 +88,8 @@ class TRTModel:
 
     @preprocessor.setter
     def preprocessor(
-        self: Self, new_preprocess: Callable[[list[np.ndarray]], list[np.ndarray]]
+        self: Self,
+        new_preprocess: Callable[[list[np.ndarray]], list[np.ndarray]],
     ) -> None:
         """
         Set the preprocessing function used in this model.

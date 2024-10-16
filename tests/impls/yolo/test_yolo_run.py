@@ -115,7 +115,7 @@ def multiple_yolos_run_in_threads(version: int) -> None:
         succeses = 0
         for _ in range(iters):
             outputs = engine.mock_run()
-            if outputs is not None:
+            if outputs is not None and len(outputs) != 0:
                 succeses += 1
 
         assert outputs is not None

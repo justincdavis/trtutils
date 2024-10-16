@@ -3,5 +3,4 @@
 # MIT License
 from __future__ import annotations
 
-
 VALID_VERSIONS = [7, 8, 9, 10]

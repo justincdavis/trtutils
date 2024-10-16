@@ -48,7 +48,7 @@ def preprocess(
     # tensor = np.expand_dims(tensor, 0)
     # tensor = tensor / 255.0
 
-    tensor = tensor / 255.0
+    tensor = tensor / 255.0  # type: ignore[assignment]
     tensor = tensor[np.newaxis, :]
     tensor = np.transpose(tensor, (0, 3, 1, 2))
     # large performance hit to assemble contiguous array
@@ -59,7 +59,11 @@ def preprocess(
     return tensor, ratios, padding
 
 
-def _postprocess_v_7_8_9(outputs: list[np.ndarray], ratios: tuple[float, float], padding: tuple[float, float]) -> list[np.ndarray]:
+def _postprocess_v_7_8_9(
+    outputs: list[np.ndarray],
+    ratios: tuple[float, float],
+    padding: tuple[float, float],
+) -> list[np.ndarray]:
     # efficient NMS postprocessor essentially
     # inputs are list[num_dets, bboxes, scores, classes]
     num_dets, bboxes, scores, class_ids = outputs
@@ -77,7 +81,11 @@ def _postprocess_v_7_8_9(outputs: list[np.ndarray], ratios: tuple[float, float],
     return [num_dets, adjusted_bboxes, scores, class_ids]
 
 
-def _postprocess_v_10(outputs: list[np.ndarray], ratios: tuple[float, float], padding: tuple[float, float]) -> list[np.ndarray]:
+def _postprocess_v_10(
+    outputs: list[np.ndarray],
+    ratios: tuple[float, float],
+    padding: tuple[float, float],
+) -> list[np.ndarray]:
     # V10 outputs (1, 300, 6)
     # each final entry is (bbox (4 parts), score, classid)
     ratio_width, ratio_height = ratios
@@ -102,7 +110,12 @@ def _postprocess_v_10(outputs: list[np.ndarray], ratios: tuple[float, float], pa
     return [adjusted_bboxes, scores, class_ids]
 
 
-def postprocess(outputs: list[np.ndarray], version: int, ratios: tuple[float, float] = (1.0, 1.0), padding: tuple[float, float] = (0.0, 0.0)) -> list[np.ndarray]:
+def postprocess(
+    outputs: list[np.ndarray],
+    version: int,
+    ratios: tuple[float, float] = (1.0, 1.0),
+    padding: tuple[float, float] = (0.0, 0.0),
+) -> list[np.ndarray]:
     """
     Postprocess outputs from a YOLO network.
 
@@ -142,7 +155,7 @@ def _get_detections_v_10(
     # set conf_thres to zero if not provided (include all bboxes)
     if conf_thres is None:
         conf_thres = 0.0
-    
+
     # unpack
     bboxes = outputs[0]
     scores = outputs[1]
@@ -161,6 +174,7 @@ def _get_detections_v_10(
             results.append(entry)
     return results
 
+
 def get_detections(
     outputs: list[np.ndarray],
     version: int,
@@ -177,7 +191,7 @@ def get_detections(
         Which version of YOLO used to generate the outputs.
     conf_thres : float, optional
         The confidence threshold to use for getting detections.
-    
+
     Returns
     -------
     list[tuple[tuple[int, int, int, int], float, int]]
@@ -192,7 +206,9 @@ def get_detections(
 
     """
     if version not in VALID_VERSIONS:
-        err_msg = f"Invalid version provided. Found: {version}, not in: {VALID_VERSIONS}"
+        err_msg = (
+            f"Invalid version provided. Found: {version}, not in: {VALID_VERSIONS}"
+        )
         raise ValueError(err_msg)
     # Handle YoloV 7/8/9
     if version < _VERSION_CUTOFF:

@@ -33,7 +33,7 @@ def decode_efficient_nms(
     conf_thres : float
         A confidence value to threshold detctions by.
         By default None.
-        
+
     Returns
     -------
     list[tuple[tuple[int, int, int, int], float, int]]
@@ -58,7 +58,7 @@ def decode_efficient_nms(
 
     if conf_thres:
         filtered_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
-        for (bbox, score, class_id) in frame_dects:
+        for bbox, score, class_id in frame_dects:
             if score >= conf_thres:
                 filtered_dects.append((bbox, score, class_id))
         frame_dects = filtered_dects

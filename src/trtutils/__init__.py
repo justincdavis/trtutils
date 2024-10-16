@@ -24,6 +24,10 @@ trtexec
 
 Classes
 -------
+BenchmarkResult
+    A dataclass for storing profiling information from benchmarking engines.
+Metric
+    A dataclass storing specific metric information from benchmarking.
 TRTEngine
     A class for creating TensorRT engines from serialized engine files.
 TRTModel
@@ -43,6 +47,10 @@ benchmark_engine
     Benchmark a TensorRT engine.
 find_trtexec
     Find an instance of the trtexec binary on the system.
+run_trtexec
+    Run a command with trtexec.
+set_log_level
+    Set the log level of the trtutils package.
 
 """
 
@@ -120,11 +128,14 @@ __author__ = "Justin Davis"
 __version__ = "0.2.0"
 
 from . import backends, core, impls, jetson, trtexec
+from ._benchmark import BenchmarkResult, Metric, benchmark_engine
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
 from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
+    "BenchmarkResult",
+    "Metric",
     "ParallelTRTEngines",
     "ParallelTRTModels",
     "QueuedTRTEngine",
@@ -136,8 +147,8 @@ __all__ = [
     "core",
     "find_trtexec",
     "impls",
+    "jetson",
     "run_trtexec",
     "set_log_level",
-    "jetson",
     "trtexec",
 ]
