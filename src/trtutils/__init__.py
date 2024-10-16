@@ -15,6 +15,8 @@ backends
     A module providing alternative backends for the TRTEngine class.
 core
     A module for the core functionality of the package.
+impls
+    A module containing implementations for different neural networks.
 trtexec
     A module for utilities related to the trtexec tool.
 
@@ -113,7 +115,7 @@ __author__ = "Justin Davis"
 __version__ = "0.1.2"
 
 
-from . import backends, core, trtexec
+from . import backends, core, impls, trtexec
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
 from .trtexec import find_trtexec, run_trtexec
@@ -128,6 +130,7 @@ __all__ = [
     "backends",
     "core",
     "find_trtexec",
+    "impls",
     "run_trtexec",
     "set_log_level",
     "trtexec",
