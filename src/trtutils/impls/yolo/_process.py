@@ -93,9 +93,9 @@ def _postprocess_v_10(
 
     output = outputs[0]
 
-    bboxes = output[0, :, :4]
-    scores = output[0, :, 4]
-    class_ids = output[0, :, 5].astype(int)
+    bboxes: np.ndarray = output[0, :, :4]
+    scores: np.ndarray = output[0, :, 4]
+    class_ids: np.ndarray = output[0, :, 5].astype(int)
 
     # each bounding box is cx, cy, dx, dy
     adjusted_bboxes = bboxes.copy()
