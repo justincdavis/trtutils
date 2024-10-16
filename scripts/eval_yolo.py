@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 
 import cv2
@@ -33,15 +34,22 @@ def main() -> None:
 
     img = cv2.imread(str(Path(__file__).parent.parent / "data" / "people.jpeg"))
 
-    yolo = YOLO(args.engine, args.version)
+    yolo = YOLO(args.engine, args.version, warmup_iterations=1, warmup=True)
 
-    output = yolo(img, preprocessed=False, postprocess=True)
+    t0 = time.perf_counter()
+    tensor, ratios, padding = yolo.preprocess(img)
+    t1 = time.perf_counter()
+    output = yolo.run(tensor, preprocessed=True, postprocess=False)
+    t2 = time.perf_counter()
+    output = yolo.postprocess(output, ratios, padding)
+    t3 = time.perf_counter()
+    detections = yolo.get_detections(output)
+    t4 = time.perf_counter()
 
-    print(output)
-
-    detections = yolo.get_detections()
-    for det in detections:
-        print(det)
+    print(f"Preprocess: {(t1 - t0) * 1000.0 :.2f} ms")
+    print(f"Inference: {(t2 - t1) * 1000.0 :.2f} ms")
+    print(f"Postprocess: {(t3 - t2) * 1000.0 :.2f} ms")
+    print(f"Decode: {(t4 - t3) * 1000.0 :.2f} ms")
 
     bboxes = [bbox for (bbox, _, _) in detections]
 
