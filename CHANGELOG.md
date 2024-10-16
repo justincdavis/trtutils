@@ -5,6 +5,13 @@
 - benchmark_engine
     Function for benchmarking a TensorRT engine file.
     Measures the host latency of the engine.
+- jetson submoudle
+    - Currently empty
+- impls submodule
+- impls.yolo submodule
+    YOLO class and associated functions available
+    Allows YOLO V7/8/9 exported with EfficientNMS
+    to be used and V10 as is.
 
 ### Changed
 
