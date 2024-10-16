@@ -15,6 +15,8 @@ backends
     A module providing alternative backends for the TRTEngine class.
 core
     A module for the core functionality of the package.
+jetson
+    A module implementating additional functionality for Jetson devices.
 impls
     A module containing implementations for different neural networks.
 trtexec
@@ -37,8 +39,11 @@ QueuedTRTModel
 
 Functions
 ---------
+benchmark_engine
+    Benchmark a TensorRT engine.
 find_trtexec
     Find an instance of the trtexec binary on the system.
+
 """
 
 from __future__ import annotations
@@ -112,10 +117,9 @@ if level is not None and level.upper() not in [
     _log.warning(f"Invalid log level: {level}. Using default log level: WARNING")
 
 __author__ = "Justin Davis"
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
-
-from . import backends, core, impls, trtexec
+from . import backends, core, impls, jetson, trtexec
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
 from .trtexec import find_trtexec, run_trtexec
@@ -128,10 +132,12 @@ __all__ = [
     "TRTEngine",
     "TRTModel",
     "backends",
+    "benchmark_engine",
     "core",
     "find_trtexec",
     "impls",
     "run_trtexec",
     "set_log_level",
+    "jetson",
     "trtexec",
 ]

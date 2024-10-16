@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trtutils"
-version = "0.1.2"
+version = "0.2.0"
 authors = [
   {name="Justin Davis", email="davisjustin302@gmail.com"},
 ]
@@ -63,6 +63,10 @@ impls = [
 pycuda = [
     "pycuda>=2023",
 ]
+jetson = [
+    "jetson-stats>=4.2.0",
+    "jetsontools>=0.0.1",
+]
 ci = [
     "pyupgrade>=3.10",
     "black>=24.0",
@@ -91,7 +95,7 @@ dev = [
 ]
 
 [tool.bumpver]
-current_version = "0.1.2"
+current_version = "0.2.0"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message  = "Bump version {old_version} -> {new_version}"
 commit          = true
