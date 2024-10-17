@@ -3,9 +3,12 @@
 # MIT License
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
-import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+# suppress pycuda import error for docs build
+with contextlib.suppress(Exception):
+    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
 
 def create_engine(
