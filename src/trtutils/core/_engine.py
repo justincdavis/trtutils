@@ -3,9 +3,15 @@
 # MIT License
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
+from threading import Lock
 
-import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+# suppress pycuda import error for docs build
+with contextlib.suppress(Exception):
+    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+
+_CREATION_LOCK = Lock()
 
 
 def create_engine(
@@ -66,9 +72,10 @@ def create_engine(
         raise RuntimeError(err_msg)
 
     # create the execution context
-    context = engine.create_execution_context()
-    if context is None:
-        err_msg = "Failed to create execution context"
-        raise RuntimeError(err_msg)
+    with _CREATION_LOCK:
+        context = engine.create_execution_context()
+        if context is None:
+            err_msg = "Failed to create execution context"
+            raise RuntimeError(err_msg)
 
     return engine, context, trt_logger

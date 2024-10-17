@@ -5,16 +5,22 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass
+from threading import Lock
 from typing import TYPE_CHECKING
 
 import numpy as np
-import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
-from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+
+# suppress pycuda import error for docs build
+with contextlib.suppress(Exception):
+    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
 
 if TYPE_CHECKING:
     from typing_extensions import Self
+
+_ALLOCATION_LOCK = Lock()
 
 
 @dataclass
@@ -116,7 +122,8 @@ def allocate_bindings(
             size = dtype.itemsize
             for s in shape:
                 size *= s
-            allocation = cuda_call(cudart.cudaMalloc(size))
+            with _ALLOCATION_LOCK:
+                allocation = cuda_call(cudart.cudaMalloc(size))
             host_allocation = (
                 np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
             )
@@ -162,7 +169,8 @@ def allocate_bindings(
             size = dtype.itemsize
             for s in shape:
                 size *= s
-            allocation = cuda_call(cudart.cudaMalloc(size))
+            with _ALLOCATION_LOCK:
+                allocation = cuda_call(cudart.cudaMalloc(size))
             host_allocation = (
                 np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
             )

@@ -1,3 +1,11 @@
+## 0.2.1 (10-16-2024)
+
+### Added
+
+- Locks around TensorRT engine creation and
+    CUDA memory allocations. Improves stability
+    when allocating engines in parallel.
+
 ## 0.2.0 (10-02-2024)
 
 ### Added
