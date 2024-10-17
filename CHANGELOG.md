@@ -1,3 +1,14 @@
+## 0.2.3 (10-17-2024)
+
+### Improved
+
+- TRTEngine docstring explanation on threading.
+
+### Fixed
+
+- trtexec.build_engine would build for GPU if DLA
+    core was set to 0. Now builds for DLA core 0.
+
 ## 0.2.2 (10-17-2024)
 
 ### Changed

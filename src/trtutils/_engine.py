@@ -25,7 +25,15 @@ if TYPE_CHECKING:
 
 
 class TRTEngine(TRTEngineInterface):
-    """Implements a generic interface for TensorRT engines."""
+    """
+    Implements a generic interface for TensorRT engines.
+
+    It is thread and process safe to create multiple TRTEngines.
+    It is valid to create a TRTEngine in one thread and use in another.
+    Each TRTEngine has its own CUDA context and there is no safeguards
+    implemented in the class for datarace conditions. As such, a
+    single TRTEngine should not be used in multiple threads or processes.
+    """
 
     def __init__(
         self: Self,

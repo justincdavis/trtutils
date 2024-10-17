@@ -168,7 +168,7 @@ def build_engine(
         raise RuntimeError(err_msg)
 
     command += f" --saveEngine={output_path_str} --skipInference"
-    if use_dla_core:
+    if isinstance(use_dla_core, int):
         command += f" --useDLACore={use_dla_core}"
     if fp16:
         command += " --fp16"
@@ -189,6 +189,9 @@ def build_engine(
     if add_args:
         for arg in add_args:
             command += f" {arg}"
+
+    # debug print
+    _log.debug(f"TRTEXEC Command: {command}")
 
     success, _, stderr = run_trtexec(command)
 
