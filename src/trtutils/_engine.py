@@ -181,7 +181,7 @@ class TRTEngine(TRTEngineInterface):
                 data[i_idx],
             )
         # execute
-        self._context.execute_v2(self._allocations)
+        self._context.execute_async_v2(self._allocations, self._stream)
         # Copy outputs
         for o_idx in range(len(self._outputs)):
             memcpy_device_to_host(

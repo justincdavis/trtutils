@@ -1,3 +1,11 @@
+## 0.2.2 (10-17-2024)
+
+### Changed
+
+- TRTEngine now uses execute_async_v2 for inference
+    core.create_engine now makes a cudaStream for async.
+    Lock for stream creation.
+
 ## 0.2.1 (10-16-2024)
 
 ### Added

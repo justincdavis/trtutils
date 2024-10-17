@@ -9,16 +9,20 @@ from threading import Lock
 
 # suppress pycuda import error for docs build
 with contextlib.suppress(Exception):
+    from cuda import cudart
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
-_CREATION_LOCK = Lock()
+from ._cuda import cuda_call
+
+_CONTEXT_LOCK = Lock()
+_STREAM_LOCK = Lock()
 
 
 def create_engine(
     engine_path: Path | str,
     logger: trt.ILogger | None = None,
     log_level: trt.ILogger.Severity = trt.Logger.WARNING,
-) -> tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger]:
+) -> tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger, cudart.cudaStream_t]:
     """
     Load a serialized engine from disk.
 
@@ -72,10 +76,14 @@ def create_engine(
         raise RuntimeError(err_msg)
 
     # create the execution context
-    with _CREATION_LOCK:
+    with _CONTEXT_LOCK:
         context = engine.create_execution_context()
         if context is None:
             err_msg = "Failed to create execution context"
             raise RuntimeError(err_msg)
+        
+    # create a cudart stream
+    with _STREAM_LOCK:
+        stream = cuda_call(cudart.cudaStreamCreate())
 
-    return engine, context, trt_logger
+    return engine, context, trt_logger, stream
