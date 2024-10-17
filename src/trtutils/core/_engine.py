@@ -9,8 +9,8 @@ from threading import Lock
 
 # suppress pycuda import error for docs build
 with contextlib.suppress(Exception):
-    from cuda import cudart
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
 
@@ -81,7 +81,7 @@ def create_engine(
         if context is None:
             err_msg = "Failed to create execution context"
             raise RuntimeError(err_msg)
-        
+
     # create a cudart stream
     with _STREAM_LOCK:
         stream = cuda_call(cudart.cudaStreamCreate())

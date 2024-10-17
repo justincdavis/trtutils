@@ -31,7 +31,9 @@ class TRTEngineInterface(ABC):
             The path to the serialized engine file.
 
         """
-        self._engine, self._context, self._logger, self._stream = create_engine(engine_path)
+        self._engine, self._context, self._logger, self._stream = create_engine(
+            engine_path,
+        )
 
     @abstractmethod
     def __del__(self) -> None:
