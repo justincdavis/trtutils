@@ -56,9 +56,12 @@ dependencies = [
 "Bug Tracker" = "https://github.com/justincdavis/trtutils/issues"
 
 [project.optional-dependencies]
-impls = [
+yolo = [
     "cv2ext>=0.0.22",
     "opencv-contrib-python>=4.6.0",
+]
+impls = [
+    "trtutils[yolo]",
 ]
 pycuda = [
     "pycuda>=2023",
@@ -84,6 +87,7 @@ docs = [
     "myst_parser>=1.0.0",
 ]
 dev = [
+    "trtutils[impls]",
     "trtutils[ci]",
     "trtutils[test]",
     "trtutils[docs]",
