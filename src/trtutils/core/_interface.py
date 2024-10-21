@@ -31,9 +31,12 @@ class TRTEngineInterface(ABC):
             The path to the serialized engine file.
 
         """
+        # engine, context, logger, and CUDA stream
         self._engine, self._context, self._logger, self._stream = create_engine(
             engine_path,
         )
+        # storage for cached random input
+        self._rand_input: list[np.ndarray] = self.get_random_input(new=True)
 
     @abstractmethod
     def __del__(self) -> None:
@@ -138,9 +141,14 @@ class TRTEngineInterface(ABC):
     def _rng(self: Self) -> np.random.Generator:
         return np.random.default_rng()
 
-    def get_random_input(self: Self) -> list[np.ndarray]:
+    def get_random_input(self: Self, *, new: bool | None = None) -> list[np.ndarray]:
         """
         Generate a random input for the network.
+
+        Parameters
+        ----------
+        new : bool, optional
+            Whether or not to generate new input. By default None/False.
 
         Returns
         -------
@@ -148,10 +156,12 @@ class TRTEngineInterface(ABC):
             The random input to the network.
 
         """
-        return [
-            self._rng.random(size=shape, dtype=dtype)
-            for (shape, dtype) in self.input_spec
-        ]
+        if new:
+            return [
+                self._rng.random(size=shape, dtype=dtype)
+                for (shape, dtype) in self.input_spec
+            ]
+        return self._rand_input
 
     def __call__(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
         """

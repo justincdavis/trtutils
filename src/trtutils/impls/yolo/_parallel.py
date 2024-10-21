@@ -11,13 +11,14 @@ from queue import Empty, Queue
 from threading import Event, Thread
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from ._yolo import YOLO
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    import numpy as np
     from typing_extensions import Self
 
 
@@ -33,8 +34,8 @@ class _InputPacket:
 @dataclass
 class _OutputPacket:
     data: list[np.ndarray]
-    ratio: tuple[float, float]
-    padding: tuple[float, float]
+    ratio: tuple[float, float] | None = None
+    padding: tuple[float, float] | None = None
     postprocessed: bool | None = None
 
 
@@ -69,15 +70,18 @@ class ParallelYOLO:
         warmup : bool, optional
             Whether or not to run the warmup iterations.
 
+        Raises
+        ------
+        RuntimeError
+            If a YOLO model could not be created.
+
         """
         self._engine_paths = engines
         self._warmup_iterations = warmup_iterations
         self._warmup = warmup
 
         self._stopflag = Event()
-        self._iqueues: list[Queue[_InputPacket | None]] = [
-            Queue() for _ in self._engine_paths
-        ]
+        self._iqueues: list[Queue[_InputPacket]] = [Queue() for _ in self._engine_paths]
         self._oqueues: list[Queue[_OutputPacket]] = [
             Queue() for _ in self._engine_paths
         ]
@@ -92,6 +96,11 @@ class ParallelYOLO:
             thread.start()
         for flag in self._flags:
             flag.wait()
+        for idx, model in enumerate(self._models):
+            if model is None:
+                self.stop()
+                err_msg = f"Error creating YOLO model: {self._engine_paths[idx]}"
+                raise RuntimeError(err_msg)
 
     def __del__(self: Self) -> None:
         self.stop()
@@ -149,7 +158,11 @@ class ParallelYOLO:
     def preprocess(
         self: Self,
         inputs: list[np.ndarray],
-    ) -> list[tuple[np.ndarray, tuple[float, float], tuple[float, float]]]:
+    ) -> tuple[
+        list[np.ndarray],
+        list[tuple[float, float]],
+        list[tuple[float, float]],
+    ]:
         """
         Preprocess inputs for inference.
 
@@ -160,7 +173,7 @@ class ParallelYOLO:
 
         Returns
         -------
-        list[np.ndarray]
+        tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]]]
             The preprocessed inputs.
 
         Raises
@@ -172,9 +185,16 @@ class ParallelYOLO:
         if len(inputs) != len(self._engine_paths):
             err_msg = "Inputs do not match models"
             raise ValueError(err_msg)
-        return [
-            self.preprocess_model(data, modelid) for modelid, data in enumerate(inputs)
-        ]
+
+        tensors: list[np.ndarray] = []
+        ratios: list[tuple[float, float]] = []
+        paddings: list[tuple[float, float]] = []
+        for modelid, data in enumerate(inputs):
+            tensor, ratio, padding = self.preprocess_model(data, modelid)
+            tensors.append(tensor)
+            ratios.append(ratio)
+            paddings.append(padding)
+        return tensors, ratios, paddings
 
     def preprocess_model(
         self: Self,
@@ -267,6 +287,52 @@ class ParallelYOLO:
         """
         return self.get_model(modelid).postprocess(outputs, ratios, padding)
 
+    def get_detections(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+        """
+        Get the detections of the YOLO models.
+
+        Parameters
+        ----------
+        outputs : list[list[np.ndarray]]
+            The outputs of the models after postprocessing.
+
+        Returns
+        -------
+        list[list[tuple[tuple[int, int, int, int], float, int]]]
+            The detections
+
+        """
+        return [
+            self.get_detections_model(output, modelid)
+            for modelid, output in enumerate(outputs)
+        ]
+
+    def get_detections_model(
+        self: Self,
+        output: list[np.ndarray],
+        modelid: int,
+    ) -> list[tuple[tuple[int, int, int, int], float, int]]:
+        """
+        Get the detections of a single YOLO model.
+
+        Parameters
+        ----------
+        output : list[np.ndarray]
+            The output of a model after postprocessing.
+        modelid : int
+            The model ID of which model is forming detections.
+
+        Returns
+        -------
+        list[tuple[tuple[int, int, int, int], float, int]]
+            The detections produced by the model
+
+        """
+        return self.get_model(modelid).get_detections(output)
+
     def submit(
         self: Self,
         inputs: list[np.ndarray],
@@ -302,8 +368,8 @@ class ParallelYOLO:
         if len(inputs) != len(self._engine_paths):
             err_msg = "Inputs do not match models."
             raise ValueError(err_msg)
-        if preprocessed and (ratios is None or paddings is None):
-            err_msg = "Must provide ratios/paddings if input is marked preprocessed."
+        if (preprocessed and postprocess) and (ratios is None or paddings is None):
+            err_msg = "Must provide ratios/paddings if input is marked preprocessed and postprocess is True."
             raise ValueError(err_msg)
         for modelid, data in enumerate(inputs):
             ratio = None if ratios is None else ratios[modelid]
@@ -355,25 +421,78 @@ class ParallelYOLO:
         )
         self._iqueues[modelid].put(packet)
 
-    def mock_submit(self, modelid: int | None = None) -> None:
+    def get_random_input(
+        self: Self,
+    ) -> list[np.ndarray]:
+        """
+        Get random inputs.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The random inputs
+
+        """
+        return [
+            self.get_model(mid).get_random_input() for mid in range(len(self._models))
+        ]
+
+    def mock_submit(
+        self,
+        data: list[np.ndarray] | np.ndarray | None = None,
+        modelid: int | None = None,
+    ) -> None:
         """
         Perform a mock submit for all models or a specific model.
 
         Parameters
         ----------
+        data : list[np.ndarray], np.ndarray, optional
+            The inputs to use for the inference.
         modelid : int, optional
             The specific engine to perform a mock submit for.
 
+        Raises
+        ------
+        ValueError
+            If specified modelid, but gave list of random input
+            If gave single np.ndarray input, but did not specify modelid
+
         """
-        if modelid:
-            self._iqueues[modelid].put(None)
+        if modelid is not None:
+            if isinstance(data, np.ndarray):
+                self.submit_model(data, modelid, preprocessed=True, postprocess=False)
+            elif isinstance(data, list):
+                err_msg = "Submitted list[np.ndarray], but specified model ID."
+                raise ValueError(err_msg)
+            else:
+                # need to generate the data
+                data = self.get_model(modelid).get_random_input()
+                self.submit_model(data, modelid, preprocessed=True, postprocess=False)
         else:
-            for iq in self._iqueues:
-                iq.put(None)
+            # the data is a list and no model specified
+            if isinstance(data, list):
+                self.submit(data, preprocessed=True, postprocess=False)
+            elif isinstance(data, np.ndarray):
+                err_msg = (
+                    "Submitted np.ndarray, but no model ID to specify which model."
+                )
+                raise ValueError(err_msg)
+            else:
+                # need to generate the data
+                inputs = [
+                    self.get_model(mid).get_random_input()
+                    for mid in range(len(self._models))
+                ]
+                self.submit(inputs, preprocessed=True, postprocess=False)
 
     def retrieve(
         self: Self,
-    ) -> list[tuple[list[np.ndarray], tuple[float, float], tuple[float, float]]]:
+    ) -> tuple[
+        list[list[np.ndarray]],
+        list[tuple[float, float] | None],
+        list[tuple[float, float] | None],
+    ]:
         """
         Get outputs back from all the models.
 
@@ -383,12 +502,24 @@ class ParallelYOLO:
             The outputs from all models
 
         """
-        return [self.retrieve_model(modelid) for modelid in range(len(self._models))]
+        outputs: list[list[np.ndarray]] = []
+        ratios: list[tuple[float, float] | None] = []
+        paddings: list[tuple[float, float] | None] = []
+        for modelid in range(len(self._engine_paths)):
+            output, ratio, padding = self.retrieve_model(modelid)
+            outputs.append(output)
+            ratios.append(ratio)
+            paddings.append(padding)
+        return outputs, ratios, paddings
 
     def retrieve_model(
         self: Self,
         modelid: int,
-    ) -> tuple[list[np.ndarray], tuple[float, float], tuple[float, float]]:
+    ) -> tuple[
+        list[np.ndarray],
+        tuple[float, float] | None,
+        tuple[float, float] | None,
+    ]:
         """
         Get the outputs from a specific model.
 
@@ -399,7 +530,7 @@ class ParallelYOLO:
 
         Returns
         -------
-        tuple[list[np.ndarray], tuple[float, float], tuple[float, float]]
+        tuple[list[np.ndarray], tuple[float, float] | None, tuple[float, float] | None]
             The outputs of the model
 
         """
@@ -410,12 +541,16 @@ class ParallelYOLO:
         # perform warmup
         engine, version = self._engine_paths[threadid]
         flag = self._flags[threadid]
-        yolo = YOLO(
-            engine,
-            version=version,
-            warmup_iterations=self._warmup_iterations,
-            warmup=self._warmup,
-        )
+        try:
+            yolo = YOLO(
+                engine,
+                version=version,
+                warmup_iterations=self._warmup_iterations,
+                warmup=self._warmup,
+            )
+        except Exception:
+            flag.set()
+            raise
         self._models[threadid] = yolo
 
         # set flag that we are ready
@@ -433,7 +568,10 @@ class ParallelYOLO:
                 continue
 
             if data is None:
-                results = yolo.mock_run()
+                randinput = yolo.get_random_input()
+                t0 = time.perf_counter()
+                results = yolo.mock_run(randinput)
+                t1 = time.perf_counter()
                 ratio = (1.0, 1.0)
                 padding = (0.0, 0.0)
                 packet = _OutputPacket(
@@ -449,19 +587,21 @@ class ParallelYOLO:
                 else:
                     ratio = data.ratio
                     padding = data.padding
-                    if ratio is None or padding is None:
-                        err_msg = "Malformed input to ParallelYOLO, must pass ratio/padding if input preprocessed."
-                        raise ValueError(err_msg)
                 t0 = time.perf_counter()
                 results = yolo.run(img, preprocessed=True, postprocess=data.postprocess)
                 t1 = time.perf_counter()
-                self._profilers[threadid] = t1 - t0
+                if data.postprocess:
+                    if ratio is None or padding is None:
+                        err_msg = "Ratio/Padding is None, but postprocess set to True."
+                        raise ValueError(err_msg)
+                    results = yolo.postprocess(results, ratio, padding)
                 packet = _OutputPacket(
                     data=results,
                     ratio=ratio,
                     padding=padding,
                     postprocessed=data.postprocess,
                 )
+            self._profilers[threadid] = t1 - t0
 
             self._oqueues[threadid].put(packet)
 

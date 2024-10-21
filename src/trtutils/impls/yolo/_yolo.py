@@ -235,16 +235,30 @@ class YOLO:
         self._last_output = outputs
         return outputs
 
+    def get_random_input(
+        self: Self,
+    ) -> np.ndarray:
+        """
+        Generate a random image for the YOLO model.
+
+        Returns
+        -------
+        np.ndarray
+            The random image.
+
+        """
+        return self._engine.get_random_input()[0]
+
     def mock_run(
         self: Self,
-        inputs: list[np.ndarray] | None = None,
+        image: np.ndarray | None = None,
     ) -> list[np.ndarray]:
         """
         Mock an execution of the YOLO model.
 
         Parameters
         ----------
-        inputs : list[np.ndarray], optional
+        image : np.ndarray, optional
             Optional inputs to use for execution.
             If None, random data will be generated.
 
@@ -254,7 +268,9 @@ class YOLO:
             The outputs of the model
 
         """
-        return self._engine.mock_execute(data=inputs)
+        if image is not None:
+            return self._engine.mock_execute(data=[image])
+        return self._engine.mock_execute()
 
     def get_detections(
         self: Self,
