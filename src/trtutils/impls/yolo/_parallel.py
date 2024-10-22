@@ -85,7 +85,9 @@ class ParallelYOLO:
         self._oqueues: list[Queue[_OutputPacket]] = [
             Queue() for _ in self._engine_paths
         ]
-        self._profilers: list[float] = [0.0 for _ in self._engine_paths]
+        self._profilers: list[tuple[float, float]] = [
+            (0.0, 0.0) for _ in self._engine_paths
+        ]
         self._flags: list[Event] = [Event() for _ in self._engine_paths]
         self._models: list[YOLO | None] = [None for _ in self._engine_paths]
         self._threads: list[Thread] = [
@@ -136,17 +138,35 @@ class ParallelYOLO:
             raise RuntimeError(err_msg)
         return model
 
-    def get_latency(self: Self, modelid: int) -> float:
+    def get_model_profiling(self: Self, modelid: int) -> tuple[float, float, float]:
         """
         Get the latency of a specific model as profiled in thread.
 
+        Parameters
+        ----------
+        modelid : int
+            The model ID of the profiling to get.
+
         Returns
         -------
-        float
-            The current running latency of the model
+        tuple[float, float, float]
+            The start time, end time, and delta
 
         """
-        return self._profilers[modelid]
+        t0, t1 = self._profilers[modelid]
+        return t0, t1, t1 - t0
+
+    def get_profiling(self: Self) -> list[tuple[float, float, float]]:
+        """
+        Get all the profiling results for all models.
+
+        Returns
+        -------
+        list[tuple[float, float, float]]
+            The profiling data
+
+        """
+        return [self.get_model_profiling(idx) for idx in range(len(self._models))]
 
     def stop(self: Self) -> None:
         """Stop the threads."""
@@ -601,7 +621,7 @@ class ParallelYOLO:
                     padding=padding,
                     postprocessed=data.postprocess,
                 )
-            self._profilers[threadid] = t1 - t0
+            self._profilers[threadid] = (t0, t1)
 
             self._oqueues[threadid].put(packet)
 
