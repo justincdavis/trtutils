@@ -35,8 +35,8 @@ class TRTEngineInterface(ABC):
         self._engine, self._context, self._logger, self._stream = create_engine(
             engine_path,
         )
-        # storage for cached random input
-        self._rand_input: list[np.ndarray] = self.get_random_input(new=True)
+        # store cache random data
+        self._rand_input: list[np.ndarray] | None = None
 
     @abstractmethod
     def __del__(self) -> None:
@@ -156,11 +156,13 @@ class TRTEngineInterface(ABC):
             The random input to the network.
 
         """
-        if new:
-            return [
+        if new or self._rand_input is None:
+            rand_input = [
                 self._rng.random(size=shape, dtype=dtype)
                 for (shape, dtype) in self.input_spec
             ]
+            self._rand_input = rand_input
+            return self._rand_input
         return self._rand_input
 
     def __call__(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
