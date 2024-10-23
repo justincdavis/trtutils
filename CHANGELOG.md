@@ -1,5 +1,10 @@
 ## 0.2.3 (10-17-2024)
 
+### Added
+- jetson.benchmark_engine integration with jetsontools > 0.0.3
+    Gives latency, energy, and power draw measurements
+    for TRTEngines
+
 ### Improved
 
 - TRTEngine docstring explanation on threading.

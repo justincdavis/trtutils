@@ -14,6 +14,7 @@ Example: engine.py
 	
 	import cv2
 	import numpy as np
+	
 	from trtutils import TRTEngine
 	
 	
