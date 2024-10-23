@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trtutils"
-version = "0.2.3"
+version = "0.2.4"
 authors = [
   {name="Justin Davis", email="davisjustin302@gmail.com"},
 ]
@@ -98,7 +98,7 @@ dev = [
 ]
 
 [tool.bumpver]
-current_version = "0.2.3"
+current_version = "0.2.4"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message  = "Bump version {old_version} -> {new_version}"
 commit          = true
