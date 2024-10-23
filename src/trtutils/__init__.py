@@ -133,7 +133,7 @@ import contextlib
 with contextlib.suppress(Exception):
     import pycuda.autoinit  # type: ignore[import-untyped, import-not-found]
 
-from . import backends, core, impls, jetson, trtexec
+from . import backends, core, impls, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
@@ -153,8 +153,13 @@ __all__ = [
     "core",
     "find_trtexec",
     "impls",
-    "jetson",
     "run_trtexec",
     "set_log_level",
     "trtexec",
 ]
+
+# attempt jetson module import
+with contextlib.suppress(ImportError):
+    from . import jetson
+
+    __all__ += ["jetson"]

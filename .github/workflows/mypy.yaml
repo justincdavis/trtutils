@@ -21,6 +21,7 @@ jobs:
           pip install mypy
           pip install types-setuptools
           pip install cv2ext
+          pip install jetsontools
 
       - name: Run MyPy check
         run: 
