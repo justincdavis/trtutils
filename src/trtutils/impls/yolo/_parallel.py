@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import time
 from dataclasses import dataclass
 from queue import Empty, Queue
@@ -20,6 +21,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -79,6 +82,10 @@ class ParallelYOLO:
         self._engine_paths = engines
         self._warmup_iterations = warmup_iterations
         self._warmup = warmup
+        self._tag = ""
+        for epath in self._engine_paths:
+            _, eversion = epath
+            self._tag += str(eversion)
 
         self._stopflag = Event()
         self._iqueues: list[Queue[_InputPacket]] = [Queue() for _ in self._engine_paths]
@@ -103,6 +110,10 @@ class ParallelYOLO:
                 self.stop()
                 err_msg = f"Error creating YOLO model: {self._engine_paths[idx]}"
                 raise RuntimeError(err_msg)
+
+        _log.debug(
+            f"{self._tag}: Initialized ParallelYOLO with tag: {self._tag}, num engines: {len(self._models)}",
+        )
 
     def __del__(self: Self) -> None:
         self.stop()
@@ -237,6 +248,7 @@ class ParallelYOLO:
             The preprocessed data
 
         """
+        _log.debug(f"{self._tag}: Preprocess model: {modelid}")
         return self.get_model(modelid).preprocess(data)
 
     def postprocess(
@@ -305,6 +317,7 @@ class ParallelYOLO:
             The preprocessed data
 
         """
+        _log.debug(f"{self._tag}: Postprocess model: {modelid}")
         return self.get_model(modelid).postprocess(outputs, ratios, padding)
 
     def get_detections(
@@ -351,6 +364,7 @@ class ParallelYOLO:
             The detections produced by the model
 
         """
+        _log.debug(f"{self._tag}: GetDetections model: {modelid}")
         return self.get_model(modelid).get_detections(output)
 
     def submit(
@@ -586,41 +600,28 @@ class ParallelYOLO:
                 data = self._iqueues[threadid].get(timeout=0.1)
             except Empty:
                 continue
+            _log.debug(f"{self._tag}: Received data")
 
-            if data is None:
-                randinput = yolo.get_random_input()
-                t0 = time.perf_counter()
-                results = yolo.mock_run(randinput)
-                t1 = time.perf_counter()
-                ratio = (1.0, 1.0)
-                padding = (0.0, 0.0)
-                packet = _OutputPacket(
-                    data=results,
-                    ratio=ratio,
-                    padding=padding,
-                    postprocessed=True,
-                )
+            img = data.data
+            if not data.preprocessed:
+                img, ratio, padding = yolo.preprocess(img)
             else:
-                img = data.data
-                if not data.preprocessed:
-                    img, ratio, padding = yolo.preprocess(img)
-                else:
-                    ratio = data.ratio
-                    padding = data.padding
-                t0 = time.perf_counter()
-                results = yolo.run(img, preprocessed=True, postprocess=data.postprocess)
-                t1 = time.perf_counter()
-                if data.postprocess:
-                    if ratio is None or padding is None:
-                        err_msg = "Ratio/Padding is None, but postprocess set to True."
-                        raise ValueError(err_msg)
-                    results = yolo.postprocess(results, ratio, padding)
-                packet = _OutputPacket(
-                    data=results,
-                    ratio=ratio,
-                    padding=padding,
-                    postprocessed=data.postprocess,
-                )
+                ratio = data.ratio
+                padding = data.padding
+            t0 = time.perf_counter()
+            results = yolo.run(img, preprocessed=True, postprocess=data.postprocess)
+            t1 = time.perf_counter()
+            if data.postprocess:
+                if ratio is None or padding is None:
+                    err_msg = "Ratio/Padding is None, but postprocess set to True."
+                    raise ValueError(err_msg)
+                results = yolo.postprocess(results, ratio, padding)
+            packet = _OutputPacket(
+                data=results,
+                ratio=ratio,
+                padding=padding,
+                postprocessed=data.postprocess,
+            )
             self._profilers[threadid] = (t0, t1)
 
             self._oqueues[threadid].put(packet)

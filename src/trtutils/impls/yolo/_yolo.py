@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from trtutils._engine import TRTEngine
@@ -12,8 +13,6 @@ from ._process import get_detections, postprocess, preprocess
 from ._version import VALID_VERSIONS
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import numpy as np
     from typing_extensions import Self
 
@@ -59,6 +58,7 @@ class YOLO:
             err_msg = f"Invalid version of YOLO given. Received {version}, valid options: {VALID_VERSIONS}"
             raise ValueError(err_msg)
         self._version = version
+        self._tag: str = f"{Path(engine_path).stem}-V{self._version}"
         self._engine = TRTEngine(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -77,9 +77,6 @@ class YOLO:
             raise ValueError(err_msg)
         self._input_size: tuple[int, int] = (input_size[3], input_size[2])
         self._dtype = input_spec[1]
-
-        # storage for last retrived output
-        self._last_output: list[np.ndarray] | None = None
 
     @property
     def input_shape(self: Self) -> tuple[int, int]:
@@ -104,7 +101,7 @@ class YOLO:
             The preprocessed inputs, rescale ratios, and padding values
 
         """
-        _log.debug("Running preprocess")
+        _log.debug(f"{self._tag}: Running preprocess")
         return preprocess(image, self._input_size, self._dtype)
 
     def postprocess(
@@ -131,7 +128,7 @@ class YOLO:
             The postprocessed outputs
 
         """
-        _log.debug("Running postprocess")
+        _log.debug(f"{self._tag}: Running postprocess")
         return postprocess(outputs, self._version, ratios, padding)
 
     def __call__(
@@ -210,7 +207,7 @@ class YOLO:
             postprocess = True
 
         _log.debug(
-            f"Running YOLO, preprocessed: {preprocessed}, postprocess: {postprocess}",
+            f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
         )
 
         # handle preprocessing
@@ -231,8 +228,6 @@ class YOLO:
                 raise RuntimeError(err_msg)
             outputs = self.postprocess(outputs, ratios, padding)
 
-        # store and return
-        self._last_output = outputs
         return outputs
 
     def get_random_input(
@@ -274,7 +269,7 @@ class YOLO:
 
     def get_detections(
         self: Self,
-        outputs: list[np.ndarray] | None = None,
+        outputs: list[np.ndarray],
         conf_thres: float = 0.15,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
         """
@@ -282,8 +277,8 @@ class YOLO:
 
         Parameters
         ----------
-        outputs : list[np.ndarray], optional
-            The outputs to process. If None, will use the last outputs of the model.
+        outputs : list[np.ndarray]
+            The outputs to process.
         conf_thres : float
             The confidence threshold with which to retrieve bounding boxes.
             By default 0.15
@@ -293,19 +288,6 @@ class YOLO:
         list[tuple[tuple[int, int, int, int], float, int]]
             The detections
 
-        Raises
-        ------
-        ValueError
-            If no output is provided and no output has been generated yet.
-
         """
-        if outputs:
-            return get_detections(outputs, version=self._version, conf_thres=conf_thres)
-        if self._last_output:
-            return get_detections(
-                self._last_output,
-                version=self._version,
-                conf_thres=conf_thres,
-            )
-        err_msg = "No output provided, and no output generated yet."
-        raise ValueError(err_msg)
+        _log.debug(f"{self._tag}: Running get_detections")
+        return get_detections(outputs, version=self._version, conf_thres=conf_thres)
