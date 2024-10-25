@@ -16,6 +16,8 @@ with contextlib.suppress(Exception):
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
+from ._memory import allocate_pinned_memory
+
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -124,9 +126,7 @@ def allocate_bindings(
                 size *= s
             with _ALLOCATION_LOCK:
                 allocation = cuda_call(cudart.cudaMalloc(size))
-            host_allocation = (
-                np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
-            )
+            host_allocation = allocate_pinned_memory(size, dtype)
             binding = Binding(
                 index=i,
                 name=name,

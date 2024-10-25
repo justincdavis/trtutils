@@ -14,6 +14,9 @@ from .core import (
     allocate_bindings,
     memcpy_device_to_host,
     memcpy_host_to_device,
+    memcpy_device_to_host_async,
+    memcpy_host_to_device_async,
+    stream_synchronize,
 )
 
 if TYPE_CHECKING:
@@ -184,18 +187,30 @@ class TRTEngine(TRTEngineInterface):
         """
         # Copy inputs
         for i_idx in range(len(self._inputs)):
-            memcpy_host_to_device(
+            # memcpy_host_to_device(
+            #     self._inputs[i_idx].allocation,
+            #     data[i_idx],
+            # )
+            memcpy_host_to_device_async(
                 self._inputs[i_idx].allocation,
                 data[i_idx],
+                self._stream,
             )
         # execute
         self._context.execute_async_v2(self._allocations, self._stream)
         # Copy outputs
         for o_idx in range(len(self._outputs)):
-            memcpy_device_to_host(
+            # memcpy_device_to_host(
+            #     self._outputs[o_idx].host_allocation,
+            #     self._outputs[o_idx].allocation,
+            # )
+            memcpy_device_to_host_async(
                 self._outputs[o_idx].host_allocation,
                 self._outputs[o_idx].allocation,
+                self._stream,
             )
+        # sync the stream
+        stream_synchronize(self._stream)
         # return
         return [o.host_allocation for o in self._outputs]
 

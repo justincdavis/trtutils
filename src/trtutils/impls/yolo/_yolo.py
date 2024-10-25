@@ -79,9 +79,19 @@ class YOLO:
         self._dtype = input_spec[1]
 
     @property
+    def engine(self: Self) -> TRTEngine:
+        """Get the underlying TRTEngine."""
+        return self._engine
+
+    @property
     def input_shape(self: Self) -> tuple[int, int]:
         """Get the width, height input shape."""
         return self._input_size
+    
+    @property
+    def dtype(self: Self) -> np.dtype:
+        """Get the dtype required by the model."""
+        return self._dtype
 
     def preprocess(
         self: Self,

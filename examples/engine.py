@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 
@@ -21,9 +23,9 @@ from trtutils import TRTEngine
 # The resulting engine can be used with this example.
 def main() -> None:
     """Run the example."""
-    engine = TRTEngine("yolo.engine", warmup=True, dtype=np.float32)
+    engine = TRTEngine(Path(__file__).parent.parent / "data" / "engines" / "trt_yolov9t.engine", warmup=True)
 
-    img = cv2.imread("example.jpg")
+    img = cv2.imread(str(Path(__file__).parent.parent / "data" / "horse.jpg"))
     img = cv2.resize(img, (640, 640))
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = img / 255.0

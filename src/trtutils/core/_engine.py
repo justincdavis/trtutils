@@ -12,7 +12,7 @@ with contextlib.suppress(Exception):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
-from ._cuda import cuda_call
+from ._stream import create_stream
 
 _CONTEXT_LOCK = Lock()
 _STREAM_LOCK = Lock()
@@ -84,6 +84,6 @@ def create_engine(
 
     # create a cudart stream
     with _STREAM_LOCK:
-        stream = cuda_call(cudart.cudaStreamCreate())
+        stream = create_stream()
 
     return engine, context, trt_logger, stream
