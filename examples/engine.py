@@ -5,34 +5,25 @@
 
 from __future__ import annotations
 
-import cv2
-import numpy as np
+from pathlib import Path
 
 from trtutils import TRTEngine
 
 
 # This example shows how to use the TRTEngine class
-# on running a Yolo model with a single input image.
-# The Yolo model is not included in this repository.
-# This works with a yolov7 engine created by
-# using the export script locating in the yolov7 repository.
-# Then generate an engine using TensorRT by:
-#  trtexec --onnx=yolo.onnx --saveEngine=yolo.engine
-# The resulting engine can be used with this example.
+# with a simple engine file
 def main() -> None:
     """Run the example."""
-    engine = TRTEngine("yolo.engine", warmup=True, dtype=np.float32)
+    engine = TRTEngine(
+        Path(__file__).parent.parent / "data" / "engines" / "simple.engine", warmup=True,
+    )
 
-    img = cv2.imread("example.jpg")
-    img = cv2.resize(img, (640, 640))
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = img / 255.0
-    img = img[np.newaxis, :]
-    img = np.transpose(img, (0, 3, 1, 2))
-    img = np.ascontiguousarray(img, dtype=np.float32)
-
-    outputs = engine.execute([img])
+    rand_input = engine.get_random_input()
+    outputs = engine.execute(rand_input)
     print(outputs)
+
+    for output in outputs:
+        print(output.shape)
 
 
 if __name__ == "__main__":

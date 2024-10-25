@@ -7,7 +7,6 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   trtutils.backends
    trtutils.core
    trtutils.impls
    trtutils.jetson

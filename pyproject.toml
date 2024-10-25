@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trtutils"
-version = "0.2.3"
+version = "0.3.0"
 authors = [
   {name="Justin Davis", email="davisjustin302@gmail.com"},
 ]
@@ -56,9 +56,12 @@ dependencies = [
 "Bug Tracker" = "https://github.com/justincdavis/trtutils/issues"
 
 [project.optional-dependencies]
-impls = [
+yolo = [
     "cv2ext>=0.0.22",
     "opencv-contrib-python>=4.6.0",
+]
+impls = [
+    "trtutils[yolo]",
 ]
 pycuda = [
     "pycuda>=2023",
@@ -83,6 +86,7 @@ docs = [
     "myst_parser>=1.0.0",
 ]
 dev = [
+    "trtutils[impls]",
     "trtutils[ci]",
     "trtutils[test]",
     "trtutils[docs]",
@@ -94,7 +98,7 @@ dev = [
 ]
 
 [tool.bumpver]
-current_version = "0.2.3"
+current_version = "0.3.0"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message  = "Bump version {old_version} -> {new_version}"
 commit          = true

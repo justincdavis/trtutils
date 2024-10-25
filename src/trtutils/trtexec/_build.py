@@ -170,6 +170,7 @@ def build_engine(
     command += f" --saveEngine={output_path_str} --skipInference"
     if isinstance(use_dla_core, int):
         command += f" --useDLACore={use_dla_core}"
+        command += " --memPoolSize=dlaSRAM:1"
     if fp16:
         command += " --fp16"
     if int8:

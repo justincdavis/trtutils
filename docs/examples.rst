@@ -6,3 +6,4 @@ Examples
 
     examples/engine.rst
     examples/model.rst
+    examples/impls/yolo.rst
