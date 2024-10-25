@@ -126,7 +126,10 @@ def allocate_bindings(
                 size *= s
             with _ALLOCATION_LOCK:
                 allocation = cuda_call(cudart.cudaMalloc(size))
-            host_allocation = allocate_pinned_memory(size, dtype)
+            host_allocation = (
+                np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
+            )
+            # host_allocation = allocate_pinned_memory(size, dtype)
             binding = Binding(
                 index=i,
                 name=name,

@@ -212,7 +212,7 @@ class TRTEngine(TRTEngineInterface):
         # sync the stream
         stream_synchronize(self._stream)
         # return
-        return [o.host_allocation for o in self._outputs]
+        return [o.host_allocation.copy() for o in self._outputs]
 
 
 class QueuedTRTEngine:
