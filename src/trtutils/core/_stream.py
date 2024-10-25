@@ -15,12 +15,12 @@ from ._cuda import cuda_call
 def create_stream() -> cudart.cudaStream_t:
     """
     Create a CUDA Stream.
-    
+
     Returns
     -------
     cudart.cudaStream_t
         The CUDA stream.
-    
+
     """
     return cuda_call(cudart.cudaStreamCreate())
 
@@ -32,6 +32,7 @@ def stream_synchronize(stream: cudart.cudaStream_t) -> None:
     Parameters
     ----------
     stream : cudart.cudaStream_t
+        The stream to synchronize calls for.
 
     """
     cuda_call(cudart.cudaStreamSynchronize(stream))

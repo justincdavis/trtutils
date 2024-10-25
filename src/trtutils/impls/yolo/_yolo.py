@@ -87,7 +87,7 @@ class YOLO:
     def input_shape(self: Self) -> tuple[int, int]:
         """Get the width, height input shape."""
         return self._input_size
-    
+
     @property
     def dtype(self: Self) -> np.dtype:
         """Get the dtype required by the model."""

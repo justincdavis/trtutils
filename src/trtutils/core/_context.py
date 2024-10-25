@@ -21,6 +21,11 @@ def create_context(device: int = 0) -> cuda.CUcontext:
     device : int
         The device to make a context for. By default 0.
 
+    Returns
+    -------
+    cuda.CUcontext
+        The created CUDA context
+
     """
     cu_device = cuda_call(cuda.cuDeviceGet(device))
     return cuda_call(cuda.cuCtxCreate(0, cu_device))
@@ -29,11 +34,11 @@ def create_context(device: int = 0) -> cuda.CUcontext:
 def destroy_context(context: cuda.CUcontext) -> None:
     """
     Destory a CUDA context.
-    
+
     Parameters
     ----------
     context : cuda.CUcontext
         The CUDA context to destroy.
-    
+
     """
     cuda_call(cuda.cuCtxDestroy(context))

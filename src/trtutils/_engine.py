@@ -12,8 +12,6 @@ from typing import TYPE_CHECKING
 from .core import (
     TRTEngineInterface,
     allocate_bindings,
-    memcpy_device_to_host,
-    memcpy_host_to_device,
     memcpy_device_to_host_async,
     memcpy_host_to_device_async,
     stream_synchronize,

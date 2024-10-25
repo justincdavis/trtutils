@@ -47,7 +47,12 @@ from ._context import create_context, destroy_context
 from ._cuda import cuda_call
 from ._engine import create_engine
 from ._interface import TRTEngineInterface
-from ._memory import memcpy_device_to_host, memcpy_host_to_device, memcpy_device_to_host_async, memcpy_host_to_device_async
+from ._memory import (
+    memcpy_device_to_host,
+    memcpy_device_to_host_async,
+    memcpy_host_to_device,
+    memcpy_host_to_device_async,
+)
 from ._stream import stream_synchronize
 
 __all__ = [
@@ -59,8 +64,8 @@ __all__ = [
     "cuda_call",
     "destroy_context",
     "memcpy_device_to_host",
-    "memcpy_host_to_device",
     "memcpy_device_to_host_async",
+    "memcpy_host_to_device",
     "memcpy_host_to_device_async",
     "stream_synchronize",
 ]

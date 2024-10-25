@@ -11,8 +11,6 @@ a class for running inference on those engines, and a variety of other utilities
 
 Submodules
 ----------
-backends
-    A module providing alternative backends for the TRTEngine class.
 core
     A module for the core functionality of the package.
 jetson
@@ -129,11 +127,7 @@ __version__ = "0.2.4"
 
 import contextlib
 
-# # suppress pycuda import error for docs build
-# with contextlib.suppress(Exception):
-#     import pycuda.autoinit  # type: ignore[import-untyped, import-not-found]
-
-from . import backends, core, impls, trtexec
+from . import core, impls, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
@@ -148,7 +142,6 @@ __all__ = [
     "QueuedTRTModel",
     "TRTEngine",
     "TRTModel",
-    "backends",
     "benchmark_engine",
     "core",
     "find_trtexec",
@@ -167,7 +160,8 @@ with contextlib.suppress(ImportError):
 
 # start CUDA
 with contextlib.suppress(ImportError):
-    from cuda import cuda
+    from cuda import cuda  # type: ignore[import-untyped, import-not-found]
+
     core.cuda_call(cuda.cuInit(0))
 
     device_count = core.cuda_call(cuda.cuDeviceGetCount())

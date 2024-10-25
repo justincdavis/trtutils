@@ -6,13 +6,16 @@ from __future__ import annotations
 import contextlib
 from pathlib import Path
 from threading import Lock
+from typing import TYPE_CHECKING
 
 # suppress pycuda import error for docs build
 with contextlib.suppress(Exception):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
-    from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._stream import create_stream
+
+if TYPE_CHECKING:
+    from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 _CONTEXT_LOCK = Lock()
 _STREAM_LOCK = Lock()

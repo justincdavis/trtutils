@@ -18,7 +18,6 @@ with contextlib.suppress(Exception):
 from ._cuda import cuda_call
 from ._memory import allocate_pinned_memory
 
-
 if TYPE_CHECKING:
     from typing_extensions import Self
 
@@ -90,17 +89,16 @@ def allocate_bindings(
 
     # version information to compare againist
     # >= 8.5 must use tensor API, otherwise binding
-    major_version = int(trt.__version__.split(".")[0])
-    minor_version = int(trt.__version__.split(".")[1])
-    split_major = 8
-    split_minor = 5
+    # simplify by just checking hasattr
+    new_trt_api = hasattr(engine, "num_io_tensors")
+    num_tensors = (
+        range(engine.num_io_tensors) if new_trt_api else range(engine.num_bindings)
+    )
 
     # based on the version of tensorrt, num_io_tensors is not available in IEngine
     # first case: version 9 or higher OR version 8.5 and higher
-    if major_version > split_major or (
-        major_version == split_major and minor_version >= split_minor
-    ):
-        for i in range(engine.num_io_tensors):
+    for i in num_tensors:
+        if new_trt_api:
             name = engine.get_tensor_name(i)
             is_input = False
             if engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
@@ -119,36 +117,7 @@ def allocate_bindings(
                 # Set the *max* profile as binding shape
                 context.set_input_shape(name, profile_shape[2])
                 shape = context.get_tensor_shape(name)
-            if is_input:
-                batch_size = shape[0]
-            size = dtype.itemsize
-            for s in shape:
-                size *= s
-            with _ALLOCATION_LOCK:
-                allocation = cuda_call(cudart.cudaMalloc(size))
-            host_allocation = (
-                np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
-            )
-            # host_allocation = allocate_pinned_memory(size, dtype)
-            binding = Binding(
-                index=i,
-                name=name,
-                dtype=dtype,
-                shape=list(shape),
-                is_input=is_input,
-                allocation=allocation,
-                host_allocation=host_allocation,
-            )
-            allocations.append(allocation)
-            if is_input:
-                inputs.append(binding)
-            else:
-                outputs.append(binding)
-            input_str = "Input" if is_input else "Output"
-            log_msg = f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
-            logger.log(trt.Logger.INFO, log_msg)
-    else:
-        for i in range(engine.num_bindings):
+        else:
             is_input = False
             if engine.binding_is_input(i):
                 is_input = True
@@ -167,34 +136,32 @@ def allocate_bindings(
                 # Set the *max* profile as binding shape
                 context.set_binding_shape(i, profile_shape[2])
                 shape = context.get_binding_shape(i)
-            if is_input:
-                batch_size = shape[0]
-            size = dtype.itemsize
-            for s in shape:
-                size *= s
-            with _ALLOCATION_LOCK:
-                allocation = cuda_call(cudart.cudaMalloc(size))
-            host_allocation = (
-                np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
-            )
-            binding = Binding(
-                index=i,
-                name=name,
-                dtype=dtype,
-                shape=list(shape),
-                is_input=is_input,
-                allocation=allocation,
-                host_allocation=host_allocation,
-            )
-            allocations.append(allocation)
-            if is_input:
-                inputs.append(binding)
-            else:
-                outputs.append(binding)
-            input_str = "Input" if is_input else "Output"
-            input_str = "Input" if is_input else "Output"
-            log_msg = f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
-            logger.log(trt.Logger.INFO, log_msg)
+        if is_input:
+            batch_size = shape[0]
+        size = dtype.itemsize
+        for s in shape:
+            size *= s
+        with _ALLOCATION_LOCK:
+            allocation = cuda_call(cudart.cudaMalloc(size))
+            host_allocation = allocate_pinned_memory(size, dtype)
+        # host_allocation = allocate_pinned_memory(size, dtype)
+        binding = Binding(
+            index=i,
+            name=name,
+            dtype=dtype,
+            shape=list(shape),
+            is_input=is_input,
+            allocation=allocation,
+            host_allocation=host_allocation,
+        )
+        allocations.append(allocation)
+        if is_input:
+            inputs.append(binding)
+        else:
+            outputs.append(binding)
+        input_str = "Input" if is_input else "Output"
+        log_msg = f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
+        logger.log(trt.Logger.INFO, log_msg)
 
     if batch_size == 0:
         err_msg = "Batch size is 0. Ensure that the engine has an input tensor with a valid batch size."

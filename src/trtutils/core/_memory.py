@@ -61,7 +61,11 @@ def memcpy_device_to_host(host_arr: np.ndarray, device_ptr: int) -> None:
     )
 
 
-def memcpy_host_to_device_async(device_ptr: int, host_arr: np.ndarray, stream: cudart.cudaStream_t) -> None:
+def memcpy_host_to_device_async(
+    device_ptr: int,
+    host_arr: np.ndarray,
+    stream: cudart.cudaStream_t,
+) -> None:
     """
     Copy a numpy array to a device pointer with error checking.
 
@@ -87,7 +91,11 @@ def memcpy_host_to_device_async(device_ptr: int, host_arr: np.ndarray, stream: c
     )
 
 
-def memcpy_device_to_host_async(host_arr: np.ndarray, device_ptr: int, stream: cudart.cudaStream_t) -> None:
+def memcpy_device_to_host_async(
+    host_arr: np.ndarray,
+    device_ptr: int,
+    stream: cudart.cudaStream_t,
+) -> None:
     """
     Copy a device pointer to a numpy array with error checking.
 
@@ -128,13 +136,14 @@ def allocate_pinned_memory(nbytes: int, dtype: np.dtype) -> np.ndarray:
     -------
     np.ndarray
         A numpy array backed by pinned memory.
+
     """
     # Allocate pinned memory and get a pointer to it directly
     host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocDefault))
 
     # Create a NumPy array from the pointer
-    array_type = (ctypes.c_byte * nbytes)
+    array_type = ctypes.c_byte * nbytes
     array = np.ctypeslib.as_array(array_type.from_address(host_ptr))
-    
+
     # Set the correct dtype and shape for the array
     return array.view(dtype).reshape((nbytes // dtype.itemsize,))
