@@ -70,11 +70,12 @@ def _postprocess_v_7_8_9(
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
 
-    adjusted_bboxes = bboxes.copy()
-    adjusted_bboxes[..., 0] = (adjusted_bboxes[..., 0] - pad_x) / ratio_width  # x1
-    adjusted_bboxes[..., 1] = (adjusted_bboxes[..., 1] - pad_y) / ratio_height  # y1
-    adjusted_bboxes[..., 2] = (adjusted_bboxes[..., 2] - pad_x) / ratio_width  # x2
-    adjusted_bboxes[..., 3] = (adjusted_bboxes[..., 3] - pad_y) / ratio_height  # y2
+    n_boxes = len(bboxes) // 4
+    adjusted_bboxes = bboxes.copy().reshape(n_boxes, 4)
+    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width  # x1
+    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height  # y1
+    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width  # x2
+    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height  # y2
 
     adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
 
@@ -92,10 +93,12 @@ def _postprocess_v_10(
     pad_x, pad_y = padding
 
     output = outputs[0]
+    n_boxes = len(output) // 6
+    output = output.reshape((n_boxes, 6))
 
-    bboxes: np.ndarray = output[0, :, :4]
-    scores: np.ndarray = output[0, :, 4]
-    class_ids: np.ndarray = output[0, :, 5].astype(int)
+    bboxes: np.ndarray = output[:, :4]
+    scores: np.ndarray = output[:, 4]
+    class_ids: np.ndarray = output[:, 5].astype(int)
 
     # each bounding box is cx, cy, dx, dy
     adjusted_bboxes = bboxes.copy()
