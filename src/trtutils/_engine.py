@@ -212,6 +212,7 @@ class TRTEngine(TRTEngineInterface):
         # sync the stream
         stream_synchronize(self._stream)
         # return
+        # copy the buffer since future inference will overwrite
         return [o.host_allocation.copy() for o in self._outputs]
 
 
