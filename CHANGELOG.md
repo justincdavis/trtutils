@@ -1,6 +1,26 @@
+## 0.3.0 (10-25-2024)
+
+### Added
+
+- impls.yolo.ParallelYOLO
+    - Allows running multiple YOLO models at once
+
+### Improved
+
+- TRTEngine
+    - Now uses async memory copies and execution
+    - Now uses pagelocked memory on host
+
+### Removed
+
+- backend submodule
+    - Only had pycuda backend which is fully replaced
+      with the current cuda-python based engines.
+
 ## 0.2.3 (10-17-2024)
 
 ### Added
+
 - jetson.benchmark_engine integration with jetsontools > 0.0.3
     Gives latency, energy, and power draw measurements
     for TRTEngines
