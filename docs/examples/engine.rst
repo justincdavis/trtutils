@@ -21,7 +21,9 @@ Example: engine.py
 	# with a simple engine file
 	def main() -> None:
 	    """Run the example."""
-	    engine = TRTEngine(Path(__file__).parent.parent / "data" / "engines" / "simple.engine", warmup=True)
+	    engine = TRTEngine(
+	        Path(__file__).parent.parent / "data" / "engines" / "simple.engine", warmup=True,
+	    )
 	
 	    rand_input = engine.get_random_input()
 	    outputs = engine.execute(rand_input)

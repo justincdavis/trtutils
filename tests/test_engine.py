@@ -20,7 +20,7 @@ def build_engine() -> Path:
     if ENGINE_PATH.exists():
         return ENGINE_PATH
 
-    trtutils.trtexec.build_from_onnx(
+    trtutils.trtexec.build_engine(
         simple_path,
         ENGINE_PATH,
     )

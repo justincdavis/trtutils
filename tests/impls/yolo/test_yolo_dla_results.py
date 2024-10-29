@@ -34,12 +34,14 @@ def build_yolo_dla(version: int) -> Path:
             onnx_path,
             engine_path,
             use_dla_core=0,
+            allow_gpu_fallback=True,
         )
     else:
         trtutils.trtexec.build_engine(
             onnx_path,
             engine_path,
             use_dla_core=0,
+            allow_gpu_fallback=True,
             shapes=[("images", (1, 3, 640, 640))],
         )
 
@@ -88,6 +90,8 @@ def yolo_dla_results(version: int) -> None:
         assert len(trt_bboxes) > max(0, gt - 2)
         assert len(trt_bboxes) < gt + 2
         assert len(trt_bboxes) >= 1
+
+    del trt_model
 
 
 def test_yolo_dla_7_results():

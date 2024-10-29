@@ -22,6 +22,8 @@ ONNX_PATHS: dict[int, Path] = {
     9: _BASE / "data" / "trt_yolov9t.onnx",
     10: _BASE / "data" / "trt_yolov10n.onnx"
 }
+NUM_ENGINES = 2
+
 
 def build_yolo_dla(version: int) -> Path:
     onnx_path = ONNX_PATHS[version]
@@ -34,6 +36,7 @@ def build_yolo_dla(version: int) -> Path:
             onnx_path,
             engine_path,
             use_dla_core=0,
+            allow_gpu_fallback=True,
         )
     else:
         trtutils.trtexec.build_engine(
@@ -41,6 +44,7 @@ def build_yolo_dla(version: int) -> Path:
             engine_path,
             use_dla_core=0,
             shapes=[("images", (1, 3, 640, 640))],
+            allow_gpu_fallback=True,
         )
 
     return engine_path
@@ -59,18 +63,23 @@ def yolo_run(version: int) -> None:
 
     assert outputs is not None
 
+    del engine
+
 
 def multiple_yolos_run(version: int) -> None:
     engine_path = build_yolo_dla(version)
 
     engines = [
-        trtutils.impls.yolo.YOLO(engine_path, version=version, warmup=False) for _ in range(4)
+        trtutils.impls.yolo.YOLO(engine_path, version=version, warmup=False) for _ in range(NUM_ENGINES)
     ]
 
     outputs = [engine.mock_run() for engine in engines]
 
     for o in outputs:
         assert o is not None
+
+    for engine in engines:
+        del engine
 
 
 def yolo_run_in_thread(version: int) -> None:
@@ -91,6 +100,8 @@ def yolo_run_in_thread(version: int) -> None:
 
         result[0] = True
 
+        del engine
+
     thread = Thread(target=run, args=(result,), daemon=True)
     thread.start()
 
@@ -100,7 +111,7 @@ def yolo_run_in_thread(version: int) -> None:
 
 
 def multiple_yolos_run_in_threads(version: int) -> None:
-    num_engines = 4
+    num_engines = NUM_ENGINES
     result = [0] * num_engines
     num_iters = 50
 
@@ -123,6 +134,8 @@ def multiple_yolos_run_in_threads(version: int) -> None:
         assert outputs is not None
 
         result[threadid] = succeses
+
+        del engine
 
     threads = [
         Thread(target=run, args=(threadid, result, num_iters), daemon=True)

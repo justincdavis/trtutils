@@ -171,8 +171,8 @@ def _get_detections_v_10(
             x1, y1, x2, y2 = bboxes[idx]
             entry = (
                 (int(x1), int(y1), int(x2), int(y2)),
-                scores[idx],
-                class_ids[idx],
+                float(scores[idx]),
+                int(class_ids[idx]),
             )
             results.append(entry)
     return results

@@ -53,7 +53,7 @@ def decode_efficient_nms(
         score = scores[idx]
         classid = classes[idx]
 
-        entry = ((int(x1), int(y1), int(x2), int(y2)), score, classid)
+        entry = ((int(x1), int(y1), int(x2), int(y2)), float(score), int(classid))
         frame_dects.append(entry)
 
     if conf_thres:

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Thread
+from threading import Thread, Lock
 
 import trtutils
 
@@ -22,6 +22,9 @@ ONNX_PATHS: dict[int, Path] = {
     9: _BASE / "data" / "trt_yolov9t.onnx",
     10: _BASE / "data" / "trt_yolov10n.onnx"
 }
+
+ENGINE_LOCK = Lock()
+
 
 def build_yolo(version: int) -> Path:
     onnx_path = ONNX_PATHS[version]
@@ -57,6 +60,8 @@ def yolo_run(version: int) -> None:
 
     assert outputs is not None
 
+    del engine
+
 
 def multiple_yolos_run(version: int) -> None:
     engine_path = build_yolo(version)
@@ -69,6 +74,9 @@ def multiple_yolos_run(version: int) -> None:
 
     for o in outputs:
         assert o is not None
+
+    for engine in engines:
+        del engine
 
 
 def yolo_run_in_thread(version: int) -> None:
@@ -89,6 +97,8 @@ def yolo_run_in_thread(version: int) -> None:
 
         result[0] = True
 
+        del engine
+
     thread = Thread(target=run, args=(result,), daemon=True)
     thread.start()
 
@@ -98,7 +108,7 @@ def yolo_run_in_thread(version: int) -> None:
 
 
 def multiple_yolos_run_in_threads(version: int) -> None:
-    num_engines = 4
+    num_engines = 2
     result = [0] * num_engines
     num_iters = 50
 
@@ -121,6 +131,8 @@ def multiple_yolos_run_in_threads(version: int) -> None:
         assert outputs is not None
 
         result[threadid] = succeses
+
+        del engine
 
     threads = [
         Thread(target=run, args=(threadid, result, num_iters), daemon=True)

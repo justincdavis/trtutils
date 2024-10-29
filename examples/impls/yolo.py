@@ -22,18 +22,30 @@ from trtutils.impls.yolo import YOLO
 # The resulting engine can be used with this example.
 def main() -> None:
     """Run the example."""
-    yolo = YOLO(
-        Path(__file__).parent.parent.parent / "data" / "engines" / "trt_yolov7t.engine",
-        version=7,
-        warmup=True,
-    )
+    engine_dir = Path(__file__).parent.parent.parent / "data" / "engines"
+    engines = [
+        (engine_dir / "trt_yolov7t.engine", 7),
+        (engine_dir / "trt_yolov8n.engine", 8),
+        (engine_dir / "trt_yolov9t.engine", 9),
+        (engine_dir / "trt_yolov10n.engine", 10),
+        (engine_dir / "trt_yolov7t_dla.engine", 7),
+        (engine_dir / "trt_yolov8n_dla.engine", 8),
+        (engine_dir / "trt_yolov9t_dla.engine", 9),
+        (engine_dir / "trt_yolov10n_dla.engine", 10),
+    ]
+
     img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
 
-    output = yolo.run(img)
+    for engine, version in engines:
+        yolo = YOLO(engine, version, warmup=False)
 
-    bboxes = yolo.get_detections(output)
+        output = yolo.run(img)
 
-    print(bboxes)
+        bboxes = yolo.get_detections(output)
+
+        print(bboxes)
+
+        del yolo
 
 
 if __name__ == "__main__":

@@ -1,3 +1,12 @@
+## 0.3.1 (10-29-2024)
+
+### Improved
+
+- Outputs from impls.yolo.YOLO are now all
+    Python based types. Improved compatibility with
+    JIT compiles (such as numba) and similiar tools
+    which need consistent types.
+
 ## 0.3.0 (10-25-2024)
 
 ### Added

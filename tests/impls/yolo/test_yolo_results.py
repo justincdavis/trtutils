@@ -87,6 +87,8 @@ def yolo_results(version: int) -> None:
         assert len(trt_bboxes) > max(0, gt - 2)
         assert len(trt_bboxes) < gt + 2
 
+    del trt_model
+
 
 def test_yolo_7_results():
     yolo_results(7)
