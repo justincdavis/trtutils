@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from functools import cached_property
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -12,8 +13,6 @@ import numpy as np
 from ._engine import create_engine
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from typing_extensions import Self
 
 
@@ -31,6 +30,8 @@ class TRTEngineInterface(ABC):
             The path to the serialized engine file.
 
         """
+        # store path stem as name
+        self._name = Path(engine_path).stem
         # engine, context, logger, and CUDA stream
         self._engine, self._context, self._logger, self._stream = create_engine(
             engine_path,
@@ -38,8 +39,13 @@ class TRTEngineInterface(ABC):
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None
 
+    @property
+    def name(self: Self) -> str:
+        """The name of the engine, as the stem of the Path."""
+        return self._name
+
     @abstractmethod
-    def __del__(self) -> None:
+    def __del__(self: Self) -> None:
         """Free the engine resources."""
 
     @abstractmethod

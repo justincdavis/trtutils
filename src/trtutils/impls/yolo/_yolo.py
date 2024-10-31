@@ -84,6 +84,11 @@ class YOLO:
         return self._engine
 
     @property
+    def name(self: Self) -> str:
+        """Get the name of the engine."""
+        return self._engine.name
+
+    @property
     def input_shape(self: Self) -> tuple[int, int]:
         """Get the width, height input shape."""
         return self._input_size
