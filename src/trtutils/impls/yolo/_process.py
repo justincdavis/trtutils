@@ -9,10 +9,10 @@ import cv2
 import numpy as np
 from cv2ext.image import letterbox
 
-from trtutils.impls.common import decode_efficient_nms
+from trtutils.impls.common import decode_efficient_nms, postprocess_efficient_nms
 
 # EfficientNMS as 4 outputs
-_789_NUM_OUTPUTS = 4
+_EFF_NUM_OUTPUTS = 4
 
 _log = logging.getLogger(__name__)
 
@@ -21,6 +21,8 @@ def preprocess(
     image: np.ndarray,
     input_shape: tuple[int, int],
     dtype: np.dtype,
+    *,
+    scale_down: bool | None = None,
 ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
     """
     Preprocess inputs for a YOLO network.
@@ -33,6 +35,10 @@ def preprocess(
         The shape to resize the inputs.
     dtype : np.dtype
         The datatype of the inputs to the network.
+    scale_down : bool, optional
+        Whether or not to scale the image to [0.0:1.0]
+        If True will scale, otherwise will not.
+        Default is to use scaling.
 
     Returns
     -------
@@ -42,13 +48,15 @@ def preprocess(
     """
     _log.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
 
+    if scale_down is None:
+        scale_down = True
+
     tensor, ratios, padding = letterbox(image, new_shape=input_shape)
     tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
-    # tensor = tensor.transpose((2, 0, 1))
-    # tensor = np.expand_dims(tensor, 0)
-    # tensor = tensor / 255.0
 
-    tensor = tensor / 255.0  # type: ignore[assignment]
+    if scale_down:
+        tensor = tensor / 255.0  # type: ignore[assignment]
+
     tensor = tensor[np.newaxis, :]
     tensor = np.transpose(tensor, (0, 3, 1, 2))
     # large performance hit to assemble contiguous array
@@ -57,29 +65,6 @@ def preprocess(
     _log.debug(f"Ratios: {ratios}")
     _log.debug(f"Padding: {padding}")
     return tensor, ratios, padding
-
-
-def _postprocess_v_7_8_9(
-    outputs: list[np.ndarray],
-    ratios: tuple[float, float],
-    padding: tuple[float, float],
-) -> list[np.ndarray]:
-    # efficient NMS postprocessor essentially
-    # inputs are list[num_dets, bboxes, scores, classes]
-    num_dets, bboxes, scores, class_ids = outputs
-    ratio_width, ratio_height = ratios
-    pad_x, pad_y = padding
-
-    n_boxes = len(bboxes) // 4
-    adjusted_bboxes = bboxes.copy().reshape(n_boxes, 4)
-    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width  # x1
-    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height  # y1
-    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width  # x2
-    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height  # y2
-
-    adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
-
-    return [num_dets, adjusted_bboxes, scores, class_ids]
 
 
 def _postprocess_v_10(
@@ -136,16 +121,9 @@ def postprocess(
         The postprocessed outputs.
 
     """
-    if len(outputs) == _789_NUM_OUTPUTS:
-        return _postprocess_v_7_8_9(outputs, ratios, padding)
+    if len(outputs) == _EFF_NUM_OUTPUTS:
+        return postprocess_efficient_nms(outputs, ratios, padding)
     return _postprocess_v_10(outputs, ratios, padding)
-
-
-def _get_detections_v_7_8_9(
-    outputs: list[np.ndarray],
-    conf_thres: float | None = None,
-) -> list[tuple[tuple[int, int, int, int], float, int]]:
-    return decode_efficient_nms(outputs, conf_thres=conf_thres)
 
 
 def _get_detections_v_10(
@@ -196,6 +174,6 @@ def get_detections(
         Each detection is a bounding box in form x1, y1, x2, y2, a confidence score and a class id.
 
     """
-    if len(outputs) == _789_NUM_OUTPUTS:
-        return _get_detections_v_7_8_9(outputs, conf_thres=conf_thres)
+    if len(outputs) == _EFF_NUM_OUTPUTS:
+        return decode_efficient_nms(outputs, conf_thres=conf_thres)
     return _get_detections_v_10(outputs, conf_thres=conf_thres)

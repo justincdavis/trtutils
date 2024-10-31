@@ -10,6 +10,16 @@ ParallelYOLO
     Multi-threaded YOLO models, useful for multi-accelerator systems.
 YOLO
     TRTModel implementation for YOLO object detectors
+YOLO7
+    Alias for YOLO with args preset
+YOLO8
+    Alias for YOLO with args preset
+YOLO9
+    Alias for YOLO with args preset
+YOLO10
+    Alias for YOLO with args preset
+YOLOX
+    Alias for YOLO with args preset
 
 Functions
 ---------
@@ -27,9 +37,15 @@ from __future__ import annotations
 from ._parallel import ParallelYOLO
 from ._process import get_detections, postprocess, preprocess
 from ._yolo import YOLO
+from ._yolos import YOLO7, YOLO8, YOLO9, YOLO10, YOLOX
 
 __all__ = [
     "YOLO",
+    "YOLO7",
+    "YOLO8",
+    "YOLO9",
+    "YOLO10",
+    "YOLOX",
     "ParallelYOLO",
     "get_detections",
     "postprocess",

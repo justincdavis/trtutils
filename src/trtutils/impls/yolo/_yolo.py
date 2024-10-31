@@ -27,6 +27,7 @@ class YOLO:
         warmup_iterations: int = 10,
         *,
         warmup: bool | None = None,
+        scale_inputs: bool | None = None,
     ) -> None:
         """
         Create a YOLO object.
@@ -43,6 +44,9 @@ class YOLO:
             The default is 10.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
+        scale_inputs : bool, optional
+            Whether or not to scale inputs to [0.0:1.0] range.
+            By default will perform scaling.
 
         Raises
         ------
@@ -71,6 +75,7 @@ class YOLO:
             raise ValueError(err_msg)
         self._input_size: tuple[int, int] = (input_size[3], input_size[2])
         self._dtype = input_spec[1]
+        self._scale_inputs = scale_inputs
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -111,7 +116,9 @@ class YOLO:
 
         """
         _log.debug(f"{self._tag}: Running preprocess")
-        return preprocess(image, self._input_size, self._dtype)
+        return preprocess(
+            image, self._input_size, self._dtype, scale_down=self._scale_inputs,
+        )
 
     def postprocess(
         self: Self,

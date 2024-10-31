@@ -8,20 +8,11 @@ from pathlib import Path
 import cv2
 import trtutils
 
+try:
+    from paths import BASE, ENGINE_PATHS, ONNX_PATHS
+except ModuleNotFoundError:
+    from .paths import BASE, ENGINE_PATHS, ONNX_PATHS
 
-_BASE = Path(__file__).parent.parent.parent.parent
-ENGINE_PATHS: dict[int, Path] = {
-    7: _BASE/ "data" / "engines" / "trt_yolov7t_dla.engine",
-    8: _BASE / "data" / "engines" / "trt_yolov8n_dla.engine",
-    9: _BASE / "data" / "engines" / "trt_yolov9t_dla.engine",
-    10: _BASE / "data" / "engines" / "trt_yolov10n_dla.engine",
-}
-ONNX_PATHS: dict[int, Path] = {
-    7: _BASE / "data" / "trt_yolov7t.onnx",
-    8: _BASE / "data" / "trt_yolov8n.onnx",
-    9: _BASE / "data" / "trt_yolov9t.onnx",
-    10: _BASE / "data" / "trt_yolov10n.onnx"
-}
 
 def build_yolo_dla(version: int) -> Path:
     onnx_path = ONNX_PATHS[version]
@@ -73,13 +64,14 @@ def yolo_dla_results(version: int) -> None:
 
     engine_path = build_yolo_dla(version)
 
-    trt_model = trtutils.impls.yolo.YOLO(engine_path, warmup=False)
+    scale = True if version != 0 else False
+    trt_model = trtutils.impls.yolo.YOLO(engine_path, warmup=False, scale_inputs=scale)
 
     for gt, ipath in zip(
         [1, 4],
         [
-            str(_BASE / "data" / "horse.jpg"),
-            str(_BASE / "data" / "people.jpeg"),
+            str(BASE / "data" / "horse.jpg"),
+            str(BASE / "data" / "people.jpeg"),
         ]
     ):
         image = cv2.imread(ipath)
