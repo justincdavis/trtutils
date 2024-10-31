@@ -1,3 +1,10 @@
+## 0.3.2 (10-31-2024)
+
+### Changed
+
+- impls.yolo.YOLO no longer requires a version to be given.
+    Automatically infers postprocessing from outputs.
+
 ## 0.3.1 (10-29-2024)
 
 ### Improved

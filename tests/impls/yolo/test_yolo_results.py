@@ -7,7 +7,6 @@ from pathlib import Path
 
 import cv2
 import trtutils
-from ultralytics import YOLO
 
 
 _BASE = Path(__file__).parent.parent.parent.parent
@@ -70,7 +69,7 @@ def yolo_results(version: int) -> None:
 
     engine_path = build_yolo(version)
 
-    trt_model = trtutils.impls.yolo.YOLO(engine_path, version=version, warmup=False)
+    trt_model = trtutils.impls.yolo.YOLO(engine_path, warmup=False)
 
     for gt, ipath in zip(
         [1, 3],

@@ -11,10 +11,10 @@ from cv2ext.image import letterbox
 
 from trtutils.impls.common import decode_efficient_nms
 
-from ._version import VALID_VERSIONS
+# EfficientNMS as 4 outputs
+_789_NUM_OUTPUTS = 4
 
 _log = logging.getLogger(__name__)
-_VERSION_CUTOFF = 10
 
 
 def preprocess(
@@ -115,7 +115,6 @@ def _postprocess_v_10(
 
 def postprocess(
     outputs: list[np.ndarray],
-    version: int,
     ratios: tuple[float, float] = (1.0, 1.0),
     padding: tuple[float, float] = (0.0, 0.0),
 ) -> list[np.ndarray]:
@@ -126,8 +125,6 @@ def postprocess(
     ----------
     outputs : list[np.ndarray]
         The outputs from a YOLO network.
-    version : int
-        The version of the YOLO networks.
     ratios : tuple[float, float]
         The ratio of original image to preprocessed shape
     padding : tuple[float, float]
@@ -139,7 +136,7 @@ def postprocess(
         The postprocessed outputs.
 
     """
-    if version < _VERSION_CUTOFF:
+    if len(outputs) == _789_NUM_OUTPUTS:
         return _postprocess_v_7_8_9(outputs, ratios, padding)
     return _postprocess_v_10(outputs, ratios, padding)
 
@@ -180,7 +177,6 @@ def _get_detections_v_10(
 
 def get_detections(
     outputs: list[np.ndarray],
-    version: int,
     conf_thres: float | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
     """
@@ -190,8 +186,6 @@ def get_detections(
     ----------
     outputs : list[np.ndarray]
         The outputs from a YOLO networks.
-    version : int
-        Which version of YOLO used to generate the outputs.
     conf_thres : float, optional
         The confidence threshold to use for getting detections.
 
@@ -201,22 +195,7 @@ def get_detections(
         The detections from the YOLO netowrk.
         Each detection is a bounding box in form x1, y1, x2, y2, a confidence score and a class id.
 
-    Raises
-    ------
-    ValueError
-        If the version provided is invalid
-        If version is V10 and image width/height are not provided
-
     """
-    if version not in VALID_VERSIONS:
-        err_msg = (
-            f"Invalid version provided. Found: {version}, not in: {VALID_VERSIONS}"
-        )
-        raise ValueError(err_msg)
-    # Handle YoloV 7/8/9
-    if version < _VERSION_CUTOFF:
+    if len(outputs) == _789_NUM_OUTPUTS:
         return _get_detections_v_7_8_9(outputs, conf_thres=conf_thres)
-    # Handle YoloV10
-    if conf_thres is None:
-        return _get_detections_v_10(outputs, conf_thres=conf_thres)
     return _get_detections_v_10(outputs, conf_thres=conf_thres)

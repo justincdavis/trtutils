@@ -55,7 +55,6 @@ def yolo_run(version: int) -> None:
 
     engine = trtutils.impls.yolo.YOLO(
         engine_path,
-        version=version,
         warmup=False,
     )
 
@@ -70,7 +69,7 @@ def multiple_yolos_run(version: int) -> None:
     engine_path = build_yolo_dla(version)
 
     engines = [
-        trtutils.impls.yolo.YOLO(engine_path, version=version, warmup=False) for _ in range(NUM_ENGINES)
+        trtutils.impls.yolo.YOLO(engine_path, warmup=False) for _ in range(NUM_ENGINES)
     ]
 
     outputs = [engine.mock_run() for engine in engines]
@@ -90,7 +89,6 @@ def yolo_run_in_thread(version: int) -> None:
 
         engine = trtutils.impls.yolo.YOLO(
             engine_path,
-            version=7,
             warmup=False,
         )
 
@@ -120,7 +118,6 @@ def multiple_yolos_run_in_threads(version: int) -> None:
 
         engine = trtutils.impls.yolo.YOLO(
             engine_path,
-            version=version,
             warmup=False,
         )
 

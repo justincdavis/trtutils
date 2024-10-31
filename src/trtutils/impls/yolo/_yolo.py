@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from trtutils._engine import TRTEngine
 
 from ._process import get_detections, postprocess, preprocess
-from ._version import VALID_VERSIONS
 
 if TYPE_CHECKING:
     import numpy as np
@@ -25,7 +24,6 @@ class YOLO:
     def __init__(
         self: Self,
         engine_path: Path | str,
-        version: int,
         warmup_iterations: int = 10,
         *,
         warmup: bool | None = None,
@@ -54,11 +52,7 @@ class YOLO:
             If model does not take 3 channel input
 
         """
-        if version not in VALID_VERSIONS:
-            err_msg = f"Invalid version of YOLO given. Received {version}, valid options: {VALID_VERSIONS}"
-            raise ValueError(err_msg)
-        self._version = version
-        self._tag: str = f"{Path(engine_path).stem}-V{self._version}"
+        self._tag: str = f"{Path(engine_path).stem}"
         self._engine = TRTEngine(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -144,7 +138,7 @@ class YOLO:
 
         """
         _log.debug(f"{self._tag}: Running postprocess")
-        return postprocess(outputs, self._version, ratios, padding)
+        return postprocess(outputs, ratios, padding)
 
     def __call__(
         self: Self,
@@ -305,4 +299,4 @@ class YOLO:
 
         """
         _log.debug(f"{self._tag}: Running get_detections")
-        return get_detections(outputs, version=self._version, conf_thres=conf_thres)
+        return get_detections(outputs, conf_thres=conf_thres)
