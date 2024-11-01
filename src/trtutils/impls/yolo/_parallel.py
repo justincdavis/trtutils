@@ -55,7 +55,7 @@ class ParallelYOLO:
 
     def __init__(
         self: Self,
-        engines: Sequence[tuple[Path, int]],
+        engines: Sequence[Path],
         warmup_iterations: int = 100,
         *,
         warmup: bool | None = None,
@@ -65,8 +65,8 @@ class ParallelYOLO:
 
         Parameters
         ----------
-        engines : Sequence[tuple[Path, int]]
-            The engine path and version numbers of the YOLO models.
+        engines : Sequence[Path]
+            The engine paths of the YOLO models.
         warmup_iterations : int
             The number of warmup iterations to run.
             Warmup occurs in parallel in each thread.
@@ -82,10 +82,7 @@ class ParallelYOLO:
         self._engine_paths = engines
         self._warmup_iterations = warmup_iterations
         self._warmup = warmup
-        self._tag = ""
-        for epath in self._engine_paths:
-            _, eversion = epath
-            self._tag += str(eversion)
+        self._tag = str(len(self._engine_paths))
 
         self._stopflag = Event()
         self._iqueues: list[Queue[_InputPacket]] = [Queue() for _ in self._engine_paths]
@@ -573,12 +570,11 @@ class ParallelYOLO:
 
     def _run(self: Self, threadid: int) -> None:
         # perform warmup
-        engine, version = self._engine_paths[threadid]
+        engine = self._engine_paths[threadid]
         flag = self._flags[threadid]
         try:
             yolo = YOLO(
                 engine,
-                version=version,
                 warmup_iterations=self._warmup_iterations,
                 warmup=self._warmup,
             )

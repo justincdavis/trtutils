@@ -24,20 +24,20 @@ def main() -> None:
     """Run the example."""
     engine_dir = Path(__file__).parent.parent.parent / "data" / "engines"
     engines = [
-        (engine_dir / "trt_yolov7t.engine", 7),
-        (engine_dir / "trt_yolov8n.engine", 8),
-        (engine_dir / "trt_yolov9t.engine", 9),
-        (engine_dir / "trt_yolov10n.engine", 10),
-        (engine_dir / "trt_yolov7t_dla.engine", 7),
-        (engine_dir / "trt_yolov8n_dla.engine", 8),
-        (engine_dir / "trt_yolov9t_dla.engine", 9),
-        (engine_dir / "trt_yolov10n_dla.engine", 10),
+        engine_dir / "trt_yolov7t.engine",
+        engine_dir / "trt_yolov8n.engine",
+        engine_dir / "trt_yolov9t.engine",
+        engine_dir / "trt_yolov10n.engine",
+        engine_dir / "trt_yolov7t_dla.engine",
+        engine_dir / "trt_yolov8n_dla.engine",
+        engine_dir / "trt_yolov9t_dla.engine",
+        engine_dir / "trt_yolov10n_dla.engine",
     ]
 
     img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
 
-    for engine, version in engines:
-        yolo = YOLO(engine, version, warmup=False)
+    for engine in engines:
+        yolo = YOLO(engine, warmup=False)
 
         output = yolo.run(img)
 
