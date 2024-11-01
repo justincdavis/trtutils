@@ -7,7 +7,7 @@ import logging
 
 import cv2
 import numpy as np
-from cv2ext.image import letterbox
+from cv2ext.image import letterbox, rescale
 
 from trtutils.impls.common import decode_efficient_nms, postprocess_efficient_nms
 
@@ -21,6 +21,7 @@ def preprocess(
     image: np.ndarray,
     input_shape: tuple[int, int],
     dtype: np.dtype,
+    input_range: tuple[float, float] = (0.0, 1.0),
 ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
     """
     Preprocess inputs for a YOLO network.
@@ -33,6 +34,9 @@ def preprocess(
         The shape to resize the inputs.
     dtype : np.dtype
         The datatype of the inputs to the network.
+    input_range : tuple[float, float]
+        The range of the model expects for inputs.
+        By default, [0.0, 1.0] (divide input by 255.0)
 
     Returns
     -------
@@ -45,7 +49,8 @@ def preprocess(
     tensor, ratios, padding = letterbox(image, new_shape=input_shape)
     tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
 
-    tensor = tensor / 255.0  # type: ignore[assignment]
+    # tensor = tensor / 255.0  # type: ignore[assignment]
+    tensor = rescale(tensor, input_range)
 
     tensor = tensor[np.newaxis, :]
     tensor = np.transpose(tensor, (0, 3, 1, 2))

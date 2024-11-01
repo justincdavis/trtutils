@@ -25,6 +25,7 @@ class YOLO:
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0.0, 1.0),
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -41,6 +42,11 @@ class YOLO:
         warmup_iterations : int
             The number of warmup iterations to perform.
             The default is 10.
+        input_range : tuple[float, float]
+            The range of input values which should be passed to
+            the model. By default [0.0, 1.0].
+            Versions 7/8/9/10 expect 0.0 through 1.0
+            X expects 0.0 through 255.0
         warmup : bool, optional
             Whether or not to perform warmup iterations.
 
@@ -71,6 +77,7 @@ class YOLO:
             raise ValueError(err_msg)
         self._input_size: tuple[int, int] = (input_size[3], input_size[2])
         self._dtype = input_spec[1]
+        self._input_range = input_range
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -115,6 +122,7 @@ class YOLO:
             image,
             self._input_size,
             self._dtype,
+            self._input_range,
         )
 
     def postprocess(

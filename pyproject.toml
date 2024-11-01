@@ -57,7 +57,7 @@ dependencies = [
 
 [project.optional-dependencies]
 yolo = [
-    "cv2ext>=0.0.22",
+    "cv2ext>=0.0.24",
     "opencv-contrib-python>=4.6.0",
 ]
 impls = [

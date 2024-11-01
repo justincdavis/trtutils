@@ -27,6 +27,7 @@ class YOLOX(YOLO):
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
+            input_range=(0, 255),
         )
 
 
@@ -44,6 +45,7 @@ class YOLO7(YOLO):
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
+            input_range=(0, 1),
         )
 
 
@@ -61,6 +63,7 @@ class YOLO8(YOLO):
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
+            input_range=(0, 1),
         )
 
 
@@ -78,6 +81,7 @@ class YOLO9(YOLO):
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
+            input_range=(0, 1),
         )
 
 
@@ -95,4 +99,5 @@ class YOLO10(YOLO):
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
+            input_range=(0, 1),
         )
