@@ -21,8 +21,6 @@ def preprocess(
     image: np.ndarray,
     input_shape: tuple[int, int],
     dtype: np.dtype,
-    *,
-    scale_down: bool | None = None,
 ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
     """
     Preprocess inputs for a YOLO network.
@@ -35,10 +33,6 @@ def preprocess(
         The shape to resize the inputs.
     dtype : np.dtype
         The datatype of the inputs to the network.
-    scale_down : bool, optional
-        Whether or not to scale the image to [0.0:1.0]
-        If True will scale, otherwise will not.
-        Default is to use scaling.
 
     Returns
     -------
@@ -48,14 +42,10 @@ def preprocess(
     """
     _log.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
 
-    if scale_down is None:
-        scale_down = True
-
     tensor, ratios, padding = letterbox(image, new_shape=input_shape)
     tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
 
-    if scale_down:
-        tensor = tensor / 255.0  # type: ignore[assignment]
+    tensor = tensor / 255.0  # type: ignore[assignment]
 
     tensor = tensor[np.newaxis, :]
     tensor = np.transpose(tensor, (0, 3, 1, 2))
