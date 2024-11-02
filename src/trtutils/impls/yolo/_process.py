@@ -55,7 +55,9 @@ def preprocess(
     tensor = tensor[np.newaxis, :]
     tensor = np.transpose(tensor, (0, 3, 1, 2))
     # large performance hit to assemble contiguous array
-    tensor = np.ascontiguousarray(tensor).astype(dtype)
+    if not tensor.flags["C_CONTIGUOUS"]:
+        tensor = np.ascontiguousarray(tensor)
+    tensor = tensor.astype(dtype)
 
     _log.debug(f"Ratios: {ratios}")
     _log.debug(f"Padding: {padding}")
