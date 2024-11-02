@@ -44,11 +44,11 @@ def build_yolo_dla(version: int) -> Path:
 def yolo_run(version: int) -> None:
     engine_path = build_yolo_dla(version)
 
-    scale = True if version != 0 else False
+    scale = (0, 1) if version != 0 else (0, 255)
     engine = trtutils.impls.yolo.YOLO(
         engine_path,
         warmup=False,
-        scale_inputs=scale,
+        input_range=scale,
     )
 
     outputs = engine.mock_run()
@@ -61,9 +61,9 @@ def yolo_run(version: int) -> None:
 def multiple_yolos_run(version: int) -> None:
     engine_path = build_yolo_dla(version)
 
-    scale = True if version != 0 else False
+    scale = (0, 1) if version != 0 else (0, 255)
     engines = [
-        trtutils.impls.yolo.YOLO(engine_path, warmup=False, scale_inputs=scale) for _ in range(NUM_ENGINES)
+        trtutils.impls.yolo.YOLO(engine_path, warmup=False, input_range=scale) for _ in range(NUM_ENGINES)
     ]
 
     outputs = [engine.mock_run() for engine in engines]
@@ -81,11 +81,11 @@ def yolo_run_in_thread(version: int) -> None:
     def run(result: list[bool]) -> None:
         engine_path = build_yolo_dla(version)
 
-        scale = True if version != 0 else False
+        scale = (0, 1) if version != 0 else (0, 255)
         engine = trtutils.impls.yolo.YOLO(
             engine_path,
             warmup=False,
-            scale_inputs=scale,
+            input_range=scale,
         )
 
         outputs = engine.mock_run()
@@ -112,11 +112,11 @@ def multiple_yolos_run_in_threads(version: int) -> None:
     def run(threadid: int, result: list[int], iters: int) -> None:
         engine_path = build_yolo_dla(version)
 
-        scale = True if version != 0 else False
+        scale = (0, 1) if version != 0 else (0, 255)
         engine = trtutils.impls.yolo.YOLO(
             engine_path,
             warmup=False,
-            scale_inputs=scale,
+            input_range=scale,
         )
 
         outputs = None

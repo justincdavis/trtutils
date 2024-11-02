@@ -48,7 +48,6 @@ dependencies = [
     "cuda-python>=8.0.0",
     "numpy>=1.19.0,<2.2.0",
     "typing_extensions>=4.0.0",
-    "setuptools>=57.0.0",
 ]
 
 [project.urls]
@@ -56,15 +55,16 @@ dependencies = [
 "Bug Tracker" = "https://github.com/justincdavis/trtutils/issues"
 
 [project.optional-dependencies]
-yolo = [
-    "cv2ext>=0.0.24",
-    "opencv-contrib-python>=4.6.0",
+all = [
+    "trtutils[impls]",
+    "trtutils[jetson]",
 ]
 impls = [
     "trtutils[yolo]",
 ]
-pycuda = [
-    "pycuda>=2023",
+yolo = [
+    "cv2ext>=0.0.24",
+    "opencv-contrib-python>=4.6.0",
 ]
 jetson = [
     "jetsontools>=0.0.3",

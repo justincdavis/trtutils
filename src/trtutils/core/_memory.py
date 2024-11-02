@@ -138,12 +138,13 @@ def allocate_pinned_memory(nbytes: int, dtype: np.dtype) -> np.ndarray:
         A numpy array backed by pinned memory.
 
     """
-    # Allocate pinned memory and get a pointer to it directly
+    # allocate pinned memory and get a pointer to it directly
     host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocDefault))
 
-    # Create a NumPy array from the pointer
+    # create the numpy array
     array_type = ctypes.c_byte * nbytes
-    array = np.ctypeslib.as_array(array_type.from_address(host_ptr))
+    array: np.ndarray = np.ctypeslib.as_array(array_type.from_address(host_ptr))
 
-    # Set the correct dtype and shape for the array
-    return array.view(dtype).reshape((nbytes // dtype.itemsize,))
+    # set datatype and shape
+    array = array.view(dtype)
+    return array.reshape((nbytes // dtype.itemsize,))
