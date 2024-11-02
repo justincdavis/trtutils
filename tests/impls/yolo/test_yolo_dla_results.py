@@ -64,8 +64,8 @@ def yolo_dla_results(version: int) -> None:
 
     engine_path = build_yolo_dla(version)
 
-    scale = True if version != 0 else False
-    trt_model = trtutils.impls.yolo.YOLO(engine_path, warmup=False, scale_inputs=scale)
+    scale = (0, 1) if version != 0 else (0, 255)
+    trt_model = trtutils.impls.yolo.YOLO(engine_path, warmup=False, input_range=scale)
 
     for gt, ipath in zip(
         [1, 4],
@@ -100,6 +100,11 @@ def test_yolo_dla_9_results():
 
 def test_yolo_dla_10_results():
     yolo_dla_results(10)
+
+
+# cannot build yolox engine with trtexec
+# def test_yolo_dla_x_results():
+#     yolo_dla_results(0)
 
 
 if __name__ == "__main__":

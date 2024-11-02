@@ -87,7 +87,7 @@ def decode_efficient_nms(
         Bounding box (x1, y1, x2, y2), confidence score, classid
 
     """
-    num_dects: int = outputs[0][0]
+    num_dects: int = int(outputs[0][0])
     bboxes: np.ndarray = outputs[1]
     scores: np.ndarray = outputs[2]
     classes: np.ndarray = outputs[3]
@@ -96,10 +96,10 @@ def decode_efficient_nms(
     for idx in range(num_dects):
         x1, y1, x2, y2 = bboxes[idx]
         # y1, x1, y2, x2 = bboxes[idx]
-        score = scores[idx]
-        classid = classes[idx]
+        np_score = scores[idx]
+        np_classid = classes[idx]
 
-        entry = ((int(x1), int(y1), int(x2), int(y2)), float(score), int(classid))
+        entry = ((int(x1), int(y1), int(x2), int(y2)), float(np_score), int(np_classid))
         frame_dects.append(entry)
 
     if conf_thres:

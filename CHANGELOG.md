@@ -1,3 +1,11 @@
+## 0.3.3 (10-31-2024)
+
+### Added
+
+- impls.yolo.YOLO input_range parameter
+    Specify the input range for the specific type of YOLO
+    YOLOX uses [0:255] while all others are [0:1]
+
 ## 0.3.2 (10-31-2024)
 
 ### Added
