@@ -24,6 +24,10 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    with contextlib.suppress(ImportError):
+        import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+
 
 class TRTEngine(TRTEngineInterface):
     """
@@ -89,6 +93,26 @@ class TRTEngine(TRTEngineInterface):
         attrs = ["_context", "_engine"]
         for attr in attrs:
             _del(self, attr)
+
+    @property
+    def engine(self: Self) -> trt.ICudaEngine:
+        """Access the raw TensorRT CUDA engine."""
+        return self._engine
+    
+    @property
+    def context(self: Self) -> trt.IExecutionContext:
+        """Access the TensorRT execution context for the engine."""
+        return self._context
+
+    @property
+    def logger(self: Self) -> trt.ILogger:
+        """Access the TensorRT logger used for the engine."""
+        return self._logger
+
+    @property
+    def stream(self: Self) -> cudart.cudaStream_t:
+        """Access the underlying CUDA stream."""
+        return self._stream
 
     @cached_property
     def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
