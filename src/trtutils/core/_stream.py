@@ -25,6 +25,19 @@ def create_stream() -> cudart.cudaStream_t:
     return cuda_call(cudart.cudaStreamCreate())
 
 
+def destroy_stream(stream: cudart.cudaStream_t) -> None:
+    """
+    Destroy a CUDA Stream.
+    
+    Parameters
+    ----------
+    stream : cudart.cudaStream_t
+        The CUDA stream to destroy.
+        
+    """
+    cuda_call(cudart.cudaStreamDestroy(stream))
+
+
 def stream_synchronize(stream: cudart.cudaStream_t) -> None:
     """
     Copy a numpy array to a device pointer with error checking.

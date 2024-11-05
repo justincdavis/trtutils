@@ -15,7 +15,11 @@ postprocess_efficient_nms
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
+
+_log = logging.getLogger(__name__)
 
 
 def postprocess_efficient_nms(
@@ -49,6 +53,8 @@ def postprocess_efficient_nms(
     num_dets, bboxes, scores, class_ids = outputs
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
+
+    _log.debug(f"EfficientNMS postproces, bboxes shape: {bboxes.shape}")
 
     n_boxes = len(bboxes) // 4
     adjusted_bboxes = bboxes.copy().reshape(n_boxes, 4)

@@ -158,11 +158,11 @@ with contextlib.suppress(ImportError):
     __all__ += ["jetson"]
 
 
-# start CUDA
-with contextlib.suppress(ImportError):
-    from cuda import cuda  # type: ignore[import-untyped, import-not-found]
+# # start CUDA
+# with contextlib.suppress(ImportError):
+#     from cuda import cuda  # type: ignore[import-untyped, import-not-found]
 
-    core.cuda_call(cuda.cuInit(0))
+#     core.cuda_call(cuda.cuInit(0))
 
-    device_count = core.cuda_call(cuda.cuDeviceGetCount())
-    _log.info(f"Number of CUDA devices: {device_count}")
+#     device_count = core.cuda_call(cuda.cuDeviceGetCount())
+#     _log.info(f"Number of CUDA devices: {device_count}")

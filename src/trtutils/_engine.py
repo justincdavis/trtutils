@@ -98,7 +98,7 @@ class TRTEngine(TRTEngineInterface):
     def engine(self: Self) -> trt.ICudaEngine:
         """Access the raw TensorRT CUDA engine."""
         return self._engine
-    
+
     @property
     def context(self: Self) -> trt.IExecutionContext:
         """Access the TensorRT execution context for the engine."""

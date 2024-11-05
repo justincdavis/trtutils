@@ -83,7 +83,7 @@ class TRTModel:
     def engine(self: Self) -> TRTEngine:
         """Access the underlying TRTEngine."""
         return self._engine
-    
+
     @property
     def stream(self: Self) -> cudart.cudaStream_t:
         """Access the underlying CUDA stream."""

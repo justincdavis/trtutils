@@ -75,6 +75,9 @@ def _postprocess_v_10(
     pad_x, pad_y = padding
 
     output = outputs[0]
+    
+    _log.debug(f"V10 postprocess, output shape: {output.shape}")
+
     n_boxes = len(output) // 6
     output = output.reshape((n_boxes, 6))
 

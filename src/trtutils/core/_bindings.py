@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from dataclasses import dataclass
 from threading import Lock
 from typing import TYPE_CHECKING
@@ -16,10 +17,12 @@ with contextlib.suppress(Exception):
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
-from ._memory import allocate_pinned_memory
+from ._memory import allocate_pinned_memory, cuda_malloc
 
 if TYPE_CHECKING:
     from typing_extensions import Self
+
+_log = logging.getLogger(__name__)
 
 _ALLOCATION_LOCK = Lock()
 
@@ -79,9 +82,9 @@ def allocate_bindings(
 
     """
     # lists for allocations
-    inputs = []
-    outputs = []
-    allocations = []
+    inputs: list[Binding] = []
+    outputs: list[Binding] = []
+    allocations: list[int] = []
     batch_size = 0
 
     # magic numbers
@@ -142,8 +145,8 @@ def allocate_bindings(
         for s in shape:
             size *= s
         with _ALLOCATION_LOCK:
-            allocation = cuda_call(cudart.cudaMalloc(size))
-            host_allocation = allocate_pinned_memory(size, dtype)
+            allocation = cuda_malloc(size)
+            host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
         # host_allocation = allocate_pinned_memory(size, dtype)
         binding = Binding(
             index=i,
@@ -160,7 +163,7 @@ def allocate_bindings(
         else:
             outputs.append(binding)
         input_str = "Input" if is_input else "Output"
-        log_msg = f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
+        log_msg = f"{input_str}-{i} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
         logger.log(trt.Logger.INFO, log_msg)
 
     if batch_size == 0:
@@ -177,3 +180,40 @@ def allocate_bindings(
         raise ValueError(err_msg)
 
     return inputs, outputs, allocations, batch_size
+
+
+def create_binding(
+    array: np.ndarray,
+    bind_id: int = 0,
+    name: str = "binding",
+    *,
+    is_input: bool | None = None,
+    pagelocked_mem: bool | None = None,
+) -> Binding:
+    # info from the np.ndarray
+    shape = array.shape
+    dtype = array.dtype
+    size = array.itemsize
+    for s in shape:
+        size *= s
+
+    # allocate host and device memory
+    device_alloc = cuda_malloc(size)
+    if pagelocked_mem:
+        _log.debug(f"Allocating pagelocked mem during Binding: {bind_id}, {name}")
+        host_alloc = allocate_pinned_memory(size, dtype, shape)
+    else:
+        # if the binding is an input binding
+        # can not allocate the host_alloc until populated later
+        host_alloc = np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
+    
+    # make the binding
+    return Binding(
+        bind_id,
+        name,
+        dtype,
+        list(shape),
+        bool(is_input),
+        device_alloc,
+        host_alloc,
+    )
