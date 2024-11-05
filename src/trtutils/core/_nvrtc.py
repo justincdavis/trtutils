@@ -88,11 +88,6 @@ def compile_kernel(
     tuple[np.char.chararray, str]
         The compiled PTX kernel and the kernel name.
 
-    Raises
-    ------
-    RuntimeError
-        If no name is provided and cannot automatically find a name.
-
     """
     kernel_bytes = kernel.encode()
     kernel_name_bytes = f"{name}.cu".encode()

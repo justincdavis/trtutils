@@ -7,12 +7,14 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from trtutils._engine import TRTEngine
 
-from ._process import get_detections, postprocess, preprocess
+from ._preprocessors import CPUPreprocessor, CUDAPreprocessor
+from ._process import get_detections, postprocess
 
 if TYPE_CHECKING:
-    import numpy as np
     from typing_extensions import Self
 
 _log = logging.getLogger(__name__)
@@ -26,6 +28,7 @@ class YOLO:
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
+        preprocessor: str = "cuda",
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -47,6 +50,9 @@ class YOLO:
             the model. By default [0.0, 1.0].
             Versions 7/8/9/10 expect 0.0 through 1.0
             X expects 0.0 through 255.0
+        preprocessor : str
+            The type of preprocessor to use.
+            The options are ['cpu', 'cuda'], default is 'cuda'.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
 
@@ -78,6 +84,22 @@ class YOLO:
         self._input_size: tuple[int, int] = (input_size[3], input_size[2])
         self._dtype = input_spec[1]
         self._input_range = input_range
+
+        # assign the preprocessor
+        self._preprocessor: CPUPreprocessor | CUDAPreprocessor
+        if preprocessor == "cuda" and self._dtype == np.float32:
+            self._preprocessor = CUDAPreprocessor(
+                self._input_size,
+                self._input_range,
+                self._dtype,
+                self._engine.stream,
+            )
+        else:
+            self._preprocessor = CPUPreprocessor(
+                self._input_size,
+                self._input_range,
+                self._dtype,
+            )
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -118,12 +140,7 @@ class YOLO:
 
         """
         _log.debug(f"{self._tag}: Running preprocess")
-        return preprocess(
-            image,
-            self._input_size,
-            self._dtype,
-            self._input_range,
-        )
+        return self._preprocessor(image)
 
     def postprocess(
         self: Self,

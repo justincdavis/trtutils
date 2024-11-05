@@ -6,6 +6,10 @@ Implementations of YOLO object detectors for TRTModel.
 
 Classes
 -------
+CPUPreprocessor
+    Preprocess an image for YOLO on CPU.
+CUDAPreprocessor
+    Preprocess an image for YOLO using CUDA.
 ParallelYOLO
     Multi-threaded YOLO models, useful for multi-accelerator systems.
 YOLO
@@ -35,6 +39,7 @@ postprocess
 from __future__ import annotations
 
 from ._parallel import ParallelYOLO
+from ._preprocessors import CPUPreprocessor, CUDAPreprocessor
 from ._process import get_detections, postprocess, preprocess
 from ._yolo import YOLO
 from ._yolos import YOLO7, YOLO8, YOLO9, YOLO10, YOLOX
@@ -46,6 +51,8 @@ __all__ = [
     "YOLO9",
     "YOLO10",
     "YOLOX",
+    "CPUPreprocessor",
+    "CUDAPreprocessor",
     "ParallelYOLO",
     "get_detections",
     "postprocess",

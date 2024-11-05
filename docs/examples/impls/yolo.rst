@@ -16,6 +16,7 @@ Example: impls/yolo.py
 	
 	import cv2
 	
+	from trtutils import set_log_level
 	from trtutils.impls.yolo import YOLO
 	
 	
@@ -44,7 +45,7 @@ Example: impls/yolo.py
 	    img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
 	
 	    for engine in engines:
-	        yolo = YOLO(engine, warmup=False)
+	        yolo = YOLO(engine, warmup=False, preprocessor="cpu")
 	
 	        output = yolo.run(img)
 	
@@ -56,5 +57,6 @@ Example: impls/yolo.py
 	
 	
 	if __name__ == "__main__":
+	    set_log_level("DEBUG")
 	    main()
 

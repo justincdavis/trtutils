@@ -206,7 +206,7 @@ def create_binding(
         # if the binding is an input binding
         # can not allocate the host_alloc until populated later
         host_alloc = np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
-    
+
     # make the binding
     return Binding(
         bind_id,

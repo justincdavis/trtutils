@@ -56,8 +56,7 @@ def postprocess_efficient_nms(
 
     _log.debug(f"EfficientNMS postproces, bboxes shape: {bboxes.shape}")
 
-    n_boxes = len(bboxes) // 4
-    adjusted_bboxes = bboxes.copy().reshape(n_boxes, 4)
+    adjusted_bboxes = bboxes.copy()
     adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width  # x1
     adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height  # y1
     adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width  # x2
@@ -94,14 +93,13 @@ def decode_efficient_nms(
 
     """
     num_dects: int = int(outputs[0][0])
-    bboxes: np.ndarray = outputs[1]
-    scores: np.ndarray = outputs[2]
-    classes: np.ndarray = outputs[3]
+    bboxes: np.ndarray = outputs[1][0]
+    scores: np.ndarray = outputs[2][0]
+    classes: np.ndarray = outputs[3][0]
 
     frame_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
     for idx in range(num_dects):
         x1, y1, x2, y2 = bboxes[idx]
-        # y1, x1, y2, x2 = bboxes[idx]
         np_score = scores[idx]
         np_classid = classes[idx]
 

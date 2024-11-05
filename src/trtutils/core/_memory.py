@@ -133,19 +133,19 @@ def cuda_malloc(
 ) -> int:
     """
     Perform a memory allocation using cudart.cudaMalloc.
-    
+
     Parameters
     ----------
     nbytes : int
         The number of bytes to allocate.
-    
+
     Returns
     -------
     int
         The pointer to the allocated memory.
-        
+
     """
-    device_ptr = cuda_call(cudart.cudaMalloc(nbytes))
+    device_ptr: int = cuda_call(cudart.cudaMalloc(nbytes))
     _log.debug(f"Allocated, device_ptr: {device_ptr}, size: {nbytes}")
     return device_ptr
 
@@ -189,6 +189,8 @@ def allocate_pinned_memory(
     array = array.view(dtype)
     shape = (nbytes // dtype.itemsize,) if shape is None else shape
 
-    _log.debug(f"Allocated-pagelocked, host_ptr: {host_ptr}, size: {nbytes}, shape: {shape}")
+    _log.debug(
+        f"Allocated-pagelocked, host_ptr: {host_ptr}, size: {nbytes}, shape: {shape}",
+    )
 
     return array.reshape(shape)

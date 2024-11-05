@@ -28,12 +28,12 @@ def create_stream() -> cudart.cudaStream_t:
 def destroy_stream(stream: cudart.cudaStream_t) -> None:
     """
     Destroy a CUDA Stream.
-    
+
     Parameters
     ----------
     stream : cudart.cudaStream_t
         The CUDA stream to destroy.
-        
+
     """
     cuda_call(cudart.cudaStreamDestroy(stream))
 

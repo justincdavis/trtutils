@@ -75,15 +75,12 @@ def _postprocess_v_10(
     pad_x, pad_y = padding
 
     output = outputs[0]
-    
+
     _log.debug(f"V10 postprocess, output shape: {output.shape}")
 
-    n_boxes = len(output) // 6
-    output = output.reshape((n_boxes, 6))
-
-    bboxes: np.ndarray = output[:, :4]
-    scores: np.ndarray = output[:, 4]
-    class_ids: np.ndarray = output[:, 5].astype(int)
+    bboxes: np.ndarray = output[0, :, :4]
+    scores: np.ndarray = output[0, :, 4]
+    class_ids: np.ndarray = output[0, :, 5].astype(int)
 
     # each bounding box is cx, cy, dx, dy
     adjusted_bboxes = bboxes.copy()

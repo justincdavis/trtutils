@@ -49,6 +49,7 @@ def yolo_run(version: int) -> None:
         engine_path,
         warmup=False,
         input_range=scale,
+        preprocessor="cpu",
     )
 
     outputs = engine.mock_run()
@@ -63,7 +64,7 @@ def multiple_yolos_run(version: int) -> None:
 
     scale = (0, 1) if version != 0 else (0, 255)
     engines = [
-        trtutils.impls.yolo.YOLO(engine_path, warmup=False, input_range=scale) for _ in range(NUM_ENGINES)
+        trtutils.impls.yolo.YOLO(engine_path, warmup=False, input_range=scale, preprocessor="cpu") for _ in range(NUM_ENGINES)
     ]
 
     outputs = [engine.mock_run() for engine in engines]
@@ -86,6 +87,7 @@ def yolo_run_in_thread(version: int) -> None:
             engine_path,
             warmup=False,
             input_range=scale,
+            preprocessor="cpu",
         )
 
         outputs = engine.mock_run()
@@ -117,6 +119,7 @@ def multiple_yolos_run_in_threads(version: int) -> None:
             engine_path,
             warmup=False,
             input_range=scale,
+            preprocessor="cpu",
         )
 
         outputs = None

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import cv2
 
+from trtutils import set_log_level
 from trtutils.impls.yolo import YOLO
 
 
@@ -37,7 +38,7 @@ def main() -> None:
     img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
 
     for engine in engines:
-        yolo = YOLO(engine, warmup=False)
+        yolo = YOLO(engine, warmup=False, preprocessor="cuda")
 
         output = yolo.run(img)
 
@@ -49,4 +50,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    set_log_level("ERROR")
     main()

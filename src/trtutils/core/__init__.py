@@ -74,7 +74,7 @@ from ._memory import (
     memcpy_host_to_device_async,
 )
 from ._nvrtc import compile_and_load_kernel, compile_kernel, load_kernel, nvrtc_call
-from ._stream import create_stream, stream_synchronize, destroy_stream
+from ._stream import create_stream, destroy_stream, stream_synchronize
 
 __all__ = [
     "Binding",
@@ -83,10 +83,10 @@ __all__ = [
     "allocate_pinned_memory",
     "compile_and_load_kernel",
     "compile_kernel",
+    "create_binding",
     "create_context",
     "create_engine",
     "create_stream",
-    "create_binding",
     "cuda_call",
     "cuda_malloc",
     "destroy_context",
