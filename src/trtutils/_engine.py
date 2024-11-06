@@ -255,6 +255,52 @@ class TRTEngine(TRTEngineInterface):
             return [o.host_allocation for o in self._outputs]
         return [o.host_allocation.copy() for o in self._outputs]
 
+    def direct_exec(
+        self: Self, pointers: list[int], *, no_warn: bool | None = None,
+    ) -> list[np.ndarray]:
+        """
+        Execute the network with the given GPU memory pointers.
+
+        The outputs of this function are not copied on return.
+        The data will be updated inplace if execute or direct_exec
+        is called. Calling this method while giving bad pointers
+        will also cause CUDA runtime to crash and program to crash.
+
+        Parameters
+        ----------
+        pointers : list[int]
+            The inputs to the network.
+        no_warn : bool, optional
+            If True, do not warn about usage.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The outputs of the network.
+
+        """
+        if not no_warn:
+            _log.warning(
+                "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
+            )
+        # execute
+        self._context.execute_async_v2(pointers, self._stream)
+        # Copy outputs
+        for o_idx in range(len(self._outputs)):
+            # memcpy_device_to_host(
+            #     self._outputs[o_idx].host_allocation,
+            #     self._outputs[o_idx].allocation,
+            # )
+            memcpy_device_to_host_async(
+                self._outputs[o_idx].host_allocation,
+                self._outputs[o_idx].allocation,
+                self._stream,
+            )
+        # sync the stream
+        stream_synchronize(self._stream)
+        # return
+        return [o.host_allocation for o in self._outputs]
+
 
 class QueuedTRTEngine:
     """Interact with TRTEngine over Thread and Queue."""

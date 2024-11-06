@@ -391,3 +391,40 @@ class YOLO:
         """
         _log.debug(f"{self._tag}: Running get_detections")
         return get_detections(outputs, conf_thres=conf_thres)
+
+    def end2end(
+        self: Self,
+        image: np.ndarray,
+    ) -> list[tuple[tuple[int, int, int, int], float, int]]:
+        """
+        Perform end to end inference for a YOLO model.
+
+        Equivalent to running preprocess, run, postprocess, and
+        get_detections in that order. Makes some memory transfer
+        optimizations under the hood to improve performance.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The image to perform inference with.
+
+        Returns
+        -------
+        list[tuple[tuple[int, int, int, int], float, int]]
+            The detections where each entry is bbox, conf, class_id
+
+        """
+        # if using CPU preprocessor best you can do is remove host-to-host copies
+        if not isinstance(self._preprocessor, CUDAPreprocessor):
+            outputs = self.run(
+                image, preprocessed=False, postprocess=True, no_copy=True,
+            )
+            return self.get_detections(outputs)
+
+        # if using CUDA, can remove much more
+        gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
+            image, no_warn=True,
+        )
+        outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
+        post_out = self.postprocess(outputs, ratios, padding, no_copy=True)
+        return self.get_detections(post_out)

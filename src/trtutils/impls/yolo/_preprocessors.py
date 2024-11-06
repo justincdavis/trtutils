@@ -313,3 +313,54 @@ class CUDAPreprocessor:
         if no_copy:
             return self._output_binding.host_allocation, ratios, padding
         return self._output_binding.host_allocation.copy(), ratios, padding
+
+    def direct_preproc(
+        self: Self,
+        image: np.ndarray,
+        *,
+        no_warn: bool | None = None,
+    ) -> tuple[int, tuple[float, float], tuple[float, float]]:
+        """
+        Preprocess an image for YOLO.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The image to preprocess.
+        no_warn : bool, optional
+            If True, do not warn about usage.
+
+        Returns
+        -------
+        tuple[int, tuple[float, float], tuple[float, float]]
+            The GPU pointer to preprocessed data, ratios, and padding used for resizing.
+
+        """
+        if not no_warn:
+            _log.warning(
+                "Calling direct_preproc is potentially dangerous. Outputs can be overwritten inplace!",
+            )
+
+        resized, ratios, padding = letterbox(image, self._o_shape)
+
+        args = self._create_args()
+
+        memcpy_host_to_device_async(
+            self._input_binding.allocation,
+            resized,
+            self._stream,
+        )
+
+        cuda_call(
+            cuda.cuLaunchKernel(
+                self._kernel,
+                *self._num_blocks,
+                *self._num_threads,
+                0,
+                self._stream,
+                args.ctypes.data,
+                0,
+            ),
+        )
+
+        return self._output_binding.allocation, ratios, padding
