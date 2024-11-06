@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from functools import cached_property
 from queue import Empty, Queue
 from threading import Thread
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):
         import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
         from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+
+_log = logging.getLogger(__name__)
 
 
 class TRTEngine(TRTEngineInterface):
@@ -75,6 +78,8 @@ class TRTEngine(TRTEngineInterface):
         if warmup:
             for _ in range(warmup_iterations):
                 self.mock_execute()
+
+        _log.debug(f"Creating TRTEngine: {self.name}")
 
     def __del__(self: Self) -> None:
         def _del(obj: object, attr: str) -> None:

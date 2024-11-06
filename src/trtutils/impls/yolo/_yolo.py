@@ -65,6 +65,7 @@ class YOLO:
 
         """
         self._tag: str = f"{Path(engine_path).stem}"
+        _log.debug(f"Creating YOLO: {self._tag}")
         self._engine = TRTEngine(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
