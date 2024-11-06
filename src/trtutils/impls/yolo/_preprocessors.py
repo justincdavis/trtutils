@@ -189,9 +189,6 @@ class CUDAPreprocessor:
             "scaleSwapTranspose",
         )
 
-        # create args
-        self._args = self._create_args()
-
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError):
             cuda_call(cuda.cuModuleUnload(self._module))
@@ -296,7 +293,7 @@ class CUDAPreprocessor:
                 *self._num_threads,
                 0,
                 self._stream,
-                self._args.ctypes.data,
+                self._create_args().ctypes.data,
                 0,
             ),
         )

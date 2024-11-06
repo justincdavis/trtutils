@@ -148,7 +148,7 @@ class YOLO:
             The preprocessed inputs, rescale ratios, and padding values
 
         """
-        _log.debug(f"{self._tag}: Running preprocess")
+        _log.debug(f"{self._tag}: Running preprocess, shape: {image.shape}")
         if isinstance(self._preprocessor, CUDAPreprocessor):
             return self._preprocessor(image, no_copy=no_copy)
         return self._preprocessor(image)
