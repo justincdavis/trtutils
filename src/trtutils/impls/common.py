@@ -62,13 +62,13 @@ def postprocess_efficient_nms(
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
 
-    _log.debug(f"EfficientNMS postproces, bboxes shape: {bboxes.shape}")
+    _log.debug(f"EfficientNMS postprocess, bboxes shape: {bboxes.shape}")
 
     adjusted_bboxes = bboxes
-    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width  # x1
-    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height  # y1
-    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width  # x2
-    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height  # y2
+    adjusted_bboxes[:, :, 0] = (adjusted_bboxes[:, :, 0] - pad_x) / ratio_width  # x1
+    adjusted_bboxes[:, :, 1] = (adjusted_bboxes[:, :, 1] - pad_y) / ratio_height  # y1
+    adjusted_bboxes[:, :, 2] = (adjusted_bboxes[:, :, 2] - pad_x) / ratio_width  # x2
+    adjusted_bboxes[:, :, 3] = (adjusted_bboxes[:, :, 3] - pad_y) / ratio_height  # y2
 
     adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
 
