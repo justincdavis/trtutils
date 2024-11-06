@@ -20,6 +20,7 @@ class YOLOX(YOLO):
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
+        preprocessor: str = "cuda",
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -28,6 +29,7 @@ class YOLOX(YOLO):
             warmup_iterations=warmup_iterations,
             warmup=warmup,
             input_range=(0, 255),
+            preprocessor=preprocessor,
         )
 
 
@@ -38,6 +40,7 @@ class YOLO7(YOLO):
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
+        preprocessor: str = "cuda",
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -46,6 +49,7 @@ class YOLO7(YOLO):
             warmup_iterations=warmup_iterations,
             warmup=warmup,
             input_range=(0, 1),
+            preprocessor=preprocessor,
         )
 
 
@@ -56,6 +60,7 @@ class YOLO8(YOLO):
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
+        preprocessor: str = "cuda",
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -64,6 +69,7 @@ class YOLO8(YOLO):
             warmup_iterations=warmup_iterations,
             warmup=warmup,
             input_range=(0, 1),
+            preprocessor=preprocessor,
         )
 
 
@@ -74,6 +80,7 @@ class YOLO9(YOLO):
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
+        preprocessor: str = "cuda",
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -82,6 +89,7 @@ class YOLO9(YOLO):
             warmup_iterations=warmup_iterations,
             warmup=warmup,
             input_range=(0, 1),
+            preprocessor=preprocessor,
         )
 
 
@@ -92,6 +100,7 @@ class YOLO10(YOLO):
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
+        preprocessor: str = "cuda",
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -100,4 +109,5 @@ class YOLO10(YOLO):
             warmup_iterations=warmup_iterations,
             warmup=warmup,
             input_range=(0, 1),
+            preprocessor=preprocessor,
         )
