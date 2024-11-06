@@ -203,6 +203,8 @@ class CUDAPreprocessor:
     def _create_args(self: Self) -> np.ndarray:
         # create a np.ndarray of pointers to the numpy arrays (CPU side pointers)
         # From: https://nvidia.github.io/cuda-python/overview.html#cuda-python-workflow
+        # Not-stated in the overview, BUT
+        # args MUST BE REGENERATED (EVEN IF IDENTICAL) FOR EVERY KERNEL CALL
         input_arg: np.ndarray = np.array(
             [self._input_binding.allocation],
             dtype=np.uint64,
@@ -280,6 +282,8 @@ class CUDAPreprocessor:
         """
         resized, ratios, padding = letterbox(image, self._o_shape)
 
+        args = self._create_args()
+
         memcpy_host_to_device_async(
             self._input_binding.allocation,
             resized,
@@ -293,7 +297,7 @@ class CUDAPreprocessor:
                 *self._num_threads,
                 0,
                 self._stream,
-                self._create_args().ctypes.data,
+                args.ctypes.data,
                 0,
             ),
         )
