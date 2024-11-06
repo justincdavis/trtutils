@@ -104,6 +104,17 @@ class YOLO:
                 self._dtype,
             )
 
+        # if warmup, warmup the preprocessor
+        if warmup:
+            self._preprocessor(
+                np.random.default_rng().integers(
+                    0,
+                    255,
+                    (*self._input_size, 3),
+                    dtype=np.uint8,
+                ),
+            )
+
     @property
     def engine(self: Self) -> TRTEngine:
         """Get the underlying TRTEngine."""
@@ -417,13 +428,17 @@ class YOLO:
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, CUDAPreprocessor):
             outputs = self.run(
-                image, preprocessed=False, postprocess=True, no_copy=True,
+                image,
+                preprocessed=False,
+                postprocess=True,
+                no_copy=True,
             )
             return self.get_detections(outputs)
 
         # if using CUDA, can remove much more
         gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
-            image, no_warn=True,
+            image,
+            no_warn=True,
         )
         outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
         post_out = self.postprocess(outputs, ratios, padding, no_copy=True)

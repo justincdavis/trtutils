@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import cv2
@@ -38,13 +39,14 @@ def main() -> None:
     img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
 
     for engine in engines:
-        yolo = YOLO(engine, warmup=False, preprocessor="cuda")
+        yolo = YOLO(engine, warmup=True, preprocessor="cuda")
 
+        t0 = time.perf_counter()
         output = yolo.run(img)
-
         bboxes = yolo.get_detections(output)
+        t1 = time.perf_counter()
 
-        print(bboxes)
+        print(f"BBoxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
 
         del yolo
 

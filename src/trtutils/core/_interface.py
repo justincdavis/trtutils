@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+import contextlib
 from abc import ABC, abstractmethod
 from functools import cached_property
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from ._bindings import allocate_bindings
 from ._engine import create_engine
 
 if TYPE_CHECKING:
@@ -32,10 +34,27 @@ class TRTEngineInterface(ABC):
         """
         # store path stem as name
         self._name = Path(engine_path).stem
+
         # engine, context, logger, and CUDA stream
         self._engine, self._context, self._logger, self._stream = create_engine(
             engine_path,
         )
+
+        # allocate memory for inputs and outputs
+        self._inputs, self._outputs, self._allocations, self._batch_size = (
+            allocate_bindings(
+                self._engine,
+                self._context,
+                self._logger,
+            )
+        )
+        self._input_allocations: list[int] = [
+            input_b.allocation for input_b in self._inputs
+        ]
+        self._output_allocations: list[int] = [
+            output_b.allocation for output_b in self._outputs
+        ]
+
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None
 
@@ -44,9 +63,23 @@ class TRTEngineInterface(ABC):
         """The name of the engine, as the stem of the Path."""
         return self._name
 
-    @abstractmethod
     def __del__(self: Self) -> None:
-        """Free the engine resources."""
+        def _del(obj: object, attr: str) -> None:
+            with contextlib.suppress(AttributeError):
+                delattr(obj, attr)
+
+        with contextlib.suppress(AttributeError):
+            for binding in self._inputs:
+                with contextlib.suppress(RuntimeError):
+                    binding.free()
+        with contextlib.suppress(AttributeError):
+            for binding in self._outputs:
+                with contextlib.suppress(RuntimeError):
+                    binding.free()
+
+        attrs = ["_context", "_engine"]
+        for attr in attrs:
+            _del(self, attr)
 
     @abstractmethod
     def execute(
@@ -68,6 +101,35 @@ class TRTEngineInterface(ABC):
             the host memory will be returned directly.
             This memory WILL BE OVERWRITTEN INPLACE
             by future inferences.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The outputs of the network.
+
+        """
+
+    @abstractmethod
+    def direct_exec(
+        self: Self,
+        pointers: list[int],
+        *,
+        no_warn: bool | None = None,
+    ) -> list[np.ndarray]:
+        """
+        Execute the network with the given GPU memory pointers.
+
+        The outputs of this function are not copied on return.
+        The data will be updated inplace if execute or direct_exec
+        is called. Calling this method while giving bad pointers
+        will also cause CUDA runtime to crash and program to crash.
+
+        Parameters
+        ----------
+        pointers : list[int]
+            The inputs to the network.
+        no_warn : bool, optional
+            If True, do not warn about usage.
 
         Returns
         -------

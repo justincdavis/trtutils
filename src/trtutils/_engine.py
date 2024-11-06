@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 
 from .core import (
     TRTEngineInterface,
-    allocate_bindings,
     memcpy_device_to_host_async,
     memcpy_host_to_device_async,
     stream_synchronize,
@@ -66,15 +65,6 @@ class TRTEngine(TRTEngineInterface):
         """
         super().__init__(engine_path)
 
-        # allocate memory for inputs and outputs
-        self._inputs, self._outputs, self._allocations, self._batch_size = (
-            allocate_bindings(
-                self._engine,
-                self._context,
-                self._logger,
-            )
-        )
-
         if warmup:
             for _ in range(warmup_iterations):
                 self.mock_execute()
@@ -82,22 +72,7 @@ class TRTEngine(TRTEngineInterface):
         _log.debug(f"Creating TRTEngine: {self.name}")
 
     def __del__(self: Self) -> None:
-        def _del(obj: object, attr: str) -> None:
-            with contextlib.suppress(AttributeError):
-                delattr(obj, attr)
-
-        with contextlib.suppress(AttributeError):
-            for binding in self._inputs:
-                with contextlib.suppress(RuntimeError):
-                    binding.free()
-        with contextlib.suppress(AttributeError):
-            for binding in self._outputs:
-                with contextlib.suppress(RuntimeError):
-                    binding.free()
-
-        attrs = ["_context", "_engine"]
-        for attr in attrs:
-            _del(self, attr)
+        super().__del__()
 
     @property
     def engine(self: Self) -> trt.ICudaEngine:
@@ -256,7 +231,10 @@ class TRTEngine(TRTEngineInterface):
         return [o.host_allocation.copy() for o in self._outputs]
 
     def direct_exec(
-        self: Self, pointers: list[int], *, no_warn: bool | None = None,
+        self: Self,
+        pointers: list[int],
+        *,
+        no_warn: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the network with the given GPU memory pointers.
@@ -284,7 +262,10 @@ class TRTEngine(TRTEngineInterface):
                 "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
             )
         # execute
-        self._context.execute_async_v2(pointers, self._stream)
+        self._context.execute_async_v2(
+            pointers + self._output_allocations,
+            self._stream,
+        )
         # Copy outputs
         for o_idx in range(len(self._outputs)):
             # memcpy_device_to_host(
