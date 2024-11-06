@@ -45,7 +45,7 @@ Example: impls/yolo.py
 	    img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
 	
 	    for engine in engines:
-	        yolo = YOLO(engine, warmup=False, preprocessor="cpu")
+	        yolo = YOLO(engine, warmup=False, preprocessor="cuda")
 	
 	        output = yolo.run(img)
 	
@@ -57,6 +57,6 @@ Example: impls/yolo.py
 	
 	
 	if __name__ == "__main__":
-	    set_log_level("DEBUG")
+	    set_log_level("ERROR")
 	    main()
 

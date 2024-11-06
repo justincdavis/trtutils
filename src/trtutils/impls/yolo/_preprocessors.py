@@ -14,7 +14,7 @@ from cv2ext.image import letterbox
 with contextlib.suppress(ImportError):
     from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
 
-from trtutils.core._bindings import Binding, create_binding
+from trtutils.core._bindings import create_binding
 from trtutils.core._cuda import cuda_call
 from trtutils.core._memory import (
     memcpy_device_to_host_async,
@@ -33,12 +33,30 @@ _log = logging.getLogger(__name__)
 
 
 class CPUPreprocessor:
+    """CPU-based preprocessor for YOLO."""
+
     def __init__(
         self: Self,
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
         dtype: np.dtype,
     ) -> None:
+        """
+        Create a CPUPreprocessor for YOLO.
+
+        Parameters
+        ----------
+        output_shape : tuple[int, int]
+            The shape of the image YOLO expects.
+            In the form [width, height]
+        output_range : tuple[float, float]
+            The range of the image values YOLO expects.
+            Examples: (0.0, 1.0), (0.0, 255.0)
+        dtype : np.dtype
+            The datatype of the image.
+            Examples: np.float32, np.float16, np.uint8
+
+        """
         _log.debug(
             f"Creating CPU preprocessor: {output_shape}, {output_range}, {dtype}",
         )
@@ -50,19 +68,72 @@ class CPUPreprocessor:
         self: Self,
         image: np.ndarray,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+        """
+        Preprocess an image for YOLO.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The image to preprocess.
+
+        Returns
+        -------
+        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
+            The preprocessed image, ratios, and padding used for resizing.
+
+        """
+        return self.preprocess(image)
+
+    def preprocess(
+        self: Self,
+        image: np.ndarray,
+    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+        """
+        Preprocess an image for YOLO.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The image to preprocess.
+
+        Returns
+        -------
+        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
+            The preprocessed image, ratios, and padding used for resizing.
+
+        """
         return preprocess(image, self._o_shape, self._o_dtype, self._o_range)
 
 
 class CUDAPreprocessor:
+    """CUDA-based preprocessor for YOLO."""
+
     def __init__(
         self: Self,
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
         dtype: np.dtype,
         stream: cudart.cudaStream_t | None = None,
-        *,
-        no_copy: bool | None = None,
     ) -> None:
+        """
+        Create a CUDAPreprocessor for YOLO.
+
+        Parameters
+        ----------
+        output_shape : tuple[int, int]
+            The shape of the image YOLO expects.
+            In the form [width, height]
+        output_range : tuple[float, float]
+            The range of the image values YOLO expects.
+            Examples: (0.0, 1.0), (0.0, 255.0)
+        dtype : np.dtype
+            The datatype of the image.
+            Examples: np.float32, np.float16, np.uint8
+        stream : cudart.cudaStream_t, optional
+            The CUDA stream to use for preprocessing execution.
+            If not provided, the preprocessor will use its own stream.
+
+        """
         _log.debug(
             f"Creating CUDA preprocessor: {output_shape}, {output_range}, {dtype}",
         )
@@ -70,13 +141,13 @@ class CUDAPreprocessor:
         self._o_shape = output_shape
         self._o_range = output_range
         self._o_dtype = dtype
-        self._no_copy = no_copy
 
         # compute scale and offset
-        self._scale = (self._o_range[1] - self._o_range[0]) / 255.0
-        self._offset = self._o_range[0]
+        self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
+        self._offset: float = self._o_range[0]
 
         # handle stream
+        self._stream: cudart.cudaStream_t
         self._own_stream = False
         if stream:
             self._stream = stream
@@ -85,33 +156,41 @@ class CUDAPreprocessor:
             self._own_stream = True
 
         # block and thread info
-        self._num_threads = (16, 16, 3)
-        self._num_blocks = (
+        self._num_threads: tuple[int, int, int] = (16, 16, 3)
+        self._num_blocks: tuple[int, int, int] = (
             math.ceil(self._o_shape[1] / self._num_threads[0]),
             math.ceil(output_shape[0] / self._num_threads[1]),
             1,
         )
 
-        # allocate output binding
-        dummy = np.zeros(
+        # allocate input/output binding
+        dummy_input: np.ndarray = np.zeros(
+            (self._o_shape[1], self._o_shape[0], 3),
+            dtype=np.uint8,
+        )
+        # set is_input since we do not use the host_allocation here
+        self._input_binding = create_binding(
+            dummy_input,
+            is_input=True,
+        )
+        dummy_output: np.ndarray = np.zeros(
             (1, 3, self._o_shape[1], self._o_shape[0]),
             dtype=self._o_dtype,
         )
-        self._output_binding = create_binding(dummy, pagelocked_mem=True)
-
-        # input shape/binding
-        # input can be variable shape so only allocate when changed
-        self._input_shape: tuple[int, ...] = (0, 0, 0)
-        self._input_binding: Binding | None = None
-
-        # store spot for the kernel args
-        self._args: np.ndarray = np.ndarray([1], dtype=np.uint64)
+        # set pagelocked memory since we read from the host allocation
+        self._output_binding = create_binding(
+            dummy_output,
+            pagelocked_mem=True,
+        )
 
         # load the kernel
         self._module, self._kernel = compile_and_load_kernel(
             SCALE_SWAP_TRANSPOSE_KERNEL_CODE,
             "scaleSwapTranspose",
         )
+
+        # create args
+        self._args = self._create_args()
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError):
@@ -124,11 +203,9 @@ class CUDAPreprocessor:
         with contextlib.suppress(AttributeError):
             del self._input_binding
 
-    def _create_args(self: Self) -> None:
-        if self._input_binding is None:
-            err_msg = "CUDAPreprocessor arg creation occured before first input."
-            raise RuntimeError(err_msg)
-
+    def _create_args(self: Self) -> np.ndarray:
+        # create a np.ndarray of pointers to the numpy arrays (CPU side pointers)
+        # From: https://nvidia.github.io/cuda-python/overview.html#cuda-python-workflow
         input_arg: np.ndarray = np.array(
             [self._input_binding.allocation],
             dtype=np.uint64,
@@ -148,22 +225,63 @@ class CUDAPreprocessor:
             dtype=np.uint64,
         )
 
-        self._args = arg_ptrs
+        return arg_ptrs
 
     def __call__(
         self: Self,
         image: np.ndarray,
+        *,
+        no_copy: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
-        resized, ratios, padding = letterbox(image, self._o_shape)
+        """
+        Preprocess an image for YOLO.
 
-        if self._input_binding is None or self._input_shape != resized.shape:
-            self._input_shape = resized.shape
-            self._input_binding = create_binding(
-                resized,
-                is_input=True,
-                pagelocked_mem=True,
-            )
-            self._create_args()
+        Parameters
+        ----------
+        image : np.ndarray
+            The image to preprocess.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE
+            by future preprocessing calls.
+
+        Returns
+        -------
+        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
+            The preprocessed image, ratios, and padding used for resizing.
+
+        """
+        return self.preprocess(image, no_copy=no_copy)
+
+    def preprocess(
+        self: Self,
+        image: np.ndarray,
+        *,
+        no_copy: bool | None = None,
+    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+        """
+        Preprocess an image for YOLO.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The image to preprocess.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE
+            by future preprocessing calls.
+
+        Returns
+        -------
+        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
+            The preprocessed image, ratios, and padding used for resizing.
+
+        """
+        resized, ratios, padding = letterbox(image, self._o_shape)
 
         memcpy_host_to_device_async(
             self._input_binding.allocation,
@@ -191,6 +309,6 @@ class CUDAPreprocessor:
 
         stream_synchronize(self._stream)
 
-        if self._no_copy:
+        if no_copy:
             return self._output_binding.host_allocation, ratios, padding
         return self._output_binding.host_allocation.copy(), ratios, padding

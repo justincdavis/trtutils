@@ -49,19 +49,30 @@ class TRTEngineInterface(ABC):
         """Free the engine resources."""
 
     @abstractmethod
-    def execute(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
+    def execute(
+        self: Self,
+        data: list[np.ndarray],
+        *,
+        no_copy: bool | None = None,
+    ) -> list[np.ndarray]:
         """
-        Execute the engine on the given data.
+        Execute the network with the given inputs.
 
         Parameters
         ----------
         data : list[np.ndarray]
-            The input data.
+            The inputs to the network.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE
+            by future inferences.
 
         Returns
         -------
         list[np.ndarray]
-            The output data.
+            The outputs of the network.
 
         """
 
@@ -171,7 +182,12 @@ class TRTEngineInterface(ABC):
             return self._rand_input
         return self._rand_input
 
-    def __call__(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
+    def __call__(
+        self: Self,
+        data: list[np.ndarray],
+        *,
+        no_copy: bool | None = None,
+    ) -> list[np.ndarray]:
         """
         Execute the network with the given inputs.
 
@@ -179,6 +195,12 @@ class TRTEngineInterface(ABC):
         ----------
         data : list[np.ndarray]
             The inputs to the network.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE
+            by future inferences.
 
         Returns
         -------
@@ -186,7 +208,7 @@ class TRTEngineInterface(ABC):
             The outputs of the network.
 
         """
-        return self.execute(data)
+        return self.execute(data, no_copy=no_copy)
 
     def mock_execute(
         self: Self,

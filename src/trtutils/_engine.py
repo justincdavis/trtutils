@@ -192,7 +192,12 @@ class TRTEngine(TRTEngineInterface):
         """
         return [o.dtype for o in self._outputs]
 
-    def execute(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
+    def execute(
+        self: Self,
+        data: list[np.ndarray],
+        *,
+        no_copy: bool | None = None,
+    ) -> list[np.ndarray]:
         """
         Execute the network with the given inputs.
 
@@ -200,6 +205,12 @@ class TRTEngine(TRTEngineInterface):
         ----------
         data : list[np.ndarray]
             The inputs to the network.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE
+            by future inferences.
 
         Returns
         -------
@@ -235,6 +246,8 @@ class TRTEngine(TRTEngineInterface):
         stream_synchronize(self._stream)
         # return
         # copy the buffer since future inference will overwrite
+        if no_copy:
+            return [o.host_allocation for o in self._outputs]
         return [o.host_allocation.copy() for o in self._outputs]
 
 

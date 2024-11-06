@@ -68,6 +68,8 @@ def _postprocess_v_10(
     outputs: list[np.ndarray],
     ratios: tuple[float, float],
     padding: tuple[float, float],
+    *,
+    no_copy: bool | None = None,
 ) -> list[np.ndarray]:
     # V10 outputs (1, 300, 6)
     # each final entry is (bbox (4 parts), score, classid)
@@ -83,7 +85,7 @@ def _postprocess_v_10(
     class_ids: np.ndarray = output[0, :, 5].astype(int)
 
     # each bounding box is cx, cy, dx, dy
-    adjusted_bboxes = bboxes.copy()
+    adjusted_bboxes = bboxes
     adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width  # x1
     adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height  # y1
     adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width  # x2
@@ -92,13 +94,17 @@ def _postprocess_v_10(
     # Clip the bounding boxes to ensure they're within valid ranges
     adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
 
-    return [adjusted_bboxes, scores, class_ids]
+    if no_copy:
+        return [adjusted_bboxes, scores, class_ids]
+    return [adjusted_bboxes.copy(), scores.copy(), class_ids.copy()]
 
 
 def postprocess(
     outputs: list[np.ndarray],
     ratios: tuple[float, float] = (1.0, 1.0),
     padding: tuple[float, float] = (0.0, 0.0),
+    *,
+    no_copy: bool | None = None,
 ) -> list[np.ndarray]:
     """
     Postprocess outputs from a YOLO network.
@@ -111,6 +117,12 @@ def postprocess(
         The ratio of original image to preprocessed shape
     padding : tuple[float, float]
         The amount of padding added during preprocessing
+    no_copy : bool, optional
+        If True, the outputs will not be copied out
+        from the cuda allocated host memory. Instead,
+        the host memory will be returned directly.
+        This memory WILL BE OVERWRITTEN INPLACE
+        by future inference calls.
 
     Returns
     -------
@@ -119,8 +131,8 @@ def postprocess(
 
     """
     if len(outputs) == _EFF_NUM_OUTPUTS:
-        return postprocess_efficient_nms(outputs, ratios, padding)
-    return _postprocess_v_10(outputs, ratios, padding)
+        return postprocess_efficient_nms(outputs, ratios, padding, no_copy=no_copy)
+    return _postprocess_v_10(outputs, ratios, padding, no_copy=no_copy)
 
 
 def _get_detections_v_10(

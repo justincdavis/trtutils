@@ -139,15 +139,23 @@ def allocate_bindings(
                 # Set the *max* profile as binding shape
                 context.set_binding_shape(i, profile_shape[2])
                 shape = context.get_binding_shape(i)
+        # get batch dim is we are an input tensor
         if is_input:
             batch_size = shape[0]
+        # compute the size of the binding
         size = dtype.itemsize
         for s in shape:
             size *= s
+        # allocate the device side memory
         with _ALLOCATION_LOCK:
             allocation = cuda_malloc(size)
-            host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
-        # host_allocation = allocate_pinned_memory(size, dtype)
+        # allocate the host side memory
+        if is_input:
+            host_allocation = np.zeros((1, 1), dtype)
+        else:
+            with _ALLOCATION_LOCK:
+                host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
+        # create the binding
         binding = Binding(
             index=i,
             name=name,
@@ -199,13 +207,17 @@ def create_binding(
 
     # allocate host and device memory
     device_alloc = cuda_malloc(size)
-    if pagelocked_mem:
+    if is_input:
+        # if the binding is an input binding
+        # can not allocate the host_alloc until populated later
+        host_alloc = np.zeros((1, 1), dtype)
+    elif pagelocked_mem:
+        # allocate the pagelocked memory
         _log.debug(f"Allocating pagelocked mem during Binding: {bind_id}, {name}")
         host_alloc = allocate_pinned_memory(size, dtype, shape)
     else:
-        # if the binding is an input binding
-        # can not allocate the host_alloc until populated later
-        host_alloc = np.zeros((1, 1), dtype) if is_input else np.zeros(shape, dtype)
+        # allocate non-pagelocked memory
+        host_alloc = np.zeros(shape, dtype)
 
     # make the binding
     return Binding(

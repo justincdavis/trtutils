@@ -87,7 +87,9 @@ class YOLO:
 
         # assign the preprocessor
         self._preprocessor: CPUPreprocessor | CUDAPreprocessor
-        if preprocessor == "cuda" and self._dtype == np.float32:
+        self._preprocessor_type = preprocessor
+        # only support uint8 to float32 CUDA kernel for now
+        if self._preprocessor_type == "cuda" and self._dtype == np.float32:
             self._preprocessor = CUDAPreprocessor(
                 self._input_size,
                 self._input_range,
@@ -124,6 +126,8 @@ class YOLO:
     def preprocess(
         self: Self,
         image: np.ndarray,
+        *,
+        no_copy: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
         Preprocess the input.
@@ -132,6 +136,11 @@ class YOLO:
         ----------
         image : np.ndarray
             The image to preprocess
+        no_copy : bool, optional
+            If True and using CUDA, do not copy the
+            data from the allocated memory. If the data
+            is not copied, it WILL BE OVERWRITTEN INPLACE
+            once new data is generated.
 
         Returns
         -------
@@ -140,6 +149,8 @@ class YOLO:
 
         """
         _log.debug(f"{self._tag}: Running preprocess")
+        if isinstance(self._preprocessor, CUDAPreprocessor):
+            return self._preprocessor(image, no_copy=no_copy)
         return self._preprocessor(image)
 
     def postprocess(
@@ -147,6 +158,8 @@ class YOLO:
         outputs: list[np.ndarray],
         ratios: tuple[float, float],
         padding: tuple[float, float],
+        *,
+        no_copy: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Postprocess the outputs.
@@ -159,6 +172,10 @@ class YOLO:
             The rescale ratios used during preprocessing
         padding : tuple[float, float]
             The padding values used during preprocessing
+        no_copy : bool, optional
+            If True, do not copy the data from the allocated
+            memory. If the data is not copied, it WILL BE
+            OVERWRITTEN INPLACE once new data is generated.
 
         Returns
         -------
@@ -167,14 +184,17 @@ class YOLO:
 
         """
         _log.debug(f"{self._tag}: Running postprocess")
-        return postprocess(outputs, ratios, padding)
+        return postprocess(outputs, ratios, padding, no_copy=no_copy)
 
     def __call__(
         self: Self,
         image: np.ndarray,
+        ratios: tuple[float, float] | None = None,
+        padding: tuple[float, float] | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
+        no_copy: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Run the YOLO network on input.
@@ -183,12 +203,22 @@ class YOLO:
         ----------
         image : np.ndarray
             The data to run the YOLO network on.
+        ratios : tuple[float, float], optional
+            The ratios generated during preprocessing.
+        padding : tuple[float, float], optional
+            The padding values used during preprocessing.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
         postprocess : bool, optional
             Whether or not to postprocess the outputs.
             If None, will postprocess outputs.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE by
+            future inferences.
 
         Returns
         -------
@@ -196,7 +226,14 @@ class YOLO:
             The outputs of the YOLO network.
 
         """
-        return self.run(image, preprocessed=preprocessed, postprocess=postprocess)
+        return self.run(
+            image,
+            ratios,
+            padding,
+            preprocessed=preprocessed,
+            postprocess=postprocess,
+            no_copy=no_copy,
+        )
 
     def run(
         self: Self,
@@ -206,6 +243,7 @@ class YOLO:
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
+        no_copy: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Run the YOLO network on input.
@@ -227,6 +265,16 @@ class YOLO:
             If postprocessing will occur and the inputs were
             passed already preprocessed, then the ratios and
             padding must be passed for postprocessing.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE by
+            future inferences.
+            In special case where, preprocessing and
+            postprocessing will occur during run and no_copy
+            was not passed (is None), then no_copy will be used
+            for preprocessing and inference stages.
 
         Returns
         -------
@@ -239,10 +287,23 @@ class YOLO:
             If postprocessing is running, but ratios/padding not found
 
         """
+        # assign flags
         if preprocessed is None:
             preprocessed = False
         if postprocess is None:
             postprocess = True
+
+        # assign no_copy values
+        if no_copy is None and not preprocessed and postprocess:
+            # remove two sets of copies when doing preprocess/run/postprocess inside
+            # a single run call
+            no_copy_pre: bool | None = True
+            no_copy_run: bool | None = True
+            no_copy_post: bool | None = False
+        else:
+            no_copy_pre = no_copy
+            no_copy_run = no_copy
+            no_copy_post = no_copy
 
         _log.debug(
             f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
@@ -251,12 +312,12 @@ class YOLO:
         # handle preprocessing
         if not preprocessed:
             _log.debug("Preprocessing inputs")
-            tensor, ratios, padding = self.preprocess(image)
+            tensor, ratios, padding = self.preprocess(image, no_copy=no_copy_pre)
         else:
             tensor = image
 
         # execute
-        outputs = self._engine([tensor])
+        outputs = self._engine([tensor], no_copy=no_copy_run)
 
         # handle postprocessing
         if postprocess:
@@ -264,7 +325,7 @@ class YOLO:
             if ratios is None or padding is None:
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
                 raise RuntimeError(err_msg)
-            outputs = self.postprocess(outputs, ratios, padding)
+            outputs = self.postprocess(outputs, ratios, padding, no_copy=no_copy_post)
 
         return outputs
 

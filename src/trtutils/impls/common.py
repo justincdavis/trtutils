@@ -26,6 +26,8 @@ def postprocess_efficient_nms(
     outputs: list[np.ndarray],
     ratios: tuple[float, float] = (1.0, 1.0),
     padding: tuple[float, float] = (0.0, 0.0),
+    *,
+    no_copy: bool | None = None,
 ) -> list[np.ndarray]:
     """
     Postprocess the output of the EfficientNMS plugin.
@@ -41,6 +43,12 @@ def postprocess_efficient_nms(
         The ratios used during preprocessing to resize the input.
     padding : tuple[float, float]
         The padding used during preprocessing to position the input.
+    no_copy : bool, optional
+        If True, the outputs will not be copied out
+        from the cuda allocated host memory. Instead,
+        the host memory will be returned directly.
+        This memory WILL BE OVERWRITTEN INPLACE
+        by future preprocessing calls.
 
     Returns
     -------
@@ -56,7 +64,7 @@ def postprocess_efficient_nms(
 
     _log.debug(f"EfficientNMS postproces, bboxes shape: {bboxes.shape}")
 
-    adjusted_bboxes = bboxes.copy()
+    adjusted_bboxes = bboxes
     adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width  # x1
     adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height  # y1
     adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width  # x2
@@ -64,7 +72,9 @@ def postprocess_efficient_nms(
 
     adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
 
-    return [num_dets, adjusted_bboxes, scores, class_ids]
+    if no_copy:
+        return [num_dets, adjusted_bboxes, scores, class_ids]
+    return [num_dets.copy(), adjusted_bboxes.copy(), scores.copy(), class_ids.copy()]
 
 
 def decode_efficient_nms(
