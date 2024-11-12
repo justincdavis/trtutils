@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import logging
+from threading import Lock
 
 import numpy as np
 
@@ -14,6 +15,8 @@ with contextlib.suppress(Exception):
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
+
+_MEM_ALLOC_LOCK = Lock()
 
 _log = logging.getLogger(__name__)
 
@@ -145,7 +148,8 @@ def cuda_malloc(
         The pointer to the allocated memory.
 
     """
-    device_ptr: int = cuda_call(cudart.cudaMalloc(nbytes))
+    with _MEM_ALLOC_LOCK:
+        device_ptr: int = cuda_call(cudart.cudaMalloc(nbytes))
     _log.debug(f"Allocated, device_ptr: {device_ptr}, size: {nbytes}")
     return device_ptr
 
@@ -179,7 +183,8 @@ def allocate_pinned_memory(
 
     """
     # allocate pinned memory and get a pointer to it directly
-    host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocDefault))
+    with _MEM_ALLOC_LOCK:
+        host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocDefault))
 
     # create the numpy array
     array_type = ctypes.c_byte * nbytes

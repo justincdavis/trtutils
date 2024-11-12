@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import time
 from functools import cached_property
 from queue import Empty, Queue
 from threading import Thread
@@ -48,6 +49,7 @@ class TRTEngine(TRTEngineInterface):
         warmup_iterations: int = 5,
         *,
         warmup: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         """
         Load the TensorRT engine from a file.
@@ -61,13 +63,20 @@ class TRTEngine(TRTEngineInterface):
             If None, warmup will be set to False
         warmup_iterations : int, optional
             The number of warmup iterations to do, by default 5
+        verbose : bool, optional
+            Whether or not to give additional information over stdout.
 
         """
         super().__init__(engine_path)
 
+        # store verbose info
+        self._verbose = verbose if verbose is not None else False
+
+        # store timing variable for sleep call before stream_sync
+        self._sync_t: float = 0.0
+
         if warmup:
-            for _ in range(warmup_iterations):
-                self.mock_execute()
+            self.warmup(warmup_iterations)
 
         _log.debug(f"Creating TRTEngine: {self.name}")
 
@@ -177,6 +186,7 @@ class TRTEngine(TRTEngineInterface):
         data: list[np.ndarray],
         *,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the network with the given inputs.
@@ -191,6 +201,10 @@ class TRTEngine(TRTEngineInterface):
             the host memory will be returned directly.
             This memory WILL BE OVERWRITTEN INPLACE
             by future inferences.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
 
         Returns
         -------
@@ -198,7 +212,10 @@ class TRTEngine(TRTEngineInterface):
             The outputs of the network.
 
         """
+        verbose = verbose if verbose is not None else self._verbose
         # Copy inputs
+        if verbose:
+            _log.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
         for i_idx in range(len(self._inputs)):
             # memcpy_host_to_device(
             #     self._inputs[i_idx].allocation,
@@ -223,7 +240,17 @@ class TRTEngine(TRTEngineInterface):
                 self._stream,
             )
         # sync the stream
+        if verbose:
+            _log.info(f"{time.perf_counter()} {self.name} Dispatch: END")
+
+        # # add additional sleep here to help parallel engines
+        # t0 = time.time()
+        # time.sleep(max(self._sync_t - 0.001, 0.0))
+        # stream_synchronize(self._stream)
+        # t1 = time.time()
+        # self._sync_t = t1 - t0
         stream_synchronize(self._stream)
+
         # return
         # copy the buffer since future inference will overwrite
         if no_copy:

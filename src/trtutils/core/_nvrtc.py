@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from threading import Lock
 from typing import TypeVar
 
 import numpy as np
@@ -15,6 +16,9 @@ with contextlib.suppress(Exception):
     from cuda import cuda, nvrtc  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
+from ._memory import _MEM_ALLOC_LOCK
+
+_NVRTC_LOCK = Lock()
 
 _log = logging.getLogger(__name__)
 
@@ -92,17 +96,20 @@ def compile_kernel(
     kernel_bytes = kernel.encode()
     kernel_name_bytes = f"{name}.cu".encode()
 
-    # compile the kernel
-    prog = nvrtc_call(
-        nvrtc.nvrtcCreateProgram(kernel_bytes, kernel_name_bytes, 0, [], []),
-    )
-    opts = [] if opts is None else opts
-    nvrtc_call(nvrtc.nvrtcCompileProgram(prog, len(opts), opts))
+    _log.debug(f"Compiling kernel: {name}")
 
-    # generate the actual kernel ptx
-    ptx_size = nvrtc_call(nvrtc.nvrtcGetPTXSize(prog))
-    ptx_buffer = b"\0" * ptx_size
-    nvrtc_call(nvrtc.nvrtcGetPTX(prog, ptx_buffer))
+    # compile the kernel
+    with _NVRTC_LOCK, _MEM_ALLOC_LOCK:
+        prog = nvrtc_call(
+            nvrtc.nvrtcCreateProgram(kernel_bytes, kernel_name_bytes, 0, [], []),
+        )
+        opts = [] if opts is None else opts
+        nvrtc_call(nvrtc.nvrtcCompileProgram(prog, len(opts), opts))
+
+        # generate the actual kernel ptx
+        ptx_size = nvrtc_call(nvrtc.nvrtcGetPTXSize(prog))
+        ptx_buffer = b"\0" * ptx_size
+        nvrtc_call(nvrtc.nvrtcGetPTX(prog, ptx_buffer))
 
     return np.char.array(ptx_buffer)
 
@@ -127,10 +134,12 @@ def load_kernel(
         The CUDA module and kernel
 
     """
-    module: cuda.CUmodule = cuda_call(cuda.cuModuleLoadData(kernel_ptx.ctypes.data))
-    kernel: cuda.CUkernel = cuda_call(
-        cuda.cuModuleGetFunction(module, name.encode()),
-    )
+    _log.debug(f"Loading kernel: {name} from PTX")
+    with _NVRTC_LOCK, _MEM_ALLOC_LOCK:
+        module: cuda.CUmodule = cuda_call(cuda.cuModuleLoadData(kernel_ptx.ctypes.data))
+        kernel: cuda.CUkernel = cuda_call(
+            cuda.cuModuleGetFunction(module, name.encode()),
+        )
     return module, kernel
 
 

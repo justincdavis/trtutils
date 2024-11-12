@@ -6,10 +6,11 @@ from __future__ import annotations
 import contextlib
 import logging
 import math
+from threading import Lock
 from typing import TYPE_CHECKING
 
 import numpy as np
-from cv2ext.image import letterbox
+from cv2ext.image import letterbox, resize_linear
 
 with contextlib.suppress(ImportError):
     from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
@@ -28,6 +29,8 @@ from ._process import preprocess
 
 if TYPE_CHECKING:
     from typing_extensions import Self
+
+_CUDA_ALLOCATE_LOCK = Lock()
 
 _log = logging.getLogger(__name__)
 
@@ -64,9 +67,20 @@ class CPUPreprocessor:
         self._o_range = output_range
         self._o_dtype = dtype
 
+    def warmup(self: Self) -> None:
+        """Compatibility function for CPU/CUDA parity."""
+        rand_data: np.ndarray = np.random.default_rng().integers(
+            0,
+            255,
+            (*self._o_shape, 3),
+            dtype=np.uint8,
+        )
+        self.preprocess(rand_data)
+
     def __call__(
         self: Self,
         image: np.ndarray,
+        resize: str = "letterbox",
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
         Preprocess an image for YOLO.
@@ -75,6 +89,9 @@ class CPUPreprocessor:
         ----------
         image : np.ndarray
             The image to preprocess.
+        resize : str
+            The method to resize the image with.
+            By default letterbox, options are [letterbox, linear]
 
         Returns
         -------
@@ -82,11 +99,12 @@ class CPUPreprocessor:
             The preprocessed image, ratios, and padding used for resizing.
 
         """
-        return self.preprocess(image)
+        return self.preprocess(image, resize=resize)
 
     def preprocess(
         self: Self,
         image: np.ndarray,
+        resize: str = "letterbox",
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
         Preprocess an image for YOLO.
@@ -95,6 +113,9 @@ class CPUPreprocessor:
         ----------
         image : np.ndarray
             The image to preprocess.
+        resize : str
+            The method to resize the image with.
+            By default letterbox, options are [letterbox, linear]
 
         Returns
         -------
@@ -102,7 +123,7 @@ class CPUPreprocessor:
             The preprocessed image, ratios, and padding used for resizing.
 
         """
-        return preprocess(image, self._o_shape, self._o_dtype, self._o_range)
+        return preprocess(image, self._o_shape, self._o_dtype, self._o_range, resize)
 
 
 class CUDAPreprocessor:
@@ -146,53 +167,54 @@ class CUDAPreprocessor:
         self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
         self._offset: float = self._o_range[0]
 
-        # handle stream
-        self._stream: cudart.cudaStream_t
-        self._own_stream = False
-        if stream:
-            self._stream = stream
-        else:
-            self._stream = create_stream()
-            self._own_stream = True
+        with _CUDA_ALLOCATE_LOCK:
+            # handle stream
+            self._stream: cudart.cudaStream_t
+            self._own_stream = False
+            if stream:
+                self._stream = stream
+            else:
+                self._stream = create_stream()
+                self._own_stream = True
 
-        # block and thread info
-        self._num_threads: tuple[int, int, int] = (16, 16, 3)
-        self._num_blocks: tuple[int, int, int] = (
-            math.ceil(self._o_shape[1] / self._num_threads[0]),
-            math.ceil(output_shape[0] / self._num_threads[1]),
-            1,
-        )
+            # block and thread info
+            self._num_threads: tuple[int, int, int] = (16, 16, 3)
+            self._num_blocks: tuple[int, int, int] = (
+                math.ceil(self._o_shape[1] / self._num_threads[0]),
+                math.ceil(output_shape[0] / self._num_threads[1]),
+                1,
+            )
 
-        # allocate input/output binding
-        dummy_input: np.ndarray = np.zeros(
-            (self._o_shape[1], self._o_shape[0], 3),
-            dtype=np.uint8,
-        )
-        # set is_input since we do not use the host_allocation here
-        self._input_binding = create_binding(
-            dummy_input,
-            is_input=True,
-        )
-        dummy_output: np.ndarray = np.zeros(
-            (1, 3, self._o_shape[1], self._o_shape[0]),
-            dtype=self._o_dtype,
-        )
-        # set pagelocked memory since we read from the host allocation
-        self._output_binding = create_binding(
-            dummy_output,
-            pagelocked_mem=True,
-        )
+            # allocate input/output binding
+            dummy_input: np.ndarray = np.zeros(
+                (self._o_shape[1], self._o_shape[0], 3),
+                dtype=np.uint8,
+            )
+            # set is_input since we do not use the host_allocation here
+            self._input_binding = create_binding(
+                dummy_input,
+                is_input=True,
+            )
+            dummy_output: np.ndarray = np.zeros(
+                (1, 3, self._o_shape[1], self._o_shape[0]),
+                dtype=self._o_dtype,
+            )
+            # set pagelocked memory since we read from the host allocation
+            self._output_binding = create_binding(
+                dummy_output,
+                pagelocked_mem=True,
+            )
 
-        # load the kernel
-        self._module, self._kernel = compile_and_load_kernel(
-            SCALE_SWAP_TRANSPOSE_KERNEL_CODE,
-            "scaleSwapTranspose",
-        )
+            # load the kernel
+            self._module, self._kernel = compile_and_load_kernel(
+                SCALE_SWAP_TRANSPOSE_KERNEL_CODE,
+                "scaleSwapTranspose",
+            )
 
     def __del__(self: Self) -> None:
-        with contextlib.suppress(AttributeError):
+        with contextlib.suppress(AttributeError, RuntimeError):
             cuda_call(cuda.cuModuleUnload(self._module))
-        with contextlib.suppress(AttributeError):
+        with contextlib.suppress(AttributeError, RuntimeError):
             if self._own_stream:
                 destroy_stream(self._stream)
         with contextlib.suppress(AttributeError):
@@ -226,9 +248,25 @@ class CUDAPreprocessor:
 
         return arg_ptrs
 
+    def warmup(self: Self) -> None:
+        """
+        Warmup the CUDA preprocessor.
+
+        Allocates all CUDA memory and enables future passes
+        to be significantly faster.
+        """
+        rand_data: np.ndarray = np.random.default_rng().integers(
+            0,
+            255,
+            (*self._o_shape, 3),
+            dtype=np.uint8,
+        )
+        self.preprocess(rand_data, no_copy=True)
+
     def __call__(
         self: Self,
         image: np.ndarray,
+        resize: str = "letterbox",
         *,
         no_copy: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
@@ -239,6 +277,9 @@ class CUDAPreprocessor:
         ----------
         image : np.ndarray
             The image to preprocess.
+        resize : str
+            The method to resize the image with.
+            By default letterbox, options are [letterbox, linear]
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -252,11 +293,12 @@ class CUDAPreprocessor:
             The preprocessed image, ratios, and padding used for resizing.
 
         """
-        return self.preprocess(image, no_copy=no_copy)
+        return self.preprocess(image, resize=resize, no_copy=no_copy)
 
     def preprocess(
         self: Self,
         image: np.ndarray,
+        resize: str = "letterbox",
         *,
         no_copy: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
@@ -267,6 +309,9 @@ class CUDAPreprocessor:
         ----------
         image : np.ndarray
             The image to preprocess.
+        resize : str
+            The method to resize the image with.
+            By default letterbox, options are [letterbox, linear]
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -279,8 +324,22 @@ class CUDAPreprocessor:
         tuple[np.ndarray, tuple[float, float], tuple[float, float]]
             The preprocessed image, ratios, and padding used for resizing.
 
+        Raises
+        ------
+        ValueError
+            If the method for resizing is not 'letterbox' or 'linear'
+
         """
-        resized, ratios, padding = letterbox(image, self._o_shape)
+        if resize == "letterbox":
+            resized, ratios, padding = letterbox(image, self._o_shape)
+        elif resize == "linear":
+            resized, ratios = resize_linear(image, self._o_shape)
+            padding = (0.0, 0.0)
+        else:
+            err_msg = (
+                "Unknown method for image resizing. Options are ['letterbox', 'linear']"
+            )
+            raise ValueError(err_msg)
 
         args = self._create_args()
 
@@ -317,6 +376,7 @@ class CUDAPreprocessor:
     def direct_preproc(
         self: Self,
         image: np.ndarray,
+        resize: str = "letterbox",
         *,
         no_warn: bool | None = None,
     ) -> tuple[int, tuple[float, float], tuple[float, float]]:
@@ -327,6 +387,9 @@ class CUDAPreprocessor:
         ----------
         image : np.ndarray
             The image to preprocess.
+        resize : str
+            The method to resize the image with.
+            By default letterbox, options are [letterbox, linear]
         no_warn : bool, optional
             If True, do not warn about usage.
 
@@ -335,13 +398,27 @@ class CUDAPreprocessor:
         tuple[int, tuple[float, float], tuple[float, float]]
             The GPU pointer to preprocessed data, ratios, and padding used for resizing.
 
+        Raises
+        ------
+        ValueError
+            If the method for resizing is not 'letterbox' or 'linear'
+
         """
         if not no_warn:
             _log.warning(
                 "Calling direct_preproc is potentially dangerous. Outputs can be overwritten inplace!",
             )
 
-        resized, ratios, padding = letterbox(image, self._o_shape)
+        if resize == "letterbox":
+            resized, ratios, padding = letterbox(image, self._o_shape)
+        elif resize == "linear":
+            resized, ratios = resize_linear(image, self._o_shape)
+            padding = (0.0, 0.0)
+        else:
+            err_msg = (
+                "Unknown method for image resizing. Options are ['letterbox', 'linear']"
+            )
+            raise ValueError(err_msg)
 
         args = self._create_args()
 

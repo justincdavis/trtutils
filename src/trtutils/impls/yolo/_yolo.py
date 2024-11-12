@@ -29,8 +29,13 @@ class YOLO:
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
         preprocessor: str = "cuda",
+        resize_method: str = "letterbox",
+        conf_thres: float | None = None,
+        nms_iou_thres: float = 0.5,
         *,
         warmup: bool | None = None,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
     ) -> None:
         """
         Create a YOLO object.
@@ -53,8 +58,23 @@ class YOLO:
         preprocessor : str
             The type of preprocessor to use.
             The options are ['cpu', 'cuda'], default is 'cuda'.
+        resize_method : str
+            The type of resize algorithm to use.
+            The options are ['letterbox', 'linear'], default is 'letterbox'.
+        conf_thres : float, optional
+            The confidence threshold above which to generate detections.
+            By default None, which will include all outputs.
+        nms_iou_thres : float, optional
+            The IOU threshold to use the in the optional and additnal
+            NMS operation. By default, 0.5
         warmup : bool, optional
             Whether or not to perform warmup iterations.
+        extra_nms : bool, optional
+            Whether or not an additional CPU-side NMS operation
+            should be conducted on final detections.
+        agnostic_nms : bool, optional
+            Whether or not the optional/additional NMS operation
+            should perform class agnostic NMS.
 
         Raises
         ------
@@ -71,6 +91,11 @@ class YOLO:
             warmup_iterations=warmup_iterations,
             warmup=warmup,
         )
+        self._conf_thres = conf_thres
+        self._resize_method: str = resize_method
+        self._nms_iou: float = nms_iou_thres
+        self._nms: bool | None = extra_nms
+        self._agnostic_nms: bool | None = agnostic_nms
         input_spec = self._engine.input_spec[0]
         input_size: tuple[int, ...] = tuple(input_spec[0])
         yolo_input_size = 4
@@ -88,32 +113,31 @@ class YOLO:
 
         # assign the preprocessor
         self._preprocessor: CPUPreprocessor | CUDAPreprocessor
-        self._preprocessor_type = preprocessor
-        # only support uint8 to float32 CUDA kernel for now
-        if self._preprocessor_type == "cuda" and self._dtype == np.float32:
-            self._preprocessor = CUDAPreprocessor(
+        # create both preprocessors to allow dynamic switching
+        # CPU preprocessor has near zero-memory footprint
+        self._preprocessors: tuple[CPUPreprocessor, CUDAPreprocessor] = (
+            CPUPreprocessor(
+                self._input_size,
+                self._input_range,
+                self._dtype,
+            ),
+            CUDAPreprocessor(
                 self._input_size,
                 self._input_range,
                 self._dtype,
                 self._engine.stream,
-            )
+            ),
+        )
+        self._preprocessor_type = preprocessor
+        # only support uint8 to float32 CUDA kernel for now
+        if self._preprocessor_type == "cuda" and self._dtype == np.float32:
+            self._preprocessor = self._preprocessors[1]
         else:
-            self._preprocessor = CPUPreprocessor(
-                self._input_size,
-                self._input_range,
-                self._dtype,
-            )
+            self._preprocessor = self._preprocessors[0]
 
-        # if warmup, warmup the preprocessor
+        # if warmup, warmup the preprocessors
         if warmup:
-            self._preprocessor(
-                np.random.default_rng().integers(
-                    0,
-                    255,
-                    (*self._input_size, 3),
-                    dtype=np.uint8,
-                ),
-            )
+            self._preprocessor.warmup()
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -138,6 +162,8 @@ class YOLO:
     def preprocess(
         self: Self,
         image: np.ndarray,
+        resize: str | None = None,
+        method: str | None = None,
         *,
         no_copy: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
@@ -148,6 +174,15 @@ class YOLO:
         ----------
         image : np.ndarray
             The image to preprocess
+        resize : str
+            The method to resize the image with.
+            Options are [letterbox, linear].
+            By default None, which will use the value passed
+            during initialization.
+        method : str, optional
+            The underlying preprocessor to use.
+            Options are 'cpu' and 'cuda'. By default None, which
+            will use the preprocessor stated in the constructor.
         no_copy : bool, optional
             If True and using CUDA, do not copy the
             data from the allocated memory. If the data
@@ -161,9 +196,15 @@ class YOLO:
 
         """
         _log.debug(f"{self._tag}: Running preprocess, shape: {image.shape}")
-        if isinstance(self._preprocessor, CUDAPreprocessor):
-            return self._preprocessor(image, no_copy=no_copy)
-        return self._preprocessor(image)
+        preprocessor = self._preprocessor
+        if method is not None:
+            preprocessor = (
+                self._preprocessors[0] if method == "cpu" else self._preprocessors[1]
+            )
+        resize = resize if resize is not None else self._resize_method
+        if isinstance(preprocessor, CUDAPreprocessor):
+            return preprocessor(image, resize=resize, no_copy=no_copy)
+        return preprocessor(image, resize=resize)
 
     def postprocess(
         self: Self,
@@ -381,7 +422,11 @@ class YOLO:
     def get_detections(
         self: Self,
         outputs: list[np.ndarray],
-        conf_thres: float = 0.15,
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
         """
         Get the bounding boxes of the last output or provided output.
@@ -390,9 +435,21 @@ class YOLO:
         ----------
         outputs : list[np.ndarray]
             The outputs to process.
-        conf_thres : float
+        conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
-            By default 0.15
+            By default None
+        nms_iou_thres : float
+            The IOU threshold to use during the optional/additional
+            NMS operation. By default, None which will use value
+            provided during initialization.
+        extra_nms : bool, optional
+            Whether or not to perform an additional NMS operation.
+            By default None, which will use value provided during
+            initialization.
+        agnostic_nms: bool, optional
+            Whether or not to perform class-agnostic NMS for the
+            optional/additional operation. By default None, which
+            will use value provided during initialization.
 
         Returns
         -------
@@ -401,11 +458,26 @@ class YOLO:
 
         """
         _log.debug(f"{self._tag}: Running get_detections")
-        return get_detections(outputs, conf_thres=conf_thres)
+        conf_thres = conf_thres or self._conf_thres
+        nms_iou = nms_iou_thres or self._nms_iou
+        use_nms = extra_nms if extra_nms is not None else self._nms
+        agnostic = agnostic_nms if agnostic_nms is not None else self._agnostic_nms
+        return get_detections(
+            outputs,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou,
+            extra_nms=use_nms,
+            agnostic_nms=agnostic,
+        )
 
     def end2end(
         self: Self,
         image: np.ndarray,
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
         """
         Perform end to end inference for a YOLO model.
@@ -418,6 +490,21 @@ class YOLO:
         ----------
         image : np.ndarray
             The image to perform inference with.
+        conf_thres : float, optional
+            The confidence threshold with which to retrieve bounding boxes.
+            By default None
+        nms_iou_thres : float
+            The IOU threshold to use during the optional/additional
+            NMS operation. By default, None which will use value
+            provided during initialization.
+        extra_nms : bool, optional
+            Whether or not to perform an additional NMS operation.
+            By default None, which will use value provided during
+            initialization.
+        agnostic_nms: bool, optional
+            Whether or not to perform class-agnostic NMS for the
+            optional/additional operation. By default None, which
+            will use value provided during initialization.
 
         Returns
         -------
@@ -425,6 +512,7 @@ class YOLO:
             The detections where each entry is bbox, conf, class_id
 
         """
+        outputs: list[np.ndarray]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, CUDAPreprocessor):
             outputs = self.run(
@@ -433,13 +521,20 @@ class YOLO:
                 postprocess=True,
                 no_copy=True,
             )
-            return self.get_detections(outputs)
+        else:
+            # if using CUDA, can remove much more
+            gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
+                image,
+                no_warn=True,
+            )
+            outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
+            outputs = self.postprocess(outputs, ratios, padding, no_copy=True)
 
-        # if using CUDA, can remove much more
-        gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
-            image,
-            no_warn=True,
+        # generate the detections
+        return self.get_detections(
+            outputs,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou_thres,
+            extra_nms=extra_nms,
+            agnostic_nms=agnostic_nms,
         )
-        outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
-        post_out = self.postprocess(outputs, ratios, padding, no_copy=True)
-        return self.get_detections(post_out)

@@ -7,7 +7,8 @@ import logging
 
 import cv2
 import numpy as np
-from cv2ext.image import letterbox, rescale
+from cv2ext.bboxes import nms
+from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils.impls.common import decode_efficient_nms, postprocess_efficient_nms
 
@@ -22,6 +23,7 @@ def preprocess(
     input_shape: tuple[int, int],
     dtype: np.dtype,
     input_range: tuple[float, float] = (0.0, 1.0),
+    method: str = "letterbox",
 ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
     """
     Preprocess inputs for a YOLO network.
@@ -37,16 +39,35 @@ def preprocess(
     input_range : tuple[float, float]
         The range of the model expects for inputs.
         By default, [0.0, 1.0] (divide input by 255.0)
+    method : str
+        The method by which to resize the image.
+        By default letterbox will be used.
+        Options are [letterbox, linear]
 
     Returns
     -------
     tuple[np.ndarray, tuple[float, float], tuple[float, float]]
         The preprocessed data.
 
+    Raises
+    ------
+    ValueError
+        If the method for resizing is not 'letterbox' or 'linear'
+
     """
     _log.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
 
-    tensor, ratios, padding = letterbox(image, new_shape=input_shape)
+    if method == "letterbox":
+        tensor, ratios, padding = letterbox(image, new_shape=input_shape)
+    elif method == "linear":
+        tensor, ratios = resize_linear(image, new_shape=input_shape)
+        padding = (0.0, 0.0)
+    else:
+        err_msg = (
+            "Unknown method for image resizing. Options are ['letterbox', 'linear']"
+        )
+        raise ValueError(err_msg)
+
     tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
 
     # tensor = tensor / 255.0  # type: ignore[assignment]
@@ -138,6 +159,10 @@ def postprocess(
 def _get_detections_v_10(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,
+    nms_iou_thres: float = 0.5,
+    *,
+    extra_nms: bool | None = None,
+    agnostic_nms: bool | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
     # set conf_thres to zero if not provided (include all bboxes)
     if conf_thres is None:
@@ -159,12 +184,20 @@ def _get_detections_v_10(
                 int(class_ids[idx]),
             )
             results.append(entry)
+
+    if extra_nms:
+        results = nms(results, iou_threshold=nms_iou_thres, agnostic=agnostic_nms)
+
     return results
 
 
 def get_detections(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,
+    nms_iou_thres: float = 0.5,
+    *,
+    extra_nms: bool | None = None,
+    agnostic_nms: bool | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
     """
     Get the detections from the output of a YOLO network.
@@ -175,6 +208,15 @@ def get_detections(
         The outputs from a YOLO networks.
     conf_thres : float, optional
         The confidence threshold to use for getting detections.
+    nms_iou_thres : float
+        The IOU threshold to use during the optional additional
+        NMS operation. By default, 0.5
+    extra_nms : bool, optional
+        Whether or not an additional CPU-side NMS operation
+        should be conducted on final detections.
+    agnostic_nms : bool, optional
+        Whether or not to perform class-agnostic NMS during the
+        optional additional operation.
 
     Returns
     -------
@@ -184,5 +226,17 @@ def get_detections(
 
     """
     if len(outputs) == _EFF_NUM_OUTPUTS:
-        return decode_efficient_nms(outputs, conf_thres=conf_thres)
-    return _get_detections_v_10(outputs, conf_thres=conf_thres)
+        return decode_efficient_nms(
+            outputs,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou_thres,
+            extra_nms=extra_nms,
+            agnostic_nms=agnostic_nms,
+        )
+    return _get_detections_v_10(
+        outputs,
+        conf_thres=conf_thres,
+        nms_iou_thres=nms_iou_thres,
+        extra_nms=extra_nms,
+        agnostic_nms=agnostic_nms,
+    )

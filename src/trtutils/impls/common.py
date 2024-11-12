@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
+from cv2ext.bboxes import nms
 
 _log = logging.getLogger(__name__)
 
@@ -80,6 +81,10 @@ def postprocess_efficient_nms(
 def decode_efficient_nms(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,
+    nms_iou_thres: float = 0.5,
+    *,
+    extra_nms: bool | None = None,
+    agnostic_nms: bool | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
     """
     Decode EfficientNMS plugin output.
@@ -94,6 +99,15 @@ def decode_efficient_nms(
     conf_thres : float
         A confidence value to threshold detctions by.
         By default None.
+    nms_iou_thres : float
+        The IOU threshold to use during the optional additional
+        NMS operation. By default, 0.5
+    extra_nms : bool, optional
+        Whether or not an additional CPU-side NMS operation
+        should be conducted on final detections.
+    agnostic_nms : bool, optional
+        Whether or not to perform class-agnostic NMS during the
+        optional additional operation.
 
     Returns
     -------
@@ -122,5 +136,12 @@ def decode_efficient_nms(
             if score >= conf_thres:
                 filtered_dects.append((bbox, score, class_id))
         frame_dects = filtered_dects
+
+    if extra_nms:
+        frame_dects = nms(
+            frame_dects,
+            iou_threshold=nms_iou_thres,
+            agnostic=agnostic_nms,
+        )
 
     return frame_dects

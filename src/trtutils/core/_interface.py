@@ -45,7 +45,6 @@ class TRTEngineInterface(ABC):
             allocate_bindings(
                 self._engine,
                 self._context,
-                self._logger,
             )
         )
         self._input_allocations: list[int] = [
