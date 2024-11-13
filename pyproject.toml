@@ -63,7 +63,7 @@ impls = [
     "trtutils[yolo]",
 ]
 yolo = [
-    "cv2ext>=0.0.24",
+    "cv2ext>=0.0.25",
     "opencv-contrib-python>=4.6.0",
 ]
 jetson = [
