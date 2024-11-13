@@ -17,9 +17,13 @@ from __future__ import annotations
 
 import contextlib
 
-from . import common
+__all__ = []
 
-__all__ = ["common"]
+# import common elements
+with contextlib.suppress(ImportError):
+    from . import common
+
+    __all__ = ["common"]
 
 # import yolo models
 with contextlib.suppress(ImportError):
