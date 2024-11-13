@@ -2,3 +2,4 @@ sphinx
 sphinx-rtd-theme
 myst_parser
 numpy
+trtutils[all]
