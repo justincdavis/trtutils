@@ -123,7 +123,7 @@ if level is not None and level.upper() not in [
     _log.warning(f"Invalid log level: {level}. Using default log level: WARNING")
 
 __author__ = "Justin Davis"
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 import contextlib
 
@@ -158,11 +158,11 @@ with contextlib.suppress(ImportError):
     __all__ += ["jetson"]
 
 
-# start CUDA
-with contextlib.suppress(ImportError):
-    from cuda import cuda  # type: ignore[import-untyped, import-not-found]
+# # start CUDA
+# with contextlib.suppress(ImportError):
+#     from cuda import cuda  # type: ignore[import-untyped, import-not-found]
 
-    core.cuda_call(cuda.cuInit(0))
+#     core.cuda_call(cuda.cuInit(0))
 
-    device_count = core.cuda_call(cuda.cuDeviceGetCount())
-    _log.info(f"Number of CUDA devices: {device_count}")
+#     device_count = core.cuda_call(cuda.cuDeviceGetCount())
+#     _log.info(f"Number of CUDA devices: {device_count}")

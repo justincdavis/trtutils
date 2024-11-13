@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import logging
+from threading import Lock
 
 import numpy as np
 
@@ -13,6 +15,10 @@ with contextlib.suppress(Exception):
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
+
+_MEM_ALLOC_LOCK = Lock()
+
+_log = logging.getLogger(__name__)
 
 
 def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
@@ -28,6 +34,7 @@ def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
 
     """
     nbytes = host_arr.size * host_arr.itemsize
+    # _log.debug(f"MemcpyHtoD: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpy(
             device_ptr,
@@ -51,6 +58,7 @@ def memcpy_device_to_host(host_arr: np.ndarray, device_ptr: int) -> None:
 
     """
     nbytes = host_arr.size * host_arr.itemsize
+    # _log.debug(f"MemcpyDtoH: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpy(
             host_arr,
@@ -80,6 +88,7 @@ def memcpy_host_to_device_async(
 
     """
     nbytes = host_arr.size * host_arr.itemsize
+    # _log.debug(f"MemcpyHtoD_Async: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpyAsync(
             device_ptr,
@@ -110,6 +119,7 @@ def memcpy_device_to_host_async(
 
     """
     nbytes = host_arr.size * host_arr.itemsize
+    # _log.debug(f"MemcpyDtoH_Async: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpyAsync(
             host_arr,
@@ -121,9 +131,40 @@ def memcpy_device_to_host_async(
     )
 
 
-def allocate_pinned_memory(nbytes: int, dtype: np.dtype) -> np.ndarray:
+def cuda_malloc(
+    nbytes: int,
+) -> int:
+    """
+    Perform a memory allocation using cudart.cudaMalloc.
+
+    Parameters
+    ----------
+    nbytes : int
+        The number of bytes to allocate.
+
+    Returns
+    -------
+    int
+        The pointer to the allocated memory.
+
+    """
+    with _MEM_ALLOC_LOCK:
+        device_ptr: int = cuda_call(cudart.cudaMalloc(nbytes))
+    _log.debug(f"Allocated, device_ptr: {device_ptr}, size: {nbytes}")
+    return device_ptr
+
+
+def allocate_pinned_memory(
+    nbytes: int,
+    dtype: np.dtype,
+    shape: tuple[int, ...] | None = None,
+) -> np.ndarray:
     """
     Allocate pinned (page-locked) memory on the host, required for asynchronous memory transfers.
+
+    The shape of the pagelocked memory is a 1D numpy array, so CPU side reshaping
+    is required for some applications. If shape is passed, then the shape will not
+    be 1D, but memory transfer may have complications.
 
     Parameters
     ----------
@@ -131,6 +172,9 @@ def allocate_pinned_memory(nbytes: int, dtype: np.dtype) -> np.ndarray:
         The number of bytes to allocate.
     dtype : np.dtype
         The data type for the allocated memory.
+    shape : tuple[int, ...], optional
+        An optional shape for the pagelocked memory array.
+        If not provided, the array will be 1D.
 
     Returns
     -------
@@ -139,7 +183,8 @@ def allocate_pinned_memory(nbytes: int, dtype: np.dtype) -> np.ndarray:
 
     """
     # allocate pinned memory and get a pointer to it directly
-    host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocDefault))
+    with _MEM_ALLOC_LOCK:
+        host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocDefault))
 
     # create the numpy array
     array_type = ctypes.c_byte * nbytes
@@ -147,4 +192,10 @@ def allocate_pinned_memory(nbytes: int, dtype: np.dtype) -> np.ndarray:
 
     # set datatype and shape
     array = array.view(dtype)
-    return array.reshape((nbytes // dtype.itemsize,))
+    shape = (nbytes // dtype.itemsize,) if shape is None else shape
+
+    _log.debug(
+        f"Allocated-pagelocked, host_ptr: {host_ptr}, size: {nbytes}, shape: {shape}",
+    )
+
+    return array.reshape(shape)

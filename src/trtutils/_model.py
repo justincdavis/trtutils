@@ -17,6 +17,9 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    with contextlib.suppress(ImportError):
+        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+
 
 def _identity(data: list[np.ndarray]) -> list[np.ndarray]:
     return data
@@ -80,6 +83,11 @@ class TRTModel:
     def engine(self: Self) -> TRTEngine:
         """Access the underlying TRTEngine."""
         return self._engine
+
+    @property
+    def stream(self: Self) -> cudart.cudaStream_t:
+        """Access the underlying CUDA stream."""
+        return self._engine.stream
 
     @property
     def preprocessor(self: Self) -> Callable[[list[np.ndarray]], list[np.ndarray]]:

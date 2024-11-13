@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 _CONTEXT_LOCK = Lock()
-_STREAM_LOCK = Lock()
 
 
 def create_engine(
@@ -86,7 +85,6 @@ def create_engine(
             raise RuntimeError(err_msg)
 
     # create a cudart stream
-    with _STREAM_LOCK:
-        stream = create_stream()
+    stream = create_stream()
 
     return engine, context, trt_logger, stream

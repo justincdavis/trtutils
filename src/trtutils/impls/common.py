@@ -15,13 +15,20 @@ postprocess_efficient_nms
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
+from cv2ext.bboxes import nms
+
+_log = logging.getLogger(__name__)
 
 
 def postprocess_efficient_nms(
     outputs: list[np.ndarray],
     ratios: tuple[float, float] = (1.0, 1.0),
     padding: tuple[float, float] = (0.0, 0.0),
+    *,
+    no_copy: bool | None = None,
 ) -> list[np.ndarray]:
     """
     Postprocess the output of the EfficientNMS plugin.
@@ -37,6 +44,12 @@ def postprocess_efficient_nms(
         The ratios used during preprocessing to resize the input.
     padding : tuple[float, float]
         The padding used during preprocessing to position the input.
+    no_copy : bool, optional
+        If True, the outputs will not be copied out
+        from the cuda allocated host memory. Instead,
+        the host memory will be returned directly.
+        This memory WILL BE OVERWRITTEN INPLACE
+        by future preprocessing calls.
 
     Returns
     -------
@@ -50,21 +63,28 @@ def postprocess_efficient_nms(
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
 
-    n_boxes = len(bboxes) // 4
-    adjusted_bboxes = bboxes.copy().reshape(n_boxes, 4)
-    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width  # x1
-    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height  # y1
-    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width  # x2
-    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height  # y2
+    _log.debug(f"EfficientNMS postprocess, bboxes shape: {bboxes.shape}")
+
+    adjusted_bboxes = bboxes
+    adjusted_bboxes[:, :, 0] = (adjusted_bboxes[:, :, 0] - pad_x) / ratio_width  # x1
+    adjusted_bboxes[:, :, 1] = (adjusted_bboxes[:, :, 1] - pad_y) / ratio_height  # y1
+    adjusted_bboxes[:, :, 2] = (adjusted_bboxes[:, :, 2] - pad_x) / ratio_width  # x2
+    adjusted_bboxes[:, :, 3] = (adjusted_bboxes[:, :, 3] - pad_y) / ratio_height  # y2
 
     adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
 
-    return [num_dets, adjusted_bboxes, scores, class_ids]
+    if no_copy:
+        return [num_dets, adjusted_bboxes, scores, class_ids]
+    return [num_dets.copy(), adjusted_bboxes.copy(), scores.copy(), class_ids.copy()]
 
 
 def decode_efficient_nms(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,
+    nms_iou_thres: float = 0.5,
+    *,
+    extra_nms: bool | None = None,
+    agnostic_nms: bool | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
     """
     Decode EfficientNMS plugin output.
@@ -79,6 +99,15 @@ def decode_efficient_nms(
     conf_thres : float
         A confidence value to threshold detctions by.
         By default None.
+    nms_iou_thres : float
+        The IOU threshold to use during the optional additional
+        NMS operation. By default, 0.5
+    extra_nms : bool, optional
+        Whether or not an additional CPU-side NMS operation
+        should be conducted on final detections.
+    agnostic_nms : bool, optional
+        Whether or not to perform class-agnostic NMS during the
+        optional additional operation.
 
     Returns
     -------
@@ -88,14 +117,13 @@ def decode_efficient_nms(
 
     """
     num_dects: int = int(outputs[0][0])
-    bboxes: np.ndarray = outputs[1]
-    scores: np.ndarray = outputs[2]
-    classes: np.ndarray = outputs[3]
+    bboxes: np.ndarray = outputs[1][0]
+    scores: np.ndarray = outputs[2][0]
+    classes: np.ndarray = outputs[3][0]
 
     frame_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
     for idx in range(num_dects):
         x1, y1, x2, y2 = bboxes[idx]
-        # y1, x1, y2, x2 = bboxes[idx]
         np_score = scores[idx]
         np_classid = classes[idx]
 
@@ -108,5 +136,12 @@ def decode_efficient_nms(
             if score >= conf_thres:
                 filtered_dects.append((bbox, score, class_id))
         frame_dects = filtered_dects
+
+    if extra_nms:
+        frame_dects = nms(
+            frame_dects,
+            iou_threshold=nms_iou_thres,
+            agnostic=agnostic_nms,
+        )
 
     return frame_dects

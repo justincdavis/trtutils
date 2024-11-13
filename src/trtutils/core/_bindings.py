@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from dataclasses import dataclass
 from threading import Lock
 from typing import TYPE_CHECKING
@@ -16,12 +17,14 @@ with contextlib.suppress(Exception):
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
-from ._memory import allocate_pinned_memory
+from ._memory import allocate_pinned_memory, cuda_malloc
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-_ALLOCATION_LOCK = Lock()
+_BINDING_LOCK = Lock()
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -47,7 +50,6 @@ class Binding:
 def allocate_bindings(
     engine: trt.IEngine,
     context: trt.IExecutionContext,
-    logger: trt.ILogger,
 ) -> tuple[list[Binding], list[Binding], list[int], int]:
     """
     Allocate memory for the input and output tensors of a TensorRT engine.
@@ -58,8 +60,6 @@ def allocate_bindings(
         The TensorRT engine to allocate memory for.
     context : trt.IExecutionContext
         The execution context to use.
-    logger : trt.ILogger
-        The logger to use.
 
     Returns
     -------
@@ -79,9 +79,9 @@ def allocate_bindings(
 
     """
     # lists for allocations
-    inputs = []
-    outputs = []
-    allocations = []
+    inputs: list[Binding] = []
+    outputs: list[Binding] = []
+    allocations: list[int] = []
     batch_size = 0
 
     # magic numbers
@@ -136,32 +136,39 @@ def allocate_bindings(
                 # Set the *max* profile as binding shape
                 context.set_binding_shape(i, profile_shape[2])
                 shape = context.get_binding_shape(i)
-        if is_input:
-            batch_size = shape[0]
-        size = dtype.itemsize
-        for s in shape:
-            size *= s
-        with _ALLOCATION_LOCK:
-            allocation = cuda_call(cudart.cudaMalloc(size))
-            host_allocation = allocate_pinned_memory(size, dtype)
-        # host_allocation = allocate_pinned_memory(size, dtype)
-        binding = Binding(
-            index=i,
-            name=name,
-            dtype=dtype,
-            shape=list(shape),
-            is_input=is_input,
-            allocation=allocation,
-            host_allocation=host_allocation,
-        )
-        allocations.append(allocation)
-        if is_input:
-            inputs.append(binding)
-        else:
-            outputs.append(binding)
-        input_str = "Input" if is_input else "Output"
-        log_msg = f"{input_str} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
-        logger.log(trt.Logger.INFO, log_msg)
+        with _BINDING_LOCK:
+            # get batch dim is we are an input tensor
+            if is_input:
+                batch_size = shape[0]
+            # compute the size of the binding
+            size = dtype.itemsize
+            for s in shape:
+                size *= s
+            # allocate the device side memory
+            allocation = cuda_malloc(size)
+            # allocate the host side memory
+            if is_input:
+                host_allocation = np.zeros((1, 1), dtype)
+            else:
+                host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
+            # create the binding
+            binding = Binding(
+                index=i,
+                name=name,
+                dtype=dtype,
+                shape=list(shape),
+                is_input=is_input,
+                allocation=allocation,
+                host_allocation=host_allocation,
+            )
+            allocations.append(allocation)
+            if is_input:
+                inputs.append(binding)
+            else:
+                outputs.append(binding)
+            input_str = "Input" if is_input else "Output"
+            log_msg = f"{input_str}-{i} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
+            _log.debug(log_msg)
 
     if batch_size == 0:
         err_msg = "Batch size is 0. Ensure that the engine has an input tensor with a valid batch size."
@@ -177,3 +184,45 @@ def allocate_bindings(
         raise ValueError(err_msg)
 
     return inputs, outputs, allocations, batch_size
+
+
+def create_binding(
+    array: np.ndarray,
+    bind_id: int = 0,
+    name: str = "binding",
+    *,
+    is_input: bool | None = None,
+    pagelocked_mem: bool | None = None,
+) -> Binding:
+    with _BINDING_LOCK:
+        # info from the np.ndarray
+        shape = array.shape
+        dtype = array.dtype
+        size = array.itemsize
+        for s in shape:
+            size *= s
+
+        # allocate host and device memory
+        device_alloc = cuda_malloc(size)
+        if is_input:
+            # if the binding is an input binding
+            # can not allocate the host_alloc until populated later
+            host_alloc = np.zeros((1, 1), dtype)
+        elif pagelocked_mem:
+            # allocate the pagelocked memory
+            _log.debug(f"Allocating pagelocked mem during Binding: {bind_id}, {name}")
+            host_alloc = allocate_pinned_memory(size, dtype, shape)
+        else:
+            # allocate non-pagelocked memory
+            host_alloc = np.zeros(shape, dtype)
+
+        # make the binding
+        return Binding(
+            bind_id,
+            name,
+            dtype,
+            list(shape),
+            bool(is_input),
+            device_alloc,
+            host_alloc,
+        )

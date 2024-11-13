@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import cv2
 
+from trtutils import set_log_level
 from trtutils.impls.yolo import YOLO
 
 
@@ -37,16 +39,29 @@ def main() -> None:
     img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
 
     for engine in engines:
-        yolo = YOLO(engine, warmup=False)
+        yolo = YOLO(engine, warmup=True, preprocessor="cuda")
+        print(yolo.name)
 
+        t0 = time.perf_counter()
         output = yolo.run(img)
-
         bboxes = yolo.get_detections(output)
+        t1 = time.perf_counter()
 
-        print(bboxes)
+        print(f"RUN, bboxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
+
+        # OR
+
+        # end2end makes a few memory optimzations by avoiding extra GPU
+        # memory transfers
+        t0 = time.perf_counter()
+        bboxes = yolo.end2end(img)
+        t1 = time.perf_counter()
+
+        print(f"END2END: bboxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
 
         del yolo
 
 
 if __name__ == "__main__":
+    set_log_level("ERROR")
     main()

@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import contextlib
+import logging
+import time
 from functools import cached_property
 from queue import Empty, Queue
 from threading import Thread
@@ -11,7 +13,6 @@ from typing import TYPE_CHECKING
 
 from .core import (
     TRTEngineInterface,
-    allocate_bindings,
     memcpy_device_to_host_async,
     memcpy_host_to_device_async,
     stream_synchronize,
@@ -23,6 +24,12 @@ if TYPE_CHECKING:
 
     import numpy as np
     from typing_extensions import Self
+
+    with contextlib.suppress(ImportError):
+        import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+
+_log = logging.getLogger(__name__)
 
 
 class TRTEngine(TRTEngineInterface):
@@ -42,6 +49,7 @@ class TRTEngine(TRTEngineInterface):
         warmup_iterations: int = 5,
         *,
         warmup: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         """
         Load the TensorRT engine from a file.
@@ -55,40 +63,45 @@ class TRTEngine(TRTEngineInterface):
             If None, warmup will be set to False
         warmup_iterations : int, optional
             The number of warmup iterations to do, by default 5
+        verbose : bool, optional
+            Whether or not to give additional information over stdout.
 
         """
         super().__init__(engine_path)
 
-        # allocate memory for inputs and outputs
-        self._inputs, self._outputs, self._allocations, self._batch_size = (
-            allocate_bindings(
-                self._engine,
-                self._context,
-                self._logger,
-            )
-        )
+        # store verbose info
+        self._verbose = verbose if verbose is not None else False
+
+        # store timing variable for sleep call before stream_sync
+        self._sync_t: float = 0.0
 
         if warmup:
-            for _ in range(warmup_iterations):
-                self.mock_execute()
+            self.warmup(warmup_iterations)
+
+        _log.debug(f"Creating TRTEngine: {self.name}")
 
     def __del__(self: Self) -> None:
-        def _del(obj: object, attr: str) -> None:
-            with contextlib.suppress(AttributeError):
-                delattr(obj, attr)
+        super().__del__()
 
-        with contextlib.suppress(AttributeError):
-            for binding in self._inputs:
-                with contextlib.suppress(RuntimeError):
-                    binding.free()
-        with contextlib.suppress(AttributeError):
-            for binding in self._outputs:
-                with contextlib.suppress(RuntimeError):
-                    binding.free()
+    @property
+    def engine(self: Self) -> trt.ICudaEngine:
+        """Access the raw TensorRT CUDA engine."""
+        return self._engine
 
-        attrs = ["_context", "_engine"]
-        for attr in attrs:
-            _del(self, attr)
+    @property
+    def context(self: Self) -> trt.IExecutionContext:
+        """Access the TensorRT execution context for the engine."""
+        return self._context
+
+    @property
+    def logger(self: Self) -> trt.ILogger:
+        """Access the TensorRT logger used for the engine."""
+        return self._logger
+
+    @property
+    def stream(self: Self) -> cudart.cudaStream_t:
+        """Access the underlying CUDA stream."""
+        return self._stream
 
     @cached_property
     def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
@@ -168,7 +181,13 @@ class TRTEngine(TRTEngineInterface):
         """
         return [o.dtype for o in self._outputs]
 
-    def execute(self: Self, data: list[np.ndarray]) -> list[np.ndarray]:
+    def execute(
+        self: Self,
+        data: list[np.ndarray],
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray]:
         """
         Execute the network with the given inputs.
 
@@ -176,6 +195,16 @@ class TRTEngine(TRTEngineInterface):
         ----------
         data : list[np.ndarray]
             The inputs to the network.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE
+            by future inferences.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
 
         Returns
         -------
@@ -183,7 +212,10 @@ class TRTEngine(TRTEngineInterface):
             The outputs of the network.
 
         """
+        verbose = verbose if verbose is not None else self._verbose
         # Copy inputs
+        if verbose:
+            _log.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
         for i_idx in range(len(self._inputs)):
             # memcpy_host_to_device(
             #     self._inputs[i_idx].allocation,
@@ -208,10 +240,74 @@ class TRTEngine(TRTEngineInterface):
                 self._stream,
             )
         # sync the stream
+        if verbose:
+            _log.info(f"{time.perf_counter()} {self.name} Dispatch: END")
+
+        # # add additional sleep here to help parallel engines
+        # t0 = time.time()
+        # time.sleep(max(self._sync_t - 0.001, 0.0))
+        # stream_synchronize(self._stream)
+        # t1 = time.time()
+        # self._sync_t = t1 - t0
         stream_synchronize(self._stream)
+
         # return
         # copy the buffer since future inference will overwrite
+        if no_copy:
+            return [o.host_allocation for o in self._outputs]
         return [o.host_allocation.copy() for o in self._outputs]
+
+    def direct_exec(
+        self: Self,
+        pointers: list[int],
+        *,
+        no_warn: bool | None = None,
+    ) -> list[np.ndarray]:
+        """
+        Execute the network with the given GPU memory pointers.
+
+        The outputs of this function are not copied on return.
+        The data will be updated inplace if execute or direct_exec
+        is called. Calling this method while giving bad pointers
+        will also cause CUDA runtime to crash and program to crash.
+
+        Parameters
+        ----------
+        pointers : list[int]
+            The inputs to the network.
+        no_warn : bool, optional
+            If True, do not warn about usage.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The outputs of the network.
+
+        """
+        if not no_warn:
+            _log.warning(
+                "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
+            )
+        # execute
+        self._context.execute_async_v2(
+            pointers + self._output_allocations,
+            self._stream,
+        )
+        # Copy outputs
+        for o_idx in range(len(self._outputs)):
+            # memcpy_device_to_host(
+            #     self._outputs[o_idx].host_allocation,
+            #     self._outputs[o_idx].allocation,
+            # )
+            memcpy_device_to_host_async(
+                self._outputs[o_idx].host_allocation,
+                self._outputs[o_idx].allocation,
+                self._stream,
+            )
+        # sync the stream
+        stream_synchronize(self._stream)
+        # return
+        return [o.host_allocation for o in self._outputs]
 
 
 class QueuedTRTEngine:

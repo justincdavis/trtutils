@@ -1,3 +1,29 @@
+## 0.3.4 (11-12-2024)
+
+### Added
+
+- CUDA based preprocessing for YOLO
+    - Now have both CUDAPreprocessor and CPUPreprocessor
+- Additional parameters for YOLO in the constructor and on methods
+    - conf_thres
+    - extra_nms, agnostic_nms
+    - resize method, preprocessing unit
+- Added ability to generate CUDA kernels at runtime with
+    NVRTC. Will be expanded later to move more preprocessing
+    onto GPU. Final transform (transpose from HWC to BCHW)
+    would take up to 50ms for 1280x1280. Now with CUDA total
+    preprocessing for 1280x1280 is down to 5ms, 10x speedup.
+    Primary slowdown for CPU was np.ascontiguousarray
+
+### Improved
+
+- multi-threading safety
+    - ParallelYOLO now forces serial deserialization of
+        engine files.
+    - CUDAProcessor has enforcement on serialization during
+        its initialization.
+    - Some core CUDA/NVRTC calls hold their own mutexes
+
 ## 0.3.3 (10-31-2024)
 
 ### Added
