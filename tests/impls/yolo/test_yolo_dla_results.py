@@ -65,7 +65,7 @@ def yolo_dla_results(version: int) -> None:
     engine_path = build_yolo_dla(version)
 
     scale = (0, 1) if version != 0 else (0, 255)
-    trt_model = trtutils.impls.yolo.YOLO(engine_path, warmup=False, input_range=scale, preprocessor="cpu")
+    trt_model = trtutils.impls.yolo.YOLO(engine_path, conf_thres=0.25, warmup=False, input_range=scale, preprocessor="cpu")
 
     for gt, ipath in zip(
         [1, 4],

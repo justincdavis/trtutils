@@ -30,7 +30,7 @@ class YOLO:
         input_range: tuple[float, float] = (0.0, 1.0),
         preprocessor: str = "cuda",
         resize_method: str = "letterbox",
-        conf_thres: float | None = None,
+        conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
         *,
         warmup: bool | None = None,
@@ -63,7 +63,7 @@ class YOLO:
             The options are ['letterbox', 'linear'], default is 'letterbox'.
         conf_thres : float, optional
             The confidence threshold above which to generate detections.
-            By default None, which will include all outputs.
+            By default 0.1
         nms_iou_thres : float, optional
             The IOU threshold to use the in the optional and additnal
             NMS operation. By default, 0.5
@@ -437,7 +437,7 @@ class YOLO:
             The outputs to process.
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
-            By default None
+            By default None, which will use value passed during initialization
         nms_iou_thres : float
             The IOU threshold to use during the optional/additional
             NMS operation. By default, None which will use value

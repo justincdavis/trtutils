@@ -690,7 +690,7 @@ class ParallelYOLO:
                 )
             except Exception:
                 flag.set()
-                return
+                raise
         self._models[threadid] = yolo
 
         # set flag that we are ready

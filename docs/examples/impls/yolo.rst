@@ -47,13 +47,24 @@ Example: impls/yolo.py
 	
 	    for engine in engines:
 	        yolo = YOLO(engine, warmup=True, preprocessor="cuda")
+	        print(yolo.name)
 	
 	        t0 = time.perf_counter()
 	        output = yolo.run(img)
 	        bboxes = yolo.get_detections(output)
 	        t1 = time.perf_counter()
 	
-	        print(f"BBoxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
+	        print(f"RUN, bboxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
+	
+	        # OR
+	
+	        # end2end makes a few memory optimzations by avoiding extra GPU
+	        # memory transfers
+	        t0 = time.perf_counter()
+	        bboxes = yolo.end2end(img)
+	        t1 = time.perf_counter()
+	
+	        print(f"END2END: bboxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
 	
 	        del yolo
 	
