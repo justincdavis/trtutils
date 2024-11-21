@@ -102,7 +102,7 @@ def benchmark_engine(
         data = raw[metric_name]
         metric = Metric(data)
         metrics[metric_name] = metric
-        _log.info(
+        _log.debug(
             f"{metric_name}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
         )
 
