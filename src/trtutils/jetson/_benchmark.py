@@ -116,9 +116,9 @@ def benchmark_engine(
         data = raw[metric_name]
         metric = Metric(data)
         metrics[metric_name] = metric
-        # _log.info(
-        #     f"{metric}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
-        # )
+        _log.debug(
+            f"{metric}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
+        )
 
     return JetsonBenchmarkResult(
         latency=metrics["latency"],
