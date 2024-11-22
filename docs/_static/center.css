@@ -1,0 +1,11 @@
+/* Center the main content */
+.document {
+    max-width: 1000px;  /* Adjust the width as needed */
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Optional: Center headers too */
+.document h1, .document h2, .document h3 {
+    text-align: center;
+}

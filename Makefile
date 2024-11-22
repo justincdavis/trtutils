@@ -29,8 +29,7 @@ clean:
 
 docs:
 	python3 ci/build_example_docs.py
-	rm -rf docs/source/*
-	sphinx-apidoc -o docs/source/ src/trtutils/
+	sphinx-apidoc -o docs/source/ src/trtutils/ --separate --force
 	cd docs && make html
 
 blobs:

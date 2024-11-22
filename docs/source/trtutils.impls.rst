@@ -12,13 +12,10 @@ Subpackages
 Submodules
 ----------
 
-trtutils.impls.common module
-----------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: trtutils.impls.common
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   trtutils.impls.common
 
 Module contents
 ---------------

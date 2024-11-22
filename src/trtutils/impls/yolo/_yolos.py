@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class YOLOX(YOLO):
-    """Implementation of YOLOX."""
+    """Alias of YOLO with default args for YOLOX."""
 
     def __init__(
         self: Self,
@@ -45,7 +45,7 @@ class YOLOX(YOLO):
 
 
 class YOLO7(YOLO):
-    """Implementation of YOLO7."""
+    """Alias of YOLO with default args for YOLO7."""
 
     def __init__(
         self: Self,
@@ -76,7 +76,7 @@ class YOLO7(YOLO):
 
 
 class YOLO8(YOLO):
-    """Implementation of YOLO8."""
+    """Alias of YOLO with default args for YOLO8."""
 
     def __init__(
         self: Self,
@@ -107,7 +107,7 @@ class YOLO8(YOLO):
 
 
 class YOLO9(YOLO):
-    """Implementation of YOLO9."""
+    """Alias of YOLO with default args for YOLO9."""
 
     def __init__(
         self: Self,
@@ -138,7 +138,7 @@ class YOLO9(YOLO):
 
 
 class YOLO10(YOLO):
-    """Implementation of YOLO10."""
+    """Alias of YOLO with default args for YOLO10."""
 
     def __init__(
         self: Self,

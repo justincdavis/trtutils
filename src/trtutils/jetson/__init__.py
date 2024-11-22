@@ -6,12 +6,12 @@ A submodule implementing additional tools for Jetson devices.
 
 Classes
 -------
-JetsonBenchmarkResult
+:class:`JetsonBenchmarkResult`
     The results of benchmarking a TRTEngine on a Jetson device.
 
 Functions
 ---------
-benchmark_engine
+:func:`benchmark_engine`
     A mirror of trtutils.benchmark_engine, but also measures energy usage.
 
 """

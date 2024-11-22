@@ -6,32 +6,32 @@ Implementations of YOLO object detectors for TRTModel.
 
 Classes
 -------
-CPUPreprocessor
+:class:`CPUPreprocessor`
     Preprocess an image for YOLO on CPU.
-CUDAPreprocessor
+:class:`CUDAPreprocessor`
     Preprocess an image for YOLO using CUDA.
-ParallelYOLO
+:class:`ParallelYOLO`
     Multi-threaded YOLO models, useful for multi-accelerator systems.
-YOLO
+:class:`YOLO`
     TRTModel implementation for YOLO object detectors
-YOLO7
+:class:`YOLO7`
     Alias for YOLO with args preset
-YOLO8
+:class:`YOLO8`
     Alias for YOLO with args preset
-YOLO9
+:class:`YOLO9`
     Alias for YOLO with args preset
-YOLO10
+:class:`YOLO10`
     Alias for YOLO with args preset
-YOLOX
+:class:`YOLOX`
     Alias for YOLO with args preset
 
 Functions
 ---------
-get_detections
+:func:`get_detections`
     Get the detections from a YOLO network.
-preprocess
+:func:`preprocess`
     Preprocess some input for a YOLO network.
-postprocess
+:func:`postprocess`
     Postprocess the output for a YOLO network.
 
 """

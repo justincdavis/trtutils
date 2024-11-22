@@ -6,13 +6,13 @@ Submodule for utilities related to the trtexec tool.
 
 Functions
 ---------
-build_engine
+:func:`build_engine`
     Build an engine from an ONNX file using trtexec.
-find_trtexec
+:func:`find_trtexec`
     Find an instance of the trtexec binary on the system.
-find_trtexec_binaries
+:func:`find_trtexec_binaries`
     Find all instances of trtexec binaries on the system.
-run_trtexec
+:func:`run_trtexec`
     Run trtexec command.
 
 """
