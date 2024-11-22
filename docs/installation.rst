@@ -27,6 +27,25 @@ Methods
 Optional Dependencies
 ^^^^^^^^^^^^^^^^^^^^^
 
+#. yolo:
+
+   trtutils supports inference with modern versions of the YOLO object detection model.
+   Performing inference requires some additional dependencies, as such you can install
+   trtutils with support for YOLO with this:
+
+   .. code-block:: console
+
+      $ pip3 install trtutils[yolo]
+
+#. jetson:
+
+   This tag installs some additional dependencies which allow measuring energy and powerdraw
+   when benchmarking engines on an NVIDIA Jetson device.
+
+   .. code-block:: console
+
+      $ pip3 install trtutils[jetson]
+
 #. dev:
 
    .. code-block:: console
