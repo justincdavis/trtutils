@@ -12,7 +12,6 @@ Functions
     Postprocesses the output of a model to reshape and scale based on preprocessing.
 """
 
-
 from __future__ import annotations
 
 import logging

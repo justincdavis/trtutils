@@ -109,8 +109,6 @@ html_sidebars = {
     "**": ["sidebar/scroll-start.html", "sidebar/brand.html", "sidebar/navigation.html", "sidebar/scroll-end.html"],
 }
 
-# Add any paths that contain custom static files (such as style sheets) here,
-# relative to this directory. They are copied after the builtin static files,
-# so a file named "default.css" will overwrite the builtin "default.css".
-def setup(app):
-    app.add_css_file("theme_overrides.css")
+html_css_files = [
+    "center.cs",  # Make sure this path is correct relative to _static
+]

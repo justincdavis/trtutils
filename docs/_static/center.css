@@ -1,11 +1,12 @@
-/* Center the main content */
+/* Center content on the page */
 .document {
-    max-width: 1000px;  /* Adjust the width as needed */
     margin-left: auto;
     margin-right: auto;
+    max-width: 80%; /* Adjust the percentage to control the width */
 }
 
-/* Optional: Center headers too */
-.document h1, .document h2, .document h3 {
-    text-align: center;
+/* Alternatively, left-align but with some space on the right */
+.document {
+    margin-left: 20px;
+    margin-right: 20px;
 }
