@@ -211,6 +211,7 @@ class YOLO:
         outputs: list[np.ndarray],
         ratios: tuple[float, float],
         padding: tuple[float, float],
+        conf_thres: float | None = None,
         *,
         no_copy: bool | None = None,
     ) -> list[np.ndarray]:
@@ -225,6 +226,9 @@ class YOLO:
             The rescale ratios used during preprocessing
         padding : tuple[float, float]
             The padding values used during preprocessing
+        conf_thres : float, optional
+            The confidence threshold to filter detections by.
+            If not passed, will use value from constructor.
         no_copy : bool, optional
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
@@ -237,7 +241,8 @@ class YOLO:
 
         """
         _log.debug(f"{self._tag}: Running postprocess")
-        return postprocess(outputs, ratios, padding, no_copy=no_copy)
+        conf_thres = conf_thres or self._conf_thres
+        return postprocess(outputs, ratios, padding, conf_thres, no_copy=no_copy)
 
     def __call__(
         self: Self,

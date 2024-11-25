@@ -89,6 +89,7 @@ def _postprocess_v_10(
     outputs: list[np.ndarray],
     ratios: tuple[float, float],
     padding: tuple[float, float],
+    conf_thres: float | None = None,
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
@@ -104,6 +105,13 @@ def _postprocess_v_10(
     bboxes: np.ndarray = output[0, :, :4]
     scores: np.ndarray = output[0, :, 4]
     class_ids: np.ndarray = output[0, :, 5].astype(int)
+
+    # pre-filter by the confidence threshold
+    if conf_thres is not None:
+        mask = scores >= conf_thres
+        bboxes = bboxes[mask]
+        scores = scores[mask]
+        class_ids = class_ids[mask]
 
     # each bounding box is cx, cy, dx, dy
     adjusted_bboxes = bboxes
@@ -124,6 +132,7 @@ def postprocess(
     outputs: list[np.ndarray],
     ratios: tuple[float, float] = (1.0, 1.0),
     padding: tuple[float, float] = (0.0, 0.0),
+    conf_thres: float | None = None,
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
@@ -138,6 +147,8 @@ def postprocess(
         The ratio of original image to preprocessed shape
     padding : tuple[float, float]
         The amount of padding added during preprocessing
+    conf_thres : float, optional
+        The confidence score for which detections below will be thrown out.
     no_copy : bool, optional
         If True, the outputs will not be copied out
         from the cuda allocated host memory. Instead,
@@ -152,8 +163,12 @@ def postprocess(
 
     """
     if len(outputs) == _EFF_NUM_OUTPUTS:
-        return postprocess_efficient_nms(outputs, ratios, padding, no_copy=no_copy)
-    return _postprocess_v_10(outputs, ratios, padding, no_copy=no_copy)
+        return postprocess_efficient_nms(
+            outputs, ratios, padding, conf_thres=conf_thres, no_copy=no_copy,
+        )
+    return _postprocess_v_10(
+        outputs, ratios, padding, conf_thres=conf_thres, no_copy=no_copy,
+    )
 
 
 def _get_detections_v_10(

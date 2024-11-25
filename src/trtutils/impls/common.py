@@ -26,6 +26,7 @@ def postprocess_efficient_nms(
     outputs: list[np.ndarray],
     ratios: tuple[float, float] = (1.0, 1.0),
     padding: tuple[float, float] = (0.0, 0.0),
+    conf_thres: float | None = None,
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
@@ -43,6 +44,11 @@ def postprocess_efficient_nms(
         The ratios used during preprocessing to resize the input.
     padding : tuple[float, float]
         The padding used during preprocessing to position the input.
+    conf_thres : float, optional
+        Optional confidence threshold to further filter detections by.
+        Detections are already filtered by EfficientNMS parameters
+        ahead of time. Should be used if EfficientNMS was given low-confidence
+        and want to filter higher variably.
     no_copy : bool, optional
         If True, the outputs will not be copied out
         from the cuda allocated host memory. Instead,
@@ -63,6 +69,19 @@ def postprocess_efficient_nms(
     pad_x, pad_y = padding
 
     _log.debug(f"EfficientNMS postprocess, bboxes shape: {bboxes.shape}")
+
+    # throw out all detections not included in the num_dets
+    num_det_id = int(outputs[0][0])  # needs to be integer
+    bboxes = bboxes[:num_det_id]
+    scores = scores[:num_det_id]
+    class_ids = class_ids[:num_det_id]
+
+    # pre-filter by the confidence threshold
+    if conf_thres is not None:
+        mask = scores >= conf_thres
+        bboxes = bboxes[mask]
+        scores = scores[mask]
+        class_ids = class_ids[mask]
 
     adjusted_bboxes = bboxes
     adjusted_bboxes[:, :, 0] = (adjusted_bboxes[:, :, 0] - pad_x) / ratio_width  # x1
@@ -120,21 +139,17 @@ def decode_efficient_nms(
     scores: np.ndarray = outputs[2][0]
     classes: np.ndarray = outputs[3][0]
 
+    conf_thres = conf_thres or 0.0
+
     frame_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
     for idx in range(num_dects):
         x1, y1, x2, y2 = bboxes[idx]
-        np_score = scores[idx]
+        score = float(scores[idx])
         np_classid = classes[idx]
 
-        entry = ((int(x1), int(y1), int(x2), int(y2)), float(np_score), int(np_classid))
-        frame_dects.append(entry)
-
-    if conf_thres:
-        filtered_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
-        for bbox, score, class_id in frame_dects:
-            if score >= conf_thres:
-                filtered_dects.append((bbox, score, class_id))
-        frame_dects = filtered_dects
+        if score >= conf_thres:
+            entry = ((int(x1), int(y1), int(x2), int(y2)), score, int(np_classid))
+            frame_dects.append(entry)
 
     if extra_nms:
         frame_dects = nms(
