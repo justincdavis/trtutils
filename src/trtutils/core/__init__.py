@@ -14,6 +14,8 @@ Classes
     A class for managing a CUDA allocation.
 :class:`TRTEngineInterface`
     An interface for the TRTEngine class.
+:class:`Kernel`
+    Wrapper around CUDA kernels.
 
 Functions
 ---------
@@ -55,6 +57,8 @@ Functions
     Load a CUDA module and kernel from PTX from NVRTC.
 :func:`compile_and_load_kernel`
     Compile and load a kernel using NVRTC.
+:func:`launch_kernel`
+    Launch a CUDA kernel.
 
 """
 
@@ -65,6 +69,7 @@ from ._context import create_context, destroy_context
 from ._cuda import cuda_call
 from ._engine import create_engine
 from ._interface import TRTEngineInterface
+from ._kernels import Kernel, launch_kernel
 from ._memory import (
     allocate_pinned_memory,
     cuda_malloc,
@@ -78,6 +83,7 @@ from ._stream import create_stream, destroy_stream, stream_synchronize
 
 __all__ = [
     "Binding",
+    "Kernel",
     "TRTEngineInterface",
     "allocate_bindings",
     "allocate_pinned_memory",
@@ -91,6 +97,7 @@ __all__ = [
     "cuda_malloc",
     "destroy_context",
     "destroy_stream",
+    "launch_kernel",
     "load_kernel",
     "memcpy_device_to_host",
     "memcpy_device_to_host_async",

@@ -7,7 +7,6 @@ from __future__ import annotations
 import contextlib
 from typing import TypeVar
 
-# suppress pycuda import error for docs build
 with contextlib.suppress(Exception):
     from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
 

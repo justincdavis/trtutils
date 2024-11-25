@@ -12,16 +12,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 from cv2ext.image import letterbox, resize_linear
 
-with contextlib.suppress(ImportError):
-    from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
-
 from trtutils.core._bindings import create_binding
-from trtutils.core._cuda import cuda_call
+from trtutils.core._kernels import Kernel
 from trtutils.core._memory import (
     memcpy_device_to_host_async,
     memcpy_host_to_device_async,
 )
-from trtutils.core._nvrtc import compile_and_load_kernel
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
 
 from ._kernels import SCALE_SWAP_TRANSPOSE_KERNEL_CODE
@@ -29,6 +25,9 @@ from ._process import preprocess
 
 if TYPE_CHECKING:
     from typing_extensions import Self
+
+    with contextlib.suppress(ImportError):
+        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 _CUDA_ALLOCATE_LOCK = Lock()
 
@@ -206,14 +205,15 @@ class CUDAPreprocessor:
             )
 
             # load the kernel
-            self._module, self._kernel = compile_and_load_kernel(
+            self._kernel = Kernel(
                 SCALE_SWAP_TRANSPOSE_KERNEL_CODE,
                 "scaleSwapTranspose",
+                self._num_blocks,
+                self._num_threads,
+                self._stream,
             )
 
     def __del__(self: Self) -> None:
-        with contextlib.suppress(AttributeError, RuntimeError):
-            cuda_call(cuda.cuModuleUnload(self._module))
         with contextlib.suppress(AttributeError, RuntimeError):
             if self._own_stream:
                 destroy_stream(self._stream)
@@ -349,17 +349,7 @@ class CUDAPreprocessor:
             self._stream,
         )
 
-        cuda_call(
-            cuda.cuLaunchKernel(
-                self._kernel,
-                *self._num_blocks,
-                *self._num_threads,
-                0,
-                self._stream,
-                args.ctypes.data,
-                0,
-            ),
-        )
+        self._kernel.call(args)
 
         memcpy_device_to_host_async(
             self._output_binding.host_allocation,
@@ -428,16 +418,6 @@ class CUDAPreprocessor:
             self._stream,
         )
 
-        cuda_call(
-            cuda.cuLaunchKernel(
-                self._kernel,
-                *self._num_blocks,
-                *self._num_threads,
-                0,
-                self._stream,
-                args.ctypes.data,
-                0,
-            ),
-        )
+        self._kernel.call(args)
 
         return self._output_binding.allocation, ratios, padding

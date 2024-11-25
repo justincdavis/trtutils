@@ -8,7 +8,6 @@ from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING
 
-# suppress pycuda import error for docs build
 with contextlib.suppress(Exception):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
