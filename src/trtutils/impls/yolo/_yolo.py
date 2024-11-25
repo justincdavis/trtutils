@@ -36,6 +36,7 @@ class YOLO:
         warmup: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         """
         Create a YOLO object.
@@ -75,6 +76,9 @@ class YOLO:
         agnostic_nms : bool, optional
             Whether or not the optional/additional NMS operation
             should perform class agnostic NMS.
+        verbose : bool, optional
+            Whether or not to log additional information.
+            Only covers the initialization phase.
 
         Raises
         ------
@@ -85,7 +89,8 @@ class YOLO:
 
         """
         self._tag: str = f"{Path(engine_path).stem}"
-        _log.debug(f"Creating YOLO: {self._tag}")
+        if verbose:
+            _log.debug(f"Creating YOLO: {self._tag}")
         self._engine = TRTEngine(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -166,6 +171,7 @@ class YOLO:
         method: str | None = None,
         *,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
         Preprocess the input.
@@ -188,6 +194,8 @@ class YOLO:
             data from the allocated memory. If the data
             is not copied, it WILL BE OVERWRITTEN INPLACE
             once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -195,7 +203,8 @@ class YOLO:
             The preprocessed inputs, rescale ratios, and padding values
 
         """
-        _log.debug(f"{self._tag}: Running preprocess, shape: {image.shape}")
+        if verbose:
+            _log.debug(f"{self._tag}: Running preprocess, shape: {image.shape}")
         preprocessor = self._preprocessor
         if method is not None:
             preprocessor = (
@@ -211,8 +220,10 @@ class YOLO:
         outputs: list[np.ndarray],
         ratios: tuple[float, float],
         padding: tuple[float, float],
+        conf_thres: float | None = None,
         *,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Postprocess the outputs.
@@ -225,10 +236,15 @@ class YOLO:
             The rescale ratios used during preprocessing
         padding : tuple[float, float]
             The padding values used during preprocessing
+        conf_thres : float, optional
+            The confidence threshold to filter detections by.
+            If not passed, will use value from constructor.
         no_copy : bool, optional
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
             OVERWRITTEN INPLACE once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -236,18 +252,22 @@ class YOLO:
             The postprocessed outputs
 
         """
-        _log.debug(f"{self._tag}: Running postprocess")
-        return postprocess(outputs, ratios, padding, no_copy=no_copy)
+        if verbose:
+            _log.debug(f"{self._tag}: Running postprocess")
+        conf_thres = conf_thres or self._conf_thres
+        return postprocess(outputs, ratios, padding, conf_thres, no_copy=no_copy)
 
     def __call__(
         self: Self,
         image: np.ndarray,
         ratios: tuple[float, float] | None = None,
         padding: tuple[float, float] | None = None,
+        conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Run the YOLO network on input.
@@ -260,6 +280,9 @@ class YOLO:
             The ratios generated during preprocessing.
         padding : tuple[float, float], optional
             The padding values used during preprocessing.
+        conf_thres : float, optional
+            Optional confidence threshold to filter detections
+            via during postprocessing.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -272,6 +295,8 @@ class YOLO:
             the host memory will be returned directly.
             This memory WILL BE OVERWRITTEN INPLACE by
             future inferences.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -283,9 +308,11 @@ class YOLO:
             image,
             ratios,
             padding,
+            conf_thres,
             preprocessed=preprocessed,
             postprocess=postprocess,
             no_copy=no_copy,
+            verbose=verbose,
         )
 
     def run(
@@ -293,10 +320,12 @@ class YOLO:
         image: np.ndarray,
         ratios: tuple[float, float] | None = None,
         padding: tuple[float, float] | None = None,
+        conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Run the YOLO network on input.
@@ -309,6 +338,9 @@ class YOLO:
             The ratios generated during preprocessing.
         padding : tuple[float, float], optional
             The padding values used during preprocessing.
+        conf_thres : float, optional
+            Optional confidence threshold to filter detections
+            via during postprocessing.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -328,6 +360,8 @@ class YOLO:
             postprocessing will occur during run and no_copy
             was not passed (is None), then no_copy will be used
             for preprocessing and inference stages.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -358,13 +392,15 @@ class YOLO:
             no_copy_run = no_copy
             no_copy_post = no_copy
 
-        _log.debug(
-            f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
-        )
+        if verbose:
+            _log.debug(
+                f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
+            )
 
         # handle preprocessing
         if not preprocessed:
-            _log.debug("Preprocessing inputs")
+            if verbose:
+                _log.debug("Preprocessing inputs")
             tensor, ratios, padding = self.preprocess(image, no_copy=no_copy_pre)
         else:
             tensor = image
@@ -374,11 +410,18 @@ class YOLO:
 
         # handle postprocessing
         if postprocess:
-            _log.debug("Postprocessing outputs")
+            if verbose:
+                _log.debug("Postprocessing outputs")
             if ratios is None or padding is None:
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
                 raise RuntimeError(err_msg)
-            outputs = self.postprocess(outputs, ratios, padding, no_copy=no_copy_post)
+            outputs = self.postprocess(
+                outputs,
+                ratios,
+                padding,
+                conf_thres,
+                no_copy=no_copy_post,
+            )
 
         return outputs
 
@@ -427,6 +470,7 @@ class YOLO:
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        verbose: bool | None = None,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
         """
         Get the bounding boxes of the last output or provided output.
@@ -450,6 +494,8 @@ class YOLO:
             Whether or not to perform class-agnostic NMS for the
             optional/additional operation. By default None, which
             will use value provided during initialization.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -457,7 +503,8 @@ class YOLO:
             The detections
 
         """
-        _log.debug(f"{self._tag}: Running get_detections")
+        if verbose:
+            _log.debug(f"{self._tag}: Running get_detections")
         conf_thres = conf_thres or self._conf_thres
         nms_iou = nms_iou_thres or self._nms_iou
         use_nms = extra_nms if extra_nms is not None else self._nms
@@ -468,6 +515,7 @@ class YOLO:
             nms_iou_thres=nms_iou,
             extra_nms=use_nms,
             agnostic_nms=agnostic,
+            verbose=verbose,
         )
 
     def end2end(
@@ -478,6 +526,7 @@ class YOLO:
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        verbose: bool | None = None,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
         """
         Perform end to end inference for a YOLO model.
@@ -505,6 +554,8 @@ class YOLO:
             Whether or not to perform class-agnostic NMS for the
             optional/additional operation. By default None, which
             will use value provided during initialization.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -517,9 +568,11 @@ class YOLO:
         if not isinstance(self._preprocessor, CUDAPreprocessor):
             outputs = self.run(
                 image,
+                conf_thres=conf_thres,
                 preprocessed=False,
                 postprocess=True,
                 no_copy=True,
+                verbose=verbose,
             )
         else:
             # if using CUDA, can remove much more
@@ -528,7 +581,14 @@ class YOLO:
                 no_warn=True,
             )
             outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
-            outputs = self.postprocess(outputs, ratios, padding, no_copy=True)
+            outputs = self.postprocess(
+                outputs,
+                ratios,
+                padding,
+                conf_thres,
+                no_copy=True,
+                verbose=verbose,
+            )
 
         # generate the detections
         return self.get_detections(
@@ -537,4 +597,5 @@ class YOLO:
             nms_iou_thres=nms_iou_thres,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            verbose=verbose,
         )
