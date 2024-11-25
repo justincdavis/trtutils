@@ -6,11 +6,10 @@ Common implementations for TensorRT engines.
 
 Functions
 ---------
-decode_efficient_nms
-    Processes the output of a model with EfficientNMS plugin outputs
-postprocess_efficient_nms
-    Postprocesses the output of a model to reshape and scale based on preprocessing
-
+:func:`decode_efficient_nms`
+    Processes the output of a model with EfficientNMS plugin outputs.
+:func:`postprocess_efficient_nms`
+    Postprocesses the output of a model to reshape and scale based on preprocessing.
 """
 
 from __future__ import annotations

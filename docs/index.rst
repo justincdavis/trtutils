@@ -13,10 +13,11 @@ Contents
    :maxdepth: 1
 
    Home <self>
-   Usage <usage>
    Installation <installation>
    Examples <examples>
-   API <api>
+   Tutorials <tutorials/overview>
+   Usage <usage>
+   API <source/modules>
    Changelog <changelog>
 
 Indices and Tables

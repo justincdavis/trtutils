@@ -10,50 +10,50 @@ and running inference on the engine.
 
 Classes
 -------
-Binding
+:class:`Binding`
     A class for managing a CUDA allocation.
-TRTEngineInterface
+:class:`TRTEngineInterface`
     An interface for the TRTEngine class.
 
 Functions
 ---------
-allocate_bindings
+:func:`allocate_bindings`
     Allocate the bindings for a TensorRT engine.
-allocate_pinned_memory
+:func:`allocate_pinned_memory`
     Allocate pagelocked memory using CUDA.
-create_binding
+:func:`create_binding`
     Create a Binding from a np.ndarray.
-create_context
+:func:`create_context`
     Create a CUDA context.
-create_engine
+:func:`create_engine`
     Create a TensorRT engine from a serialized engine file.
-create_stream
+:func:`create_stream`
     Create a CUDA stream.
-cuda_call
+:func:`cuda_call`
     A function for checking the return status of a CUDA call.
-cuda_malloc
+:func:`cuda_malloc`
     Allocate memory on the CUDA device using CUDA runtime.
-destroy_context
+:func:`destroy_context`
     Destroy a CUDA context.
-destroy_stream
+:func:`destroy_stream`
     Destroy a CUDA stream.
-memcpy_device_to_host
+:func:`memcpy_device_to_host`
     Copy data from device to host.
-memcpy_host_to_device
+:func:`memcpy_host_to_device`
     Copy data from host to device.
-memcpy_device_to_host_async
+:func:`memcpy_device_to_host_async`
     Copy data from device to host async.
-memcpy_host_to_device_async
+:func:`memcpy_host_to_device_async`
     Copy data from host to device async.
-stream_synchronize
+:func:`stream_synchronize`
     Synchronize the cuda stream.
-nvrtc_call
+:func:`nvrtc_call`
     A function for checking the return status of a NVRTC call.
-compile_kernel
+:func:`compile_kernel`
     Compile a kernel using NVRTC.
-load_kernel
+:func:`load_kernel`
     Load a CUDA module and kernel from PTX from NVRTC.
-compile_and_load_kernel
+:func:`compile_and_load_kernel`
     Compile and load a kernel using NVRTC.
 
 """

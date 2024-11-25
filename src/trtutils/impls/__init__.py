@@ -6,9 +6,9 @@ Submodule of implementations for TRTModels.
 
 Submodules
 ----------
-common
+:mod:`common`
     Implementations which are generic to underlying models.
-yolo
+:mod:`yolo`
     Implementations of YOLO object detectors.
 
 """

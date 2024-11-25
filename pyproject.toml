@@ -67,15 +67,11 @@ yolo = [
     "opencv-contrib-python>=4.6.0",
 ]
 jetson = [
-    "jetsontools>=0.0.3",
+    "jetsontools>=0.0.4",
 ]
 ci = [
-    "pyupgrade>=3.10",
-    "black>=24.0",
-    "isort>=5.10",
-    "ruff>=0.2.2",
-    "mypy>=1.8.0",
-    "types-setuptools>=57.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
 ]
 test = [
     "pytest>=6.2.0",

@@ -23,7 +23,7 @@ _CONTEXT_LOCK = Lock()
 def create_engine(
     engine_path: Path | str,
     logger: trt.ILogger | None = None,
-    log_level: trt.ILogger.Severity = trt.Logger.WARNING,
+    log_level: trt.ILogger.Severity | None = None,
 ) -> tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger, cudart.cudaStream_t]:
     """
     Load a serialized engine from disk.
@@ -60,6 +60,8 @@ def create_engine(
         raise FileNotFoundError(err_msg)
 
     # load the logger and libnvinfer plugins
+    if log_level is None:
+        log_level = trt.Logger.WARNING
     trt_logger = logger or trt.Logger(log_level)
     trt.init_libnvinfer_plugins(trt_logger, "")
 

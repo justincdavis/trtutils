@@ -8,3 +8,16 @@
 .wy-table-responsive {
     overflow: visible !important;
 }
+
+/* Center content and add padding */
+.content {
+    margin: 0 auto;
+    max-width: 80%;
+    padding: 2rem;
+}
+
+/* Tweak dark mode styles if necessary */
+:root {
+    --color-background-primary: #121212;
+    --color-text-primary: #ffffff;
+}

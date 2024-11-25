@@ -11,43 +11,43 @@ a class for running inference on those engines, and a variety of other utilities
 
 Submodules
 ----------
-core
+:mod:`core`
     A module for the core functionality of the package.
-jetson
+:mod:`jetson`
     A module implementating additional functionality for Jetson devices.
-impls
+:mod:`impls`
     A module containing implementations for different neural networks.
-trtexec
+:mod:`trtexec`
     A module for utilities related to the trtexec tool.
 
 Classes
 -------
-BenchmarkResult
+:class:`BenchmarkResult`
     A dataclass for storing profiling information from benchmarking engines.
-Metric
+:class:`Metric`
     A dataclass storing specific metric information from benchmarking.
-TRTEngine
+:class:`TRTEngine`
     A class for creating TensorRT engines from serialized engine files.
-TRTModel
+:class:`TRTModel`
     A class for running inference on TensorRT engines.
-ParallelTRTEngines
+:class:`ParallelTRTEngines`
     A class for running many TRTEngines in parallel.
-ParallelTRTModels
+:class:`ParallelTRTModels`
     A class for running many TRTModels in parallel.
-QueuedTRTEngine
+:class:`QueuedTRTEngine`
     A class for running a TRTEngine in a seperate thread asynchronously.
-QueuedTRTModel
+:class:`QueuedTRTModel`
     A class for running a TRTModel in a seperate thread asynchronously.
 
 Functions
 ---------
-benchmark_engine
+:func:`benchmark_engine`
     Benchmark a TensorRT engine.
-find_trtexec
+:func:`find_trtexec`
     Find an instance of the trtexec binary on the system.
-run_trtexec
+:func:`run_trtexec`
     Run a command with trtexec.
-set_log_level
+:func:`set_log_level`
     Set the log level of the trtutils package.
 
 """
@@ -60,8 +60,6 @@ import os
 import sys
 
 
-# Created from answer by Dennis at:
-# https://stackoverflow.com/questions/7621897/python-logging-module-globally
 def _setup_logger(level: str | None = None) -> None:
     if level is not None:
         level = level.upper()
