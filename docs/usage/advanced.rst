@@ -105,10 +105,11 @@ An example of compiling a kernel:
     }
     """
 
-    from trtutils.core import Kernel
+    from trtutils.core import Kernel, create_stream
 
     # compile and load kernel
-    kernel = Kernel(KERNEL_CODE, "scaleSwapTranspose")
+    stream = create_stream()
+    kernel = Kernel(KERNEL_CODE, "scaleSwapTranspose", (16, 16, 3), (32, 32, 1))
 
     # to run the kernel need input and output CUDA data
     import numpy as np
@@ -144,10 +145,8 @@ An example of compiling a kernel:
     )
 
     # launch the kernel
-    from trtutils.core import cuda_call, create_stream, stream_synchronize, memcpy_host_to_device_async, memcpy_device_to_host_async
-    from cuda import cuda
+    from trtutils.core import stream_synchronize, memcpy_host_to_device_async, memcpy_device_to_host_async
 
-    stream = create_stream()
     memcpy_host_to_device_async(
         input_binding.allocation,
         input_arr,
