@@ -29,6 +29,7 @@ def postprocess_efficient_nms(
     conf_thres: float | None = None,
     *,
     no_copy: bool | None = None,
+    verbose: bool | None = None,
 ) -> list[np.ndarray]:
     """
     Postprocess the output of the EfficientNMS plugin.
@@ -55,6 +56,8 @@ def postprocess_efficient_nms(
         the host memory will be returned directly.
         This memory WILL BE OVERWRITTEN INPLACE
         by future preprocessing calls.
+    verbose : bool, optional
+        Whether or not to log additional information.
 
     Returns
     -------
@@ -68,7 +71,8 @@ def postprocess_efficient_nms(
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
 
-    _log.debug(f"EfficientNMS postprocess, bboxes shape: {bboxes.shape}")
+    if verbose:
+        _log.debug(f"EfficientNMS postprocess, bboxes shape: {bboxes.shape}")
 
     # throw out all detections not included in the num_dets
     num_det_id = int(outputs[0][0])  # needs to be integer
@@ -102,6 +106,7 @@ def decode_efficient_nms(
     *,
     extra_nms: bool | None = None,
     agnostic_nms: bool | None = None,
+    verbose: bool | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
     """
     Decode EfficientNMS plugin output.
@@ -125,6 +130,8 @@ def decode_efficient_nms(
     agnostic_nms : bool, optional
         Whether or not to perform class-agnostic NMS during the
         optional additional operation.
+    verbose : bool, optional
+        Whether or not to log additional information.
 
     Returns
     -------
@@ -139,6 +146,9 @@ def decode_efficient_nms(
     classes: np.ndarray = outputs[3][0]
 
     conf_thres = conf_thres or 0.0
+
+    if verbose:
+        _log.debug(f"Generating detections for: {num_dects} bboxes")
 
     frame_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
     for idx in range(num_dects):
