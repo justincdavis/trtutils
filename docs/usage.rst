@@ -3,7 +3,6 @@
 Usage
 =====
 
-.. toctree::
-    :maxdepth: 1
-
-    usage/general.rst
+.. include:: usage/basic.rst
+.. include:: usage/advanced.rst
+.. include:: usage/implementations.rst
