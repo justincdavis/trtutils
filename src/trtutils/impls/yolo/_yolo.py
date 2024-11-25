@@ -249,6 +249,7 @@ class YOLO:
         image: np.ndarray,
         ratios: tuple[float, float] | None = None,
         padding: tuple[float, float] | None = None,
+        conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -265,6 +266,9 @@ class YOLO:
             The ratios generated during preprocessing.
         padding : tuple[float, float], optional
             The padding values used during preprocessing.
+        conf_thres : float, optional
+            Optional confidence threshold to filter detections
+            via during postprocessing.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -288,6 +292,7 @@ class YOLO:
             image,
             ratios,
             padding,
+            conf_thres,
             preprocessed=preprocessed,
             postprocess=postprocess,
             no_copy=no_copy,
@@ -298,6 +303,7 @@ class YOLO:
         image: np.ndarray,
         ratios: tuple[float, float] | None = None,
         padding: tuple[float, float] | None = None,
+        conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -314,6 +320,9 @@ class YOLO:
             The ratios generated during preprocessing.
         padding : tuple[float, float], optional
             The padding values used during preprocessing.
+        conf_thres : float, optional
+            Optional confidence threshold to filter detections
+            via during postprocessing.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -383,7 +392,13 @@ class YOLO:
             if ratios is None or padding is None:
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
                 raise RuntimeError(err_msg)
-            outputs = self.postprocess(outputs, ratios, padding, no_copy=no_copy_post)
+            outputs = self.postprocess(
+                outputs,
+                ratios,
+                padding,
+                conf_thres,
+                no_copy=no_copy_post,
+            )
 
         return outputs
 
@@ -522,6 +537,7 @@ class YOLO:
         if not isinstance(self._preprocessor, CUDAPreprocessor):
             outputs = self.run(
                 image,
+                conf_thres=conf_thres,
                 preprocessed=False,
                 postprocess=True,
                 no_copy=True,
@@ -533,7 +549,13 @@ class YOLO:
                 no_warn=True,
             )
             outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
-            outputs = self.postprocess(outputs, ratios, padding, no_copy=True)
+            outputs = self.postprocess(
+                outputs,
+                ratios,
+                padding,
+                conf_thres,
+                no_copy=True,
+            )
 
         # generate the detections
         return self.get_detections(

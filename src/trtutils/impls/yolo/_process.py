@@ -164,10 +164,18 @@ def postprocess(
     """
     if len(outputs) == _EFF_NUM_OUTPUTS:
         return postprocess_efficient_nms(
-            outputs, ratios, padding, conf_thres=conf_thres, no_copy=no_copy,
+            outputs,
+            ratios,
+            padding,
+            conf_thres=conf_thres,
+            no_copy=no_copy,
         )
     return _postprocess_v_10(
-        outputs, ratios, padding, conf_thres=conf_thres, no_copy=no_copy,
+        outputs,
+        ratios,
+        padding,
+        conf_thres=conf_thres,
+        no_copy=no_copy,
     )
 
 

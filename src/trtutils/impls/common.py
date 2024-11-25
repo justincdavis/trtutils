@@ -72,16 +72,15 @@ def postprocess_efficient_nms(
 
     # throw out all detections not included in the num_dets
     num_det_id = int(outputs[0][0])  # needs to be integer
-    bboxes = bboxes[:num_det_id]
-    scores = scores[:num_det_id]
-    class_ids = class_ids[:num_det_id]
+    bboxes = bboxes[:, :num_det_id]
+    scores = scores[:, :num_det_id]
+    class_ids = class_ids[:, :num_det_id]
 
-    # pre-filter by the confidence threshold
     if conf_thres is not None:
         mask = scores >= conf_thres
-        bboxes = bboxes[mask]
-        scores = scores[mask]
-        class_ids = class_ids[mask]
+        bboxes = np.where(mask[..., np.newaxis], bboxes, 0)
+        scores = np.where(mask, scores, 0)
+        class_ids = np.where(mask, class_ids, 0)
 
     adjusted_bboxes = bboxes
     adjusted_bboxes[:, :, 0] = (adjusted_bboxes[:, :, 0] - pad_x) / ratio_width  # x1
