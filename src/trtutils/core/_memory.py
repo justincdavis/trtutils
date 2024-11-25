@@ -10,7 +10,6 @@ from threading import Lock
 
 import numpy as np
 
-# suppress pycuda import error for docs build
 with contextlib.suppress(Exception):
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 

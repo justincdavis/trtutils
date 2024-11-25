@@ -11,7 +11,6 @@ from typing import TypeVar
 
 import numpy as np
 
-# suppress pycuda import error for docs build
 with contextlib.suppress(Exception):
     from cuda import cuda, nvrtc  # type: ignore[import-untyped, import-not-found]
 

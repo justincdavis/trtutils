@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import contextlib
 
-# suppress pycuda import error for docs build
 with contextlib.suppress(Exception):
     from cuda import cuda  # type: ignore[import-untyped, import-not-found]
 
