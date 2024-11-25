@@ -258,6 +258,8 @@ def get_detections(
     agnostic_nms : bool, optional
         Whether or not to perform class-agnostic NMS during the
         optional additional operation.
+    verbose : bool, optional
+        Whether or not to log additional information.
 
     Returns
     -------

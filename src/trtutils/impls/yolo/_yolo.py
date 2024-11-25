@@ -245,7 +245,7 @@ class YOLO:
             OVERWRITTEN INPLACE once new data is generated.
         verbose : bool, optional
             Whether or not to log additional information.
-            
+
         Returns
         -------
         list[np.ndarray]
