@@ -10,17 +10,16 @@ from threading import Lock
 from typing import TYPE_CHECKING
 
 import numpy as np
-from cv2ext.image import letterbox, resize_linear
 
 from trtutils.core._bindings import create_binding
-from trtutils.core._kernels import Kernel
+from trtutils.core._kernels import Kernel, create_kernel_args
 from trtutils.core._memory import (
     memcpy_device_to_host_async,
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
+from trtutils.impls.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE, SCALE_SWAP_TRANSPOSE
 
-from ._kernels import SCALE_SWAP_TRANSPOSE_KERNEL_CODE
 from ._process import preprocess
 
 if TYPE_CHECKING:
@@ -29,6 +28,7 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):
         from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
+_COLOR_CHANNELS = 3
 _CUDA_ALLOCATE_LOCK = Lock()
 
 _log = logging.getLogger(__name__)
@@ -134,6 +134,7 @@ class CUDAPreprocessor:
         output_range: tuple[float, float],
         dtype: np.dtype,
         stream: cudart.cudaStream_t | None = None,
+        threads: tuple[int, int, int] | None = None,
     ) -> None:
         """
         Create a CUDAPreprocessor for YOLO.
@@ -152,6 +153,9 @@ class CUDAPreprocessor:
         stream : cudart.cudaStream_t, optional
             The CUDA stream to use for preprocessing execution.
             If not provided, the preprocessor will use its own stream.
+        threads : tuple[int, int, int], optional
+            The number of threads to use per-block of computation.
+            Can be changed depending on GPU size.
 
         """
         _log.debug(
@@ -166,6 +170,9 @@ class CUDAPreprocessor:
         self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
         self._offset: float = self._o_range[0]
 
+        # resize methods
+        self._valid_methods = ["letterbox", "linear"]
+
         with _CUDA_ALLOCATE_LOCK:
             # handle stream
             self._stream: cudart.cudaStream_t
@@ -177,76 +184,134 @@ class CUDAPreprocessor:
                 self._own_stream = True
 
             # block and thread info
-            self._num_threads: tuple[int, int, int] = (16, 16, 3)
+            self._num_threads: tuple[int, int, int] = threads or (32, 32, 1)
             self._num_blocks: tuple[int, int, int] = (
                 math.ceil(self._o_shape[1] / self._num_threads[0]),
-                math.ceil(output_shape[0] / self._num_threads[1]),
+                math.ceil(self._o_shape[0] / self._num_threads[1]),
                 1,
             )
 
-            # allocate input/output binding
+            # allocate input, sst_input, output binding
+            # call resize kernel then sst kernel
+            # need input -> intermediate -> output
+            # for now just allocate 1080p image, reallocate when needed
+            # resize kernel input binding
+            self._allocated_input_shape: tuple[int, int, int] = (1080, 1920, 3)
             dummy_input: np.ndarray = np.zeros(
-                (self._o_shape[1], self._o_shape[0], 3),
+                self._allocated_input_shape,
                 dtype=np.uint8,
             )
-            # set is_input since we do not use the host_allocation here
             self._input_binding = create_binding(
                 dummy_input,
                 is_input=True,
             )
+            # these two CUDA allocations are static size
+            # sst kernel input binding
+            dummy_sstinput: np.ndarray = np.zeros(
+                (self._o_shape[1], self._o_shape[0], 3),
+                dtype=np.uint8,
+            )
+            self._sst_input_binding = create_binding(
+                dummy_sstinput,
+                is_input=True,
+            )
+            # sst kernel output binding
             dummy_output: np.ndarray = np.zeros(
                 (1, 3, self._o_shape[1], self._o_shape[0]),
                 dtype=self._o_dtype,
             )
-            # set pagelocked memory since we read from the host allocation
             self._output_binding = create_binding(
                 dummy_output,
                 pagelocked_mem=True,
             )
 
-            # load the kernel
-            self._kernel = Kernel(
-                SCALE_SWAP_TRANSPOSE_KERNEL_CODE,
-                "scaleSwapTranspose",
-                self._num_blocks,
-                self._num_threads,
-                self._stream,
-            )
+            # load the kernels
+            # sst kernel always used
+            self._sst_kernel = Kernel(*SCALE_SWAP_TRANSPOSE)
+            # either letterbox or linear is used
+            self._linear_kernel = Kernel(*LINEAR_RESIZE)
+            self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
             if self._own_stream:
                 destroy_stream(self._stream)
         with contextlib.suppress(AttributeError):
+            del self._input_binding
+        with contextlib.suppress(AttributeError):
             del self._output_binding
         with contextlib.suppress(AttributeError):
-            del self._input_binding
+            del self._sst_input_binding
 
-    def _create_args(self: Self) -> np.ndarray:
-        # create a np.ndarray of pointers to the numpy arrays (CPU side pointers)
-        # From: https://nvidia.github.io/cuda-python/overview.html#cuda-python-workflow
-        # Not-stated in the overview, BUT
-        # args MUST BE REGENERATED (EVEN IF IDENTICAL) FOR EVERY KERNEL CALL
-        input_arg: np.ndarray = np.array(
-            [self._input_binding.allocation],
-            dtype=np.uint64,
-        )
-        output_arg: np.ndarray = np.array(
-            [self._output_binding.allocation],
-            dtype=np.uint64,
-        )
-        height: np.ndarray = np.array([self._o_shape[1]], dtype=np.uint64)
-        width: np.ndarray = np.array([self._o_shape[0]], dtype=np.uint64)
-        scale: np.ndarray = np.array([self._scale], dtype=np.float32)
-        offset: np.ndarray = np.array([self._offset], dtype=np.float32)
+    def _create_args(
+        self: Self,
+        height: int,
+        width: int,
+        method: str,
+    ) -> tuple[
+        Kernel,
+        np.ndarray,
+        tuple[float, float],
+        tuple[float, float],
+        np.ndarray,
+    ]:
+        # pre-compute the common potions
+        o_width, o_height = self._o_shape
+        scale_x = o_width / width
+        scale_y = o_height / height
+        if method == "letterbox":
+            scale = min(scale_x, scale_y)
+            padding_x = (width - (o_width * scale)) / 2
+            padding_y = (height - (o_height * scale)) / 2
+            ratios = (scale, scale)
+            padding = (padding_x, padding_y)
 
-        args: list[np.ndarray] = [input_arg, output_arg, scale, offset, height, width]
-        arg_ptrs: np.ndarray = np.array(
-            [arg.ctypes.data for arg in args],
-            dtype=np.uint64,
+            # create args and assign kernel
+            resize_kernel = self._letterbox_kernel
+            resize_args = create_kernel_args(
+                self._input_binding.allocation,
+                self._sst_input_binding.allocation,
+                width,
+                height,
+                o_width,
+                o_height,
+                scale,
+                scale,
+                int(padding_x),
+                int(padding_y),
+                int(width * scale),
+                int(height * scale),
+                128,
+            )
+        else:
+            o_width, o_height = self._o_shape
+            scale_x = o_width / width
+            scale_y = o_height / height
+            ratios = (scale_x, scale_y)
+            padding = (0.0, 0.0)
+
+            # create args and assign kernel
+            resize_kernel = self._linear_kernel
+            resize_args = create_kernel_args(
+                self._input_binding.allocation,
+                self._sst_input_binding.allocation,
+                width,
+                height,
+                o_width,
+                o_height,
+                scale_x,
+                scale_y,
+            )
+        sst_args = create_kernel_args(
+            self._sst_input_binding.allocation,
+            self._output_binding.allocation,
+            self._scale,
+            self._offset,
+            self._o_shape[1],
+            self._o_shape[0],
         )
 
-        return arg_ptrs
+        return resize_kernel, resize_args, ratios, padding, sst_args
 
     def warmup(self: Self) -> None:
         """
@@ -328,28 +393,58 @@ class CUDAPreprocessor:
         ------
         ValueError
             If the method for resizing is not 'letterbox' or 'linear'
+        ValueError
+            If the image given is not color.
 
         """
-        if resize == "letterbox":
-            resized, ratios, padding = letterbox(image, self._o_shape)
-        elif resize == "linear":
-            resized, ratios = resize_linear(image, self._o_shape)
-            padding = (0.0, 0.0)
-        else:
+        # valid the method
+        if resize not in self._valid_methods:
             err_msg = (
-                "Unknown method for image resizing. Options are ['letterbox', 'linear']"
+                f"Unknown method for image resizing. Options are {self._valid_methods}"
             )
             raise ValueError(err_msg)
 
-        args = self._create_args()
+        # check if the image shape is the same as re have allocated with, if not update
+        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
+        if img_shape != self._allocated_input_shape:
+            self._input_binding.free()  # free the memory explicitly
+            if img_shape[2] != _COLOR_CHANNELS:
+                err_msg = "Can only preprocess color images."
+                raise ValueError(err_msg)
+
+            self._input_binding = create_binding(
+                image,
+                is_input=True,
+            )
+            self._allocated_input_shape = image.shape  # type: ignore[assignment]
+
+        # create the arguments
+        height, width = image.shape[:2]
+        resize_kernel, resize_args, ratios, padding, sst_args = self._create_args(
+            height,
+            width,
+            resize,
+        )
 
         memcpy_host_to_device_async(
             self._input_binding.allocation,
-            resized,
+            image,
             self._stream,
         )
 
-        self._kernel.call(args)
+        resize_kernel.call(
+            self._num_blocks,
+            self._num_threads,
+            self._stream,
+            resize_args,
+        )
+
+        self._sst_kernel.call(
+            self._num_blocks,
+            self._num_threads,
+            self._stream,
+            sst_args,
+        )
 
         memcpy_device_to_host_async(
             self._output_binding.host_allocation,
@@ -399,25 +494,53 @@ class CUDAPreprocessor:
                 "Calling direct_preproc is potentially dangerous. Outputs can be overwritten inplace!",
             )
 
-        if resize == "letterbox":
-            resized, ratios, padding = letterbox(image, self._o_shape)
-        elif resize == "linear":
-            resized, ratios = resize_linear(image, self._o_shape)
-            padding = (0.0, 0.0)
-        else:
+        # valid the method
+        if resize not in self._valid_methods:
             err_msg = (
-                "Unknown method for image resizing. Options are ['letterbox', 'linear']"
+                f"Unknown method for image resizing. Options are {self._valid_methods}"
             )
             raise ValueError(err_msg)
 
-        args = self._create_args()
+        # check if the image shape is the same as re have allocated with, if not update
+        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
+        if img_shape != self._allocated_input_shape:
+            self._input_binding.free()  # free the memory explicitly
+            if img_shape[2] != _COLOR_CHANNELS:
+                err_msg = "Can only preprocess color images."
+                raise ValueError(err_msg)
+
+            self._input_binding = create_binding(
+                image,
+                is_input=True,
+            )
+            self._allocated_input_shape = image.shape  # type: ignore[assignment]
+
+        # create the arguments
+        height, width = image.shape[:2]
+        resize_kernel, resize_args, ratios, padding, sst_args = self._create_args(
+            height,
+            width,
+            resize,
+        )
 
         memcpy_host_to_device_async(
             self._input_binding.allocation,
-            resized,
+            image,
             self._stream,
         )
 
-        self._kernel.call(args)
+        resize_kernel.call(
+            self._num_blocks,
+            self._num_threads,
+            self._stream,
+            resize_args,
+        )
+
+        self._sst_kernel.call(
+            self._num_blocks,
+            self._num_threads,
+            self._stream,
+            sst_args,
+        )
 
         return self._output_binding.allocation, ratios, padding

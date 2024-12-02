@@ -1,10 +1,13 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: PYI041
 from __future__ import annotations
 
 import contextlib
 from typing import TYPE_CHECKING
+
+import numpy as np
 
 with contextlib.suppress(Exception):
     from cuda import cuda  # type: ignore[import-untyped, import-not-found]
@@ -13,7 +16,6 @@ from ._cuda import cuda_call
 from ._nvrtc import compile_and_load_kernel
 
 if TYPE_CHECKING:
-    import numpy as np
     from typing_extensions import Self
 
     with contextlib.suppress(Exception):
@@ -27,9 +29,6 @@ class Kernel:
         self: Self,
         kernel_code: str,
         name: str,
-        num_blocks: tuple[int, int, int],
-        num_threads: tuple[int, int, int],
-        stream: cudart.cudaStream_t,
     ) -> None:
         """
         Create the specified kernel from the CUDA code.
@@ -40,19 +39,10 @@ class Kernel:
             The CUDA code containing the kernel definition.
         name: str
             The name of the kernel to compile.
-        num_blocks: tuple[int, int, int]
-            The number of blocks to use for the kernel calls.
-        num_threads: tuple[int, int, int]
-            The number of threads to use for the kernel calls.
-        stream: cudart.cudaStream_t
-            The CUDA stream to execute the kernel in.
 
         """
         self._name = name
         self._module, self._kernel = compile_and_load_kernel(kernel_code, name)
-        self._blocks = num_blocks
-        self._threads = num_threads
-        self._stream = stream
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -60,12 +50,18 @@ class Kernel:
 
     def __call__(
         self: Self,
+        num_blocks: tuple[int, int, int],
+        num_threads: tuple[int, int, int],
+        stream: cudart.cudaStream_t,
         args: np.ndarray,
     ) -> None:
-        self.call(args)
+        self.call(num_blocks, num_threads, stream, args)
 
     def call(
         self: Self,
+        num_blocks: tuple[int, int, int],
+        num_threads: tuple[int, int, int],
+        stream: cudart.cudaStream_t,
         args: np.ndarray,
     ) -> None:
         """
@@ -73,6 +69,12 @@ class Kernel:
 
         Parameters
         ----------
+        num_blocks: tuple[int, int, int]
+            The number of blocks to use for the kernel calls.
+        num_threads: tuple[int, int, int]
+            The number of threads to use for the kernel calls.
+        stream: cudart.cudaStream_t
+            The CUDA stream to execute the kernel in.
         args: np.ndarray
             The NumPy array containing the pointers to the arguments.
             This array should be 1D containing int64 pointers to a NumPy
@@ -81,9 +83,9 @@ class Kernel:
         """
         launch_kernel(
             self._kernel,
-            self._blocks,
-            self._threads,
-            self._stream,
+            num_blocks,
+            num_threads,
+            stream,
             args,
         )
 
@@ -125,3 +127,50 @@ def launch_kernel(
             0,
         ),
     )
+
+
+def create_kernel_args(*args: int | float | np.ndarray) -> np.ndarray:
+    """
+    Create the argument pointer array for a CUDA kernel call.
+
+    Adapted from the workflow present in:
+    https://nvidia.github.io/cuda-python/overview.html#cuda-python-workflow
+    This MUST be called for each kernel call. If the args are not
+    regenerated the CUDA runtime will crash.
+
+    Parameters
+    ----------
+    *args: int | float | np.ndarray
+        All args to pass to the kernel as integers, floats, or pre-formed args.
+        If arrays are to be passed to the kernel, they should be
+        given as an integer representing the pointer returned
+        from CUDA malloc.
+        A preformed arg is one which is already wrapped as an np.ndarray
+        with specific type.
+
+    Returns
+    -------
+    np.ndarray
+        The np.ndarray of argument pointers (one pointer per arg)
+
+    Raises
+    ------
+    TypeError
+        If the type of an argument is not integer or float
+
+    """
+    # convert all args to np.ndarrays
+    converted_args: list[np.ndarray] = []
+    for arg in args:
+        if isinstance(arg, int):
+            converted_args.append(np.array([arg], dtype=np.uint64))
+        elif isinstance(arg, float):
+            converted_args.append(np.array([arg], dtype=np.float32))
+        elif isinstance(arg, np.ndarray):
+            converted_args.append(arg)
+        else:
+            err_msg = f"Unrecognized arg type for CUDA kernel: {type(arg)}"
+            raise TypeError(err_msg)
+
+    # get a pointer to each np.ndarray and pack into new array
+    return np.array([arg.ctypes.data for arg in converted_args], dtype=np.uint64)
