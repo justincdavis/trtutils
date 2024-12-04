@@ -4,6 +4,7 @@
 # ruff: noqa: PYI041
 from __future__ import annotations
 
+import logging
 import contextlib
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     with contextlib.suppress(Exception):
         from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
+_log = logging.getLogger(__name__)
+
 
 class Kernel:
     """Holds kernel coda and PTX for execution."""
@@ -29,6 +32,8 @@ class Kernel:
         self: Self,
         kernel_code: str,
         name: str,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Create the specified kernel from the CUDA code.
@@ -39,14 +44,22 @@ class Kernel:
             The CUDA code containing the kernel definition.
         name: str
             The name of the kernel to compile.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
 
         """
         self._name = name
-        self._module, self._kernel = compile_and_load_kernel(kernel_code, name)
+        self._module, self._kernel = compile_and_load_kernel(kernel_code, name, verbose=verbose)
+
+    def free(self: Self) -> None:
+        """Free the memory of the loaded kernel."""
+        cuda_call(cuda.cuModuleUnload(self._module))
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
-            cuda_call(cuda.cuModuleUnload(self._module))
+            self.free()
 
     def __call__(
         self: Self,
@@ -54,8 +67,10 @@ class Kernel:
         num_threads: tuple[int, int, int],
         stream: cudart.cudaStream_t,
         args: np.ndarray,
+        *,
+        verbose: bool | None = None,
     ) -> None:
-        self.call(num_blocks, num_threads, stream, args)
+        self.call(num_blocks, num_threads, stream, args, verbose=verbose)
 
     def call(
         self: Self,
@@ -63,6 +78,8 @@ class Kernel:
         num_threads: tuple[int, int, int],
         stream: cudart.cudaStream_t,
         args: np.ndarray,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Launch the kernel with the specified blocks, threads, and args in a stream.
@@ -79,8 +96,15 @@ class Kernel:
             The NumPy array containing the pointers to the arguments.
             This array should be 1D containing int64 pointers to a NumPy
             array containing each individual argument.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
 
         """
+        if verbose:
+            _log.debug(f"Calling kernel: {self._name}, blocks: {num_blocks}, threads: {num_threads}, args: {args}")
+
         launch_kernel(
             self._kernel,
             num_blocks,
@@ -129,7 +153,7 @@ def launch_kernel(
     )
 
 
-def create_kernel_args(*args: int | float | np.ndarray) -> np.ndarray:
+def create_kernel_args(*args: int | float | np.ndarray, verbose: bool | None = False) -> np.ndarray:
     """
     Create the argument pointer array for a CUDA kernel call.
 
@@ -140,13 +164,15 @@ def create_kernel_args(*args: int | float | np.ndarray) -> np.ndarray:
 
     Parameters
     ----------
-    *args: int | float | np.ndarray
+    *args : int | float | np.ndarray
         All args to pass to the kernel as integers, floats, or pre-formed args.
         If arrays are to be passed to the kernel, they should be
         given as an integer representing the pointer returned
         from CUDA malloc.
         A preformed arg is one which is already wrapped as an np.ndarray
         with specific type.
+    verbose : bool, optional
+        Whether or not to output additional information about the passed args.
 
     Returns
     -------
@@ -159,6 +185,10 @@ def create_kernel_args(*args: int | float | np.ndarray) -> np.ndarray:
         If the type of an argument is not integer or float
 
     """
+    # verbose output
+    if verbose:
+        _log.debug(f"Converting args: {args}")
+
     # convert all args to np.ndarrays
     converted_args: list[np.ndarray] = []
     for arg in args:

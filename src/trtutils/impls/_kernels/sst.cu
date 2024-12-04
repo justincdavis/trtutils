@@ -4,24 +4,25 @@ void scaleSwapTranspose(
     float* __restrict__ outImg,
     const float scale,
     const float offset,
-    const int height,
-    const int width
+    const int shape
 ) {
     const int tx = blockIdx.x * blockDim.x + threadIdx.x;
     const int ty = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (tx < height && ty < width) {
-        const int inputBaseIdx = (tx * width + ty) * 3;
+    if (tx < shape && ty < shape) {
+        const int inputBaseIdx = (tx * shape + ty) * 3;
 
         // scale BGR values to new range
-        float b = static_cast<float>(inImg[inputBaseIdx + 0]) * scale + offset;
-        float g = static_cast<float>(inImg[inputBaseIdx + 1]) * scale + offset;
-        float r = static_cast<float>(inImg[inputBaseIdx + 2]) * scale + offset;
+        const float b = static_cast<float>(inImg[inputBaseIdx + 0]) * scale + offset;
+        const float g = static_cast<float>(inImg[inputBaseIdx + 1]) * scale + offset;
+        const float r = static_cast<float>(inImg[inputBaseIdx + 2]) * scale + offset;
+
+        const int shape_squared = shape * shape;
 
         // swap BGR to RGB for YOLO inference
-        int outputBaseIdx = (tx * width + ty);
-        outImg[outputBaseIdx + 0 * height * width] = r;
-        outImg[outputBaseIdx + 1 * height * width] = g;
-        outImg[outputBaseIdx + 2 * height * width] = b;
+        const int outputBaseIdx = (tx * shape + ty);
+        outImg[outputBaseIdx + 0 * shape_squared] = r;
+        outImg[outputBaseIdx + 1 * shape_squared] = g;
+        outImg[outputBaseIdx + 2 * shape_squared] = b;
     }
 }

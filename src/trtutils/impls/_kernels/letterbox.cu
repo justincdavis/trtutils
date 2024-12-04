@@ -2,58 +2,61 @@ extern "C" __global__
 void letterboxResize(
     const unsigned char* __restrict__ inImg,
     unsigned char* __restrict__ outImg,
-    const int inWidth,
-    const int inHeight,
-    const int outWidth,
-    const int outHeight,
-    const float scaleX,
-    const float scaleY,
-    const int startX,
-    const int startY,
-    const int newWidth,
-    const int newHeight
+    const int widthIn,
+    const int heightIn,
+    const int widthOut,
+    const int heightOut,
+    const int startWidth,
+    const int startHeight,
+    const int endWidth,
+    const int endHeight
 ) {
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    const int tx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int ty = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (x >= outWidth || y >= outHeight) return;
+    if (tx < widthOut && ty < heightOut) {
+        const int outputIdx = (ty * widthOut + tx) * 3;
 
-    int outIdx = (y * outWidth + x) * 3;
+        if (tx >= startWidth && tx < endWidth && ty >= startHeight && ty < endHeight) {
+            const float scaleWidth = 1.0f / ((endWidth - startWidth) / (float)widthIn);
+            const float scaleHeight = 1.0f / ((endHeight - startHeight) / (float)heightIn);
 
-    // always fill the value
-    outImg[outIdx + 0] = 114;
-    outImg[outIdx + 1] = 114;
-    outImg[outIdx + 2] = 114;
+            const float inputX = max((tx - startWidth) * scaleWidth, 0.0);
+            const float inputY = max((ty - startHeight) * scaleHeight, 0.0);
 
-    // if pixel is valid location for resizing input
-    if (x >= startX && x < startX + newWidth && y >= startY && y < startY + newHeight) {
-        // get source pixel locations
-        float srcX = (x - startX) * scaleX;
-        float srcY = (y - startY) * scaleY;
+            // get four surrounding pixels
+            const int x0 = floor(inputX);
+            const int y0 = floor(inputY);
+            const int x1 = min(x0 + 1, widthIn - 1);
+            const int y1 = min(y0 + 1, heightIn - 1);
 
-        int x0 = static_cast<int>(srcX);
-        int y0 = static_cast<int>(srcY);
+            // interpolation weights
+            const float dx = inputX - x0;
+            const float dy = inputY - y0;
+            const float w00 = (1.0f - dx) * (1.0f - dy);
+            const float w01 = dx * (1.0f - dy);
+            const float w10 = (1.0f - dx) * dy;
+            const float w11 = dx * dy;
 
-        int x1 = min(x0 + 1, inWidth - 1);
-        int y1 = min(y0 + 1, inHeight - 1);
+            const int inputIdx00 = (y0 * widthIn + x0) * 3;
+            const int inputIdx01 = (y0 * widthIn + x1) * 3;
+            const int inputIdx10 = (y1 * widthIn + x0) * 3;
+            const int inputIdx11 = (y1 * widthIn + x1) * 3;
 
-        // interpolation weights
-        float dx = srcX - x0;
-        float dy = srcY - y0;
-
-        // compute adjacent four pixels
-        int idx00 = (y0 * inWidth + x0) * 3;
-        int idx01 = (y0 * inWidth + x1) * 3;
-        int idx10 = (y1 * inWidth + x0) * 3;
-        int idx11 = (y1 * inWidth + x1) * 3;
-
-        // perform bilinear interpolation for pixel (on 3 channels)
-        for (int c = 0; c < 3; ++c) {
-            outImg[outIdx + c] = static_cast<unsigned char>(
-                (1 - dx) * (1 - dy) * inImg[idx00 + c] +
-                dx * (1 - dy) * inImg[idx01 + c] +
-                (1 - dx) * dy * inImg[idx10 + c] +
-                dx * dy * inImg[idx11 + c]);
+            // bilinear interpolation for each color channel
+            for (int c = 0; c < 3; ++c) {
+                const float interpolatedValue = 
+                    inImg[inputIdx00 + c] * w00 +
+                    inImg[inputIdx01 + c] * w01 +
+                    inImg[inputIdx10 + c] * w10 +
+                    inImg[inputIdx11 + c] * w11;
+                
+                outImg[outputIdx + c] = static_cast<unsigned char>(interpolatedValue);
+            }
+        }
+        else {
+            for (int c = 0; c < 3; ++c)
+                outImg[outputIdx + c] = 114;
         }
     }
 }

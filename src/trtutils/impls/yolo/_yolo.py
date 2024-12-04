@@ -130,7 +130,8 @@ class YOLO:
                 self._input_size,
                 self._input_range,
                 self._dtype,
-                self._engine.stream,
+                resize=self._resize_method,
+                stream=self._engine.stream,
             ),
         )
         self._preprocessor_type = preprocessor
@@ -203,14 +204,14 @@ class YOLO:
             The preprocessed inputs, rescale ratios, and padding values
 
         """
+        resize = resize if resize is not None else self._resize_method
         if verbose:
-            _log.debug(f"{self._tag}: Running preprocess, shape: {image.shape}")
+            _log.debug(f"{self._tag}: Running preprocess, shape: {image.shape}, with method: {resize}")
         preprocessor = self._preprocessor
         if method is not None:
             preprocessor = (
                 self._preprocessors[0] if method == "cpu" else self._preprocessors[1]
             )
-        resize = resize if resize is not None else self._resize_method
         if isinstance(preprocessor, CUDAPreprocessor):
             return preprocessor(image, resize=resize, no_copy=no_copy)
         return preprocessor(image, resize=resize)
@@ -578,6 +579,7 @@ class YOLO:
             # if using CUDA, can remove much more
             gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
                 image,
+                resize=self._resize_method,
                 no_warn=True,
             )
             outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
