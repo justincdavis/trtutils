@@ -4,17 +4,6 @@
 # list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# -- Path setup --------------------------------------------------------------
-
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-
-# Documentation written with 
-# https://samnicholls.net/2016/06/15/how-to-sphinx-readthedocs/
-# as a guide
-
 import os
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
@@ -23,14 +12,13 @@ import trtutils
 # -- Project information -----------------------------------------------------
 
 project = "trtutils"
-copyright = "2023, Justin Davis"
+copyright = "2024, Justin Davis"
 author = "Justin Davis"
 version = "0.3.5"
 
 assert version == trtutils.__version__  # Make sure version is consistent
 
 # -- General configuration ---------------------------------------------------
-# -- General configuration
 
 extensions = [
     "sphinx.ext.duration",
