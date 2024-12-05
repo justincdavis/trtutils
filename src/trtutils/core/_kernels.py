@@ -258,7 +258,8 @@ def create_kernel_args(
 
     # get a pointer to each np.ndarray and pack into new array
     ptrs: np.ndarray = np.array(
-        [arg.ctypes.data for arg in converted_args], dtype=np.uint64,
+        [arg.ctypes.data for arg in converted_args],
+        dtype=np.uint64,
     )
 
     if verbose:
