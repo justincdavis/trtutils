@@ -10,6 +10,8 @@ Submodules
     Implementations which are generic to underlying models.
 :mod:`yolo`
     Implementations of YOLO object detectors.
+:mod:`kernels`
+    CUDA kernels for various functions.
 
 """
 
@@ -17,7 +19,9 @@ from __future__ import annotations
 
 import contextlib
 
-__all__ = []
+from . import kernels
+
+__all__ = ["kernels"]
 
 # import common elements
 with contextlib.suppress(ImportError):

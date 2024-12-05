@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 (2024-12-05)
+
+### Added
+
+- CUDA-based resize kernels
+  - Peform linear or letterbox resizing
+- core.create_kernel_args nad core.Kernel
+
 ## 0.3.4 (2024-11-12)
 
 ### Added

@@ -59,6 +59,8 @@ Functions
     Compile and load a kernel using NVRTC.
 :func:`launch_kernel`
     Launch a CUDA kernel.
+:func:`create_kernel_args`
+    Create the argument array for a kernel call.
 
 """
 
@@ -69,7 +71,7 @@ from ._context import create_context, destroy_context
 from ._cuda import cuda_call
 from ._engine import create_engine
 from ._interface import TRTEngineInterface
-from ._kernels import Kernel, launch_kernel
+from ._kernels import Kernel, create_kernel_args, launch_kernel
 from ._memory import (
     allocate_pinned_memory,
     cuda_malloc,
@@ -92,6 +94,7 @@ __all__ = [
     "create_binding",
     "create_context",
     "create_engine",
+    "create_kernel_args",
     "create_stream",
     "cuda_call",
     "cuda_malloc",
