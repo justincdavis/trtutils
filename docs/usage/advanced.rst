@@ -150,7 +150,7 @@ An example of compiling a kernel:
         input_arr,
         stream,
     )
-    kernel.call((16, 16, 3), (32, 32, 1), stream, args)
+    kernel.call((32, 32, 1), (32, 32, 1), stream, args)
     memcpy_device_to_host_async(
         output_binding.host_allocation,
         output_binding.allocation,
