@@ -198,3 +198,29 @@ def allocate_pinned_memory(
     )
 
     return array.reshape(shape)
+
+
+def get_ptr_pair(host_array: np.ndarray) -> tuple[int, int]:
+    """
+    Get the pointer pairs (host/device) of a pagelocked allocation.
+
+    Parameters
+    ----------
+    host_array : np.ndarray
+        A np.ndarray allocated by the allocate_pinned_memory function.
+    
+    Returns
+    -------
+    tuple[int, int]
+        The host and device pointer of the allocation.
+
+    """
+    host_ptr = host_array.ctypes.data
+    with _MEM_ALLOC_LOCK:
+        device_ptr = cuda_call(cudart.cudaHostGetDevicePointer(host_ptr, 0))
+
+    _log.debug(
+        f"Acquired pointers: (host: {host_ptr}, device: {device_ptr}) from ndarray"
+    )
+
+    return host_ptr, device_ptr

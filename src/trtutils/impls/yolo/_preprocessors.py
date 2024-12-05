@@ -212,6 +212,7 @@ class CUDAPreprocessor:
             self._input_binding = create_binding(
                 dummy_input,
                 is_input=True,
+                pagelocked_mem=True,
             )
             # these two CUDA allocations are static size
             # sst kernel input binding
@@ -222,6 +223,7 @@ class CUDAPreprocessor:
             self._sst_input_binding = create_binding(
                 dummy_sstinput,
                 is_input=True,
+                pagelocked_mem=True,
             )
             # sst kernel output binding
             dummy_output: np.ndarray = np.zeros(
@@ -339,6 +341,7 @@ class CUDAPreprocessor:
         self._input_binding = create_binding(
             image,
             is_input=True,
+            pagelocked_mem=True,
         )
         self._allocated_input_shape = image.shape  # type: ignore[assignment]
         self._resize_num_blocks = (
