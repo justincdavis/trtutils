@@ -105,11 +105,10 @@ An example of compiling a kernel:
     }
     """
 
-    from trtutils.core import Kernel, create_stream
+    from trtutils.core import Kernel
 
     # compile and load kernel
-    stream = create_stream()
-    kernel = Kernel(KERNEL_CODE, "scaleSwapTranspose", (16, 16, 3), (32, 32, 1))
+    kernel = Kernel(KERNEL_CODE, "scaleSwapTranspose")
 
     # to run the kernel need input and output CUDA data
     import numpy as np
@@ -133,26 +132,25 @@ An example of compiling a kernel:
         dtype=np.uint64,
     )
     # assume no scale and offset
-    height: np.ndarray = np.array([640], dtype=np.uint64)
-    width: np.ndarray = np.array([640], dtype=np.uint64)
-    scale: np.ndarray = np.array([1.0], dtype=np.float32)
-    offset: np.ndarray = np.array([0.0], dtype=np.float32)
-
-    args: list[np.ndarray] = [input_arg, output_arg, scale, offset, height, width]
-    arg_ptrs: np.ndarray = np.array(
-        [arg.ctypes.data for arg in args],
-        dtype=np.uint64,
+    args = kernel.create_args(
+        input_binding.allocation,
+        output_binding.allocation,
+        height,
+        width,
+        scale,
+        offset,
     )
 
     # launch the kernel
-    from trtutils.core import stream_synchronize, memcpy_host_to_device_async, memcpy_device_to_host_async
+    from trtutils.core import create_stream, stream_synchronize, memcpy_host_to_device_async, memcpy_device_to_host_async
 
+    stream = create_stream()
     memcpy_host_to_device_async(
         input_binding.allocation,
         input_arr,
         stream,
     )
-    kernel.call(arg_ptrs)
+    kernel.call((32, 32, 1), (32, 32, 1), stream, args)
     memcpy_device_to_host_async(
         output_binding.host_allocation,
         output_binding.allocation,

@@ -16,6 +16,7 @@ Submodules
    :maxdepth: 4
 
    trtutils.impls.common
+   trtutils.impls.kernels
 
 Module contents
 ---------------
