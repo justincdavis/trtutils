@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils.core._bindings import create_binding
-from trtutils.core._kernels import Kernel, create_kernel_args
+from trtutils.core._kernels import Kernel
 from trtutils.core._memory import (
     memcpy_device_to_host_async,
     memcpy_host_to_device_async,
@@ -162,6 +162,11 @@ class CUDAPreprocessor:
             The number of threads to use per-block of computation.
             Can be changed depending on GPU size.
 
+        Raises
+        ------
+        ValueError
+            If the resize method is not valid
+
         """
         _log.debug(
             f"Creating CUDA preprocessor: {output_shape}, {output_range}, {dtype}",
@@ -279,27 +284,26 @@ class CUDAPreprocessor:
         scale_y = o_height / height
         if method == "letterbox":
             scale = min(scale_x, scale_y)
-            padding_x = (width - (o_width * scale)) / 2
-            padding_y = (height - (o_height * scale)) / 2
+            new_width = width * scale
+            new_height = height * scale
+            padding_x = (o_width - new_width) / 2
+            padding_y = (o_height - new_height) / 2
             ratios = (scale, scale)
             padding = (padding_x, padding_y)
 
             # create args and assign kernel
             resize_kernel = self._letterbox_kernel
-            resize_args = create_kernel_args(
+            resize_args = resize_kernel.create_args(
                 self._input_binding.allocation,
                 self._sst_input_binding.allocation,
                 width,
                 height,
                 o_width,
                 o_height,
-                scale,
-                scale,
                 int(padding_x),
                 int(padding_y),
-                int(width * scale),
-                int(height * scale),
-                128,
+                int(new_width),
+                int(new_height),
                 verbose=verbose,
             )
         else:
@@ -311,7 +315,7 @@ class CUDAPreprocessor:
 
             # create args and assign kernel
             resize_kernel = self._linear_kernel
-            resize_args = create_kernel_args(
+            resize_args = resize_kernel.create_args(
                 self._input_binding.allocation,
                 self._sst_input_binding.allocation,
                 width,
@@ -320,12 +324,11 @@ class CUDAPreprocessor:
                 o_height,
                 verbose=verbose,
             )
-        sst_args = create_kernel_args(
+        sst_args = self._sst_kernel.create_args(
             self._sst_input_binding.allocation,
             self._output_binding.allocation,
             self._scale,
             self._offset,
-            # self._o_shape[1],
             self._o_shape[0],
             verbose=verbose,
         )

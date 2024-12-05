@@ -139,7 +139,7 @@ def load_kernel(
         Whether or not to output additional information
         to stdout. If not provided, will default to overall
         engines verbose setting.
-        
+
     Returns
     -------
     tuple[cuda.CUmodule, cuda.CUkernel]
@@ -148,7 +148,7 @@ def load_kernel(
     """
     if verbose:
         _log.debug(f"Loading kernel: {name} from PTX")
-    
+
     with _NVRTC_LOCK, _MEM_ALLOC_LOCK:
         module: cuda.CUmodule = cuda_call(cuda.cuModuleLoadData(kernel_ptx.ctypes.data))
         kernel: cuda.CUkernel = cuda_call(

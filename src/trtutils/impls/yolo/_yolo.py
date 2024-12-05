@@ -206,7 +206,9 @@ class YOLO:
         """
         resize = resize if resize is not None else self._resize_method
         if verbose:
-            _log.debug(f"{self._tag}: Running preprocess, shape: {image.shape}, with method: {resize}")
+            _log.debug(
+                f"{self._tag}: Running preprocess, shape: {image.shape}, with method: {resize}",
+            )
         preprocessor = self._preprocessor
         if method is not None:
             preprocessor = (

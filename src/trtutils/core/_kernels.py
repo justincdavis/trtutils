@@ -4,8 +4,8 @@
 # ruff: noqa: PYI041
 from __future__ import annotations
 
-import logging
 import contextlib
+import logging
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -51,7 +51,12 @@ class Kernel:
 
         """
         self._name = name
-        self._module, self._kernel = compile_and_load_kernel(kernel_code, name, verbose=verbose)
+        self._module, self._kernel = compile_and_load_kernel(
+            kernel_code,
+            name,
+            verbose=verbose,
+        )
+        self._inter_args: list[np.ndarray] | None = None
 
     def free(self: Self) -> None:
         """Free the memory of the loaded kernel."""
@@ -60,6 +65,41 @@ class Kernel:
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
             self.free()
+
+    def create_args(
+        self: Self,
+        *args: int | float | np.ndarray,
+        verbose: bool | None = False,
+    ) -> np.ndarray:
+        """
+        Create the argument pointer array for a CUDA kernel call.
+
+        Is a wrapper around :func:`trtutils.core.create_kernel_args`, which
+        stores the intermediate pointer results in inside of the class.
+        The intermediate arrays can be cleaned up by the garbage collector
+        if the kernel does not access the memory fast enough.
+
+        Parameters
+        ----------
+        *args : int | float | np.ndarray
+            All args to pass to the kernel as integers, floats, or pre-formed args.
+            If arrays are to be passed to the kernel, they should be
+            given as an integer representing the pointer returned
+            from CUDA malloc.
+            A preformed arg is one which is already wrapped as an np.ndarray
+            with specific type.
+        verbose : bool, optional
+            Whether or not to output additional information about the passed args.
+
+        Returns
+        -------
+        np.ndarray
+            The np.ndarray of argument pointers (one pointer per arg)
+
+        """
+        ptrs, intermediate = create_kernel_args(*args, verbose=verbose)
+        self._inter_args = intermediate
+        return ptrs
 
     def __call__(
         self: Self,
@@ -103,7 +143,9 @@ class Kernel:
 
         """
         if verbose:
-            _log.debug(f"Calling kernel: {self._name}, blocks: {num_blocks}, threads: {num_threads}, args: {args}")
+            _log.debug(
+                f"Calling kernel: {self._name}, blocks: {num_blocks}, threads: {num_threads}, args: {args}",
+            )
 
         launch_kernel(
             self._kernel,
@@ -153,7 +195,10 @@ def launch_kernel(
     )
 
 
-def create_kernel_args(*args: int | float | np.ndarray, verbose: bool | None = False) -> np.ndarray:
+def create_kernel_args(
+    *args: int | float | np.ndarray,
+    verbose: bool | None = False,
+) -> tuple[np.ndarray, list[np.ndarray]]:
     """
     Create the argument pointer array for a CUDA kernel call.
 
@@ -161,6 +206,11 @@ def create_kernel_args(*args: int | float | np.ndarray, verbose: bool | None = F
     https://nvidia.github.io/cuda-python/overview.html#cuda-python-workflow
     This MUST be called for each kernel call. If the args are not
     regenerated the CUDA runtime will crash.
+
+    The intermediate argument buffers MUST be saved as variable to ensure
+    the garbage collector does not delete them before use. The Kernel wrapper
+    class handles this and is the recomended way to interact with kernels
+    inside of trtutils.
 
     Parameters
     ----------
@@ -176,8 +226,8 @@ def create_kernel_args(*args: int | float | np.ndarray, verbose: bool | None = F
 
     Returns
     -------
-    np.ndarray
-        The np.ndarray of argument pointers (one pointer per arg)
+    tuple[np.ndarray, list[np.ndarray]]
+        The np.ndarray of argument pointers (one pointer per arg), and the allocated arrays
 
     Raises
     ------
@@ -201,15 +251,17 @@ def create_kernel_args(*args: int | float | np.ndarray, verbose: bool | None = F
         else:
             err_msg = f"Unrecognized arg type for CUDA kernel: {type(arg)}"
             raise TypeError(err_msg)
-        
+
         if verbose:
             last_arg = converted_args[-1]
             _log.debug(f"Converted Arg: {arg} -> Array: {last_arg} {last_arg.dtype}")
 
     # get a pointer to each np.ndarray and pack into new array
-    ptrs = np.array([arg.ctypes.data for arg in converted_args], dtype=np.uint64)
+    ptrs: np.ndarray = np.array(
+        [arg.ctypes.data for arg in converted_args], dtype=np.uint64,
+    )
 
     if verbose:
         _log.debug(f"Generated pointers: {ptrs}")
 
-    return ptrs
+    return ptrs, converted_args

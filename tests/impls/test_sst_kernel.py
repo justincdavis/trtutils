@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from trtutils.core import Kernel, create_stream, destroy_stream, create_binding, create_kernel_args, memcpy_host_to_device_async, memcpy_device_to_host_async, stream_synchronize
+from trtutils.core import Kernel, create_stream, destroy_stream, create_binding, memcpy_host_to_device_async, memcpy_device_to_host_async, stream_synchronize
 from trtutils.impls import kernels
 from trtutils.impls.yolo import preprocess
 
@@ -64,8 +64,7 @@ def test_sst_results():
         *kernels.SCALE_SWAP_TRANSPOSE,
     )
 
-    # args = create_sst_args()
-    args = create_kernel_args(
+    args = kernel.create_args(
         input_binding.allocation,
         output_binding.allocation,
         scale,

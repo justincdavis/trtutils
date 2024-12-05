@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from trtutils.core import Kernel, create_stream, destroy_stream, create_binding, create_kernel_args, memcpy_host_to_device_async, memcpy_device_to_host_async, stream_synchronize
+from trtutils.core import Kernel, create_stream, destroy_stream, create_binding, memcpy_host_to_device_async, memcpy_device_to_host_async, stream_synchronize
 from trtutils.impls import kernels
 
 
@@ -59,8 +59,7 @@ def test_linear_results():
         *kernels.LINEAR_RESIZE,
     )
 
-    # args = create_sst_args()
-    args = create_kernel_args(
+    args = kernel.create_args(
         input_binding.allocation,
         output_binding.allocation,
         width,
@@ -91,6 +90,10 @@ def test_linear_results():
     cpu_mean = np.mean(resized_img)
     # allow up to an overall 0.5 out of 255.0 drift (1.0 abs)
     assert cpu_mean - 0.5 <= np.mean(cuda_result) <= cpu_mean + 0.5
+
+    # cv2.imshow("CPU", resized_img)
+    # cv2.imshow("CUDA", cuda_result)
+    # cv2.waitKey(0)
 
     destroy_stream(stream)
     input_binding.free()

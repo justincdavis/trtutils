@@ -22,6 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
@@ -42,7 +43,7 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "Typing :: Typed",
 ]
-requires-python=">=3.8, <=3.13"
+requires-python=">=3.8, <=3.14"
 dependencies = [
     "tensorrt>=8.0.0",
     "cuda-python>=8.0.0",
@@ -63,7 +64,7 @@ impls = [
     "trtutils[yolo]",
 ]
 yolo = [
-    "cv2ext>=0.0.25",
+    "cv2ext>=0.1.0",
     "opencv-contrib-python>=4.6.0",
 ]
 jetson = [
@@ -110,7 +111,7 @@ push            = false
 where = ["src"]
 
 [tool.setuptools.package-data]
-trtutils = ["src/trtutils/py.typed"]
+trtutils = ["src/*.cu", "src/trtutils/py.typed"]
 
 [tool.ruff]
 fix = true
