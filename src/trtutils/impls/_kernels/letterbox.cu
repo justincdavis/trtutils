@@ -23,7 +23,6 @@ void letterboxResize(
 
     if (tx >= startX && tx < startX + regionWidth &&
         ty >= startY && ty < startY + regionHeight) {
-    
         const float scaleX = widthIn / (float)regionWidth;
         const float scaleY = heightIn / (float)regionHeight;
 
