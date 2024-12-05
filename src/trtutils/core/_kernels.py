@@ -201,6 +201,15 @@ def create_kernel_args(*args: int | float | np.ndarray, verbose: bool | None = F
         else:
             err_msg = f"Unrecognized arg type for CUDA kernel: {type(arg)}"
             raise TypeError(err_msg)
+        
+        if verbose:
+            last_arg = converted_args[-1]
+            _log.debug(f"Converted Arg: {arg} -> Array: {last_arg} {last_arg.dtype}")
 
     # get a pointer to each np.ndarray and pack into new array
-    return np.array([arg.ctypes.data for arg in converted_args], dtype=np.uint64)
+    ptrs = np.array([arg.ctypes.data for arg in converted_args], dtype=np.uint64)
+
+    if verbose:
+        _log.debug(f"Generated pointers: {ptrs}")
+
+    return ptrs

@@ -1,62 +1,82 @@
 extern "C" __global__
 void letterboxResize(
-    const unsigned char* __restrict__ inImg,
-    unsigned char* __restrict__ outImg,
-    const int widthIn,
-    const int heightIn,
-    const int widthOut,
-    const int heightOut,
-    const int startWidth,
-    const int startHeight,
-    const int endWidth,
-    const int endHeight
+    const unsigned char* __restrict__ inImg, // Input image
+    unsigned char* __restrict__ outImg,      // Output image
+    const int widthIn,                       // Input image width
+    const int heightIn,                      // Input image height
+    const int widthOut,                      // Output image width
+    const int heightOut,                     // Output image height
+    const int startX,                        // X-offset for the letterboxed region
+    const int startY,                        // Y-offset for the letterboxed region
+    const int regionWidth,                   // Width of the scaled region
+    const int regionHeight                   // Height of the scaled region
 ) {
+    // Get thread coordinates
     const int tx = blockIdx.x * blockDim.x + threadIdx.x;
     const int ty = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (tx < widthOut && ty < heightOut) {
+    if (tx == 0 && ty == 0) {
+        printf("%d, %d, %d, %d, %d, %d, %d, %d\n", widthIn, heightIn, widthOut, heightOut, startX, startY, regionWidth, regionHeight);
+    }
+
+    // // Bounds check: Ensure valid threads
+    // if (tx < widthOut && ty < heightOut) {
+    //     const int outputIdx = (ty * widthOut + tx) * 3;
+    //     outImg[outputIdx + 0] = 0;
+    //     outImg[outputIdx + 1] = 0;
+    //     outImg[outputIdx + 2] = 0;
+    // }
+
+    return;
+
+
+    // Check if the thread falls within the active (non-padded) region
+    if (tx >= startX && tx < startX + regionWidth &&
+        ty >= startY && ty < startY + regionHeight) {
+    
+        // Scale factors for input to active region mapping
+        const float scaleX = widthIn / (float)regionWidth;
+        const float scaleY = heightIn / (float)regionHeight;
+
+        // Calculate input image coordinates
+        const float inputX = (tx - startX) * scaleX;
+        const float inputY = (ty - startY) * scaleY;
+
+        // Get four surrounding pixels (ensure indices are within bounds)
+        const int x0 = max(0, min((int)floor(inputX), widthIn - 1));
+        const int y0 = max(0, min((int)floor(inputY), heightIn - 1));
+        const int x1 = max(0, min(x0 + 1, widthIn - 1));
+        const int y1 = max(0, min(y0 + 1, heightIn - 1));
+
+        // Interpolation weights
+        const float dx = inputX - x0;
+        const float dy = inputY - y0;
+        const float w00 = (1.0f - dx) * (1.0f - dy);
+        const float w01 = dx * (1.0f - dy);
+        const float w10 = (1.0f - dx) * dy;
+        const float w11 = dx * dy;
+
+        // Input and output indices
+        const int inputIdx00 = (y0 * widthIn + x0) * 3;
+        const int inputIdx01 = (y0 * widthIn + x1) * 3;
+        const int inputIdx10 = (y1 * widthIn + x0) * 3;
+        const int inputIdx11 = (y1 * widthIn + x1) * 3;
         const int outputIdx = (ty * widthOut + tx) * 3;
 
-        if (tx >= startWidth && tx < endWidth && ty >= startHeight && ty < endHeight) {
-            const float scaleWidth = 1.0f / ((endWidth - startWidth) / (float)widthIn);
-            const float scaleHeight = 1.0f / ((endHeight - startHeight) / (float)heightIn);
+        printf("Thread (%d, %d): x0=%d, y0=%d, x1=%d, y1=%d, scaleX=%.2f, scaleY=%.2f\n",
+            tx, ty, x0, y0, x1, y1, scaleX, scaleY);
 
-            const float inputX = max((tx - startWidth) * scaleWidth, 0.0);
-            const float inputY = max((ty - startHeight) * scaleHeight, 0.0);
+        return;
 
-            // get four surrounding pixels
-            const int x0 = floor(inputX);
-            const int y0 = floor(inputY);
-            const int x1 = min(x0 + 1, widthIn - 1);
-            const int y1 = min(y0 + 1, heightIn - 1);
+        // Perform bilinear interpolation for each color channel
+        for (int c = 0; c < 3; ++c) {
+            const float interpolatedValue = 
+                inImg[inputIdx00 + c] * w00 +
+                inImg[inputIdx01 + c] * w01 +
+                inImg[inputIdx10 + c] * w10 +
+                inImg[inputIdx11 + c] * w11;
 
-            // interpolation weights
-            const float dx = inputX - x0;
-            const float dy = inputY - y0;
-            const float w00 = (1.0f - dx) * (1.0f - dy);
-            const float w01 = dx * (1.0f - dy);
-            const float w10 = (1.0f - dx) * dy;
-            const float w11 = dx * dy;
-
-            const int inputIdx00 = (y0 * widthIn + x0) * 3;
-            const int inputIdx01 = (y0 * widthIn + x1) * 3;
-            const int inputIdx10 = (y1 * widthIn + x0) * 3;
-            const int inputIdx11 = (y1 * widthIn + x1) * 3;
-
-            // bilinear interpolation for each color channel
-            for (int c = 0; c < 3; ++c) {
-                const float interpolatedValue = 
-                    inImg[inputIdx00 + c] * w00 +
-                    inImg[inputIdx01 + c] * w01 +
-                    inImg[inputIdx10 + c] * w10 +
-                    inImg[inputIdx11 + c] * w11;
-                
-                outImg[outputIdx + c] = static_cast<unsigned char>(interpolatedValue);
-            }
-        }
-        else {
-            for (int c = 0; c < 3; ++c)
-                outImg[outputIdx + c] = 114;
+            outImg[outputIdx + c] = static_cast<unsigned char>(interpolatedValue);
         }
     }
 }
