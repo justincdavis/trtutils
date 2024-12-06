@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from trtutils import set_log_level
+from trtutils.trtexec._cli import cli_trtexec
 
 if TYPE_CHECKING:
     from types import SimpleNamespace
@@ -149,6 +150,13 @@ def _main() -> None:
         help="If True, will use the trtutils.jetson submodule benchmarker to record energy and pwoerdraw as well.",
     )
     benchmark_parser.set_defaults(func=_benchmark)
+
+    # trtexec parser
+    trtexec_parser = subparsers.add_parser(
+        "trtexec",
+        help="Run trtexec.",
+    )
+    trtexec_parser.set_defaults(func=cli_trtexec)
 
     # parse args and call the function
     args = parser.parse_args()
