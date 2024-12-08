@@ -11,6 +11,8 @@ a class for running inference on those engines, and a variety of other utilities
 
 Submodules
 ----------
+:mod:`builder`
+    A module for building TensorRT engines.
 :mod:`core`
     A module for the core functionality of the package.
 :mod:`jetson`
@@ -43,6 +45,8 @@ Functions
 ---------
 :func:`benchmark_engine`
     Benchmark a TensorRT engine.
+:func:`build_engine`
+    Build a TensorRT engine.
 :func:`find_trtexec`
     Find an instance of the trtexec binary on the system.
 :func:`run_trtexec`
@@ -138,7 +142,8 @@ __version__ = "0.4.0"
 
 import contextlib
 
-from . import core, impls, trtexec
+from . import builder, core, impls, trtexec
+from .builder import build_engine
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
@@ -154,6 +159,8 @@ __all__ = [
     "TRTEngine",
     "TRTModel",
     "benchmark_engine",
+    "build_engine",
+    "builder",
     "core",
     "find_trtexec",
     "impls",
