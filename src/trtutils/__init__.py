@@ -143,10 +143,10 @@ __version__ = "0.4.0"
 import contextlib
 
 from . import builder, core, impls, trtexec
-from .builder import build_engine
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
+from .builder import build_engine
 from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
