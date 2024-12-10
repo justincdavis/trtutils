@@ -102,9 +102,9 @@ def build_engine(
     config = builder.create_builder_config()
 
     # setup the workspace size
-    workspace *= 1 << 30
+    workspace_bytes = int(workspace * (1 << 30))
     if hasattr(config, "max_workspace_size"):
-        config.max_workspace_size = workspace
+        config.max_workspace_size = workspace_bytes
     else:
         config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace)
 
