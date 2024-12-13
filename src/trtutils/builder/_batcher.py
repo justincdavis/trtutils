@@ -6,7 +6,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import cv2
 import numpy as np
+from cv2ext.image import letterbox
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -23,8 +25,6 @@ class ImageBatcher:
         max_images: int | None = None,
         resize_method: str = "letterbox",
         input_scale: tuple[float, float] = (0.0, 1.0),
-        *,
-        exact_batches: bool = True,
     ) -> None:
         """
         Create batches of images for TensorRT calibration.
@@ -47,9 +47,6 @@ class ImageBatcher:
             The range with which the image should have values in
             Examples are: (0.0, 255.0), (0.0, 1.0), (-1.0, 1.0)
             The default is (0.0, 1.0) since that is the YOLO standard
-        exact_batches : bool, optional
-            Whether or not to use exact batch dimensions for the network
-            Default is True
 
         Raises
         ------
@@ -58,7 +55,11 @@ class ImageBatcher:
         NotADirectoryError
             If the input_dir is a file
         ValueError
+            If the max_images is set less than one
+        ValueError
             If no images could be found in the input_dir
+        ValueError
+            If no valid batches could be formed
 
         """
         # verify resize method and input scale
@@ -111,7 +112,48 @@ class ImageBatcher:
         self._width = shape[3]
 
         # generate batches list
-        # TODO
+        batches: list[list[Path]] = []
+        for i in range(len(self._images)):
+            batch: list[Path] = []
+            for _ in range(self._batch):
+                batch.append(self._images[i])
+            if len(batch) != self._batch:
+                continue
+            batches.append(batch)
+        
+        if len(batches) == 0:
+            err_msg = "Could not form any valid batches."
+            raise ValueError(err_msg)
+
+    def get_batch(self: Self) -> list[np.ndarray]:
+        """
+        Get a batch of images which have been preprocessed.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The batch of images
+
+        """
+        
+        def _preprocess(img: np.ndarray) -> np.ndarray:
+            if self._resize_method == "letterbox":
+                tensor, _, _ = letterbox(image, new_shape=input_shape)
+            else self._resize_method == "linear":
+                tensor, _ = resize_linear(image, new_shape=input_shape)
+
+            tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
+            tensor = rescale(tensor, input_range)
+
+            tensor = tensor[np.newaxis, :]
+            tensor = np.transpose(tensor, (0, 3, 1, 2))
+            # large performance hit to assemble contiguous array
+            if not tensor.flags["C_CONTIGUOUS"]:
+                tensor = np.ascontiguousarray(tensor)
+            tensor = tensor.astype(dtype)
+            if self._resize_method == "letterbox":
+                resized_img, _, _ = letterbox(img, (self._width, self._height))
+            return new_img
 
     # def preprocess_image(self, image_path):
     #     """
