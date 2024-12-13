@@ -2,3 +2,8 @@
 #
 # MIT License
 from __future__ import annotations
+
+
+class EngineCalibrator:
+    def __init__(self) -> None:
+        pass

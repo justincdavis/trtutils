@@ -3,15 +3,24 @@
 # MIT License
 from __future__ import annotations
 
+import atexit
+import concurrent.futures
+import contextlib
+import logging
+import os
 from pathlib import Path
+from queue import Empty, Full, Queue
+from threading import Event, Thread
 from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
-from cv2ext.image import letterbox, resize_linear, rescale
+from cv2ext.image import letterbox, rescale
 
 if TYPE_CHECKING:
     from typing_extensions import Self
+
+_log = logging.getLogger(__name__)
 
 
 class ImageBatcher:
@@ -22,6 +31,8 @@ class ImageBatcher:
         input_dir: Path | str,
         shape: tuple[int, int, int, int],
         dtype: np.dtype,
+        batch_size: int = 8,
+        order: str = "NCHW",
         max_images: int | None = None,
         resize_method: str = "letterbox",
         input_scale: tuple[float, float] = (0.0, 1.0),
@@ -34,10 +45,16 @@ class ImageBatcher:
         input_dir : Path, str
             The directory containing the images to calibrate the model with.
         shape : tuple[int, int, int]
-            The expected input shape of the network in format BCHW
-            (batch size, channels, height, width)
+            The expected input shape of the network in format HWC
+            (height, width, channels)
         dtype : np.dtype
             The expected datatype input of the network
+        batch_size : int, optional
+            The batch size to group images in.
+            Default is 8
+        order : str, optional
+            The ordering of data elements expected by the network.
+            Options are: ['NCHW', 'NHWC'], default is 'NCHW'
         max_images : int, optional
             Optionally, specify the maximum number of images to calibrate with
         resize_method : str, optional
@@ -72,6 +89,20 @@ class ImageBatcher:
         self._resize_method = resize_method
         self._input_scale = input_scale
 
+        # handle the shape and dtype
+        self._dtype = dtype
+        self._batch = batch_size
+        self._height = shape[0]
+        self._width = shape[1]
+        self._channel = shape[2]
+
+        # assign order
+        valid_orders: list[str] = ["NCHW", "NHWC"]
+        if order not in valid_orders:
+            err_msg = f"Invalid order found, {order}, options are: {valid_orders}"
+            raise ValueError(err_msg)
+        self._order = order
+
         # verify image directory
         image_dir = Path(input_dir)
         if not image_dir.exists():
@@ -104,125 +135,112 @@ class ImageBatcher:
 
             self._images = self._images[0:max_images]
 
-        # handle the shape and dtype
-        self._dtype = dtype
-        self._batch = shape[0]
-        self._channel = shape[1]
-        self._height = shape[2]
-        self._width = shape[3]
-
         # generate batches list
-        batches: list[list[Path]] = []
-        for i in range(len(self._images)):
-            batch: list[Path] = []
-            for _ in range(self._batch):
-                batch.append(self._images[i])
-            if len(batch) != self._batch:
-                continue
-            batches.append(batch)
-        
-        if len(batches) == 0:
+        self._batches: list[list[Path]] = []
+        for i in range(0, len(self._images), self._batch):
+            with contextlib.suppress(IndexError):
+                batch: list[Path] = [self._images[i + j] for j in range(self._batch)]
+                self._batches.append(batch)
+
+        if len(self._batches) == 0:
             err_msg = "Could not form any valid batches."
             raise ValueError(err_msg)
 
-    def get_batch(self: Self) -> list[np.ndarray]:
+        _log.debug(f"ImageBatch found images: {len(self._images)}")
+        _log.debug(f"ImageBatcher formed batches: {len(self._batches)}")
+
+        # tracking indices for iteration
+        self._current_batch: int = 0
+
+        # threading setup to speedup loading
+        cpu_cores = os.cpu_count()
+        if cpu_cores is None:
+            cpu_cores = 1
+        self._pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(self._batch, cpu_cores - 1),
+        )
+        self._event: Event = Event()
+        self._queue: Queue[list[np.ndarray]] = Queue(maxsize=3)
+        self._thread: Thread = Thread(target=self._run, daemon=True)
+
+        atexit.register(self._close)
+
+        self._thread.start()
+
+    @property
+    def num_batches(self: Self) -> int:
+        """Get the number of batches."""
+        return len(self._batches)
+
+    def _close(self: Self) -> None:
+        self._event.set()
+        self._thread.join()
+
+    def _get_image(self: Self, image_path: Path) -> np.ndarray:
+        # read image
+        img = cv2.imread(str(image_path.resolve()))
+
+        # resize and rescale the image
+        if self._resize_method == "letterbox":
+            resized_img, _, _ = letterbox(img, (self._width, self._height))
+        else:
+            resized_img = cv2.resize(
+                img,
+                (self._width, self._height),
+                interpolation=cv2.INTER_LINEAR,
+            )
+        rescaled_img = rescale(resized_img, self._input_scale)
+
+        # run the transpose operations and make contiguous
+        new_img = rescaled_img[np.newaxis, :]
+        if self._order == "NCHW":
+            new_img = np.transpose(new_img, (0, 3, 1, 2))
+        else:
+            new_img = np.transpose(new_img, (0, 1, 2, 3))
+
+        new_img = new_img.astype(self._dtype)
+
+        if not new_img.flags["C_CONTIGUOUS"]:
+            new_img = np.ascontiguousarray(new_img)
+
+        return new_img
+
+    def _run(self: Self) -> None:
+        # for each batch get the images
+        for idx, image_paths in enumerate(self._batches):
+            if self._event.is_set():
+                return
+
+            _log.debug(f"ImageBatcher getting batch: {idx}")
+
+            # get the batch
+            results = list(self._pool.map(self._get_image, image_paths))
+
+            # keep trying to put images into the queue
+            while not self._event.is_set():
+                try:
+                    self._queue.put(results, timeout=0.1)
+                    break
+                except Full:
+                    continue
+
+    def get_next_batch(self: Self) -> list[np.ndarray] | None:
         """
         Get a batch of images which have been preprocessed.
 
         Returns
         -------
-        list[np.ndarray]
-            The batch of images
+        list[np.ndarray] | None
+            The batch of images if one exists
 
         """
-        def _preprocess(img: np.ndarray) -> np.ndarray:
-            # resize and rescale the image
-            if self._resize_method == "letterbox":
-                resized_img, _, _ = letterbox(img, (self._width, self._height))
-            else:
-                resized_img, _ = resize_linear(img, (self._width, self._height))
-            rescaled_img = rescale(resized_img, self._input_scale)
+        if self._current_batch == len(self._batches):
+            return None
 
-            # run the transpose operations and make contiguous
-            new_img = rescaled_img[np.newaxis, :]
-            new_img = np.transpose(new_img, (0, 3, 1, 2))
-            new_img = new_img.astype(self._dtype)
-            if not new_img.flags["C_CONTIGUOUS"]:
-                new_img = np.ascontiguousarray(new_img)
-            return new_img
+        while not self._event.is_set():
+            with contextlib.suppress(Empty):
+                batch = self._queue.get(timeout=0.1)
+                self._current_batch += 1
+                return batch
 
-    # def preprocess_image(self, image_path):
-    #     """
-    #     The image preprocessor loads an image from disk and prepares it as needed for batching. This includes padding,
-    #     resizing, normalization, data type casting, and transposing.
-    #     This Image Batcher implements one algorithm for now:
-    #     * Resizes and pads the image to fit the input size.
-    #     :param image_path: The path to the image on disk to load.
-    #     :return: Two values: A numpy array holding the image sample, ready to be contacatenated into the rest of the
-    #     batch, and the resize scale used, if any.
-    #     """
-
-    #     def resize_pad(image, pad_color=(0, 0, 0)):
-    #         """
-    #         A subroutine to implement padding and resizing. This will resize the image to fit fully within the input
-    #         size, and pads the remaining bottom-right portions with the value provided.
-    #         :param image: The PIL image object
-    #         :pad_color: The RGB values to use for the padded area. Default: Black/Zeros.
-    #         :return: Two values: The PIL image object already padded and cropped, and the resize scale used.
-    #         """
-    #         # Get characteristics.
-    #         width, height = image.size
-    #         width_scale = width / self.width
-    #         height_scale = height / self.height
-
-    #         # Depending on preprocessor, box scaling will be slightly different.
-    #         if self.preprocessor == "fixed_shape_resizer":
-    #             scale = [self.width / width, self.height / height]
-    #             image = image.resize((self.width, self.height), resample=Image.BILINEAR)
-    #             return image, scale
-    #         if self.preprocessor == "keep_aspect_ratio_resizer":
-    #             scale = 1.0 / max(width_scale, height_scale)
-    #             image = image.resize(
-    #                 (round(width * scale), round(height * scale)),
-    #                 resample=Image.BILINEAR,
-    #             )
-    #             pad = Image.new("RGB", (self.width, self.height))
-    #             pad.paste(pad_color, [0, 0, self.width, self.height])
-    #             pad.paste(image)
-    #             return pad, scale
-
-    #     scale = None
-    #     image = Image.open(image_path)
-    #     image = image.convert(mode="RGB")
-    #     if (
-    #         self.preprocessor == "fixed_shape_resizer"
-    #         or self.preprocessor == "keep_aspect_ratio_resizer"
-    #     ):
-    #         # Resize & Pad with ImageNet mean values and keep as [0,255] Normalization
-    #         image, scale = resize_pad(image, (124, 116, 104))
-    #         image = np.asarray(image, dtype=self.dtype)
-    #     else:
-    #         print(f"Preprocessing method {self.preprocessor} not supported")
-    #         sys.exit(1)
-    #     if self.format == "NCHW":
-    #         image = np.transpose(image, (2, 0, 1))
-    #     # return image/255., scale
-    #     return image, scale
-
-    # def get_batch(self):
-    #     """
-    #     Retrieve the batches. This is a generator object, so you can use it within a loop as:
-    #     for batch, images in batcher.get_batch():
-    #        ...
-    #     Or outside of a batch with the next() function.
-    #     :return: A generator yielding three items per iteration: a numpy array holding a batch of images, the list of
-    #     paths to the images loaded within this batch, and the list of resize scales for each image in the batch.
-    #     """
-    #     for i, batch_images in enumerate(self.batches):
-    #         batch_data = np.zeros(self.shape, dtype=self.dtype)
-    #         batch_scales = [None] * len(batch_images)
-    #         for i, image in enumerate(batch_images):
-    #             self.image_index += 1
-    #             batch_data[i], batch_scales[i] = self.preprocess_image(image)
-    #         self.batch_index += 1
-    #         yield batch_data, batch_images, batch_scales
+        return None

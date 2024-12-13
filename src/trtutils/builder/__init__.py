@@ -4,6 +4,13 @@
 """
 Submodule containing tools for building TensorRT engines.
 
+Classes
+-------
+:class:`EngineCalibrator`
+    Calibrates an engine during quantization.
+:class:`ImageBatcher`
+    Batches images for calibration during engine building.
+
 Functions
 ---------
 :func:`build_engine`
@@ -13,8 +20,12 @@ Functions
 
 from __future__ import annotations
 
+from ._batcher import ImageBatcher
 from ._build import build_engine
+from ._calibrator import EngineCalibrator
 
 __all__ = [
+    "EngineCalibrator",
+    "ImageBatcher",
     "build_engine",
 ]
