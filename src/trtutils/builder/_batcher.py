@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import atexit
+from abc import ABC, abstractmethod
 import concurrent.futures
 import contextlib
 import logging
@@ -23,13 +24,31 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
-class ImageBatcher:
+class AbstractBatcher(ABC):
+    """Abstract base class for data batching classes."""
+
+    def __init__(self: Self) -> None:
+        pass
+
+    @property
+    @abstractmethod
+    def batch_size(self: Self) -> int:
+        """Get the batch size."""
+        pass
+
+    @abstractmethod
+    def get_next_batch(self: Self) -> np.ndarray | None:
+        """Get the batch of data."""
+        pass
+
+
+class ImageBatcher(AbstractBatcher):
     """Creates image batches for calibrating TensorRT engines."""
 
     def __init__(
         self: Self,
-        input_dir: Path | str,
-        shape: tuple[int, int, int, int],
+        image_dir: Path | str,
+        shape: tuple[int, int, int],
         dtype: np.dtype,
         batch_size: int = 8,
         order: str = "NCHW",
@@ -42,7 +61,7 @@ class ImageBatcher:
 
         Parameters
         ----------
-        input_dir : Path, str
+        image_dir : Path, str
             The directory containing the images to calibrate the model with.
         shape : tuple[int, int, int]
             The expected input shape of the network in format HWC
@@ -63,7 +82,7 @@ class ImageBatcher:
         input_scale : tuple[float, float], optional
             The range with which the image should have values in
             Examples are: (0.0, 255.0), (0.0, 1.0), (-1.0, 1.0)
-            The default is (0.0, 1.0) since that is the YOLO standard
+            The default is (0.0, 1.0)
 
         Raises
         ------
@@ -102,13 +121,16 @@ class ImageBatcher:
             err_msg = f"Invalid order found, {order}, options are: {valid_orders}"
             raise ValueError(err_msg)
         self._order = order
+        self._data_shape: tuple[int, int, int, int] = (self._batch, self._channel, self._height, self._width)
+        if order == "NHWC":
+            self._data_shape = (self._batch, self._height, self._width, self._channel)
 
         # verify image directory
-        image_dir = Path(input_dir)
-        if not image_dir.exists():
+        image_dir_path: Path = Path(image_dir)
+        if not image_dir_path.exists():
             err_msg = f"Could not find image directory: {image_dir}"
             raise FileNotFoundError(err_msg)
-        if image_dir.is_file():
+        if image_dir_path.is_file():
             err_msg = f"Image directory: {image_dir} is a file."
             raise NotADirectoryError(err_msg)
 
@@ -116,7 +138,7 @@ class ImageBatcher:
         image_exts: list[str] = [".jpg", ".jpeg", ".png"]
         self._images: list[Path] = []
         for extension in image_exts:
-            for file in image_dir.glob(f"*{extension}"):
+            for file in image_dir_path.glob(f"*{extension}"):
                 self._images.append(file)
 
         # ensure we found some images
@@ -160,7 +182,7 @@ class ImageBatcher:
             max_workers=min(self._batch, cpu_cores - 1),
         )
         self._event: Event = Event()
-        self._queue: Queue[list[np.ndarray]] = Queue(maxsize=3)
+        self._queue: Queue[np.ndarray] = Queue(maxsize=3)
         self._thread: Thread = Thread(target=self._run, daemon=True)
 
         atexit.register(self._close)
@@ -171,6 +193,11 @@ class ImageBatcher:
     def num_batches(self: Self) -> int:
         """Get the number of batches."""
         return len(self._batches)
+
+    @property
+    def batch_size(self: Self) -> int:
+        """Get the batch size."""
+        return self._batch
 
     def _close(self: Self) -> None:
         self._event.set()
@@ -200,9 +227,6 @@ class ImageBatcher:
 
         new_img = new_img.astype(self._dtype)
 
-        if not new_img.flags["C_CONTIGUOUS"]:
-            new_img = np.ascontiguousarray(new_img)
-
         return new_img
 
     def _run(self: Self) -> None:
@@ -215,22 +239,29 @@ class ImageBatcher:
 
             # get the batch
             results = list(self._pool.map(self._get_image, image_paths))
+            data = np.zeros(self._data_shape, dtype=self._dtype)
+
+            for i, img in enumerate(results):
+                data[i] = img
+            
+            if not data.flags["C_CONTIGUOUS"]:
+                data = np.ascontiguousarray(data)
 
             # keep trying to put images into the queue
             while not self._event.is_set():
                 try:
-                    self._queue.put(results, timeout=0.1)
+                    self._queue.put(data, timeout=0.1)
                     break
                 except Full:
                     continue
 
-    def get_next_batch(self: Self) -> list[np.ndarray] | None:
+    def get_next_batch(self: Self) -> np.ndarray | None:
         """
         Get a batch of images which have been preprocessed.
 
         Returns
         -------
-        list[np.ndarray] | None
+        np.ndarray | None
             The batch of images if one exists
 
         """
