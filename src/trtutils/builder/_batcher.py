@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
-from cv2ext.image import letterbox
+from cv2ext.image import letterbox, resize_linear, rescale
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -135,24 +135,20 @@ class ImageBatcher:
             The batch of images
 
         """
-        
         def _preprocess(img: np.ndarray) -> np.ndarray:
-            if self._resize_method == "letterbox":
-                tensor, _, _ = letterbox(image, new_shape=input_shape)
-            else self._resize_method == "linear":
-                tensor, _ = resize_linear(image, new_shape=input_shape)
-
-            tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
-            tensor = rescale(tensor, input_range)
-
-            tensor = tensor[np.newaxis, :]
-            tensor = np.transpose(tensor, (0, 3, 1, 2))
-            # large performance hit to assemble contiguous array
-            if not tensor.flags["C_CONTIGUOUS"]:
-                tensor = np.ascontiguousarray(tensor)
-            tensor = tensor.astype(dtype)
+            # resize and rescale the image
             if self._resize_method == "letterbox":
                 resized_img, _, _ = letterbox(img, (self._width, self._height))
+            else:
+                resized_img, _ = resize_linear(img, (self._width, self._height))
+            rescaled_img = rescale(resized_img, self._input_scale)
+
+            # run the transpose operations and make contiguous
+            new_img = rescaled_img[np.newaxis, :]
+            new_img = np.transpose(new_img, (0, 3, 1, 2))
+            new_img = new_img.astype(self._dtype)
+            if not new_img.flags["C_CONTIGUOUS"]:
+                new_img = np.ascontiguousarray(new_img)
             return new_img
 
     # def preprocess_image(self, image_path):
