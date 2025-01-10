@@ -33,9 +33,6 @@ docs:
 	sphinx-apidoc -o docs/source/ src/trtutils/ --separate --force
 	cd docs && make html
 
-blobs:
-	python3 ci/compile_models.py --definitions
-
 ci: ruff mypy
 
 mypy:
