@@ -36,7 +36,7 @@ def main() -> None:
 
     # get the paths of the ultralytics weights
     repo = Path(__file__).parent.parent
-    weight_path = repo / "data" / "ultralytics" / "yolov10n.onnx"
+    weight_path = repo / "data" / "ultralytics" / "yolov10n.pt"
     weight_path = weight_path.resolve()
 
     # small helper func
