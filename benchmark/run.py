@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: S603, S607
+# ruff: noqa: S603, S607, T201
 """Benchmark trtutils againist popular frameworks."""
 
 from __future__ import annotations
@@ -45,8 +45,8 @@ def main() -> None:
     repo = Path(__file__).parent.parent
     for modelname in ["yolov10n"]:
         # add to results
-        for framework in results:
-            results[framework][modelname] = {}
+        for framework_data in results.values():
+            framework_data[modelname] = {}
 
         # handle the weights
         weight_path = repo / "data" / "ultralytics" / f"{modelname}.pt"
@@ -64,8 +64,6 @@ def main() -> None:
         # repeat for each image size
         for imgsz in [160]:
         # for imgsz in [160, 320, 480, 640, 800, 960, 1120, 1280]:
-            sub_result: dict[str, dict[str, float]] = {}
-
             # export the weights to tensorrt engines
             subprocess.run(
                 [
@@ -134,11 +132,12 @@ def main() -> None:
             del trt_yolo
 
             # generate the stats for each
-            sub_result["ultralytics"][modelname][str(imgsz)] = get_results(u_timing)
-            sub_result["trtutils"][modelname][str(imgsz)] = get_results(t_timing)
+            u_results = get_results(u_timing)
+            trt_results = get_results(t_timing)
 
             # write to overall
-            results[modelname] = sub_result
+            results["ultralytics"][modelname][str(imgsz)] = u_results
+            results["trtutils"][modelname][str(imgsz)] = trt_results
 
     # write the results
     data_dir = Path(__file__).parent / "data"
