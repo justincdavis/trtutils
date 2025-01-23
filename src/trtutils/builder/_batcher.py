@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import atexit
-from abc import ABC, abstractmethod
 import concurrent.futures
 import contextlib
 import logging
 import os
+from abc import ABC, abstractmethod
 from pathlib import Path
 from queue import Empty, Full, Queue
 from threading import Event, Thread
@@ -34,12 +34,10 @@ class AbstractBatcher(ABC):
     @abstractmethod
     def batch_size(self: Self) -> int:
         """Get the batch size."""
-        pass
 
     @abstractmethod
     def get_next_batch(self: Self) -> np.ndarray | None:
         """Get the batch of data."""
-        pass
 
 
 class ImageBatcher(AbstractBatcher):
@@ -121,7 +119,12 @@ class ImageBatcher(AbstractBatcher):
             err_msg = f"Invalid order found, {order}, options are: {valid_orders}"
             raise ValueError(err_msg)
         self._order = order
-        self._data_shape: tuple[int, int, int, int] = (self._batch, self._channel, self._height, self._width)
+        self._data_shape: tuple[int, int, int, int] = (
+            self._batch,
+            self._channel,
+            self._height,
+            self._width,
+        )
         if order == "NHWC":
             self._data_shape = (self._batch, self._height, self._width, self._channel)
 
@@ -243,7 +246,7 @@ class ImageBatcher(AbstractBatcher):
 
             for i, img in enumerate(results):
                 data[i] = img
-            
+
             if not data.flags["C_CONTIGUOUS"]:
                 data = np.ascontiguousarray(data)
 

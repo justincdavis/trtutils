@@ -13,10 +13,13 @@ import numpy as np
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
+from trtutils.core import memcpy_host_to_device
+
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-from trtutils.core._memory import memcpy_host_to_device
+    from ._batcher import ImageBatcher
+
 
 _log = logging.getLogger(__name__)
 
@@ -79,25 +82,31 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             return self._batcher.batch_size
         return 1
 
-    def get_batch(self, names):
+    def get_batch(self: Self):
         """
-        Get the batch of data
+        Get the next batch of data.
+
         Overrides from trt.IInt8EntropyCalibrator2.
-        Get the next batch to use for calibration, as a list of device memory pointers.
-        :param names: The names of the inputs, if useful to define the order of inputs.
-        :return: A list of int-casted memory pointers.
+    
+        Returns
+        -------
+        list[int]
+            GPU-Memory pointers of the next batch
+
         """
         # if we dont have an image batcher, dont handle calibration
         if self._batcher is None:
             return None
-        
+
         # if we do load the image
         batch = self._batcher.get_next_batch()
         if batch is None:
             return None
-        
-        common.memcpy_host_to_device(self.batch_allocation, np.ascontiguousarray(batch))
-        return [int(self.batch_allocation)]
+
+        # TODO: need to fill out remainder
+        # STEP 1: make GPU memory allocation for batch
+        # STEP 2: copy the host side to device
+        # STEP 3: return the GPU pointers
 
     def read_calibration_cache(self: Self) -> bytes | None:
         """
