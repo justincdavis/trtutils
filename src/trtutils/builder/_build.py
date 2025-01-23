@@ -106,7 +106,7 @@ def build_engine(
     if hasattr(config, "max_workspace_size"):
         config.max_workspace_size = workspace_bytes
     else:
-        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace)
+        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_bytes)
 
     # make network
     network = builder.create_network(
