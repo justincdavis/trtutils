@@ -405,13 +405,12 @@ class CUDAPreprocessor:
 
         # check if the image shape is the same as re have allocated with, if not update
         if img_shape != self._allocated_input_shape:
-            self._input_binding.free()  # free the memory explicitly
             if img_shape[2] != _COLOR_CHANNELS:
                 err_msg = f"{self._tag}: Can only preprocess color images."
                 raise ValueError(err_msg)
 
             self._reallocate_input(image, verbose=verbose)
-        
+
         return resize
 
     def warmup(self: Self) -> None:

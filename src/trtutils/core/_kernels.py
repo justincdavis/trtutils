@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections import deque
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -32,6 +33,7 @@ class Kernel:
         self: Self,
         kernel_code: str,
         name: str,
+        max_arg_cache: int = 1,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -42,8 +44,12 @@ class Kernel:
         ----------
         kernel_code : str
             The CUDA code containing the kernel definition.
-        name: str
+        name : str
             The name of the kernel to compile.
+        max_arg_cache : int
+            The number of arg arrays to store cached to prevent garbage collection.
+            Since args are created per-call only 1 is typically needed.
+            Default 1.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -56,7 +62,7 @@ class Kernel:
             name,
             verbose=verbose,
         )
-        self._inter_args: list[np.ndarray] | None = None
+        self._inter_args: deque[list[np.ndarray]] = deque(maxlen=max_arg_cache)
 
     def free(self: Self) -> None:
         """Free the memory of the loaded kernel."""
@@ -98,7 +104,7 @@ class Kernel:
 
         """
         ptrs, intermediate = create_kernel_args(*args, verbose=verbose)
-        self._inter_args = intermediate
+        self._inter_args.append(intermediate)
         return ptrs
 
     def __call__(
