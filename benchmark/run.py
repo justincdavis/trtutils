@@ -47,7 +47,7 @@ def get_data(device: str) -> dict[str, dict[str, dict[str, dict[str, float]]]]:
     else:
         # NOTE: Add framework name when another is being added for comparision
         return {"ultralytics": {}, "trtutils": {}}
-    
+
 
 def write_data(device: str, data: dict[str, dict[str, dict[str, dict[str, float]]]]) -> None:
     file_path = DATA_DIR / f"{device}.json"
@@ -59,10 +59,6 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int) -> None
     from trtutils.impls.yolo import YOLO
     from trtutils.trtexec import build_engine
 
-    # add some debugging stuff here
-    from trtutils import set_log_level
-    set_log_level("DEBUG")
-
     # resolve paths
     image = cv2.imread(IMAGE_PATH)
 
@@ -70,6 +66,7 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int) -> None
     data = get_data(device)
 
     for imgsz in IMAGE_SIZES:
+        print(f"Processing trtutils on {MODELNAME} for imgsz={imgsz}...")
         weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
         trt_path = weight_path.with_suffix(".engine")
 
@@ -83,9 +80,10 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int) -> None
 
             # verify
             if not trt_path.exists():
-                raise FileNotFoundError(f"trtutils TensorRT engine not found: {trt_path}")
+                err_msg = f"trtutils TensorRT engine not found: {trt_path}"
+                raise FileNotFoundError(err_msg)
 
-        print(f"\tProcessing trtutils for imgsz={imgsz}...")
+        print("\tBenchmarking trtutils engine...")
         trt_yolo = YOLO(
             engine_path=trt_path,
             warmup_iterations=warmup_iters,
@@ -120,6 +118,7 @@ def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int) -> N
     data = get_data(device)
 
     for imgsz in IMAGE_SIZES:
+        print(f"Processing ultralytics on {MODELNAME} for imgsz={imgsz}...")
         # build ultralytics tensorrt engine
         print("\tBuilding ONNX and Ultralytics engine...")
         subprocess.run(
@@ -137,9 +136,10 @@ def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int) -> N
 
         # verify
         if not utrt_path.exists():
-            raise FileNotFoundError(f"Ultralytics TensorRT engine not found: {utrt_path}")
+            err_msg = f"Ultralytics TensorRT engine not found: {utrt_path}"
+            raise FileNotFoundError(err_msg)
 
-        print(f"\tProcessing ultralytics for imgsz={imgsz}...")
+        print("\tBenchmarking ultralytics engine...")
         u_yolo = YOLO(model=utrt_path, task="detect", verbose=False)
         for _ in range(warmup_iters):
             u_yolo(image, imgsz=imgsz, verbose=False)
@@ -176,7 +176,7 @@ def main() -> None:
     parser.add_argument(
         "--iterations",
         type=int,
-        default=10000,
+        default=1000,
         help="The number of iterations to perform and measure for benchmarking.",
     )
     parser.add_argument(
@@ -190,7 +190,7 @@ def main() -> None:
         help="Run the benchmarks on the ultralytics framework.",
     )
     args = parser.parse_args()
-    
+
     # trtutils benchmark
     if args.trtutils:
         benchmark_trtutils(
