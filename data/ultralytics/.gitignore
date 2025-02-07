@@ -1,3 +1,13 @@
 yolov10n.onnx
 yolov10n.engine
 yolov10n.trt
+
+# only care about the 10n.pt
+yolov10s.pt
+yolov10m.pt
+yolov9t.pt
+yolov9s.pt
+yolov9m.pt
+yolov8n.pt
+yolov8s.pt
+yolov8m.pt
