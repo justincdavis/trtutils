@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
-import multiprocessing
 import statistics
 import subprocess
+import warnings
 import time
 from pathlib import Path
 
@@ -24,6 +25,36 @@ DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_PATH = str((REPO_DIR / "data" / "horse.jpg").resolve())
 MODELNAME = "yolov10n"
+MODELNAMES = [
+    "yolov10n",
+    "yolov10s",
+    "yolov10m",
+    "yolov9t",
+    "yolov9s",
+    "yolov9m",
+    "yolov8n",
+    "yolov8s",
+    "yolov8m",
+    "yolov7t",
+    "yolov7m",
+]
+ULTRALYTICS_MODELS = [
+    "yolov10n",
+    "yolov10s",
+    "yolov10m",
+    "yolov9t",
+    "yolov9s",
+    "yolov9m",
+    "yolov8n",
+    "yolov8s",
+    "yolov8m",
+]
+MODEL_DIRS = [
+    "yolov10",
+    "yolov9",
+    "yolov8",
+    "yolov7",
+]
 ONNX_DIR = REPO_DIR / "data" / "yolov10"
 
 # global vars
@@ -67,6 +98,8 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int) -> None
 
     for imgsz in IMAGE_SIZES:
         print(f"Processing trtutils on {MODELNAME} for imgsz={imgsz}...")
+
+        # resolve paths
         weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
         trt_path = weight_path.with_suffix(".engine")
 
@@ -76,6 +109,8 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int) -> None
                 weight_path,
                 trt_path,
                 fp16=True,
+                # patch for compiling the yolov9 exported onnx
+                shapes=[("images", (1, 3, imgsz, imgsz))] if "yolov9" in MODELNAME else None,
             )
 
             # verify
@@ -111,34 +146,44 @@ def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int) -> N
 
     # resolve paths
     ultralytics_weight_path = (REPO_DIR / "data" / "ultralytics" / f"{MODELNAME}.pt").resolve()
-    utrt_path = ultralytics_weight_path.with_suffix(".engine")
+    utrt_base_path = ultralytics_weight_path.with_suffix(".engine")
     image = cv2.imread(IMAGE_PATH)
 
     # read initial data
     data = get_data(device)
 
     for imgsz in IMAGE_SIZES:
+        # resolve paths
+        # make a "smarter" path
+        utrt_path = ultralytics_weight_path.parent / f"{ultralytics_weight_path.stem}_{imgsz}.engine"
+
         print(f"Processing ultralytics on {MODELNAME} for imgsz={imgsz}...")
-        # build ultralytics tensorrt engine
-        print("\tBuilding ONNX and Ultralytics engine...")
-        subprocess.run(
-            [
-                "yolo",
-                "export",
-                f"model={ultralytics_weight_path}",
-                "format=engine",
-                f"imgsz={imgsz}",
-                "half",
-            ],
-            check=True,
-            capture_output=True,
-        )
-
-        # verify
+        # chekc if the engine file is already built
         if not utrt_path.exists():
-            err_msg = f"Ultralytics TensorRT engine not found: {utrt_path}"
-            raise FileNotFoundError(err_msg)
+            # build ultralytics tensorrt engine
+            print("\tBuilding ONNX and Ultralytics engine...")
+            subprocess.run(
+                [
+                    "yolo",
+                    "export",
+                    f"model={ultralytics_weight_path}",
+                    "format=engine",
+                    f"imgsz={imgsz}",
+                    "half",
+                ],
+                check=True,
+                capture_output=True,
+            )
 
+            # verify the build
+            if not utrt_base_path.exists():
+                err_msg = f"Ultralytics TensorRT engine not found: {utrt_path}"
+                raise FileNotFoundError(err_msg)
+            
+            # copy the utrt_base_path to utrt_path
+            utrt_base_path.rename(utrt_path)
+
+        # perform actual benchmark
         print("\tBenchmarking ultralytics engine...")
         u_yolo = YOLO(model=utrt_path, task="detect", verbose=False)
         for _ in range(warmup_iters):
@@ -168,6 +213,12 @@ def main() -> None:
         help="The name of the device you are generating a benchmark on.",
     )
     parser.add_argument(
+        "--model",
+        type=str,
+        default="yolov10n",
+        help="Which model to benchmark, special option: all",
+    )
+    parser.add_argument(
         "--warmup",
         type=int,
         default=100,
@@ -191,21 +242,45 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # trtutils benchmark
-    if args.trtutils:
-        benchmark_trtutils(
-            args.device,
-            args.warmup,
-            args.iterations,
-        )
+    # check if iterating over all possible models
+    models: list[str] = []
+    if args.model == "all":
+        models = copy.deepcopy(MODELNAMES)
+    else:
+        models.append(args.model)
 
-    # ultralytics benchmark
-    if args.ultralytics:
-        benchmark_ultralytics(
-            args.device,
-            args.warmup,
-            args.iterations,
-        )
+    # process each model
+    for modelname in models:
+        # solve for MODELNAME and ONNX_DIR
+        global MODELNAME
+        if modelname not in MODELNAMES:
+            err_msg = f"Could not find: {modelname}"
+            raise ValueError(err_msg)
+        MODELNAME = modelname
+
+        # now solve for new onnx_dir
+        yolo_version = copy.copy(MODELNAME).replace("t", "").replace("n", "").replace("s", "").replace("m", "")
+        global ONNX_DIR
+        ONNX_DIR = REPO_DIR / "data" / yolo_version
+
+        # trtutils benchmark
+        if args.trtutils:
+            benchmark_trtutils(
+                args.device,
+                args.warmup,
+                args.iterations,
+            )
+
+        # ultralytics benchmark
+        if args.ultralytics:
+            if MODELNAME in ULTRALYTICS_MODELS:
+                benchmark_ultralytics(
+                    args.device,
+                    args.warmup,
+                    args.iterations,
+                )
+            else:
+                warnings.warn(f"Could not process: {MODELNAME}, since it is not a valid ultralytics model")
 
 
 if __name__ == "__main__":
