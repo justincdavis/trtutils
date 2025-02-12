@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import json
 import statistics
@@ -86,7 +87,7 @@ def write_data(device: str, data: dict[str, dict[str, dict[str, dict[str, float]
         json.dump(data, f, indent=4)
 
 
-def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int) -> None:
+def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool) -> None:
     from trtutils.impls.yolo import YOLO
     from trtutils.trtexec import build_engine
 
@@ -97,6 +98,11 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int) -> None
     data = get_data(device)
 
     for imgsz in IMAGE_SIZES:
+        # if we can find the model nested, then we can skip
+        with contextlib.suppress(KeyError):
+            if data["trtutils"][MODELNAME][str(imgsz)] is not None and not overwrite:
+                continue
+
         print(f"Processing trtutils on {MODELNAME} for imgsz={imgsz}...")
 
         # resolve paths
@@ -141,7 +147,7 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int) -> None
         write_data(device, data)
 
 
-def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int) -> None:
+def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool) -> None:
     from ultralytics import YOLO
 
     # resolve paths
@@ -153,6 +159,11 @@ def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int) -> N
     data = get_data(device)
 
     for imgsz in IMAGE_SIZES:
+        # if we can find the model nested, then we can skip
+        with contextlib.suppress(KeyError):
+            if data["ultralytics"][MODELNAME][str(imgsz)] is not None and not overwrite:
+                continue
+
         # resolve paths
         # make a "smarter" path
         utrt_path = ultralytics_weight_path.parent / f"{ultralytics_weight_path.stem}_{imgsz}.engine"
@@ -240,6 +251,11 @@ def main() -> None:
         action="store_true",
         help="Run the benchmarks on the ultralytics framework.",
     )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing data by rerunning benchmarks.",
+    )
     args = parser.parse_args()
 
     # check if iterating over all possible models
@@ -269,6 +285,7 @@ def main() -> None:
                 args.device,
                 args.warmup,
                 args.iterations,
+                overwrite=args.overwrite,
             )
 
         # ultralytics benchmark
@@ -278,6 +295,7 @@ def main() -> None:
                     args.device,
                     args.warmup,
                     args.iterations,
+                    overwrite=args.overwrite,
                 )
             else:
                 warnings.warn(f"Could not process: {MODELNAME}, since it is not a valid ultralytics model")
