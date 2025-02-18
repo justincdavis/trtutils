@@ -17,6 +17,7 @@ Contents
    Examples <examples>
    Tutorials <tutorials/overview>
    Usage <usage>
+   Benchmarks <benchmarks/overview>
    API <source/modules>
    Changelog <changelog>
 
