@@ -236,7 +236,7 @@ class TRTEngineInterface(ABC):
         """
         if new or self._rand_input is None:
             rand_input = [
-                self._rng.random(size=shape, dtype=dtype)
+                self._rng.random(size=shape, dtype=np.float32).astype(dtype)
                 for (shape, dtype) in self.input_spec
             ]
             self._rand_input = rand_input
