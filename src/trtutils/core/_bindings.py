@@ -28,6 +28,8 @@ _log = logging.getLogger(__name__)
 
 @dataclass
 class Binding:
+    """Small wrapper for a host/device allocation pair."""
+
     index: int
     name: str
     dtype: np.dtype
@@ -49,6 +51,8 @@ class Binding:
 def allocate_bindings(
     engine: trt.IEngine,
     context: trt.IExecutionContext,
+    *,
+    pagelocked_mem: bool | None = None,
 ) -> tuple[list[Binding], list[Binding], list[int], int]:
     """
     Allocate memory for the input and output tensors of a TensorRT engine.
@@ -59,6 +63,9 @@ def allocate_bindings(
         The TensorRT engine to allocate memory for.
     context : trt.IExecutionContext
         The execution context to use.
+    pagelocked_mem : bool, optional
+        Whether or not to use pagelocked memory for host allocations.
+        By default None, which means pagelocked memory will be used.
 
     Returns
     -------
@@ -77,6 +84,9 @@ def allocate_bindings(
         If no memory allocations are found
 
     """
+    if pagelocked_mem is None:
+        pagelocked_mem = True
+
     # lists for allocations
     inputs: list[Binding] = []
     outputs: list[Binding] = []
@@ -147,9 +157,11 @@ def allocate_bindings(
             allocation = cuda_malloc(size)
             # allocate the host side memory
             if is_input:
-                host_allocation = np.zeros((1, 1), dtype)
-            else:
+                host_allocation = np.zeros((1, 1), dtype=dtype)
+            elif pagelocked_mem:
                 host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
+            else:
+                host_allocation = np.zeros(size, dtype=dtype)
             # create the binding
             binding = Binding(
                 index=i,
@@ -162,7 +174,7 @@ def allocate_bindings(
             )
             allocations.append(allocation)
             if is_input:
-                inputs.append(binding)
+                inputs.append(binding) 
             else:
                 outputs.append(binding)
             input_str = "Input" if is_input else "Output"

@@ -43,6 +43,8 @@ Functions
 ---------
 :func:`benchmark_engine`
     Benchmark a TensorRT engine.
+:func:`benchmark_engines`
+    Benchmark TensorRT engines in parallel or serially.
 :func:`find_trtexec`
     Find an instance of the trtexec binary on the system.
 :func:`run_trtexec`
@@ -139,7 +141,7 @@ __version__ = "0.4.0"
 import contextlib
 
 from . import core, impls, trtexec
-from ._benchmark import BenchmarkResult, Metric, benchmark_engine
+from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
 from .trtexec import find_trtexec, run_trtexec
@@ -154,6 +156,7 @@ __all__ = [
     "TRTEngine",
     "TRTModel",
     "benchmark_engine",
+    "benchmark_engines",
     "core",
     "find_trtexec",
     "impls",
