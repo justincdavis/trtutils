@@ -433,11 +433,11 @@ class QueuedTRTEngine:
 
         """
         return self._engine.output_dtypes
-    
+
     def get_random_input(self: Self, *, new: bool | None = None) -> list[np.ndarray]:
         """
         Get a random input to the underlying TRTEngine.
-        
+
         Parameters
         ----------
         new : bool, optional
@@ -448,7 +448,7 @@ class QueuedTRTEngine:
         -------
         list[np.ndarray]
             The random input.
-        
+
         """
         return self._engine.get_random_input(new=new)
 
@@ -550,10 +550,14 @@ class ParallelTRTEngines:
             for epath in engine_paths
         ]
 
-    def get_random_input(self: Self, *, new: bool | None = None) -> list[list[np.ndarray]]:
+    def get_random_input(
+        self: Self,
+        *,
+        new: bool | None = None,
+    ) -> list[list[np.ndarray]]:
         """
         Get a random input to the underlying TRTEngines.
-        
+
         Parameters
         ----------
         new : bool, optional
@@ -564,7 +568,7 @@ class ParallelTRTEngines:
         -------
         list[list[np.ndarray]]
             The random inputs.
-        
+
         """
         return [e.get_random_input(new=new) for e in self._engines]
 

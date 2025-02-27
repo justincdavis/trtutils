@@ -10,7 +10,7 @@ from pathlib import Path
 from statistics import mean, median
 from typing import TYPE_CHECKING
 
-from ._engine import TRTEngine, ParallelTRTEngines
+from ._engine import ParallelTRTEngines, TRTEngine
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -140,7 +140,7 @@ def benchmark_engines(
         Useful for assessing concurrent execution performance.
         Will execute the engines in lockstep.
         If None, will benchmark each engine individually.
-        
+
     Returns
     -------
     list[BenchmarkResult]
@@ -149,11 +149,18 @@ def benchmark_engines(
 
     """
     if not parallel:
-        return [benchmark_engine(engine, iterations, warmup_iterations, warmup=warmup) for engine in engine_paths]
+        return [
+            benchmark_engine(engine, iterations, warmup_iterations, warmup=warmup)
+            for engine in engine_paths
+        ]
 
     # otherwise we need a parallel setup
     engines_paths = [Path(ep) for ep in engine_paths]
-    engines = ParallelTRTEngines(engines_paths, warmup_iterations=warmup_iterations, warmup=warmup)
+    engines = ParallelTRTEngines(
+        engines_paths,
+        warmup_iterations=warmup_iterations,
+        warmup=warmup,
+    )
 
     # list of metrics
     metric_names = ["latency"]
@@ -182,6 +189,8 @@ def benchmark_engines(
             f"{metric_name}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
         )
 
-    return [BenchmarkResult(
-        latency=metrics["latency"],
-    )]
+    return [
+        BenchmarkResult(
+            latency=metrics["latency"],
+        ),
+    ]

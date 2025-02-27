@@ -4,10 +4,8 @@
 # ruff: noqa: S404, S603, S607
 from __future__ import annotations
 
-import contextlib
 import subprocess
 import sys
-from typing import TYPE_CHECKING
 
 from ._find import find_trtexec
 

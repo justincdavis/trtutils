@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from jetsontools import Tegrastats, filter_data, get_powerdraw, parse_tegrastats
 
 from trtutils._benchmark import Metric
-from trtutils._engine import TRTEngine, ParallelTRTEngines
+from trtutils._engine import ParallelTRTEngines, TRTEngine
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -161,7 +161,7 @@ def benchmark_engines(
         Useful for assessing concurrent execution performance.
         Will execute the engines in lockstep.
         If None, will benchmark each engine individually.
-        
+
     Returns
     -------
     list[JetsonBenchmarkResult]
@@ -170,11 +170,24 @@ def benchmark_engines(
 
     """
     if not parallel:
-        return [benchmark_engine(engine, iterations, warmup_iterations, tegra_interval, warmup=warmup) for engine in engine_paths]
+        return [
+            benchmark_engine(
+                engine,
+                iterations,
+                warmup_iterations,
+                tegra_interval,
+                warmup=warmup,
+            )
+            for engine in engine_paths
+        ]
 
     # otherwise we need a parallel setup
     engines_paths = [Path(ep) for ep in engine_paths]
-    engines = ParallelTRTEngines(engines_paths, warmup_iterations=warmup_iterations, warmup=warmup)
+    engines = ParallelTRTEngines(
+        engines_paths,
+        warmup_iterations=warmup_iterations,
+        warmup=warmup,
+    )
 
     # list of metrics
     metric_names = ["latency", "power_draw", "energy"]
@@ -229,8 +242,10 @@ def benchmark_engines(
             f"{metric}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
         )
 
-    return [JetsonBenchmarkResult(
-        latency=metrics["latency"],
-        power_draw=metrics["power_draw"],
-        energy=metrics["energy"],
-    )]
+    return [
+        JetsonBenchmarkResult(
+            latency=metrics["latency"],
+            power_draw=metrics["power_draw"],
+            energy=metrics["energy"],
+        ),
+    ]

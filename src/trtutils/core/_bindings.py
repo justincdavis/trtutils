@@ -174,7 +174,7 @@ def allocate_bindings(
             )
             allocations.append(allocation)
             if is_input:
-                inputs.append(binding) 
+                inputs.append(binding)
             else:
                 outputs.append(binding)
             input_str = "Input" if is_input else "Output"
