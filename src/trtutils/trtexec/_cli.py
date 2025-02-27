@@ -4,19 +4,19 @@
 # ruff: noqa: S404, S603, S607
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
 from typing import TYPE_CHECKING
 
 from ._find import find_trtexec
 
-if TYPE_CHECKING:
-    from types import SimpleNamespace
 
-
-def cli_trtexec(_: SimpleNamespace | None = None) -> None:
+def cli_trtexec(args: list[str] | None = None) -> None:
     """Run trtexec with given arguments as if using trtexec directly."""
     trtexec_path = find_trtexec()
+    if args is not None:
+        sys.argv = ["trtexec", *args]
     try:
         subprocess.run(
             [str(trtexec_path), *sys.argv[1:]],
