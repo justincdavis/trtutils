@@ -159,9 +159,12 @@ def _main() -> None:
     trtexec_parser.set_defaults(func=cli_trtexec)
 
     # parse args and call the function
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
     if hasattr(args, "func"):
-        args.func(args)
+        if args.command == "trtexec":
+            args.func(unknown)
+        else:
+            args.func(args)
     else:
         parser.print_help()
 
