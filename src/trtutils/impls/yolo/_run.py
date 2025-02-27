@@ -71,7 +71,11 @@ def run_cli() -> None:
 
     # for each frame in the scene
     image: np.ndarray
-    with cv2ext.Display(f"YOLO: {yolo.name}", stopkey="q", buffersize=args.buffersize) as display:
+    with cv2ext.Display(
+        f"YOLO: {yolo.name}",
+        stopkey="q",
+        buffersize=args.buffersize,
+    ) as display:
         for _, image in cv2ext.IterableVideo(args.input):
             if display.stopped:
                 break
@@ -79,7 +83,12 @@ def run_cli() -> None:
             t0 = time.time()
             tensor, ratio, padding = yolo.preprocess(image, no_copy=True)
             t1 = time.time()
-            outputs = yolo.run(tensor, preprocessed=True, postprocess=False, no_copy=True)
+            outputs = yolo.run(
+                tensor,
+                preprocessed=True,
+                postprocess=False,
+                no_copy=True,
+            )
             t2 = time.time()
             postoutputs = yolo.postprocess(outputs, ratio, padding, no_copy=True)
             t3 = time.time()
