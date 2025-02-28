@@ -215,6 +215,7 @@ class YOLO:
             _log.debug(
                 f"{self._tag}: Running preprocess, shape: {image.shape}, with method: {resize}",
             )
+            _log.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self._preprocessor
         if method is not None:
             preprocessor = (
@@ -222,11 +223,11 @@ class YOLO:
             )
         if isinstance(preprocessor, CUDAPreprocessor):
             t0 = time.perf_counter()
-            data = preprocessor(image, resize=resize, no_copy=no_copy)
+            data = preprocessor(image, resize=resize, no_copy=no_copy, verbose=verbose)
             t1 = time.perf_counter()
         else:
             t0 = time.perf_counter()
-            data = preprocessor(image, resize=resize)
+            data = preprocessor(image, resize=resize, verbose=verbose)
             t1 = time.perf_counter()
         self._pre_profile = (t0, t1)
         return data

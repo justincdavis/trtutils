@@ -11,6 +11,8 @@ from pathlib import Path
 import cv2ext
 import numpy as np
 
+from trtutils._log import set_log_level
+
 from ._yolo import YOLO
 
 
@@ -48,7 +50,20 @@ def run_cli() -> None:
         default=10,
         help="The amount of frames to buffer performance times for dispaly.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Output debug information from the execution.",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Output additional debugging information.",
+    )
     args = parser.parse_args()
+
+    if args.debug:
+        set_log_level("DEBUG")
 
     input_range = (0.0, float(args.input_high))
     yolo = YOLO(
@@ -56,7 +71,7 @@ def run_cli() -> None:
         input_range=input_range,
         warmup_iterations=10,
         warmup=True,
-        preprocessor="cpu",
+        preprocessor="cuda",
         resize_method="letterbox",
         conf_thres=args.conf_thresh,
     )
@@ -81,19 +96,30 @@ def run_cli() -> None:
                 break
 
             t0 = time.time()
-            tensor, ratio, padding = yolo.preprocess(image, no_copy=True)
+            tensor, ratio, padding = yolo.preprocess(
+                image,
+                no_copy=True,
+                verbose=args.verbose,
+            )
             t1 = time.time()
             outputs = yolo.run(
                 tensor,
                 preprocessed=True,
                 postprocess=False,
                 no_copy=True,
+                verbose=args.verbose,
             )
             t2 = time.time()
-            postoutputs = yolo.postprocess(outputs, ratio, padding, no_copy=True)
+            postoutputs = yolo.postprocess(
+                outputs,
+                ratio,
+                padding,
+                no_copy=True,
+                verbose=args.verbose,
+            )
             t3 = time.time()
-            detections = yolo.get_detections(postoutputs)
-            bboxes = [bbox for (bbox, _, classid) in detections]
+            detections = yolo.get_detections(postoutputs, verbose=args.verbose)
+            bboxes = [bbox for (bbox, _, _) in detections]
             t4 = time.time()
 
             pretime = t1 - t0
@@ -117,27 +143,27 @@ def run_cli() -> None:
             canvas = cv2ext.bboxes.draw_bboxes(image, bboxes)
             canvas = cv2ext.image.draw.text(
                 canvas,
-                f"PRE: {round(float(np.mean(buffers['PRE'])), 1)} ms",
+                f"PRE: {round(float(np.mean(list(buffers['PRE']))), 1)} ms",
                 (10, 40),
             )
             canvas = cv2ext.image.draw.text(
                 canvas,
-                f"INF: {round(float(np.mean(buffers['INF'])), 1)} ms",
+                f"INF: {round(float(np.mean(list(buffers['INF']))), 1)} ms",
                 (10, 70),
             )
             canvas = cv2ext.image.draw.text(
                 canvas,
-                f"POST: {round(float(np.mean(buffers['POST'])), 1)} ms",
+                f"POST: {round(float(np.mean(list(buffers['POST']))), 1)} ms",
                 (10, 100),
             )
             canvas = cv2ext.image.draw.text(
                 canvas,
-                f"DEC: {round(float(np.mean(buffers['DEC'])), 1)} ms",
+                f"DEC: {round(float(np.mean(list(buffers['DEC']))), 1)} ms",
                 (10, 130),
             )
             canvas = cv2ext.image.draw.text(
                 canvas,
-                f"TOTAL: {round(float(np.mean(buffers['TOTAL'])), 1)} ms",
+                f"TOTAL: {round(float(np.mean(list(buffers['TOTAL']))), 1)} ms",
                 (10, 180),
             )
             display.update(canvas)
