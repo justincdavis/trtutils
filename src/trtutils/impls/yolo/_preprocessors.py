@@ -458,62 +458,12 @@ class CUDAPreprocessor:
         tuple[np.ndarray, tuple[float, float], tuple[float, float]]
             The preprocessed image, ratios, and padding used for resizing.
 
-        Raises
-        ------
-        ValueError
-            If the method for resizing is not 'letterbox' or 'linear'
-        ValueError
-            If the image given is not color.
-
         """
-        # valid the method
-        resize = resize if resize is not None else self._resize
-        if resize not in self._valid_methods:
-            err_msg = (
-                f"Unknown method for image resizing. Options are {self._valid_methods}"
-            )
-            raise ValueError(err_msg)
-
-        # check if the image shape is the same as re have allocated with, if not update
-        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
-        if img_shape != self._allocated_input_shape:
-            if img_shape[2] != _COLOR_CHANNELS:
-                err_msg = "Can only preprocess color images."
-                raise ValueError(err_msg)
-
-            self._reallocate_input(image)
-
-        # create the arguments
-        height, width = image.shape[:2]
-        resize_kernel, resize_args, ratios, padding, sst_args = self._create_args(
-            height,
-            width,
-            resize,
-            verbose=verbose,
-        )
-
-        if verbose:
-            _log.debug(f"Ratios: {ratios}")
-            _log.debug(f"Padding: {padding}")
-
-        memcpy_host_to_device_async(
-            self._input_binding.allocation,
+        _, ratios, padding = self.direct_preproc(
             image,
-            self._stream,
-        )
-
-        resize_kernel.call(
-            self._resize_num_blocks,
-            self._num_threads,
-            self._stream,
-            resize_args,
-        )
-
-        self._sst_kernel.call(
-            self._sst_num_blocks,
-            self._num_threads,
-            self._stream,
-            sst_args,
+            resize=resize,
+            no_warn=True,
+            verbose=verbose,
         )
 
         memcpy_device_to_host_async(
@@ -562,6 +512,8 @@ class CUDAPreprocessor:
         ------
         ValueError
             If the method for resizing is not 'letterbox' or 'linear'
+        ValueError
+            If the image given is not color.
 
         """
         if not no_warn:
@@ -580,7 +532,6 @@ class CUDAPreprocessor:
         # check if the image shape is the same as re have allocated with, if not update
         img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
         if img_shape != self._allocated_input_shape:
-            self._input_binding.free()  # free the memory explicitly
             if img_shape[2] != _COLOR_CHANNELS:
                 err_msg = "Can only preprocess color images."
                 raise ValueError(err_msg)
