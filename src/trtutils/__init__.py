@@ -57,7 +57,7 @@ Functions
 from __future__ import annotations
 
 __author__ = "Justin Davis"
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 import contextlib
 

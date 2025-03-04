@@ -14,7 +14,7 @@ import trtutils
 project = "trtutils"
 copyright = "2024, Justin Davis"
 author = "Justin Davis"
-version = "0.4.0"
+version = "0.4.1"
 
 assert version == trtutils.__version__  # Make sure version is consistent
 
