@@ -32,6 +32,11 @@ class AbstractBatcher(ABC):
 
     @property
     @abstractmethod
+    def num_batches(self: Self) -> int:
+        """Get the number of batches."""
+
+    @property
+    @abstractmethod
     def batch_size(self: Self) -> int:
         """Get the batch size."""
 
@@ -171,7 +176,7 @@ class ImageBatcher(AbstractBatcher):
             err_msg = "Could not form any valid batches."
             raise ValueError(err_msg)
 
-        _log.debug(f"ImageBatch found images: {len(self._images)}")
+        _log.debug(f"ImageBatcher found images: {len(self._images)}")
         _log.debug(f"ImageBatcher formed batches: {len(self._batches)}")
 
         # tracking indices for iteration
@@ -229,6 +234,9 @@ class ImageBatcher(AbstractBatcher):
             new_img = np.transpose(new_img, (0, 1, 2, 3))
 
         new_img = new_img.astype(self._dtype)
+
+        if not new_img.flags["C_CONTIGUOUS"]:
+            new_img = np.ascontiguousarray(new_img)
 
         return new_img
 

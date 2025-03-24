@@ -6,7 +6,9 @@
 
 - CUDA-based resize kernels
   - Peform linear or letterbox resizing
-- core.create_kernel_args nad core.Kernel
+- core.create_kernel_args and core.Kernel
+
+---
 
 ## 0.3.4 (2024-11-12)
 

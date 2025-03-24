@@ -15,6 +15,10 @@ Functions
 ---------
 :func:`build_engine`
     Build a TensorRT engine from an ONNX file.
+:func:`eval_dla`
+    Evaluate if the model can run on a DLA.
+:func:`read_onnx`
+    Read an ONNX file and get TensorRT objects.
 
 """
 
@@ -23,9 +27,13 @@ from __future__ import annotations
 from ._batcher import ImageBatcher
 from ._build import build_engine
 from ._calibrator import EngineCalibrator
+from ._dla import eval_dla
+from ._onnx import read_onnx
 
 __all__ = [
     "EngineCalibrator",
     "ImageBatcher",
     "build_engine",
+    "eval_dla",
+    "read_onnx",
 ]

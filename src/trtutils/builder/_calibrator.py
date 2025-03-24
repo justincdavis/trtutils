@@ -13,12 +13,12 @@ import numpy as np
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
-from trtutils.core import memcpy_host_to_device
+from trtutils.core import memcpy_host_to_device, cuda_malloc
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-    from ._batcher import ImageBatcher
+    from ._batcher import AbstractBatcher
 
 
 _log = logging.getLogger(__name__)
@@ -30,7 +30,6 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
     def __init__(
         self: Self,
         calibration_cache: Path | str | None = None,
-        image_dir: Path | str | None = None,
     ) -> None:
         """
         Create an EngineCalibrator.
@@ -39,32 +38,14 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         ----------
         calibration_cache : Path, str, optional
             The path to the calibration cache.
-        image_dir : Path, str, optional
-            The directory containing images to calibrate with.
-
-        Raises
-        ------
-        ValueError
-            If image_dir is None and calibration cache does not exist.
 
         """
-        self._use_batcher: bool = False
-        self._use_cache: bool = False
-        self._calib_cache: Path | None = None
-        if calibration_cache is not None:
-            self._calib_cache = Path(calibration_cache)
-            if not self._calib_cache.exists():
-                # need to run the image batcher if the calibration cache does not exist
-                self._use_batcher = True
-            else:
-                # if cache exists, use it
-                self._use_cache = True
+        self._cache_path: Path = Path(calibration_cache).resolve() if calibration_cache is not None else Path("calibration.cache").resolve()
+        self._batcher: AbstractBatcher | None = None
 
-        self._batcher: ImageBatcher | None = None
-        if self._use_batcher:
-            if image_dir is None:
-                err_msg = "Must pass image_dir if calibration cache does not exist."
-                raise ValueError(err_msg)
+    def set_batcher(self: Self, batcher: AbstractBatcher) -> None:
+        """Set the batcher."""
+        self._batcher = batcher
 
     def get_batch_size(self: Self) -> int:
         """
@@ -82,7 +63,7 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             return self._batcher.batch_size
         return 1
 
-    def get_batch(self: Self):
+    def get_batch(self: Self) -> list[int] | None:
         """
         Get the next batch of data.
 
@@ -103,10 +84,14 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         if batch is None:
             return None
 
-        # TODO: need to fill out remainder
-        # STEP 1: make GPU memory allocation for batch
-        # STEP 2: copy the host side to device
-        # STEP 3: return the GPU pointers
+        # # TODO: need to fill out remainder
+        # # STEP 1: make GPU memory allocation for batch
+        # # STEP 2: copy the host side to device
+        # # STEP 3: return the GPU pointers
+
+        ptr = cuda_malloc(batch.nbytes)
+        memcpy_host_to_device(batch.ctypes.data, ptr)
+        return [ptr]
 
     def read_calibration_cache(self: Self) -> bytes | None:
         """

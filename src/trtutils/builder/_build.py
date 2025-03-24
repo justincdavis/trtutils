@@ -6,6 +6,10 @@ from __future__ import annotations
 import contextlib
 from pathlib import Path
 
+from ._batcher import AbstractBatcher
+from ._calibrator import EngineCalibrator
+from ._onnx import read_onnx
+
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
@@ -18,6 +22,8 @@ def build_engine(
     log_level: trt.ILogger.Severity | None = None,
     workspace: float = 4.0,
     dla_core: int | None = None,
+    calibration_cache: Path | str | None = None,
+    data_batcher: AbstractBatcher | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -25,6 +31,7 @@ def build_engine(
     reject_empty_algorithms: bool = False,
     ignore_timing_mismatch: bool = False,
     fp16: bool | None = None,
+    int8: bool | None = None,
 ) -> None:
     """
     Build a TensorRT engine from an ONNX model.
@@ -45,6 +52,10 @@ def build_engine(
     workspace : float
         The size of the workspace in gigabytes.
         Default is 4.0 GiB.
+    calibration_cache : Path, str, optional
+        The path to the calibration cache.
+    data_batcher : AbstractBatcher, optional
+        The data batcher to use for calibration.
     dla_core : int, optional
         The DLA core to build the engine for.
         By default, None or build the engine for GPU.
@@ -67,6 +78,8 @@ def build_engine(
         By default, False
     fp16 : bool, optional
         If True, quantize the engine to FP16 precision.
+    int8 : bool, optional
+        If True, quantize the engine to INT8 precision.
 
     Raises
     ------
@@ -82,43 +95,10 @@ def build_engine(
         If the TensorRT engines fails to build
 
     """
-    onnx_path = Path(onnx).resolve()
     output_path = Path(output).resolve()
-    if not onnx_path.exists():
-        err_msg = f"Could not find ONNX model at: {onnx_path}"
-        raise FileNotFoundError(err_msg)
-    if onnx_path.is_dir():
-        err_msg = f"Path given is a directory: {onnx_path}"
-        raise IsADirectoryError(err_msg)
-    if onnx_path.suffix != ".onnx":
-        err_msg = "File does not have .onnx extension"
-        raise ValueError(err_msg)
 
-    if log_level is None:
-        log_level = trt.Logger.WARNING
-    trt_logger = logger or trt.Logger(log_level)
-
-    builder = trt.Builder(trt_logger)
-    config = builder.create_builder_config()
-
-    # setup the workspace size
-    workspace_bytes = int(workspace * (1 << 30))
-    if hasattr(config, "max_workspace_size"):
-        config.max_workspace_size = workspace_bytes
-    else:
-        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_bytes)
-
-    # make network
-    network = builder.create_network(
-        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH),
-    )
-
-    # setup parser
-    parser = trt.OnnxParser(network, trt_logger)
-    with onnx_path.open("rb") as f:
-        if not parser.parse(f.read()):
-            err_msg = "Cannot parse ONNX file"
-            raise RuntimeError(err_msg)
+    # read the onnx model
+    network, builder, config, _, trt_logger = read_onnx(onnx, logger, log_level, workspace)
 
     # create profile and config
     profile = builder.create_optimization_profile()
@@ -153,6 +133,16 @@ def build_engine(
         if not builder.platform_has_fast_fp16:
             trt_logger.warning("Platform does not have native fast FP16.")
         config.set_flag(trt.BuilderFlag.FP16)
+    if int8:
+        if not builder.platform_has_fast_int8:
+            trt_logger.warning("Platform does not have native fast INT8.")
+        config.set_flag(trt.BuilderFlag.INT8)
+        config.int8_calibrator = EngineCalibrator(calibration_cache=calibration_cache)
+        if calibration_cache is None and data_batcher is None:
+            err_msg = "Must pass either calibration cache or data batcher to quantize the model to INT8."
+            raise ValueError(err_msg)
+        if data_batcher is not None:
+            config.int8_calibrator.set_batcher(data_batcher)
 
     # build the engine
     if hasattr(builder, "build_serialized_network"):

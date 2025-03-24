@@ -119,6 +119,10 @@ def _build(args: SimpleNamespace) -> None:
     )
 
 
+def _dla(args: SimpleNamespace) -> None:
+    trtutils.builder.eval_dla(Path(args.onnx), verbose=True)
+
+
 def _main() -> None:
     parser = argparse.ArgumentParser(description="Utilities for TensorRT.")
 
@@ -241,6 +245,19 @@ def _main() -> None:
         help="Quantize the engine to FP16 precision.",
     )
     build_parser.set_defaults(func=_build)
+
+    # dla parser
+    dla_parser = subparsers.add_parser(
+        "dla",
+        help="Evaluate if the model can run on a DLA.",
+    )
+    dla_parser.add_argument(
+        "--onnx",
+        "-o",
+        required=True,
+        help="Path to the ONNX model file.",
+    )
+    dla_parser.set_defaults(func=_dla)
 
     # parse args and call the function
     args = parser.parse_args()
