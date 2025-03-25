@@ -32,6 +32,10 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
+# CHECKLIST:
+# Support execute_async_v3: https://forums.developer.nvidia.com/t/tensorrt-v10-inference-using-context-execute-async-v3/289771
+
+
 class TRTEngine(TRTEngineInterface):
     """
     Implements a generic interface for TensorRT engines.
