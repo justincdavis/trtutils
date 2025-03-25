@@ -4,14 +4,20 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ._batcher import AbstractBatcher
 from ._calibrator import EngineCalibrator
 from ._onnx import read_onnx
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+
+if TYPE_CHECKING:
+    from ._batcher import AbstractBatcher
+
+_log = logging.getLogger(__name__)
 
 
 def build_engine(
@@ -83,12 +89,6 @@ def build_engine(
 
     Raises
     ------
-    FileNotFoundError
-        If the onnx model does not exist
-    IsADirectoryError
-        If the onnx model path is a directory
-    ValueError
-        If the onnx model path does not have .onnx extension
     RuntimeError
         If the ONNX model cannot be parsed
     RuntimeError
@@ -98,7 +98,12 @@ def build_engine(
     output_path = Path(output).resolve()
 
     # read the onnx model
-    network, builder, config, _, trt_logger = read_onnx(onnx, logger, log_level, workspace)
+    network, builder, config, _, trt_logger = read_onnx(
+        onnx,
+        logger,
+        log_level,
+        workspace,
+    )
 
     # create profile and config
     profile = builder.create_optimization_profile()
@@ -137,10 +142,13 @@ def build_engine(
         if not builder.platform_has_fast_int8:
             trt_logger.warning("Platform does not have native fast INT8.")
         config.set_flag(trt.BuilderFlag.INT8)
-        config.int8_calibrator = EngineCalibrator(calibration_cache=calibration_cache)
         if calibration_cache is None and data_batcher is None:
-            err_msg = "Must pass either calibration cache or data batcher to quantize the model to INT8."
-            raise ValueError(err_msg)
+            err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
+            _log.warning(err_msg)
+        if calibration_cache is not None:
+            config.int8_calibrator = EngineCalibrator(
+                calibration_cache=calibration_cache
+            )
         if data_batcher is not None:
             config.int8_calibrator.set_batcher(data_batcher)
 

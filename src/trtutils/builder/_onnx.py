@@ -15,9 +15,15 @@ def read_onnx(
     logger: trt.ILogger | None = None,
     log_level: trt.ILogger.Severity | None = None,
     workspace: float = 4.0,
-) -> None:
+) -> tuple[
+    trt.INetworkDefinition,
+    trt.IBuilder,
+    trt.IBuilderConfig,
+    trt.IOnnxParser,
+    trt.ILogger,
+]:
     """
-    Open an ONNX model and generate TensorRT network, builder, config, and parser.
+    Open an ONNX model and generate TensorRT network, builder, config, parser, and logger.
 
     Parameters
     ----------
@@ -30,6 +36,11 @@ def read_onnx(
     workspace : float
         The size of the workspace in gigabytes.
         Default is 4.0 GiB.
+
+    Returns
+    -------
+    tuple[trt.INetworkDefinition, trt.IBuilder, trt.IBuilderConfig, trt.IOnnxParser, trt.ILogger]
+        The network, builder, config, parser, and logger.
 
     Raises
     ------

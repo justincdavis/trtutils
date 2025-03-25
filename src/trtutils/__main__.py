@@ -17,6 +17,9 @@ from trtutils.trtexec._cli import cli_trtexec
 if TYPE_CHECKING:
     from types import SimpleNamespace
 
+    from ._benchmark import Metric
+
+
 _log = logging.getLogger("trtutils")
 
 
@@ -26,80 +29,70 @@ def _benchmark(args: SimpleNamespace) -> None:
         err_msg = f"Cannot find provided model: {mpath}"
         raise FileNotFoundError(err_msg)
 
+    latency: Metric
+    energy: Metric | None = None
+    power: Metric | None = None
     if args.jetson:
-        j_result = trtutils.jetson.benchmark_engine(
-            mpath,
+        jresult = trtutils.jetson.benchmark_engine(
+            engine=mpath,
             iterations=args.iterations,
             warmup_iterations=args.warmup_iterations,
             tegra_interval=1,
             warmup=True,
         )
-        latency = j_result.latency
-        energy = j_result.energy
-        power = j_result.power_draw
-        latency_in_ms = {
-            "mean": latency.mean * 1000.0,
-            "median": latency.median * 1000.0,
-            "min": latency.min * 1000.0,
-            "max": latency.max * 1000.0,
-        }
+        latency = jresult.latency
+        energy = jresult.energy
+        power = jresult.power_draw
+    else:
+        result = trtutils.benchmark_engine(
+            engine=mpath,
+            iterations=args.iterations,
+            warmup_iterations=args.warmup_iterations,
+            warmup=True,
+        )
+        latency = result.latency
+
+    latency_in_ms = {
+        "mean": latency.mean * 1000.0,
+        "median": latency.median * 1000.0,
+        "min": latency.min * 1000.0,
+        "max": latency.max * 1000.0,
+    }
+    _log.info(f"Benchmarking result for: {mpath.stem}")
+    _log.info("=" * 40)
+    _log.info("Latency (ms):")
+    _log.info(f"  Mean   : {latency_in_ms['mean']:.2f}")
+    _log.info(f"  Median : {latency_in_ms['median']:.2f}")
+    _log.info(f"  Min    : {latency_in_ms['min']:.2f}")
+    _log.info(f"  Max    : {latency_in_ms['max']:.2f}")
+
+    if energy is not None:
         energy_in_joules = {
             "mean": energy.mean / 1000.0,
             "median": energy.median / 1000.0,
             "min": energy.min / 1000.0,
             "max": energy.max / 1000.0,
         }
+        _log.info("Energy Consumption (J):")
+        _log.info(f"  Mean   : {energy_in_joules['mean']:.3f}")
+        _log.info(f"  Median : {energy_in_joules['median']:.3f}")
+        _log.info(f"  Min    : {energy_in_joules['min']:.3f}")
+        _log.info(f"  Max    : {energy_in_joules['max']:.3f}")
+
+    if power is not None:
         power_in_watts = {
             "mean": power.mean / 1000.0,
             "median": power.median / 1000.0,
             "min": power.min / 1000.0,
             "max": power.max / 1000.0,
         }
-
-        _log.info(f"Benchmarking result for: {mpath.stem}")
-        _log.info("=" * 40)
-        _log.info("Latency (ms):")
-        _log.info(f"  Mean   : {latency_in_ms['mean']:.2f}")
-        _log.info(f"  Median : {latency_in_ms['median']:.2f}")
-        _log.info(f"  Min    : {latency_in_ms['min']:.2f}")
-        _log.info(f"  Max    : {latency_in_ms['max']:.2f}")
-        _log.info("")
-        _log.info("Energy Consumption (J):")
-        _log.info(f"  Mean   : {energy_in_joules['mean']:.3f}")
-        _log.info(f"  Median : {energy_in_joules['median']:.3f}")
-        _log.info(f"  Min    : {energy_in_joules['min']:.3f}")
-        _log.info(f"  Max    : {energy_in_joules['max']:.3f}")
-        _log.info("")
         _log.info("Power Draw (W):")
         _log.info(f"  Mean   : {power_in_watts['mean']:.3f}")
         _log.info(f"  Median : {power_in_watts['median']:.3f}")
         _log.info(f"  Min    : {power_in_watts['min']:.3f}")
         _log.info(f"  Max    : {power_in_watts['max']:.3f}")
-        _log.info("=" * 40)
 
-    else:
-        result = trtutils.benchmark_engine(
-            mpath,
-            iterations=args.iterations,
-            warmup_iterations=args.warmup_iterations,
-            warmup=True,
-        )
-        latency = result.latency
-        latency_in_ms = {
-            "mean": latency.mean * 1000.0,
-            "median": latency.median * 1000.0,
-            "min": latency.min * 1000.0,
-            "max": latency.max * 1000.0,
-        }
-
-        _log.info(f"Benchmarking result for: {mpath.stem}")
-        _log.info("=" * 40)
-        _log.info("Latency (ms):")
-        _log.info(f"  Mean   : {latency_in_ms['mean']:.2f}")
-        _log.info(f"  Median : {latency_in_ms['median']:.2f}")
-        _log.info(f"  Min    : {latency_in_ms['min']:.2f}")
-        _log.info(f"  Max    : {latency_in_ms['max']:.2f}")
-        _log.info("=" * 40)
+    _log.info("=" * 40)
 
 
 def _build(args: SimpleNamespace) -> None:
@@ -110,17 +103,19 @@ def _build(args: SimpleNamespace) -> None:
         log_level=args.log_level,
         workspace=args.workspace,
         dla_core=args.dla_core,
+        calibration_cache=args.calibration_cache,
         gpu_fallback=args.gpu_fallback,
         direct_io=args.direct_io,
         prefer_precision_constraints=args.prefer_precision_constraints,
         reject_empty_algorithms=args.reject_empty_algorithms,
         ignore_timing_mismatch=args.ignore_timing_mismatch,
         fp16=args.fp16,
+        int8=args.int8,
     )
 
 
-def _dla(args: SimpleNamespace) -> None:
-    trtutils.builder.eval_dla(Path(args.onnx), verbose=True)
+def _can_run_on_dla(args: SimpleNamespace) -> None:
+    trtutils.builder.can_run_on_dla(Path(args.onnx), verbose=True)
 
 
 def _main() -> None:
@@ -215,6 +210,12 @@ def _main() -> None:
         help="Specify the DLA core. By default, the engine is built for GPU.",
     )
     build_parser.add_argument(
+        "--calibration_cache",
+        "-cc",
+        default="calibration.cache",
+        help="Path to store calibration cache data. Default is 'calibration.cache'.",
+    )
+    build_parser.add_argument(
         "--gpu_fallback",
         action="store_true",
         help="Allow GPU fallback for unsupported layers when building for DLA.",
@@ -244,20 +245,35 @@ def _main() -> None:
         action="store_true",
         help="Quantize the engine to FP16 precision.",
     )
+    build_parser.add_argument(
+        "--int8",
+        action="store_true",
+        help="Quantize the engine to INT8 precision.",
+    )
     build_parser.set_defaults(func=_build)
 
-    # dla parser
-    dla_parser = subparsers.add_parser(
-        "dla",
+    # run_on_dla parser
+    can_run_on_dla_parser = subparsers.add_parser(
+        "run_on_dla",
         help="Evaluate if the model can run on a DLA.",
     )
-    dla_parser.add_argument(
+    can_run_on_dla_parser.add_argument(
         "--onnx",
         "-o",
         required=True,
         help="Path to the ONNX model file.",
     )
-    dla_parser.set_defaults(func=_dla)
+    can_run_on_dla_parser.add_argument(
+        "--int8",
+        action="store_true",
+        help="Use INT8 precision to assess DLA compatibility.",
+    )
+    can_run_on_dla_parser.add_argument(
+        "--fp16",
+        action="store_true",
+        help="Use FP16 precision to assess DLA compatibility.",
+    )
+    can_run_on_dla_parser.set_defaults(func=_can_run_on_dla)
 
     # parse args and call the function
     args = parser.parse_args()

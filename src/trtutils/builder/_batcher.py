@@ -27,8 +27,9 @@ _log = logging.getLogger(__name__)
 class AbstractBatcher(ABC):
     """Abstract base class for data batching classes."""
 
+    @abstractmethod
     def __init__(self: Self) -> None:
-        pass
+        """Initialize the batcher."""
 
     @property
     @abstractmethod

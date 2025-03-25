@@ -8,12 +8,10 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
-from trtutils.core import memcpy_host_to_device, cuda_malloc
+from trtutils.core import cuda_malloc, memcpy_host_to_device
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -40,7 +38,11 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             The path to the calibration cache.
 
         """
-        self._cache_path: Path = Path(calibration_cache).resolve() if calibration_cache is not None else Path("calibration.cache").resolve()
+        self._cache_path: Path = (
+            Path(calibration_cache).resolve()
+            if calibration_cache is not None
+            else Path("calibration.cache").resolve()
+        )
         self._batcher: AbstractBatcher | None = None
 
     def set_batcher(self: Self, batcher: AbstractBatcher) -> None:
@@ -68,7 +70,7 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         Get the next batch of data.
 
         Overrides from trt.IInt8EntropyCalibrator2.
-    
+
         Returns
         -------
         list[int]
@@ -84,13 +86,10 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         if batch is None:
             return None
 
-        # # TODO: need to fill out remainder
-        # # STEP 1: make GPU memory allocation for batch
-        # # STEP 2: copy the host side to device
-        # # STEP 3: return the GPU pointers
-
+        # allocate GPU memory for the batch
+        # return the GPU pointer
         ptr = cuda_malloc(batch.nbytes)
-        memcpy_host_to_device(batch.ctypes.data, ptr)
+        memcpy_host_to_device(ptr, batch)
         return [ptr]
 
     def read_calibration_cache(self: Self) -> bytes | None:
@@ -112,7 +111,8 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
 
         with self._calib_cache.open("rb") as f:
             _log.debug(f"Reading calibration cache file: {self._calib_cache}")
-            return f.read()
+            data: bytes = f.read()
+            return data
 
     def write_calibration_cache(self: Self, cache: bytes) -> None:
         """
