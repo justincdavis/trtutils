@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from ._calibrator import EngineCalibrator
 from ._onnx import read_onnx
+from ._progress import ProgressBar
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
@@ -38,6 +39,7 @@ def build_engine(
     ignore_timing_mismatch: bool = False,
     fp16: bool | None = None,
     int8: bool | None = None,
+    verbose: bool | None = None,
 ) -> None:
     """
     Build a TensorRT engine from an ONNX model.
@@ -86,6 +88,9 @@ def build_engine(
         If True, quantize the engine to FP16 precision.
     int8 : bool, optional
         If True, quantize the engine to INT8 precision.
+    verbose : bool, optional
+        If True, print verbose output.
+        By default, None or False
 
     Raises
     ------
@@ -104,6 +109,10 @@ def build_engine(
         log_level,
         workspace,
     )
+
+    if verbose:
+        _log.debug("Applying ProgressBar to config")
+        config.progress_monitor = ProgressBar()
 
     # create profile and config
     profile = builder.create_optimization_profile()

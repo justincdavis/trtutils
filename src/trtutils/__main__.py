@@ -111,6 +111,7 @@ def _build(args: SimpleNamespace) -> None:
         ignore_timing_mismatch=args.ignore_timing_mismatch,
         fp16=args.fp16,
         int8=args.int8,
+        verbose=True,
     )
 
 

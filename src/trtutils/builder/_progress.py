@@ -21,7 +21,6 @@ class ProgressBar(trt.IProgressMonitor):
     def __init__(self: Self) -> None:
         """Initialize the progress bar."""
         super().__init__()
-        self._phase_stack: list[tuple[str, int]] = []  # List of (phase_name, num_steps)
         self._progress_bars: dict[str, tqdm] = {}
         self._phase_parents: dict[str, str | None] = {}  # Track parent relationships
         self._indentation_levels: dict[
@@ -64,7 +63,6 @@ class ProgressBar(trt.IProgressMonitor):
                 current_indent = self._indentation_levels[parent_phase] + 1
 
             self._indentation_levels[phase_name] = current_indent
-            self._phase_stack.append((phase_name, num_steps))
             self._last_steps[phase_name] = 0  # Initialize last step counter
 
             # Create progress bar with indentation
@@ -110,19 +108,17 @@ class ProgressBar(trt.IProgressMonitor):
 
         return not self._interrupted
 
-    def phase_finish(self: Self) -> None:
+    def phase_finish(self: Self, phase_name: str) -> None:
         """Finish the current phase."""
         try:
-            if self._phase_stack:
-                phase_name, _ = self._phase_stack.pop()
-                if phase_name in self._progress_bars:
-                    self._progress_bars[phase_name].close()
-                    del self._progress_bars[phase_name]
-                if phase_name in self._phase_parents:
-                    del self._phase_parents[phase_name]
-                if phase_name in self._indentation_levels:
-                    del self._indentation_levels[phase_name]
-                if phase_name in self._last_steps:
-                    del self._last_steps[phase_name]
+            if phase_name in self._progress_bars:
+                self._progress_bars[phase_name].close()
+                del self._progress_bars[phase_name]
+            if phase_name in self._phase_parents:
+                del self._phase_parents[phase_name]
+            if phase_name in self._indentation_levels:
+                del self._indentation_levels[phase_name]
+            if phase_name in self._last_steps:
+                del self._last_steps[phase_name]
         except KeyboardInterrupt:
             self._interrupted = True
