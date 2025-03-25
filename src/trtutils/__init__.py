@@ -54,6 +54,11 @@ Functions
 :func:`set_log_level`
     Set the log level of the trtutils package.
 
+Objects
+-------
+:obj:`FLAGS`
+    The flag storage object for trtutils.
+
 """
 
 from __future__ import annotations
@@ -62,6 +67,9 @@ from __future__ import annotations
 import logging
 import os
 import sys
+
+# import the flags object
+from ._flags import FLAGS
 
 
 def _setup_logger(level: str | None = None) -> None:
@@ -150,6 +158,7 @@ from .builder import build_engine
 from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
+    "FLAGS",
     "BenchmarkResult",
     "Metric",
     "ParallelTRTEngines",
@@ -174,6 +183,10 @@ with contextlib.suppress(ImportError):
     from . import jetson
 
     __all__ += ["jetson"]
+
+# output available execution api debug
+for attr in [a for a in dir(FLAGS) if not a.startswith("_")]:
+    _log.debug(f"FLAG {attr}: {getattr(FLAGS, attr)}")
 
 
 # # start CUDA

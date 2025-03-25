@@ -11,6 +11,7 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import TYPE_CHECKING
 
+from ._flags import FLAGS
 from .core import (
     TRTEngineInterface,
     memcpy_device_to_host_async,
@@ -21,6 +22,7 @@ from .core import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
+    from typing import ClassVar
 
     import numpy as np
     from typing_extensions import Self
@@ -30,10 +32,6 @@ if TYPE_CHECKING:
         from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 _log = logging.getLogger(__name__)
-
-
-# CHECKLIST:
-# Support execute_async_v3: https://forums.developer.nvidia.com/t/tensorrt-v10-inference-using-context-execute-async-v3/289771
 
 
 class TRTEngine(TRTEngineInterface):
@@ -47,10 +45,13 @@ class TRTEngine(TRTEngineInterface):
     single TRTEngine should not be used in multiple threads or processes.
     """
 
+    _backends: ClassVar[set[str]] = {"auto", "v3", "v2"}
+
     def __init__(
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 5,
+        backend: str = "auto",
         *,
         warmup: bool | None = None,
         verbose: bool | None = None,
@@ -65,13 +66,41 @@ class TRTEngine(TRTEngineInterface):
         warmup : bool, optional
             Whether to do warmup iterations, by default None
             If None, warmup will be set to False
+        backend : str, optional
+            What version of backend execution to use.
+            By default 'auto', which will use v3 if available otherwise v2.
+            Options are: ['auto', 'async_v3', 'async_v2]
         warmup_iterations : int, optional
             The number of warmup iterations to do, by default 5
         verbose : bool, optional
             Whether or not to give additional information over stdout.
 
+        Raises
+        ------
+        ValueError
+            If the backend is not valid.
+
         """
         super().__init__(engine_path)
+
+        # solve for execution method
+        # only care about v2 or v3 async
+        if backend not in TRTEngine._backends:
+            err_msg = f"Invalid backend {backend}, options are: {TRTEngine._backends}"
+            raise ValueError(err_msg)
+
+        self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (
+            backend == "async_v3" or backend == "auto"
+        )
+        # if using v3
+        # 1.) need to do set_input_shape for all input bindings
+        # 2.) need to do set_tensor_address for all input/output bindings
+        if self._async_v3:
+            for i_binding in self._inputs:
+                self._context.set_input_shape(i_binding.name, i_binding.shape)
+                self._context.set_tensor_address(i_binding.name, i_binding.allocation)
+            for o_binding in self._outputs:
+                self._context.set_tensor_address(o_binding.name, o_binding.allocation)
 
         # store verbose info
         self._verbose = verbose if verbose is not None else False
@@ -231,7 +260,10 @@ class TRTEngine(TRTEngineInterface):
                 self._stream,
             )
         # execute
-        self._context.execute_async_v2(self._allocations, self._stream)
+        if self._async_v3:
+            self._context.execute_async_v3(self._stream)
+        else:
+            self._context.execute_async_v2(self._allocations, self._stream)
         # Copy outputs
         for o_idx in range(len(self._outputs)):
             # memcpy_device_to_host(
@@ -293,10 +325,16 @@ class TRTEngine(TRTEngineInterface):
                 "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
             )
         # execute
-        self._context.execute_async_v2(
-            pointers + self._output_allocations,
-            self._stream,
-        )
+        if self._async_v3:
+            # need to set the input pointers to match the bindings, assume in same order
+            for i in range(len(pointers)):
+                self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+            self._context.execute_async_v3(self._stream)
+        else:
+            self._context.execute_async_v2(
+                pointers + self._output_allocations,
+                self._stream,
+            )
         # Copy outputs
         for o_idx in range(len(self._outputs)):
             # memcpy_device_to_host(

@@ -15,6 +15,8 @@ with contextlib.suppress(Exception):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
+from trtutils._flags import FLAGS
+
 from ._cuda import cuda_call
 from ._memory import allocate_pinned_memory, cuda_malloc
 
@@ -89,15 +91,14 @@ def allocate_bindings(
     # version information to compare againist
     # >= 8.5 must use tensor API, otherwise binding
     # simplify by just checking hasattr
-    new_trt_api = hasattr(engine, "num_io_tensors")
     num_tensors = (
-        range(engine.num_io_tensors) if new_trt_api else range(engine.num_bindings)
+        range(engine.num_io_tensors) if FLAGS.TRT_10 else range(engine.num_bindings)
     )
 
     # based on the version of tensorrt, num_io_tensors is not available in IEngine
     # first case: version 9 or higher OR version 8.5 and higher
     for i in num_tensors:
-        if new_trt_api:
+        if FLAGS.TRT_10:
             name = engine.get_tensor_name(i)
             is_input = False
             if engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT:

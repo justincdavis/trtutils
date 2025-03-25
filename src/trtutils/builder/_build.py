@@ -10,7 +10,9 @@ from typing import TYPE_CHECKING
 
 from ._calibrator import EngineCalibrator
 from ._onnx import read_onnx
-from ._progress import ProgressBar
+
+with contextlib.suppress(AttributeError):
+    from ._progress import ProgressBar
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
@@ -110,7 +112,7 @@ def build_engine(
         workspace,
     )
 
-    if verbose:
+    if verbose and hasattr(trt, "IProgressMonitor"):
         _log.debug("Applying ProgressBar to config")
         config.progress_monitor = ProgressBar()
 
