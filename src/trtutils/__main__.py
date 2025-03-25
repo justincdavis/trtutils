@@ -96,8 +96,13 @@ def _benchmark(args: SimpleNamespace) -> None:
 
 
 def _build(args: SimpleNamespace) -> None:
+    if args.int8:
+        _log.warning("Build API is unstable and experimental with INT8 quantization.")
+
+    # Eventually implement CLI for image batching
     batcher = None
 
+    # actual call
     trtutils.build_engine(
         onnx=Path(args.onnx),
         output=Path(args.output),
@@ -125,6 +130,7 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
         fp16=args.fp16,
         verbose=args.verbose,
     )
+    # compute portion layers compatible
     all_layers = 0
     compat_layers = 0
     for chunk in chunks:
