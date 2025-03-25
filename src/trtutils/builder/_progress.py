@@ -21,6 +21,7 @@ class ProgressBar(trt.IProgressMonitor):
     def __init__(self: Self) -> None:
         """Initialize the progress bar."""
         super().__init__()
+
         self._progress_bars: dict[str, tqdm] = {}
         self._phase_parents: dict[str, str | None] = {}  # Track parent relationships
         self._indentation_levels: dict[

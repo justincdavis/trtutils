@@ -10,6 +10,8 @@ Classes
     Calibrates an engine during quantization.
 :class:`ImageBatcher`
     Batches images for calibration during engine building.
+:class:`ProgressBar`
+    Progress bar implementation for TensorRT engine building.
 
 Functions
 ---------
@@ -37,3 +39,10 @@ __all__ = [
     "can_run_on_dla",
     "read_onnx",
 ]
+
+import contextlib
+
+with contextlib.suppress(AttributeError):
+    from ._progress import ProgressBar
+
+    __all__ += ["ProgressBar"]

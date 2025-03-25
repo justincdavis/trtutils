@@ -38,6 +38,8 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             The path to the calibration cache.
 
         """
+        super().__init__()
+
         self._cache_path: Path = (
             Path(calibration_cache).resolve()
             if calibration_cache is not None
@@ -65,11 +67,16 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             return self._batcher.batch_size
         return 1
 
-    def get_batch(self: Self) -> list[int] | None:
+    def get_batch(self: Self, names: list[str]) -> list[int] | None:  # noqa: ARG002
         """
         Get the next batch of data.
 
         Overrides from trt.IInt8EntropyCalibrator2.
+
+        Parameters
+        ----------
+        names : list[str]
+            The list of inputs, if useful to define the batch.
 
         Returns
         -------
@@ -104,13 +111,13 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             The calibration cache contents if it exists
 
         """
-        if self._calib_cache is None:
+        if self._cache_path is None:
             return None
-        if not self._calib_cache.exists():
+        if not self._cache_path.exists():
             return None
 
-        with self._calib_cache.open("rb") as f:
-            _log.debug(f"Reading calibration cache file: {self._calib_cache}")
+        with self._cache_path.open("rb") as f:
+            _log.debug(f"Reading calibration cache file: {self._cache_path}")
             data: bytes = f.read()
             return data
 
@@ -126,9 +133,9 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             The calibration data generated.
 
         """
-        if self._calib_cache is None:
+        if self._cache_path is None:
             return
 
-        with self._calib_cache.open("wb") as f:
-            _log.debug(f"Writing calibration cache file: {self._calib_cache}")
+        with self._cache_path.open("wb") as f:
+            _log.debug(f"Writing calibration cache file: {self._cache_path}")
             f.write(cache)

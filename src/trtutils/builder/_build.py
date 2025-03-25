@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from trtutils._flags import FLAGS
+
 from ._calibrator import EngineCalibrator
 from ._onnx import read_onnx
 
@@ -112,7 +114,7 @@ def build_engine(
         workspace,
     )
 
-    if verbose and hasattr(trt, "IProgressMonitor"):
+    if verbose and FLAGS.BUILD_PROGRESS:
         _log.debug("Applying ProgressBar to config")
         config.progress_monitor = ProgressBar()
 

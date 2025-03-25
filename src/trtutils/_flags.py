@@ -16,6 +16,8 @@ class _FLAGS:
     ----------
     TRT_10 : bool
         Whether or not TensorRT is version 10 or greater.
+    BUILD_PROGRESS : bool
+        Whether or not TensorRT supports the trt.IProgressMonitor interface.
     EXEC_ASYNC_V3 : bool
         Whether or not execute_async_v3 is available
     EXEC_ASYNC_V2 : bool
@@ -30,6 +32,7 @@ class _FLAGS:
     """
 
     TRT_10: bool = False
+    BUILD_PROGRESS: bool = False
     EXEC_ASYNC_V3: bool = False
     EXEC_ASYNC_V2: bool = False
     EXEC_ASYNC_V1: bool = False
@@ -44,6 +47,7 @@ with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
     FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
+    FLAGS.BUILD_PROGRESS = hasattr(trt, "IProgressMonitor")
     FLAGS.EXEC_ASYNC_V3 = hasattr(trt.IExecutionContext, "execute_async_v3")
     FLAGS.EXEC_ASYNC_V2 = hasattr(trt.IExecutionContext, "execute_async_v2")
     FLAGS.EXEC_ASYNC_V1 = hasattr(trt.IExecutionContext, "execute_async")
