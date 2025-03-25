@@ -72,7 +72,6 @@ def can_run_on_dla(
 
     for idx in range(network.num_layers):
         layer = network.get_layer(idx)
-        layer.precision = trt.DataType.INT8
         is_dla = check_dla(layer)
         if not is_dla:
             full_dla = False
