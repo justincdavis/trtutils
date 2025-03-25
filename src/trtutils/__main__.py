@@ -96,14 +96,17 @@ def _benchmark(args: SimpleNamespace) -> None:
 
 
 def _build(args: SimpleNamespace) -> None:
+    batcher = None
+
     trtutils.build_engine(
         onnx=Path(args.onnx),
         output=Path(args.output),
-        timing_cache=Path(args.timing_cache),
+        timing_cache=args.timing_cache,
         log_level=args.log_level,
         workspace=args.workspace,
         dla_core=args.dla_core,
         calibration_cache=args.calibration_cache,
+        data_batcher=batcher,
         gpu_fallback=args.gpu_fallback,
         direct_io=args.direct_io,
         prefer_precision_constraints=args.prefer_precision_constraints,
@@ -111,17 +114,26 @@ def _build(args: SimpleNamespace) -> None:
         ignore_timing_mismatch=args.ignore_timing_mismatch,
         fp16=args.fp16,
         int8=args.int8,
-        verbose=True,
+        verbose=args.verbose,
     )
 
 
 def _can_run_on_dla(args: SimpleNamespace) -> None:
-    trtutils.builder.can_run_on_dla(
+    full_dla, chunks = trtutils.builder.can_run_on_dla(
         Path(args.onnx),
         int8=args.int8,
         fp16=args.fp16,
-        verbose=True,
+        verbose=args.verbose,
     )
+    all_layers = 0
+    compat_layers = 0
+    for chunk in chunks:
+        chunk_size = chunk[2] - chunk[1] + 1
+        if chunk[-1]:
+            compat_layers += chunk_size
+        all_layers += chunk_size
+    portion_compat = round((compat_layers / all_layers) * 100.0, 2)
+    _log.info(f"ONNX: {args.onnx}, DLA Compatible: {full_dla}, Layers: {portion_compat} % Compatible")
 
 
 def _main() -> None:
@@ -194,7 +206,7 @@ def _main() -> None:
     build_parser.add_argument(
         "--timing_cache",
         "-tc",
-        default="timing.cache",
+        default=None,
         help="Path to store timing cache data. Default is 'timing.cache'.",
     )
     build_parser.add_argument(
@@ -218,7 +230,7 @@ def _main() -> None:
     build_parser.add_argument(
         "--calibration_cache",
         "-cc",
-        default="calibration.cache",
+        default=None,
         help="Path to store calibration cache data. Default is 'calibration.cache'.",
     )
     build_parser.add_argument(
@@ -256,11 +268,16 @@ def _main() -> None:
         action="store_true",
         help="Quantize the engine to INT8 precision.",
     )
+    build_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose output from can_run_on_dla.",
+    )
     build_parser.set_defaults(func=_build)
 
     # run_on_dla parser
     can_run_on_dla_parser = subparsers.add_parser(
-        "run_on_dla",
+        "can_run_on_dla",
         help="Evaluate if the model can run on a DLA.",
     )
     can_run_on_dla_parser.add_argument(
@@ -278,6 +295,11 @@ def _main() -> None:
         "--fp16",
         action="store_true",
         help="Use FP16 precision to assess DLA compatibility.",
+    )
+    can_run_on_dla_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose output from can_run_on_dla.",
     )
     can_run_on_dla_parser.set_defaults(func=_can_run_on_dla)
 

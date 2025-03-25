@@ -28,7 +28,7 @@ _log = logging.getLogger(__name__)
 def build_engine(
     onnx: Path | str,
     output: Path | str,
-    timing_cache: Path | str = "timing.cache",
+    timing_cache: Path | str | None = None,
     logger: trt.ILogger | None = None,
     log_level: trt.ILogger.Severity | None = None,
     workspace: float = 4.0,
@@ -56,7 +56,7 @@ def build_engine(
         The location to save the TensorRT engine.
     timing_cache : Path, str, optional
         Where to store the timing cache data.
-        Default is timing.cache in current working directory.
+        Default is None.
     logger : trt.ILogger, optional
         The logger to use, by default None
     log_level : trt.ILogger.Severity, optional
@@ -130,24 +130,19 @@ def build_engine(
     if reject_empty_algorithms:
         config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
 
-    # handle DLA assignment
-    if dla_core is not None:
-        config.default_device_type = trt.DeviceType.DLA
-        config.DLA_core = dla_core
-    if gpu_fallback:
-        config.set_flag(trt.BuilderFlag.GPU_FALLBACK)
-
     # load/setup the timing cache
-    timing_cache_path = Path(timing_cache).resolve()
-    buffer = b""
-    if timing_cache_path.exists():
-        with timing_cache_path.open("rb") as timing_cache_file:
-            buffer = timing_cache_file.read()
-    t_cache = config.create_timing_cache(buffer)
-    config.set_timing_cache(t_cache, ignore_mismatch=ignore_timing_mismatch)
+    timing_cache_path: Path | None = Path(timing_cache).resolve() if timing_cache else None
+    if timing_cache_path:
+        buffer = b""
+        if timing_cache_path.exists():
+            with timing_cache_path.open("rb") as timing_cache_file:
+                buffer = timing_cache_file.read()
+        t_cache = config.create_timing_cache(buffer)
+        config.set_timing_cache(t_cache, ignore_mismatch=ignore_timing_mismatch)
 
     # setup the precision sets
-    if fp16:
+    if fp16 or int8:
+        # want to enable fp16 for both int8 and fp16 since fp16 may be faster
         if not builder.platform_has_fast_fp16:
             trt_logger.warning("Platform does not have native fast FP16.")
         config.set_flag(trt.BuilderFlag.FP16)
@@ -158,23 +153,30 @@ def build_engine(
         if calibration_cache is None and data_batcher is None:
             err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
             _log.warning(err_msg)
-        if calibration_cache is not None:
-            config.int8_calibrator = EngineCalibrator(
-                calibration_cache=calibration_cache
-            )
+        config.int8_calibrator = EngineCalibrator(
+            calibration_cache=calibration_cache
+        )
         if data_batcher is not None:
             config.int8_calibrator.set_batcher(data_batcher)
 
+    # handle DLA assignment
+    if dla_core is not None:
+        config.default_device_type = trt.DeviceType.DLA
+        config.DLA_core = dla_core
+    if gpu_fallback:
+        config.set_flag(trt.BuilderFlag.GPU_FALLBACK)
+
     # build the engine
-    if hasattr(builder, "build_serialized_network"):
+    if FLAGS.BUILD_SERIALIZED:
         engine_bytes = builder.build_serialized_network(network, config)
     else:
         engine_bytes = builder.build_engine(network, config)
 
     # save the timing cache
-    post_t_cache = config.get_timing_cache()
-    with timing_cache_path.open("wb") as f:
-        f.write(memoryview(post_t_cache.serialize()))
+    if timing_cache_path:
+        post_t_cache = config.get_timing_cache()
+        with timing_cache_path.open("wb") as f:
+            f.write(memoryview(post_t_cache.serialize()))
 
     if engine_bytes is None:
         err_msg = "Failed to build engine."

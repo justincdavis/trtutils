@@ -25,7 +25,7 @@ def can_run_on_dla(
     int8: bool | None = None,
     fp16: bool | None = None,
     verbose: bool | None = None,
-) -> bool:
+) -> tuple[bool, list[tuple[list[trt.ILayer], int, int, bool]]]:
     """
     Whether or not the entire model can be run on a DLA.
 
@@ -44,8 +44,9 @@ def can_run_on_dla(
 
     Returns
     -------
-    bool
-        Whether or not the model will all run on DLA.
+    tuple[bool, list[tuple[list[trt.ILayer], int, int, bool]]]
+        Whether or not the model will all run on DLA and each block of layers.
+        Where each block can run on a single device, DLA or GPU.
 
     """
     network, _, config, _, _ = read_onnx(onnx_path)
@@ -70,18 +71,35 @@ def can_run_on_dla(
     config.DLA_core = 0
 
     full_dla = True
+    last_layer_dla = False
+    chunks: list[tuple[list[trt.ILayer], int, int, bool]] = []
+    curr_start: int = 0
+    curr_layers: list[trt.ILayer] = []
 
     for idx in range(network.num_layers):
         layer = network.get_layer(idx)
         if int8:
             layer.precision = trt.DataType.INT8
         else:
-            layer.precision = trt.DataType.FP16
+            layer.precision = trt.DataType.HALF
 
         # check if the layer can run on DLA
         dla_valid = check_dla(layer)
         if not dla_valid:
             full_dla = False
+
+        # handle chunk storage
+        if dla_valid != last_layer_dla:
+            if len(curr_layers) > 0:
+                chunks.append(
+                    (curr_layers, curr_start, idx - 1, last_layer_dla)
+                )
+                curr_layers = [layer]
+            curr_start = idx
+        else:
+            curr_layers.append(layer)
+
+        last_layer_dla = dla_valid
 
         if verbose:
             _log.info(
@@ -89,4 +107,14 @@ def can_run_on_dla(
             )
             _log.info(f"\tDLA: {dla_valid}")
 
-    return full_dla
+    # handle final chunk
+    chunks.append(
+        (curr_layers, curr_start, network.num_layers - 1, last_layer_dla)
+    )
+
+    if verbose:
+        _log.info(f"Found {len(chunks)} Chunks of Layers")
+        for i, (layers, start, end, on_dla) in enumerate(chunks):
+            _log.info(f"\tChunk {i}: [{start} - {end}], {len(layers)} layers, {'DLA' if on_dla else 'GPU'}")
+
+    return full_dla, chunks

@@ -18,6 +18,8 @@ class _FLAGS:
         Whether or not TensorRT is version 10 or greater.
     BUILD_PROGRESS : bool
         Whether or not TensorRT supports the trt.IProgressMonitor interface.
+    BUILD_SERIALIZED : bool
+        Whether or not TensorRT supports IBuilder.build_serialized_engine or not.
     EXEC_ASYNC_V3 : bool
         Whether or not execute_async_v3 is available
     EXEC_ASYNC_V2 : bool
@@ -33,6 +35,7 @@ class _FLAGS:
 
     TRT_10: bool = False
     BUILD_PROGRESS: bool = False
+    BUILD_SERIALIZED: bool = False
     EXEC_ASYNC_V3: bool = False
     EXEC_ASYNC_V2: bool = False
     EXEC_ASYNC_V1: bool = False
@@ -48,6 +51,7 @@ with contextlib.suppress(ImportError):
 
     FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
     FLAGS.BUILD_PROGRESS = hasattr(trt, "IProgressMonitor")
+    FLAGS.BUILD_SERIALIZED = hasattr(trt.Builder, "build_serialized_network")
     FLAGS.EXEC_ASYNC_V3 = hasattr(trt.IExecutionContext, "execute_async_v3")
     FLAGS.EXEC_ASYNC_V2 = hasattr(trt.IExecutionContext, "execute_async_v2")
     FLAGS.EXEC_ASYNC_V1 = hasattr(trt.IExecutionContext, "execute_async")
