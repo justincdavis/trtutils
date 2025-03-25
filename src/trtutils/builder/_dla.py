@@ -13,6 +13,7 @@ with contextlib.suppress(ImportError):
 from ._onnx import read_onnx
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 _log = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def can_run_on_dla(
     """
     network, _, config, _, _ = read_onnx(onnx_path)
 
-    check_dla = (
+    check_dla: Callable[[trt.ILayer], bool] = (
         config.can_run_on_DLA
         if hasattr(config, "can_run_on_DLA")
         else config.canRunOnDLA
@@ -72,14 +73,20 @@ def can_run_on_dla(
 
     for idx in range(network.num_layers):
         layer = network.get_layer(idx)
-        is_dla = check_dla(layer)
-        if not is_dla:
+        if int8:
+            layer.precision = trt.DataType.INT8
+        else:
+            layer.precision = trt.DataType.FP16
+
+        # check if the layer can run on DLA
+        dla_valid = check_dla(layer)
+        if not dla_valid:
             full_dla = False
 
         if verbose:
             _log.info(
                 f"Layer {idx}: {layer.name}, {layer.type}, {layer.precision}, {layer.metadata}",
             )
-            _log.info(f"\tDLA: {is_dla}")
+            _log.info(f"\tDLA: {dla_valid}")
 
     return full_dla
