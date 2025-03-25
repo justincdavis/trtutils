@@ -21,6 +21,8 @@ _log = logging.getLogger(__name__)
 def can_run_on_dla(
     onnx_path: Path | str,
     *,
+    int8: bool | None = None,
+    fp16: bool | None = None,
     verbose: bool | None = None,
 ) -> bool:
     """
@@ -30,6 +32,12 @@ def can_run_on_dla(
     ----------
     onnx_path : Path, str
         The path to the onnx file.
+    int8 : bool, optional
+        Whether to use INT8 precision, by default None
+        If neither int8 or fp16 are provided, fp16 will be used.
+    fp16 : bool, optional
+        Whether to use FP16 precision, by default None
+        If neither int8 or fp16 are provided, fp16 will be used.
     verbose : bool, optional
         Whether to print verbose output, by default None
 
@@ -46,7 +54,17 @@ def can_run_on_dla(
         if hasattr(config, "can_run_on_DLA")
         else config.canRunOnDLA
     )
-    config.set_flag(trt.BuilderFlag.INT8)
+
+    # handle precision setup
+    if int8 is None and fp16 is None:
+        fp16 = True
+
+    if int8:
+        config.set_flag(trt.BuilderFlag.INT8)
+    elif fp16:
+        config.set_flag(trt.BuilderFlag.FP16)
+
+    # assign to DLA 0, since core doesnt matter for this check
     config.default_device_type = trt.DeviceType.DLA
     config.DLA_core = 0
 

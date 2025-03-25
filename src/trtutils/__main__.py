@@ -115,7 +115,12 @@ def _build(args: SimpleNamespace) -> None:
 
 
 def _can_run_on_dla(args: SimpleNamespace) -> None:
-    trtutils.builder.can_run_on_dla(Path(args.onnx), verbose=True)
+    trtutils.builder.can_run_on_dla(
+        Path(args.onnx),
+        int8=args.int8,
+        fp16=args.fp16,
+        verbose=True,
+    )
 
 
 def _main() -> None:
