@@ -676,6 +676,45 @@ class ParallelYOLO:
         """
         packet = self._oqueues[modelid].get()
         return (packet.data, packet.ratio, packet.padding)
+    
+    def end2end(
+        self: Self,
+        inputs: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = None,
+        paddings: list[tuple[float, float]] | None = None,
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+        """
+        Perform end-to-end inference for all models.
+
+        Parameters
+        ----------
+        inputs : list[np.ndarray]
+            The inputs to pass to the models
+        ratios : list[tuple[float, float]], optional
+            The optional ratio values for each input
+        paddings : list[tuple[float, float]], optional
+            The optional padding values for each input
+        preprocessed : bool, optional
+            Whether or not the inputs are preprocessed
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs right away
+        no_copy : bool, optional
+            If True, do not copy the data from the allocated
+            memory. If the data is not copied, it WILL BE
+            OVERWRITTEN INPLACE once new data is generated.
+
+        Returns
+        -------
+        list[list[tuple[tuple[int, int, int, int], float, int]]]
+            The outputs of the models
+
+        """
+        self.submit(inputs, ratios, paddings, preprocessed, postprocess, no_copy)
+        return self.retrieve()
 
     def _run(self: Self, threadid: int) -> None:
         # perform warmup

@@ -1,12 +1,8 @@
 # Custom/common files
-temp.engine
-temp.trt
-temp.plan
-engine.engine
-engine.trt
-engine.plan
-timing.cache
-calibration.cache
+*.engine
+*.trt
+*.plan
+*.cache
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
