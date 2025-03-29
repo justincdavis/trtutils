@@ -99,8 +99,26 @@ def _build(args: SimpleNamespace) -> None:
     if args.int8:
         _log.warning("Build API is unstable and experimental with INT8 quantization.")
 
-    # Eventually implement CLI for image batching
+    # Create ImageBatcher if calibration directory is provided
     batcher = None
+    if args.calibration_dir is not None:
+        if args.input_shape is None:
+            err_msg = "Input shape must be provided when using calibration directory"
+            raise ValueError(err_msg)
+        if args.input_dtype is None:
+            err_msg = "Input dtype must be provided when using calibration directory"
+            raise ValueError(err_msg)
+
+        batcher = trtutils.ImageBatcher(
+            image_dir=args.calibration_dir,
+            shape=args.input_shape,
+            dtype=args.input_dtype,
+            batch_size=args.batch_size,
+            order=args.data_order,
+            max_images=args.max_images,
+            resize_method=args.resize_method,
+            input_scale=args.input_scale,
+        )
 
     # actual call
     trtutils.build_engine(
@@ -140,7 +158,9 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
             compat_layers += chunk_size
         all_layers += chunk_size
     portion_compat = round((compat_layers / all_layers) * 100.0, 2)
-    _log.info(f"ONNX: {args.onnx}, Fully DLA Compatible: {full_dla}, Layers: {portion_compat} % Compatible")
+    _log.info(
+        f"ONNX: {args.onnx}, Fully DLA Compatible: {full_dla}, Layers: {portion_compat} % Compatible"
+    )
 
 
 def _main() -> None:
@@ -239,6 +259,60 @@ def _main() -> None:
         "-cc",
         default=None,
         help="Path to store calibration cache data. Default is 'calibration.cache'.",
+    )
+    build_parser.add_argument(
+        "--calibration_dir",
+        "-cd",
+        default=None,
+        help="Directory containing images for INT8 calibration.",
+    )
+    build_parser.add_argument(
+        "--input_shape",
+        "-is",
+        type=int,
+        nargs=3,
+        help="Input shape in HWC format (height, width, channels). Required when using calibration directory.",
+    )
+    build_parser.add_argument(
+        "--input_dtype",
+        "-id",
+        choices=["float32", "float16", "int8"],
+        help="Input data type. Required when using calibration directory.",
+    )
+    build_parser.add_argument(
+        "--batch_size",
+        "-bs",
+        type=int,
+        default=8,
+        help="Batch size for calibration. Default is 8.",
+    )
+    build_parser.add_argument(
+        "--data_order",
+        "-do",
+        choices=["NCHW", "NHWC"],
+        default="NCHW",
+        help="Data ordering expected by the network. Default is NCHW.",
+    )
+    build_parser.add_argument(
+        "--max_images",
+        "-mi",
+        type=int,
+        help="Maximum number of images to use for calibration.",
+    )
+    build_parser.add_argument(
+        "--resize_method",
+        "-rm",
+        choices=["letterbox", "linear"],
+        default="letterbox",
+        help="Method to resize images. Default is letterbox.",
+    )
+    build_parser.add_argument(
+        "--input_scale",
+        "-is",
+        type=float,
+        nargs=2,
+        default=[0.0, 1.0],
+        help="Input value range. Default is [0.0, 1.0].",
     )
     build_parser.add_argument(
         "--gpu_fallback",

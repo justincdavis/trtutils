@@ -676,7 +676,7 @@ class ParallelYOLO:
         """
         packet = self._oqueues[modelid].get()
         return (packet.data, packet.ratio, packet.padding)
-    
+
     def end2end(
         self: Self,
         inputs: list[np.ndarray],

@@ -131,7 +131,9 @@ def build_engine(
         config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
 
     # load/setup the timing cache
-    timing_cache_path: Path | None = Path(timing_cache).resolve() if timing_cache else None
+    timing_cache_path: Path | None = (
+        Path(timing_cache).resolve() if timing_cache else None
+    )
     if timing_cache_path:
         buffer = b""
         if timing_cache_path.exists():
@@ -153,9 +155,7 @@ def build_engine(
         if calibration_cache is None and data_batcher is None:
             err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
             _log.warning(err_msg)
-        config.int8_calibrator = EngineCalibrator(
-            calibration_cache=calibration_cache
-        )
+        config.int8_calibrator = EngineCalibrator(calibration_cache=calibration_cache)
         if data_batcher is not None:
             config.int8_calibrator.set_batcher(data_batcher)
 

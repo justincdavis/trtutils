@@ -94,9 +94,7 @@ def can_run_on_dla(
         # handle chunk storage
         if dla_valid != last_layer_dla:
             if len(curr_layers) > 0:
-                chunks.append(
-                    (curr_layers, curr_start, idx - 1, last_layer_dla)
-                )
+                chunks.append((curr_layers, curr_start, idx - 1, last_layer_dla))
                 curr_layers = [layer]
             curr_start = idx
         else:
@@ -111,13 +109,13 @@ def can_run_on_dla(
             _log.info(f"\tDLA: {dla_valid}")
 
     # handle final chunk
-    chunks.append(
-        (curr_layers, curr_start, network.num_layers - 1, last_layer_dla)
-    )
+    chunks.append((curr_layers, curr_start, network.num_layers - 1, last_layer_dla))
 
     if verbose_chunks:
         _log.info(f"Found {len(chunks)} Chunks of Layers")
         for i, (layers, start, end, on_dla) in enumerate(chunks):
-            _log.info(f"\tChunk {i}: [{start} - {end}], {len(layers)} layers, {'DLA' if on_dla else 'GPU'}")
+            _log.info(
+                f"\tChunk {i}: [{start} - {end}], {len(layers)} layers, {'DLA' if on_dla else 'GPU'}"
+            )
 
     return full_dla, chunks

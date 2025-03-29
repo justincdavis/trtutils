@@ -52,6 +52,14 @@ trtutils build [options]
 - `--workspace, -w`: Workspace size in GB (default: 4.0)
 - `--dla_core`: Specify the DLA core (default: engine built for GPU)
 - `--calibration_cache, -cc`: Path to store calibration cache data (default: 'calibration.cache')
+- `--calibration_dir, -cd`: Directory containing images for INT8 calibration
+- `--input_shape, -is`: Input shape in HWC format (height, width, channels). Required when using calibration directory
+- `--input_dtype, -id`: Input data type (float32, float16, int8). Required when using calibration directory
+- `--batch_size, -bs`: Batch size for calibration (default: 8)
+- `--data_order, -do`: Data ordering expected by the network (NCHW, NHWC). Default is NCHW
+- `--max_images, -mi`: Maximum number of images to use for calibration
+- `--resize_method, -rm`: Method to resize images (letterbox, linear). Default is letterbox
+- `--input_scale, -is`: Input value range (default: [0.0, 1.0])
 - `--gpu_fallback`: Allow GPU fallback for unsupported layers when building for DLA
 - `--direct_io`: Use direct IO for the engine
 - `--prefer_precision_constraints`: Prefer precision constraints
@@ -62,6 +70,11 @@ trtutils build [options]
 - `--verbose`: Enable verbose output
 
 > **Note**: The Build API is unstable and experimental with INT8 quantization.
+
+> **Note**: When using INT8 quantization with calibration, you must provide:
+> - `--calibration_dir`: Directory containing calibration images
+> - `--input_shape`: Expected input shape in HWC format
+> - `--input_dtype`: Expected input data type
 
 ### Can Run on DLA
 
@@ -115,7 +128,21 @@ trtutils benchmark --engine model.engine --iterations 2000 --warmup_iterations 2
 ### Building an Engine from ONNX
 
 ```bash
+# Basic build with FP16 precision
 trtutils build --onnx model.onnx --output model.engine --fp16 --workspace 8.0
+
+# Build with INT8 quantization using calibration
+trtutils build \
+    --onnx model.onnx \
+    --output model.engine \
+    --int8 \
+    --calibration_dir ./calibration_images \
+    --input_shape 640 640 3 \
+    --input_dtype float32 \
+    --batch_size 8 \
+    --data_order NCHW \
+    --resize_method letterbox \
+    --input_scale 0.0 1.0
 ```
 
 ### Checking DLA Compatibility
