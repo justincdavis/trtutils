@@ -24,9 +24,9 @@ _log = logging.getLogger("trtutils")
 
 
 def _benchmark(args: SimpleNamespace) -> None:
-    mpath = Path(args.model)
+    mpath = Path(args.engine)
     if not mpath.exists():
-        err_msg = f"Cannot find provided model: {mpath}"
+        err_msg = f"Cannot find provided engine: {mpath}"
         raise FileNotFoundError(err_msg)
 
     latency: Metric
@@ -139,7 +139,7 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
             compat_layers += chunk_size
         all_layers += chunk_size
     portion_compat = round((compat_layers / all_layers) * 100.0, 2)
-    _log.info(f"ONNX: {args.onnx}, DLA Compatible: {full_dla}, Layers: {portion_compat} % Compatible")
+    _log.info(f"ONNX: {args.onnx}, Fully DLA Compatible: {full_dla}, Layers: {portion_compat} % Compatible")
 
 
 def _main() -> None:
@@ -158,8 +158,8 @@ def _main() -> None:
         help="Benchmark a given TensorRT engine.",
     )
     benchmark_parser.add_argument(
-        "--model",
-        "-m",
+        "--engine",
+        "-e",
         required=True,
         help="Path to the engine file.",
     )
