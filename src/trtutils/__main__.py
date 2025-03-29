@@ -128,7 +128,8 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
         Path(args.onnx),
         int8=args.int8,
         fp16=args.fp16,
-        verbose=args.verbose,
+        verbose_layers=args.verbose_layers,
+        verbose_chunks=args.verbose_chunks,
     )
     # compute portion layers compatible
     all_layers = 0
@@ -303,9 +304,14 @@ def _main() -> None:
         help="Use FP16 precision to assess DLA compatibility.",
     )
     can_run_on_dla_parser.add_argument(
-        "--verbose",
+        "--verbose-layers",
         action="store_true",
-        help="Verbose output from can_run_on_dla.",
+        help="Print detailed information about each layer's DLA compatibility.",
+    )
+    can_run_on_dla_parser.add_argument(
+        "--verbose-chunks",
+        action="store_true",
+        help="Print detailed information about layer chunks and their device assignments.",
     )
     can_run_on_dla_parser.set_defaults(func=_can_run_on_dla)
 

@@ -44,6 +44,7 @@ Documentation
    Tutorials <tutorials/overview>
    Usage Guide <usage/index>
    API Reference <api>
+   CLI Reference <cli>
    Examples <examples>
    Changelog <changelog>
 

@@ -24,7 +24,8 @@ def can_run_on_dla(
     *,
     int8: bool | None = None,
     fp16: bool | None = None,
-    verbose: bool | None = None,
+    verbose_layers: bool | None = None,
+    verbose_chunks: bool | None = None,
 ) -> tuple[bool, list[tuple[list[trt.ILayer], int, int, bool]]]:
     """
     Whether or not the entire model can be run on a DLA.
@@ -39,8 +40,10 @@ def can_run_on_dla(
     fp16 : bool, optional
         Whether to use FP16 precision, by default None
         If neither int8 or fp16 are provided, fp16 will be used.
-    verbose : bool, optional
-        Whether to print verbose output, by default None
+    verbose_layers : bool, optional
+        Whether to print verbose output for individual layers, by default None
+    verbose_chunks : bool, optional
+        Whether to print verbose output for layer chunks, by default None
 
     Returns
     -------
@@ -101,7 +104,7 @@ def can_run_on_dla(
 
         last_layer_dla = dla_valid
 
-        if verbose:
+        if verbose_layers:
             _log.info(
                 f"Layer {idx}: {layer.name}, {layer.type}, {layer.precision}, {layer.metadata}",
             )
@@ -112,7 +115,7 @@ def can_run_on_dla(
         (curr_layers, curr_start, network.num_layers - 1, last_layer_dla)
     )
 
-    if verbose:
+    if verbose_chunks:
         _log.info(f"Found {len(chunks)} Chunks of Layers")
         for i, (layers, start, end, on_dla) in enumerate(chunks):
             _log.info(f"\tChunk {i}: [{start} - {end}], {len(layers)} layers, {'DLA' if on_dla else 'GPU'}")

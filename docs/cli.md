@@ -76,13 +76,23 @@ trtutils can_run_on_dla [options]
 - `--onnx, -o`: Path to the ONNX model file (required)
 - `--int8`: Use INT8 precision to assess DLA compatibility
 - `--fp16`: Use FP16 precision to assess DLA compatibility
-- `--verbose`: Enable verbose output
+- `--verbose-layers`: Print detailed information about each layer's DLA compatibility
+- `--verbose-chunks`: Print detailed information about layer chunks and their device assignments
 
 #### Output
 
 The command will output:
 - Whether the model is fully DLA compatible
 - The percentage of layers that are compatible with DLA
+- If `--verbose-layers` is enabled:
+  - Detailed information about each layer including name, type, precision, and metadata
+  - DLA compatibility status for each layer
+- If `--verbose-chunks` is enabled:
+  - Number of layer chunks found
+  - For each chunk:
+    - Start and end layer indices
+    - Number of layers in the chunk
+    - Device assignment (DLA or GPU)
 
 ### TRTExec
 
@@ -111,7 +121,17 @@ trtutils build --onnx model.onnx --output model.engine --fp16 --workspace 8.0
 ### Checking DLA Compatibility
 
 ```bash
+# Basic compatibility check
 trtutils can_run_on_dla --onnx model.onnx --fp16
+
+# Detailed layer information
+trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers
+
+# Detailed chunk information
+trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-chunks
+
+# Full detailed output
+trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers --verbose-chunks
 ```
 
 ## Notes
