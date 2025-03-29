@@ -11,6 +11,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import cv2
+import cv2ext
 import trtutils
 from trtutils.trtexec._cli import cli_trtexec
 
@@ -161,6 +163,56 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
     _log.info(
         f"ONNX: {args.onnx}, Fully DLA Compatible: {full_dla}, Layers: {portion_compat} % Compatible"
     )
+
+
+def _run_yolo(args: SimpleNamespace) -> None:
+    img_extensions = [".jpg", ".jpeg", ".png"]
+    video_extensions = [".mp4", ".avi", ".mov"]
+
+    input_path = Path(args.input)
+    is_image = input_path.suffix in img_extensions
+    is_video = input_path.suffix in video_extensions
+    if not is_image and not is_video:
+        err_msg = f"Invalid input file: {input_path}"
+        raise ValueError(err_msg)
+    
+    yolo = trtutils.impls.yolo.YOLO(
+        engine_path=args.engine,
+        warmup_iterations=args.warmup_iterations,
+        input_range=args.input_range,
+        preprocessor=args.preprocessor,
+        resize_method=args.resize_method,
+        conf_thres=args.conf_thres,
+        warmup=args.warmup,
+        verbose=args.verbose,
+    )
+
+    if is_image:
+        img = cv2.imread(str(input_path))
+        if img is None:
+            err_msg = f"Failed to read image: {input_path}"
+            raise ValueError(err_msg)
+        
+        dets = yolo.end2end(img)
+
+        canvas = cv2ext.bboxes.draw_bboxes(img, dets)
+        cv2.imshow("YOLO", canvas)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+    elif is_video:
+        with cv2ext.Display(f"YOLO detection: {input_path.stem}") as display:
+            for _, frame in cv2ext.IterableVideo(input_path):
+                if display.is_stopped:
+                    break
+
+                dets = yolo.end2end(frame)
+                canvas = cv2ext.bboxes.draw_bboxes(frame, dets)
+                display.update(canvas)
+
+    else:
+        err_msg = f"Invalid input file: {input_path}"
+        raise ValueError(err_msg)
 
 
 def _main() -> None:
@@ -388,6 +440,71 @@ def _main() -> None:
         help="Print detailed information about layer chunks and their device assignments.",
     )
     can_run_on_dla_parser.set_defaults(func=_can_run_on_dla)
+
+    # run_yolo parser
+    run_yolo_parser = subparsers.add_parser(
+        "yolo",
+        help="Run YOLO on an image or video.",
+    )
+    run_yolo_parser.add_argument(
+        "--engine",
+        "-e",
+        required=True,
+        help="Path to the YOLO engine file.",
+    )
+    run_yolo_parser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="Path to the input image or video file.",
+    )
+    run_yolo_parser.add_argument(
+        "--warmup_iterations",
+        "-wi",
+        type=int,
+        default=10,
+        help="Number of iterations to warmup the model before measuring.",
+    )
+    run_yolo_parser.add_argument(
+        "--input_range",
+        "-ir",
+        type=float,
+        nargs=2,
+        default=[0.0, 1.0],
+        help="Input value range. Default is [0.0, 1.0].",
+    )
+    run_yolo_parser.add_argument(
+        "--preprocessor",
+        "-p",
+        choices=["cpu", "cuda"],
+        default="cuda",
+        help="Hardware target for preprocessing. Default is cuda.",
+    )
+    run_yolo_parser.add_argument(
+        "--resize_method",
+        "-rm",
+        choices=["letterbox", "linear"],
+        default="letterbox",
+        help="Method to resize the input image. Default is letterbox.",
+    )
+    run_yolo_parser.add_argument(
+        "--conf_thres",
+        "-ct",
+        type=float,
+        default=0.1,
+        help="Confidence threshold for detection. Default is 0.1.",
+    )
+    run_yolo_parser.add_argument(
+        "--warmup",
+        action="store_true",
+        help="Warmup the model before running the detection.",
+    )
+    run_yolo_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose output from YOLO.",
+    )
+    run_yolo_parser.set_defaults(func=_run_yolo)
 
     # parse args and call the function
     args = parser.parse_args()
