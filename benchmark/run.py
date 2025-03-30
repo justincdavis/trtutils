@@ -38,6 +38,10 @@ MODELNAMES = [
     "yolov8m",
     "yolov7t",
     "yolov7m",
+    "yoloxt",
+    "yoloxn",
+    "yoloxs",
+    "yoloxm",
 ]
 ULTRALYTICS_MODELS = [
     "yolov10n",
@@ -55,6 +59,7 @@ MODEL_DIRS = [
     "yolov9",
     "yolov8",
     "yolov7",
+    "yolox",
 ]
 ONNX_DIR = REPO_DIR / "data" / "yolov10"
 

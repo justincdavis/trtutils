@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Generate markdown table of benchmarking results."""
+"""Generate RST tables of benchmarking results."""
 
 from __future__ import annotations
 
@@ -14,22 +14,16 @@ def format_value(value: float | str) -> str:
     return f"{value:.1f}" if isinstance(value, float) else "N/A"
 
 
-def _make_table(rows: list[list[str]], headers: list[str]) -> str:
-    columns = list(zip(*chain([headers], rows)))
-    col_widths = [max(len(str(item)) for item in col) for col in columns]
-
-    header_row = " | ".join(
-        f"{headers[i]:<{col_widths[i]}}" for i in range(len(headers))
-    )
-    separator_row = "-+-".join("-" * col_width for col_width in col_widths)
-
-    formatted_rows = [
-        " | ".join(f"{row[i]!s:<{col_widths[i]}}" for i in range(len(row)))
-        for row in rows
-    ]
-
-    table = ""
-    table += f"{header_row}\n{separator_row}\n" + "\n".join(formatted_rows)
+def _make_rst_table(rows: list[list[str]], headers: list[str]) -> str:
+    # Create the RST table header
+    table = ".. csv-table:: Performance Metrics\n"
+    table += "   :header: " + ",".join(headers) + "\n"
+    table += "   :widths: " + ",".join(["10"] * len(headers)) + "\n\n"
+    
+    # Add the rows
+    for row in rows:
+        table += "   " + ",".join(str(cell) for cell in row) + "\n"
+    
     return table
 
 
@@ -69,7 +63,7 @@ def _make_all_table(
         "Min (ms)",
         "Max (ms)",
     ]
-    return _make_table(rows, headers)
+    return _make_rst_table(rows, headers)
 
 
 def _make_device_table(
@@ -105,11 +99,11 @@ def _make_device_table(
         "Min (ms)",
         "Max (ms)",
     ]
-    return _make_table(rows, headers)
+    return _make_rst_table(rows, headers)
 
 
 def main() -> None:
-    """Generate a markdown table of benchmarking results."""
+    """Generate RST tables of benchmarking results."""
     data_dir = Path(__file__).parent / "data"
     data: dict[str, dict[str, dict[str, dict[str, dict[str, float]]]]] = {}
     for file in data_dir.iterdir():
@@ -123,21 +117,21 @@ def main() -> None:
             file_data: dict[str, dict[str, dict[str, dict[str, float]]]] = json.load(f)
         data[name] = file_data
 
-    mk_dir = Path(__file__).parent / "markdown"
-    mk_dir.mkdir(parents=True, exist_ok=True)
+    rst_dir = Path(__file__).parent / "rst"
+    rst_dir.mkdir(parents=True, exist_ok=True)
 
     # create the overall table
     all_table = _make_all_table(data)
-    all_table_path = mk_dir / "overview.md"
+    all_table_path = rst_dir / "overview.rst"
     with all_table_path.open("w+") as f:
         f.write(all_table)
 
     # create each device table
-    device_dir = mk_dir / "devices"
+    device_dir = rst_dir / "devices"
     device_dir.mkdir(parents=True, exist_ok=True)
     for device, device_data in data.items():
         device_table = _make_device_table(device_data)
-        device_table_path = device_dir / f"{device}.md"
+        device_table_path = device_dir / f"{device}.rst"
         with device_table_path.open("w+") as f:
             f.write(device_table)
 
