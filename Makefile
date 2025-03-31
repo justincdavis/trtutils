@@ -29,12 +29,10 @@ clean:
 
 docs:
 	rm -rf docs/_build/*
+	python3 ci/build_benchmark_docs.py
 	python3 ci/build_example_docs.py
 	sphinx-apidoc -o docs/source/ src/trtutils/ --separate --force
 	cd docs && make html
-
-blobs:
-	python3 ci/compile_models.py --definitions
 
 ci: ruff mypy
 

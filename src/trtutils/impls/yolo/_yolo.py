@@ -92,6 +92,7 @@ class YOLO:
         self._tag: str = f"{Path(engine_path).stem}"
         if verbose:
             _log.debug(f"Creating YOLO: {self._tag}")
+
         self._engine = TRTEngine(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -126,6 +127,7 @@ class YOLO:
                 self._input_size,
                 self._input_range,
                 self._dtype,
+                tag=self._tag,
             ),
             CUDAPreprocessor(
                 self._input_size,
@@ -133,6 +135,7 @@ class YOLO:
                 self._dtype,
                 resize=self._resize_method,
                 stream=self._engine.stream,
+                tag=self._tag,
             ),
         )
         self._preprocessor_type = preprocessor
@@ -270,7 +273,8 @@ class YOLO:
 
         """
         if verbose:
-            _log.debug(f"{self._tag}: Running postprocess")
+            _log.debug(f"{self._tag}: postprocess")
+
         conf_thres = conf_thres or self._conf_thres
         t0 = time.perf_counter()
         data = postprocess(outputs, ratios, padding, conf_thres, no_copy=no_copy)
@@ -395,6 +399,9 @@ class YOLO:
             If postprocessing is running, but ratios/padding not found
 
         """
+        if verbose:
+            _log.debug(f"{self._tag}: run")
+
         # assign flags
         if preprocessed is None:
             preprocessed = False
@@ -529,7 +536,8 @@ class YOLO:
 
         """
         if verbose:
-            _log.debug(f"{self._tag}: Running get_detections")
+            _log.debug(f"{self._tag}: get_detections")
+
         conf_thres = conf_thres or self._conf_thres
         nms_iou = nms_iou_thres or self._nms_iou
         use_nms = extra_nms if extra_nms is not None else self._nms
@@ -588,9 +596,15 @@ class YOLO:
             The detections where each entry is bbox, conf, class_id
 
         """
+        if verbose:
+            _log.debug(f"{self._tag}: end2end")
+
         outputs: list[np.ndarray]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, CUDAPreprocessor):
+            if verbose:
+                _log.debug(f"{self._tag}: end2end -> calling CPU preprocess")
+
             outputs = self.run(
                 image,
                 conf_thres=conf_thres,
@@ -600,11 +614,15 @@ class YOLO:
                 verbose=verbose,
             )
         else:
+            if verbose:
+                _log.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
+
             # if using CUDA, can remove much more
             gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
                 image,
                 resize=self._resize_method,
                 no_warn=True,
+                verbose=verbose,
             )
             outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
             outputs = self.postprocess(

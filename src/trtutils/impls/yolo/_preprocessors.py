@@ -42,6 +42,7 @@ class CPUPreprocessor:
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
         dtype: np.dtype,
+        tag: str | None = None,
     ) -> None:
         """
         Create a CPUPreprocessor for YOLO.
@@ -57,10 +58,16 @@ class CPUPreprocessor:
         dtype : np.dtype
             The datatype of the image.
             Examples: np.float32, np.float16, np.uint8
+        tag : str
+            The tag to prefix to all logging statements made.
+            By default, 'CPUPreprocessor'
+            If used within a YOLO class, will be the YOLO tag.
 
         """
+        self._tag = "CPUPreprocessor" if tag is None else f"{tag}.CPUPreprocessor"
+
         _log.debug(
-            f"Creating CPU preprocessor: {output_shape}, {output_range}, {dtype}",
+            f"{self._tag}: Creating preprocessor: {output_shape}, {output_range}, {dtype}",
         )
         self._o_shape = output_shape
         self._o_range = output_range
@@ -155,6 +162,7 @@ class CUDAPreprocessor:
         resize: str = "letterbox",
         stream: cudart.cudaStream_t | None = None,
         threads: tuple[int, int, int] | None = None,
+        tag: str | None = None,
     ) -> None:
         """
         Create a CUDAPreprocessor for YOLO.
@@ -180,6 +188,10 @@ class CUDAPreprocessor:
         threads : tuple[int, int, int], optional
             The number of threads to use per-block of computation.
             Can be changed depending on GPU size.
+        tag : str
+            The tag to prefix to all logging statements made.
+            By default, 'CUDAPreprocessor'
+            If used within a YOLO class, will be the YOLO tag.
 
         Raises
         ------
@@ -187,8 +199,10 @@ class CUDAPreprocessor:
             If the resize method is not valid
 
         """
+        self._tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
+
         _log.debug(
-            f"Creating CUDA preprocessor: {output_shape}, {output_range}, {dtype}",
+            f"{self._tag}: Creating preprocessor: {output_shape}, {output_range}, {dtype}",
         )
         # allocate static output sizes
         self._o_shape = output_shape
@@ -202,9 +216,7 @@ class CUDAPreprocessor:
         # resize methods
         self._valid_methods = ["letterbox", "linear"]
         if resize not in self._valid_methods:
-            err_msg = (
-                f"Unknown method for image resizing. Options are {self._valid_methods}"
-            )
+            err_msg = f"{self._tag}: Unknown method for image resizing. Options are {self._valid_methods}"
             raise ValueError(err_msg)
         self._resize = resize
 
@@ -299,11 +311,17 @@ class CUDAPreprocessor:
         tuple[float, float],
         np.ndarray,
     ]:
+        if verbose:
+            _log.debug(f"{self._tag}: create_args")
+
         # pre-compute the common potions
         o_width, o_height = self._o_shape
         scale_x = o_width / width
         scale_y = o_height / height
         if method == "letterbox":
+            if verbose:
+                _log.debug(f"{self._tag}: Making letterbox args")
+
             scale = min(scale_x, scale_y)
             new_width = width * scale
             new_height = height * scale
@@ -328,6 +346,9 @@ class CUDAPreprocessor:
                 verbose=verbose,
             )
         else:
+            if verbose:
+                _log.debug(f"{self._tag}: Making linear args")
+
             o_width, o_height = self._o_shape
             scale_x = o_width / width
             scale_y = o_height / height
@@ -345,6 +366,10 @@ class CUDAPreprocessor:
                 o_height,
                 verbose=verbose,
             )
+
+        if verbose:
+            _log.debug(f"{self._tag}: Making sst args")
+
         sst_args = self._sst_kernel.create_args(
             self._sst_input_binding.allocation,
             self._output_binding.allocation,
@@ -356,19 +381,61 @@ class CUDAPreprocessor:
 
         return resize_kernel, resize_args, ratios, padding, sst_args
 
-    def _reallocate_input(self: Self, image: np.ndarray) -> None:
+    def _reallocate_input(
+        self: Self,
+        image: np.ndarray,
+        *,
+        verbose: bool | None = None,
+    ) -> None:
+        if verbose:
+            _log.debug(f"{self._tag}: Reallocating input bindings")
+            _log.debug(
+                f"{self._tag}: Reallocation -> new shape: {image.shape}, old shape: {self._input_binding.shape}",
+            )
+
+        self._allocated_input_shape = image.shape  # type: ignore[assignment]
         self._input_binding = create_binding(
             image,
             is_input=True,
         )
-        self._allocated_input_shape = image.shape  # type: ignore[assignment]
-        # self._resize_num_blocks = (
-        #     # math.ceil(self._allocated_input_shape[1] / self._num_threads[1]),
-        #     # math.ceil(self._allocated_input_shape[0] / self._num_threads[0]),
-        #     math.ceil(self._o_shape[0] / self._num_threads[0]),
-        #     math.ceil(self._o_shape[1] / self._num_threads[1]),
-        #     1,
-        # )
+        self._resize_num_blocks = (
+            math.ceil(self._allocated_input_shape[0] / self._num_threads[0]),
+            math.ceil(self._allocated_input_shape[1] / self._num_threads[1]),
+            1,
+        )
+
+    def _validate_input(
+        self: Self,
+        image: np.ndarray,
+        resize: str | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> str:
+        if verbose:
+            _log.debug(f"{self._tag}: validate_input")
+
+        # valid the method
+        resize = resize if resize is not None else self._resize
+        if resize not in self._valid_methods:
+            err_msg = f"{self._tag}: Unknown method for image resizing. Options are {self._valid_methods}"
+            raise ValueError(err_msg)
+
+        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
+
+        if verbose:
+            _log.debug(
+                f"{self._tag}: Image shape: {img_shape}, Allocated shape: {self._allocated_input_shape}",
+            )
+
+        # check if the image shape is the same as re have allocated with, if not update
+        if img_shape != self._allocated_input_shape:
+            if img_shape[2] != _COLOR_CHANNELS:
+                err_msg = f"{self._tag}: Can only preprocess color images."
+                raise ValueError(err_msg)
+
+            self._reallocate_input(image, verbose=verbose)
+
+        return resize
 
     def warmup(self: Self) -> None:
         """
@@ -508,35 +575,17 @@ class CUDAPreprocessor:
         tuple[int, tuple[float, float], tuple[float, float]]
             The GPU pointer to preprocessed data, ratios, and padding used for resizing.
 
-        Raises
-        ------
-        ValueError
-            If the method for resizing is not 'letterbox' or 'linear'
-        ValueError
-            If the image given is not color.
-
         """
+        if verbose:
+            _log.debug(f"{self._tag}: direct_preproc")
+
         if not no_warn:
             _log.warning(
                 "Calling direct_preproc is potentially dangerous. Outputs can be overwritten inplace!",
             )
 
         # valid the method
-        resize = resize if resize is not None else self._resize
-        if resize not in self._valid_methods:
-            err_msg = (
-                f"Unknown method for image resizing. Options are {self._valid_methods}"
-            )
-            raise ValueError(err_msg)
-
-        # check if the image shape is the same as re have allocated with, if not update
-        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
-        if img_shape != self._allocated_input_shape:
-            if img_shape[2] != _COLOR_CHANNELS:
-                err_msg = "Can only preprocess color images."
-                raise ValueError(err_msg)
-
-            self._reallocate_input(image)
+        resize = self._validate_input(image, resize, verbose=verbose)
 
         # create the arguments
         height, width = image.shape[:2]

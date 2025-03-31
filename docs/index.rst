@@ -46,6 +46,7 @@ Documentation
    API Reference <api>
    CLI Reference <cli>
    Examples <examples>
+   Benchmarking <benchmark/index>
    Changelog <changelog>
 
 Indices and Tables
