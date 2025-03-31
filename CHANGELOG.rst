@@ -1,30 +1,31 @@
 Changelog
 =========
 
-## 0.4.1 (2025-03-04)
+0.4.1 (2025-03-04)
+------------------
 
-### Added
-
-- core.init_cuda
-  - Use to start CUDA if not using a TRTEngine and only the core setup.
-- benchmark_engines and jetson.benchmark_engines
-  - Can benchmark TRTEngines in concurrently running mode
-- Example yolo CLI program
-  - Currently only support video file input and display.
-- General CLI fixes for trtexec
-- Experimental non-pagelocked memory addressing for TRTengines
-  - Unstable, should be used with caution. Will be refined in the future
-  - Does not provide performance improvement, simply for testing speedup
+Added
+^^^^^
+* core.init_cuda
+  * Use to start CUDA if not using a TRTEngine and only the core setup.
+* benchmark_engines and jetson.benchmark_engines
+  * Can benchmark TRTEngines in concurrently running mode
+* Example yolo CLI program
+  * Currently only support video file input and display.
+* General CLI fixes for trtexec
+* Experimental non-pagelocked memory addressing for TRTengines
+  * Unstable, should be used with caution. Will be refined in the future
+  * Does not provide performance improvement, simply for testing speedup
     of pagelocked memory utilization. As such, low-priority
-- Basic internal profiling setup for YOLO objects.
-  - No current public access, but accessible through: (_pre)(_infer)(_post)_profile attributes
-  - Only stores last timestamp tuple
-  - No end2end method support yet
+* Basic internal profiling setup for YOLO objects.
+  * No current public access, but accessible through: (_pre)(_infer)(_post)_profile attributes
+  * Only stores last timestamp tuple
+  * No end2end method support yet
 
-### Fixed
-
-- yolo.CUDAPreprocessor using the wrong block size during resize call
-- Various fixes and extensions to ParallelTRTEngines
+Fixed
+^^^^^
+* yolo.CUDAPreprocessor using the wrong block size during resize call
+* Various fixes and extensions to ParallelTRTEngines
 
 0.4.0 (2024-12-05)
 ------------------

@@ -1,6 +1,6 @@
-.. _examples_impls\yolo:
+.. _examples_impls/yolo:
 
-Example: impls\yolo.py
+Example: impls/yolo.py
 ======================
 
 .. code-block:: python

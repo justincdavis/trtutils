@@ -575,13 +575,6 @@ class CUDAPreprocessor:
         tuple[int, tuple[float, float], tuple[float, float]]
             The GPU pointer to preprocessed data, ratios, and padding used for resizing.
 
-        Raises
-        ------
-        ValueError
-            If the method for resizing is not 'letterbox' or 'linear'
-        ValueError
-            If the image given is not color.
-
         """
         if verbose:
             _log.debug(f"{self._tag}: direct_preproc")
