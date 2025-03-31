@@ -515,9 +515,12 @@ def _main() -> None:
     run_yolo_parser.set_defaults(func=_run_yolo)
 
     # parse args and call the function
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
     if hasattr(args, "func"):
-        args.func(args)
+        if args.command == "trtexec":
+            args.func(unknown)
+        else:
+            args.func(args)
     else:
         parser.print_help()
 

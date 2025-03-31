@@ -12,9 +12,11 @@ from typing import TYPE_CHECKING
 from jetsontools import Tegrastats, filter_data, get_powerdraw, parse_tegrastats
 
 from trtutils._benchmark import Metric
-from trtutils._engine import TRTEngine
+from trtutils._engine import ParallelTRTEngines, TRTEngine
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from jetsontools._parsing import Metric as JMetric  # typing fix
 
 _log = logging.getLogger(__name__)
@@ -125,3 +127,125 @@ def benchmark_engine(
         power_draw=metrics["power_draw"],
         energy=metrics["energy"],
     )
+
+
+def benchmark_engines(
+    engine_paths: Sequence[Path | str],
+    iterations: int = 1000,
+    warmup_iterations: int = 50,
+    tegra_interval: int = 5,
+    *,
+    warmup: bool | None = None,
+    parallel: bool | None = None,
+) -> list[JetsonBenchmarkResult]:
+    """
+    Benchmark a TensorRT engine.
+
+    Parameters
+    ----------
+    engine_paths : Sequence[Path | str]
+        The engines to benchmark as paths to the engine files.
+    iterations : int, optional
+        The number of iterations to run the benchmark for, by default 1000.
+    warmup_iterations : int, optional
+        The number of warmup iterations to run before the benchmark, by default 50.
+    tegra_interval : int, optional
+        The number of milliseconds between each tegrastats sampling.
+        The smaller the number, the more samples per second are generated.
+        By default 5 milliseconds between samples.
+    warmup : bool, optional
+        Whether to do warmup iterations, by default None
+        If None, warmup will be set to True.
+    parallel : bool, optional
+        Whether or not to process the engines in parallel.
+        Useful for assessing concurrent execution performance.
+        Will execute the engines in lockstep.
+        If None, will benchmark each engine individually.
+
+    Returns
+    -------
+    list[JetsonBenchmarkResult]
+        A list of dataclasses containing the results of the benchmark.
+        If parallel was True, will only contain one item.
+
+    """
+    if not parallel:
+        return [
+            benchmark_engine(
+                engine,
+                iterations,
+                warmup_iterations,
+                tegra_interval,
+                warmup=warmup,
+            )
+            for engine in engine_paths
+        ]
+
+    # otherwise we need a parallel setup
+    engines_paths = [Path(ep) for ep in engine_paths]
+    engines = ParallelTRTEngines(
+        engines_paths,
+        warmup_iterations=warmup_iterations,
+        warmup=warmup,
+    )
+
+    # list of metrics
+    metric_names = ["latency", "power_draw", "energy"]
+    raw: dict[str, list[float]] = {metric: [] for metric in metric_names}
+
+    # pre-generate the false data
+    false_data = engines.get_random_input()
+
+    # create temp file location for data to go
+    temp_file = Path(Path.cwd()) / "temptegra.txt"
+    # store the start/stop times of the engine execution
+    start_stop_times: list[tuple[float, float]] = []
+    with Tegrastats(temp_file, interval=tegra_interval):
+        for _ in range(iterations):
+            t0 = time.time()
+            engines.submit(false_data)
+            engines.retrieve()
+            t1 = time.time()
+            raw["latency"].append(t1 - t0)
+            start_stop_times.append((t0, t1))
+
+    # parse the tegra data
+    tegradata = parse_tegrastats(temp_file)
+
+    # delete the temp file
+    temp_file.unlink()
+
+    # filter the data by actual times during execution
+    filtered_data, per_inference = filter_data(tegradata, start_stop_times)
+
+    # get the energy values
+    powerdraw_data: dict[str, JMetric] = get_powerdraw(filtered_data)
+    raw["power_draw"] = powerdraw_data["VDD_TOTAL"].raw
+
+    # compute energy values
+    # for energy values need to compute powerdraw per infernece
+    # then compute energy
+    energy_data = [
+        get_powerdraw(inf_data)["VDD_TOTAL"].mean * (inf_stop - inf_start)
+        for (inf_start, inf_stop), inf_data in per_inference
+        if len(inf_data) > 0
+    ]
+    raw["energy"] = energy_data
+
+    # calculate the metrics
+    metrics: dict[str, Metric] = {}
+    for metric_name in metric_names:
+        data = raw[metric_name]
+        metric = Metric(data)
+        metrics[metric_name] = metric
+        _log.debug(
+            f"{metric}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
+        )
+
+    return [
+        JetsonBenchmarkResult(
+            latency=metrics["latency"],
+            power_draw=metrics["power_draw"],
+            energy=metrics["energy"],
+        ),
+    ]

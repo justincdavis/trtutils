@@ -80,6 +80,8 @@ class CPUPreprocessor:
         self: Self,
         image: np.ndarray,
         resize: str = "letterbox",
+        *,
+        verbose: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
         Preprocess an image for YOLO.
@@ -91,6 +93,10 @@ class CPUPreprocessor:
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
 
         Returns
         -------
@@ -98,12 +104,14 @@ class CPUPreprocessor:
             The preprocessed image, ratios, and padding used for resizing.
 
         """
-        return self.preprocess(image, resize=resize)
+        return self.preprocess(image, resize=resize, verbose=verbose)
 
     def preprocess(
         self: Self,
         image: np.ndarray,
         resize: str = "letterbox",
+        *,
+        verbose: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
         Preprocess an image for YOLO.
@@ -115,6 +123,10 @@ class CPUPreprocessor:
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
 
         Returns
         -------
@@ -122,7 +134,14 @@ class CPUPreprocessor:
             The preprocessed image, ratios, and padding used for resizing.
 
         """
-        return preprocess(image, self._o_shape, self._o_dtype, self._o_range, resize)
+        return preprocess(
+            image,
+            self._o_shape,
+            self._o_dtype,
+            self._o_range,
+            resize,
+            verbose=verbose,
+        )
 
 
 class CUDAPreprocessor:
@@ -236,13 +255,15 @@ class CUDAPreprocessor:
             # block and thread info
             self._num_threads: tuple[int, int, int] = threads or (32, 32, 1)
             self._sst_num_blocks: tuple[int, int, int] = (
-                math.ceil(self._o_shape[1] / self._num_threads[0]),
-                math.ceil(self._o_shape[0] / self._num_threads[1]),
+                math.ceil(self._o_shape[0] / self._num_threads[0]),
+                math.ceil(self._o_shape[1] / self._num_threads[1]),
                 1,
             )
             self._resize_num_blocks: tuple[int, int, int] = (
-                math.ceil(self._allocated_input_shape[0] / self._num_threads[0]),
-                math.ceil(self._allocated_input_shape[1] / self._num_threads[1]),
+                # math.ceil(self._allocated_input_shape[1] / self._num_threads[1]),
+                # math.ceil(self._allocated_input_shape[0] / self._num_threads[0]),
+                math.ceil(self._o_shape[0] / self._num_threads[0]),
+                math.ceil(self._o_shape[1] / self._num_threads[1]),
                 1,
             )
 
@@ -341,11 +362,13 @@ class CUDAPreprocessor:
             is_input=True,
         )
         self._allocated_input_shape = image.shape  # type: ignore[assignment]
-        self._resize_num_blocks = (
-            math.ceil(self._allocated_input_shape[0] / self._num_threads[0]),
-            math.ceil(self._allocated_input_shape[1] / self._num_threads[1]),
-            1,
-        )
+        # self._resize_num_blocks = (
+        #     # math.ceil(self._allocated_input_shape[1] / self._num_threads[1]),
+        #     # math.ceil(self._allocated_input_shape[0] / self._num_threads[0]),
+        #     math.ceil(self._o_shape[0] / self._num_threads[0]),
+        #     math.ceil(self._o_shape[1] / self._num_threads[1]),
+        #     1,
+        # )
 
     def warmup(self: Self) -> None:
         """
@@ -368,6 +391,7 @@ class CUDAPreprocessor:
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
         Preprocess an image for YOLO.
@@ -386,6 +410,10 @@ class CUDAPreprocessor:
             the host memory will be returned directly.
             This memory WILL BE OVERWRITTEN INPLACE
             by future preprocessing calls.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
 
         Returns
         -------
@@ -393,7 +421,7 @@ class CUDAPreprocessor:
             The preprocessed image, ratios, and padding used for resizing.
 
         """
-        return self.preprocess(image, resize=resize, no_copy=no_copy)
+        return self.preprocess(image, resize=resize, no_copy=no_copy, verbose=verbose)
 
     def preprocess(
         self: Self,
@@ -430,58 +458,12 @@ class CUDAPreprocessor:
         tuple[np.ndarray, tuple[float, float], tuple[float, float]]
             The preprocessed image, ratios, and padding used for resizing.
 
-        Raises
-        ------
-        ValueError
-            If the method for resizing is not 'letterbox' or 'linear'
-        ValueError
-            If the image given is not color.
-
         """
-        # valid the method
-        resize = resize if resize is not None else self._resize
-        if resize not in self._valid_methods:
-            err_msg = (
-                f"Unknown method for image resizing. Options are {self._valid_methods}"
-            )
-            raise ValueError(err_msg)
-
-        # check if the image shape is the same as re have allocated with, if not update
-        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
-        if img_shape != self._allocated_input_shape:
-            if img_shape[2] != _COLOR_CHANNELS:
-                err_msg = "Can only preprocess color images."
-                raise ValueError(err_msg)
-
-            self._reallocate_input(image)
-
-        # create the arguments
-        height, width = image.shape[:2]
-        resize_kernel, resize_args, ratios, padding, sst_args = self._create_args(
-            height,
-            width,
-            resize,
-            verbose=verbose,
-        )
-
-        memcpy_host_to_device_async(
-            self._input_binding.allocation,
+        _, ratios, padding = self.direct_preproc(
             image,
-            self._stream,
-        )
-
-        resize_kernel.call(
-            self._resize_num_blocks,
-            self._num_threads,
-            self._stream,
-            resize_args,
-        )
-
-        self._sst_kernel.call(
-            self._sst_num_blocks,
-            self._num_threads,
-            self._stream,
-            sst_args,
+            resize=resize,
+            no_warn=True,
+            verbose=verbose,
         )
 
         memcpy_device_to_host_async(
@@ -530,6 +512,8 @@ class CUDAPreprocessor:
         ------
         ValueError
             If the method for resizing is not 'letterbox' or 'linear'
+        ValueError
+            If the image given is not color.
 
         """
         if not no_warn:
@@ -548,7 +532,6 @@ class CUDAPreprocessor:
         # check if the image shape is the same as re have allocated with, if not update
         img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
         if img_shape != self._allocated_input_shape:
-            self._input_binding.free()  # free the memory explicitly
             if img_shape[2] != _COLOR_CHANNELS:
                 err_msg = "Can only preprocess color images."
                 raise ValueError(err_msg)
@@ -563,6 +546,10 @@ class CUDAPreprocessor:
             resize,
             verbose=verbose,
         )
+
+        if verbose:
+            _log.debug(f"Ratios: {ratios}")
+            _log.debug(f"Padding: {padding}")
 
         memcpy_host_to_device_async(
             self._input_binding.allocation,

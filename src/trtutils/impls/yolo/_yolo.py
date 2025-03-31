@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -141,6 +142,11 @@ class YOLO:
         else:
             self._preprocessor = self._preprocessors[0]
 
+        # basic profiler setup
+        self._pre_profile: tuple[float, float] = (0.0, 0.0)
+        self._infer_profile: tuple[float, float] = (0.0, 0.0)
+        self._post_profile: tuple[float, float] = (0.0, 0.0)
+
         # if warmup, warmup the preprocessors
         if warmup:
             self._preprocessor.warmup()
@@ -209,14 +215,22 @@ class YOLO:
             _log.debug(
                 f"{self._tag}: Running preprocess, shape: {image.shape}, with method: {resize}",
             )
+            _log.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self._preprocessor
         if method is not None:
             preprocessor = (
                 self._preprocessors[0] if method == "cpu" else self._preprocessors[1]
             )
         if isinstance(preprocessor, CUDAPreprocessor):
-            return preprocessor(image, resize=resize, no_copy=no_copy)
-        return preprocessor(image, resize=resize)
+            t0 = time.perf_counter()
+            data = preprocessor(image, resize=resize, no_copy=no_copy, verbose=verbose)
+            t1 = time.perf_counter()
+        else:
+            t0 = time.perf_counter()
+            data = preprocessor(image, resize=resize, verbose=verbose)
+            t1 = time.perf_counter()
+        self._pre_profile = (t0, t1)
+        return data
 
     def postprocess(
         self: Self,
@@ -258,7 +272,11 @@ class YOLO:
         if verbose:
             _log.debug(f"{self._tag}: Running postprocess")
         conf_thres = conf_thres or self._conf_thres
-        return postprocess(outputs, ratios, padding, conf_thres, no_copy=no_copy)
+        t0 = time.perf_counter()
+        data = postprocess(outputs, ratios, padding, conf_thres, no_copy=no_copy)
+        t1 = time.perf_counter()
+        self._post_profile = (t0, t1)
+        return data
 
     def __call__(
         self: Self,
@@ -409,7 +427,9 @@ class YOLO:
             tensor = image
 
         # execute
+        t0 = time.perf_counter()
         outputs = self._engine([tensor], no_copy=no_copy_run)
+        t1 = time.perf_counter()
 
         # handle postprocessing
         if postprocess:
@@ -425,6 +445,8 @@ class YOLO:
                 conf_thres,
                 no_copy=no_copy_post,
             )
+
+        self._infer_profile = (t0, t1)
 
         return outputs
 

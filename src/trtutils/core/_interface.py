@@ -22,6 +22,8 @@ class TRTEngineInterface(ABC):
     def __init__(
         self: Self,
         engine_path: Path | str,
+        *,
+        pagelocked_mem: bool | None = None,
     ) -> None:
         """
         Load the TensorRT engine from a file.
@@ -30,6 +32,9 @@ class TRTEngineInterface(ABC):
         ----------
         engine_path : Path | str
             The path to the serialized engine file.
+        pagelocked_mem : bool, optional
+            Whether or not to use pagelocked memory for host allocations.
+            By default None, which means pagelocked memory will be used.
 
         """
         # store path stem as name
@@ -45,6 +50,7 @@ class TRTEngineInterface(ABC):
             allocate_bindings(
                 self._engine,
                 self._context,
+                pagelocked_mem=pagelocked_mem,
             )
         )
         self._input_allocations: list[int] = [
@@ -236,7 +242,7 @@ class TRTEngineInterface(ABC):
         """
         if new or self._rand_input is None:
             rand_input = [
-                self._rng.random(size=shape, dtype=dtype)
+                self._rng.random(size=shape, dtype=np.float32).astype(dtype)
                 for (shape, dtype) in self.input_spec
             ]
             self._rand_input = rand_input
