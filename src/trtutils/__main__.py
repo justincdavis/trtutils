@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import cv2
 import cv2ext
+
 import trtutils
 from trtutils.trtexec._cli import cli_trtexec
 
@@ -111,7 +112,7 @@ def _build(args: SimpleNamespace) -> None:
             err_msg = "Input dtype must be provided when using calibration directory"
             raise ValueError(err_msg)
 
-        batcher = trtutils.ImageBatcher(
+        batcher = trtutils.builder.ImageBatcher(
             image_dir=args.calibration_dir,
             shape=args.input_shape,
             dtype=args.input_dtype,
@@ -175,7 +176,7 @@ def _run_yolo(args: SimpleNamespace) -> None:
     if not is_image and not is_video:
         err_msg = f"Invalid input file: {input_path}"
         raise ValueError(err_msg)
-    
+
     yolo = trtutils.impls.yolo.YOLO(
         engine_path=args.engine,
         warmup_iterations=args.warmup_iterations,
@@ -192,10 +193,13 @@ def _run_yolo(args: SimpleNamespace) -> None:
         if img is None:
             err_msg = f"Failed to read image: {input_path}"
             raise ValueError(err_msg)
-        
-        dets = yolo.end2end(img)
 
-        canvas = cv2ext.bboxes.draw_bboxes(img, dets)
+        dets = yolo.end2end(img)
+        bboxes = [d[0] for d in dets]
+        scores = [d[1] for d in dets]
+        classes = [d[2] for d in dets]
+
+        canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
         cv2.imshow("YOLO", canvas)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
@@ -203,11 +207,15 @@ def _run_yolo(args: SimpleNamespace) -> None:
     elif is_video:
         with cv2ext.Display(f"YOLO detection: {input_path.stem}") as display:
             for _, frame in cv2ext.IterableVideo(input_path):
-                if display.is_stopped:
+                if display.stopped:
                     break
 
                 dets = yolo.end2end(frame)
-                canvas = cv2ext.bboxes.draw_bboxes(frame, dets)
+                bboxes = [d[0] for d in dets]
+                scores = [d[1] for d in dets]
+                classes = [d[2] for d in dets]
+
+                canvas = cv2ext.bboxes.draw_bboxes(frame, bboxes, scores, classes)
                 display.update(canvas)
 
     else:

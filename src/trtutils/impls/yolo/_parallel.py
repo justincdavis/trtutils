@@ -713,8 +713,16 @@ class ParallelYOLO:
             The outputs of the models
 
         """
-        self.submit(inputs, ratios, paddings, preprocessed, postprocess, no_copy)
-        return self.retrieve()
+        self.submit(
+            inputs,
+            ratios,
+            paddings,
+            preprocessed=preprocessed,
+            postprocess=postprocess,
+            no_copy=no_copy,
+        )
+        outputs, _, _ = self.retrieve()
+        return self.get_detections(outputs)
 
     def _run(self: Self, threadid: int) -> None:
         # perform warmup
