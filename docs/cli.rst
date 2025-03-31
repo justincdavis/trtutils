@@ -22,9 +22,9 @@ Benchmark
 
 Benchmark a TensorRT engine to measure its performance metrics.
 
-.. code-block:: bash
+.. code-block:: console
 
-    trtutils benchmark [options]
+    python3 -m trtutils benchmark --engine model.engine --iterations 2000 --warmup_iterations 200
 
 Options
 ^^^^^^^
@@ -47,9 +47,23 @@ Build
 
 Build a TensorRT engine from an ONNX model.
 
-.. code-block:: bash
+.. code-block:: console
 
-    trtutils build [options]
+    # Basic build with FP16 precision
+    python3 -m trtutils build --onnx model.onnx --output model.engine --fp16 --workspace 8.0
+
+    # Build with INT8 quantization using calibration
+    python3 -m trtutils build \
+        --onnx model.onnx \
+        --output model.engine \
+        --int8 \
+        --calibration_dir ./calibration_images \
+        --input_shape 640 640 3 \
+        --input_dtype float32 \
+        --batch_size 8 \
+        --data_order NCHW \
+        --resize_method letterbox \
+        --input_scale 0.0 1.0
 
 Options
 ^^^^^^^
@@ -62,13 +76,13 @@ Options
 * ``--dla_core``: Specify the DLA core (default: engine built for GPU)
 * ``--calibration_cache, -cc``: Path to store calibration cache data (default: 'calibration.cache')
 * ``--calibration_dir, -cd``: Directory containing images for INT8 calibration
-* ``--input_shape, -is``: Input shape in HWC format (height, width, channels). Required when using calibration directory
-* ``--input_dtype, -id``: Input data type (float32, float16, int8). Required when using calibration directory
+* ``--input_shape, -is``: Input shape in HWC format (height, width, channels)
+* ``--input_dtype, -id``: Input data type (choices: float32, float16, int8)
 * ``--batch_size, -bs``: Batch size for calibration (default: 8)
-* ``--data_order, -do``: Data ordering expected by the network (NCHW, NHWC). Default is NCHW
+* ``--data_order, -do``: Data ordering expected by the network (choices: NCHW, NHWC, default: NCHW)
 * ``--max_images, -mi``: Maximum number of images to use for calibration
-* ``--resize_method, -rm``: Method to resize images (letterbox, linear). Default is letterbox
-* ``--input_scale, -is``: Input value range (default: [0.0, 1.0])
+* ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear, default: letterbox)
+* ``--input_scale, -sc``: Input value range (default: [0.0, 1.0])
 * ``--gpu_fallback``: Allow GPU fallback for unsupported layers when building for DLA
 * ``--direct_io``: Use direct IO for the engine
 * ``--prefer_precision_constraints``: Prefer precision constraints
@@ -76,7 +90,7 @@ Options
 * ``--ignore_timing_mismatch``: Allow different CUDA device timing caches to be used
 * ``--fp16``: Quantize the engine to FP16 precision
 * ``--int8``: Quantize the engine to INT8 precision
-* ``--verbose``: Enable verbose output
+* ``--verbose``: Verbose output from can_run_on_dla
 
 .. note::
    The Build API is unstable and experimental with INT8 quantization.
@@ -92,9 +106,19 @@ Can Run on DLA
 
 Evaluate if a model can run on a DLA (Deep Learning Accelerator).
 
-.. code-block:: bash
+.. code-block:: console
 
-    trtutils can_run_on_dla [options]
+    # Basic compatibility check
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16
+
+    # Detailed layer information
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers
+
+    # Detailed chunk information
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-chunks
+
+    # Full detailed output
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers --verbose-chunks
 
 Options
 ^^^^^^^
@@ -126,9 +150,9 @@ TRTExec
 
 Run trtexec with the provided options.
 
-.. code-block:: bash
+.. code-block:: console
 
-    trtutils trtexec [options]
+    python3 -m trtutils trtexec [options]
 
 For detailed information about trtexec options, please refer to the NVIDIA TensorRT documentation.
 
@@ -137,22 +161,34 @@ YOLO
 
 Run YOLO inference with TensorRT.
 
-.. code-block:: bash
+.. code-block:: console
 
-    trtutils yolo [options]
+    # Run inference on a single image
+    python3 -m trtutils yolo --engine model.engine --input image.jpg --conf_thres 0.25 --preprocessor cuda
+
+    # Run inference on a video with custom settings
+    python3 -m trtutils yolo \
+        --engine model.engine \
+        --input video.mp4 \
+        --conf_thres 0.3 \
+        --input_range 0.0 255.0 \
+        --preprocessor cpu \
+        --resize_method letterbox \
+        --warmup \
+        --warmup_iterations 20
 
 Options
 ^^^^^^^
 
 * ``--engine, -e``: Path to the TensorRT engine file (required)
-* ``--input, -i``: Path to input image or directory of images (required)
-* ``--output, -o``: Path to output directory for detection results (default: 'output')
-* ``--conf_threshold, -c``: Confidence threshold for detections (default: 0.25)
-* ``--iou_threshold, -iou``: IoU threshold for NMS (default: 0.45)
-* ``--batch_size, -bs``: Batch size for inference (default: 1)
-* ``--save_labels``: Save detection results as YOLO format labels
-* ``--save_images``: Save annotated images with detections
-* ``--verbose``: Enable verbose output
+* ``--input, -i``: Path to the input image or video file (required)
+* ``--conf_thres, -c``: Confidence threshold for detections (default: 0.1)
+* ``--input_range, -r``: Input value range (default: [0.0, 1.0])
+* ``--preprocessor, -p``: Preprocessor to use (choices: cpu, cuda, default: cuda)
+* ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear, default: letterbox)
+* ``--warmup, -w``: Perform warmup iterations
+* ``--warmup_iterations, -wi``: Number of warmup iterations (default: 10)
+* ``--verbose, -v``: Output additional debugging information
 
 Examples
 --------
@@ -160,20 +196,20 @@ Examples
 Benchmarking an Engine
 ~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: bash
+.. code-block:: console
 
-    trtutils benchmark --engine model.engine --iterations 2000 --warmup_iterations 200
+    python3 -m trtutils benchmark --engine model.engine --iterations 2000 --warmup_iterations 200
 
 Building an Engine from ONNX
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: bash
+.. code-block:: console
 
     # Basic build with FP16 precision
-    trtutils build --onnx model.onnx --output model.engine --fp16 --workspace 8.0
+    python3 -m trtutils build --onnx model.onnx --output model.engine --fp16 --workspace 8.0
 
     # Build with INT8 quantization using calibration
-    trtutils build \
+    python3 -m trtutils build \
         --onnx model.onnx \
         --output model.engine \
         --int8 \
@@ -188,37 +224,38 @@ Building an Engine from ONNX
 Checking DLA Compatibility
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: bash
+.. code-block:: console
 
     # Basic compatibility check
-    trtutils can_run_on_dla --onnx model.onnx --fp16
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16
 
     # Detailed layer information
-    trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers
 
     # Detailed chunk information
-    trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-chunks
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-chunks
 
     # Full detailed output
-    trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers --verbose-chunks
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers --verbose-chunks
 
 Running YOLO Inference
 ~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: bash
+.. code-block:: console
 
     # Run inference on a single image
-    trtutils yolo --engine model.engine --input image.jpg --output results
+    python3 -m trtutils yolo --engine model.engine --input image.jpg --conf_thres 0.25 --preprocessor cuda
 
-    # Run inference on a directory of images with custom thresholds
-    trtutils yolo \
+    # Run inference on a video with custom settings
+    python3 -m trtutils yolo \
         --engine model.engine \
-        --input images/ \
-        --output results \
-        --conf_threshold 0.3 \
-        --iou_threshold 0.5 \
-        --save_labels \
-        --save_images
+        --input video.mp4 \
+        --conf_thres 0.3 \
+        --input_range 0.0 255.0 \
+        --preprocessor cpu \
+        --resize_method letterbox \
+        --warmup \
+        --warmup_iterations 20
 
 Notes
 -----
