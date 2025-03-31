@@ -1,3 +1,9 @@
+# Custom/common files
+*.engine
+*.trt
+*.plan
+*.cache
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

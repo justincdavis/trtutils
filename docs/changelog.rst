@@ -1,4 +1,6 @@
+.. _changelog:
+
 Changelog
 =========
 
-.. include:: ../CHANGELOG.md
+.. include:: ../CHANGELOG.rst

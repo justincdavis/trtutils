@@ -1,19 +1,22 @@
-.. _usage_basic:
+.. _tutorials_basic:
 
-Basic
------
+Basic Usage Tutorial
+====================
+
+This tutorial covers the basic usage of trtutils, focusing on the core
+:py:class:`~trtutils.TRTEngine` and :py:class:`~trtutils.TRTModel` classes.
 
 The core functionality of trtutils is implemented inside of the 
-:ref:`TRTEngine <trtutils.TRTEngine>` class. 
+:py:class:`~trtutils.TRTEngine` class. 
 
-Additional functionality is provided by the :ref:`TRTModel <trtutils.TRTModel>` class.
-This class provides a small wrapper around :ref:`TRTEngine <trtutils.TRTEngine>` allowing
+Additional functionality is provided by the :py:class:`~trtutils.TRTModel` class.
+This class provides a small wrapper around :py:class:`~trtutils.TRTEngine` allowing
 preprocess and postprocess functions to be defined explicity.
 
 TRTEngine
 ^^^^^^^^^
 
-An example of using :ref:`TRTEngine <trtutils.TRTEngine>` is given below:
+An example of using :py:class:`~trtutils.TRTEngine` is given below:
 
 .. code-block:: python
 
@@ -26,14 +29,14 @@ An example of using :ref:`TRTEngine <trtutils.TRTEngine>` is given below:
 
     # or with real data
     data = read_data()
-    outptus = engine([data])
+    outputs = engine([data])
 
 This class implements a barebones interface over a compiled TensorRT engine.
 All data inputted is required to be formatted as a list of NumPy arrays, and are
 expected to be of the correct shape and size (or risk a segmentation fault).
 
 The format and datatype of inputs can be acquired from TRTEngine directly to ensure
-that inputs are of the correct form. But, do note that inputs are not checked againist
+that inputs are of the correct form. But, do note that inputs are not checked against
 these properties automatically since that could incur large overhead among other issues.
 
 .. code-block:: python
@@ -43,7 +46,7 @@ these properties automatically since that could incur large overhead among other
     print(engine.input_dtypes)  # get the datatypes of inputs
     print(engine.input_spec)  # get a list of shapes and dtypes
     
-    # repeat for outpus
+    # repeat for outputs
     print(engine.output_shapes)
     print(engine.output_dtypes)
     print(engine.output_spec)
@@ -65,7 +68,7 @@ for itself to perform inference on. This can be accessed via:
 TRTModel
 ^^^^^^^^
 
-An example for using :ref:`TRTModel <trtutils.TRTModel>` is given below:
+An example for using :py:class:`~trtutils.TRTModel` is given below:
 
 .. code-block:: python
 

@@ -11,6 +11,7 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import TYPE_CHECKING
 
+from ._flags import FLAGS
 from .core import (
     TRTEngineInterface,
     memcpy_device_to_host_async,
@@ -21,6 +22,7 @@ from .core import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
+    from typing import ClassVar
 
     import numpy as np
     from typing_extensions import Self
@@ -43,12 +45,16 @@ class TRTEngine(TRTEngineInterface):
     single TRTEngine should not be used in multiple threads or processes.
     """
 
+    _backends: ClassVar[set[str]] = {"auto", "v3", "v2"}
+
     def __init__(
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 5,
+        backend: str = "auto",
         *,
         warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -61,13 +67,44 @@ class TRTEngine(TRTEngineInterface):
         warmup : bool, optional
             Whether to do warmup iterations, by default None
             If None, warmup will be set to False
+        backend : str, optional
+            What version of backend execution to use.
+            By default 'auto', which will use v3 if available otherwise v2.
+            Options are: ['auto', 'async_v3', 'async_v2]
         warmup_iterations : int, optional
             The number of warmup iterations to do, by default 5
+        pagelocked_mem : bool, optional
+            Whether or not to use pagelocked memory for host allocations.
+            By default None, which means pagelocked memory will be used.
         verbose : bool, optional
             Whether or not to give additional information over stdout.
 
+        Raises
+        ------
+        ValueError
+            If the backend is not valid.
+
         """
-        super().__init__(engine_path)
+        super().__init__(engine_path, pagelocked_mem=pagelocked_mem)
+
+        # solve for execution method
+        # only care about v2 or v3 async
+        if backend not in TRTEngine._backends:
+            err_msg = f"Invalid backend {backend}, options are: {TRTEngine._backends}"
+            raise ValueError(err_msg)
+
+        self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (
+            backend == "async_v3" or backend == "auto"
+        )
+        # if using v3
+        # 1.) need to do set_input_shape for all input bindings
+        # 2.) need to do set_tensor_address for all input/output bindings
+        if self._async_v3:
+            for i_binding in self._inputs:
+                self._context.set_input_shape(i_binding.name, i_binding.shape)
+                self._context.set_tensor_address(i_binding.name, i_binding.allocation)
+            for o_binding in self._outputs:
+                self._context.set_tensor_address(o_binding.name, o_binding.allocation)
 
         # store verbose info
         self._verbose = verbose if verbose is not None else False
@@ -227,7 +264,10 @@ class TRTEngine(TRTEngineInterface):
                 self._stream,
             )
         # execute
-        self._context.execute_async_v2(self._allocations, self._stream)
+        if self._async_v3:
+            self._context.execute_async_v3(self._stream)
+        else:
+            self._context.execute_async_v2(self._allocations, self._stream)
         # Copy outputs
         for o_idx in range(len(self._outputs)):
             # memcpy_device_to_host(
@@ -289,10 +329,16 @@ class TRTEngine(TRTEngineInterface):
                 "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
             )
         # execute
-        self._context.execute_async_v2(
-            pointers + self._output_allocations,
-            self._stream,
-        )
+        if self._async_v3:
+            # need to set the input pointers to match the bindings, assume in same order
+            for i in range(len(pointers)):
+                self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+            self._context.execute_async_v3(self._stream)
+        else:
+            self._context.execute_async_v2(
+                pointers + self._output_allocations,
+                self._stream,
+            )
         # Copy outputs
         for o_idx in range(len(self._outputs)):
             # memcpy_device_to_host(
@@ -335,16 +381,16 @@ class QueuedTRTEngine:
 
         """
         self._stopped = False  # flag for if user stopped thread
-        self._engine: TRTEngine | None = None  # storage for engine data
+        self._engine: TRTEngine = TRTEngine(
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            warmup=warmup,
+        )
         self._input_queue: Queue[list[np.ndarray]] = Queue()
         self._output_queue: Queue[list[np.ndarray]] = Queue()
         self._thread = Thread(
             target=self._run,
-            kwargs={
-                "engine_path": engine_path,
-                "warmup_iterations": warmup_iterations,
-                "warmup": warmup,
-            },
+            args=(),
             daemon=True,
         )
         self._thread.start()
@@ -362,15 +408,7 @@ class QueuedTRTEngine:
         list[tuple[list[int], np.dtype]]
             A list with two items per element, the shape and (numpy) datatype of each input tensor.
 
-        Raises
-        ------
-        RuntimeError
-            The engine has not been created yet.
-
         """
-        if self._engine is None:
-            err_msg = "Engine has not been created yet."
-            raise RuntimeError(err_msg)
         return self._engine.input_spec
 
     @property
@@ -383,15 +421,7 @@ class QueuedTRTEngine:
         list[tuple[int, ...]]
             A list with the shape of each input tensor.
 
-        Raises
-        ------
-        RuntimeError
-            The engine has not been created yet.
-
         """
-        if self._engine is None:
-            err_msg = "Engine has not been created yet."
-            raise RuntimeError(err_msg)
         return self._engine.input_shapes
 
     @property
@@ -404,15 +434,7 @@ class QueuedTRTEngine:
         list[np.dtype]
             A list with the datatype of each input tensor.
 
-        Raises
-        ------
-        RuntimeError
-            The engine has not been created yet.
-
         """
-        if self._engine is None:
-            err_msg = "Engine has not been created yet."
-            raise RuntimeError(err_msg)
         return self._engine.input_dtypes
 
     @property
@@ -425,15 +447,7 @@ class QueuedTRTEngine:
         list[tuple[list[int], np.dtype]]
             A list with two items per element, the shape and (numpy) datatype of each output tensor.
 
-        Raises
-        ------
-        RuntimeError
-            The engine has not been created yet.
-
         """
-        if self._engine is None:
-            err_msg = "Engine has not been created yet."
-            raise RuntimeError(err_msg)
         return self._engine.output_spec
 
     @property
@@ -446,15 +460,7 @@ class QueuedTRTEngine:
         list[tuple[int, ...]]
             A list with the shape of each output tensor.
 
-        Raises
-        ------
-        RuntimeError
-            The engine has not been created yet.
-
         """
-        if self._engine is None:
-            err_msg = "Engine has not been created yet."
-            raise RuntimeError(err_msg)
         return self._engine.output_shapes
 
     @property
@@ -467,16 +473,26 @@ class QueuedTRTEngine:
         list[np.dtype]
             A list with the datatype of each output tensor.
 
-        Raises
-        ------
-        RuntimeError
-            The engine has not been created yet.
+        """
+        return self._engine.output_dtypes
+
+    def get_random_input(self: Self, *, new: bool | None = None) -> list[np.ndarray]:
+        """
+        Get a random input to the underlying TRTEngine.
+
+        Parameters
+        ----------
+        new : bool, optional
+            Whether or not to get a new input or the cached already generated one.
+            By default, None/False
+
+        Returns
+        -------
+        list[np.ndarray]
+            The random input.
 
         """
-        if self._engine is None:
-            err_msg = "Engine has not been created yet."
-            raise RuntimeError(err_msg)
-        return self._engine.output_dtypes
+        return self._engine.get_random_input(new=new)
 
     def stop(
         self: Self,
@@ -503,18 +519,7 @@ class QueuedTRTEngine:
     def mock_submit(
         self: Self,
     ) -> None:
-        """
-        Send a random input to the engine.
-
-        Raises
-        ------
-        RuntimeError
-            If the engine has not been created
-
-        """
-        if self._engine is None:
-            err_msg = "Engine has not been created."
-            raise RuntimeError(err_msg)
+        """Send a random input to the engine."""
         data = self._engine.get_random_input()
         self._input_queue.put(data)
 
@@ -542,17 +547,7 @@ class QueuedTRTEngine:
 
     def _run(
         self: Self,
-        engine_path: Path,
-        warmup_iterations: int,
-        *,
-        warmup: bool,
     ) -> None:
-        self._engine = TRTEngine(
-            engine_path=engine_path,
-            warmup_iterations=warmup_iterations,
-            warmup=warmup,
-        )
-
         while not self._stopped:
             try:
                 inputs = self._input_queue.get(timeout=0.1)
@@ -596,6 +591,28 @@ class ParallelTRTEngines:
             )
             for epath in engine_paths
         ]
+
+    def get_random_input(
+        self: Self,
+        *,
+        new: bool | None = None,
+    ) -> list[list[np.ndarray]]:
+        """
+        Get a random input to the underlying TRTEngines.
+
+        Parameters
+        ----------
+        new : bool, optional
+            Whether or not to get a new input or the cached already generated one.
+            By default, None/False
+
+        Returns
+        -------
+        list[list[np.ndarray]]
+            The random inputs.
+
+        """
+        return [e.get_random_input(new=new) for e in self._engines]
 
     def stop(self: Self) -> None:
         """Stop the underlying engine threads."""

@@ -61,6 +61,8 @@ Functions
     Launch a CUDA kernel.
 :func:`create_kernel_args`
     Create the argument array for a kernel call.
+:func:`init_cuda`
+    Initialize CUDA.
 
 """
 
@@ -68,7 +70,7 @@ from __future__ import annotations
 
 from ._bindings import Binding, allocate_bindings, create_binding
 from ._context import create_context, destroy_context
-from ._cuda import cuda_call
+from ._cuda import cuda_call, init_cuda
 from ._engine import create_engine
 from ._interface import TRTEngineInterface
 from ._kernels import Kernel, create_kernel_args, launch_kernel
@@ -100,6 +102,7 @@ __all__ = [
     "cuda_malloc",
     "destroy_context",
     "destroy_stream",
+    "init_cuda",
     "launch_kernel",
     "load_kernel",
     "memcpy_device_to_host",

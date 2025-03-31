@@ -10,9 +10,11 @@ from pathlib import Path
 from statistics import mean, median
 from typing import TYPE_CHECKING
 
-from ._engine import TRTEngine
+from ._engine import ParallelTRTEngines, TRTEngine
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from typing_extensions import Self
 
 _log = logging.getLogger(__name__)
@@ -109,3 +111,86 @@ def benchmark_engine(
     return BenchmarkResult(
         latency=metrics["latency"],
     )
+
+
+def benchmark_engines(
+    engine_paths: Sequence[Path | str],
+    iterations: int = 1000,
+    warmup_iterations: int = 50,
+    *,
+    warmup: bool | None = None,
+    parallel: bool | None = None,
+) -> list[BenchmarkResult]:
+    """
+    Benchmark a TensorRT engine.
+
+    Parameters
+    ----------
+    engine_paths : Sequence[Path | str]
+        The engines to benchmark as paths to the engine files.
+    iterations : int, optional
+        The number of iterations to run the benchmark for, by default 1000.
+    warmup_iterations : int, optional
+        The number of warmup iterations to run before the benchmark, by default 50.
+    warmup : bool, optional
+        Whether to do warmup iterations, by default None
+        If None, warmup will be set to True.
+    parallel : bool, optional
+        Whether or not to process the engines in parallel.
+        Useful for assessing concurrent execution performance.
+        Will execute the engines in lockstep.
+        If None, will benchmark each engine individually.
+
+    Returns
+    -------
+    list[BenchmarkResult]
+        A list of dataclasses containing the results of the benchmark.
+        If parallel was True, will only contain one item.
+
+    """
+    if not parallel:
+        return [
+            benchmark_engine(engine, iterations, warmup_iterations, warmup=warmup)
+            for engine in engine_paths
+        ]
+
+    # otherwise we need a parallel setup
+    engines_paths = [Path(ep) for ep in engine_paths]
+    engines = ParallelTRTEngines(
+        engines_paths,
+        warmup_iterations=warmup_iterations,
+        warmup=warmup,
+    )
+
+    # list of metrics
+    metric_names = ["latency"]
+
+    # allocate spot for raw data
+    raw: dict[str, list[float]] = {metric: [] for metric in metric_names}
+
+    # pre-generate the false data
+    false_data = engines.get_random_input()
+
+    for _ in range(iterations):
+        t0 = time.time()
+        engines.submit(false_data)
+        engines.retrieve()
+        t1 = time.time()
+
+        raw["latency"].append(t1 - t0)
+
+    # calculate the metrics
+    metrics: dict[str, Metric] = {}
+    for metric_name in metric_names:
+        data = raw[metric_name]
+        metric = Metric(data)
+        metrics[metric_name] = metric
+        _log.debug(
+            f"{metric_name}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
+        )
+
+    return [
+        BenchmarkResult(
+            latency=metrics["latency"],
+        ),
+    ]

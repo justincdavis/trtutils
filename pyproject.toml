@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trtutils"
-version = "0.4.0"
+version = "0.4.1"
 authors = [
   {name="Justin Davis", email="davisjustin302@gmail.com"},
 ]
@@ -48,6 +48,9 @@ dependencies = [
     "tensorrt>=8.0.0",
     "cuda-python>=8.0.0",
     "numpy>=1.19.0,<2.2.0",
+    "cv2ext>=0.1.0",
+    "opencv-python>=4.8.0",
+    "tqdm>=4.67.1",
     "typing_extensions>=4.0.0",
 ]
 
@@ -57,22 +60,15 @@ dependencies = [
 
 [project.optional-dependencies]
 all = [
-    "trtutils[impls]",
     "trtutils[jetson]",
-]
-impls = [
-    "trtutils[yolo]",
-]
-yolo = [
-    "cv2ext>=0.1.0",
-    "opencv-contrib-python>=4.6.0",
 ]
 jetson = [
     "jetsontools>=0.0.4",
 ]
 ci = [
-    "ruff>=0.8.0",
-    "mypy>=1.13.0",
+    "ruff>=0.11.2",
+    "mypy>=1.15.0",
+    "types-tqdm>=4.67",
 ]
 test = [
     "pytest>=6.2.0",
@@ -84,7 +80,6 @@ docs = [
     "myst_parser>=4.0.0",
 ]
 dev = [
-    "trtutils[impls]",
     "trtutils[ci]",
     "trtutils[test]",
     "trtutils[docs]",
@@ -96,7 +91,7 @@ dev = [
 ]
 
 [tool.bumpver]
-current_version = "0.4.0"
+current_version = "0.4.1"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message  = "Bump version {old_version} -> {new_version}"
 commit          = true
@@ -126,7 +121,7 @@ builtins = ["_"]
 
 [tool.ruff.lint]
 select = ["ALL", "PLR2004"]
-ignore = ["PLR", "C901", "E501", "D203", "D212", "ERA"]
+ignore = ["PLR", "C901", "E501", "D203", "D212", "ERA", "COM812"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

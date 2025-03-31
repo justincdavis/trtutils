@@ -1,56 +1,115 @@
 .. _installation:
 
 Installation
-------------
+============
 
-There are multiple methods for installing trtutils. The recommended method is
-to install trtutils into a virtual environment. This will ensure that the
-trtutils dependencies are isolated from other Python projects you may be
-working on.
+This guide will help you install trtutils and its dependencies. The recommended method is
+to install trtutils into a virtual environment to ensure dependency isolation.
 
-Methods
-^^^^^^^
-#. Pip:
+System Requirements
+-------------------
 
-   .. code-block:: console
+- Python 3.8 or later
+- CUDA toolkit
+- TensorRT
+- NVIDIA GPU or Jetson device
 
-      $ pip3 install trtutils
+Basic Installation
+------------------
 
-#. From source:
+The simplest way to install trtutils is using pip:
 
-   .. code-block:: console
+.. code-block:: console
 
-      $ git clone https://github.com/justincdavis/trtutils.git
-      $ cd trtutils
-      $ pip3 install .
+    $ pip install trtutils
+
+For development or to get the latest features, install from source:
+
+.. code-block:: console
+
+    $ git clone https://github.com/justincdavis/trtutils.git
+    $ cd trtutils
+    $ pip install -e .
 
 Optional Dependencies
-^^^^^^^^^^^^^^^^^^^^^
+---------------------
 
-#. yolo:
+trtutils provides several optional dependency groups that can be installed
+using pip's extras feature:
 
-   trtutils supports inference with modern versions of the YOLO object detection model.
-   Performing inference requires some additional dependencies, as such you can install
-   trtutils with support for YOLO with this:
+YOLO Support
+~~~~~~~~~~~~
 
-   .. code-block:: console
+Install support for YOLO object detection models:
 
-      $ pip3 install trtutils[yolo]
+.. code-block:: console
 
-#. jetson:
+    $ pip install "trtutils[yolo]"
 
-   This tag installs some additional dependencies which allow measuring energy and powerdraw
-   when benchmarking engines on an NVIDIA Jetson device.
+This includes dependencies for:
+- YOLO-specific preprocessing
+- Object detection utilities
 
-   .. code-block:: console
+Jetson Support
+~~~~~~~~~~~~~~
 
-      $ pip3 install trtutils[jetson]
+For NVIDIA Jetson devices, install additional utilities:
 
-#. dev:
+.. code-block:: console
 
-   .. code-block:: console
+    $ pip install "trtutils[jetson]"
 
-      $ pip3 install trtutils[dev]
-   
-   This will install dependencies allowing a full development environment.
-   All CI and tools used for development will be installed and can be run.
+This enables:
+- Power consumption monitoring
+- Energy usage tracking
+
+Development Tools
+~~~~~~~~~~~~~~~~~
+
+For development or contributing to trtutils:
+
+.. code-block:: console
+
+    $ pip install "trtutils[dev]"
+
+This installs:
+- Testing frameworks
+- Linting tools
+- Documentation generators
+- Development utilities
+
+Troubleshooting
+---------------
+
+Common Installation Issues
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. **CUDA/TensorRT Not Found**
+   - Ensure CUDA and TensorRT are properly installed
+   - Check environment variables (LD_LIBRARY_PATH, etc.)
+   - Verify CUDA version compatibility
+
+2. **Dependency Conflicts**
+   - Use a virtual environment
+   - Check package versions
+   - Update pip: ``pip install --upgrade pip``
+
+3. **Jetson-Specific Issues**
+   - Install Jetson-specific TensorRT version
+   - Use compatible CUDA version
+   - Check Jetpack installation
+
+Getting Started
+---------------
+
+After installation, verify your setup:
+
+.. code-block:: python
+
+    from trtutils import TRTEngine
+
+    # Create a test engine
+    engine = TRTEngine("test.engine")
+    print("Installation successful!")
+
+For more detailed examples, see the :ref:`Examples <examples>` section.

@@ -15,6 +15,8 @@ with contextlib.suppress(Exception):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
+from trtutils._flags import FLAGS
+
 from ._cuda import cuda_call
 from ._memory import allocate_pinned_memory, cuda_malloc
 
@@ -28,6 +30,8 @@ _log = logging.getLogger(__name__)
 
 @dataclass
 class Binding:
+    """Small wrapper for a host/device allocation pair."""
+
     index: int
     name: str
     dtype: np.dtype
@@ -49,6 +53,8 @@ class Binding:
 def allocate_bindings(
     engine: trt.IEngine,
     context: trt.IExecutionContext,
+    *,
+    pagelocked_mem: bool | None = None,
 ) -> tuple[list[Binding], list[Binding], list[int], int]:
     """
     Allocate memory for the input and output tensors of a TensorRT engine.
@@ -59,6 +65,9 @@ def allocate_bindings(
         The TensorRT engine to allocate memory for.
     context : trt.IExecutionContext
         The execution context to use.
+    pagelocked_mem : bool, optional
+        Whether or not to use pagelocked memory for host allocations.
+        By default None, which means pagelocked memory will be used.
 
     Returns
     -------
@@ -77,6 +86,9 @@ def allocate_bindings(
         If no memory allocations are found
 
     """
+    if pagelocked_mem is None:
+        pagelocked_mem = True
+
     # lists for allocations
     inputs: list[Binding] = []
     outputs: list[Binding] = []
@@ -89,15 +101,14 @@ def allocate_bindings(
     # version information to compare againist
     # >= 8.5 must use tensor API, otherwise binding
     # simplify by just checking hasattr
-    new_trt_api = hasattr(engine, "num_io_tensors")
     num_tensors = (
-        range(engine.num_io_tensors) if new_trt_api else range(engine.num_bindings)
+        range(engine.num_io_tensors) if FLAGS.TRT_10 else range(engine.num_bindings)
     )
 
     # based on the version of tensorrt, num_io_tensors is not available in IEngine
     # first case: version 9 or higher OR version 8.5 and higher
     for i in num_tensors:
-        if new_trt_api:
+        if FLAGS.TRT_10:
             name = engine.get_tensor_name(i)
             is_input = False
             if engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
@@ -147,9 +158,11 @@ def allocate_bindings(
             allocation = cuda_malloc(size)
             # allocate the host side memory
             if is_input:
-                host_allocation = np.zeros((1, 1), dtype)
-            else:
+                host_allocation = np.zeros((1, 1), dtype=dtype)
+            elif pagelocked_mem:
                 host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
+            else:
+                host_allocation = np.zeros(size, dtype=dtype)
             # create the binding
             binding = Binding(
                 index=i,
