@@ -65,13 +65,17 @@ Objects
 
 from __future__ import annotations
 
-# setup the logger before importing anything else
 import logging
-import os
-import sys
 
 # import the flags object
 from ._flags import FLAGS
+from ._log import set_log_level
+
+_logger = logging.getLogger(__name__)
+# output available execution api debug
+for attr in [a for a in dir(FLAGS) if not a.startswith("_")]:
+    _flag_str = f"FLAG {attr}: {getattr(FLAGS, attr)}"
+    _logger.debug(_flag_str)
 
 __author__ = "Justin Davis"
 __version__ = "0.4.1"
@@ -81,7 +85,6 @@ import contextlib
 from . import builder, core, impls, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
-from ._log import set_log_level
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
 from .builder import build_engine
 from .trtexec import find_trtexec, run_trtexec
@@ -97,9 +100,9 @@ __all__ = [
     "TRTEngine",
     "TRTModel",
     "benchmark_engine",
+    "benchmark_engines",
     "build_engine",
     "builder",
-    "benchmark_engines",
     "core",
     "find_trtexec",
     "impls",
@@ -113,11 +116,6 @@ with contextlib.suppress(ImportError):
     from . import jetson
 
     __all__ += ["jetson"]
-
-# output available execution api debug
-for attr in [a for a in dir(FLAGS) if not a.startswith("_")]:
-    _log.debug(f"FLAG {attr}: {getattr(FLAGS, attr)}")
-
 
 # # start CUDA
 # with contextlib.suppress(ImportError):
