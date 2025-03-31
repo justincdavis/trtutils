@@ -368,7 +368,7 @@ def _main() -> None:
     )
     build_parser.add_argument(
         "--input_scale",
-        "-is",
+        "-sc",
         type=float,
         nargs=2,
         default=[0.0, 1.0],
@@ -449,70 +449,72 @@ def _main() -> None:
     )
     can_run_on_dla_parser.set_defaults(func=_can_run_on_dla)
 
-    # run_yolo parser
-    run_yolo_parser = subparsers.add_parser(
+    # yolo parser
+    yolo_parser = subparsers.add_parser(
         "yolo",
-        help="Run YOLO on an image or video.",
+        help="Run YOLO object detection on an image or video.",
     )
-    run_yolo_parser.add_argument(
+    yolo_parser.add_argument(
         "--engine",
         "-e",
         required=True,
-        help="Path to the YOLO engine file.",
+        help="Path to the TensorRT engine file.",
     )
-    run_yolo_parser.add_argument(
+    yolo_parser.add_argument(
         "--input",
         "-i",
         required=True,
         help="Path to the input image or video file.",
     )
-    run_yolo_parser.add_argument(
-        "--warmup_iterations",
-        "-wi",
-        type=int,
-        default=10,
-        help="Number of iterations to warmup the model before measuring.",
+    yolo_parser.add_argument(
+        "--conf_thres",
+        "-c",
+        type=float,
+        default=0.1,
+        help="Confidence threshold for detections. Default is 0.1.",
     )
-    run_yolo_parser.add_argument(
+    yolo_parser.add_argument(
         "--input_range",
-        "-ir",
+        "-r",
         type=float,
         nargs=2,
         default=[0.0, 1.0],
         help="Input value range. Default is [0.0, 1.0].",
     )
-    run_yolo_parser.add_argument(
+    yolo_parser.add_argument(
         "--preprocessor",
         "-p",
         choices=["cpu", "cuda"],
         default="cuda",
-        help="Hardware target for preprocessing. Default is cuda.",
+        help="Preprocessor to use. Default is cuda.",
     )
-    run_yolo_parser.add_argument(
+    yolo_parser.add_argument(
         "--resize_method",
         "-rm",
         choices=["letterbox", "linear"],
         default="letterbox",
-        help="Method to resize the input image. Default is letterbox.",
+        help="Method to resize images. Default is letterbox.",
     )
-    run_yolo_parser.add_argument(
-        "--conf_thres",
-        "-ct",
-        type=float,
-        default=0.1,
-        help="Confidence threshold for detection. Default is 0.1.",
-    )
-    run_yolo_parser.add_argument(
+    yolo_parser.add_argument(
         "--warmup",
+        "-w",
         action="store_true",
-        help="Warmup the model before running the detection.",
+        help="Perform warmup iterations.",
     )
-    run_yolo_parser.add_argument(
+    yolo_parser.add_argument(
+        "--warmup_iterations",
+        "-wi",
+        type=int,
+        default=10,
+        help="Number of warmup iterations. Default is 10.",
+    )
+    yolo_parser.add_argument(
         "--verbose",
+        "-v",
         action="store_true",
-        help="Verbose output from YOLO.",
+        help="Output additional debugging information.",
     )
-    run_yolo_parser.set_defaults(func=_run_yolo)
+    yolo_parser.set_defaults(func=_run_yolo)
 
     # parse args and call the function
     args, unknown = parser.parse_known_args()
