@@ -68,6 +68,7 @@ jetson = [
 ci = [
     "ruff>=0.11.2",
     "mypy>=1.15.0",
+    "types-tqdm>=4.67",
 ]
 test = [
     "pytest>=6.2.0",
