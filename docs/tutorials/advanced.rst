@@ -1,13 +1,16 @@
-.. _usage_advanced:
+.. _tutorials_advanced:
 
-Advanced
---------
+Advanced Usage Tutorial
+=======================
+
+This tutorial covers advanced usage of trtutils, including lower-level interfaces
+and CUDA operations.
 
 trtutils provides some lower-level interfaces which are used inside of 
-:ref:`TRTEngine <trtutils.TRTEngine>`. These involve creating TensorRT engines 
+:py:class:`~trtutils.TRTEngine`. These involve creating TensorRT engines 
 allocating memory with CUDA.
 
-These lower-level utilities can be found inside of the :ref:`core <trtutils.core>` 
+These lower-level utilities can be found inside of the :py:mod:`~trtutils.core` 
 submodule. All utilties included are:
 
 1. CUDA context helpers
@@ -26,12 +29,12 @@ submodule. All utilties included are:
 Bindings
 ^^^^^^^^
 
-:ref:`Bindings <trtutils.core.Binding>` manage CUDA-allocated memory. 
-You can create bindings directly if you allocate memory manually with :ref:`cuda_malloc <trtutils.core.cuda_malloc>` 
-or :ref:`allocate_pagelocked <trtutils.core.allocate_pagelocked>`. CudaMalloc allocates memory 
+:py:class:`~trtutils.core.Binding` manages CUDA-allocated memory. 
+You can create bindings directly if you allocate memory manually with :py:func:`~trtutils.core.cuda_malloc` 
+or :py:func:`~trtutils.core.allocate_pagelocked`. CudaMalloc allocates memory 
 directly on the GPU and allocate_pagelocked allocates page-locked memory to share between 
 CUDA and the CPU. Pagelocked memory can enable large speedup on some systems. 
-You can also create a binding with :ref:`create_binding <trtutils.core.create_binding>` which 
+You can also create a binding with :py:func:`~trtutils.core.create_binding` which 
 automatically allocates memory based on a given Numpy array.
 
 Example of binding allocation with create_binding:
@@ -53,7 +56,7 @@ Example of binding allocation with create_binding:
 TensorRT Engine deserialization
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-You can deserialize a TensorRT engine using the :ref:`create_engine <trtutils.core.create_engine>` 
+You can deserialize a TensorRT engine using the :py:func:`~trtutils.core.create_engine` 
 function. This function also allocates an execution context, a tensorrt logger, and a CUDA
 stream which can be used to execute the engine.
 
