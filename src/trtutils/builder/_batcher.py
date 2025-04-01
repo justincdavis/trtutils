@@ -59,6 +59,8 @@ class ImageBatcher(AbstractBatcher):
         max_images: int | None = None,
         resize_method: str = "letterbox",
         input_scale: tuple[float, float] = (0.0, 1.0),
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Create batches of images for TensorRT calibration.
@@ -87,6 +89,8 @@ class ImageBatcher(AbstractBatcher):
             The range with which the image should have values in
             Examples are: (0.0, 255.0), (0.0, 1.0), (-1.0, 1.0)
             The default is (0.0, 1.0)
+        verbose : bool, optional
+            Whether to print verbose output, by default None
 
         Raises
         ------
@@ -102,6 +106,8 @@ class ImageBatcher(AbstractBatcher):
             If no valid batches could be formed
 
         """
+        self._verbose = verbose
+
         # verify resize method and input scale
         valid_resize_methods = ["letterbox", "linear"]
         if resize_method not in valid_resize_methods:
@@ -263,6 +269,10 @@ class ImageBatcher(AbstractBatcher):
             while not self._event.is_set():
                 try:
                     self._queue.put(data, timeout=0.1)
+
+                    if self._verbose:
+                        _log.debug(f"ImageBatcher put batch: {idx} / {len(self._batches)}")
+
                     break
                 except Full:
                     continue
@@ -284,6 +294,10 @@ class ImageBatcher(AbstractBatcher):
             with contextlib.suppress(Empty):
                 batch = self._queue.get(timeout=0.1)
                 self._current_batch += 1
+
+                if self._verbose:
+                    _log.debug(f"ImageBatcher get batch: {self._current_batch} / {len(self._batches)}")
+
                 return batch
 
         return None

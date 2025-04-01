@@ -20,6 +20,8 @@ with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ._batcher import AbstractBatcher
 
 _log = logging.getLogger(__name__)
@@ -35,8 +37,8 @@ def build_engine(
     dla_core: int | None = None,
     calibration_cache: Path | str | None = None,
     data_batcher: AbstractBatcher | None = None,
-    layer_precision: list[trt.DataType] | None = None,
-    layer_device: list[trt.DeviceType] | None = None,
+    layer_precision: list[tuple[int, trt.DataType]] | None = None,
+    layer_device: list[tuple[int, trt.DeviceType]] | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -73,11 +75,11 @@ def build_engine(
     dla_core : int, optional
         The DLA core to build the engine for.
         By default, None or build the engine for GPU.
-    layer_precision : list[trt.DataType], optional
-        The precision to use for each layer.
+    layer_precision : list[tuple[int, trt.DataType]], optional
+        The precision to use for specific layers.
         By default, None.
-    layer_device : list[trt.DeviceType], optional
-        The device to use for each layer.
+    layer_device : list[tuple[int, trt.DeviceType]], optional
+        The device to use for specific layers.
         By default, None.
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
@@ -113,13 +115,29 @@ def build_engine(
 
     """
     output_path = Path(output).resolve()
+    if log_level is None:
+        log_level = trt.Logger.Severity.WARNING
+    logger = trt.Logger(log_level)
+
+    if verbose:
+        logger.min_severity = trt.Logger.Severity.VERBOSE
+
+    # initialize TensorRT plugins
+    trt.init_libnvinfer_plugins(logger, "")
 
     # read the onnx model
-    network, builder, config, _, trt_logger = read_onnx(
+    network, builder, config, _, _ = read_onnx(
         onnx,
         logger,
         log_level,
         workspace,
+    )
+
+    # helper function for checking if layer can run on DLA
+    check_dla: Callable[[trt.ILayer], bool] = (
+        config.can_run_on_DLA
+        if hasattr(config, "can_run_on_DLA")
+        else config.canRunOnDLA
     )
 
     if verbose and FLAGS.BUILD_PROGRESS:
@@ -154,11 +172,11 @@ def build_engine(
     if fp16 or int8:
         # want to enable fp16 for both int8 and fp16 since fp16 may be faster
         if not builder.platform_has_fast_fp16:
-            trt_logger.warning("Platform does not have native fast FP16.")
+            logger.warning("Platform does not have native fast FP16.")
         config.set_flag(trt.BuilderFlag.FP16)
     if int8:
         if not builder.platform_has_fast_int8:
-            trt_logger.warning("Platform does not have native fast INT8.")
+            logger.warning("Platform does not have native fast INT8.")
         config.set_flag(trt.BuilderFlag.INT8)
         if calibration_cache is None and data_batcher is None:
             err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
@@ -174,15 +192,26 @@ def build_engine(
     if gpu_fallback:
         config.set_flag(trt.BuilderFlag.GPU_FALLBACK)
 
-    # handle individual layer precision and device assignments
+    # handle individual layer precision
     if layer_precision is not None:
-        for idx in range(network.num_layers):
-            layer = network.get_layer(idx)
-            layer.precision = layer_precision[idx]
+        for layer_idx, precision in layer_precision:
+            layer = network.get_layer(layer_idx)
+            layer.precision = precision
+
+    # handle individual layer device
     if layer_device is not None:
-        for idx in range(network.num_layers):
-            layer = network.get_layer(idx)
-            layer.device_type = layer_device[idx]
+        for layer_idx, device in layer_device:
+            layer = network.get_layer(layer_idx)
+            # assess if can run on DLA
+            if device == trt.DeviceType.DLA and not check_dla(layer):
+                err_msg = f"Layer {layer.name} (type: {layer.type}) cannot run on DLA"
+                if gpu_fallback:
+                    err_msg += ", using GPU fallback"
+                    _log.warning(err_msg)
+                else:
+                    raise ValueError(err_msg)
+            else:
+                config.set_device_type(layer, device)
 
     # build the engine
     if FLAGS.BUILD_SERIALIZED:

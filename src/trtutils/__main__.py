@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import cv2
 import cv2ext
+import numpy as np
 
 import trtutils
 from trtutils.trtexec._cli import cli_trtexec
@@ -146,7 +147,7 @@ def _build(args: SimpleNamespace) -> None:
 
 def _can_run_on_dla(args: SimpleNamespace) -> None:
     full_dla, chunks = trtutils.builder.can_run_on_dla(
-        Path(args.onnx),
+        onnx=Path(args.onnx),
         int8=args.int8,
         fp16=args.fp16,
         verbose_layers=args.verbose_layers,
@@ -162,7 +163,34 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
         all_layers += chunk_size
     portion_compat = round((compat_layers / all_layers) * 100.0, 2)
     _log.info(
-        f"ONNX: {args.onnx}, Fully DLA Compatible: {full_dla}, Layers: {portion_compat} % Compatible"
+        f"ONNX: {args.onnx}, Fully DLA Compatible: {full_dla}, Layers: {compat_layers} / {all_layers} ({portion_compat} % Compatible)"
+    )
+
+
+def _build_dla(args: SimpleNamespace) -> None:
+    dtype = np.float32
+    if args.dtype == "float16":
+        dtype = np.float16
+    elif args.dtype == "int8":
+        dtype = np.int8
+
+    batcher = trtutils.builder.ImageBatcher(
+        image_dir=args.image_dir,
+        shape=args.shape,
+        dtype=dtype,
+        batch_size=args.batch_size,
+        order=args.order,
+        max_images=args.max_images,
+        resize_method=args.resize_method,
+        input_scale=args.input_scale,
+        verbose=args.verbose,
+    )
+    trtutils.builder.build_dla_engine(
+        onnx=Path(args.onnx),
+        output_path=Path(args.output),
+        data_batcher=batcher,
+        dla_core=args.dla_core,
+        verbose=args.verbose,
     )
 
 
@@ -221,6 +249,20 @@ def _run_yolo(args: SimpleNamespace) -> None:
     else:
         err_msg = f"Invalid input file: {input_path}"
         raise ValueError(err_msg)
+
+
+def _inspect(args: SimpleNamespace) -> None:
+    engine_size, max_batch, inputs, outputs = trtutils.inspect.inspect_engine(
+        Path(args.engine)
+    )
+    _log.info(f"Engine Size: {engine_size / (1024 * 1024):.2f} MB")
+    _log.info(f"Max Batch Size: {max_batch}")
+    _log.info("Inputs:")
+    for name, shape, dtype in inputs:
+        _log.info(f"\t{name}: shape={shape}, dtype={dtype}")
+    _log.info("Outputs:")
+    for name, shape, dtype in outputs:
+        _log.info(f"\t{name}: shape={shape}, dtype={dtype}")
 
 
 def _main() -> None:
@@ -438,16 +480,94 @@ def _main() -> None:
         help="Use FP16 precision to assess DLA compatibility.",
     )
     can_run_on_dla_parser.add_argument(
-        "--verbose-layers",
+        "--verbose_layers",
         action="store_true",
         help="Print detailed information about each layer's DLA compatibility.",
     )
     can_run_on_dla_parser.add_argument(
-        "--verbose-chunks",
+        "--verbose_chunks",
         action="store_true",
         help="Print detailed information about layer chunks and their device assignments.",
     )
     can_run_on_dla_parser.set_defaults(func=_can_run_on_dla)
+
+    # build_dla parser
+    build_dla_parser = subparsers.add_parser(
+        "build_dla",
+        help="Build a TensorRT engine for DLA.",
+    )
+    build_dla_parser.add_argument(
+        "--onnx",
+        "-o",
+        required=True,
+        help="Path to the ONNX model file.",
+    )
+    build_dla_parser.add_argument(
+        "--output",
+        "-out",
+        required=True,
+        help="Path to save the TensorRT engine file.",
+    )
+    build_dla_parser.add_argument(
+        "--dla_core",
+        type=int,
+        default=0,
+        help="Specify the DLA core. By default, the engine is built for GPU.",
+    )
+    build_dla_parser.add_argument(
+        "--image_dir",
+        required=True,
+        help="Path to the directory containing images for calibration.",
+    )
+    build_dla_parser.add_argument(
+        "--shape",
+        type=int,
+        nargs=3,
+        default=(640, 640, 3),
+        help="Input shape in HWC format (height, width, channels).",
+    )
+    build_dla_parser.add_argument(
+        "--dtype",
+        choices=["float32", "float16", "int8"],
+        default="float32",
+        help="Input data type. Required when using calibration directory.",
+    )
+    build_dla_parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=8,
+        help="Batch size for calibration. Default is 8.",
+    )
+    build_dla_parser.add_argument(
+        "--order",
+        choices=["NCHW", "NHWC"],
+        default="NCHW",
+        help="Data ordering expected by the network. Default is NCHW.",
+    )
+    build_dla_parser.add_argument(
+        "--max_images",
+        type=int,
+        help="Maximum number of images to use for calibration.",
+    )
+    build_dla_parser.add_argument(
+        "--resize_method",
+        choices=["letterbox", "linear"],
+        default="letterbox",
+        help="Method to resize images. Default is letterbox.",
+    )
+    build_dla_parser.add_argument(
+        "--input_scale",
+        type=float,
+        nargs=2,
+        default=[0.0, 1.0],
+        help="Input value range. Default is [0.0, 1.0].",
+    )
+    build_dla_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose output from can_run_on_dla.",
+    )
+    build_dla_parser.set_defaults(func=_build_dla)
 
     # yolo parser
     yolo_parser = subparsers.add_parser(
@@ -510,11 +630,23 @@ def _main() -> None:
     )
     yolo_parser.add_argument(
         "--verbose",
-        "-v",
         action="store_true",
         help="Output additional debugging information.",
     )
     yolo_parser.set_defaults(func=_run_yolo)
+
+    # inspect parser
+    inspect_parser = subparsers.add_parser(
+        "inspect",
+        help="Inspect a TensorRT engine.",
+    )
+    inspect_parser.add_argument(
+        "--engine",
+        "-e",
+        required=True,
+        help="Path to the TensorRT engine file.",
+    )
+    inspect_parser.set_defaults(func=_inspect)
 
     # parse args and call the function
     args, unknown = parser.parse_known_args()
