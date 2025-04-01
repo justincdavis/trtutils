@@ -35,6 +35,8 @@ def build_engine(
     dla_core: int | None = None,
     calibration_cache: Path | str | None = None,
     data_batcher: AbstractBatcher | None = None,
+    layer_precision: list[trt.DataType] | None = None,
+    layer_device: list[trt.DeviceType] | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -71,6 +73,12 @@ def build_engine(
     dla_core : int, optional
         The DLA core to build the engine for.
         By default, None or build the engine for GPU.
+    layer_precision : list[trt.DataType], optional
+        The precision to use for each layer.
+        By default, None.
+    layer_device : list[trt.DeviceType], optional
+        The device to use for each layer.
+        By default, None.
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
         when building the engine for DLA.
@@ -165,6 +173,16 @@ def build_engine(
         config.DLA_core = dla_core
     if gpu_fallback:
         config.set_flag(trt.BuilderFlag.GPU_FALLBACK)
+
+    # handle individual layer precision and device assignments
+    if layer_precision is not None:
+        for idx in range(network.num_layers):
+            layer = network.get_layer(idx)
+            layer.precision = layer_precision[idx]
+    if layer_device is not None:
+        for idx in range(network.num_layers):
+            layer = network.get_layer(idx)
+            layer.device_type = layer_device[idx]
 
     # build the engine
     if FLAGS.BUILD_SERIALIZED:
