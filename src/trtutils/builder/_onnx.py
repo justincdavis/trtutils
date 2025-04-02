@@ -88,6 +88,8 @@ def read_onnx(
     parser = trt.OnnxParser(network, trt_logger)
     with onnx_path.open("rb") as f:
         if not parser.parse(f.read()):
+            for error in range(parser.num_errors):
+                trt_logger.error(parser.get_error(error))
             err_msg = "Cannot parse ONNX file"
             raise RuntimeError(err_msg)
 
