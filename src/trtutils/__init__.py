@@ -64,22 +64,20 @@ Objects
 -------
 :obj:`FLAGS`
     The flag storage object for trtutils.
+:obj:`LOG`
+    The TensorRT compatible logger for trtutils.
 
 """
 
 from __future__ import annotations
 
-import logging
-
-# import the flags object
 from ._flags import FLAGS
-from ._log import set_log_level
+from ._log import LOG, set_log_level
 
-_logger = logging.getLogger(__name__)
 # output available execution api debug
 for attr in [a for a in dir(FLAGS) if not a.startswith("_")]:
     _flag_str = f"FLAG {attr}: {getattr(FLAGS, attr)}"
-    _logger.debug(_flag_str)
+    LOG.debug(_flag_str)
 
 __author__ = "Justin Davis"
 __version__ = "0.4.1"
@@ -96,6 +94,7 @@ from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
     "FLAGS",
+    "LOG",
     "BenchmarkResult",
     "Metric",
     "ParallelTRTEngines",
@@ -123,6 +122,13 @@ with contextlib.suppress(ImportError):
     from . import jetson
 
     __all__ += ["jetson"]
+
+
+with contextlib.suppress(ImportError):
+    # always initialize TensorRT plugins
+    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+
+    trt.init_libnvinfer_plugins(LOG, "")
 
 # # start CUDA
 # with contextlib.suppress(ImportError):

@@ -14,12 +14,10 @@ Functions
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 from cv2ext.bboxes import nms
 
-_log = logging.getLogger(__name__)
+from trtutils._log import LOG
 
 
 def postprocess_efficient_nms(
@@ -72,7 +70,7 @@ def postprocess_efficient_nms(
     pad_x, pad_y = padding
 
     if verbose:
-        _log.debug(f"EfficientNMS postprocess, bboxes shape: {bboxes.shape}")
+        LOG.debug(f"EfficientNMS postprocess, bboxes shape: {bboxes.shape}")
 
     # throw out all detections not included in the num_dets
     num_det_id = int(outputs[0][0])  # needs to be integer
@@ -148,7 +146,7 @@ def decode_efficient_nms(
     conf_thres = conf_thres or 0.0
 
     if verbose:
-        _log.debug(f"Generating detections for: {num_dects} bboxes")
+        LOG.debug(f"Generating detections for: {num_dects} bboxes")
 
     frame_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
     for idx in range(num_dects):

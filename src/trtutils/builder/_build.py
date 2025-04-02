@@ -4,35 +4,32 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+with contextlib.suppress(ImportError):
+    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+
 from trtutils._flags import FLAGS
+from trtutils._log import LOG
 
 from ._calibrator import EngineCalibrator
+from ._dla import get_check_dla
 from ._onnx import read_onnx
 
 with contextlib.suppress(AttributeError):
     from ._progress import ProgressBar
-
-with contextlib.suppress(ImportError):
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ._batcher import AbstractBatcher
 
-_log = logging.getLogger(__name__)
-
 
 def build_engine(
     onnx: Path | str,
     output: Path | str,
     timing_cache: Path | str | None = None,
-    logger: trt.ILogger | None = None,
-    log_level: trt.ILogger.Severity | None = None,
     workspace: float = 4.0,
     dla_core: int | None = None,
     calibration_cache: Path | str | None = None,
@@ -61,10 +58,6 @@ def build_engine(
     timing_cache : Path, str, optional
         Where to store the timing cache data.
         Default is None.
-    logger : trt.ILogger, optional
-        The logger to use, by default None
-    log_level : trt.ILogger.Severity, optional
-        The log level to use if the logger is None, by default trt.Logger.WARNING
     workspace : float
         The size of the workspace in gigabytes.
         Default is 4.0 GiB.
@@ -118,33 +111,18 @@ def build_engine(
 
     """
     output_path = Path(output).resolve()
-    if log_level is None:
-        log_level = trt.Logger.Severity.WARNING
-    logger = trt.Logger(log_level)
-
-    if verbose:
-        logger.min_severity = trt.Logger.Severity.VERBOSE
-
-    # initialize TensorRT plugins
-    trt.init_libnvinfer_plugins(logger, "")
 
     # read the onnx model
-    network, builder, config, _, _ = read_onnx(
+    network, builder, config, _ = read_onnx(
         onnx,
-        logger,
-        log_level,
         workspace,
     )
 
     # helper function for checking if layer can run on DLA
-    check_dla: Callable[[trt.ILayer], bool] = (
-        config.can_run_on_DLA
-        if hasattr(config, "can_run_on_DLA")
-        else config.canRunOnDLA
-    )
+    check_dla: Callable[[trt.ILayer], bool] = get_check_dla(config)
 
     if verbose and FLAGS.BUILD_PROGRESS:
-        _log.debug("Applying ProgressBar to config")
+        LOG.debug("Applying ProgressBar to config")
         config.progress_monitor = ProgressBar()
 
     # create profile and config
@@ -175,15 +153,15 @@ def build_engine(
     if fp16 or int8:
         # want to enable fp16 for both int8 and fp16 since fp16 may be faster
         if not builder.platform_has_fast_fp16:
-            logger.warning("Platform does not have native fast FP16.")
+            LOG.warning("Platform does not have native fast FP16.")
         config.set_flag(trt.BuilderFlag.FP16)
     if int8:
         if not builder.platform_has_fast_int8:
-            logger.warning("Platform does not have native fast INT8.")
+            LOG.warning("Platform does not have native fast INT8.")
         config.set_flag(trt.BuilderFlag.INT8)
         if calibration_cache is None and data_batcher is None:
             err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
-            _log.warning(err_msg)
+            LOG.warning(err_msg)
         config.int8_calibrator = EngineCalibrator(calibration_cache=calibration_cache)
         if data_batcher is not None:
             config.int8_calibrator.set_batcher(data_batcher)
@@ -210,7 +188,7 @@ def build_engine(
                 err_msg = f"Layer {layer.name} (type: {layer.type}) cannot run on DLA"
                 if gpu_fallback:
                     err_msg += ", using GPU fallback"
-                    _log.warning(err_msg)
+                    LOG.warning(err_msg)
                 else:
                     raise ValueError(err_msg)
             else:

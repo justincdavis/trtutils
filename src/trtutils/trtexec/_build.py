@@ -3,16 +3,15 @@
 # MIT License
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
+
+from trtutils._log import LOG
 
 from ._run import run_trtexec
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
-
-_log = logging.getLogger(__name__)
 
 
 def build_engine(
@@ -106,30 +105,30 @@ def build_engine(
         raise ValueError(err_msg)
 
     if output.exists():
-        _log.warning(f"Overwriting existing file at {output}")
+        LOG.warning(f"Overwriting existing file at {output}")
 
     if use_dla_core is not None and use_dla_core not in [0, 1]:
         err_msg = "DLA core must be either 0 or 1"
         raise ValueError(err_msg)
 
     if allow_gpu_fallback and use_dla_core is None:
-        _log.warning("GPU fallback enabled without specifying DLA core")
+        LOG.warning("GPU fallback enabled without specifying DLA core")
 
     if best and (fp16 or int8 or fp8):
-        _log.warning("Best precision enabled with other precisions also being enabled.")
-        _log.warning("Best precision level ENABLES ALL precisions")
+        LOG.warning("Best precision enabled with other precisions also being enabled.")
+        LOG.warning("Best precision level ENABLES ALL precisions")
     if fp16 and int8:
-        _log.warning(
+        LOG.warning(
             "FP16 and INT8 precision cannot be used together. Using lower precision level.",
         )
         fp16 = False
     if fp16 and fp8:
-        _log.warning(
+        LOG.warning(
             "FP16 and FP8 precision cannot be used together. Using lower precision level.",
         )
         fp16 = False
     if int8 and fp8:
-        _log.warning(
+        LOG.warning(
             "INT8 and FP8 precision cannot be used together. Using lower precision level.",
         )
         int8 = False
@@ -192,11 +191,11 @@ def build_engine(
             command += f" {arg}"
 
     # debug print
-    _log.debug(f"TRTEXEC Command: {command}")
+    LOG.debug(f"TRTEXEC Command: {command}")
 
     success, _, stderr = run_trtexec(command)
 
     if not success:
-        _log.error(f"Error building engine from ONNX: {stderr}")
+        LOG.error(f"Error building engine from ONNX: {stderr}")
 
     return success

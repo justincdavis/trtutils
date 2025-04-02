@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import argparse
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,15 +15,13 @@ import cv2ext
 import numpy as np
 
 import trtutils
+from trtutils._log import LOG
 from trtutils.trtexec._cli import cli_trtexec
 
 if TYPE_CHECKING:
     from types import SimpleNamespace
 
     from ._benchmark import Metric
-
-
-_log = logging.getLogger("trtutils")
 
 
 def _benchmark(args: SimpleNamespace) -> None:
@@ -62,13 +59,13 @@ def _benchmark(args: SimpleNamespace) -> None:
         "min": latency.min * 1000.0,
         "max": latency.max * 1000.0,
     }
-    _log.info(f"Benchmarking result for: {mpath.stem}")
-    _log.info("=" * 40)
-    _log.info("Latency (ms):")
-    _log.info(f"  Mean   : {latency_in_ms['mean']:.2f}")
-    _log.info(f"  Median : {latency_in_ms['median']:.2f}")
-    _log.info(f"  Min    : {latency_in_ms['min']:.2f}")
-    _log.info(f"  Max    : {latency_in_ms['max']:.2f}")
+    LOG.info(f"Benchmarking result for: {mpath.stem}")
+    LOG.info("=" * 40)
+    LOG.info("Latency (ms):")
+    LOG.info(f"  Mean   : {latency_in_ms['mean']:.2f}")
+    LOG.info(f"  Median : {latency_in_ms['median']:.2f}")
+    LOG.info(f"  Min    : {latency_in_ms['min']:.2f}")
+    LOG.info(f"  Max    : {latency_in_ms['max']:.2f}")
 
     if energy is not None:
         energy_in_joules = {
@@ -77,11 +74,11 @@ def _benchmark(args: SimpleNamespace) -> None:
             "min": energy.min / 1000.0,
             "max": energy.max / 1000.0,
         }
-        _log.info("Energy Consumption (J):")
-        _log.info(f"  Mean   : {energy_in_joules['mean']:.3f}")
-        _log.info(f"  Median : {energy_in_joules['median']:.3f}")
-        _log.info(f"  Min    : {energy_in_joules['min']:.3f}")
-        _log.info(f"  Max    : {energy_in_joules['max']:.3f}")
+        LOG.info("Energy Consumption (J):")
+        LOG.info(f"  Mean   : {energy_in_joules['mean']:.3f}")
+        LOG.info(f"  Median : {energy_in_joules['median']:.3f}")
+        LOG.info(f"  Min    : {energy_in_joules['min']:.3f}")
+        LOG.info(f"  Max    : {energy_in_joules['max']:.3f}")
 
     if power is not None:
         power_in_watts = {
@@ -90,18 +87,18 @@ def _benchmark(args: SimpleNamespace) -> None:
             "min": power.min / 1000.0,
             "max": power.max / 1000.0,
         }
-        _log.info("Power Draw (W):")
-        _log.info(f"  Mean   : {power_in_watts['mean']:.3f}")
-        _log.info(f"  Median : {power_in_watts['median']:.3f}")
-        _log.info(f"  Min    : {power_in_watts['min']:.3f}")
-        _log.info(f"  Max    : {power_in_watts['max']:.3f}")
+        LOG.info("Power Draw (W):")
+        LOG.info(f"  Mean   : {power_in_watts['mean']:.3f}")
+        LOG.info(f"  Median : {power_in_watts['median']:.3f}")
+        LOG.info(f"  Min    : {power_in_watts['min']:.3f}")
+        LOG.info(f"  Max    : {power_in_watts['max']:.3f}")
 
-    _log.info("=" * 40)
+    LOG.info("=" * 40)
 
 
 def _build(args: SimpleNamespace) -> None:
     if args.int8:
-        _log.warning("Build API is unstable and experimental with INT8 quantization.")
+        LOG.warning("Build API is unstable and experimental with INT8 quantization.")
 
     # Create ImageBatcher if calibration directory is provided
     batcher = None
@@ -129,7 +126,6 @@ def _build(args: SimpleNamespace) -> None:
         onnx=Path(args.onnx),
         output=Path(args.output),
         timing_cache=args.timing_cache,
-        log_level=args.log_level,
         workspace=args.workspace,
         dla_core=args.dla_core,
         calibration_cache=args.calibration_cache,
@@ -160,7 +156,7 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
             compat_layers += chunk_size
         all_layers += chunk_size
     portion_compat = round((compat_layers / all_layers) * 100.0, 2)
-    _log.info(
+    LOG.info(
         f"ONNX: {args.onnx}, Fully DLA Compatible: {full_dla}, Layers: {compat_layers} / {all_layers} ({portion_compat} % Compatible)"
     )
 
@@ -253,14 +249,14 @@ def _inspect(args: SimpleNamespace) -> None:
     engine_size, max_batch, inputs, outputs = trtutils.inspect.inspect_engine(
         Path(args.engine)
     )
-    _log.info(f"Engine Size: {engine_size / (1024 * 1024):.2f} MB")
-    _log.info(f"Max Batch Size: {max_batch}")
-    _log.info("Inputs:")
+    LOG.info(f"Engine Size: {engine_size / (1024 * 1024):.2f} MB")
+    LOG.info(f"Max Batch Size: {max_batch}")
+    LOG.info("Inputs:")
     for name, shape, dtype in inputs:
-        _log.info(f"\t{name}: shape={shape}, dtype={dtype}")
-    _log.info("Outputs:")
+        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}")
+    LOG.info("Outputs:")
     for name, shape, dtype in outputs:
-        _log.info(f"\t{name}: shape={shape}, dtype={dtype}")
+        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}")
 
 
 def _main() -> None:
@@ -335,12 +331,6 @@ def _main() -> None:
         "-tc",
         default=None,
         help="Path to store timing cache data. Default is 'timing.cache'.",
-    )
-    build_parser.add_argument(
-        "--log_level",
-        "-ll",
-        type=int,
-        help="Log level to use if the logger is None. Default is WARNING.",
     )
     build_parser.add_argument(
         "--workspace",

@@ -4,13 +4,13 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 import time
 from queue import Empty, Queue
 from threading import Thread
 from typing import TYPE_CHECKING
 
 from ._flags import FLAGS
+from ._log import LOG
 from .core import (
     TRTEngineInterface,
     memcpy_device_to_host_async,
@@ -25,9 +25,6 @@ if TYPE_CHECKING:
 
     import numpy as np
     from typing_extensions import Self
-
-
-_log = logging.getLogger(__name__)
 
 
 class TRTEngine(TRTEngineInterface):
@@ -111,7 +108,7 @@ class TRTEngine(TRTEngineInterface):
         if warmup:
             self.warmup(warmup_iterations)
 
-        _log.debug(f"Creating TRTEngine: {self.name}")
+        LOG.debug(f"Creating TRTEngine: {self.name}")
 
     def __del__(self: Self) -> None:
         super().__del__()
@@ -150,7 +147,7 @@ class TRTEngine(TRTEngineInterface):
         verbose = verbose if verbose is not None else self._verbose
         # Copy inputs
         if verbose:
-            _log.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
+            LOG.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
         for i_idx in range(len(self._inputs)):
             # memcpy_host_to_device(
             #     self._inputs[i_idx].allocation,
@@ -179,7 +176,7 @@ class TRTEngine(TRTEngineInterface):
             )
         # sync the stream
         if verbose:
-            _log.info(f"{time.perf_counter()} {self.name} Dispatch: END")
+            LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
 
         # # add additional sleep here to help parallel engines
         # t0 = time.time()
@@ -223,7 +220,7 @@ class TRTEngine(TRTEngineInterface):
 
         """
         if not no_warn:
-            _log.warning(
+            LOG.warning(
                 "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
             )
         # execute

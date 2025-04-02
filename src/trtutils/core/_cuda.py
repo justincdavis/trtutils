@@ -5,13 +5,12 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 from typing import TypeVar
 
 with contextlib.suppress(Exception):
     from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
 
-_log = logging.getLogger(__name__)
+from trtutils._log import LOG
 
 
 def check_cuda_err(err: cuda.CUresult | cudart.cudaError_t) -> None:
@@ -75,4 +74,4 @@ def init_cuda() -> None:
     """Initialize CUDA."""
     cuda_call(cuda.cuInit(0))
     device_count = cuda_call(cuda.cuDeviceGetCount())
-    _log.info(f"Number of CUDA devices: {device_count}")
+    LOG.info(f"Number of CUDA devices: {device_count}")

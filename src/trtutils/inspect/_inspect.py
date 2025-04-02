@@ -4,17 +4,15 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 from pathlib import Path
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
 from trtutils._flags import FLAGS
+from trtutils._log import LOG
 from trtutils.core._engine import create_engine
 from trtutils.core._stream import destroy_stream
-
-_log = logging.getLogger(__name__)
 
 
 def inspect_engine(
@@ -52,10 +50,10 @@ def inspect_engine(
     batch_size = engine.max_batch_size
 
     if verbose:
-        _log.info("Engine Info:")
-        _log.info(f"\tMax Batch Size: {batch_size}")
-        _log.info(f"\tNum IO Tensors: {engine.num_io_tensors}")
-        _log.info(f"\tDevice Memory Size: {engine_mem_size / (1024 * 1024):.2f} MB")
+        LOG.info("Engine Info:")
+        LOG.info(f"\tMax Batch Size: {batch_size}")
+        LOG.info(f"\tNum IO Tensors: {engine.num_io_tensors}")
+        LOG.info(f"\tDevice Memory Size: {engine_mem_size / (1024 * 1024):.2f} MB")
 
     input_tensors = []
     output_tensors = []
@@ -82,13 +80,13 @@ def inspect_engine(
                 output_tensors.append((tensor_name, shape, dtype))
 
     if verbose:
-        _log.info("\tInput Tensors:")
+        LOG.info("\tInput Tensors:")
         for name, shape, dtype in input_tensors:
-            _log.info(f"\t\t{name}: shape={shape}, dtype={dtype}")
-        _log.info("\tOutput Tensors:")
+            LOG.info(f"\t\t{name}: shape={shape}, dtype={dtype}")
+        LOG.info("\tOutput Tensors:")
         for name, shape, dtype in output_tensors:
-            _log.info(f"\t\t{name}: shape={shape}, dtype={dtype}")
-        _log.info("")
+            LOG.info(f"\t\t{name}: shape={shape}, dtype={dtype}")
+        LOG.info("")
 
     if loaded:
         del engine

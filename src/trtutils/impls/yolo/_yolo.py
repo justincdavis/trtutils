@@ -3,7 +3,6 @@
 # MIT License
 from __future__ import annotations
 
-import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,14 +10,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils._engine import TRTEngine
+from trtutils._log import LOG
 
 from ._preprocessors import CPUPreprocessor, CUDAPreprocessor
 from ._process import get_detections, postprocess
 
 if TYPE_CHECKING:
     from typing_extensions import Self
-
-_log = logging.getLogger(__name__)
 
 
 class YOLO:
@@ -91,7 +89,7 @@ class YOLO:
         """
         self._tag: str = f"{Path(engine_path).stem}"
         if verbose:
-            _log.debug(f"Creating YOLO: {self._tag}")
+            LOG.debug(f"Creating YOLO: {self._tag}")
 
         self._engine = TRTEngine(
             engine_path=engine_path,
@@ -215,10 +213,10 @@ class YOLO:
         """
         resize = resize if resize is not None else self._resize_method
         if verbose:
-            _log.debug(
+            LOG.debug(
                 f"{self._tag}: Running preprocess, shape: {image.shape}, with method: {resize}",
             )
-            _log.debug(f"{self._tag}: Using device: {method}")
+            LOG.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self._preprocessor
         if method is not None:
             preprocessor = (
@@ -273,7 +271,7 @@ class YOLO:
 
         """
         if verbose:
-            _log.debug(f"{self._tag}: postprocess")
+            LOG.debug(f"{self._tag}: postprocess")
 
         conf_thres = conf_thres or self._conf_thres
         t0 = time.perf_counter()
@@ -400,7 +398,7 @@ class YOLO:
 
         """
         if verbose:
-            _log.debug(f"{self._tag}: run")
+            LOG.debug(f"{self._tag}: run")
 
         # assign flags
         if preprocessed is None:
@@ -421,14 +419,14 @@ class YOLO:
             no_copy_post = no_copy
 
         if verbose:
-            _log.debug(
+            LOG.debug(
                 f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
             )
 
         # handle preprocessing
         if not preprocessed:
             if verbose:
-                _log.debug("Preprocessing inputs")
+                LOG.debug("Preprocessing inputs")
             tensor, ratios, padding = self.preprocess(image, no_copy=no_copy_pre)
         else:
             tensor = image
@@ -441,7 +439,7 @@ class YOLO:
         # handle postprocessing
         if postprocess:
             if verbose:
-                _log.debug("Postprocessing outputs")
+                LOG.debug("Postprocessing outputs")
             if ratios is None or padding is None:
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
                 raise RuntimeError(err_msg)
@@ -536,7 +534,7 @@ class YOLO:
 
         """
         if verbose:
-            _log.debug(f"{self._tag}: get_detections")
+            LOG.debug(f"{self._tag}: get_detections")
 
         conf_thres = conf_thres or self._conf_thres
         nms_iou = nms_iou_thres or self._nms_iou
@@ -597,13 +595,13 @@ class YOLO:
 
         """
         if verbose:
-            _log.debug(f"{self._tag}: end2end")
+            LOG.debug(f"{self._tag}: end2end")
 
         outputs: list[np.ndarray]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, CUDAPreprocessor):
             if verbose:
-                _log.debug(f"{self._tag}: end2end -> calling CPU preprocess")
+                LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
 
             outputs = self.run(
                 image,
@@ -615,7 +613,7 @@ class YOLO:
             )
         else:
             if verbose:
-                _log.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
+                LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
 
             # if using CUDA, can remove much more
             gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(

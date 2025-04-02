@@ -3,19 +3,16 @@
 # MIT License
 from __future__ import annotations
 
-import logging
-
 import cv2
 import numpy as np
 from cv2ext.bboxes import nms
 from cv2ext.image import letterbox, rescale, resize_linear
 
+from trtutils._log import LOG
 from trtutils.impls.common import decode_efficient_nms, postprocess_efficient_nms
 
 # EfficientNMS as 4 outputs
 _EFF_NUM_OUTPUTS = 4
-
-_log = logging.getLogger(__name__)
 
 
 def preprocess(
@@ -60,7 +57,7 @@ def preprocess(
 
     """
     if verbose:
-        _log.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
+        LOG.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
 
     if method == "letterbox":
         tensor, ratios, padding = letterbox(image, new_shape=input_shape)
@@ -86,8 +83,8 @@ def preprocess(
     tensor = tensor.astype(dtype)
 
     if verbose:
-        _log.debug(f"Ratios: {ratios}")
-        _log.debug(f"Padding: {padding}")
+        LOG.debug(f"Ratios: {ratios}")
+        LOG.debug(f"Padding: {padding}")
     return tensor, ratios, padding
 
 
@@ -108,7 +105,7 @@ def _postprocess_v_10(
     output = outputs[0]
 
     if verbose:
-        _log.debug(f"V10 postprocess, output shape: {output.shape}")
+        LOG.debug(f"V10 postprocess, output shape: {output.shape}")
 
     bboxes: np.ndarray = output[0, :, :4]
     scores: np.ndarray = output[0, :, 4]
@@ -211,7 +208,7 @@ def _get_detections_v_10(
     class_ids = outputs[2]
 
     if verbose:
-        _log.debug(f"Decoding: {bboxes.shape[0]} bboxes")
+        LOG.debug(f"Decoding: {bboxes.shape[0]} bboxes")
 
     # convert to output format
     results: list[tuple[tuple[int, int, int, int], float, int]] = []
@@ -270,7 +267,7 @@ def get_detections(
     """
     if len(outputs) == _EFF_NUM_OUTPUTS:
         if verbose:
-            _log.debug("Using EfficientNMS decoding")
+            LOG.debug("Using EfficientNMS decoding")
         return decode_efficient_nms(
             outputs,
             conf_thres=conf_thres,
@@ -279,7 +276,7 @@ def get_detections(
             agnostic_nms=agnostic_nms,
         )
     if verbose:
-        _log.debug("Using V10 decoding")
+        LOG.debug("Using V10 decoding")
     return _get_detections_v_10(
         outputs,
         conf_thres=conf_thres,

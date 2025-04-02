@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 import time
 from dataclasses import dataclass
 from queue import Empty, Queue
@@ -13,6 +12,8 @@ from threading import Event, Lock, Thread
 from typing import TYPE_CHECKING
 
 import numpy as np
+
+from trtutils._log import LOG
 
 from ._yolo import YOLO
 
@@ -23,8 +24,6 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 _YOLO_LOCK = Lock()
-
-_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -111,7 +110,7 @@ class ParallelYOLO:
                 err_msg = f"Error creating YOLO model: {self._engine_paths[idx]}"
                 raise RuntimeError(err_msg)
 
-        _log.debug(
+        LOG.debug(
             f"{self._tag}: Initialized ParallelYOLO with tag: {self._tag}, num engines: {len(self._models)}",
         )
 
@@ -308,7 +307,7 @@ class ParallelYOLO:
             The preprocessed data
 
         """
-        _log.debug(f"{self._tag}: Preprocess model: {modelid}")
+        LOG.debug(f"{self._tag}: Preprocess model: {modelid}")
         return self.get_model(modelid).preprocess(
             data,
             resize=resize,
@@ -394,7 +393,7 @@ class ParallelYOLO:
             The preprocessed data
 
         """
-        _log.debug(f"{self._tag}: Postprocess model: {modelid}")
+        LOG.debug(f"{self._tag}: Postprocess model: {modelid}")
         return self.get_model(modelid).postprocess(
             outputs,
             ratios,
@@ -446,7 +445,7 @@ class ParallelYOLO:
             The detections produced by the model
 
         """
-        _log.debug(f"{self._tag}: GetDetections model: {modelid}")
+        LOG.debug(f"{self._tag}: GetDetections model: {modelid}")
         return self.get_model(modelid).get_detections(output)
 
     def submit(
@@ -753,7 +752,7 @@ class ParallelYOLO:
                 data = self._iqueues[threadid].get(timeout=0.1)
             except Empty:
                 continue
-            _log.debug(f"{self._tag}: Received data")
+            LOG.debug(f"{self._tag}: Received data")
 
             img = data.data
             if not data.preprocessed:

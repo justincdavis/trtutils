@@ -3,7 +3,6 @@
 # MIT License
 from __future__ import annotations
 
-import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,13 +12,12 @@ from jetsontools import Tegrastats, filter_data, get_powerdraw, parse_tegrastats
 
 from trtutils._benchmark import Metric
 from trtutils._engine import ParallelTRTEngines, TRTEngine
+from trtutils._log import LOG
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from jetsontools._parsing import Metric as JMetric  # typing fix
-
-_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -118,7 +116,7 @@ def benchmark_engine(
         data = raw[metric_name]
         metric = Metric(data)
         metrics[metric_name] = metric
-        _log.debug(
+        LOG.debug(
             f"{metric}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
         )
 
@@ -238,7 +236,7 @@ def benchmark_engines(
         data = raw[metric_name]
         metric = Metric(data)
         metrics[metric_name] = metric
-        _log.debug(
+        LOG.debug(
             f"{metric}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
         )
 

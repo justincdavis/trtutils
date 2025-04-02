@@ -4,13 +4,13 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 import math
 from threading import Lock
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
 from trtutils.core._memory import (
@@ -30,8 +30,6 @@ if TYPE_CHECKING:
 
 _COLOR_CHANNELS = 3
 _CUDA_ALLOCATE_LOCK = Lock()
-
-_log = logging.getLogger(__name__)
 
 
 class CPUPreprocessor:
@@ -66,7 +64,7 @@ class CPUPreprocessor:
         """
         self._tag = "CPUPreprocessor" if tag is None else f"{tag}.CPUPreprocessor"
 
-        _log.debug(
+        LOG.debug(
             f"{self._tag}: Creating preprocessor: {output_shape}, {output_range}, {dtype}",
         )
         self._o_shape = output_shape
@@ -201,7 +199,7 @@ class CUDAPreprocessor:
         """
         self._tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
 
-        _log.debug(
+        LOG.debug(
             f"{self._tag}: Creating preprocessor: {output_shape}, {output_range}, {dtype}",
         )
         # allocate static output sizes
@@ -312,7 +310,7 @@ class CUDAPreprocessor:
         np.ndarray,
     ]:
         if verbose:
-            _log.debug(f"{self._tag}: create_args")
+            LOG.debug(f"{self._tag}: create_args")
 
         # pre-compute the common potions
         o_width, o_height = self._o_shape
@@ -320,7 +318,7 @@ class CUDAPreprocessor:
         scale_y = o_height / height
         if method == "letterbox":
             if verbose:
-                _log.debug(f"{self._tag}: Making letterbox args")
+                LOG.debug(f"{self._tag}: Making letterbox args")
 
             scale = min(scale_x, scale_y)
             new_width = width * scale
@@ -347,7 +345,7 @@ class CUDAPreprocessor:
             )
         else:
             if verbose:
-                _log.debug(f"{self._tag}: Making linear args")
+                LOG.debug(f"{self._tag}: Making linear args")
 
             o_width, o_height = self._o_shape
             scale_x = o_width / width
@@ -368,7 +366,7 @@ class CUDAPreprocessor:
             )
 
         if verbose:
-            _log.debug(f"{self._tag}: Making sst args")
+            LOG.debug(f"{self._tag}: Making sst args")
 
         sst_args = self._sst_kernel.create_args(
             self._sst_input_binding.allocation,
@@ -388,8 +386,8 @@ class CUDAPreprocessor:
         verbose: bool | None = None,
     ) -> None:
         if verbose:
-            _log.debug(f"{self._tag}: Reallocating input bindings")
-            _log.debug(
+            LOG.debug(f"{self._tag}: Reallocating input bindings")
+            LOG.debug(
                 f"{self._tag}: Reallocation -> new shape: {image.shape}, old shape: {self._input_binding.shape}",
             )
 
@@ -412,7 +410,7 @@ class CUDAPreprocessor:
         verbose: bool | None = None,
     ) -> str:
         if verbose:
-            _log.debug(f"{self._tag}: validate_input")
+            LOG.debug(f"{self._tag}: validate_input")
 
         # valid the method
         resize = resize if resize is not None else self._resize
@@ -423,7 +421,7 @@ class CUDAPreprocessor:
         img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
 
         if verbose:
-            _log.debug(
+            LOG.debug(
                 f"{self._tag}: Image shape: {img_shape}, Allocated shape: {self._allocated_input_shape}",
             )
 
@@ -577,10 +575,10 @@ class CUDAPreprocessor:
 
         """
         if verbose:
-            _log.debug(f"{self._tag}: direct_preproc")
+            LOG.debug(f"{self._tag}: direct_preproc")
 
         if not no_warn:
-            _log.warning(
+            LOG.warning(
                 "Calling direct_preproc is potentially dangerous. Outputs can be overwritten inplace!",
             )
 
@@ -597,8 +595,8 @@ class CUDAPreprocessor:
         )
 
         if verbose:
-            _log.debug(f"Ratios: {ratios}")
-            _log.debug(f"Padding: {padding}")
+            LOG.debug(f"Ratios: {ratios}")
+            LOG.debug(f"Padding: {padding}")
 
         memcpy_host_to_device_async(
             self._input_binding.allocation,

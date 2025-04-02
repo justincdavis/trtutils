@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+
+from trtutils._flags import FLAGS
+from trtutils._log import LOG
 
 from ._build import build_engine
 from ._onnx import read_onnx
@@ -19,7 +21,26 @@ if TYPE_CHECKING:
 
     from ._batcher import AbstractBatcher
 
-_log = logging.getLogger(__name__)
+
+def get_check_dla(config: trt.IBuilderConfig) -> Callable[[trt.ILayer], bool]:
+    """
+    Get the check_dla function for the given config.
+
+    Parameters
+    ----------
+    config : trt.IBuilderConfig
+        The TensorRT builder config.
+
+    Returns
+    -------
+    Callable[[trt.ILayer], bool]
+        The check_dla function.
+
+    """
+    check_dla: Callable[[trt.ILayer], bool] = (
+        config.can_run_on_DLA if FLAGS.NEW_CAN_RUN_ON_DLA else config.canRunOnDLA
+    )
+    return check_dla
 
 
 def can_run_on_dla(
@@ -62,13 +83,9 @@ def can_run_on_dla(
             raise ValueError(err_msg)
         network = onnx
     else:
-        network, _, config, _, _ = read_onnx(onnx)
+        network, _, config, _ = read_onnx(onnx)
 
-    check_dla: Callable[[trt.ILayer], bool] = (
-        config.can_run_on_DLA
-        if hasattr(config, "can_run_on_DLA")
-        else config.canRunOnDLA
-    )
+    check_dla: Callable[[trt.ILayer], bool] = get_check_dla(config)
 
     # assign to DLA 0, since core doesnt matter for this check
     config.default_device_type = trt.DeviceType.DLA
@@ -99,18 +116,18 @@ def can_run_on_dla(
         last_layer_dla = dla_valid
 
         if verbose_layers:
-            _log.info(
+            LOG.info(
                 f"Layer {idx}: {layer.name}, {layer.type}, {layer.precision}, {layer.metadata}",
             )
-            _log.info(f"\tDLA: {dla_valid}")
+            LOG.info(f"\tDLA: {dla_valid}")
 
     # handle final chunk
     chunks.append((curr_layers, curr_start, network.num_layers - 1, last_layer_dla))
 
     if verbose_chunks:
-        _log.info(f"Found {len(chunks)} Chunks of Layers")
+        LOG.info(f"Found {len(chunks)} Chunks of Layers")
         for i, (layers, start, end, on_dla) in enumerate(chunks):
-            _log.info(
+            LOG.info(
                 f"\tChunk {i}: [{start} - {end}], {len(layers)} layers, {'DLA' if on_dla else 'GPU'}"
             )
 
@@ -149,7 +166,7 @@ def build_dla_engine(
 
     """
     # read the onnx path
-    network, _, config, _, _ = read_onnx(onnx)
+    network, _, config, _ = read_onnx(onnx)
 
     # check layers for DLA compatibility and use int8 precision
     full_dla, chunks = can_run_on_dla(
@@ -160,8 +177,8 @@ def build_dla_engine(
     )
 
     if verbose:
-        _log.info(f"Model can run fully on DLA: {full_dla}")
-        _log.info(f"Found {len(chunks)} chunks of layers")
+        LOG.info(f"Model can run fully on DLA: {full_dla}")
+        LOG.info(f"Found {len(chunks)} chunks of layers")
 
     # case where the entire model can run on DLA
     if full_dla:
@@ -181,7 +198,7 @@ def build_dla_engine(
 
     # case where no DLA layers are found
     if not dla_chunks:
-        _log.warning("No DLA-compatible layers found. Building GPU-only engine.")
+        LOG.warning("No DLA-compatible layers found. Building GPU-only engine.")
         build_engine(
             onnx,
             output_path,
@@ -195,7 +212,7 @@ def build_dla_engine(
     dla_start, dla_end = largest_dla_chunk[1], largest_dla_chunk[2]
 
     if verbose:
-        _log.info(f"Largest DLA chunk: layers {dla_start} to {dla_end}")
+        LOG.info(f"Largest DLA chunk: layers {dla_start} to {dla_end}")
 
     layer_precision: list[tuple[int, trt.DataType]] = []
     layer_device: list[tuple[int, trt.DeviceType]] = []

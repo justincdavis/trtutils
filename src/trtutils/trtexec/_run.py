@@ -4,13 +4,12 @@
 # ruff: noqa: S404, S603
 from __future__ import annotations
 
-import logging
 import subprocess
 from pathlib import Path
 
-from ._find import find_trtexec
+from trtutils._log import LOG
 
-_log = logging.getLogger(__name__)
+from ._find import find_trtexec
 
 
 def run_trtexec(
@@ -54,7 +53,7 @@ def run_trtexec(
     except subprocess.CalledProcessError as e:
         err_msg = f"Error running trtexec command: {command}"
         err_msg += f"\n\tReturn value: {e.returncode}"
-        _log.error(err_msg)
+        LOG.error(err_msg)
         return False, e.stdout.decode(), e.stderr.decode()
     stdout = ""
     if process.stdout is not None:

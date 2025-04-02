@@ -6,7 +6,6 @@ from __future__ import annotations
 import atexit
 import concurrent.futures
 import contextlib
-import logging
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -18,10 +17,10 @@ import cv2
 import numpy as np
 from cv2ext.image import letterbox, rescale
 
+from trtutils._log import LOG
+
 if TYPE_CHECKING:
     from typing_extensions import Self
-
-_log = logging.getLogger(__name__)
 
 
 class AbstractBatcher(ABC):
@@ -183,8 +182,8 @@ class ImageBatcher(AbstractBatcher):
             err_msg = "Could not form any valid batches."
             raise ValueError(err_msg)
 
-        _log.debug(f"ImageBatcher found images: {len(self._images)}")
-        _log.debug(f"ImageBatcher formed batches: {len(self._batches)}")
+        LOG.debug(f"ImageBatcher found images: {len(self._images)}")
+        LOG.debug(f"ImageBatcher formed batches: {len(self._batches)}")
 
         # tracking indices for iteration
         self._current_batch: int = 0
@@ -253,7 +252,7 @@ class ImageBatcher(AbstractBatcher):
             if self._event.is_set():
                 return
 
-            _log.debug(f"ImageBatcher getting batch: {idx}")
+            LOG.debug(f"ImageBatcher getting batch: {idx}")
 
             # get the batch
             results = list(self._pool.map(self._get_image, image_paths))
@@ -271,7 +270,7 @@ class ImageBatcher(AbstractBatcher):
                     self._queue.put(data, timeout=0.1)
 
                     if self._verbose:
-                        _log.debug(
+                        LOG.debug(
                             f"ImageBatcher put batch: {idx} / {len(self._batches)}"
                         )
 
@@ -298,7 +297,7 @@ class ImageBatcher(AbstractBatcher):
                 self._current_batch += 1
 
                 if self._verbose:
-                    _log.debug(
+                    LOG.debug(
                         f"ImageBatcher get batch: {self._current_batch} / {len(self._batches)}"
                     )
 

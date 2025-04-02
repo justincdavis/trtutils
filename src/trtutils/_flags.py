@@ -16,6 +16,8 @@ class _FLAGS:
     ----------
     TRT_10 : bool
         Whether or not TensorRT is version 10 or greater.
+    NEW_CAN_RUN_ON_DLA : bool
+        Whether or not TensorRT supports the new can_run_on_dla method.
     BUILD_PROGRESS : bool
         Whether or not TensorRT supports the trt.IProgressMonitor interface.
     BUILD_SERIALIZED : bool
@@ -34,6 +36,7 @@ class _FLAGS:
     """
 
     TRT_10: bool = False
+    NEW_CAN_RUN_ON_DLA: bool = False
     BUILD_PROGRESS: bool = False
     BUILD_SERIALIZED: bool = False
     EXEC_ASYNC_V3: bool = False
@@ -50,6 +53,7 @@ with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
     FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
+    FLAGS.NEW_CAN_RUN_ON_DLA = hasattr(trt.IBuilderConfig, "can_run_on_DLA")
     FLAGS.BUILD_PROGRESS = hasattr(trt, "IProgressMonitor")
     FLAGS.BUILD_SERIALIZED = hasattr(trt.Builder, "build_serialized_network")
     FLAGS.EXEC_ASYNC_V3 = hasattr(trt.IExecutionContext, "execute_async_v3")

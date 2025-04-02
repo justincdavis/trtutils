@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 from threading import Lock
 from typing import TypeVar
 
@@ -14,12 +13,12 @@ import numpy as np
 with contextlib.suppress(Exception):
     from cuda import cuda, nvrtc  # type: ignore[import-untyped, import-not-found]
 
+from trtutils._log import LOG
+
 from ._cuda import cuda_call
 from ._memory import _MEM_ALLOC_LOCK
 
 _NVRTC_LOCK = Lock()
-
-_log = logging.getLogger(__name__)
 
 
 def check_nvrtc_err(err: nvrtc.nvrtcResult) -> None:
@@ -102,7 +101,7 @@ def compile_kernel(
     kernel_name_bytes = f"{name}.cu".encode()
 
     if verbose:
-        _log.debug(f"Compiling kernel: {name}")
+        LOG.debug(f"Compiling kernel: {name}")
 
     # compile the kernel
     with _NVRTC_LOCK, _MEM_ALLOC_LOCK:
@@ -147,7 +146,7 @@ def load_kernel(
 
     """
     if verbose:
-        _log.debug(f"Loading kernel: {name} from PTX")
+        LOG.debug(f"Loading kernel: {name} from PTX")
 
     with _NVRTC_LOCK, _MEM_ALLOC_LOCK:
         module: cuda.CUmodule = cuda_call(cuda.cuModuleLoadData(kernel_ptx.ctypes.data))

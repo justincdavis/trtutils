@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -13,6 +12,8 @@ import numpy as np
 
 with contextlib.suppress(Exception):
     from cuda import cuda  # type: ignore[import-untyped, import-not-found]
+
+from trtutils._log import LOG
 
 from ._cuda import cuda_call
 from ._nvrtc import compile_and_load_kernel
@@ -22,8 +23,6 @@ if TYPE_CHECKING:
 
     with contextlib.suppress(Exception):
         from cuda import cudart  # type: ignore[import-untyped, import-not-found]
-
-_log = logging.getLogger(__name__)
 
 
 class Kernel:
@@ -149,7 +148,7 @@ class Kernel:
 
         """
         if verbose:
-            _log.debug(
+            LOG.debug(
                 f"Calling kernel: {self._name}, blocks: {num_blocks}, threads: {num_threads}, args: {args}",
             )
 
@@ -243,7 +242,7 @@ def create_kernel_args(
     """
     # verbose output
     if verbose:
-        _log.debug(f"Converting args: {args}")
+        LOG.debug(f"Converting args: {args}")
 
     # convert all args to np.ndarrays
     converted_args: list[np.ndarray] = []
@@ -260,7 +259,7 @@ def create_kernel_args(
 
         if verbose:
             last_arg = converted_args[-1]
-            _log.debug(f"Converted Arg: {arg} -> Array: {last_arg} {last_arg.dtype}")
+            LOG.debug(f"Converted Arg: {arg} -> Array: {last_arg} {last_arg.dtype}")
 
     # get a pointer to each np.ndarray and pack into new array
     ptrs: np.ndarray = np.array(
@@ -269,6 +268,6 @@ def create_kernel_args(
     )
 
     if verbose:
-        _log.debug(f"Generated pointers: {ptrs}")
+        LOG.debug(f"Generated pointers: {ptrs}")
 
     return ptrs, converted_args
