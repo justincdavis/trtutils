@@ -65,7 +65,7 @@ class TRTEngineInterface(ABC):
         ]
 
         # store useful properties about the engine
-        self._memsize = self._engine.device_memory_size
+        self._memsize: int = self._engine.device_memory_size
 
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None
@@ -94,7 +94,7 @@ class TRTEngineInterface(ABC):
     def stream(self: Self) -> cudart.cudaStream_t:
         """Access the underlying CUDA stream."""
         return self._stream
-    
+
     @property
     def memsize(self: Self) -> int:
         """The size of the engine in bytes."""

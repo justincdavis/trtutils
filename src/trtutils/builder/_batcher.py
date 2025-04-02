@@ -271,7 +271,9 @@ class ImageBatcher(AbstractBatcher):
                     self._queue.put(data, timeout=0.1)
 
                     if self._verbose:
-                        _log.debug(f"ImageBatcher put batch: {idx} / {len(self._batches)}")
+                        _log.debug(
+                            f"ImageBatcher put batch: {idx} / {len(self._batches)}"
+                        )
 
                     break
                 except Full:
@@ -296,7 +298,9 @@ class ImageBatcher(AbstractBatcher):
                 self._current_batch += 1
 
                 if self._verbose:
-                    _log.debug(f"ImageBatcher get batch: {self._current_batch} / {len(self._batches)}")
+                    _log.debug(
+                        f"ImageBatcher get batch: {self._current_batch} / {len(self._batches)}"
+                    )
 
                 return batch
 

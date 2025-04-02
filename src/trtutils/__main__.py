@@ -148,8 +148,6 @@ def _build(args: SimpleNamespace) -> None:
 def _can_run_on_dla(args: SimpleNamespace) -> None:
     full_dla, chunks = trtutils.builder.can_run_on_dla(
         onnx=Path(args.onnx),
-        int8=args.int8,
-        fp16=args.fp16,
         verbose_layers=args.verbose_layers,
         verbose_chunks=args.verbose_chunks,
     )
@@ -168,11 +166,11 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
 
 
 def _build_dla(args: SimpleNamespace) -> None:
-    dtype = np.float32
+    dtype: np.dtype = np.dtype("float32")
     if args.dtype == "float16":
-        dtype = np.float16
+        dtype = np.dtype("float16")
     elif args.dtype == "int8":
-        dtype = np.int8
+        dtype = np.dtype("int8")
 
     batcher = trtutils.builder.ImageBatcher(
         image_dir=args.image_dir,
@@ -468,16 +466,6 @@ def _main() -> None:
         "-o",
         required=True,
         help="Path to the ONNX model file.",
-    )
-    can_run_on_dla_parser.add_argument(
-        "--int8",
-        action="store_true",
-        help="Use INT8 precision to assess DLA compatibility.",
-    )
-    can_run_on_dla_parser.add_argument(
-        "--fp16",
-        action="store_true",
-        help="Use FP16 precision to assess DLA compatibility.",
     )
     can_run_on_dla_parser.add_argument(
         "--verbose_layers",

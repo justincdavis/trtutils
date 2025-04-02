@@ -31,15 +31,15 @@ from __future__ import annotations
 from ._batcher import ImageBatcher
 from ._build import build_engine
 from ._calibrator import EngineCalibrator
-from ._dla import can_run_on_dla, build_dla_engine
+from ._dla import build_dla_engine, can_run_on_dla
 from ._onnx import read_onnx
 
 __all__ = [
     "EngineCalibrator",
     "ImageBatcher",
+    "build_dla_engine",
     "build_engine",
     "can_run_on_dla",
-    "build_dla_engine",
     "read_onnx",
 ]
 

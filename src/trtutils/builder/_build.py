@@ -112,6 +112,9 @@ def build_engine(
         If the ONNX model cannot be parsed
     RuntimeError
         If the TensorRT engines fails to build
+    ValueError
+        If layer is manually assigned to DLA and DLA is not supported
+        and gpu_fallback is False
 
     """
     output_path = Path(output).resolve()

@@ -10,13 +10,14 @@ from typing import TYPE_CHECKING
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
-from ._batcher import AbstractBatcher
 from ._build import build_engine
 from ._onnx import read_onnx
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+
+    from ._batcher import AbstractBatcher
 
 _log = logging.getLogger(__name__)
 
@@ -57,7 +58,8 @@ def can_run_on_dla(
     # handle network input
     if isinstance(onnx, trt.INetworkDefinition):
         if config is None:
-            raise ValueError("config must be provided when onnx is a network")
+            err_msg = "Config must be provided when onnx is a network"
+            raise ValueError(err_msg)
         network = onnx
     else:
         network, _, config, _, _ = read_onnx(onnx)
@@ -125,13 +127,13 @@ def build_dla_engine(
 ) -> None:
     """
     Automatically build a TensorRT engine for DLA with automatic layer assignments.
-    
+
     This function will:
     1. Check which layers can run on DLA
     2. Find the largest chunk of DLA-compatible layers
     3. Assign those layers to DLA with INT8 precision
     4. Assign remaining layers to GPU with FP16 precision
-    
+
     Parameters
     ----------
     onnx : Path, str
@@ -156,7 +158,7 @@ def build_dla_engine(
         verbose_layers=verbose,
         verbose_chunks=verbose,
     )
-    
+
     if verbose:
         _log.info(f"Model can run fully on DLA: {full_dla}")
         _log.info(f"Found {len(chunks)} chunks of layers")
@@ -173,7 +175,7 @@ def build_dla_engine(
             verbose=verbose,
         )
         return
-    
+
     # identify if any chunks contain DLA layers
     dla_chunks = [(i, chunk) for i, chunk in enumerate(chunks) if chunk[3]]
 
@@ -187,22 +189,22 @@ def build_dla_engine(
             verbose=verbose,
         )
         return
-    
+
     # Get the largest DLA chunk
     _, largest_dla_chunk = max(dla_chunks, key=lambda x: len(x[1][0]))
     dla_start, dla_end = largest_dla_chunk[1], largest_dla_chunk[2]
-    
+
     if verbose:
         _log.info(f"Largest DLA chunk: layers {dla_start} to {dla_end}")
-    
+
     layer_precision: list[tuple[int, trt.DataType]] = []
     layer_device: list[tuple[int, trt.DeviceType]] = []
-    
+
     # create specific DLA layer assignments
     for idx in range(largest_dla_chunk[1], largest_dla_chunk[2] + 1):
         layer_precision.append((idx, trt.DataType.INT8))
         layer_device.append((idx, trt.DeviceType.DLA))
-    
+
     # build engine with specific layer assignments
     build_engine(
         onnx,
