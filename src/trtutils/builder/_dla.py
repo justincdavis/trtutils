@@ -219,7 +219,7 @@ def build_dla_engine(
         layer_precision=layer_precision,
         layer_device=layer_device,
         dla_core=dla_core,  # Keep DLA core specified for context
-        gpu_fallback=True,  # Explicitly enable GPU fallback
+        gpu_fallback=False,  # Explicitly disable GPU fallback
         fp16=True,
         int8=True,
         verbose=verbose,
