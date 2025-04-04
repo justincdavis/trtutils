@@ -14,8 +14,8 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._calibrator import EngineCalibrator
-from ._dla import get_check_dla
 from ._onnx import read_onnx
+from ._utils import get_check_dla
 
 with contextlib.suppress(AttributeError):
     from ._progress import ProgressBar

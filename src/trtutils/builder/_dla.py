@@ -9,38 +9,17 @@ from typing import TYPE_CHECKING
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
-from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._build import build_engine
 from ._onnx import read_onnx
+from ._utils import get_check_dla
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
     from ._batcher import AbstractBatcher
-
-
-def get_check_dla(config: trt.IBuilderConfig) -> Callable[[trt.ILayer], bool]:
-    """
-    Get the check_dla function for the given config.
-
-    Parameters
-    ----------
-    config : trt.IBuilderConfig
-        The TensorRT builder config.
-
-    Returns
-    -------
-    Callable[[trt.ILayer], bool]
-        The check_dla function.
-
-    """
-    check_dla: Callable[[trt.ILayer], bool] = (
-        config.can_run_on_DLA if FLAGS.NEW_CAN_RUN_ON_DLA else config.canRunOnDLA
-    )
-    return check_dla
 
 
 def can_run_on_dla(
@@ -218,9 +197,19 @@ def build_dla_engine(
     layer_device: list[tuple[int, trt.DeviceType]] = []
 
     # create specific DLA layer assignments
-    for idx in range(largest_dla_chunk[1], largest_dla_chunk[2] + 1):
-        layer_precision.append((idx, trt.DataType.INT8))
-        layer_device.append((idx, trt.DeviceType.DLA))
+    for idx in range(network.num_layers):
+        layer = network.get_layer(idx)
+        if dla_start <= idx <= dla_end:
+            layer_precision.append((idx, trt.DataType.INT8))
+            layer_device.append((idx, trt.DeviceType.DLA))
+            if verbose:
+                LOG.info(f"Assigning layer {idx} ({layer.name}) to DLA (INT8)")
+        else:
+            # Explicitly assign others to GPU FP16, although builder might default correctly
+            # layer_precision.append((idx, trt.DataType.HALF))
+            layer_device.append((idx, trt.DeviceType.GPU))
+            if verbose:
+                LOG.info(f"Assigning layer {idx} ({layer.name}) to GPU (FP16)")
 
     # build engine with specific layer assignments
     build_engine(
@@ -229,6 +218,8 @@ def build_dla_engine(
         data_batcher=data_batcher,
         layer_precision=layer_precision,
         layer_device=layer_device,
+        dla_core=dla_core,  # Keep DLA core specified for context
+        gpu_fallback=True,  # Explicitly enable GPU fallback
         fp16=True,
         int8=True,
         verbose=verbose,

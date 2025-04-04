@@ -217,28 +217,39 @@ def _run_yolo(args: SimpleNamespace) -> None:
             raise ValueError(err_msg)
 
         dets = yolo.end2end(img)
+        LOG.info(f"Found {len(dets)} detections")
         bboxes = [d[0] for d in dets]
         scores = [d[1] for d in dets]
         classes = [d[2] for d in dets]
 
         canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
-        cv2.imshow("YOLO", canvas)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+
+        if args.show:
+            cv2.imshow("YOLO", canvas)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
 
     elif is_video:
-        with cv2ext.Display(f"YOLO detection: {input_path.stem}") as display:
-            for _, frame in cv2ext.IterableVideo(input_path):
-                if display.stopped:
-                    break
+        if args.show:
+            display = cv2ext.Display(f"YOLO detection: {input_path.stem}")
+        else:
+            display = None
+        for fid, frame in cv2ext.IterableVideo(input_path):
+            if display is not None and display.stopped:
+                break
 
-                dets = yolo.end2end(frame)
-                bboxes = [d[0] for d in dets]
-                scores = [d[1] for d in dets]
-                classes = [d[2] for d in dets]
+            dets = yolo.end2end(frame)
+            LOG.info(f"Frame {fid}:  {len(dets)} detections")
+            bboxes = [d[0] for d in dets]
+            scores = [d[1] for d in dets]
+            classes = [d[2] for d in dets]
 
-                canvas = cv2ext.bboxes.draw_bboxes(frame, bboxes, scores, classes)
+            canvas = cv2ext.bboxes.draw_bboxes(frame, bboxes, scores, classes)
+            if display is not None:
                 display.update(canvas)
+
+        if display is not None:
+            display.stop()
 
     else:
         err_msg = f"Invalid input file: {input_path}"
@@ -605,6 +616,11 @@ def _main() -> None:
         type=int,
         default=10,
         help="Number of warmup iterations. Default is 10.",
+    )
+    yolo_parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Show the detections.",
     )
     yolo_parser.add_argument(
         "--verbose",
