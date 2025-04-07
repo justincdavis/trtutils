@@ -97,6 +97,11 @@ def compile_kernel(
     tuple[np.char.chararray, str]
         The compiled PTX kernel and the kernel name.
 
+    Raises
+    ------
+    RuntimeError
+        If the version of cuda-python installed does not match the version of CUDA installed.
+
     """
     kernel_bytes = kernel.encode()
     kernel_name_bytes = f"{name}.cu".encode()
@@ -115,7 +120,7 @@ def compile_kernel(
                 err_msg = str(err)
                 err_msg += " Ensure the version of cuda-python installed matches the version of CUDA installed."
                 raise RuntimeError(err_msg) from err
-            raise err
+            raise
         opts = [] if opts is None else opts
         nvrtc_call(nvrtc.nvrtcCompileProgram(prog, len(opts), opts))
 
