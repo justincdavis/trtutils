@@ -29,13 +29,14 @@ if TYPE_CHECKING:
 def build_engine(
     onnx: Path | str,
     output: Path | str,
+    default_device: trt.DeviceType | str = trt.DeviceType.GPU,
     timing_cache: Path | str | None = None,
     workspace: float = 4.0,
     dla_core: int | None = None,
     calibration_cache: Path | str | None = None,
     data_batcher: AbstractBatcher | None = None,
-    layer_precision: list[tuple[int, trt.DataType]] | None = None,
-    layer_device: list[tuple[int, trt.DeviceType]] | None = None,
+    layer_precision: list[tuple[int, trt.DataType | None]] | None = None,
+    layer_device: list[tuple[int, trt.DeviceType | None]] | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -55,6 +56,11 @@ def build_engine(
         The path to the onnx model.
     output : Path, str
         The location to save the TensorRT engine.
+    default_device : trt.DeviceType, str, optional
+        The device to use for the engine.
+        By default, trt.DeviceType.GPU.
+        Options are trt.DeviceType.GPU, trt.DeviceType.DLA, or a string
+        of "gpu" or "dla".
     timing_cache : Path, str, optional
         Where to store the timing cache data.
         Default is None.
@@ -68,10 +74,10 @@ def build_engine(
     dla_core : int, optional
         The DLA core to build the engine for.
         By default, None or build the engine for GPU.
-    layer_precision : list[tuple[int, trt.DataType]], optional
+    layer_precision : list[tuple[int, trt.DataType | None]], optional
         The precision to use for specific layers.
         By default, None.
-    layer_device : list[tuple[int, trt.DeviceType]], optional
+    layer_device : list[tuple[int, trt.DeviceType | None]], optional
         The device to use for specific layers.
         By default, None.
     gpu_fallback : bool
@@ -110,6 +116,26 @@ def build_engine(
         and gpu_fallback is False
 
     """
+    # match the device
+    valid_gpu = ["gpu", "GPU"]
+    valid_dla = ["dla", "DLA"]
+    if isinstance(default_device, str):
+        if default_device not in valid_gpu + valid_dla:
+            err_msg = f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            raise ValueError(err_msg)
+        default_device = (
+            trt.DeviceType.GPU if default_device in valid_gpu else trt.DeviceType.DLA
+        )
+    else:
+        if default_device not in [trt.DeviceType.GPU, trt.DeviceType.DLA]:
+            err_msg = f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            raise ValueError(err_msg)
+        default_device = (
+            trt.DeviceType.GPU
+            if default_device == trt.DeviceType.GPU
+            else trt.DeviceType.DLA
+        )
+
     output_path = Path(output).resolve()
 
     # read the onnx model
@@ -166,22 +192,38 @@ def build_engine(
         if data_batcher is not None:
             config.int8_calibrator.set_batcher(data_batcher)
 
+    # assign the default device
+    config.default_device_type = default_device
+
     # handle DLA assignment
     if dla_core is not None:
-        config.default_device_type = trt.DeviceType.DLA
         config.DLA_core = dla_core
     if gpu_fallback:
         config.set_flag(trt.BuilderFlag.GPU_FALLBACK)
 
     # handle individual layer precision
     if layer_precision is not None:
+        # validate length
+        if len(layer_precision) != network.num_layers:
+            err_msg = "Layer precision list must be the same length as the number of layers in the network."
+            raise ValueError(err_msg)
+        # handle precision assignment
         for layer_idx, precision in layer_precision:
+            if precision is None:
+                continue
             layer = network.get_layer(layer_idx)
             layer.precision = precision
 
     # handle individual layer device
     if layer_device is not None:
+        # validate length
+        if len(layer_device) != network.num_layers:
+            err_msg = "Layer device list must be the same length as the number of layers in the network."
+            raise ValueError(err_msg)
+        # handle device assignment
         for layer_idx, device in layer_device:
+            if device is None:
+                continue
             layer = network.get_layer(layer_idx)
             # assess if can run on DLA
             if device == trt.DeviceType.DLA and not check_dla(layer):

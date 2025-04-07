@@ -118,6 +118,7 @@ def build_dla_engine(
     output_path: Path | str,
     data_batcher: AbstractBatcher,
     dla_core: int,
+    timing_cache: Path | str | None = None,
     *,
     verbose: bool | None = None,
 ) -> None:
@@ -140,6 +141,8 @@ def build_dla_engine(
         The data batcher instance for INT8 calibration
     dla_core : int
         The DLA core to use
+    timing_cache : Path, str, optional
+        The path to the timing cache file
     verbose : bool, optional
         Whether to print verbose output, by default False
 
@@ -193,33 +196,44 @@ def build_dla_engine(
     if verbose:
         LOG.info(f"Largest DLA chunk: layers {dla_start} to {dla_end}")
 
-    layer_precision: list[tuple[int, trt.DataType]] = []
-    layer_device: list[tuple[int, trt.DeviceType]] = []
+    layer_precision: list[tuple[int, trt.DataType | None]] = []
+    layer_device: list[tuple[int, trt.DeviceType | None]] = []
 
     # create specific DLA layer assignments
+    exclude_layer_types = [trt.LayerType.CONSTANT, trt.LayerType.SHUFFLE]
     for idx in range(network.num_layers):
         layer = network.get_layer(idx)
+        layer_name: str = layer.name
+        layer_name = layer_name.lower()
+        LOG.debug(f"Assigning layer: {idx} - ({layer_name})")
         if dla_start <= idx <= dla_end:
             layer_precision.append((idx, trt.DataType.INT8))
             layer_device.append((idx, trt.DeviceType.DLA))
             if verbose:
                 LOG.info(f"Assigning layer {idx} ({layer.name}) to DLA (INT8)")
         else:
-            # Explicitly assign others to GPU FP16, although builder might default correctly
-            # layer_precision.append((idx, trt.DataType.HALF))
+            # if the layer is not in the DLA chunk, simply assign to GPU
             layer_device.append((idx, trt.DeviceType.GPU))
             if verbose:
                 LOG.info(f"Assigning layer {idx} ({layer.name}) to GPU (FP16)")
+            # intelligently assign precision level to HALF unless layer
+            # is Constant, Shuffle, or Tile
+            if layer.type in exclude_layer_types or "tile" in layer_name:
+                layer_precision.append((idx, None))
+            else:
+                layer_precision.append((idx, trt.DataType.HALF))
 
     # build engine with specific layer assignments
     build_engine(
         onnx,
         output_path,
+        default_device=trt.DeviceType.GPU,  # default device GPU
+        timing_cache=timing_cache,
         data_batcher=data_batcher,
         layer_precision=layer_precision,
         layer_device=layer_device,
-        dla_core=dla_core,  # Keep DLA core specified for context
-        gpu_fallback=False,  # Explicitly disable GPU fallback
+        dla_core=dla_core,  # ensure DLA core is maintained
+        gpu_fallback=True,  # enable GPU fallback to account for input/copy
         fp16=True,
         int8=True,
         verbose=verbose,

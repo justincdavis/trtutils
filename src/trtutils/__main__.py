@@ -184,6 +184,7 @@ def _build_dla(args: SimpleNamespace) -> None:
         output_path=Path(args.output),
         data_batcher=batcher,
         dla_core=args.dla_core,
+        timing_cache=args.timing_cache,
         verbose=args.verbose,
     )
 
@@ -336,6 +337,13 @@ def _main() -> None:
         "-out",
         required=True,
         help="Path to save the TensorRT engine file.",
+    )
+    build_parser.add_argument(
+        "--device",
+        "-d",
+        choices=["gpu", "dla", "GPU", "DLA"],
+        default="gpu",
+        help="Device to use for the engine. Default is 'gpu'.",
     )
     build_parser.add_argument(
         "--timing_cache",
@@ -550,6 +558,12 @@ def _main() -> None:
         nargs=2,
         default=[0.0, 1.0],
         help="Input value range. Default is [0.0, 1.0].",
+    )
+    build_dla_parser.add_argument(
+        "--timing_cache",
+        "-tc",
+        default=None,
+        help="Path to store timing cache data. Default is 'timing.cache'.",
     )
     build_dla_parser.add_argument(
         "--verbose",
