@@ -106,9 +106,16 @@ def compile_kernel(
 
     # compile the kernel
     with _NVRTC_LOCK, _MEM_ALLOC_LOCK:
-        prog = nvrtc_call(
-            nvrtc.nvrtcCreateProgram(kernel_bytes, kernel_name_bytes, 0, [], []),
-        )
+        try:
+            prog = nvrtc_call(
+                nvrtc.nvrtcCreateProgram(kernel_bytes, kernel_name_bytes, 0, [], []),
+            )
+        except RuntimeError as err:
+            if "Failed to dlopen libnvrtc" in str(err):
+                err_msg = str(err)
+                err_msg += " Ensure the version of cuda-python installed matches the version of CUDA installed."
+                raise RuntimeError(err_msg) from err
+            raise err
         opts = [] if opts is None else opts
         nvrtc_call(nvrtc.nvrtcCompileProgram(prog, len(opts), opts))
 
