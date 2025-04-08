@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -211,14 +212,27 @@ def _run_yolo(args: SimpleNamespace) -> None:
         verbose=args.verbose,
     )
 
+    def _summarize_classes(dets: list[tuple[tuple[int, int, int, int], float, int]]) -> list[tuple[str, int]]:
+        class_count = {}
+        for _, _, class_id in dets:
+            if class_id not in class_count:
+                class_count[class_id] = 0
+            class_count[class_id] += 1    
+        return sorted([(cid, count) for cid, count in class_count.items()], key=lambda x: x[0])
+
     if is_image:
         img = cv2.imread(str(input_path))
         if img is None:
             err_msg = f"Failed to read image: {input_path}"
             raise ValueError(err_msg)
 
-        dets = yolo.end2end(img)
-        LOG.info(f"Found {len(dets)} detections")
+        t0 = time.time()
+        dets = yolo.end2end(img, conf_thres=args.conf_thres, verbose=args.verbose)
+        t1 = time.time()
+        if args.verbose:
+            LOG.info(f"Found {len(dets)} detections in {round((t1 - t0) * 1000.0, 2)} ms")
+            for class_id, count in _summarize_classes(dets):
+                LOG.info(f"\tClass {class_id} - {count} detections")
         bboxes = [d[0] for d in dets]
         scores = [d[1] for d in dets]
         classes = [d[2] for d in dets]
@@ -239,8 +253,13 @@ def _run_yolo(args: SimpleNamespace) -> None:
             if display is not None and display.stopped:
                 break
 
-            dets = yolo.end2end(frame)
-            LOG.info(f"Frame {fid}:  {len(dets)} detections")
+            t0 = time.time()
+            dets = yolo.end2end(frame, conf_thres=args.conf_thres, verbose=args.verbose)
+            t1 = time.time()
+            if args.verbose:
+                LOG.info(f"Frame {fid}: {len(dets)} detections in {round((t1 - t0) * 1000.0, 2)} ms")
+                for class_id, count in _summarize_classes(dets):
+                    LOG.info(f"\tClass {class_id} - {count} detections")
             bboxes = [d[0] for d in dets]
             scores = [d[1] for d in dets]
             classes = [d[2] for d in dets]
