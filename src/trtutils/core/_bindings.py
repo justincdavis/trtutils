@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 from dataclasses import dataclass
 from threading import Lock
 from typing import TYPE_CHECKING
@@ -16,6 +15,7 @@ with contextlib.suppress(Exception):
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from trtutils._flags import FLAGS
+from trtutils._log import LOG
 
 from ._cuda import cuda_call
 from ._memory import allocate_pinned_memory, cuda_malloc
@@ -24,8 +24,6 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 _BINDING_LOCK = Lock()
-
-_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -180,7 +178,7 @@ def allocate_bindings(
                 outputs.append(binding)
             input_str = "Input" if is_input else "Output"
             log_msg = f"{input_str}-{i} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
-            _log.debug(log_msg)
+            LOG.debug(log_msg)
 
     if batch_size == 0:
         err_msg = "Batch size is 0. Ensure that the engine has an input tensor with a valid batch size."
@@ -222,7 +220,7 @@ def create_binding(
             host_alloc = np.zeros((1, 1), dtype)
         elif pagelocked_mem:
             # allocate the pagelocked memory
-            _log.debug(f"Allocating pagelocked mem during Binding: {bind_id}, {name}")
+            LOG.debug(f"Allocating pagelocked mem during Binding: {bind_id}, {name}")
             host_alloc = allocate_pinned_memory(size, dtype, shape)
         else:
             # allocate non-pagelocked memory

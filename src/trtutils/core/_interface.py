@@ -17,6 +17,10 @@ from ._engine import create_engine
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+    with contextlib.suppress(ImportError):
+        import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+
 
 class TRTEngineInterface(ABC):
     def __init__(
@@ -60,6 +64,9 @@ class TRTEngineInterface(ABC):
             output_b.allocation for output_b in self._outputs
         ]
 
+        # store useful properties about the engine
+        self._memsize: int = self._engine.device_memory_size
+
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None
 
@@ -67,6 +74,109 @@ class TRTEngineInterface(ABC):
     def name(self: Self) -> str:
         """The name of the engine, as the stem of the Path."""
         return self._name
+
+    @property
+    def engine(self: Self) -> trt.ICudaEngine:
+        """Access the raw TensorRT CUDA engine."""
+        return self._engine
+
+    @property
+    def context(self: Self) -> trt.IExecutionContext:
+        """Access the TensorRT execution context for the engine."""
+        return self._context
+
+    @property
+    def logger(self: Self) -> trt.ILogger:
+        """Access the TensorRT logger used for the engine."""
+        return self._logger
+
+    @property
+    def stream(self: Self) -> cudart.cudaStream_t:
+        """Access the underlying CUDA stream."""
+        return self._stream
+
+    @property
+    def memsize(self: Self) -> int:
+        """The size of the engine in bytes."""
+        return self._memsize
+
+    @cached_property
+    def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
+        """
+        Get the specs for the input tensor of the network. Useful to prepare memory allocations.
+
+        Returns
+        -------
+        list[tuple[list[int], np.dtype]]
+            A list with two items per element, the shape and (numpy) datatype of each input tensor.
+
+        """
+        return [(i.shape, i.dtype) for i in self._inputs]
+
+    @cached_property
+    def input_shapes(self: Self) -> list[tuple[int, ...]]:
+        """
+        Get the shapes for the input tensors of the network.
+
+        Returns
+        -------
+        list[tuple[int, ...]]
+            A list with the shape of each input tensor.
+
+        """
+        return [tuple(i.shape) for i in self._inputs]
+
+    @cached_property
+    def input_dtypes(self: Self) -> list[np.dtype]:
+        """
+        Get the datatypes for the input tensors of the network.
+
+        Returns
+        -------
+        list[np.dtype]
+            A list with the datatype of each input tensor.
+
+        """
+        return [i.dtype for i in self._inputs]
+
+    @cached_property
+    def output_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
+        """
+        Get the specs for the output tensor of the network. Useful to prepare memory allocations.
+
+        Returns
+        -------
+        list[tuple[list[int], np.dtype]]
+            A list with two items per element, the shape and (numpy) datatype of each output tensor.
+
+        """
+        return [(o.shape, o.dtype) for o in self._outputs]
+
+    @cached_property
+    def output_shapes(self: Self) -> list[tuple[int, ...]]:
+        """
+        Get the shapes for the output tensors of the network.
+
+        Returns
+        -------
+        list[tuple[int, ...]]
+            A list with the shape of each output tensor.
+
+        """
+        return [tuple(o.shape) for o in self._outputs]
+
+    @cached_property
+    def output_dtypes(self: Self) -> list[np.dtype]:
+        """
+        Get the datatypes for the output tensors of the network.
+
+        Returns
+        -------
+        list[np.dtype]
+            A list with the datatype of each output tensor.
+
+        """
+        return [o.dtype for o in self._outputs]
 
     def __del__(self: Self) -> None:
         def _del(obj: object, attr: str) -> None:
@@ -140,84 +250,6 @@ class TRTEngineInterface(ABC):
         -------
         list[np.ndarray]
             The outputs of the network.
-
-        """
-
-    @property
-    @abstractmethod
-    def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
-        """
-        Get the specs for the input tensor of the network. Useful to prepare memory allocations.
-
-        Returns
-        -------
-        list[tuple[list[int], np.dtype]]
-            A list with two items per element, the shape and (numpy) datatype of each input tensor.
-
-        """
-
-    @property
-    @abstractmethod
-    def input_shapes(self: Self) -> list[tuple[int, ...]]:
-        """
-        Get the shapes for the input tensors of the network.
-
-        Returns
-        -------
-        list[tuple[int, ...]]
-            A list with the shape of each input tensor.
-
-        """
-
-    @property
-    @abstractmethod
-    def input_dtypes(self: Self) -> list[np.dtype]:
-        """
-        Get the datatypes for the input tensors of the network.
-
-        Returns
-        -------
-        list[np.dtype]
-            A list with the datatype of each input tensor.
-
-        """
-
-    @property
-    @abstractmethod
-    def output_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
-        """
-        Get the specs for the output tensor of the network. Useful to prepare memory allocations.
-
-        Returns
-        -------
-        list[tuple[list[int], np.dtype]]
-            A list with two items per element, the shape and (numpy) datatype of each output tensor.
-
-        """
-
-    @property
-    @abstractmethod
-    def output_shapes(self: Self) -> list[tuple[int, ...]]:
-        """
-        Get the shapes for the output tensors of the network.
-
-        Returns
-        -------
-        list[tuple[int, ...]]
-            A list with the shape of each output tensor.
-
-        """
-
-    @property
-    @abstractmethod
-    def output_dtypes(self: Self) -> list[np.dtype]:
-        """
-        Get the datatypes for the output tensors of the network.
-
-        Returns
-        -------
-        list[np.dtype]
-            A list with the datatype of each output tensor.
 
         """
 

@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 with contextlib.suppress(Exception):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
+from trtutils._log import LOG
+
 from ._stream import create_stream
 
 if TYPE_CHECKING:
@@ -62,7 +64,7 @@ def create_engine(
     if log_level is None:
         log_level = trt.Logger.WARNING
     trt_logger = logger or trt.Logger(log_level)
-    trt.init_libnvinfer_plugins(trt_logger, "")
+    trt_logger = LOG
 
     # load the engine from file
     with Path.open(engine_path, "rb") as f, trt.Runtime(

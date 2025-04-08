@@ -4,37 +4,39 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
-
-from trtutils._flags import FLAGS
-
-from ._calibrator import EngineCalibrator
-from ._onnx import read_onnx
-
-with contextlib.suppress(AttributeError):
-    from ._progress import ProgressBar
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
-if TYPE_CHECKING:
-    from ._batcher import AbstractBatcher
+from trtutils._flags import FLAGS
+from trtutils._log import LOG
 
-_log = logging.getLogger(__name__)
+from ._calibrator import EngineCalibrator
+from ._onnx import read_onnx
+from ._utils import get_check_dla
+
+with contextlib.suppress(AttributeError):
+    from ._progress import ProgressBar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from ._batcher import AbstractBatcher
 
 
 def build_engine(
     onnx: Path | str,
     output: Path | str,
+    default_device: trt.DeviceType | str = trt.DeviceType.GPU,
     timing_cache: Path | str | None = None,
-    logger: trt.ILogger | None = None,
-    log_level: trt.ILogger.Severity | None = None,
     workspace: float = 4.0,
     dla_core: int | None = None,
     calibration_cache: Path | str | None = None,
     data_batcher: AbstractBatcher | None = None,
+    layer_precision: list[tuple[int, trt.DataType | None]] | None = None,
+    layer_device: list[tuple[int, trt.DeviceType | None]] | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -54,13 +56,14 @@ def build_engine(
         The path to the onnx model.
     output : Path, str
         The location to save the TensorRT engine.
+    default_device : trt.DeviceType, str, optional
+        The device to use for the engine.
+        By default, trt.DeviceType.GPU.
+        Options are trt.DeviceType.GPU, trt.DeviceType.DLA, or a string
+        of "gpu" or "dla".
     timing_cache : Path, str, optional
         Where to store the timing cache data.
         Default is None.
-    logger : trt.ILogger, optional
-        The logger to use, by default None
-    log_level : trt.ILogger.Severity, optional
-        The log level to use if the logger is None, by default trt.Logger.WARNING
     workspace : float
         The size of the workspace in gigabytes.
         Default is 4.0 GiB.
@@ -71,6 +74,12 @@ def build_engine(
     dla_core : int, optional
         The DLA core to build the engine for.
         By default, None or build the engine for GPU.
+    layer_precision : list[tuple[int, trt.DataType | None]], optional
+        The precision to use for specific layers.
+        By default, None.
+    layer_device : list[tuple[int, trt.DeviceType | None]], optional
+        The device to use for specific layers.
+        By default, None.
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
         when building the engine for DLA.
@@ -102,20 +111,44 @@ def build_engine(
         If the ONNX model cannot be parsed
     RuntimeError
         If the TensorRT engines fails to build
+    ValueError
+        If layer is manually assigned to DLA and DLA is not supported
+        and gpu_fallback is False
 
     """
+    # match the device
+    valid_gpu = ["gpu", "GPU"]
+    valid_dla = ["dla", "DLA"]
+    if isinstance(default_device, str):
+        if default_device not in valid_gpu + valid_dla:
+            err_msg = f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            raise ValueError(err_msg)
+        default_device = (
+            trt.DeviceType.GPU if default_device in valid_gpu else trt.DeviceType.DLA
+        )
+    else:
+        if default_device not in [trt.DeviceType.GPU, trt.DeviceType.DLA]:
+            err_msg = f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            raise ValueError(err_msg)
+        default_device = (
+            trt.DeviceType.GPU
+            if default_device == trt.DeviceType.GPU
+            else trt.DeviceType.DLA
+        )
+
     output_path = Path(output).resolve()
 
     # read the onnx model
-    network, builder, config, _, trt_logger = read_onnx(
+    network, builder, config, _ = read_onnx(
         onnx,
-        logger,
-        log_level,
         workspace,
     )
 
+    # helper function for checking if layer can run on DLA
+    check_dla: Callable[[trt.ILayer], bool] = get_check_dla(config)
+
     if verbose and FLAGS.BUILD_PROGRESS:
-        _log.debug("Applying ProgressBar to config")
+        LOG.debug("Applying ProgressBar to config")
         config.progress_monitor = ProgressBar()
 
     # create profile and config
@@ -146,25 +179,62 @@ def build_engine(
     if fp16 or int8:
         # want to enable fp16 for both int8 and fp16 since fp16 may be faster
         if not builder.platform_has_fast_fp16:
-            trt_logger.warning("Platform does not have native fast FP16.")
+            LOG.warning("Platform does not have native fast FP16.")
         config.set_flag(trt.BuilderFlag.FP16)
     if int8:
         if not builder.platform_has_fast_int8:
-            trt_logger.warning("Platform does not have native fast INT8.")
+            LOG.warning("Platform does not have native fast INT8.")
         config.set_flag(trt.BuilderFlag.INT8)
         if calibration_cache is None and data_batcher is None:
             err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
-            _log.warning(err_msg)
+            LOG.warning(err_msg)
         config.int8_calibrator = EngineCalibrator(calibration_cache=calibration_cache)
         if data_batcher is not None:
             config.int8_calibrator.set_batcher(data_batcher)
 
+    # assign the default device
+    config.default_device_type = default_device
+
     # handle DLA assignment
     if dla_core is not None:
-        config.default_device_type = trt.DeviceType.DLA
         config.DLA_core = dla_core
     if gpu_fallback:
         config.set_flag(trt.BuilderFlag.GPU_FALLBACK)
+
+    # handle individual layer precision
+    if layer_precision is not None:
+        # validate length
+        if len(layer_precision) != network.num_layers:
+            err_msg = "Layer precision list must be the same length as the number of layers in the network."
+            raise ValueError(err_msg)
+        # handle precision assignment
+        for layer_idx, precision in layer_precision:
+            if precision is None:
+                continue
+            layer = network.get_layer(layer_idx)
+            layer.precision = precision
+
+    # handle individual layer device
+    if layer_device is not None:
+        # validate length
+        if len(layer_device) != network.num_layers:
+            err_msg = "Layer device list must be the same length as the number of layers in the network."
+            raise ValueError(err_msg)
+        # handle device assignment
+        for layer_idx, device in layer_device:
+            if device is None:
+                continue
+            layer = network.get_layer(layer_idx)
+            # assess if can run on DLA
+            if device == trt.DeviceType.DLA and not check_dla(layer):
+                err_msg = f"Layer {layer.name} (type: {layer.type}) cannot run on DLA"
+                if gpu_fallback:
+                    err_msg += ", using GPU fallback"
+                    LOG.warning(err_msg)
+                else:
+                    raise ValueError(err_msg)
+            else:
+                config.set_device_type(layer, device)
 
     # build the engine
     if FLAGS.BUILD_SERIALIZED:

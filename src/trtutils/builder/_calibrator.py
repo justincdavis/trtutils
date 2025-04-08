@@ -4,22 +4,19 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
 
+from trtutils._log import LOG
 from trtutils.core import cuda_malloc, memcpy_host_to_device
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
     from ._batcher import AbstractBatcher
-
-
-_log = logging.getLogger(__name__)
 
 
 class EngineCalibrator(trt.IInt8EntropyCalibrator2):
@@ -117,7 +114,7 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             return None
 
         with self._cache_path.open("rb") as f:
-            _log.debug(f"Reading calibration cache file: {self._cache_path}")
+            LOG.debug(f"Reading calibration cache file: {self._cache_path}")
             data: bytes = f.read()
             return data
 
@@ -137,5 +134,5 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             return
 
         with self._cache_path.open("wb") as f:
-            _log.debug(f"Writing calibration cache file: {self._cache_path}")
+            LOG.debug(f"Writing calibration cache file: {self._cache_path}")
             f.write(cache)

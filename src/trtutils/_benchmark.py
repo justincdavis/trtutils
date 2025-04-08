@@ -3,7 +3,6 @@
 # MIT License
 from __future__ import annotations
 
-import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,17 +10,18 @@ from statistics import mean, median
 from typing import TYPE_CHECKING
 
 from ._engine import ParallelTRTEngines, TRTEngine
+from ._log import LOG
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from typing_extensions import Self
 
-_log = logging.getLogger(__name__)
-
 
 @dataclass
 class Metric:
+    """A dataclass to store the results of a benchmark."""
+
     raw: list[float | int]
     mean: float | int = -1.0
     median: float | int = -1.0
@@ -104,7 +104,7 @@ def benchmark_engine(
         data = raw[metric_name]
         metric = Metric(data)
         metrics[metric_name] = metric
-        _log.debug(
+        LOG.debug(
             f"{metric_name}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
         )
 
@@ -185,7 +185,7 @@ def benchmark_engines(
         data = raw[metric_name]
         metric = Metric(data)
         metrics[metric_name] = metric
-        _log.debug(
+        LOG.debug(
             f"{metric_name}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
         )
 

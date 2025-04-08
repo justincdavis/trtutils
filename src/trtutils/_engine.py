@@ -4,14 +4,13 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 import time
-from functools import cached_property
 from queue import Empty, Queue
 from threading import Thread
 from typing import TYPE_CHECKING
 
 from ._flags import FLAGS
+from ._log import LOG
 from .core import (
     TRTEngineInterface,
     memcpy_device_to_host_async,
@@ -27,12 +26,6 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
-    with contextlib.suppress(ImportError):
-        import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
-        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
-
-_log = logging.getLogger(__name__)
-
 
 class TRTEngine(TRTEngineInterface):
     """
@@ -45,7 +38,7 @@ class TRTEngine(TRTEngineInterface):
     single TRTEngine should not be used in multiple threads or processes.
     """
 
-    _backends: ClassVar[set[str]] = {"auto", "v3", "v2"}
+    _backends: ClassVar[set[str]] = {"auto", "async_v3", "async_v2"}
 
     def __init__(
         self: Self,
@@ -115,108 +108,10 @@ class TRTEngine(TRTEngineInterface):
         if warmup:
             self.warmup(warmup_iterations)
 
-        _log.debug(f"Creating TRTEngine: {self.name}")
+        LOG.debug(f"Creating TRTEngine: {self.name}")
 
     def __del__(self: Self) -> None:
         super().__del__()
-
-    @property
-    def engine(self: Self) -> trt.ICudaEngine:
-        """Access the raw TensorRT CUDA engine."""
-        return self._engine
-
-    @property
-    def context(self: Self) -> trt.IExecutionContext:
-        """Access the TensorRT execution context for the engine."""
-        return self._context
-
-    @property
-    def logger(self: Self) -> trt.ILogger:
-        """Access the TensorRT logger used for the engine."""
-        return self._logger
-
-    @property
-    def stream(self: Self) -> cudart.cudaStream_t:
-        """Access the underlying CUDA stream."""
-        return self._stream
-
-    @cached_property
-    def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
-        """
-        Get the specs for the input tensor of the network. Useful to prepare memory allocations.
-
-        Returns
-        -------
-        list[tuple[list[int], np.dtype]]
-            A list with two items per element, the shape and (numpy) datatype of each input tensor.
-
-        """
-        return [(i.shape, i.dtype) for i in self._inputs]
-
-    @cached_property
-    def input_shapes(self: Self) -> list[tuple[int, ...]]:
-        """
-        Get the shapes for the input tensors of the network.
-
-        Returns
-        -------
-        list[tuple[int, ...]]
-            A list with the shape of each input tensor.
-
-        """
-        return [tuple(i.shape) for i in self._inputs]
-
-    @cached_property
-    def input_dtypes(self: Self) -> list[np.dtype]:
-        """
-        Get the datatypes for the input tensors of the network.
-
-        Returns
-        -------
-        list[np.dtype]
-            A list with the datatype of each input tensor.
-
-        """
-        return [i.dtype for i in self._inputs]
-
-    @cached_property
-    def output_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
-        """
-        Get the specs for the output tensor of the network. Useful to prepare memory allocations.
-
-        Returns
-        -------
-        list[tuple[list[int], np.dtype]]
-            A list with two items per element, the shape and (numpy) datatype of each output tensor.
-
-        """
-        return [(o.shape, o.dtype) for o in self._outputs]
-
-    @cached_property
-    def output_shapes(self: Self) -> list[tuple[int, ...]]:
-        """
-        Get the shapes for the output tensors of the network.
-
-        Returns
-        -------
-        list[tuple[int, ...]]
-            A list with the shape of each output tensor.
-
-        """
-        return [tuple(o.shape) for o in self._outputs]
-
-    @cached_property
-    def output_dtypes(self: Self) -> list[np.dtype]:
-        """
-        Get the datatypes for the output tensors of the network.
-
-        Returns
-        -------
-        list[np.dtype]
-            A list with the datatype of each output tensor.
-
-        """
-        return [o.dtype for o in self._outputs]
 
     def execute(
         self: Self,
@@ -252,7 +147,7 @@ class TRTEngine(TRTEngineInterface):
         verbose = verbose if verbose is not None else self._verbose
         # Copy inputs
         if verbose:
-            _log.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
+            LOG.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
         for i_idx in range(len(self._inputs)):
             # memcpy_host_to_device(
             #     self._inputs[i_idx].allocation,
@@ -281,7 +176,7 @@ class TRTEngine(TRTEngineInterface):
             )
         # sync the stream
         if verbose:
-            _log.info(f"{time.perf_counter()} {self.name} Dispatch: END")
+            LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
 
         # # add additional sleep here to help parallel engines
         # t0 = time.time()
@@ -325,7 +220,7 @@ class TRTEngine(TRTEngineInterface):
 
         """
         if not no_warn:
-            _log.warning(
+            LOG.warning(
                 "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
             )
         # execute

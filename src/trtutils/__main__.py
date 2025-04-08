@@ -7,23 +7,21 @@
 from __future__ import annotations
 
 import argparse
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import cv2
 import cv2ext
+import numpy as np
 
 import trtutils
+from trtutils._log import LOG
 from trtutils.trtexec._cli import cli_trtexec
 
 if TYPE_CHECKING:
     from types import SimpleNamespace
 
     from ._benchmark import Metric
-
-
-_log = logging.getLogger("trtutils")
 
 
 def _benchmark(args: SimpleNamespace) -> None:
@@ -61,13 +59,13 @@ def _benchmark(args: SimpleNamespace) -> None:
         "min": latency.min * 1000.0,
         "max": latency.max * 1000.0,
     }
-    _log.info(f"Benchmarking result for: {mpath.stem}")
-    _log.info("=" * 40)
-    _log.info("Latency (ms):")
-    _log.info(f"  Mean   : {latency_in_ms['mean']:.2f}")
-    _log.info(f"  Median : {latency_in_ms['median']:.2f}")
-    _log.info(f"  Min    : {latency_in_ms['min']:.2f}")
-    _log.info(f"  Max    : {latency_in_ms['max']:.2f}")
+    LOG.info(f"Benchmarking result for: {mpath.stem}")
+    LOG.info("=" * 40)
+    LOG.info("Latency (ms):")
+    LOG.info(f"  Mean   : {latency_in_ms['mean']:.2f}")
+    LOG.info(f"  Median : {latency_in_ms['median']:.2f}")
+    LOG.info(f"  Min    : {latency_in_ms['min']:.2f}")
+    LOG.info(f"  Max    : {latency_in_ms['max']:.2f}")
 
     if energy is not None:
         energy_in_joules = {
@@ -76,11 +74,11 @@ def _benchmark(args: SimpleNamespace) -> None:
             "min": energy.min / 1000.0,
             "max": energy.max / 1000.0,
         }
-        _log.info("Energy Consumption (J):")
-        _log.info(f"  Mean   : {energy_in_joules['mean']:.3f}")
-        _log.info(f"  Median : {energy_in_joules['median']:.3f}")
-        _log.info(f"  Min    : {energy_in_joules['min']:.3f}")
-        _log.info(f"  Max    : {energy_in_joules['max']:.3f}")
+        LOG.info("Energy Consumption (J):")
+        LOG.info(f"  Mean   : {energy_in_joules['mean']:.3f}")
+        LOG.info(f"  Median : {energy_in_joules['median']:.3f}")
+        LOG.info(f"  Min    : {energy_in_joules['min']:.3f}")
+        LOG.info(f"  Max    : {energy_in_joules['max']:.3f}")
 
     if power is not None:
         power_in_watts = {
@@ -89,18 +87,18 @@ def _benchmark(args: SimpleNamespace) -> None:
             "min": power.min / 1000.0,
             "max": power.max / 1000.0,
         }
-        _log.info("Power Draw (W):")
-        _log.info(f"  Mean   : {power_in_watts['mean']:.3f}")
-        _log.info(f"  Median : {power_in_watts['median']:.3f}")
-        _log.info(f"  Min    : {power_in_watts['min']:.3f}")
-        _log.info(f"  Max    : {power_in_watts['max']:.3f}")
+        LOG.info("Power Draw (W):")
+        LOG.info(f"  Mean   : {power_in_watts['mean']:.3f}")
+        LOG.info(f"  Median : {power_in_watts['median']:.3f}")
+        LOG.info(f"  Min    : {power_in_watts['min']:.3f}")
+        LOG.info(f"  Max    : {power_in_watts['max']:.3f}")
 
-    _log.info("=" * 40)
+    LOG.info("=" * 40)
 
 
 def _build(args: SimpleNamespace) -> None:
     if args.int8:
-        _log.warning("Build API is unstable and experimental with INT8 quantization.")
+        LOG.warning("Build API is unstable and experimental with INT8 quantization.")
 
     # Create ImageBatcher if calibration directory is provided
     batcher = None
@@ -128,7 +126,6 @@ def _build(args: SimpleNamespace) -> None:
         onnx=Path(args.onnx),
         output=Path(args.output),
         timing_cache=args.timing_cache,
-        log_level=args.log_level,
         workspace=args.workspace,
         dla_core=args.dla_core,
         calibration_cache=args.calibration_cache,
@@ -146,9 +143,7 @@ def _build(args: SimpleNamespace) -> None:
 
 def _can_run_on_dla(args: SimpleNamespace) -> None:
     full_dla, chunks = trtutils.builder.can_run_on_dla(
-        Path(args.onnx),
-        int8=args.int8,
-        fp16=args.fp16,
+        onnx=Path(args.onnx),
         verbose_layers=args.verbose_layers,
         verbose_chunks=args.verbose_chunks,
     )
@@ -161,8 +156,36 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
             compat_layers += chunk_size
         all_layers += chunk_size
     portion_compat = round((compat_layers / all_layers) * 100.0, 2)
-    _log.info(
-        f"ONNX: {args.onnx}, Fully DLA Compatible: {full_dla}, Layers: {portion_compat} % Compatible"
+    LOG.info(
+        f"ONNX: {args.onnx}, Fully DLA Compatible: {full_dla}, Layers: {compat_layers} / {all_layers} ({portion_compat} % Compatible)"
+    )
+
+
+def _build_dla(args: SimpleNamespace) -> None:
+    dtype: np.dtype = np.dtype("float32")
+    if args.dtype == "float16":
+        dtype = np.dtype("float16")
+    elif args.dtype == "int8":
+        dtype = np.dtype("int8")
+
+    batcher = trtutils.builder.ImageBatcher(
+        image_dir=args.image_dir,
+        shape=args.shape,
+        dtype=dtype,
+        batch_size=args.batch_size,
+        order=args.order,
+        max_images=args.max_images,
+        resize_method=args.resize_method,
+        input_scale=args.input_scale,
+        verbose=args.verbose,
+    )
+    trtutils.builder.build_dla_engine(
+        onnx=Path(args.onnx),
+        output_path=Path(args.output),
+        data_batcher=batcher,
+        dla_core=args.dla_core,
+        timing_cache=args.timing_cache,
+        verbose=args.verbose,
     )
 
 
@@ -195,32 +218,57 @@ def _run_yolo(args: SimpleNamespace) -> None:
             raise ValueError(err_msg)
 
         dets = yolo.end2end(img)
+        LOG.info(f"Found {len(dets)} detections")
         bboxes = [d[0] for d in dets]
         scores = [d[1] for d in dets]
         classes = [d[2] for d in dets]
 
         canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
-        cv2.imshow("YOLO", canvas)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+
+        if args.show:
+            cv2.imshow("YOLO", canvas)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
 
     elif is_video:
-        with cv2ext.Display(f"YOLO detection: {input_path.stem}") as display:
-            for _, frame in cv2ext.IterableVideo(input_path):
-                if display.stopped:
-                    break
+        if args.show:
+            display = cv2ext.Display(f"YOLO detection: {input_path.stem}")
+        else:
+            display = None
+        for fid, frame in cv2ext.IterableVideo(input_path):
+            if display is not None and display.stopped:
+                break
 
-                dets = yolo.end2end(frame)
-                bboxes = [d[0] for d in dets]
-                scores = [d[1] for d in dets]
-                classes = [d[2] for d in dets]
+            dets = yolo.end2end(frame)
+            LOG.info(f"Frame {fid}:  {len(dets)} detections")
+            bboxes = [d[0] for d in dets]
+            scores = [d[1] for d in dets]
+            classes = [d[2] for d in dets]
 
-                canvas = cv2ext.bboxes.draw_bboxes(frame, bboxes, scores, classes)
+            canvas = cv2ext.bboxes.draw_bboxes(frame, bboxes, scores, classes)
+            if display is not None:
                 display.update(canvas)
+
+        if display is not None:
+            display.stop()
 
     else:
         err_msg = f"Invalid input file: {input_path}"
         raise ValueError(err_msg)
+
+
+def _inspect(args: SimpleNamespace) -> None:
+    engine_size, max_batch, inputs, outputs = trtutils.inspect.inspect_engine(
+        Path(args.engine)
+    )
+    LOG.info(f"Engine Size: {engine_size / (1024 * 1024):.2f} MB")
+    LOG.info(f"Max Batch Size: {max_batch}")
+    LOG.info("Inputs:")
+    for name, shape, dtype in inputs:
+        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}")
+    LOG.info("Outputs:")
+    for name, shape, dtype in outputs:
+        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}")
 
 
 def _main() -> None:
@@ -291,16 +339,17 @@ def _main() -> None:
         help="Path to save the TensorRT engine file.",
     )
     build_parser.add_argument(
+        "--device",
+        "-d",
+        choices=["gpu", "dla", "GPU", "DLA"],
+        default="gpu",
+        help="Device to use for the engine. Default is 'gpu'.",
+    )
+    build_parser.add_argument(
         "--timing_cache",
         "-tc",
         default=None,
         help="Path to store timing cache data. Default is 'timing.cache'.",
-    )
-    build_parser.add_argument(
-        "--log_level",
-        "-ll",
-        type=int,
-        help="Log level to use if the logger is None. Default is WARNING.",
     )
     build_parser.add_argument(
         "--workspace",
@@ -428,26 +477,100 @@ def _main() -> None:
         help="Path to the ONNX model file.",
     )
     can_run_on_dla_parser.add_argument(
-        "--int8",
-        action="store_true",
-        help="Use INT8 precision to assess DLA compatibility.",
-    )
-    can_run_on_dla_parser.add_argument(
-        "--fp16",
-        action="store_true",
-        help="Use FP16 precision to assess DLA compatibility.",
-    )
-    can_run_on_dla_parser.add_argument(
-        "--verbose-layers",
+        "--verbose_layers",
         action="store_true",
         help="Print detailed information about each layer's DLA compatibility.",
     )
     can_run_on_dla_parser.add_argument(
-        "--verbose-chunks",
+        "--verbose_chunks",
         action="store_true",
         help="Print detailed information about layer chunks and their device assignments.",
     )
     can_run_on_dla_parser.set_defaults(func=_can_run_on_dla)
+
+    # build_dla parser
+    build_dla_parser = subparsers.add_parser(
+        "build_dla",
+        help="Build a TensorRT engine for DLA.",
+    )
+    build_dla_parser.add_argument(
+        "--onnx",
+        "-o",
+        required=True,
+        help="Path to the ONNX model file.",
+    )
+    build_dla_parser.add_argument(
+        "--output",
+        "-out",
+        required=True,
+        help="Path to save the TensorRT engine file.",
+    )
+    build_dla_parser.add_argument(
+        "--dla_core",
+        type=int,
+        default=0,
+        help="Specify the DLA core. By default, the engine is built for GPU.",
+    )
+    build_dla_parser.add_argument(
+        "--image_dir",
+        required=True,
+        help="Path to the directory containing images for calibration.",
+    )
+    build_dla_parser.add_argument(
+        "--shape",
+        type=int,
+        nargs=3,
+        default=(640, 640, 3),
+        help="Input shape in HWC format (height, width, channels).",
+    )
+    build_dla_parser.add_argument(
+        "--dtype",
+        choices=["float32", "float16", "int8"],
+        default="float32",
+        help="Input data type. Required when using calibration directory.",
+    )
+    build_dla_parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=8,
+        help="Batch size for calibration. Default is 8.",
+    )
+    build_dla_parser.add_argument(
+        "--order",
+        choices=["NCHW", "NHWC"],
+        default="NCHW",
+        help="Data ordering expected by the network. Default is NCHW.",
+    )
+    build_dla_parser.add_argument(
+        "--max_images",
+        type=int,
+        help="Maximum number of images to use for calibration.",
+    )
+    build_dla_parser.add_argument(
+        "--resize_method",
+        choices=["letterbox", "linear"],
+        default="letterbox",
+        help="Method to resize images. Default is letterbox.",
+    )
+    build_dla_parser.add_argument(
+        "--input_scale",
+        type=float,
+        nargs=2,
+        default=[0.0, 1.0],
+        help="Input value range. Default is [0.0, 1.0].",
+    )
+    build_dla_parser.add_argument(
+        "--timing_cache",
+        "-tc",
+        default=None,
+        help="Path to store timing cache data. Default is 'timing.cache'.",
+    )
+    build_dla_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose output from can_run_on_dla.",
+    )
+    build_dla_parser.set_defaults(func=_build_dla)
 
     # yolo parser
     yolo_parser = subparsers.add_parser(
@@ -509,12 +632,29 @@ def _main() -> None:
         help="Number of warmup iterations. Default is 10.",
     )
     yolo_parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Show the detections.",
+    )
+    yolo_parser.add_argument(
         "--verbose",
-        "-v",
         action="store_true",
         help="Output additional debugging information.",
     )
     yolo_parser.set_defaults(func=_run_yolo)
+
+    # inspect parser
+    inspect_parser = subparsers.add_parser(
+        "inspect",
+        help="Inspect a TensorRT engine.",
+    )
+    inspect_parser.add_argument(
+        "--engine",
+        "-e",
+        required=True,
+        help="Path to the TensorRT engine file.",
+    )
+    inspect_parser.set_defaults(func=_inspect)
 
     # parse args and call the function
     args, unknown = parser.parse_known_args()
