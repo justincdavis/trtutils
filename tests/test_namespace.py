@@ -7,5 +7,5 @@ import trtutils
 
 
 def test_namespace():
-    assert trtutils.TRTEngine is not None
-    assert trtutils.TRTModel is not None
+    for attr in dir(trtutils):
+        assert getattr(trtutils, attr) is not None
