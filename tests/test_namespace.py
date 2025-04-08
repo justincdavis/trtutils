@@ -7,5 +7,5 @@ import trtutils
 
 
 def test_namespace():
-    for attr in dir(trtutils):
+    for attr in trtutils.__all__:
         assert getattr(trtutils, attr) is not None
