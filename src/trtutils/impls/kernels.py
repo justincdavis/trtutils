@@ -8,6 +8,9 @@ Attributes
 ----------
 :attribute:`SCALE_SWAP_TRANSPOSE` : tuple[str, str]
     Rescales an image, swaps channels, and transposes HWC -> CHW
+:attribute:`SCALE_SWAP_TRANSPOSE_FAST` : tuple[str, str]
+    Rescales an image, swaps channels, and transposes HWC -> CHW
+    Uses underlying optimizations
 :attribute:`LETTERBOX_RESIZE` : tuple[str, str]
     Resizes an image using the letterbox method.
 :attribute:`LINEAR_RESIZE` : tuple[str, str]
@@ -21,6 +24,7 @@ from pathlib import Path
 
 _KERNEL_DIR = Path(__file__).parent / "_kernels"
 _SST_FILE = _KERNEL_DIR / "sst.cu"
+_SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
 _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
 
@@ -29,6 +33,13 @@ with _SST_FILE.open("r") as f:
 SCALE_SWAP_TRANSPOSE: tuple[str, str] = (
     _SCALE_SWAP_TRANSPOSE_KERNEL_CODE,
     "scaleSwapTranspose",
+)
+
+with _SST_FAST_FILE.open("r") as f:
+    _SCALE_SWAP_TRANSPOSE_FAST_KERNEL_CODE = f.read()
+SCALE_SWAP_TRANSPOSE_FAST: tuple[str, str] = (
+    _SCALE_SWAP_TRANSPOSE_FAST_KERNEL_CODE,
+    "scaleSwapTranspose_opt",
 )
 
 with _LETTERBOX_FILE.open("r") as f:
