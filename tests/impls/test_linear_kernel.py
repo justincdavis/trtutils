@@ -9,21 +9,29 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from trtutils.core import Kernel, create_stream, destroy_stream, create_binding, memcpy_host_to_device_async, memcpy_device_to_host_async, stream_synchronize
+from trtutils.core import (
+    Kernel,
+    create_binding,
+    create_stream,
+    destroy_stream,
+    memcpy_device_to_host_async,
+    memcpy_host_to_device_async,
+    stream_synchronize,
+)
 from trtutils.impls import kernels
 
 
 def test_linear_compile():
+    """Test compilation of the linear resize kernel."""
     linear = Kernel(*kernels.LINEAR_RESIZE)
     assert linear is not None
 
 
 def test_linear_results():
+    """Test linear resize kernel results against OpenCV's linear interpolation."""
     output_shape = (640, 480)
 
-    img = cv2.imread(
-        str(Path(__file__).parent.parent.parent / "data" / "horse.jpg")
-    )
+    img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
     resized_img = cv2.resize(img, output_shape, interpolation=cv2.INTER_LINEAR)
 
     height, width = img.shape[:2]

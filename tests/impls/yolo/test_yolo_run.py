@@ -3,38 +3,16 @@
 # MIT License
 from __future__ import annotations
 
-from pathlib import Path
-from threading import Thread, Lock
+from threading import Lock, Thread
 
 import trtutils
 
 try:
     from paths import ENGINE_PATHS, ONNX_PATHS
 except ModuleNotFoundError:
-    from .paths import ENGINE_PATHS, ONNX_PATHS
+    pass
 
 ENGINE_LOCK = Lock()
-
-
-def build_yolo(version: int) -> Path:
-    onnx_path = ONNX_PATHS[version]
-    engine_path = ENGINE_PATHS[version]
-    if engine_path.exists():
-        return engine_path
-
-    if version != 9:
-        trtutils.trtexec.build_engine(
-            onnx_path,
-            engine_path,
-        )
-    else:
-        trtutils.trtexec.build_engine(
-            onnx_path,
-            engine_path,
-            shapes=[("images", (1, 3, 640, 640))],
-        )
-
-    return engine_path
 
 
 def yolo_run(version: int) -> None:
@@ -60,7 +38,10 @@ def multiple_yolos_run(version: int) -> None:
 
     scale = (0, 1) if version != 0 else (0, 255)
     engines = [
-        trtutils.impls.yolo.YOLO(engine_path, warmup=False, input_range=scale, preprocessor="cpu") for _ in range(4)
+        trtutils.impls.yolo.YOLO(
+            engine_path, warmup=False, input_range=scale, preprocessor="cpu"
+        )
+        for _ in range(4)
     ]
 
     outputs = [engine.mock_run() for engine in engines]
@@ -148,11 +129,14 @@ def multiple_yolos_run_in_threads(version: int) -> None:
 def test_yolo_7_run():
     yolo_run(7)
 
+
 def test_yolo_7_run_thread():
     yolo_run_in_thread(7)
 
+
 def test_yolo_7_multiple():
     multiple_yolos_run(7)
+
 
 def test_yolo_7_multiple_threads():
     multiple_yolos_run_in_threads(7)
@@ -162,11 +146,14 @@ def test_yolo_7_multiple_threads():
 def test_yolo_8_run():
     yolo_run(8)
 
+
 def test_yolo_8_run_thread():
     yolo_run_in_thread(8)
 
+
 def test_yolo_8_multiple():
     multiple_yolos_run(8)
+
 
 def test_yolo_8_multiple_threads():
     multiple_yolos_run_in_threads(8)
@@ -176,11 +163,14 @@ def test_yolo_8_multiple_threads():
 def test_yolo_9_run():
     yolo_run(9)
 
+
 def test_yolo_9_run_thread():
     yolo_run_in_thread(9)
 
+
 def test_yolo_9_multiple():
     multiple_yolos_run(9)
+
 
 def test_yolo_9_multiple_threads():
     multiple_yolos_run_in_threads(9)
@@ -190,11 +180,14 @@ def test_yolo_9_multiple_threads():
 def test_yolo_10_run():
     yolo_run(10)
 
+
 def test_yolo_10_run_thread():
     yolo_run_in_thread(10)
 
+
 def test_yolo_10_multiple():
     multiple_yolos_run(10)
+
 
 def test_yolo_10_multiple_threads():
     multiple_yolos_run_in_threads(10)
@@ -204,11 +197,14 @@ def test_yolo_10_multiple_threads():
 def test_yolo_x_run():
     yolo_run(0)
 
+
 def test_yolo_x_run_thread():
     yolo_run_in_thread(0)
 
+
 def test_yolo_x_multiple():
     multiple_yolos_run(0)
+
 
 def test_yolo_x_multiple_threads():
     multiple_yolos_run_in_threads(0)

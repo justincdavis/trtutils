@@ -37,13 +37,19 @@ docs:
 ci: ruff mypy
 
 mypy:
+	python3 -m mypy examples --config-file=pyproject.toml
+	python3 -m mypy tests --config-file=pyproject.toml
 	python3 -m mypy src/trtutils --config-file=pyproject.toml
 
 pyright:
 	python3 -m pyright --project=pyproject.toml
 
 ruff:
+	python3 -m ruff format ./examples
+	python3 -m ruff format ./tests
 	python3 -m ruff format ./src/trtutils
+	python3 -m ruff check ./examples --fix --preview --ignore=INP001,T201
+	python3 -m ruff check ./tests --fix --preview --ignore=INP001,S101
 	python3 -m ruff check ./src/trtutils --fix --preview
 
 stubs:
@@ -52,8 +58,4 @@ stubs:
 test:
 	./ci/run_tests.sh
 
-example-ci:
-	python3 -m ruff format ./examples
-	python3 -m ruff check ./examples --fix --preview --ignore=T201,INP001,F841
-
-release: clean ci test docs example-ci
+release: clean ci test docs

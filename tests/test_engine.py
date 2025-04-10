@@ -8,13 +8,13 @@ from threading import Thread
 
 import trtutils
 
-
 ENGINE_PATH = engine_path = (
     Path(__file__).parent.parent / "data" / "engines" / "simple.engine"
 )
 
 
 def build_engine() -> Path:
+    """Build a TensorRT engine from ONNX model."""
     simple_path = Path(__file__).parent.parent / "data" / "simple.onnx"
 
     if ENGINE_PATH.exists():
@@ -29,6 +29,7 @@ def build_engine() -> Path:
 
 
 def test_engine_run() -> None:
+    """Test basic engine execution with mock data."""
     engine_path = build_engine()
 
     engine = trtutils.TRTEngine(
@@ -42,6 +43,7 @@ def test_engine_run() -> None:
 
 
 def test_multiple_engines_run() -> None:
+    """Test running multiple engines simultaneously."""
     engine_path = build_engine()
 
     engines = [trtutils.TRTEngine(engine_path, warmup=False) for _ in range(4)]
@@ -53,6 +55,7 @@ def test_multiple_engines_run() -> None:
 
 
 def test_engine_run_in_thread() -> None:
+    """Test engine execution in a separate thread."""
     result = [False]
 
     def run(result: list[bool]) -> None:
@@ -78,6 +81,7 @@ def test_engine_run_in_thread() -> None:
 
 
 def test_multiple_engines_run_in_threads() -> None:
+    """Test running multiple engines in separate threads with multiple iterations."""
     num_engines = 4
     result = [0] * num_engines
     num_iters = 1_000
@@ -93,13 +97,12 @@ def test_multiple_engines_run_in_threads() -> None:
         outputs = None
         succeses = 0
         for _ in range(iters):
-            outputs = engine.mock_execute()
+            outputs = engine.mock_run()
             if outputs is not None:
                 succeses += 1
-
         assert outputs is not None
-
         result[threadid] = succeses
+        del engine
 
     threads = [
         Thread(target=run, args=(threadid, result, num_iters), daemon=True)
@@ -109,6 +112,5 @@ def test_multiple_engines_run_in_threads() -> None:
         thread.start()
     for thread in threads:
         thread.join()
-
     for r in result:
         assert r == num_iters

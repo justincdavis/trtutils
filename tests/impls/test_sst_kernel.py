@@ -9,24 +9,32 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from trtutils.core import Kernel, create_stream, destroy_stream, create_binding, memcpy_host_to_device_async, memcpy_device_to_host_async, stream_synchronize
+from trtutils.core import (
+    Kernel,
+    create_binding,
+    create_stream,
+    destroy_stream,
+    memcpy_device_to_host_async,
+    memcpy_host_to_device_async,
+    stream_synchronize,
+)
 from trtutils.impls import kernels
 from trtutils.impls.yolo import preprocess
 
 
 def test_scale_swap_transpose_compile():
+    """Test compilation of the scale-swap-transpose kernel."""
     sst = Kernel(*kernels.SCALE_SWAP_TRANSPOSE)
     assert sst is not None
 
 
 def test_sst_results():
+    """Test scale-swap-transpose kernel results against CPU implementation."""
     output_shape = 640
     scale = 1.0 / 255.0
     offset = 0.0
 
-    img = cv2.imread(
-        str(Path(__file__).parent.parent.parent / "data" / "horse.jpg")
-    )
+    img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
     img = cv2.resize(img, (output_shape, output_shape))
 
     stream = create_stream()

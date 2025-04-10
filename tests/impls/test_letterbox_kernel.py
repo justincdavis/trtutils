@@ -7,24 +7,32 @@ import math
 from pathlib import Path
 
 import cv2
-from cv2ext.image import letterbox
 import numpy as np
+from cv2ext.image import letterbox
 
-from trtutils.core import Kernel, create_stream, destroy_stream, create_binding, memcpy_host_to_device_async, memcpy_device_to_host_async, stream_synchronize
+from trtutils.core import (
+    Kernel,
+    create_binding,
+    create_stream,
+    destroy_stream,
+    memcpy_device_to_host_async,
+    memcpy_host_to_device_async,
+    stream_synchronize,
+)
 from trtutils.impls import kernels
 
 
 def test_letterbox_compile():
+    """Test compilation of the letterbox kernel."""
     letterbox = Kernel(*kernels.LETTERBOX_RESIZE)
     assert letterbox is not None
 
 
 def test_letterbox_results():
+    """Test letterbox kernel results against CPU implementation."""
     output_shape = (640, 480)
 
-    img = cv2.imread(
-        str(Path(__file__).parent.parent.parent / "data" / "horse.jpg")
-    )
+    img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
     resized_img, _, _ = letterbox(img, output_shape)
 
     height, width = img.shape[:2]
