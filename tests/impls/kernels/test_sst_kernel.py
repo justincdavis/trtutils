@@ -21,11 +21,12 @@ from trtutils.core import (
 from trtutils.impls import kernels
 from trtutils.impls.yolo import preprocess
 
+from common import kernel_compile
+
 
 def test_scale_swap_transpose_compile() -> None:
     """Test compilation of the scale-swap-transpose kernel."""
-    sst = Kernel(*kernels.SCALE_SWAP_TRANSPOSE)
-    assert sst is not None
+    kernel_compile(kernels.SCALE_SWAP_TRANSPOSE)
 
 
 def test_sst_results() -> None:

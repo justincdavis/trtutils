@@ -21,11 +21,12 @@ from trtutils.core import (
 )
 from trtutils.impls import kernels
 
+from common import kernel_compile
+
 
 def test_letterbox_compile() -> None:
     """Test compilation of the letterbox kernel."""
-    letterbox = Kernel(*kernels.LETTERBOX_RESIZE)
-    assert letterbox is not None
+    kernel_compile(kernels.LETTERBOX_RESIZE)
 
 
 def test_letterbox_results() -> None:

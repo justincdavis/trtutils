@@ -20,11 +20,12 @@ from trtutils.core import (
 )
 from trtutils.impls import kernels
 
+from common import kernel_compile
+
 
 def test_linear_compile() -> None:
     """Test compilation of the linear resize kernel."""
-    linear = Kernel(*kernels.LINEAR_RESIZE)
-    assert linear is not None
+    kernel_compile(kernels.LINEAR_RESIZE)
 
 
 def test_linear_results() -> None:
