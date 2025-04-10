@@ -16,14 +16,16 @@ def kernel_compile(kernel: tuple[str, str]) -> None:
         The kernel info
     
     """
-    def _eval() -> None:
+    def _compile() -> None:
         compiled = Kernel(*kernel)
         assert compiled is not None
 
     # if we get a CUDA not initialized error then we can init and try again
     try:
-        _eval()
+        _compile()
     except RuntimeError as err:
         if "Initialized" in err:
             init_cuda()
-        _eval()
+            _compile()
+        else:
+            raise err
