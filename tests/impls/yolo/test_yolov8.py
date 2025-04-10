@@ -3,26 +3,36 @@
 # MIT License
 from __future__ import annotations
 
-try:
-    from common import (
-        DLA_ENGINES,
-        GPU_ENGINES,
-        yolo_results,
-        yolo_run,
-        yolo_run_in_thread,
-        yolo_run_multiple,
-        yolo_run_multiple_threads,
-    )
-except ModuleNotFoundError:
-    from .common import (
-        DLA_ENGINES,
-        GPU_ENGINES,
-        yolo_results,
-        yolo_run,
-        yolo_run_in_thread,
-        yolo_run_multiple,
-        yolo_run_multiple_threads,
-    )
+from common import (
+    DLA_ENGINES,
+    GPU_ENGINES,
+    yolo_results,
+    yolo_run,
+    yolo_run_in_thread,
+    yolo_run_multiple,
+    yolo_run_multiple_threads,
+)
+
+# try:
+#     from common import (
+#         DLA_ENGINES,
+#         GPU_ENGINES,
+#         yolo_results,
+#         yolo_run,
+#         yolo_run_in_thread,
+#         yolo_run_multiple,
+#         yolo_run_multiple_threads,
+#     )
+# except ModuleNotFoundError:
+#     from .common import (
+#         DLA_ENGINES,
+#         GPU_ENGINES,
+#         yolo_results,
+#         yolo_run,
+#         yolo_run_in_thread,
+#         yolo_run_multiple,
+#         yolo_run_multiple_threads,
+#     )
 
 
 def test_yolo_8_cpu_run() -> None:

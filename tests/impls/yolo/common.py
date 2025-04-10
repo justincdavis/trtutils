@@ -13,10 +13,12 @@ import trtutils
 if TYPE_CHECKING:
     from pathlib import Path
 
-try:
-    from paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
-except ModuleNotFoundError:
-    from .paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
+from paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
+
+# try:
+#     from paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
+# except ModuleNotFoundError:
+#     from .paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
 
 DLA_ENGINES = 2
 GPU_ENGINES = 4
@@ -48,8 +50,8 @@ def build_yolo(version: int, *, use_dla: bool | None = None) -> Path:
         trtutils.builder.build_engine(
             onnx_path,
             engine_path,
-            use_dla_core=0 if use_dla else None,
-            allow_gpu_fallback=True if use_dla else None,
+            dla_core=0 if use_dla else None,
+            gpu_fallback=bool(use_dla),
             fp16=True,
         )
     else:

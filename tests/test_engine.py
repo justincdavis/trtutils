@@ -105,7 +105,7 @@ def test_multiple_engines_run_in_threads() -> None:
         outputs = None
         succeses = 0
         for _ in range(iters):
-            outputs = engine.mock_run()
+            outputs = engine.mock_execute()
             if outputs is not None:
                 succeses += 1
         assert outputs is not None
