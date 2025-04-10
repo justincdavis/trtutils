@@ -14,7 +14,15 @@ ENGINE_PATH = engine_path = (
 
 
 def build_engine() -> Path:
-    """Build a TensorRT engine from ONNX model."""
+    """
+    Build a TensorRT engine from ONNX model.
+
+    Returns
+    -------
+    Path
+        The compiled engine.
+
+    """
     simple_path = Path(__file__).parent.parent / "data" / "simple.onnx"
 
     if ENGINE_PATH.exists():

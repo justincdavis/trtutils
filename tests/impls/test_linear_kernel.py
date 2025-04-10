@@ -21,13 +21,13 @@ from trtutils.core import (
 from trtutils.impls import kernels
 
 
-def test_linear_compile():
+def test_linear_compile() -> None:
     """Test compilation of the linear resize kernel."""
     linear = Kernel(*kernels.LINEAR_RESIZE)
     assert linear is not None
 
 
-def test_linear_results():
+def test_linear_results() -> None:
     """Test linear resize kernel results against OpenCV's linear interpolation."""
     output_shape = (640, 480)
 

@@ -22,13 +22,13 @@ from trtutils.core import (
 from trtutils.impls import kernels
 
 
-def test_letterbox_compile():
+def test_letterbox_compile() -> None:
     """Test compilation of the letterbox kernel."""
     letterbox = Kernel(*kernels.LETTERBOX_RESIZE)
     assert letterbox is not None
 
 
-def test_letterbox_results():
+def test_letterbox_results() -> None:
     """Test letterbox kernel results against CPU implementation."""
     output_shape = (640, 480)
 

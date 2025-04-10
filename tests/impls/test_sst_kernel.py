@@ -22,13 +22,13 @@ from trtutils.impls import kernels
 from trtutils.impls.yolo import preprocess
 
 
-def test_scale_swap_transpose_compile():
+def test_scale_swap_transpose_compile() -> None:
     """Test compilation of the scale-swap-transpose kernel."""
     sst = Kernel(*kernels.SCALE_SWAP_TRANSPOSE)
     assert sst is not None
 
 
-def test_sst_results():
+def test_sst_results() -> None:
     """Test scale-swap-transpose kernel results against CPU implementation."""
     output_shape = 640
     scale = 1.0 / 255.0
