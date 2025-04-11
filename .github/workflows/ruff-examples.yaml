@@ -1,4 +1,4 @@
-name: Ruff Check
+name: Ruff - Examples
 on: [ push ]
 jobs:
   ruff:
@@ -7,4 +7,4 @@ jobs:
       - uses: actions/checkout@v3
       - uses: chartboost/ruff-action@v1
         with:
-          src: src/trtutils
+          src: examples

@@ -24,6 +24,14 @@ jobs:
           pip install cv2ext
           pip install jetsontools
 
-      - name: Run MyPy check
+      - name: MyPy - Source
         run: 
           python3 -m mypy src/trtutils --config-file=pyproject.toml
+
+      - name: MyPy - Examples
+        run: 
+          python3 -m mypy examples --config-file=pyproject.toml
+
+      - name: MyPy - Tests
+        run: 
+          python3 -m mypy tests --config-file=pyproject.toml
