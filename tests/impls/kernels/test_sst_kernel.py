@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -21,7 +20,7 @@ from trtutils.core import (
 from trtutils.impls import kernels
 from trtutils.impls.yolo import preprocess
 
-from common import kernel_compile
+from .common import IMG_PATH, kernel_compile
 
 
 def test_scale_swap_transpose_compile() -> None:
@@ -35,7 +34,7 @@ def test_sst_results() -> None:
     scale = 1.0 / 255.0
     offset = 0.0
 
-    img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
+    img = cv2.imread(IMG_PATH)
     img = cv2.resize(img, (output_shape, output_shape))
 
     stream = create_stream()

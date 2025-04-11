@@ -49,7 +49,7 @@ ruff:
 	python3 -m ruff format ./tests
 	python3 -m ruff format ./src/trtutils
 	python3 -m ruff check ./examples --fix --preview --ignore=INP001,T201
-	python3 -m ruff check ./tests --fix --preview --ignore=INP001,S101,D100,PLR2004
+	python3 -m ruff check ./tests --fix --preview --ignore=S101,D100,D104,PLR2004
 	python3 -m ruff check ./src/trtutils --fix --preview
 
 stubs:

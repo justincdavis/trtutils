@@ -3,29 +3,24 @@
 # MIT License
 from __future__ import annotations
 
-from trtutils.core import Kernel, init_cuda
+from pathlib import Path
+
+from trtutils.core import Kernel, create_stream, destroy_stream
+
+IMG_PATH = str(Path(__file__).parent.parent.parent.parent / "data" / "horse.jpg")
 
 
 def kernel_compile(kernel: tuple[str, str]) -> None:
     """
     Test if a kernel will compile.
-    
+
     Parameters
     ----------
     kernel : tuple[str, str]
         The kernel info
-    
-    """
-    def _compile() -> None:
-        compiled = Kernel(*kernel)
-        assert compiled is not None
 
-    # if we get a CUDA not initialized error then we can init and try again
-    try:
-        _compile()
-    except RuntimeError as err:
-        if "Initialized" in err:
-            init_cuda()
-            _compile()
-        else:
-            raise err
+    """
+    stream = create_stream()
+    compiled = Kernel(*kernel)
+    assert compiled is not None
+    destroy_stream(stream)

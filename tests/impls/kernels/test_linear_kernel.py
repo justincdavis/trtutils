@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -20,7 +19,7 @@ from trtutils.core import (
 )
 from trtutils.impls import kernels
 
-from common import kernel_compile
+from .common import IMG_PATH, kernel_compile
 
 
 def test_linear_compile() -> None:
@@ -32,7 +31,7 @@ def test_linear_results() -> None:
     """Test linear resize kernel results against OpenCV's linear interpolation."""
     output_shape = (640, 480)
 
-    img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
+    img = cv2.imread(IMG_PATH)
     resized_img = cv2.resize(img, output_shape, interpolation=cv2.INTER_LINEAR)
 
     height, width = img.shape[:2]

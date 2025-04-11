@@ -3,17 +3,14 @@
 # MIT License
 from __future__ import annotations
 
+from pathlib import Path
 from threading import Thread
-from typing import TYPE_CHECKING
 
 import cv2
 
 import trtutils
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-from paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
+from .paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
 
 # try:
 #     from paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
@@ -50,6 +47,7 @@ def build_yolo(version: int, *, use_dla: bool | None = None) -> Path:
         trtutils.builder.build_engine(
             onnx_path,
             engine_path,
+            timing_cache=Path(__file__).parent / "timing.cache",
             dla_core=0 if use_dla else None,
             gpu_fallback=bool(use_dla),
             fp16=True,
@@ -154,6 +152,9 @@ def yolo_run_in_thread(
     assert result[0]
 
 
+# TODO: occassional crash in memcpy for invalid argument
+# Always occurs when using the CUDA preprocessor
+# Most likely auto-cleanup from GC and not saving memory ref.
 def yolo_run_multiple_threads(
     version: int,
     preprocessor: str = "cpu",

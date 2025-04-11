@@ -3,7 +3,7 @@
 # MIT License
 from __future__ import annotations
 
-from common import (
+from .common import (
     DLA_ENGINES,
     GPU_ENGINES,
     yolo_results,
