@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Thread
+from threading import Barrier, Thread
 
 import cv2
 
@@ -164,10 +164,10 @@ def yolo_run_multiple_threads(
 ) -> None:
     """Check if multiple YOLO engines can run across multiple threads."""
     results = [False] * count
+    engine_path = build_yolo(version, use_dla=use_dla)
+    barrier = Barrier(count)
 
-    def run(tid: int, results: list[bool]) -> None:
-        engine_path = build_yolo(version, use_dla=use_dla)
-
+    def run(tid: int, barrier: Barrier, results: list[bool], engine_path: Path) -> None:
         scale = (0, 1) if version != 0 else (0, 255)
         yolo = trtutils.impls.yolo.YOLO(
             engine_path,
@@ -176,6 +176,8 @@ def yolo_run_multiple_threads(
             input_range=scale,
             preprocessor=preprocessor,
         )
+
+        # barrier.wait()
 
         outputs = yolo.mock_run()
 
@@ -190,7 +192,9 @@ def yolo_run_multiple_threads(
             target=run,
             args=(
                 i,
+                barrier,
                 results,
+                engine_path,
             ),
             daemon=True,
         )
