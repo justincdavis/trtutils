@@ -124,6 +124,7 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
                 weight_path,
                 trt_path,
                 fp16=True,
+                add_args=[f"--timingCacheFile={str(Path(__file__).parent / 'timing.cache')}"],
                 # patch for compiling the yolov9 exported onnx
                 shapes=[("images", (1, 3, imgsz, imgsz))] if "yolov9" in MODELNAME else None,
             )
