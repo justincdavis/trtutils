@@ -98,7 +98,7 @@ def write_data(device: str, data: dict[str, dict[str, dict[str, dict[str, float]
 
 def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool) -> None:
     from trtutils.impls.yolo import YOLO
-    from trtutils.trtexec import build_engine
+    from trtutils.builder import build_engine
 
     # resolve paths
     image = cv2.imread(IMAGE_PATH)
@@ -121,11 +121,10 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
         if not trt_path.exists():
             print("\tBuilding trtutils engine...")
             build_engine(
-                weight_path,
-                trt_path,
+                onnx=weight_path,
+                output=trt_path,
                 fp16=True,
-                add_args=[f"--timingCacheFile={str(Path(__file__).parent / 'timing.cache')}"],
-                # patch for compiling the yolov9 exported onnx
+                timing_cache=str(Path(__file__).parent / "timing.cache"),
                 shapes=[("images", (1, 3, imgsz, imgsz))] if "yolov9" in MODELNAME else None,
             )
 
