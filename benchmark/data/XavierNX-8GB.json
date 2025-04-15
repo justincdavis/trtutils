@@ -1,14 +1,5 @@
 {
-    "ultralytics(torch)": {
-        "yolov10n": {
-            "160": {
-                "mean": 33.131611846387386,
-                "median": 32.29208942502737,
-                "min": 27.173757553100586,
-                "max": 46.9836238771677
-            }
-        }
-    },
+    "ultralytics(torch)": {},
     "ultralytics(trt)": {},
     "trtutils": {
         "yolov8n": {
