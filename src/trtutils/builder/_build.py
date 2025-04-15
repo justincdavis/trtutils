@@ -37,6 +37,7 @@ def build_engine(
     data_batcher: AbstractBatcher | None = None,
     layer_precision: list[tuple[int, trt.DataType | None]] | None = None,
     layer_device: list[tuple[int, trt.DeviceType | None]] | None = None,
+    shapes: list[tuple[str, tuple[int, ...]]] | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -79,6 +80,12 @@ def build_engine(
         By default, None.
     layer_device : list[tuple[int, trt.DeviceType | None]], optional
         The device to use for specific layers.
+        By default, None.
+    shapes : list[tuple[str, tuple[int, ...]]], optional
+        A list of (input_name, shape) pairs to specify the shapes of the input layers.
+        For example, shapes=[("images", (1, 3, imgsz, imgsz))] will set the input
+        “images” to a fixed shape. This shape will be used as the min, optimal,
+        and max shape for the binding.
         By default, None.
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
@@ -153,6 +160,13 @@ def build_engine(
 
     # create profile and config
     profile = builder.create_optimization_profile()
+
+    # handle if manual shapes were passed for inputs
+    if shapes:
+        for input_name, shape in shapes:
+            # set the minimum, optimal, maximum to all the same
+            profile.set_shape(input_name, shape, shape, shape)
+
     config.add_optimization_profile(profile)
 
     # handle some flags

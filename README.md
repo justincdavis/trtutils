@@ -20,6 +20,11 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 - Comprehensive type hints and documentation
 - Support for both basic engine execution and end-to-end model inference
 
+## Performance
+
+![OrinAGX-64GB YOLOv8m Performance](benchmark/plots/OrinAGX-64GB/yolov8m.png)
+![3080Ti YOLOv8m Performance](benchmark/plots/3080Ti/yolov8m.png)
+
 ## Quick Start
 
 ### Basic Engine Usage

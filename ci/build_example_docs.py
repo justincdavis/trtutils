@@ -28,7 +28,9 @@ def main():
         relative_path = os.path.relpath(example_file, examples_dir)
 
         # create the path to the rst file
-        rst_file = os.path.join("docs", "examples", relative_path.replace(".py", ".rst"))
+        rst_file = os.path.join(
+            "docs", "examples", relative_path.replace(".py", ".rst")
+        )
 
         # create the directory for the rst file
         os.makedirs(os.path.dirname(rst_file), exist_ok=True)
@@ -61,6 +63,7 @@ def main():
             rst_file = os.path.join("examples", relative_path.replace(".py", ".rst"))
 
             f.write(f"    {rst_file}\n")
+
 
 if __name__ == "__main__":
     main()
