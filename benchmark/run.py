@@ -294,24 +294,32 @@ def main() -> None:
 
         # trtutils benchmark
         if args.trtutils:
-            benchmark_trtutils(
-                args.device,
-                args.warmup,
-                args.iterations,
-                overwrite=args.overwrite,
-            )
-
-        # ultralytics benchmark
-        if args.ultralytics:
-            if MODELNAME in ULTRALYTICS_MODELS:
-                benchmark_ultralytics(
+            try:
+                benchmark_trtutils(
                     args.device,
                     args.warmup,
                     args.iterations,
                     overwrite=args.overwrite,
                 )
-            else:
-                warnings.warn(f"Could not process: {MODELNAME}, since it is not a valid ultralytics model")
+            except Exception as e:
+                warnings.warn(f"Failed to process {MODELNAME} with trtutils: {e}")
+                continue
+
+        # ultralytics benchmark
+        if args.ultralytics:
+            try:
+                if MODELNAME in ULTRALYTICS_MODELS:
+                    benchmark_ultralytics(
+                        args.device,
+                        args.warmup,
+                        args.iterations,
+                        overwrite=args.overwrite,
+                    )
+                else:
+                    warnings.warn(f"Could not process: {MODELNAME}, since it is not a valid ultralytics model")
+            except Exception as e:
+                warnings.warn(f"Failed to process {MODELNAME} with ultralytics: {e}")
+                continue
 
 
 if __name__ == "__main__":
