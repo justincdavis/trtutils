@@ -95,6 +95,12 @@ Check out our [examples directory](examples/) for more detailed usage examples, 
 - YOLO model implementation
 - Benchmarking utilities
 
+## Performance Example
+
+Below is a sample performance plot for the OrinAGX-64GB Jetson running YOLOv10m:
+
+![OrinAGX-64GB YOLOv10m Performance](benchmark/plots/OrinAGX-64GB/yolov10m.png)
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
