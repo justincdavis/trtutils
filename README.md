@@ -20,6 +20,11 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 - Comprehensive type hints and documentation
 - Support for both basic engine execution and end-to-end model inference
 
+## Performance
+
+![OrinAGX-64GB YOLOv8m Performance](benchmark/plots/OrinAGX-64GB/yolov8m.png)
+![3080Ti YOLOv8m Performance](benchmark/plots/3080Ti/yolov8m.png)
+
 ## Quick Start
 
 ### Basic Engine Usage
@@ -94,12 +99,6 @@ Check out our [examples directory](examples/) for more detailed usage examples, 
 - End-to-end model inference
 - YOLO model implementation
 - Benchmarking utilities
-
-## Performance Example
-
-Below is a sample performance plot for the OrinAGX-64GB Jetson running YOLOv10m:
-
-![OrinAGX-64GB YOLOv10m Performance](benchmark/plots/OrinAGX-64GB/yolov10m.png)
 
 ## License
 
