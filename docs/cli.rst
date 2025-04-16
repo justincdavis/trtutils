@@ -9,9 +9,11 @@ Overview
 TRTUtils provides a command-line interface with several subcommands for working with TensorRT engines and models. The main commands are:
 
 * ``benchmark``: Benchmark a TensorRT engine
-* ``trtexec``: Run trtexec
 * ``build``: Build a TensorRT engine from an ONNX model
-* ``can_run_on_dla``: Evaluate if a model can run on a DLA
+* ``build_dla``: Build a TensorRT engine with mixed GPU/DLA layers and precision automatically
+* ``can_run_on_dla``: Evaluate if a model can run on a DLA and specific layer/chunk compatibility.
+* ``inspect``: Inspect a TensorRT engine
+* ``trtexec``: Run trtexec with the provided options
 * ``yolo``: Run YOLO inference with TensorRT
 
 Commands
@@ -70,8 +72,8 @@ Options
 
 * ``--onnx, -o``: Path to the ONNX model file (required)
 * ``--output, -out``: Path to save the TensorRT engine file (required)
+* ``--device, -d``: Device to use for the engine (choices: gpu, dla, GPU, DLA; default: gpu)
 * ``--timing_cache, -tc``: Path to store timing cache data (default: 'timing.cache')
-* ``--log_level, -ll``: Log level to use if the logger is None (default: WARNING)
 * ``--workspace, -w``: Workspace size in GB (default: 4.0)
 * ``--dla_core``: Specify the DLA core (default: engine built for GPU)
 * ``--calibration_cache, -cc``: Path to store calibration cache data (default: 'calibration.cache')
@@ -93,13 +95,46 @@ Options
 * ``--verbose``: Verbose output from can_run_on_dla
 
 .. note::
-   The Build API is unstable and experimental with INT8 quantization.
-
-.. note::
    When using INT8 quantization with calibration, you must provide:
    * ``--calibration_dir``: Directory containing calibration images
    * ``--input_shape``: Expected input shape in HWC format
    * ``--input_dtype``: Expected input data type
+
+Build DLA
+~~~~~~~~~
+
+Build a TensorRT engine for DLA, supporting mixed GPU/DLA layers and precision.
+
+.. code-block:: console
+
+    python3 -m trtutils build_dla \
+        --onnx model.onnx \
+        --output model.engine \
+        --dla_core 0 \
+        --image_dir ./calibration_images \
+        --shape 640 640 3 \
+        --dtype float32 \
+        --batch_size 8 \
+        --order NCHW \
+        --resize_method letterbox \
+        --input_scale 0.0 1.0
+
+Options
+^^^^^^^
+
+* ``--onnx, -o``: Path to the ONNX model file (required)
+* ``--output, -out``: Path to save the TensorRT engine file (required)
+* ``--dla_core``: Specify the DLA core (default: 0)
+* ``--image_dir``: Path to the directory containing images for calibration (required)
+* ``--shape``: Input shape in HWC format (height, width, channels; default: 640 640 3)
+* ``--dtype``: Input data type (choices: float32, float16, int8; default: float32)
+* ``--batch_size``: Batch size for calibration (default: 8)
+* ``--order``: Data ordering expected by the network (choices: NCHW, NHWC, default: NCHW)
+* ``--max_images``: Maximum number of images to use for calibration
+* ``--resize_method``: Method to resize images (choices: letterbox, linear, default: letterbox)
+* ``--input_scale``: Input value range (default: [0.0, 1.0])
+* ``--timing_cache, -tc``: Path to store timing cache data (default: 'timing.cache')
+* ``--verbose``: Verbose output from can_run_on_dla
 
 Can Run on DLA
 ~~~~~~~~~~~~~~
@@ -109,25 +144,23 @@ Evaluate if a model can run on a DLA (Deep Learning Accelerator).
 .. code-block:: console
 
     # Basic compatibility check
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16
+    python3 -m trtutils can_run_on_dla --onnx model.onnx
 
     # Detailed layer information
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --verbose_layers
 
     # Detailed chunk information
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-chunks
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --verbose_chunks
 
     # Full detailed output
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers --verbose-chunks
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --verbose_layers --verbose_chunks
 
 Options
 ^^^^^^^
 
 * ``--onnx, -o``: Path to the ONNX model file (required)
-* ``--int8``: Use INT8 precision to assess DLA compatibility
-* ``--fp16``: Use FP16 precision to assess DLA compatibility
-* ``--verbose-layers``: Print detailed information about each layer's DLA compatibility
-* ``--verbose-chunks``: Print detailed information about layer chunks and their device assignments
+* ``--verbose_layers``: Print detailed information about each layer's DLA compatibility
+* ``--verbose_chunks``: Print detailed information about layer chunks and their device assignments
 
 Output
 ^^^^^^
@@ -135,15 +168,34 @@ Output
 The command will output:
 * Whether the model is fully DLA compatible
 * The percentage of layers that are compatible with DLA
-* If ``--verbose-layers`` is enabled:
+* If ``--verbose_layers`` is enabled:
   * Detailed information about each layer including name, type, precision, and metadata
   * DLA compatibility status for each layer
-* If ``--verbose-chunks`` is enabled:
+* If ``--verbose_chunks`` is enabled:
   * Number of layer chunks found
   * For each chunk:
     * Start and end layer indices
     * Number of layers in the chunk
     * Device assignment (DLA or GPU)
+
+Inspect
+~~~~~~~
+Inspect a TensorRT engine for metadata and IO information.
+
+.. code-block:: console
+
+    python3 -m trtutils inspect --engine model.engine
+
+Options
+^^^^^^^
+* ``--engine, -e``: Path to the engine file (required)
+
+Output
+^^^^^^
+The inspect command will output:
+* Engine size in MB
+* Max batch size
+* Input and output tensor names, shapes, and dtypes
 
 TRTExec
 ~~~~~~~
@@ -188,7 +240,14 @@ Options
 * ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear, default: letterbox)
 * ``--warmup, -w``: Perform warmup iterations
 * ``--warmup_iterations, -wi``: Number of warmup iterations (default: 10)
+* ``--show``: Show the detections
 * ``--verbose, -v``: Output additional debugging information
+
+Output
+^^^^^^
+
+The YOLO command will output:
+* Number of detections found in image or per frame.
 
 Examples
 --------
@@ -221,6 +280,23 @@ Building an Engine from ONNX
         --resize_method letterbox \
         --input_scale 0.0 1.0
 
+Building a DLA Engine
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+    python3 -m trtutils build_dla \
+        --onnx model.onnx \
+        --output model.engine \
+        --dla_core 0 \
+        --image_dir ./calibration_images \
+        --shape 640 640 3 \
+        --dtype float32 \
+        --batch_size 8 \
+        --order NCHW \
+        --resize_method letterbox \
+        --input_scale 0.0 1.0
+
 Checking DLA Compatibility
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -230,13 +306,20 @@ Checking DLA Compatibility
     python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16
 
     # Detailed layer information
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose_layers
 
     # Detailed chunk information
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-chunks
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose_chunks
 
     # Full detailed output
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose-layers --verbose-chunks
+    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose_layers --verbose_chunks
+
+Inspecting an Engine
+~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: console
+
+    python3 -m trtutils inspect --engine model.engine
 
 Running YOLO Inference
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -263,4 +346,4 @@ Notes
 * All paths can be specified as relative or absolute paths
 * The CLI automatically sets the log level to INFO when running
 * For Jetson-specific features, make sure you're running on a Jetson device
-* When using INT8 quantization, ensure you have the appropriate calibration data 
+* When using INT8 quantization, ensure you have the appropriate calibration data
