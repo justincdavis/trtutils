@@ -369,7 +369,9 @@ class ParallelYOLO:
             err_msg = "Outputs do not match models"
             raise ValueError(err_msg)
         return [
-            self.postprocess_model(output, modelid, ratio, padding, no_copy=no_copy, verbose=verbose)
+            self.postprocess_model(
+                output, modelid, ratio, padding, no_copy=no_copy, verbose=verbose
+            )
             for modelid, (output, ratio, padding) in enumerate(
                 zip(outputs, ratios, paddings),
             )
@@ -466,7 +468,7 @@ class ParallelYOLO:
             The model ID of which model is forming detections.
         verbose : bool, optional
             Whether or not to log additional information.
-            
+
         Returns
         -------
         list[tuple[tuple[int, int, int, int], float, int]]
@@ -715,7 +717,7 @@ class ParallelYOLO:
             The model to retrieve data from.
         verbose : bool, optional
             Whether or not to log additional information.
-            
+
         Returns
         -------
         tuple[list[np.ndarray], tuple[float, float] | None, tuple[float, float] | None]
