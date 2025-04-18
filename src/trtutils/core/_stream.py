@@ -4,14 +4,11 @@
 from __future__ import annotations
 
 import contextlib
-from threading import Lock
 
 with contextlib.suppress(Exception):
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
-
-_STREAM_LOCK = Lock()
 
 
 def create_stream() -> cudart.cudaStream_t:
@@ -24,8 +21,7 @@ def create_stream() -> cudart.cudaStream_t:
         The CUDA stream.
 
     """
-    with _STREAM_LOCK:
-        return cuda_call(cudart.cudaStreamCreate())
+    return cuda_call(cudart.cudaStreamCreate())
 
 
 def destroy_stream(stream: cudart.cudaStream_t) -> None:
@@ -38,8 +34,7 @@ def destroy_stream(stream: cudart.cudaStream_t) -> None:
         The CUDA stream to destroy.
 
     """
-    with _STREAM_LOCK:
-        cuda_call(cudart.cudaStreamDestroy(stream))
+    cuda_call(cudart.cudaStreamDestroy(stream))
 
 
 def stream_synchronize(stream: cudart.cudaStream_t) -> None:

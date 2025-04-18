@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from threading import Lock
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(Exception):
@@ -18,13 +17,9 @@ from ._stream import create_stream
 if TYPE_CHECKING:
     from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
-_CONTEXT_LOCK = Lock()
-
 
 def create_engine(
     engine_path: Path | str,
-    logger: trt.ILogger | None = None,
-    log_level: trt.ILogger.Severity | None = None,
 ) -> tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger, cudart.cudaStream_t]:
     """
     Load a serialized engine from disk.
@@ -33,10 +28,6 @@ def create_engine(
     ----------
     engine_path : Path | str
         The path to the serialized engine file.
-    logger : trt.ILogger, optional
-        The logger to use, by default None
-    log_level : trt.ILogger.Severity, optional
-        The log level to use if the logger is None, by default trt.Logger.WARNING
 
     Returns
     -------
@@ -60,16 +51,9 @@ def create_engine(
         err_msg = f"Engine file not found: {engine_path}"
         raise FileNotFoundError(err_msg)
 
-    # load the logger and libnvinfer plugins
-    if log_level is None:
-        log_level = trt.Logger.WARNING
-    trt_logger = logger or trt.Logger(log_level)
-    trt_logger = LOG
-
     # load the engine from file
-    with Path.open(engine_path, "rb") as f, trt.Runtime(
-        trt_logger,
-    ) as runtime:
+    runtime = trt.Runtime(LOG)
+    with Path.open(engine_path, "rb") as f:
         if runtime is None:
             err_msg = "Failed to create TRT runtime"
             raise RuntimeError(err_msg)
@@ -81,13 +65,12 @@ def create_engine(
         raise RuntimeError(err_msg)
 
     # create the execution context
-    with _CONTEXT_LOCK:
-        context = engine.create_execution_context()
-        if context is None:
-            err_msg = "Failed to create execution context"
-            raise RuntimeError(err_msg)
+    context = engine.create_execution_context()
+    if context is None:
+        err_msg = "Failed to create execution context"
+        raise RuntimeError(err_msg)
 
     # create a cudart stream
     stream = create_stream()
 
-    return engine, context, trt_logger, stream
+    return engine, context, LOG, stream

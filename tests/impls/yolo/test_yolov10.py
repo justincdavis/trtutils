@@ -13,27 +13,6 @@ from .common import (
     yolo_run_multiple_threads,
 )
 
-# try:
-#     from common import (
-#         DLA_ENGINES,
-#         GPU_ENGINES,
-#         yolo_results,
-#         yolo_run,
-#         yolo_run_in_thread,
-#         yolo_run_multiple,
-#         yolo_run_multiple_threads,
-#     )
-# except ModuleNotFoundError:
-#     from .common import (
-#         DLA_ENGINES,
-#         GPU_ENGINES,
-#         yolo_results,
-#         yolo_run,
-#         yolo_run_in_thread,
-#         yolo_run_multiple,
-#         yolo_run_multiple_threads,
-#     )
-
 
 def test_yolo_10_cpu_run() -> None:
     """Test GPU engine runs with CPU preproc."""

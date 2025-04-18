@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Barrier, Thread
+from threading import Thread
 
 import cv2
 
@@ -152,9 +152,6 @@ def yolo_run_in_thread(
     assert result[0]
 
 
-# TODO: occassional crash in memcpy for invalid argument
-# Always occurs when using the CUDA preprocessor
-# Most likely auto-cleanup from GC and not saving memory ref.
 def yolo_run_multiple_threads(
     version: int,
     preprocessor: str = "cpu",
@@ -165,9 +162,8 @@ def yolo_run_multiple_threads(
     """Check if multiple YOLO engines can run across multiple threads."""
     results = [False] * count
     engine_path = build_yolo(version, use_dla=use_dla)
-    barrier = Barrier(count)
 
-    def run(tid: int, barrier: Barrier, results: list[bool], engine_path: Path) -> None:
+    def run(tid: int, results: list[bool], engine_path: Path) -> None:
         scale = (0, 1) if version != 0 else (0, 255)
         yolo = trtutils.impls.yolo.YOLO(
             engine_path,
@@ -176,8 +172,6 @@ def yolo_run_multiple_threads(
             input_range=scale,
             preprocessor=preprocessor,
         )
-
-        # barrier.wait()
 
         outputs = yolo.mock_run()
 
@@ -192,7 +186,6 @@ def yolo_run_multiple_threads(
             target=run,
             args=(
                 i,
-                barrier,
                 results,
                 engine_path,
             ),

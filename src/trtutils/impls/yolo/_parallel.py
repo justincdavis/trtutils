@@ -8,7 +8,7 @@ import contextlib
 import time
 from dataclasses import dataclass
 from queue import Empty, Queue
-from threading import Event, Lock, Thread
+from threading import Event, Thread
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -22,8 +22,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
-
-_YOLO_LOCK = Lock()
 
 
 @dataclass
@@ -61,6 +59,7 @@ class ParallelYOLO:
         warmup_iterations: int = 100,
         *,
         warmup: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         """
         Create a ParallelYOLO instance.
@@ -74,6 +73,8 @@ class ParallelYOLO:
             Warmup occurs in parallel in each thread.
         warmup : bool, optional
             Whether or not to run the warmup iterations.
+        verbose : bool, optional
+            Whether or not to output additional information.
 
         Raises
         ------
@@ -85,6 +86,7 @@ class ParallelYOLO:
         self._warmup_iterations = warmup_iterations
         self._warmup = warmup
         self._tag = str(len(self._engine_paths))
+        self._verbose = verbose
 
         self._stopflag = Event()
         self._iqueues: list[Queue[_InputPacket]] = [Queue() for _ in self._engine_paths]
@@ -110,9 +112,10 @@ class ParallelYOLO:
                 err_msg = f"Error creating YOLO model: {self._engine_paths[idx]}"
                 raise RuntimeError(err_msg)
 
-        LOG.debug(
-            f"{self._tag}: Initialized ParallelYOLO with tag: {self._tag}, num engines: {len(self._models)}",
-        )
+        if self._verbose:
+            LOG.debug(
+                f"{self._tag}: Initialized ParallelYOLO with tag: {self._tag}, num engines: {len(self._models)}",
+            )
 
     def __del__(self: Self) -> None:
         self.stop()
@@ -214,6 +217,7 @@ class ParallelYOLO:
         method: str | None = None,
         *,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> tuple[
         list[np.ndarray],
         list[tuple[float, float]],
@@ -238,6 +242,8 @@ class ParallelYOLO:
             data from the allocated memory. If the data
             is not copied, it WILL BE OVERWRITTEN INPLACE
             once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -264,6 +270,7 @@ class ParallelYOLO:
                 resize=resize,
                 method=method,
                 no_copy=no_copy,
+                verbose=verbose,
             )
             tensors.append(tensor)
             ratios.append(ratio)
@@ -278,6 +285,7 @@ class ParallelYOLO:
         method: str | None = None,
         *,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
         Preprocess data for a specific model.
@@ -300,6 +308,8 @@ class ParallelYOLO:
             data from the allocated memory. If the data
             is not copied, it WILL BE OVERWRITTEN INPLACE
             once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -307,12 +317,14 @@ class ParallelYOLO:
             The preprocessed data
 
         """
-        LOG.debug(f"{self._tag}: Preprocess model: {modelid}")
+        if verbose:
+            LOG.debug(f"{self._tag}: Preprocess model: {modelid}")
         return self.get_model(modelid).preprocess(
             data,
             resize=resize,
             method=method,
             no_copy=no_copy,
+            verbose=verbose,
         )
 
     def postprocess(
@@ -322,6 +334,7 @@ class ParallelYOLO:
         paddings: list[tuple[float, float]],
         *,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> list[list[np.ndarray]]:
         """
         Preprocess outputs for inference.
@@ -338,6 +351,8 @@ class ParallelYOLO:
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
             OVERWRITTEN INPLACE once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -354,7 +369,7 @@ class ParallelYOLO:
             err_msg = "Outputs do not match models"
             raise ValueError(err_msg)
         return [
-            self.postprocess_model(output, modelid, ratio, padding, no_copy=no_copy)
+            self.postprocess_model(output, modelid, ratio, padding, no_copy=no_copy, verbose=verbose)
             for modelid, (output, ratio, padding) in enumerate(
                 zip(outputs, ratios, paddings),
             )
@@ -368,6 +383,7 @@ class ParallelYOLO:
         padding: tuple[float, float],
         *,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Postprocess outputs for a specific model.
@@ -386,6 +402,8 @@ class ParallelYOLO:
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
             OVERWRITTEN INPLACE once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -393,17 +411,21 @@ class ParallelYOLO:
             The preprocessed data
 
         """
-        LOG.debug(f"{self._tag}: Postprocess model: {modelid}")
+        if verbose:
+            LOG.debug(f"{self._tag}: Postprocess model: {modelid}")
         return self.get_model(modelid).postprocess(
             outputs,
             ratios,
             padding,
             no_copy=no_copy,
+            verbose=verbose,
         )
 
     def get_detections(
         self: Self,
         outputs: list[list[np.ndarray]],
+        *,
+        verbose: bool | None = None,
     ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
         """
         Get the detections of the YOLO models.
@@ -412,6 +434,8 @@ class ParallelYOLO:
         ----------
         outputs : list[list[np.ndarray]]
             The outputs of the models after postprocessing.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -420,7 +444,7 @@ class ParallelYOLO:
 
         """
         return [
-            self.get_detections_model(output, modelid)
+            self.get_detections_model(output, modelid, verbose=verbose)
             for modelid, output in enumerate(outputs)
         ]
 
@@ -428,6 +452,8 @@ class ParallelYOLO:
         self: Self,
         output: list[np.ndarray],
         modelid: int,
+        *,
+        verbose: bool | None = None,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
         """
         Get the detections of a single YOLO model.
@@ -438,15 +464,18 @@ class ParallelYOLO:
             The output of a model after postprocessing.
         modelid : int
             The model ID of which model is forming detections.
-
+        verbose : bool, optional
+            Whether or not to log additional information.
+            
         Returns
         -------
         list[tuple[tuple[int, int, int, int], float, int]]
             The detections produced by the model
 
         """
-        LOG.debug(f"{self._tag}: GetDetections model: {modelid}")
-        return self.get_model(modelid).get_detections(output)
+        if verbose:
+            LOG.debug(f"{self._tag}: GetDetections model: {modelid}")
+        return self.get_model(modelid).get_detections(output, verbose=verbose)
 
     def submit(
         self: Self,
@@ -457,6 +486,7 @@ class ParallelYOLO:
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         """
         Submit data to be run for all models or a specific one.
@@ -477,6 +507,8 @@ class ParallelYOLO:
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
             OVERWRITTEN INPLACE once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Raises
         ------
@@ -502,6 +534,7 @@ class ParallelYOLO:
                 preprocessed=preprocessed,
                 postprocess=postprocess,
                 no_copy=no_copy,
+                verbose=verbose,
             )
 
     def submit_model(
@@ -514,6 +547,7 @@ class ParallelYOLO:
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         """
         Submit data to a specific model.
@@ -536,8 +570,12 @@ class ParallelYOLO:
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
             OVERWRITTEN INPLACE once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         """
+        if verbose:
+            LOG.debug(f"{self._tag}: Submit model: {modelid}")
         packet = _InputPacket(
             data=inputs,
             ratio=ratio,
@@ -627,6 +665,8 @@ class ParallelYOLO:
 
     def retrieve(
         self: Self,
+        *,
+        verbose: bool | None = None,
     ) -> tuple[
         list[list[np.ndarray]],
         list[tuple[float, float] | None],
@@ -634,6 +674,11 @@ class ParallelYOLO:
     ]:
         """
         Get outputs back from all the models.
+
+        Parameters
+        ----------
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -645,7 +690,7 @@ class ParallelYOLO:
         ratios: list[tuple[float, float] | None] = []
         paddings: list[tuple[float, float] | None] = []
         for modelid in range(len(self._engine_paths)):
-            output, ratio, padding = self.retrieve_model(modelid)
+            output, ratio, padding = self.retrieve_model(modelid, verbose=verbose)
             outputs.append(output)
             ratios.append(ratio)
             paddings.append(padding)
@@ -654,6 +699,8 @@ class ParallelYOLO:
     def retrieve_model(
         self: Self,
         modelid: int,
+        *,
+        verbose: bool | None = None,
     ) -> tuple[
         list[np.ndarray],
         tuple[float, float] | None,
@@ -666,13 +713,17 @@ class ParallelYOLO:
         ----------
         modelid : int
             The model to retrieve data from.
-
+        verbose : bool, optional
+            Whether or not to log additional information.
+            
         Returns
         -------
         tuple[list[np.ndarray], tuple[float, float] | None, tuple[float, float] | None]
             The outputs of the model
 
         """
+        if verbose:
+            LOG.debug(f"{self._tag}: Retrieve model: {modelid}")
         packet = self._oqueues[modelid].get()
         return (packet.data, packet.ratio, packet.padding)
 
@@ -685,6 +736,7 @@ class ParallelYOLO:
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
     ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
         """
         Perform end-to-end inference for all models.
@@ -705,6 +757,8 @@ class ParallelYOLO:
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
             OVERWRITTEN INPLACE once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
@@ -719,24 +773,24 @@ class ParallelYOLO:
             preprocessed=preprocessed,
             postprocess=postprocess,
             no_copy=no_copy,
+            verbose=verbose,
         )
-        outputs, _, _ = self.retrieve()
-        return self.get_detections(outputs)
+        outputs, _, _ = self.retrieve(verbose=verbose)
+        return self.get_detections(outputs, verbose=verbose)
 
     def _run(self: Self, threadid: int) -> None:
         # perform warmup
         engine = self._engine_paths[threadid]
         flag = self._flags[threadid]
-        with _YOLO_LOCK:
-            try:
-                yolo = YOLO(
-                    engine,
-                    warmup_iterations=self._warmup_iterations,
-                    warmup=self._warmup,
-                )
-            except Exception:
-                flag.set()
-                raise
+        try:
+            yolo = YOLO(
+                engine,
+                warmup_iterations=self._warmup_iterations,
+                warmup=self._warmup,
+            )
+        except Exception:
+            flag.set()
+            raise
         self._models[threadid] = yolo
 
         # set flag that we are ready
