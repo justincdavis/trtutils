@@ -10,7 +10,11 @@ from typing import TypeVar
 import numpy as np
 
 with contextlib.suppress(Exception):
-    from cuda import cuda, nvrtc  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.driver as cuda  # type: ignore[import-untyped, import-not-found]
+        import cuda.bindings.nvrtc as nvrtc  # type: ignore[import-untyped, import-not-found]
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cuda, nvrtc  # type: ignore[import-untyped, import-not-found]
 
 from trtutils._log import LOG
 

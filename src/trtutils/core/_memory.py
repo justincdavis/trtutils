@@ -9,7 +9,10 @@ import ctypes
 import numpy as np
 
 with contextlib.suppress(Exception):
-    from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.runtime as cudart  # type: ignore[import-untyped, import-not-found]
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 from trtutils._log import LOG
 

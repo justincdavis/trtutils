@@ -59,6 +59,7 @@ class ParallelYOLO:
         warmup_iterations: int = 100,
         *,
         warmup: bool | None = None,
+        no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -73,8 +74,12 @@ class ParallelYOLO:
             Warmup occurs in parallel in each thread.
         warmup : bool, optional
             Whether or not to run the warmup iterations.
+        no_warn : bool, optional
+            If True, suppresses warnings from TensorRT during engine deserialization.
+            Default is None, which means warnings will be shown.
         verbose : bool, optional
             Whether or not to output additional information.
+            Only covers initialization of the models.
 
         Raises
         ------
@@ -86,6 +91,7 @@ class ParallelYOLO:
         self._warmup_iterations = warmup_iterations
         self._warmup = warmup
         self._tag = str(len(self._engine_paths))
+        self._no_warn = no_warn
         self._verbose = verbose
 
         self._stopflag = Event()
@@ -789,6 +795,8 @@ class ParallelYOLO:
                 engine,
                 warmup_iterations=self._warmup_iterations,
                 warmup=self._warmup,
+                no_warn=self._no_warn,
+                verbose=self._verbose,
             )
         except Exception:
             flag.set()

@@ -78,6 +78,7 @@ def yolo_run(
         warmup=False,
         input_range=scale,
         preprocessor=preprocessor,
+        no_warn=True,
     )
 
     outputs = yolo.mock_run()
@@ -105,6 +106,7 @@ def yolo_run_multiple(
             warmup=False,
             input_range=scale,
             preprocessor=preprocessor,
+            no_warn=True,
         )
         for _ in range(count)
     ]
@@ -134,6 +136,7 @@ def yolo_run_in_thread(
             warmup=False,
             input_range=scale,
             preprocessor=preprocessor,
+            no_warn=True,
         )
 
         outputs = yolo.mock_run()
@@ -171,6 +174,7 @@ def yolo_run_multiple_threads(
             warmup=False,
             input_range=scale,
             preprocessor=preprocessor,
+            no_warn=True,
         )
 
         outputs = yolo.mock_run()
@@ -217,6 +221,7 @@ def yolo_results(
         warmup=False,
         input_range=scale,
         preprocessor=preprocessor,
+        no_warn=True,
     )
 
     for gt, ipath in zip(
@@ -229,7 +234,7 @@ def yolo_results(
         bboxes = [bbox for (bbox, _, _) in yolo.get_detections(outputs)]
 
         # check within +-2 bounding boxes from ground truth
-        assert max(0, gt - 2) <= len(bboxes) <= gt + 2
+        assert max(1, gt - 1) <= len(bboxes) <= gt + 1
         # we always have at least one detection per image
         assert len(bboxes) >= 1
 

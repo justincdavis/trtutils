@@ -48,6 +48,7 @@ class TRTEngine(TRTEngineInterface):
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
+        no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -69,6 +70,9 @@ class TRTEngine(TRTEngineInterface):
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for host allocations.
             By default None, which means pagelocked memory will be used.
+        no_warn : bool, optional
+            If True, suppresses warnings from TensorRT during engine deserialization.
+            Default is None, which means warnings will be shown.
         verbose : bool, optional
             Whether or not to give additional information over stdout.
 
@@ -78,7 +82,7 @@ class TRTEngine(TRTEngineInterface):
             If the backend is not valid.
 
         """
-        super().__init__(engine_path, pagelocked_mem=pagelocked_mem)
+        super().__init__(engine_path, pagelocked_mem=pagelocked_mem, no_warn=no_warn)
 
         # solve for execution method
         # only care about v2 or v3 async

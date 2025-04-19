@@ -15,11 +15,16 @@ from trtutils._log import LOG
 from ._stream import create_stream
 
 if TYPE_CHECKING:
-    from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.cudart as cudart  # type: ignore[import-untyped, import-not-found]
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 
 def create_engine(
     engine_path: Path | str,
+    *,
+    no_warn: bool | None = None,
 ) -> tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger, cudart.cudaStream_t]:
     """
     Load a serialized engine from disk.
@@ -28,6 +33,8 @@ def create_engine(
     ----------
     engine_path : Path | str
         The path to the serialized engine file.
+    no_warn : bool | None, optional
+        If True, suppresses warnings from TensorRT. Default is None.
 
     Returns
     -------
@@ -57,7 +64,11 @@ def create_engine(
         if runtime is None:
             err_msg = "Failed to create TRT runtime"
             raise RuntimeError(err_msg)
-        engine = runtime.deserialize_cuda_engine(f.read())
+        if no_warn:
+            with LOG.suppress():
+                engine = runtime.deserialize_cuda_engine(f.read())
+        else:
+            engine = runtime.deserialize_cuda_engine(f.read())
 
     # final check on engine
     if engine is None:

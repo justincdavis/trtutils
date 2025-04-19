@@ -19,7 +19,11 @@ if TYPE_CHECKING:
 
     with contextlib.suppress(ImportError):
         import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
-        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+
+        try:
+            import cuda.bindings.runtime as cudart  # type: ignore[import-untyped, import-not-found]
+        except (ImportError, ModuleNotFoundError):
+            from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 
 class TRTEngineInterface(ABC):
@@ -28,6 +32,7 @@ class TRTEngineInterface(ABC):
         engine_path: Path | str,
         *,
         pagelocked_mem: bool | None = None,
+        no_warn: bool | None = None,
     ) -> None:
         """
         Load the TensorRT engine from a file.
@@ -39,6 +44,9 @@ class TRTEngineInterface(ABC):
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for host allocations.
             By default None, which means pagelocked memory will be used.
+        no_warn : bool, optional
+            If True, suppresses warnings from TensorRT during engine deserialization.
+            Default is None, which means warnings will be shown.
 
         """
         # store path stem as name
@@ -47,6 +55,7 @@ class TRTEngineInterface(ABC):
         # engine, context, logger, and CUDA stream
         self._engine, self._context, self._logger, self._stream = create_engine(
             engine_path,
+            no_warn=no_warn,
         )
 
         # allocate memory for inputs and outputs

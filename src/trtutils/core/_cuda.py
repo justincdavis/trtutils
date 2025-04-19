@@ -8,7 +8,11 @@ import contextlib
 from typing import TypeVar
 
 with contextlib.suppress(Exception):
-    from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.driver as cuda  # type: ignore[import-untyped, import-not-found]
+        import cuda.bindings.runtime as cudart  # type: ignore[import-untyped, import-not-found]
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
 
 from trtutils._log import LOG
 

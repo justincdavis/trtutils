@@ -11,7 +11,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 with contextlib.suppress(Exception):
-    from cuda import cuda  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.driver as cuda  # type: ignore[import-untyped, import-not-found]
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cuda  # type: ignore[import-untyped, import-not-found]
 
 from trtutils._log import LOG
 
@@ -22,7 +25,10 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     with contextlib.suppress(Exception):
-        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+        try:
+            import cuda.bindings.runtime as cudart  # type: ignore[import-untyped, import-not-found]
+        except (ImportError, ModuleNotFoundError):
+            from cuda import cudart  # type: ignore[import-untyped, import-not-found]
 
 
 class Kernel:

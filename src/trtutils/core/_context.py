@@ -6,7 +6,10 @@ from __future__ import annotations
 import contextlib
 
 with contextlib.suppress(Exception):
-    from cuda import cuda  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.driver as cuda  # type: ignore[import-untyped, import-not-found]
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cuda  # type: ignore[import-untyped, import-not-found]
 
 from ._cuda import cuda_call
 
