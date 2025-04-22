@@ -155,7 +155,7 @@ class TRTLogger(trt.ILogger):
         def __init__(self: Self, logger: TRTLogger, level: str | None) -> None:
             self._logger = logger
             self._level = level
-            self._old_level = logger._logger.getEffectiveLevel()
+            self._old_level = logger.logger.getEffectiveLevel()
 
         def __enter__(self: Self) -> TRTLogger:
             if self._level:

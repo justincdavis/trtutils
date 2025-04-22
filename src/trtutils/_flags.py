@@ -37,6 +37,7 @@ class _FLAGS:
 
     TRT_10: bool = False
     NEW_CAN_RUN_ON_DLA: bool = False
+    MEMSIZE_V2: bool = False
     BUILD_PROGRESS: bool = False
     BUILD_SERIALIZED: bool = False
     EXEC_ASYNC_V3: bool = False
@@ -54,6 +55,7 @@ with contextlib.suppress(ImportError):
 
     FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
     FLAGS.NEW_CAN_RUN_ON_DLA = hasattr(trt.IBuilderConfig, "can_run_on_DLA")
+    FLAGS.MEMSIZE_V2 = hasattr(trt.ICudaEngine, "device_memory_size_v2")
     FLAGS.BUILD_PROGRESS = hasattr(trt, "IProgressMonitor")
     FLAGS.BUILD_SERIALIZED = hasattr(trt.Builder, "build_serialized_network")
     FLAGS.EXEC_ASYNC_V3 = hasattr(trt.IExecutionContext, "execute_async_v3")

@@ -12,13 +12,9 @@ import trtutils
 
 from .paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
 
-# try:
-#     from paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
-# except ModuleNotFoundError:
-#     from .paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
-
 DLA_ENGINES = 2
 GPU_ENGINES = 4
+YOLOV9_VERSION = 9
 
 
 def build_yolo(version: int, *, use_dla: bool | None = None) -> Path:
@@ -43,24 +39,15 @@ def build_yolo(version: int, *, use_dla: bool | None = None) -> Path:
     if engine_path.exists():
         return engine_path
 
-    if version != 9:
-        trtutils.builder.build_engine(
-            onnx_path,
-            engine_path,
-            timing_cache=Path(__file__).parent / "timing.cache",
-            dla_core=0 if use_dla else None,
-            gpu_fallback=bool(use_dla),
-            fp16=True,
-        )
-    else:
-        trtutils.trtexec.build_engine(
-            onnx_path,
-            engine_path,
-            use_dla_core=0 if use_dla else None,
-            allow_gpu_fallback=True if use_dla else None,
-            shapes=[("images", (1, 3, 640, 640))],
-            fp16=True,
-        )
+    trtutils.builder.build_engine(
+        onnx_path,
+        engine_path,
+        timing_cache=Path(__file__).parent / "timing.cache",
+        dla_core=0 if use_dla else None,
+        gpu_fallback=bool(use_dla),
+        fp16=True,
+        shapes=[("images", (1, 3, 640, 640))] if version == YOLOV9_VERSION else None,
+    )
 
     return engine_path
 

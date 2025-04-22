@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from trtutils._flags import FLAGS
+
 from ._bindings import allocate_bindings
 from ._engine import create_engine
 
@@ -74,7 +76,11 @@ class TRTEngineInterface(ABC):
         ]
 
         # store useful properties about the engine
-        self._memsize: int = self._engine.device_memory_size
+        self._memsize: int = 0
+        if FLAGS.MEMSIZE_V2:
+            self._memsize = self._engine.device_memory_size_v2
+        else:
+            self._memsize = self._engine.device_memory_size
 
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None
