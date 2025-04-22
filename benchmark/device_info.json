@@ -1,0 +1,9 @@
+{
+    "OrinAGX-64GB": "Developer Kit with Jetpack 6",
+    "OrinNX-16GB": "Developer Kit with Jetpack 6",
+    "OrinNano-8GB": "Developer Kit with Jetpack 5",
+    "XavierNX-8GB": "Developer Kit with Jetpack 5",
+    "3090": "3090 in a server with dual AMD EPYC CPU",
+    "3080Ti": "3080Ti in a workstation with Intel 12900K CPU",
+    "TitanRTX": "Titan RTX in a workstation with AMD 7950X CPU"
+}
