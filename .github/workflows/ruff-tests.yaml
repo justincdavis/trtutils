@@ -5,6 +5,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: chartboost/ruff-action@v1
+      - uses: chartboost/ruff-action@v3
         with:
           src: tests
+          args: "--ignore=S101,D100,D104,PLR2004"
