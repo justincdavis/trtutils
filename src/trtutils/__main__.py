@@ -184,6 +184,8 @@ def _build_dla(args: SimpleNamespace) -> None:
         output_path=Path(args.output),
         data_batcher=batcher,
         dla_core=args.dla_core,
+        max_chunks=args.max_chunks,
+        min_layers=args.min_layers,
         timing_cache=args.timing_cache,
         verbose=args.verbose,
     )
@@ -510,6 +512,18 @@ def _main() -> None:
         type=int,
         default=0,
         help="Specify the DLA core. By default, the engine is built for GPU.",
+    )
+    build_dla_parser.add_argument(
+        "--max_chunks",
+        type=int,
+        default=1,
+        help="Maximum number of DLA chunks to assign. Default is 1.",
+    )
+    build_dla_parser.add_argument(
+        "--min_layers",
+        type=int,
+        default=20,
+        help="Minimum number of layers in a chunk to be assigned to DLA. Default is 20.",
     )
     build_dla_parser.add_argument(
         "--image_dir",
