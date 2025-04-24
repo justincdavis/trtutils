@@ -21,6 +21,7 @@ def test_metric_class() -> None:
     data = [1.0, 2.0, 3.0, 4.0, 5.0]
     metric = Metric(data)
 
+    assert metric.raw
     assert metric.mean == 3.0
     assert metric.median == 3.0
     assert metric.min == 1.0
