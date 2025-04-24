@@ -22,8 +22,10 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 
 ## Performance
 
-![OrinAGX-64GB YOLOv8m Performance](benchmark/plots/OrinAGX-64GB/yolov8m.png)
-![3080Ti YOLOv8m Performance](benchmark/plots/3080Ti/yolov8m.png)
+| Device            | YOLOv8m                                                                 | YOLOv8n                                                                 |
+|-------------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------|
+| OrinAGX-64GB      | ![OrinAGX-64GB YOLOv8m](benchmark/plots/OrinAGX-64GB/yolov8m.png)       | ![OrinAGX-64GB YOLOv8n](benchmark/plots/OrinAGX-64GB/yolov8n.png)       |
+| 3080Ti            | ![3080Ti YOLOv8m](benchmark/plots/3080Ti/yolov8m.png)                   | ![3080Ti YOLOv8n](benchmark/plots/3080Ti/yolov8n.png)                   |
 
 ## Quick Start
 
