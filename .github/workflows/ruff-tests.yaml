@@ -7,5 +7,4 @@ jobs:
       - uses: actions/checkout@v3
       - uses: astral-sh/ruff-action@v3
         with:
-          src: tests
-          args: "--ignore=S101,D100,D104,PLR2004"
+          args: "check tests --ignore=S101,D100,D104,PLR2004"
