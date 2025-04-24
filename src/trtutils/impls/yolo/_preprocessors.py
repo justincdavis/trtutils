@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
@@ -26,7 +27,10 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     with contextlib.suppress(ImportError):
-        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+        try:
+            import cuda.bindings.runtime as cudart
+        except (ImportError, ModuleNotFoundError):
+            from cuda import cudart
 
 _COLOR_CHANNELS = 3
 _CUDA_ALLOCATE_LOCK = Lock()

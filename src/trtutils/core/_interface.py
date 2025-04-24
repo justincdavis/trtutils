@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
@@ -21,12 +22,12 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     with contextlib.suppress(ImportError):
-        import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+        import tensorrt as trt
 
         try:
-            import cuda.bindings.runtime as cudart  # type: ignore[import-untyped, import-not-found]
+            import cuda.bindings.runtime as cudart
         except (ImportError, ModuleNotFoundError):
-            from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+            from cuda import cudart
 
 
 class TRTEngineInterface(ABC):

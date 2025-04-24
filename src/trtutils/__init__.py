@@ -2,6 +2,7 @@
 #
 # MIT License
 # ruff: noqa: E402, F401
+# mypy: disable-error-code="import-untyped"
 """
 A package for enabling high-level usage of TensorRT in Python.
 
@@ -126,15 +127,6 @@ with contextlib.suppress(ImportError):
 
 with contextlib.suppress(ImportError):
     # always initialize TensorRT plugins
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    import tensorrt as trt
 
     trt.init_libnvinfer_plugins(LOG, "")
-
-# # start CUDA
-# with contextlib.suppress(ImportError):
-#     from cuda import cuda  # type: ignore[import-untyped, import-not-found]
-
-#     core.cuda_call(cuda.cuInit(0))
-
-#     device_count = core.cuda_call(cuda.cuDeviceGetCount())
-#     _log.info(f"Number of CUDA devices: {device_count}")

@@ -2,6 +2,7 @@
 #
 # MIT License
 # ruff: noqa: TRY004
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
@@ -11,10 +12,10 @@ import numpy as np
 
 with contextlib.suppress(Exception):
     try:
-        import cuda.bindings.driver as cuda  # type: ignore[import-untyped, import-not-found]
-        import cuda.bindings.nvrtc as nvrtc  # type: ignore[import-untyped, import-not-found]
+        import cuda.bindings.driver as cuda
+        import cuda.bindings.nvrtc as nvrtc
     except (ImportError, ModuleNotFoundError):
-        from cuda import cuda, nvrtc  # type: ignore[import-untyped, import-not-found]
+        from cuda import cuda, nvrtc
 
 from trtutils._log import LOG
 
