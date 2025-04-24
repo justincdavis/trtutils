@@ -6,3 +6,4 @@ from __future__ import annotations
 from threading import Lock
 
 MEM_ALLOC_LOCK = Lock()
+NVRTC_LOCK = Lock()

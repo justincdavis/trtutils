@@ -12,6 +12,9 @@ ENGINE_PATH = engine_path = (
     Path(__file__).parent.parent / "data" / "engines" / "simple.engine"
 )
 
+NUM_ENGINES = 4
+NUM_ITERS = 1_000
+
 
 def build_engine() -> Path:
     """
@@ -54,7 +57,9 @@ def test_multiple_engines_run() -> None:
     """Test running multiple engines simultaneously."""
     engine_path = build_engine()
 
-    engines = [trtutils.TRTEngine(engine_path, warmup=False) for _ in range(4)]
+    engines = [
+        trtutils.TRTEngine(engine_path, warmup=False) for _ in range(NUM_ENGINES)
+    ]
 
     outputs = [engine.mock_execute() for engine in engines]
 
@@ -90,9 +95,7 @@ def test_engine_run_in_thread() -> None:
 
 def test_multiple_engines_run_in_threads() -> None:
     """Test running multiple engines in separate threads with multiple iterations."""
-    num_engines = 4
-    result = [0] * num_engines
-    num_iters = 1_000
+    result = [0] * NUM_ENGINES
 
     def run(threadid: int, result: list[int], iters: int) -> None:
         engine_path = build_engine()
@@ -113,12 +116,12 @@ def test_multiple_engines_run_in_threads() -> None:
         del engine
 
     threads = [
-        Thread(target=run, args=(threadid, result, num_iters), daemon=True)
-        for threadid in range(num_engines)
+        Thread(target=run, args=(threadid, result, NUM_ITERS), daemon=True)
+        for threadid in range(NUM_ENGINES)
     ]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
     for r in result:
-        assert r == num_iters
+        assert r == NUM_ITERS

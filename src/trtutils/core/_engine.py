@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 def create_engine(
     engine_path: Path | str,
+    stream: cudart.cudaStream_t | None = None,
     *,
     no_warn: bool | None = None,
 ) -> tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger, cudart.cudaStream_t]:
@@ -33,6 +34,11 @@ def create_engine(
     ----------
     engine_path : Path | str
         The path to the serialized engine file.
+    stream : cudart.cudaStream_t, optional
+        When an already made stream is passed, no new stream is created.
+        Useful if you want multiple engines to share the same stream.
+        Although there is no explicit link between engine and stream, the stream
+        returned by this function should be used for execution.
     no_warn : bool | None, optional
         If True, suppresses warnings from TensorRT. Default is None.
 
@@ -59,6 +65,8 @@ def create_engine(
         raise FileNotFoundError(err_msg)
 
     # load the engine from file
+    # explicitly a thread-safe operation
+    # https://docs.nvidia.com/deeplearning/tensorrt/latest/architecture/how-trt-works.html
     runtime = trt.Runtime(LOG)
     with Path.open(engine_path, "rb") as f:
         if runtime is None:
@@ -76,12 +84,15 @@ def create_engine(
         raise RuntimeError(err_msg)
 
     # create the execution context
+    # explicitly a thread-safe operation
+    # https://docs.nvidia.com/deeplearning/tensorrt/latest/architecture/how-trt-works.html
     context = engine.create_execution_context()
     if context is None:
         err_msg = "Failed to create execution context"
         raise RuntimeError(err_msg)
 
     # create a cudart stream
-    stream = create_stream()
+    if stream is None:
+        stream = create_stream()
 
     return engine, context, LOG, stream

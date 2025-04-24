@@ -19,6 +19,7 @@ with contextlib.suppress(Exception):
 from trtutils._log import LOG
 
 from ._cuda import cuda_call
+from ._lock import MEM_ALLOC_LOCK, NVRTC_LOCK
 
 
 def check_nvrtc_err(err: nvrtc.nvrtcResult) -> None:
@@ -110,9 +111,10 @@ def compile_kernel(
 
     # compile the kernel
     try:
-        prog = nvrtc_call(
-            nvrtc.nvrtcCreateProgram(kernel_bytes, kernel_name_bytes, 0, [], []),
-        )
+        with MEM_ALLOC_LOCK, NVRTC_LOCK:
+            prog = nvrtc_call(
+                nvrtc.nvrtcCreateProgram(kernel_bytes, kernel_name_bytes, 0, [], []),
+            )
     except RuntimeError as err:
         if "Failed to dlopen libnvrtc" in str(err):
             err_msg = str(err)
@@ -120,7 +122,8 @@ def compile_kernel(
             raise RuntimeError(err_msg) from err
         raise
     opts = [] if opts is None else opts
-    nvrtc_call(nvrtc.nvrtcCompileProgram(prog, len(opts), opts))
+    with MEM_ALLOC_LOCK, NVRTC_LOCK:
+        nvrtc_call(nvrtc.nvrtcCompileProgram(prog, len(opts), opts))
 
     # generate the actual kernel ptx
     ptx_size = nvrtc_call(nvrtc.nvrtcGetPTXSize(prog))

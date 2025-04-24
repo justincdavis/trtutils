@@ -15,6 +15,7 @@ from trtutils._flags import FLAGS
 
 from ._bindings import allocate_bindings
 from ._engine import create_engine
+from ._stream import stream_synchronize
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -194,6 +195,11 @@ class TRTEngineInterface(ABC):
         return [o.dtype for o in self._outputs]
 
     def __del__(self: Self) -> None:
+        # Ensure CUDA stream is synchronized before freeing resources
+        # This prevents issues in multithreaded environments
+        with contextlib.suppress(Exception):
+            stream_synchronize(self._stream)
+
         def _del(obj: object, attr: str) -> None:
             with contextlib.suppress(AttributeError):
                 delattr(obj, attr)

@@ -14,6 +14,7 @@ from .paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
 
 DLA_ENGINES = 2
 GPU_ENGINES = 4
+NUM_ITERS = 100
 YOLOV9_VERSION = 9
 
 
@@ -68,7 +69,9 @@ def yolo_run(
         no_warn=True,
     )
 
-    outputs = yolo.mock_run()
+    outputs = None
+    for _ in range(NUM_ITERS):
+        outputs = yolo.mock_run()
 
     assert outputs is not None
 
@@ -98,8 +101,11 @@ def yolo_run_multiple(
         for _ in range(count)
     ]
 
-    outputs = [yolo.mock_run() for yolo in yolos]
+    outputs = None
+    for _ in range(NUM_ITERS):
+        outputs = [yolo.mock_run() for yolo in yolos]
 
+    assert outputs is not None
     for o in outputs:
         assert o is not None
 
@@ -126,7 +132,9 @@ def yolo_run_in_thread(
             no_warn=True,
         )
 
-        outputs = yolo.mock_run()
+        outputs = None
+        for _ in range(NUM_ITERS):
+            outputs = yolo.mock_run()
 
         assert outputs is not None
 
@@ -164,7 +172,9 @@ def yolo_run_multiple_threads(
             no_warn=True,
         )
 
-        outputs = yolo.mock_run()
+        outputs = None
+        for _ in range(NUM_ITERS):
+            outputs = yolo.mock_run()
 
         assert outputs is not None
 
