@@ -3,40 +3,14 @@
 # MIT License
 from __future__ import annotations
 
-from pathlib import Path
 from threading import Thread
 
 import trtutils
 
-ENGINE_PATH = engine_path = (
-    Path(__file__).parent.parent / "data" / "engines" / "simple.engine"
-)
+from .common import build_engine
 
 NUM_ENGINES = 4
 NUM_ITERS = 1_000
-
-
-def build_engine() -> Path:
-    """
-    Build a TensorRT engine from ONNX model.
-
-    Returns
-    -------
-    Path
-        The compiled engine.
-
-    """
-    simple_path = Path(__file__).parent.parent / "data" / "simple.onnx"
-
-    if ENGINE_PATH.exists():
-        return ENGINE_PATH
-
-    trtutils.builder.build_engine(
-        simple_path,
-        ENGINE_PATH,
-    )
-
-    return ENGINE_PATH
 
 
 def test_engine_run() -> None:

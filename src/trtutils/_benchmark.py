@@ -38,12 +38,24 @@ class Metric:
         self.max = max(self.raw)
         self.mean = mean(self.raw)
 
+    def __str__(self: Self) -> str:
+        return f"Metric(mean={self.mean:.3f}, median={self.median:.3f}, min={self.min:.3f}, max={self.max:.3f})"
+
+    def __repr__(self: Self) -> str:
+        return f"Metric(mean={self.mean},median={self.median},min={self.min},max={self.max})"
+
 
 @dataclass
 class BenchmarkResult:
     """A dataclass to store the results of a benchmark."""
 
     latency: Metric
+
+    def __str__(self: Self) -> str:
+        return f"BenchmarkResult(latency={self.latency})"
+
+    def __repr__(self: Self) -> str:
+        return f"BenchmarkResult(latency={self.latency!r})"
 
 
 def benchmark_engine(
@@ -104,9 +116,7 @@ def benchmark_engine(
         data = raw[metric_name]
         metric = Metric(data)
         metrics[metric_name] = metric
-        LOG.debug(
-            f"{metric_name}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
-        )
+        LOG.debug(f"{metric_name}: {metric}")
 
     return BenchmarkResult(
         latency=metrics["latency"],
@@ -185,9 +195,7 @@ def benchmark_engines(
         data = raw[metric_name]
         metric = Metric(data)
         metrics[metric_name] = metric
-        LOG.debug(
-            f"{metric_name}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
-        )
+        LOG.debug(f"{metric_name}: {metric}")
 
     return [
         BenchmarkResult(
