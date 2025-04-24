@@ -111,6 +111,8 @@ Build a TensorRT engine for DLA, supporting mixed GPU/DLA layers and precision.
         --onnx model.onnx \
         --output model.engine \
         --dla_core 0 \
+        --max_chunks 1 \
+        --min_layers 20 \
         --image_dir ./calibration_images \
         --shape 640 640 3 \
         --dtype float32 \
@@ -124,8 +126,10 @@ Options
 
 * ``--onnx, -o``: Path to the ONNX model file (required)
 * ``--output, -out``: Path to save the TensorRT engine file (required)
-* ``--dla_core``: Specify the DLA core (default: 0)
 * ``--image_dir``: Path to the directory containing images for calibration (required)
+* ``--dla_core``: Specify the DLA core (default: 0)
+* ``--max_chunks``: The number of DLA compatible chunks to use in the compiled model (default: 1)
+* ``--min_layers``: The minimum number of layers for a chunk to be scheduled on DLA (default: 20)
 * ``--shape``: Input shape in HWC format (height, width, channels; default: 640 640 3)
 * ``--dtype``: Input data type (choices: float32, float16, int8; default: float32)
 * ``--batch_size``: Batch size for calibration (default: 8)
@@ -289,6 +293,8 @@ Building a DLA Engine
         --onnx model.onnx \
         --output model.engine \
         --dla_core 0 \
+        --max_chunks 1 \
+        --min_layers 20 \
         --image_dir ./calibration_images \
         --shape 640 640 3 \
         --dtype float32 \
