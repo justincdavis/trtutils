@@ -40,6 +40,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup_iterations=args.warmup_iterations,
             tegra_interval=1,
             warmup=True,
+            verbose=args.verbose,
         )
         latency = jresult.latency
         energy = jresult.energy
@@ -50,6 +51,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             iterations=args.iterations,
             warmup_iterations=args.warmup_iterations,
             warmup=True,
+            verbose=args.verbose,
         )
         latency = result.latency
 
@@ -313,6 +315,11 @@ def _main() -> None:
         "-j",
         action="store_true",
         help="If True, will use the trtutils.jetson submodule benchmarker to record energy and pwoerdraw as well.",
+    )
+    benchmark_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output during benchmarking.",
     )
     benchmark_parser.set_defaults(func=_benchmark)
 

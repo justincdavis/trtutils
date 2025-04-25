@@ -41,6 +41,7 @@ def benchmark_engine(
     tegra_interval: int = 5,
     *,
     warmup: bool | None = None,
+    verbose: bool | None = None,
 ) -> JetsonBenchmarkResult:
     """
     Benchmark a TensorRT engine on a Jetson device.
@@ -61,6 +62,9 @@ def benchmark_engine(
     warmup : bool, optional
         Whether to do warmup iterations, by default None
         If None, warmup will be set to True.
+    verbose : bool, optional
+        Whether ot not to output additional information to stdout.
+        Default None/False.
 
     Returns
     -------
@@ -69,7 +73,9 @@ def benchmark_engine(
 
     """
     if isinstance(engine, (Path, str)):
-        engine = TRTEngine(engine, warmup_iterations=warmup_iterations, warmup=warmup)
+        engine = TRTEngine(
+            engine, warmup_iterations=warmup_iterations, warmup=warmup, verbose=verbose
+        )
     else:
         if warmup:
             for _ in range(warmup_iterations):
@@ -80,7 +86,7 @@ def benchmark_engine(
     raw: dict[str, list[float]] = {metric: [] for metric in metric_names}
 
     # pre-generate the false data
-    false_data = engine.get_random_input()
+    false_data = engine.get_random_input(verbose=verbose)
 
     # create temp file location for data to go
     temp_file = Path(Path.cwd()) / "temptegra.txt"
@@ -89,7 +95,7 @@ def benchmark_engine(
     with Tegrastats(temp_file, interval=tegra_interval):
         for _ in range(iterations):
             t0 = time.time()
-            engine.mock_execute(false_data)
+            engine.mock_execute(false_data, verbose=verbose)
             t1 = time.time()
             raw["latency"].append(t1 - t0)
             start_stop_times.append((t0, t1))
@@ -140,6 +146,7 @@ def benchmark_engines(
     *,
     warmup: bool | None = None,
     parallel: bool | None = None,
+    verbose: bool | None = None,
 ) -> list[JetsonBenchmarkResult]:
     """
     Benchmark a TensorRT engine.
@@ -164,6 +171,9 @@ def benchmark_engines(
         Useful for assessing concurrent execution performance.
         Will execute the engines in lockstep.
         If None, will benchmark each engine individually.
+    verbose : bool, optional
+        Whether ot not to output additional information to stdout.
+        Default None/False.
 
     Returns
     -------
@@ -180,6 +190,7 @@ def benchmark_engines(
                 warmup_iterations,
                 tegra_interval,
                 warmup=warmup,
+                verbose=verbose,
             )
             for engine in engine_paths
         ]

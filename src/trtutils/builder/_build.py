@@ -39,6 +39,12 @@ def build_engine(
     layer_precision: list[tuple[int, trt.DataType | None]] | None = None,
     layer_device: list[tuple[int, trt.DeviceType | None]] | None = None,
     shapes: list[tuple[str, tuple[int, ...]]] | None = None,
+    input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]]
+    | None = None,
+    output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]]
+    | None = None,
+    hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]]
+    | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -51,6 +57,30 @@ def build_engine(
 ) -> None:
     """
     Build a TensorRT engine from an ONNX model.
+
+    The order in which operations occur inside build_engine:
+
+    1. Parse the ONNX model
+
+    2. Apply any network hooks
+
+    3. Create optimization profile and apply any manual shapes
+
+    4. Apply builder flags (precision constraints, empty algorithms, direct I/O)
+
+    5. Configure tensor formats if specified
+
+    6. Set up timing cache
+
+    7. Configure precision (FP16, INT8)
+
+    8. Set default device and DLA core
+
+    9. Apply individual layer precision and device settings
+
+    10. Build the engine
+
+    11. Save timing cache and engine
 
     Parameters
     ----------
@@ -88,6 +118,18 @@ def build_engine(
         “images” to a fixed shape. This shape will be used as the min, optimal,
         and max shape for the binding.
         By default, None.
+    input_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
+        A list of (name, dtype format) to allow deep specification of input layers.
+        For example, input_tensor_formats=[("input", trt.DataType.UINT8, trt.TensorFormat.HWC)]
+        By default, None
+    output_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
+        A list of (name, dtype format) to allow deep specification of output layers.
+        For example, output_tensor_formats=[("output", trt.DataType.HALF, trt.TensorFormat.LINEAR)]
+        By default, None
+    hooks : list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]], optional
+        An optional list of 'hook' functions to modify the TensorRT network before
+        the remainder of the build phase occurs.
+        By default, None
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
         when building the engine for DLA.
@@ -152,6 +194,11 @@ def build_engine(
         workspace,
     )
 
+    # handle all hooks to start
+    if hooks is not None:
+        for hook in hooks:
+            network = hook(network)
+
     # helper function for checking if layer can run on DLA
     check_dla: Callable[[trt.ILayer], bool] = get_check_dla(config)
 
@@ -173,10 +220,42 @@ def build_engine(
     # handle some flags
     if prefer_precision_constraints:
         config.set_flag(trt.BuilderFlag.PREFER_PRECISION_CONSTRAINTS)
-    if direct_io:
-        config.set_flag(trt.BuilderFlag.DIRECT_IO)
     if reject_empty_algorithms:
         config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
+    # handle custom datatype/format for input/output tensors
+    if (
+        input_tensor_formats is not None or output_tensor_formats is not None
+    ) and not direct_io:
+        LOG.warning(
+            "Direct IO not enabled, but some tensor formats specified. Enabling direct IO."
+        )
+        direct_io = True
+    if direct_io:
+        config.set_flag(trt.BuilderFlag.DIRECT_IO)
+    if input_tensor_formats is not None:
+        for tensor_name, tensor_dtype, tensor_format in input_tensor_formats:
+            found = False
+            for idx in range(network.num_inputs):
+                inp = network.get_input(idx)
+                if inp.name == tensor_name:
+                    inp.dtype = tensor_dtype
+                    inp.allowed_formats = 1 << int(tensor_format)
+                    found = True
+                    break
+            if not found:
+                LOG.warning(f"Input tensor '{tensor_name}' not found in network")
+    if output_tensor_formats is not None:
+        for tensor_name, tensor_dtype, tensor_format in output_tensor_formats:
+            found = False
+            for idx in range(network.num_outputs):
+                out = network.get_output(idx)
+                if out.name == tensor_name:
+                    out.dtype = tensor_dtype
+                    out.allowed_formats = 1 << int(tensor_format)
+                    found = True
+                    break
+            if not found:
+                LOG.warning(f"Output tensor '{tensor_name}' not found in network")
 
     # load/setup the timing cache
     timing_cache_path: Path | None = (

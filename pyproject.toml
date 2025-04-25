@@ -108,7 +108,7 @@ push            = false
 where = ["src"]
 
 [tool.setuptools.package-data]
-trtutils = ["src/*.cu", "src/trtutils/py.typed"]
+trtutils = ["src/*.cu", "src/*.onnx", "src/trtutils/py.typed"]
 
 [tool.ruff]
 fix = true
