@@ -18,11 +18,11 @@ Exporting ONNX Weights
 YOLOv8 is implemented by Ultralytics and requires a two-step process for end-to-end ONNX export.
 First, export the basic ONNX weights:
 
-.. code-block:: console
+.. code-block:: bash
 
     # Install ultralytics if you haven't already
     $ pip install ultralytics
-
+    
     # Export ONNX weights
     # This will save the ONNX file in the same directory as your PyTorch weights
     $ yolo export model=TORCH_WEIGHTS format=onnx
@@ -32,12 +32,12 @@ Converting to End-to-End ONNX
 
 Next, convert the Ultralytics ONNX weights to end-to-end format:
 
-.. code-block:: console
+.. code-block:: bash
 
     # Clone the YOLOv8-TensorRT repository
     $ git clone https://github.com/triple-Mu/YOLOv8-TensorRT.git
     $ cd YOLOv8-TensorRT
-
+    
     # Convert the weights to end-to-end format
     # Adjust parameters according to your needs:
     # - iou-thres: IoU threshold for NMS

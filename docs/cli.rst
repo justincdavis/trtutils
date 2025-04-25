@@ -170,14 +170,19 @@ Output
 ^^^^^^
 
 The command will output:
+
 * Whether the model is fully DLA compatible
 * The percentage of layers that are compatible with DLA
 * If ``--verbose_layers`` is enabled:
+
   * Detailed information about each layer including name, type, precision, and metadata
   * DLA compatibility status for each layer
+
 * If ``--verbose_chunks`` is enabled:
+
   * Number of layer chunks found
   * For each chunk:
+
     * Start and end layer indices
     * Number of layers in the chunk
     * Device assignment (DLA or GPU)

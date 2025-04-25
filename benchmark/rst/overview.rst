@@ -810,14 +810,14 @@
    3080Ti,trtutils,yolov10s,960,2.7,2.7,2.6,2.8
    3080Ti,trtutils,yolov10s,1120,3.2,3.2,3.1,3.4
    3080Ti,trtutils,yolov10s,1280,4.0,4.0,3.8,4.1
-   3080Ti,trtutils,yolov10m,160,3.1,3.1,2.1,4.8
+   3080Ti,trtutils,yolov10m,160,1.6,1.6,1.6,2.0
    3080Ti,trtutils,yolov10m,320,1.8,1.8,1.7,2.0
-   3080Ti,trtutils,yolov10m,480,2.2,2.2,2.1,2.4
-   3080Ti,trtutils,yolov10m,640,2.7,2.7,2.6,2.9
-   3080Ti,trtutils,yolov10m,800,3.4,3.4,3.2,3.5
-   3080Ti,trtutils,yolov10m,960,4.6,4.6,4.3,4.7
-   3080Ti,trtutils,yolov10m,1120,5.5,5.5,5.1,5.7
-   3080Ti,trtutils,yolov10m,1280,6.7,6.7,6.0,7.0
+   3080Ti,trtutils,yolov10m,480,2.2,2.2,2.1,2.3
+   3080Ti,trtutils,yolov10m,640,2.6,2.6,2.6,2.9
+   3080Ti,trtutils,yolov10m,800,3.3,3.3,3.2,3.5
+   3080Ti,trtutils,yolov10m,960,4.5,4.5,4.2,4.9
+   3080Ti,trtutils,yolov10m,1120,5.4,5.4,5.1,5.6
+   3080Ti,trtutils,yolov10m,1280,6.6,6.6,6.0,6.9
    3080Ti,trtutils,yolov9t,160,1.9,1.9,1.9,2.3
    3080Ti,trtutils,yolov9t,320,2.0,2.0,2.0,2.2
    3080Ti,trtutils,yolov9t,480,2.2,2.2,2.1,3.0

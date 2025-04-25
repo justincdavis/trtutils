@@ -66,7 +66,7 @@ def generate_rst_docs():
     # Generate main benchmark RST file
     with open(RST_DIR / "index.rst", "w") as f:
         f.write("""Benchmarking Results
-===================
+====================
 
 This section contains benchmarking results for various YOLO models using different frameworks on different devices.
 
@@ -116,7 +116,7 @@ This section contains benchmarking results for various YOLO models using differe
             f.write(f"This section contains benchmarking results for various YOLO models on the {device_name} platform.\n\n")
             f.write("""
 Performance Plots
-----------------
+-----------------
 
 The following plots show the performance comparison between different YOLO models and frameworks:
 
@@ -136,7 +136,7 @@ The following plots show the performance comparison between different YOLO model
 """)
             f.write("""
 Performance Table
-----------------
+-----------------
 
 The following table shows detailed performance metrics for all tested models:
 

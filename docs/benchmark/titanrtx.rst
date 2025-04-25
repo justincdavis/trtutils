@@ -7,7 +7,7 @@ This section contains benchmarking results for various YOLO models on the TitanR
 
 
 Performance Plots
-----------------
+-----------------
 
 The following plots show the performance comparison between different YOLO models and frameworks:
 
@@ -133,7 +133,7 @@ yoloxt
 
 
 Performance Table
-----------------
+-----------------
 
 The following table shows detailed performance metrics for all tested models:
 

@@ -18,7 +18,7 @@ Exporting ONNX Weights
 YOLOX requires a two-step process for end-to-end ONNX export. First, export
 the basic ONNX weights:
 
-.. code-block:: console
+.. code-block:: bash
 
     # Clone the YOLOX repository
     $ git clone https://github.com/Megvii-BaseDetection/YOLOX.git
@@ -38,7 +38,7 @@ Converting to End-to-End ONNX
 The end-to-end conversion for YOLOX is handled during the engine build process.
 You'll need to use the YOLOX-TensorRT repository:
 
-.. code-block:: console
+.. code-block:: bash
 
     # Clone the YOLOX-TensorRT repository
     $ git clone https://github.com/justincdavis/YOLOX-TensorRT.git
