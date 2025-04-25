@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import contextlib
 import math
-from threading import Lock
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -33,7 +32,6 @@ if TYPE_CHECKING:
             from cuda import cudart
 
 _COLOR_CHANNELS = 3
-_CUDA_ALLOCATE_LOCK = Lock()
 
 
 class CPUPreprocessor:
@@ -222,71 +220,70 @@ class CUDAPreprocessor:
             raise ValueError(err_msg)
         self._resize = resize
 
-        with _CUDA_ALLOCATE_LOCK:
-            # handle stream
-            self._stream: cudart.cudaStream_t
-            self._own_stream = False
-            if stream:
-                self._stream = stream
-            else:
-                self._stream = create_stream()
-                self._own_stream = True
+        # handle stream
+        self._stream: cudart.cudaStream_t
+        self._own_stream = False
+        if stream:
+            self._stream = stream
+        else:
+            self._stream = create_stream()
+            self._own_stream = True
 
-            # allocate input, sst_input, output binding
-            # call resize kernel then sst kernel
-            # need input -> intermediate -> output
-            # for now just allocate 1080p image, reallocate when needed
-            # resize kernel input binding
-            self._allocated_input_shape: tuple[int, int, int] = (1080, 1920, 3)
-            dummy_input: np.ndarray = np.zeros(
-                self._allocated_input_shape,
-                dtype=np.uint8,
-            )
-            self._input_binding = create_binding(
-                dummy_input,
-                is_input=True,
-            )
-            # these two CUDA allocations are static size
-            # sst kernel input binding
-            dummy_sstinput: np.ndarray = np.zeros(
-                (self._o_shape[1], self._o_shape[0], 3),
-                dtype=np.uint8,
-            )
-            self._sst_input_binding = create_binding(
-                dummy_sstinput,
-                is_input=True,
-            )
-            # sst kernel output binding
-            dummy_output: np.ndarray = np.zeros(
-                (1, 3, self._o_shape[1], self._o_shape[0]),
-                dtype=self._o_dtype,
-            )
-            self._output_binding = create_binding(
-                dummy_output,
-                pagelocked_mem=True,
-            )
+        # allocate input, sst_input, output binding
+        # call resize kernel then sst kernel
+        # need input -> intermediate -> output
+        # for now just allocate 1080p image, reallocate when needed
+        # resize kernel input binding
+        self._allocated_input_shape: tuple[int, int, int] = (1080, 1920, 3)
+        dummy_input: np.ndarray = np.zeros(
+            self._allocated_input_shape,
+            dtype=np.uint8,
+        )
+        self._input_binding = create_binding(
+            dummy_input,
+            is_input=True,
+        )
+        # these two CUDA allocations are static size
+        # sst kernel input binding
+        dummy_sstinput: np.ndarray = np.zeros(
+            (self._o_shape[1], self._o_shape[0], 3),
+            dtype=np.uint8,
+        )
+        self._sst_input_binding = create_binding(
+            dummy_sstinput,
+            is_input=True,
+        )
+        # sst kernel output binding
+        dummy_output: np.ndarray = np.zeros(
+            (1, 3, self._o_shape[1], self._o_shape[0]),
+            dtype=self._o_dtype,
+        )
+        self._output_binding = create_binding(
+            dummy_output,
+            pagelocked_mem=True,
+        )
 
-            # block and thread info
-            self._num_threads: tuple[int, int, int] = threads or (32, 32, 1)
-            self._sst_num_blocks: tuple[int, int, int] = (
-                math.ceil(self._o_shape[0] / self._num_threads[0]),
-                math.ceil(self._o_shape[1] / self._num_threads[1]),
-                1,
-            )
-            self._resize_num_blocks: tuple[int, int, int] = (
-                # math.ceil(self._allocated_input_shape[1] / self._num_threads[1]),
-                # math.ceil(self._allocated_input_shape[0] / self._num_threads[0]),
-                math.ceil(self._o_shape[0] / self._num_threads[0]),
-                math.ceil(self._o_shape[1] / self._num_threads[1]),
-                1,
-            )
+        # block and thread info
+        self._num_threads: tuple[int, int, int] = threads or (32, 32, 1)
+        self._sst_num_blocks: tuple[int, int, int] = (
+            math.ceil(self._o_shape[0] / self._num_threads[0]),
+            math.ceil(self._o_shape[1] / self._num_threads[1]),
+            1,
+        )
+        self._resize_num_blocks: tuple[int, int, int] = (
+            # math.ceil(self._allocated_input_shape[1] / self._num_threads[1]),
+            # math.ceil(self._allocated_input_shape[0] / self._num_threads[0]),
+            math.ceil(self._o_shape[0] / self._num_threads[0]),
+            math.ceil(self._o_shape[1] / self._num_threads[1]),
+            1,
+        )
 
-            # load the kernels
-            # sst kernel always used
-            self._sst_kernel = Kernel(*SCALE_SWAP_TRANSPOSE)
-            # either letterbox or linear is used
-            self._linear_kernel = Kernel(*LINEAR_RESIZE)
-            self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
+        # load the kernels
+        # sst kernel always used
+        self._sst_kernel = Kernel(*SCALE_SWAP_TRANSPOSE)
+        # either letterbox or linear is used
+        self._linear_kernel = Kernel(*LINEAR_RESIZE)
+        self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
