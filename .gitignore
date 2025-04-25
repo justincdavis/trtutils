@@ -3,6 +3,10 @@
 *.trt
 *.plan
 *.cache
+*.cache.lock
+
+# IDE setup
+.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

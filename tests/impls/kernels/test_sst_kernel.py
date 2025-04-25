@@ -4,49 +4,62 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import cv2
 import numpy as np
 
-from trtutils.core import Kernel, create_stream, destroy_stream, create_binding, memcpy_host_to_device_async, memcpy_device_to_host_async, stream_synchronize
+from trtutils.core import (
+    Kernel,
+    create_binding,
+    create_stream,
+    destroy_stream,
+    memcpy_device_to_host_async,
+    memcpy_host_to_device_async,
+    stream_synchronize,
+)
 from trtutils.impls import kernels
+from trtutils.impls.yolo import preprocess
+
+from .common import IMG_PATH, kernel_compile
 
 
-def test_linear_compile():
-    linear = Kernel(*kernels.LINEAR_RESIZE)
-    assert linear is not None
+def test_scale_swap_transpose_compile() -> None:
+    """Test compilation of the scale-swap-transpose kernel."""
+    kernel_compile(kernels.SCALE_SWAP_TRANSPOSE)
 
 
-def test_linear_results():
-    output_shape = (640, 480)
+def test_sst_results() -> None:
+    """Test scale-swap-transpose kernel results against CPU implementation."""
+    output_shape = 640
+    scale = 1.0 / 255.0
+    offset = 0.0
 
-    img = cv2.imread(
-        str(Path(__file__).parent.parent.parent / "data" / "horse.jpg")
-    )
-    resized_img = cv2.resize(img, output_shape, interpolation=cv2.INTER_LINEAR)
-
-    height, width = img.shape[:2]
-    o_width, o_height = output_shape
+    img = cv2.imread(IMG_PATH)
+    img = cv2.resize(img, (output_shape, output_shape))
 
     stream = create_stream()
 
     # block and thread info
     num_threads: tuple[int, int, int] = (32, 32, 1)
     num_blocks: tuple[int, int, int] = (
-        math.ceil(o_width / num_threads[1]),  # X-axis (width)
-        math.ceil(o_height / num_threads[0]),  # Y-axis (height)
+        math.ceil(output_shape / num_threads[0]),
+        math.ceil(output_shape / num_threads[1]),
         1,
     )
 
+    # allocate input/output binding
+    dummy_input: np.ndarray = np.zeros(
+        (output_shape, output_shape, 3),
+        dtype=np.uint8,
+    )
     # set is_input since we do not use the host_allocation here
     input_binding = create_binding(
-        img,
+        dummy_input,
         is_input=True,
     )
     dummy_output: np.ndarray = np.zeros(
-        (o_height, o_width, 3),
-        dtype=np.uint8,
+        (1, 3, output_shape, output_shape),
+        dtype=np.float32,
     )
     # set pagelocked memory since we read from the host allocation
     output_binding = create_binding(
@@ -56,16 +69,15 @@ def test_linear_results():
 
     # load the kernel
     kernel = Kernel(
-        *kernels.LINEAR_RESIZE,
+        *kernels.SCALE_SWAP_TRANSPOSE,
     )
 
     args = kernel.create_args(
         input_binding.allocation,
         output_binding.allocation,
-        width,
-        height,
-        o_width,
-        o_height,
+        scale,
+        offset,
+        output_shape,
     )
 
     memcpy_host_to_device_async(
@@ -86,14 +98,10 @@ def test_linear_results():
 
     cuda_result = output_binding.host_allocation
 
-    assert cuda_result.shape == resized_img.shape
-    cpu_mean = np.mean(resized_img)
-    # allow up to an overall 0.5 out of 255.0 drift (1.0 abs)
-    assert cpu_mean - 0.5 <= np.mean(cuda_result) <= cpu_mean + 0.5
+    cpu_result, _, _ = preprocess(img, (output_shape, output_shape), dummy_output.dtype)
 
-    # cv2.imshow("CPU", resized_img)
-    # cv2.imshow("CUDA", cuda_result)
-    # cv2.waitKey(0)
+    assert cuda_result.shape == cpu_result.shape
+    assert np.allclose(cuda_result, cpu_result)
 
     destroy_stream(stream)
     input_binding.free()

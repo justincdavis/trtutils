@@ -15,15 +15,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install numpy>=1.19.0
-          pip install typing_extensions>=4.0.0
-          pip install setuptools>=57.0.0
-          pip install mypy
-          pip install types-setuptools
-          pip install types-tqdm
-          pip install cv2ext
-          pip install jetsontools
+          pip install .[all]
+          pip install .[ci]
 
-      - name: Run MyPy check
+      - name: MyPy - Source
         run: 
           python3 -m mypy src/trtutils --config-file=pyproject.toml
+
+      - name: MyPy - Examples
+        run: 
+          python3 -m mypy examples --config-file=pyproject.toml
+
+      - name: MyPy - Tests
+        run: 
+          python3 -m mypy tests --config-file=pyproject.toml

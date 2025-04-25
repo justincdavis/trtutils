@@ -35,6 +35,7 @@ class YOLO:
         warmup: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -75,6 +76,9 @@ class YOLO:
         agnostic_nms : bool, optional
             Whether or not the optional/additional NMS operation
             should perform class agnostic NMS.
+        no_warn : bool, optional
+            If True, suppresses warnings from TensorRT during engine deserialization.
+            Default is None, which means warnings will be shown.
         verbose : bool, optional
             Whether or not to log additional information.
             Only covers the initialization phase.
@@ -95,6 +99,7 @@ class YOLO:
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
+            no_warn=no_warn,
         )
         self._conf_thres = conf_thres
         self._resize_method: str = resize_method

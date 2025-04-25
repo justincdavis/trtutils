@@ -48,6 +48,7 @@ class TRTEngine(TRTEngineInterface):
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
+        no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -69,6 +70,9 @@ class TRTEngine(TRTEngineInterface):
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for host allocations.
             By default None, which means pagelocked memory will be used.
+        no_warn : bool, optional
+            If True, suppresses warnings from TensorRT during engine deserialization.
+            Default is None, which means warnings will be shown.
         verbose : bool, optional
             Whether or not to give additional information over stdout.
 
@@ -78,7 +82,7 @@ class TRTEngine(TRTEngineInterface):
             If the backend is not valid.
 
         """
-        super().__init__(engine_path, pagelocked_mem=pagelocked_mem)
+        super().__init__(engine_path, pagelocked_mem=pagelocked_mem, no_warn=no_warn)
 
         # solve for execution method
         # only care about v2 or v3 async
@@ -145,52 +149,47 @@ class TRTEngine(TRTEngineInterface):
 
         """
         verbose = verbose if verbose is not None else self._verbose
-        # Copy inputs
         if verbose:
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
-        for i_idx in range(len(self._inputs)):
-            # memcpy_host_to_device(
-            #     self._inputs[i_idx].allocation,
-            #     data[i_idx],
-            # )
-            memcpy_host_to_device_async(
-                self._inputs[i_idx].allocation,
-                data[i_idx],
-                self._stream,
-            )
-        # execute
-        if self._async_v3:
-            self._context.execute_async_v3(self._stream)
-        else:
-            self._context.execute_async_v2(self._allocations, self._stream)
-        # Copy outputs
-        for o_idx in range(len(self._outputs)):
-            # memcpy_device_to_host(
-            #     self._outputs[o_idx].host_allocation,
-            #     self._outputs[o_idx].allocation,
-            # )
-            memcpy_device_to_host_async(
-                self._outputs[o_idx].host_allocation,
-                self._outputs[o_idx].allocation,
-                self._stream,
-            )
-        # sync the stream
-        if verbose:
-            LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
 
-        # # add additional sleep here to help parallel engines
-        # t0 = time.time()
-        # time.sleep(max(self._sync_t - 0.001, 0.0))
-        # stream_synchronize(self._stream)
-        # t1 = time.time()
-        # self._sync_t = t1 - t0
-        stream_synchronize(self._stream)
+        try:
+            # copy inputs
+            for i_idx in range(len(self._inputs)):
+                memcpy_host_to_device_async(
+                    self._inputs[i_idx].allocation,
+                    data[i_idx],
+                    self._stream,
+                )
 
-        # return
-        # copy the buffer since future inference will overwrite
-        if no_copy:
-            return [o.host_allocation for o in self._outputs]
-        return [o.host_allocation.copy() for o in self._outputs]
+            # execute
+            if self._async_v3:
+                self._context.execute_async_v3(self._stream)
+            else:
+                self._context.execute_async_v2(self._allocations, self._stream)
+
+            # copy outputs
+            for o_idx in range(len(self._outputs)):
+                memcpy_device_to_host_async(
+                    self._outputs[o_idx].host_allocation,
+                    self._outputs[o_idx].allocation,
+                    self._stream,
+                )
+
+            # make sure all operations are complete
+            stream_synchronize(self._stream)
+
+            if verbose:
+                LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
+
+            # return the results
+            if no_copy:
+                return [o.host_allocation for o in self._outputs]
+            return [o.host_allocation.copy() for o in self._outputs]
+
+        except Exception:
+            # If we encounter an error, make sure the stream is synchronized
+            stream_synchronize(self._stream)
+            raise
 
     def direct_exec(
         self: Self,
@@ -223,32 +222,38 @@ class TRTEngine(TRTEngineInterface):
             LOG.warning(
                 "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
             )
-        # execute
-        if self._async_v3:
-            # need to set the input pointers to match the bindings, assume in same order
-            for i in range(len(pointers)):
-                self._context.set_tensor_address(self._inputs[i].name, pointers[i])
-            self._context.execute_async_v3(self._stream)
-        else:
-            self._context.execute_async_v2(
-                pointers + self._output_allocations,
-                self._stream,
-            )
-        # Copy outputs
-        for o_idx in range(len(self._outputs)):
-            # memcpy_device_to_host(
-            #     self._outputs[o_idx].host_allocation,
-            #     self._outputs[o_idx].allocation,
-            # )
-            memcpy_device_to_host_async(
-                self._outputs[o_idx].host_allocation,
-                self._outputs[o_idx].allocation,
-                self._stream,
-            )
-        # sync the stream
-        stream_synchronize(self._stream)
-        # return
-        return [o.host_allocation for o in self._outputs]
+
+        try:
+            # execute
+            if self._async_v3:
+                # need to set the input pointers to match the bindings, assume in same order
+                for i in range(len(pointers)):
+                    self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+                self._context.execute_async_v3(self._stream)
+            else:
+                self._context.execute_async_v2(
+                    pointers + self._output_allocations,
+                    self._stream,
+                )
+
+            # copy outputs
+            for o_idx in range(len(self._outputs)):
+                memcpy_device_to_host_async(
+                    self._outputs[o_idx].host_allocation,
+                    self._outputs[o_idx].allocation,
+                    self._stream,
+                )
+
+            # make sure all operations are complete
+            stream_synchronize(self._stream)
+
+            # return the results
+            return [o.host_allocation for o in self._outputs]
+
+        except Exception:
+            # If we encounter an error, make sure the stream is synchronized
+            stream_synchronize(self._stream)
+            raise
 
 
 class QueuedTRTEngine:

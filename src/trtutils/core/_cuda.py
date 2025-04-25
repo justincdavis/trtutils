@@ -2,13 +2,18 @@
 #
 # MIT License
 # ruff: noqa: TRY004
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
 from typing import TypeVar
 
 with contextlib.suppress(Exception):
-    from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.driver as cuda
+        import cuda.bindings.runtime as cudart
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cuda, cudart
 
 from trtutils._log import LOG
 

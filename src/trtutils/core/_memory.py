@@ -1,22 +1,24 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
 import ctypes
-from threading import Lock
 
 import numpy as np
 
 with contextlib.suppress(Exception):
-    from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.runtime as cudart
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cudart
 
 from trtutils._log import LOG
 
 from ._cuda import cuda_call
-
-_MEM_ALLOC_LOCK = Lock()
+from ._lock import MEM_ALLOC_LOCK
 
 
 def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
@@ -146,7 +148,7 @@ def cuda_malloc(
         The pointer to the allocated memory.
 
     """
-    with _MEM_ALLOC_LOCK:
+    with MEM_ALLOC_LOCK:
         device_ptr: int = cuda_call(cudart.cudaMalloc(nbytes))
     LOG.debug(f"Allocated, device_ptr: {device_ptr}, size: {nbytes}")
     return device_ptr
@@ -181,7 +183,7 @@ def allocate_pinned_memory(
 
     """
     # allocate pinned memory and get a pointer to it directly
-    with _MEM_ALLOC_LOCK:
+    with MEM_ALLOC_LOCK:
         host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocDefault))
 
     # create the numpy array

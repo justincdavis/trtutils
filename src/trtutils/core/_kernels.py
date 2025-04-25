@@ -2,6 +2,7 @@
 #
 # MIT License
 # ruff: noqa: PYI041
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
@@ -11,7 +12,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 with contextlib.suppress(Exception):
-    from cuda import cuda  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.driver as cuda
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cuda
 
 from trtutils._log import LOG
 
@@ -22,7 +26,10 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     with contextlib.suppress(Exception):
-        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+        try:
+            import cuda.bindings.runtime as cudart
+        except (ImportError, ModuleNotFoundError):
+            from cuda import cudart
 
 
 class Kernel:

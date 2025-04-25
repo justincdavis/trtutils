@@ -29,6 +29,8 @@ class YOLOX(YOLO):
         warmup: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         super().__init__(
             engine_path=engine_path,
@@ -41,6 +43,8 @@ class YOLOX(YOLO):
             warmup=warmup,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            no_warn=no_warn,
+            verbose=verbose,
         )
 
 
@@ -60,6 +64,8 @@ class YOLO7(YOLO):
         warmup: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         super().__init__(
             engine_path=engine_path,
@@ -72,6 +78,8 @@ class YOLO7(YOLO):
             warmup=warmup,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            no_warn=no_warn,
+            verbose=verbose,
         )
 
 
@@ -91,6 +99,8 @@ class YOLO8(YOLO):
         warmup: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         super().__init__(
             engine_path=engine_path,
@@ -103,6 +113,8 @@ class YOLO8(YOLO):
             warmup=warmup,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            no_warn=no_warn,
+            verbose=verbose,
         )
 
 
@@ -122,6 +134,8 @@ class YOLO9(YOLO):
         warmup: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         super().__init__(
             engine_path=engine_path,
@@ -134,6 +148,8 @@ class YOLO9(YOLO):
             warmup=warmup,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            no_warn=no_warn,
+            verbose=verbose,
         )
 
 
@@ -153,6 +169,8 @@ class YOLO10(YOLO):
         warmup: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         super().__init__(
             engine_path=engine_path,
@@ -165,4 +183,6 @@ class YOLO10(YOLO):
             warmup=warmup,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            no_warn=no_warn,
+            verbose=verbose,
         )

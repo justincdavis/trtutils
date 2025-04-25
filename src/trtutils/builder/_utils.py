@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -12,7 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     with contextlib.suppress(ImportError):
-        import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+        import tensorrt as trt
 
 
 def get_check_dla(config: trt.IBuilderConfig) -> Callable[[trt.ILayer], bool]:

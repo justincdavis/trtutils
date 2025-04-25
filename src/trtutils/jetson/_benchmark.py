@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from jetsontools._parsing import Metric as JMetric  # typing fix
+    from typing_extensions import Self
 
 
 @dataclass
@@ -25,6 +26,12 @@ class JetsonBenchmarkResult:
     latency: Metric
     power_draw: Metric
     energy: Metric
+
+    def __str__(self: Self) -> str:
+        return f"JetsonBenchmarkResult(latency={self.latency}, power_draw={self.power_draw}, energy={self.energy})"
+
+    def __repr__(self: Self) -> str:
+        return f"JetsonBenchmarkResult(latency={self.latency!r}, power_draw={self.power_draw!r}, energy={self.energy!r})"
 
 
 def benchmark_engine(
@@ -116,9 +123,7 @@ def benchmark_engine(
         data = raw[metric_name]
         metric = Metric(data)
         metrics[metric_name] = metric
-        LOG.debug(
-            f"{metric}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
-        )
+        LOG.debug(f"{metric_name}: {metric}")
 
     return JetsonBenchmarkResult(
         latency=metrics["latency"],
@@ -236,9 +241,7 @@ def benchmark_engines(
         data = raw[metric_name]
         metric = Metric(data)
         metrics[metric_name] = metric
-        LOG.debug(
-            f"{metric}: mean={metric.mean:.6f}, median={metric.median:.6f}, min={metric.min:.6f}, max={metric.max:.6f}",
-        )
+        LOG.debug(f"{metric_name}: {metric}")
 
     return [
         JetsonBenchmarkResult(

@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
@@ -11,15 +12,22 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from trtutils._flags import FLAGS
+
 from ._bindings import allocate_bindings
 from ._engine import create_engine
+from ._stream import stream_synchronize
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
     with contextlib.suppress(ImportError):
-        import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
-        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+        import tensorrt as trt
+
+        try:
+            import cuda.bindings.runtime as cudart
+        except (ImportError, ModuleNotFoundError):
+            from cuda import cudart
 
 
 class TRTEngineInterface(ABC):
@@ -28,6 +36,7 @@ class TRTEngineInterface(ABC):
         engine_path: Path | str,
         *,
         pagelocked_mem: bool | None = None,
+        no_warn: bool | None = None,
     ) -> None:
         """
         Load the TensorRT engine from a file.
@@ -39,6 +48,9 @@ class TRTEngineInterface(ABC):
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for host allocations.
             By default None, which means pagelocked memory will be used.
+        no_warn : bool, optional
+            If True, suppresses warnings from TensorRT during engine deserialization.
+            Default is None, which means warnings will be shown.
 
         """
         # store path stem as name
@@ -47,6 +59,7 @@ class TRTEngineInterface(ABC):
         # engine, context, logger, and CUDA stream
         self._engine, self._context, self._logger, self._stream = create_engine(
             engine_path,
+            no_warn=no_warn,
         )
 
         # allocate memory for inputs and outputs
@@ -65,7 +78,11 @@ class TRTEngineInterface(ABC):
         ]
 
         # store useful properties about the engine
-        self._memsize: int = self._engine.device_memory_size
+        self._memsize: int = 0
+        if FLAGS.MEMSIZE_V2:
+            self._memsize = self._engine.device_memory_size_v2
+        else:
+            self._memsize = self._engine.device_memory_size
 
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None
@@ -179,6 +196,11 @@ class TRTEngineInterface(ABC):
         return [o.dtype for o in self._outputs]
 
     def __del__(self: Self) -> None:
+        # Ensure CUDA stream is synchronized before freeing resources
+        # This prevents issues in multithreaded environments
+        with contextlib.suppress(Exception):
+            stream_synchronize(self._stream)
+
         def _del(obj: object, attr: str) -> None:
             with contextlib.suppress(AttributeError):
                 delattr(obj, attr)

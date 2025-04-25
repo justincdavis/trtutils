@@ -4,28 +4,35 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import cv2
-from cv2ext.image import letterbox
 import numpy as np
 
-from trtutils.core import Kernel, create_stream, destroy_stream, create_binding, memcpy_host_to_device_async, memcpy_device_to_host_async, stream_synchronize
+from trtutils.core import (
+    Kernel,
+    create_binding,
+    create_stream,
+    destroy_stream,
+    memcpy_device_to_host_async,
+    memcpy_host_to_device_async,
+    stream_synchronize,
+)
 from trtutils.impls import kernels
 
-
-def test_letterbox_compile():
-    letterbox = Kernel(*kernels.LETTERBOX_RESIZE)
-    assert letterbox is not None
+from .common import IMG_PATH, kernel_compile
 
 
-def test_letterbox_results():
+def test_linear_compile() -> None:
+    """Test compilation of the linear resize kernel."""
+    kernel_compile(kernels.LINEAR_RESIZE)
+
+
+def test_linear_results() -> None:
+    """Test linear resize kernel results against OpenCV's linear interpolation."""
     output_shape = (640, 480)
 
-    img = cv2.imread(
-        str(Path(__file__).parent.parent.parent / "data" / "horse.jpg")
-    )
-    resized_img, _, _ = letterbox(img, output_shape)
+    img = cv2.imread(IMG_PATH)
+    resized_img = cv2.resize(img, output_shape, interpolation=cv2.INTER_LINEAR)
 
     height, width = img.shape[:2]
     o_width, o_height = output_shape
@@ -55,18 +62,9 @@ def test_letterbox_results():
         pagelocked_mem=True,
     )
 
-    # compute the args
-    scale_x = o_width / width
-    scale_y = o_height / height
-    scale = min(scale_x, scale_y)
-    new_width = int(width * scale)
-    new_height = int(height * scale)
-    pad_x = int((o_width - new_width) / 2)
-    pad_y = int((o_height - new_height) / 2)
-
     # load the kernel
     kernel = Kernel(
-        *kernels.LETTERBOX_RESIZE,
+        *kernels.LINEAR_RESIZE,
     )
 
     args = kernel.create_args(
@@ -76,11 +74,6 @@ def test_letterbox_results():
         height,
         o_width,
         o_height,
-        pad_x,
-        pad_y,
-        new_width,
-        new_height,
-        verbose=True,
     )
 
     memcpy_host_to_device_async(
