@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 from collections import deque
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -37,7 +38,7 @@ class Kernel:
 
     def __init__(
         self: Self,
-        kernel_code: str,
+        kernel_file: Path | str,
         name: str,
         max_arg_cache: int = 1,
         *,
@@ -48,8 +49,8 @@ class Kernel:
 
         Parameters
         ----------
-        kernel_code : str
-            The CUDA code containing the kernel definition.
+        kernel_file : Path | str
+            The CUDA file containing the kernel definition.
         name : str
             The name of the kernel to compile.
         max_arg_cache : int
@@ -62,6 +63,11 @@ class Kernel:
             engines verbose setting.
 
         """
+        kernel_file = (
+            kernel_file if isinstance(kernel_file, Path) else Path(kernel_file)
+        )
+        with kernel_file.open("r") as f:
+            kernel_code: str = f.read()
         self._name = name
         self._module, self._kernel = compile_and_load_kernel(
             kernel_code,
