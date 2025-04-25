@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -46,6 +47,7 @@ class _FLAGS:
     EXEC_ASYNC_V1: bool = False
     EXEC_V2: bool = False
     EXEC_V1: bool = False
+    IS_JETSON: bool = False
 
 
 FLAGS = _FLAGS()
@@ -64,3 +66,4 @@ with contextlib.suppress(ImportError):
     FLAGS.EXEC_ASYNC_V1 = hasattr(trt.IExecutionContext, "execute_async")
     FLAGS.EXEC_V2 = hasattr(trt.IExecutionContext, "execute_v2")
     FLAGS.EXEC_V1 = hasattr(trt.IExecutionContext, "execute")
+    FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()
