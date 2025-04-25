@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 with contextlib.suppress(ImportError):
     import tensorrt as trt
 
+from trtutils._config import CONFIG
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
@@ -124,6 +125,9 @@ def build_engine(
         and gpu_fallback is False
 
     """
+    # load libnvinfer plugins
+    CONFIG.load_plugins()
+
     # match the device
     valid_gpu = ["gpu", "GPU"]
     valid_dla = ["dla", "DLA"]

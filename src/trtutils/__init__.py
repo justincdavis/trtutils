@@ -72,6 +72,7 @@ Objects
 
 from __future__ import annotations
 
+from ._config import CONFIG
 from ._flags import FLAGS
 from ._log import LOG, set_log_level
 
@@ -94,6 +95,7 @@ from .inspect import inspect_engine
 from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
+    "CONFIG",
     "FLAGS",
     "LOG",
     "BenchmarkResult",
@@ -123,10 +125,3 @@ with contextlib.suppress(ImportError):
     from . import jetson
 
     __all__ += ["jetson"]
-
-
-with contextlib.suppress(ImportError):
-    # always initialize TensorRT plugins
-    import tensorrt as trt
-
-    trt.init_libnvinfer_plugins(LOG, "")

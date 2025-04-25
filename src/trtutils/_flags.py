@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 @dataclass
-class _FLAGS:
+class Flags:
     """
     Class for storing flags for trtutils.
 
@@ -34,6 +34,8 @@ class _FLAGS:
         Whether or not execute_v2 is available.
     EXEC_V1 : bool
         Whether or not execute_v1 is available.
+    IS_JETSON : bool
+        Whether or not the system is a Jetson system
 
     """
 
@@ -50,7 +52,7 @@ class _FLAGS:
     IS_JETSON: bool = False
 
 
-FLAGS = _FLAGS()
+FLAGS = Flags()
 
 
 with contextlib.suppress(ImportError):

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 with contextlib.suppress(Exception):
     import tensorrt as trt
 
+from trtutils._config import CONFIG
 from trtutils._log import LOG
 
 from ._stream import create_stream
@@ -59,6 +60,9 @@ def create_engine(
         If the execution context could not be created.
 
     """
+    # load libnvinfer plugins
+    CONFIG.load_plugins()
+
     engine_path = Path(engine_path) if isinstance(engine_path, str) else engine_path
 
     if not engine_path.exists():
