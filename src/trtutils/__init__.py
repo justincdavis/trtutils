@@ -81,7 +81,7 @@ for attr in [a for a in dir(FLAGS) if not a.startswith("_")]:
     LOG.debug(_flag_str)
 
 __author__ = "Justin Davis"
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 import contextlib
 
