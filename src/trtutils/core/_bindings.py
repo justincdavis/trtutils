@@ -55,7 +55,7 @@ def create_binding(
     array: np.ndarray,
     bind_id: int = 0,
     name: str = "binding",
-    tensor_format: trt.TensorFormat = trt.TensorFormat.CDHW32,
+    tensor_format: trt.TensorFormat = trt.TensorFormat.LINEAR,
     *,
     is_input: bool | None = None,
     pagelocked_mem: bool | None = None,

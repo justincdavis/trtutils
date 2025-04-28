@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import contextlib
 import math
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -13,7 +15,10 @@ import numpy as np
 with contextlib.suppress(ImportError):
     import tensorrt as trt
 
+from trtutils._engine import TRTEngine
 from trtutils._log import LOG
+from trtutils.builder._build import build_engine
+from trtutils.core import cache as caching_tools
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
 from trtutils.core._memory import (
@@ -706,8 +711,7 @@ class TRTPreprocessor:
             self._stream = create_stream()
             self._own_stream = True
 
-        # allocate input, sst_input, output binding
-        # call resize kernel then sst kernel
+        # allocate input, output binding
         # need input -> intermediate -> output
         # for now just allocate 1080p image, reallocate when needed
         # resize kernel input binding
@@ -718,6 +722,13 @@ class TRTPreprocessor:
         )
         self._input_binding = create_binding(
             dummy_input,
+        )
+        dummy_intermediate: np.ndarray = np.zeros(
+            (self._o_shape[1], self._o_shape[0], 3),
+            dtype=np.uint8,
+        )
+        self._intermediate_binding = create_binding(
+            dummy_intermediate,
         )
 
         # block and thread info
@@ -731,6 +742,38 @@ class TRTPreprocessor:
         # either letterbox or linear is used
         self._linear_kernel = Kernel(*LINEAR_RESIZE)
         self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
+
+        # allocate the trtengine
+        # also check if the file exists
+        exists, current_path = caching_tools.query_cache(self._get_engine_name())
+        if exists:
+            self._engine_path = current_path
+        else:
+            base_path = Path(__file__).parent.parent / "_onnx" / "preproc_base.onnx"
+            with tempfile.TemporaryDirectory() as tmpdir:
+                temp_output = Path(tmpdir).resolve() / f"{self._get_engine_name}.engine"
+                build_engine(
+                    base_path,
+                    temp_output,
+                    default_device=trt.DeviceType.GPU,
+                    workspace=1.0,
+                    input_tensor_formats=[
+                        ("input", trt.DataType.uint8, trt.TensorFormat.HWC)
+                    ],
+                    output_tensor_formats=[
+                        ("output", trt.DataType.HALF, trt.TensorFormat.LINEAR)
+                    ],
+                    shapes=[("input", (self._o_shape[1], self._o_shape[1], 3))],
+                    hooks=[self._build_hook],
+                    fp16=True,
+                    direct_io=True,
+                    cache=True,
+                )
+            self._engine_path = caching_tools.query_cache(self._get_engine_name)[1]
+        self._engine = TRTEngine(self._engine_path, warmup_iterations=1, warmup=True)
+
+    def _get_engine_name(self: Self) -> str:
+        return f"yolo_preproc_{self._o_shape[0]}_{self._o_shape[1]}_{self._scale}_{self._offset}"
 
     def _build_hook(self: Self, net: trt.INetworkDefinition) -> trt.INetworkDefinition:
         inp = net.get_input(0)
@@ -765,18 +808,17 @@ class TRTPreprocessor:
         t_out = transpose.get_output(0)
         net.unmark_output(t_out)
 
-        c = 3
         scales = (
-            np.full((c,), 1.0 / self._scale, dtype=np.float32)
+            np.full((_COLOR_CHANNELS,), 1.0 / self._scale, dtype=np.float32)
             if self._scale is not None
-            else np.ones((c,), dtype=np.float32)
+            else np.ones((_COLOR_CHANNELS,), dtype=np.float32)
         )
         shifts = (
-            np.full((c,), self._offset, dtype=np.float32)
+            np.full((_COLOR_CHANNELS,), self._offset, dtype=np.float32)
             if self._offset is not None
-            else np.zeros((c,), dtype=np.float32)
+            else np.zeros((_COLOR_CHANNELS,), dtype=np.float32)
         )
-        power = np.ones((c,), dtype=np.float32)
+        power = np.ones((_COLOR_CHANNELS,), dtype=np.float32)
 
         scale_layer = net.add_scale(
             t_out,
@@ -1076,7 +1118,7 @@ class TRTPreprocessor:
 
         # create the arguments
         height, width = image.shape[:2]
-        resize_kernel, resize_args, ratios, padding, sst_args = self._create_args(
+        resize_kernel, resize_args, ratios, padding = self._create_args(
             height,
             width,
             resize,
@@ -1100,11 +1142,7 @@ class TRTPreprocessor:
             resize_args,
         )
 
-        self._sst_kernel.call(
-            self._sst_num_blocks,
-            self._num_threads,
-            self._stream,
-            sst_args,
-        )
+        # TODO: add new execution mode which takes pointers and returns pointers with no sync
+        self._engine.direct_exec([self._])
 
         return self._output_binding.allocation, ratios, padding
