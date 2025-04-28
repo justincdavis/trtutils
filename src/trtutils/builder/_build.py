@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,12 +14,13 @@ with contextlib.suppress(ImportError):
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core import cache as caching_tools
 
 from ._calibrator import EngineCalibrator
 from ._onnx import read_onnx
 from ._utils import get_check_dla
 
-with contextlib.suppress(AttributeError):
+if FLAGS.BUILD_PROGRESS:
     from ._progress import ProgressBar
 
 if TYPE_CHECKING:
@@ -53,6 +55,7 @@ def build_engine(
     ignore_timing_mismatch: bool = False,
     fp16: bool | None = None,
     int8: bool | None = None,
+    cache: bool | None = None,
     verbose: bool | None = None,
 ) -> None:
     """
@@ -70,13 +73,13 @@ def build_engine(
 
     5. Configure tensor formats if specified
 
-    6. Set up timing cache
+    6. Configure precision (FP16, INT8)
 
-    7. Configure precision (FP16, INT8)
+    7. Set default device and DLA core
 
-    8. Set default device and DLA core
+    8. Apply individual layer precision and device settings
 
-    9. Apply individual layer precision and device settings
+    9. Set up timing cache
 
     10. Build the engine
 
@@ -151,6 +154,13 @@ def build_engine(
         If True, quantize the engine to FP16 precision.
     int8 : bool, optional
         If True, quantize the engine to INT8 precision.
+    cache : bool, optional
+        Whether or not to cache the engine in the trtutils engine cache.
+        If an existing version is found will use that.
+        Uses the name of the output file to assess if the engine has been compiled before.
+        As such, naming the output 'engine', 'model' or similiar will result in
+        unintended caching behavior.
+        By default None, will not cache the engine.
     verbose : bool, optional
         If True, print verbose output.
         By default, None or False
@@ -166,6 +176,13 @@ def build_engine(
         and gpu_fallback is False
 
     """
+    # first thing is to check cache
+    if cache:
+        exists, location = caching_tools.query_cache(output.stem)
+        if exists:
+            shutil.copy(location, output)
+            return
+
     # match the device
     valid_gpu = ["gpu", "GPU"]
     valid_dla = ["dla", "DLA"]
@@ -257,18 +274,6 @@ def build_engine(
             if not found:
                 LOG.warning(f"Output tensor '{tensor_name}' not found in network")
 
-    # load/setup the timing cache
-    timing_cache_path: Path | None = (
-        Path(timing_cache).resolve() if timing_cache else None
-    )
-    if timing_cache_path:
-        buffer = b""
-        if timing_cache_path.exists():
-            with timing_cache_path.open("rb") as timing_cache_file:
-                buffer = timing_cache_file.read()
-        t_cache = config.create_timing_cache(buffer)
-        config.set_timing_cache(t_cache, ignore_mismatch=ignore_timing_mismatch)
-
     # setup the precision sets
     if fp16 or int8:
         # want to enable fp16 for both int8 and fp16 since fp16 may be faster
@@ -330,6 +335,18 @@ def build_engine(
             else:
                 config.set_device_type(layer, device)
 
+    # load/setup the timing cache
+    timing_cache_path: Path | None = (
+        Path(timing_cache).resolve() if timing_cache else None
+    )
+    if timing_cache_path:
+        buffer = b""
+        if timing_cache_path.exists():
+            with timing_cache_path.open("rb") as timing_cache_file:
+                buffer = timing_cache_file.read()
+        t_cache = config.create_timing_cache(buffer)
+        config.set_timing_cache(t_cache, ignore_mismatch=ignore_timing_mismatch)
+
     # build the engine
     if FLAGS.BUILD_SERIALIZED:
         engine_bytes = builder.build_serialized_network(network, config)
@@ -348,3 +365,6 @@ def build_engine(
 
     with output_path.open("wb") as f:
         f.write(engine_bytes)
+
+    if cache:
+        caching_tools.store_in_cache(output_path, overwrite=False, clear_old=False)

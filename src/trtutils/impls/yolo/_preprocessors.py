@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+with contextlib.suppress(ImportError):
+    import tensorrt as trt
+
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
@@ -679,6 +682,9 @@ class TRTPreprocessor:
         self._o_shape = output_shape
         self._o_range = output_range
         self._o_dtype = dtype
+        # change to handle dynamically later via all YOLO models
+        # currently all preprocessors assume the swap so we will here too
+        self._use_rgb = True
 
         # compute scale and offset
         self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
@@ -726,52 +732,49 @@ class TRTPreprocessor:
         self._linear_kernel = Kernel(*LINEAR_RESIZE)
         self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
 
-    def build_hook(self: Self, net: trt.INetworkDefinition) -> trt.INetworkDefinition:
-        # 2) fix the single ONNX input's shape to (H, W, 3)
+    def _build_hook(self: Self, net: trt.INetworkDefinition) -> trt.INetworkDefinition:
         inp = net.get_input(0)
-        inp.shape = [input_size[0], input_size[1], 3]
+        inp.shape = [self._o_shape[1], self._o_shape[0], 3]
 
-        # 3) optionally insert BGR→RGB via a 1×1 conv before the Unsqueeze
-        if swap:
-            # make a 1×1 kernel that reorders BGR→RGB
+        if self._use_rgb:
             w = np.zeros((3, 3, 1, 1), dtype=np.float32)
             w[0, 2, 0, 0] = 1.0  # R←B
             w[1, 1, 0, 0] = 1.0  # G←G
             w[2, 0, 0, 0] = 1.0  # B←R
             conv = net.add_convolution(
-                inp, 3, (1, 1),
+                inp,
+                3,
+                (1, 1),
                 trt.Weights(w),
-                trt.Weights(np.zeros(3, dtype=np.float32))
+                trt.Weights(np.zeros(3, dtype=np.float32)),
             )
-            # find the Unsqueeze shuffle (it’s the only IShuffle with reshape_dims[0]==1)
             unsq = next(
-                layer for layer in net
+                layer
+                for layer in net
                 if isinstance(layer, trt.IShuffleLayer)
-                and list(layer.reshape_dims)[0] == 1
+                and next(list(layer.reshape_dims)) == 1
             )
-            # reroute its input to come from our conv
             unsq.set_input(0, conv.get_output(0))
 
-        # 4) insert scale/offset after the final Transpose
-        #    (the Transpose is the IShuffle with a non-default first_transpose)
         transpose = next(
-            layer for layer in net
+            layer
+            for layer in net
             if isinstance(layer, trt.IShuffleLayer)
             and any(dim != i for i, dim in enumerate(layer.first_transpose))
         )
         t_out = transpose.get_output(0)
-        # unmark the old ONNX output
         net.unmark_output(t_out)
 
-        c = 3  # channels
-        # build weights
+        c = 3
         scales = (
-            np.full((c,), 1.0 / scale, dtype=np.float32)
-            if scale is not None else np.ones((c,), dtype=np.float32)
+            np.full((c,), 1.0 / self._scale, dtype=np.float32)
+            if self._scale is not None
+            else np.ones((c,), dtype=np.float32)
         )
         shifts = (
-            np.full((c,), offset, dtype=np.float32)
-            if offset is not None else np.zeros((c,), dtype=np.float32)
+            np.full((c,), self._offset, dtype=np.float32)
+            if self._offset is not None
+            else np.zeros((c,), dtype=np.float32)
         )
         power = np.ones((c,), dtype=np.float32)
 
