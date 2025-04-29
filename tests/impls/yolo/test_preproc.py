@@ -59,3 +59,19 @@ def test_trt_parity() -> None:
         assert cpu_result.shape == trt_result.shape
         assert np.allclose(cpu_result, trt_result)
         assert cpu_result == trt_result
+
+
+def test_trt_cuda_parity() -> None:
+    """Test the results of the TRT preprocessor againist the CUDA preprocessor."""
+    cuda = trtutils.impls.yolo.CUDAPreprocessor((640, 640), (0.0, 1.0), np.float32)
+    trt = trtutils.impls.yolo.TRTPreprocessor((640, 640), (0.0, 1.0), np.float32)
+
+    for ipath in IMAGE_PATHS:
+        img = cv2.imread(ipath)
+        cuda_result, cuda_ratios, cuda_padding = cuda.preprocess(img, resize="linear")
+        trt_result, trt_ratios, trt_padding = trt.preprocess(img, resize="linear")
+        assert cuda_ratios == trt_ratios
+        assert cuda_padding == trt_padding
+        assert cuda_result.shape == trt_result.shape
+        assert np.allclose(cuda_result, trt_result)
+        assert cuda_result == trt_result
