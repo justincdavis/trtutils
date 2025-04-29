@@ -20,7 +20,10 @@ from trtutils.core import (
 from trtutils.impls import kernels
 from trtutils.impls.yolo import preprocess
 
-from .common import IMG_PATH, kernel_compile
+try:
+    from .common import IMG_PATH, kernel_compile
+except ImportError:
+    from common import IMG_PATH, kernel_compile
 
 
 def test_scale_swap_transpose_compile() -> None:
@@ -101,9 +104,16 @@ def test_sst_results() -> None:
     cpu_result, _, _ = preprocess(img, (output_shape, output_shape), dummy_output.dtype)
 
     assert cuda_result.shape == cpu_result.shape
+    assert np.mean(cuda_result) == np.mean(cpu_result)
+    assert np.min(cuda_result) == np.min(cpu_result)
+    assert np.max(cuda_result) == np.max(cpu_result)
     assert np.allclose(cuda_result, cpu_result)
 
     destroy_stream(stream)
     input_binding.free()
     output_binding.free()
     kernel.free()
+
+
+if __name__ == "__main__":
+    test_sst_results()

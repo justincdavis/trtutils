@@ -19,7 +19,12 @@ from trtutils.core import (
 )
 from trtutils.impls import kernels
 
-from .common import IMG_PATH, kernel_compile
+try:
+    from .common import IMG_PATH, kernel_compile
+except ImportError:
+    from common import IMG_PATH, kernel_compile
+
+SHOW = False
 
 
 def test_linear_compile() -> None:
@@ -98,12 +103,22 @@ def test_linear_results() -> None:
     cpu_mean = np.mean(resized_img)
     # allow up to an overall 0.5 out of 255.0 drift (1.0 abs)
     assert cpu_mean - 0.5 <= np.mean(cuda_result) <= cpu_mean + 0.5
+    # Check pixels that are different
+    diff_mask = np.any(resized_img != cuda_result, axis=-1)
+    avg_diff = np.mean(np.abs(resized_img[diff_mask] - cuda_result[diff_mask]))
+    assert avg_diff < 1.0
 
-    # cv2.imshow("CPU", resized_img)
-    # cv2.imshow("CUDA", cuda_result)
-    # cv2.waitKey(0)
+    if SHOW:
+        cv2.imshow("CPU", resized_img)
+        cv2.imshow("CUDA", cuda_result)
+        cv2.waitKey(0)
 
     destroy_stream(stream)
     input_binding.free()
     output_binding.free()
     kernel.free()
+
+
+if __name__ == "__main__":
+    SHOW = True
+    test_linear_results()
