@@ -14,7 +14,7 @@ import tensorrt as trt
 class PreprocBase(torch.nn.Module):
     def forward(self, image: torch.Tensor, scale: torch.Tensor, offset: torch.Tensor) -> torch.Tensor:
         # x: (H, W, 3) uint8, dynamic H/W
-        x = image.to(torch.float16)
+        x = image.to(torch.float32)
         x = x * scale + offset
         x = x.unsqueeze(0)  # (1, H, W, 3)
         x = x[:, :, :, [2, 1, 0]]  # swap BGR to RGB
@@ -30,8 +30,8 @@ def main() -> None:
     # may want to bundle a CLI tool to compile preprocessing models (downside is will need torch)
     # export to ONNX
     dummy_image = torch.ones((640, 640, 3), dtype=torch.uint8)
-    dummy_scale = torch.tensor([1.0], dtype=torch.float16)
-    dummy_offset = torch.tensor([0.0], dtype=torch.float16)
+    dummy_scale = torch.tensor([1.0], dtype=torch.float32)
+    dummy_offset = torch.tensor([0.0], dtype=torch.float32)
     torch.onnx.export(
         PreprocBase(),
         (dummy_image, dummy_scale, dummy_offset),

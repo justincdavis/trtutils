@@ -27,7 +27,7 @@ class YOLO:
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
-        preprocessor: str = "cuda",
+        preprocessor: str = "trt",
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
@@ -241,9 +241,7 @@ class YOLO:
                 preprocessor = self._preprocessors[1]
             elif method == "trt":
                 preprocessor = self._preprocessors[2]
-        if isinstance(preprocessor, CUDAPreprocessor) or isinstance(
-            preprocessor, TRTPreprocessor
-        ):
+        if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             t0 = time.perf_counter()
             data = preprocessor(image, resize=resize, no_copy=no_copy, verbose=verbose)
             t1 = time.perf_counter()
