@@ -769,7 +769,11 @@ class TRTPreprocessor:
         stream_synchronize(self._stream)
 
         # pre-allocate the input pointer list for the engine
-        self._gpu_pointers = [self._input_binding.allocation, self._scale_binding.allocation, self._offset_binding.allocation]
+        self._gpu_pointers = [
+            self._input_binding.allocation,
+            self._scale_binding.allocation,
+            self._offset_binding.allocation,
+        ]
 
         # allocate the trtengine
         # also check if the file exists
@@ -779,7 +783,9 @@ class TRTPreprocessor:
         else:
             base_path = Path(__file__).parent.parent / "_onnx" / "preproc_base.onnx"
             with tempfile.TemporaryDirectory() as tmpdir:
-                temp_output = Path(tmpdir).resolve() / f"{self._get_engine_name()}.engine"
+                temp_output = (
+                    Path(tmpdir).resolve() / f"{self._get_engine_name()}.engine"
+                )
                 build_engine(
                     base_path,
                     temp_output,
@@ -800,7 +806,7 @@ class TRTPreprocessor:
                     ],
                     fp16=True,
                     direct_io=True,
-                    cache=True,
+                    cache=False,
                 )
             self._engine_path = caching_tools.query_cache(self._get_engine_name())[1]
         self._engine = TRTEngine(
@@ -913,7 +919,11 @@ class TRTPreprocessor:
         )
 
         # pre-allocate the input pointer list for the engine
-        self._gpu_pointers = [self._input_binding.allocation, self._scale_binding.allocation, self._offset_binding.allocation]
+        self._gpu_pointers = [
+            self._input_binding.allocation,
+            self._scale_binding.allocation,
+            self._offset_binding.allocation,
+        ]
 
     def _validate_input(
         self: Self,

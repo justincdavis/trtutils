@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import cv2
-import trtutils
 import numpy as np
+
+import trtutils
 
 from .paths import IMAGE_PATHS
 
@@ -35,8 +36,10 @@ def test_cuda_parity() -> None:
 
     for ipath in IMAGE_PATHS:
         img = cv2.imread(ipath)
-        cpu_result = cpu.preprocess(img, resize="linear")
-        cuda_result = cuda.preprocess(img, resize="linear")
+        cpu_result, cpu_ratios, cpu_padding = cpu.preprocess(img, resize="linear")
+        cuda_result, cuda_ratios, cuda_padding = cuda.preprocess(img, resize="linear")
+        assert cpu_ratios == cuda_ratios
+        assert cpu_padding == cuda_padding
         assert cpu_result.shape == cuda_result.shape
         assert np.allclose(cpu_result, cuda_result)
         assert cpu_result == cuda_result
@@ -49,8 +52,10 @@ def test_trt_parity() -> None:
 
     for ipath in IMAGE_PATHS:
         img = cv2.imread(ipath)
-        cpu_result = cpu.preprocess(img, resize="linear")
-        trt_result = trt.preprocess(img, resize="linear")
+        cpu_result, cpu_ratios, cpu_padding = cpu.preprocess(img, resize="linear")
+        trt_result, trt_ratios, trt_padding = trt.preprocess(img, resize="linear")
+        assert cpu_ratios == trt_ratios
+        assert cpu_padding == trt_padding
         assert cpu_result.shape == trt_result.shape
         assert np.allclose(cpu_result, trt_result)
         assert cpu_result == trt_result

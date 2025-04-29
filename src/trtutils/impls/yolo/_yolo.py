@@ -241,7 +241,9 @@ class YOLO:
                 preprocessor = self._preprocessors[1]
             elif method == "trt":
                 preprocessor = self._preprocessors[2]
-        if isinstance(preprocessor, CUDAPreprocessor) or isinstance(preprocessor, TRTPreprocessor):
+        if isinstance(preprocessor, CUDAPreprocessor) or isinstance(
+            preprocessor, TRTPreprocessor
+        ):
             t0 = time.perf_counter()
             data = preprocessor(image, resize=resize, no_copy=no_copy, verbose=verbose)
             t1 = time.perf_counter()
