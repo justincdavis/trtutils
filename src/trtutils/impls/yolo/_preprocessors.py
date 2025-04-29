@@ -687,6 +687,12 @@ class TRTPreprocessor:
         self._o_shape = output_shape
         self._o_range = output_range
         self._o_dtype = dtype
+        self._o_dtype_str = "float32"
+        output_dtype = trt.DataType.FLOAT
+        if self._o_dtype == np.float16:
+            self._o_dtype_str = "float16"
+            output_dtype = trt.DataType.HALF
+
         # change to handle dynamically later via all YOLO models
         # currently all preprocessors assume the swap so we will here too
         self._use_rgb = True
@@ -743,6 +749,28 @@ class TRTPreprocessor:
         self._linear_kernel = Kernel(*LINEAR_RESIZE)
         self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
 
+        # allocate the scale/offset CUDA locations
+        self._scale_binding = create_binding(
+            np.zeros((1), dtype=np.float32),
+        )
+        memcpy_host_to_device_async(
+            self._scale_binding.allocation,
+            np.array((self._scale), dtype=np.float32),
+            self._stream,
+        )
+        self._offset_binding = create_binding(
+            np.zeros((1), dtype=np.float32),
+        )
+        memcpy_host_to_device_async(
+            self._offset_binding.allocation,
+            np.array((self._offset), dtype=np.float32),
+            self._stream,
+        )
+        stream_synchronize(self._stream)
+
+        # pre-allocate the input pointer list for the engine
+        self._gpu_pointers = [self._input_binding.allocation, self._scale_binding.allocation, self._offset_binding.allocation]
+
         # allocate the trtengine
         # also check if the file exists
         exists, current_path = caching_tools.query_cache(self._get_engine_name())
@@ -751,86 +779,37 @@ class TRTPreprocessor:
         else:
             base_path = Path(__file__).parent.parent / "_onnx" / "preproc_base.onnx"
             with tempfile.TemporaryDirectory() as tmpdir:
-                temp_output = Path(tmpdir).resolve() / f"{self._get_engine_name}.engine"
+                temp_output = Path(tmpdir).resolve() / f"{self._get_engine_name()}.engine"
                 build_engine(
                     base_path,
                     temp_output,
                     default_device=trt.DeviceType.GPU,
                     workspace=1.0,
                     input_tensor_formats=[
-                        ("input", trt.DataType.uint8, trt.TensorFormat.HWC)
+                        ("input", trt.DataType.UINT8, trt.TensorFormat.HWC),
+                        ("scale", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
+                        ("offset", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
                     ],
                     output_tensor_formats=[
-                        ("output", trt.DataType.HALF, trt.TensorFormat.LINEAR)
+                        ("output", output_dtype, trt.TensorFormat.LINEAR)
                     ],
-                    shapes=[("input", (self._o_shape[1], self._o_shape[1], 3))],
-                    hooks=[self._build_hook],
+                    shapes=[
+                        ("input", (self._o_shape[1], self._o_shape[1], 3)),
+                        ("scale", (1,)),
+                        ("offset", (1,)),
+                    ],
                     fp16=True,
                     direct_io=True,
                     cache=True,
                 )
-            self._engine_path = caching_tools.query_cache(self._get_engine_name)[1]
-        self._engine = TRTEngine(self._engine_path, warmup_iterations=1, warmup=True)
+            self._engine_path = caching_tools.query_cache(self._get_engine_name())[1]
+        self._engine = TRTEngine(
+            self._engine_path, stream=self._stream, warmup_iterations=1, warmup=True
+        )
+        self._engine_output_binding = self._engine.output_bindings[0]
 
     def _get_engine_name(self: Self) -> str:
-        return f"yolo_preproc_{self._o_shape[0]}_{self._o_shape[1]}_{self._scale}_{self._offset}"
-
-    def _build_hook(self: Self, net: trt.INetworkDefinition) -> trt.INetworkDefinition:
-        inp = net.get_input(0)
-        inp.shape = [self._o_shape[1], self._o_shape[0], 3]
-
-        if self._use_rgb:
-            w = np.zeros((3, 3, 1, 1), dtype=np.float32)
-            w[0, 2, 0, 0] = 1.0  # R←B
-            w[1, 1, 0, 0] = 1.0  # G←G
-            w[2, 0, 0, 0] = 1.0  # B←R
-            conv = net.add_convolution(
-                inp,
-                3,
-                (1, 1),
-                trt.Weights(w),
-                trt.Weights(np.zeros(3, dtype=np.float32)),
-            )
-            unsq = next(
-                layer
-                for layer in net
-                if isinstance(layer, trt.IShuffleLayer)
-                and next(list(layer.reshape_dims)) == 1
-            )
-            unsq.set_input(0, conv.get_output(0))
-
-        transpose = next(
-            layer
-            for layer in net
-            if isinstance(layer, trt.IShuffleLayer)
-            and any(dim != i for i, dim in enumerate(layer.first_transpose))
-        )
-        t_out = transpose.get_output(0)
-        net.unmark_output(t_out)
-
-        scales = (
-            np.full((_COLOR_CHANNELS,), 1.0 / self._scale, dtype=np.float32)
-            if self._scale is not None
-            else np.ones((_COLOR_CHANNELS,), dtype=np.float32)
-        )
-        shifts = (
-            np.full((_COLOR_CHANNELS,), self._offset, dtype=np.float32)
-            if self._offset is not None
-            else np.zeros((_COLOR_CHANNELS,), dtype=np.float32)
-        )
-        power = np.ones((_COLOR_CHANNELS,), dtype=np.float32)
-
-        scale_layer = net.add_scale(
-            t_out,
-            trt.ScaleMode.CHANNEL,
-            trt.Weights(shifts),
-            trt.Weights(scales),
-            trt.Weights(power),
-        )
-        out_tensor = scale_layer.get_output(0)
-        net.mark_output(out_tensor)
-
-        return net
+        return f"yolo_preproc_{self._o_shape[0]}_{self._o_shape[1]}_{self._o_range[0]}_{self._o_range[1]}_{self._o_dtype_str}"
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -875,7 +854,7 @@ class TRTPreprocessor:
             resize_kernel = self._letterbox_kernel
             resize_args = resize_kernel.create_args(
                 self._input_binding.allocation,
-                self._sst_input_binding.allocation,
+                self._engine_output_binding.allocation,
                 width,
                 height,
                 o_width,
@@ -900,7 +879,7 @@ class TRTPreprocessor:
             resize_kernel = self._linear_kernel
             resize_args = resize_kernel.create_args(
                 self._input_binding.allocation,
-                self._sst_input_binding.allocation,
+                self._engine_output_binding.allocation,
                 width,
                 height,
                 o_width,
@@ -932,6 +911,9 @@ class TRTPreprocessor:
             math.ceil(self._allocated_input_shape[1] / self._num_threads[1]),
             1,
         )
+
+        # pre-allocate the input pointer list for the engine
+        self._gpu_pointers = [self._input_binding.allocation, self._scale_binding.allocation, self._offset_binding.allocation]
 
     def _validate_input(
         self: Self,
@@ -1063,16 +1045,16 @@ class TRTPreprocessor:
         )
 
         memcpy_device_to_host_async(
-            self._output_binding.host_allocation,
-            self._output_binding.allocation,
+            self._engine_output_binding.host_allocation,
+            self._engine_output_binding.allocation,
             self._stream,
         )
 
         stream_synchronize(self._stream)
 
         if no_copy:
-            return self._output_binding.host_allocation, ratios, padding
-        return self._output_binding.host_allocation.copy(), ratios, padding
+            return self._engine_output_binding.host_allocation, ratios, padding
+        return self._engine_output_binding.host_allocation.copy(), ratios, padding
 
     def direct_preproc(
         self: Self,
@@ -1142,7 +1124,6 @@ class TRTPreprocessor:
             resize_args,
         )
 
-        # TODO: add new execution mode which takes pointers and returns pointers with no sync
-        self._engine.direct_exec([self._])
+        output_ptrs = self._engine.raw_exec(self._gpu_pointers, no_warn=True)
 
-        return self._output_binding.allocation, ratios, padding
+        return output_ptrs[0], ratios, padding

@@ -15,7 +15,7 @@ import numpy as np
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
-from ._bindings import allocate_bindings
+from ._bindings import Binding, allocate_bindings
 from ._engine import create_engine
 from ._stream import stream_synchronize
 
@@ -26,15 +26,17 @@ if TYPE_CHECKING:
         import tensorrt as trt
 
         try:
+            import cuda.bindings.driver as cuda
             import cuda.bindings.runtime as cudart
         except (ImportError, ModuleNotFoundError):
-            from cuda import cudart
+            from cuda import cuda, cudart
 
 
 class TRTEngineInterface(ABC):
     def __init__(
         self: Self,
         engine_path: Path | str,
+        stream: cuda.cudaStream_t | None = None,
         *,
         pagelocked_mem: bool | None = None,
         no_warn: bool | None = None,
@@ -47,6 +49,9 @@ class TRTEngineInterface(ABC):
         ----------
         engine_path : Path | str
             The path to the serialized engine file.
+        stream : cuda.cudaStream_t, optional
+            The CUDA stream to use for this engine.
+            By default None, will allocate a new stream.
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for host allocations.
             By default None, which means pagelocked memory will be used.
@@ -64,6 +69,7 @@ class TRTEngineInterface(ABC):
         # engine, context, logger, and CUDA stream
         self._engine, self._context, self._logger, self._stream = create_engine(
             engine_path,
+            stream=stream,
             no_warn=no_warn,
         )
 
@@ -197,6 +203,32 @@ class TRTEngineInterface(ABC):
 
         """
         return [o.dtype for o in self._outputs]
+
+    @property
+    def input_bindings(self: Self) -> list[Binding]:
+        """
+        Get the input bindings.
+
+        Returns
+        -------
+        list[Binding]
+            The input bindings.
+
+        """
+        return self._inputs
+
+    @property
+    def output_bindings(self: Self) -> list[Binding]:
+        """
+        Get the output bindings.
+
+        Returns
+        -------
+        list[Binding]
+            The output bindings.
+
+        """
+        return self._outputs
 
     def __del__(self: Self) -> None:
         # Ensure CUDA stream is synchronized before freeing resources

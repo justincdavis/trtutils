@@ -25,7 +25,6 @@ Functions
 from __future__ import annotations
 
 import shutil
-import site
 from pathlib import Path
 
 from trtutils._log import LOG
@@ -50,8 +49,8 @@ def get_cache_dir() -> Path:
         The trtutils engine cache directory Path
 
     """
-    site_packages = Path(site.getusersitepackages()).resolve()
-    return site_packages / "trtutils" / "core" / "_engine_cache"
+    file_path = Path(__file__)
+    return file_path.parent / "_engine_cache"
 
 
 def clear_cache(*, no_warn: bool | None = None) -> None:

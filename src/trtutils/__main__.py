@@ -628,9 +628,9 @@ def _main() -> None:
     yolo_parser.add_argument(
         "--preprocessor",
         "-p",
-        choices=["cpu", "cuda"],
-        default="cuda",
-        help="Preprocessor to use. Default is cuda.",
+        choices=["cpu", "cuda", "trt"],
+        default="trt",
+        help="Preprocessor to use. Default is trt.",
     )
     yolo_parser.add_argument(
         "--resize_method",

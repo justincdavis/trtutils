@@ -176,11 +176,13 @@ def build_engine(
         and gpu_fallback is False
 
     """
+    output_path = Path(output).resolve()
+
     # first thing is to check cache
     if cache:
-        exists, location = caching_tools.query_cache(output.stem)
+        exists, location = caching_tools.query_cache(output_path.stem)
         if exists:
-            shutil.copy(location, output)
+            shutil.copy(location, output_path)
             return
 
     # match the device
@@ -202,8 +204,6 @@ def build_engine(
             if default_device == trt.DeviceType.GPU
             else trt.DeviceType.DLA
         )
-
-    output_path = Path(output).resolve()
 
     # read the onnx model
     network, builder, config, _ = read_onnx(
