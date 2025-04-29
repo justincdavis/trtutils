@@ -149,7 +149,7 @@ class TRTPreprocessor:
 
         # block and thread info
         self._num_threads: tuple[int, int, int] = threads or (32, 32, 1)
-        self._resize_num_blocks: tuple[int, int, int] = (
+        self._num_blocks: tuple[int, int, int] = (
             math.ceil(self._o_shape[0] / self._num_threads[0]),
             math.ceil(self._o_shape[1] / self._num_threads[1]),
             1,
@@ -321,11 +321,6 @@ class TRTPreprocessor:
         self._input_binding = create_binding(
             image,
             is_input=True,
-        )
-        self._resize_num_blocks = (
-            math.ceil(self._allocated_input_shape[0] / self._num_threads[0]),
-            math.ceil(self._allocated_input_shape[1] / self._num_threads[1]),
-            1,
         )
 
         # pre-allocate the input pointer list for the engine
@@ -538,7 +533,7 @@ class TRTPreprocessor:
         )
 
         resize_kernel.call(
-            self._resize_num_blocks,
+            self._num_blocks,
             self._num_threads,
             self._stream,
             resize_args,
