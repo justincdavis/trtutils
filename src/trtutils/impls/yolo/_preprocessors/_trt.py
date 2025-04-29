@@ -191,7 +191,9 @@ class TRTPreprocessor:
         if exists:
             self._engine_path = current_path
         else:
-            base_path = Path(__file__).parent.parent.parent / "_onnx" / "preproc_base.onnx"
+            base_path = (
+                Path(__file__).parent.parent.parent / "_onnx" / "preproc_base.onnx"
+            )
             with tempfile.TemporaryDirectory() as tmpdir:
                 temp_output = (
                     Path(tmpdir).resolve() / f"{self._get_engine_name()}.engine"
@@ -233,6 +235,14 @@ class TRTPreprocessor:
                 destroy_stream(self._stream)
         with contextlib.suppress(AttributeError):
             del self._input_binding
+        with contextlib.suppress(AttributeError):
+            del self._intermediate_binding
+        with contextlib.suppress(AttributeError):
+            del self._scale_binding
+        with contextlib.suppress(AttributeError):
+            del self._offset_binding
+        with contextlib.suppress(AttributeError):
+            del self._engine
 
     def _create_args(
         self: Self,
