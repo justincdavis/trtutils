@@ -374,6 +374,44 @@ class TRTPreprocessor:
         )
         self.preprocess(rand_data, resize=self._resize, no_copy=True)
 
+    def __call__(
+        self: Self,
+        image: np.ndarray,
+        resize: str | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+        """
+        Preprocess an image for YOLO.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The image to preprocess.
+        resize : str, optional
+            The method to resize the image with.
+            Options are [letterbox, linear], will use method
+            provided in constructor by default.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE
+            by future preprocessing calls.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+
+        Returns
+        -------
+        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
+            The preprocessed image, ratios, and padding used for resizing.
+
+        """
+        return self.preprocess(image, resize=resize, no_copy=no_copy, verbose=verbose)
+
     def preprocess(
         self: Self,
         image: np.ndarray,
