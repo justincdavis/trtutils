@@ -8,7 +8,6 @@ from pathlib import Path
 import torch
 import onnx
 import onnxsim
-import tensorrt as trt
 
 
 class PreprocBase(torch.nn.Module):
@@ -23,7 +22,7 @@ class PreprocBase(torch.nn.Module):
 
 
 def main() -> None:
-    output_path = Path(__file__).parent.parent / "src/trtutils/impls/_onnx/preproc_base.onnx"
+    output_path = Path(__file__).parent.parent / "src/trtutils/impls/_onnx/yolo_preproc_base.onnx"
     output_path_str = str(output_path.resolve())
 
     # other preprocessing models will have to be defined manually

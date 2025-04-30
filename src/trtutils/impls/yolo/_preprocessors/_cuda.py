@@ -196,10 +196,10 @@ class CUDAPreprocessor:
                 LOG.debug(f"{self._tag}: Making letterbox args")
 
             scale = min(scale_x, scale_y)
-            new_width = width * scale
-            new_height = height * scale
-            padding_x = (o_width - new_width) / 2
-            padding_y = (o_height - new_height) / 2
+            new_width = int(width * scale)
+            new_height = int(height * scale)
+            padding_x = int((o_width - new_width) / 2)
+            padding_y = int((o_height - new_height) / 2)
             ratios = (scale, scale)
             padding = (padding_x, padding_y)
 
@@ -212,10 +212,10 @@ class CUDAPreprocessor:
                 height,
                 o_width,
                 o_height,
-                int(padding_x),
-                int(padding_y),
-                int(new_width),
-                int(new_height),
+                padding_x,
+                padding_y,
+                new_width,
+                new_height,
                 verbose=verbose,
             )
         else:

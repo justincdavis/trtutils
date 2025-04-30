@@ -27,6 +27,7 @@ from trtutils.core._memory import (
 )
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
 from trtutils.impls.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
+from trtutils.impls.onnx_models import YOLO_PREPROC_BASE
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -180,47 +181,39 @@ class TRTPreprocessor:
 
         # pre-allocate the input pointer list for the engine
         self._gpu_pointers = [
-            self._input_binding.allocation,
+            self._intermediate_binding.allocation,
             self._scale_binding.allocation,
             self._offset_binding.allocation,
         ]
 
         # allocate the trtengine
-        # also check if the file exists
-        exists, current_path = caching_tools.query_cache(self._get_engine_name())
-        if exists:
-            self._engine_path = current_path
-        else:
-            base_path = (
-                Path(__file__).parent.parent.parent / "_onnx" / "preproc_base.onnx"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_output = (
+                Path(tmpdir).resolve() / f"{self._get_engine_name()}.engine"
             )
-            with tempfile.TemporaryDirectory() as tmpdir:
-                temp_output = (
-                    Path(tmpdir).resolve() / f"{self._get_engine_name()}.engine"
-                )
-                build_engine(
-                    base_path,
-                    temp_output,
-                    default_device=trt.DeviceType.GPU,
-                    workspace=1.0,
-                    input_tensor_formats=[
-                        ("input", trt.DataType.UINT8, trt.TensorFormat.HWC),
-                        ("scale", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
-                        ("offset", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
-                    ],
-                    output_tensor_formats=[
-                        ("output", output_dtype, trt.TensorFormat.LINEAR)
-                    ],
-                    shapes=[
-                        ("input", (self._o_shape[1], self._o_shape[1], 3)),
-                        ("scale", (1,)),
-                        ("offset", (1,)),
-                    ],
-                    fp16=True,
-                    direct_io=True,
-                    cache=True,
-                )
-            self._engine_path = caching_tools.query_cache(self._get_engine_name())[1]
+            build_engine(
+                YOLO_PREPROC_BASE,
+                temp_output,
+                default_device=trt.DeviceType.GPU,
+                workspace=1.0,
+                direct_io=True,
+                input_tensor_formats=[
+                    ("input", trt.DataType.UINT8, trt.TensorFormat.HWC),
+                    ("scale", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
+                    ("offset", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
+                ],
+                output_tensor_formats=[
+                    ("output", output_dtype, trt.TensorFormat.LINEAR)
+                ],
+                shapes=[
+                    ("input", (self._o_shape[1], self._o_shape[1], 3)),
+                    ("scale", (1,)),
+                    ("offset", (1,)),
+                ],
+                fp16=True,
+                cache=True,
+            )
+        self._engine_path = caching_tools.query_cache(self._get_engine_name())[1]
         self._engine = TRTEngine(
             self._engine_path, stream=self._stream, warmup_iterations=1, warmup=True
         )
@@ -269,10 +262,10 @@ class TRTPreprocessor:
                 LOG.debug(f"{self._tag}: Making letterbox args")
 
             scale = min(scale_x, scale_y)
-            new_width = width * scale
-            new_height = height * scale
-            padding_x = (o_width - new_width) / 2
-            padding_y = (o_height - new_height) / 2
+            new_width = int(width * scale)
+            new_height = int(height * scale)
+            padding_x = int((o_width - new_width) / 2)
+            padding_y = int((o_height - new_height) / 2)
             ratios = (scale, scale)
             padding = (padding_x, padding_y)
 
@@ -280,15 +273,15 @@ class TRTPreprocessor:
             resize_kernel = self._letterbox_kernel
             resize_args = resize_kernel.create_args(
                 self._input_binding.allocation,
-                self._engine_output_binding.allocation,
+                self._intermediate_binding.allocation,
                 width,
                 height,
                 o_width,
                 o_height,
-                int(padding_x),
-                int(padding_y),
-                int(new_width),
-                int(new_height),
+                padding_x,
+                padding_y,
+                new_width,
+                new_height,
                 verbose=verbose,
             )
         else:
@@ -305,7 +298,7 @@ class TRTPreprocessor:
             resize_kernel = self._linear_kernel
             resize_args = resize_kernel.create_args(
                 self._input_binding.allocation,
-                self._engine_output_binding.allocation,
+                self._intermediate_binding.allocation,
                 width,
                 height,
                 o_width,
@@ -332,13 +325,6 @@ class TRTPreprocessor:
             image,
             is_input=True,
         )
-
-        # pre-allocate the input pointer list for the engine
-        self._gpu_pointers = [
-            self._input_binding.allocation,
-            self._scale_binding.allocation,
-            self._offset_binding.allocation,
-        ]
 
     def _validate_input(
         self: Self,
@@ -387,44 +373,6 @@ class TRTPreprocessor:
             dtype=np.uint8,
         )
         self.preprocess(rand_data, resize=self._resize, no_copy=True)
-
-    def __call__(
-        self: Self,
-        image: np.ndarray,
-        resize: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
-        """
-        Preprocess an image for YOLO.
-
-        Parameters
-        ----------
-        image : np.ndarray
-            The image to preprocess.
-        resize : str, optional
-            The method to resize the image with.
-            Options are [letterbox, linear], will use method
-            provided in constructor by default.
-        no_copy : bool, optional
-            If True, the outputs will not be copied out
-            from the cuda allocated host memory. Instead,
-            the host memory will be returned directly.
-            This memory WILL BE OVERWRITTEN INPLACE
-            by future preprocessing calls.
-        verbose : bool, optional
-            Whether or not to output additional information
-            to stdout. If not provided, will default to overall
-            engines verbose setting.
-
-        Returns
-        -------
-        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-            The preprocessed image, ratios, and padding used for resizing.
-
-        """
-        return self.preprocess(image, resize=resize, no_copy=no_copy, verbose=verbose)
 
     def preprocess(
         self: Self,
