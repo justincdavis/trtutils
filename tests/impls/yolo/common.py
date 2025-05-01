@@ -238,27 +238,35 @@ def yolo_results(
     del yolo
 
 
-def bboxes_close(
-    bbox1: tuple[int, int, int, int],
-    bbox2: tuple[int, int, int, int],
-    tolerance: int = 2,
-) -> bool:
-    """
-    Check if two bboxes are close to each other.
+def yolo_swapping_preproc_results(
+    version: int, *, use_dla: bool | None = None
+) -> None:
+    """Check if the results are valid for a YOLO model."""
+    engine_path = build_yolo(version, use_dla=use_dla)
 
-    Parameters
-    ----------
-    bbox1 : tuple[int, int, int, int]
-        Bbox1
-    bbox2 : tuple[int, int, int, int]
-        Bbox2
-    tolerance : int, optional
-        The pixel value tolerance
+    scale = (0, 1) if version != 0 else (0, 255)
+    yolo = trtutils.impls.yolo.YOLO(
+        engine_path,
+        conf_thres=0.25,
+        warmup=False,
+        input_range=scale,
+        preprocessor="cpu",
+        no_warn=True,
+    )
 
-    Returns
-    -------
-    bool
-        Whether or not they are close.
+    for gt, ipath in zip(
+        [1, 4],
+        IMAGE_PATHS,
+    ):
+        image = cv2.imread(ipath)
+        for preproc in ["cpu", "cuda", "trt"]:
+            tensor, ratios, padding = yolo.preprocess(image, method=preproc, no_copy=True)
+            outputs = yolo.run(tensor, ratios, padding, preprocessed=True, postprocess=True, no_copy=True)
+            bboxes = [bbox for (bbox, _, _) in yolo.get_detections(outputs)]
 
-    """
-    return all(abs(c1 - c2) <= tolerance for c1, c2 in zip(bbox1, bbox2))
+            # check within +-2 bounding boxes from ground truth
+            assert max(1, gt - 1) <= len(bboxes) <= gt + 1
+            # we always have at least one detection per image
+            assert len(bboxes) >= 1
+
+    del yolo

@@ -121,44 +121,27 @@ class YOLO:
         self._dtype = input_spec[1]
         self._input_range = input_range
 
-        # assign the preprocessor
-        self._preprocessor: CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
-        # create both preprocessors to allow dynamic switching
-        # CPU preprocessor has near zero-memory footprint
-        self._preprocessors: tuple[
-            CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
-        ] = (
-            CPUPreprocessor(
-                self._input_size,
-                self._input_range,
-                self._dtype,
-                tag=self._tag,
-            ),
-            CUDAPreprocessor(
-                self._input_size,
-                self._input_range,
-                self._dtype,
-                resize=self._resize_method,
-                stream=self._engine.stream,
-                tag=self._tag,
-            ),
-            TRTPreprocessor(
-                self._input_size,
-                self._input_range,
-                self._dtype,
-                resize=self._resize_method,
-                stream=self._engine.stream,
-                tag=self._tag,
-            ),
+        # set up the preprocessor
+        valid_preprocessors = ["cpu", "cuda", "trt"]
+        if preprocessor not in valid_preprocessors:
+            err_msg = f"Invalid preprocessor found, options are: {valid_preprocessors}"
+            raise ValueError(err_msg)
+        self._preproc_cpu: CPUPreprocessor = CPUPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            tag=self._tag,
         )
-        self._preprocessor_type = preprocessor
-        # only support uint8 to float32 CUDA kernel for now
-        if self._preprocessor_type == "trt":
-            self._preprocessor = self._preprocessors[2]
-        elif self._preprocessor_type == "cuda" and self._dtype == np.float32:
-            self._preprocessor = self._preprocessors[1]
+        self._preproc_cuda: CUDAPreprocessor | None = None
+        self._preproc_trt: TRTPreprocessor | None = None
+        if preprocessor == "trt":
+            self._preproc_trt = self._setup_trt_preproc()
+            self._preprocessor = self._preproc_trt
+        elif preprocessor == "cuda" and self._dtype == np.float32:
+            self._preproc_cuda = self._setup_cuda_preproc()
+            self._preprocessor = self._preproc_cuda
         else:
-            self._preprocessor = self._preprocessors[0]
+            self._preprocessor = self._preproc_cpu
 
         # basic profiler setup
         self._pre_profile: tuple[float, float] = (0.0, 0.0)
@@ -168,6 +151,26 @@ class YOLO:
         # if warmup, warmup the preprocessors
         if warmup:
             self._preprocessor.warmup()
+
+    def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
+        return CUDAPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            resize=self._resize_method,
+            stream=self._engine.stream,
+            tag=self._tag,
+        )
+
+    def _setup_trt_preproc(self: Self) -> TRTPreprocessor:
+        return TRTPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            resize=self._resize_method,
+            stream=self._engine.stream,
+            tag=self._tag,
+        )
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -236,11 +239,15 @@ class YOLO:
             LOG.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self._preprocessor
         if method is not None:
-            preprocessor = self._preprocessors[0]
+            preprocessor = self._preproc_cpu
             if method == "cuda":
-                preprocessor = self._preprocessors[1]
+                if self._preproc_cuda is None:
+                    self._preproc_cuda = self._setup_cuda_preproc()
+                preprocessor = self._preproc_cuda
             elif method == "trt":
-                preprocessor = self._preprocessors[2]
+                if self._preproc_trt is None:
+                    self._preproc_trt = self._setup_trt_preproc()
+                preprocessor = self._preproc_trt
         if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             t0 = time.perf_counter()
             data = preprocessor(image, resize=resize, no_copy=no_copy, verbose=verbose)
@@ -618,7 +625,7 @@ class YOLO:
 
         outputs: list[np.ndarray]
         # if using CPU preprocessor best you can do is remove host-to-host copies
-        if not isinstance(self._preprocessor, CUDAPreprocessor):
+        if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             if verbose:
                 LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
 

@@ -3,6 +3,8 @@
 # MIT License
 from __future__ import annotations
 
+import time
+
 import cv2
 import numpy as np
 
@@ -114,3 +116,59 @@ def test_trt_parity_letterbox() -> None:
     trt = TRTPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
 
     _assess_parity(cpu, "CPU", trt, "TRT", "letterbox")
+
+
+def test_cuda_perf() -> None:
+    """Test that the CUDA preprocessor is faster than the CPU preprocessor."""
+    cpu = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
+    cuda = CUDAPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
+
+    img = cv2.imread(HORSE_IMAGE_PATH)
+
+    # warmup
+    for _ in range(10):
+        cpu.preprocess(img)
+        cuda.preprocess(img)
+
+    # measure CPU time
+    def _measure(preproc: CPUPreprocessor | CUDAPreprocessor) -> float:
+        profs = []
+        for _ in range(10):
+            t0 = time.perf_counter()
+            preproc.preprocess(img)
+            t1 = time.perf_counter()
+            profs.append(t1 - t0)
+        return np.mean(profs)
+
+    cpu_time = _measure(cpu)
+    cuda_time = _measure(cuda)
+
+    assert cpu_time > cuda_time
+
+
+def test_trt_perf() -> None:
+    """Test that the TRT preprocessor is faster than the CPU preprocessor."""
+    cpu = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
+    trt = TRTPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
+
+    img = cv2.imread(HORSE_IMAGE_PATH)
+
+    # warmup
+    for _ in range(10):
+        cpu.preprocess(img)
+        trt.preprocess(img)
+
+    # measure CPU time
+    def _measure(preproc: CPUPreprocessor | TRTPreprocessor) -> float:
+        profs = []
+        for _ in range(10):
+            t0 = time.perf_counter()
+            preproc.preprocess(img)
+            t1 = time.perf_counter()
+            profs.append(t1 - t0)
+        return np.mean(profs)
+
+    cpu_time = _measure(cpu)
+    trt_time = _measure(trt)
+
+    assert cpu_time > trt_time
