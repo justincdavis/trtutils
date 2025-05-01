@@ -10,13 +10,13 @@ from trtutils.core import Kernel, create_stream, destroy_stream
 IMG_PATH = str(Path(__file__).parent.parent.parent.parent / "data" / "horse.jpg")
 
 
-def kernel_compile(kernel: tuple[str, str]) -> None:
+def kernel_compile(kernel: tuple[Path, str]) -> None:
     """
     Test if a kernel will compile.
 
     Parameters
     ----------
-    kernel : tuple[str, str]
+    kernel : tuple[Path, str]
         The kernel info
 
     """

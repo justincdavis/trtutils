@@ -11,6 +11,7 @@ from .common import (
     yolo_run_in_thread,
     yolo_run_multiple,
     yolo_run_multiple_threads,
+    yolo_swapping_preproc_results,
 )
 
 
@@ -162,6 +163,16 @@ def test_yolo_8_preproc_trt_results() -> None:
 def test_yolo_8_dla_preproc_trt_results() -> None:
     """Test DLA engine with TRT preproc has valid results."""
     yolo_results(8, preprocessor="trt", use_dla=True)
+
+
+def test_yolo_8_swapping_preproc_results() -> None:
+    """Test swapping the preprocessing method at runtime and check results."""
+    yolo_swapping_preproc_results(7, use_dla=False)
+
+
+def test_yolo_8_swapping_preproc_results_dla() -> None:
+    """Test swapping the preprocessing method at runtime and check results with DLA."""
+    yolo_swapping_preproc_results(7, use_dla=True)
 
 
 if __name__ == "__main__":
