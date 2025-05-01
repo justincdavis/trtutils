@@ -122,6 +122,7 @@ class YOLO:
         self._input_range = input_range
 
         # set up the preprocessor
+        self._preprocessor: CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
         valid_preprocessors = ["cpu", "cuda", "trt"]
         if preprocessor not in valid_preprocessors:
             err_msg = f"Invalid preprocessor found, options are: {valid_preprocessors}"

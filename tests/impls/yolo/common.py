@@ -238,9 +238,7 @@ def yolo_results(
     del yolo
 
 
-def yolo_swapping_preproc_results(
-    version: int, *, use_dla: bool | None = None
-) -> None:
+def yolo_swapping_preproc_results(version: int, *, use_dla: bool | None = None) -> None:
     """Check if the results are valid for a YOLO model."""
     engine_path = build_yolo(version, use_dla=use_dla)
 
@@ -260,8 +258,17 @@ def yolo_swapping_preproc_results(
     ):
         image = cv2.imread(ipath)
         for preproc in ["cpu", "cuda", "trt"]:
-            tensor, ratios, padding = yolo.preprocess(image, method=preproc, no_copy=True)
-            outputs = yolo.run(tensor, ratios, padding, preprocessed=True, postprocess=True, no_copy=True)
+            tensor, ratios, padding = yolo.preprocess(
+                image, method=preproc, no_copy=True
+            )
+            outputs = yolo.run(
+                tensor,
+                ratios,
+                padding,
+                preprocessed=True,
+                postprocess=True,
+                no_copy=True,
+            )
             bboxes = [bbox for (bbox, _, _) in yolo.get_detections(outputs)]
 
             # check within +-2 bounding boxes from ground truth

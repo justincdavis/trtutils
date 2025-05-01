@@ -118,6 +118,18 @@ def test_trt_parity_letterbox() -> None:
     _assess_parity(cpu, "CPU", trt, "TRT", "letterbox")
 
 
+def _measure(
+    img: np.ndarray, preproc: CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
+) -> float:
+    profs = []
+    for _ in range(10):
+        t0 = time.perf_counter()
+        preproc.preprocess(img)
+        t1 = time.perf_counter()
+        profs.append(t1 - t0)
+    return float(np.mean(profs))
+
+
 def test_cuda_perf() -> None:
     """Test that the CUDA preprocessor is faster than the CPU preprocessor."""
     cpu = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
@@ -130,18 +142,8 @@ def test_cuda_perf() -> None:
         cpu.preprocess(img)
         cuda.preprocess(img)
 
-    # measure CPU time
-    def _measure(preproc: CPUPreprocessor | CUDAPreprocessor) -> float:
-        profs = []
-        for _ in range(10):
-            t0 = time.perf_counter()
-            preproc.preprocess(img)
-            t1 = time.perf_counter()
-            profs.append(t1 - t0)
-        return np.mean(profs)
-
-    cpu_time = _measure(cpu)
-    cuda_time = _measure(cuda)
+    cpu_time = _measure(img, cpu)
+    cuda_time = _measure(img, cuda)
 
     assert cpu_time > cuda_time
 
@@ -158,17 +160,7 @@ def test_trt_perf() -> None:
         cpu.preprocess(img)
         trt.preprocess(img)
 
-    # measure CPU time
-    def _measure(preproc: CPUPreprocessor | TRTPreprocessor) -> float:
-        profs = []
-        for _ in range(10):
-            t0 = time.perf_counter()
-            preproc.preprocess(img)
-            t1 = time.perf_counter()
-            profs.append(t1 - t0)
-        return np.mean(profs)
-
-    cpu_time = _measure(cpu)
-    trt_time = _measure(trt)
+    cpu_time = _measure(img, cpu)
+    trt_time = _measure(img, trt)
 
     assert cpu_time > trt_time
