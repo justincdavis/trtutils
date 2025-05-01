@@ -230,7 +230,7 @@ class TRTEngineInterface(ABC):
         return self._outputs
 
     def __del__(self: Self) -> None:
-        # TODO: handle stream sync/cleanup better
+        # NOTE: handle stream sync/cleanup better
         # # Ensure CUDA stream is synchronized before freeing resources
         # # This prevents issues in multithreaded environments
         # with contextlib.suppress(Exception):

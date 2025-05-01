@@ -104,7 +104,7 @@ class CUDAPreprocessor:
         # handle stream
         self._stream: cudart.cudaStream_t
         self._own_stream = False
-        if stream:
+        if stream is not None:
             self._stream = stream
         else:
             self._stream = create_stream()
@@ -226,7 +226,7 @@ class CUDAPreprocessor:
             scale_x = o_width / width
             scale_y = o_height / height
             ratios = (scale_x, scale_y)
-            padding = (0.0, 0.0)
+            padding = (0, 0)
 
             # create args and assign kernel
             resize_kernel = self._linear_kernel

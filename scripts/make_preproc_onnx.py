@@ -13,8 +13,9 @@ import onnxsim
 class PreprocBase(torch.nn.Module):
     def forward(self, image: torch.Tensor, scale: torch.Tensor, offset: torch.Tensor) -> torch.Tensor:
         # x: (H, W, 3) uint8, dynamic H/W
-        x = image.to(torch.float32)
-        x = x * scale + offset
+        x = image.to(torch.float16)
+        x = image * scale
+        x += offset
         x = x.unsqueeze(0)  # (1, H, W, 3)
         x = x[:, :, :, [2, 1, 0]]  # swap BGR to RGB
         x = x.permute(0, 3, 1, 2)  # (1, 3, H, W)

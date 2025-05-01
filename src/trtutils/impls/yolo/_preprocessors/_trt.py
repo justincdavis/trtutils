@@ -6,19 +6,15 @@ from __future__ import annotations
 
 import contextlib
 import math
-import tempfile
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 with contextlib.suppress(ImportError):
-    import tensorrt as trt
+    pass
 
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
-from trtutils.builder._build import build_engine
-from trtutils.core import cache as caching_tools
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
 from trtutils.core._memory import (
@@ -27,7 +23,7 @@ from trtutils.core._memory import (
 )
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
 from trtutils.impls.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
-from trtutils.impls.onnx_models import YOLO_PREPROC_BASE
+from trtutils.impls.onnx_models import build_yolo_preproc
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -98,15 +94,6 @@ class TRTPreprocessor:
         self._o_shape = output_shape
         self._o_range = output_range
         self._o_dtype = dtype
-        self._o_dtype_str = "float32"
-        output_dtype = trt.DataType.FLOAT
-        if self._o_dtype == np.float16:
-            self._o_dtype_str = "float16"
-            output_dtype = trt.DataType.HALF
-
-        # change to handle dynamically later via all YOLO models
-        # currently all preprocessors assume the swap so we will here too
-        self._use_rgb = True
 
         # compute scale and offset
         self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
@@ -122,7 +109,7 @@ class TRTPreprocessor:
         # handle stream
         self._stream: cudart.cudaStream_t
         self._own_stream = False
-        if stream:
+        if stream is not None:
             self._stream = stream
         else:
             self._stream = create_stream()
@@ -161,23 +148,28 @@ class TRTPreprocessor:
         self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
 
         # allocate the scale/offset CUDA locations
-        self._scale_binding = create_binding(
-            np.zeros((1), dtype=np.float32),
-        )
+        scale_arr = np.array((self._scale,), dtype=np.float32)
+        self._scale_binding = create_binding(scale_arr)
         memcpy_host_to_device_async(
             self._scale_binding.allocation,
-            np.array((self._scale), dtype=np.float32),
+            scale_arr,
             self._stream,
         )
-        self._offset_binding = create_binding(
-            np.zeros((1), dtype=np.float32),
-        )
+        offset_arr = np.array((self._offset,), dtype=np.float32)
+        self._offset_binding = create_binding(offset_arr)
         memcpy_host_to_device_async(
             self._offset_binding.allocation,
-            np.array((self._offset), dtype=np.float32),
+            offset_arr,
             self._stream,
         )
         stream_synchronize(self._stream)
+
+        # allocate the trtengine
+        self._engine_path = build_yolo_preproc(self._o_shape, self._o_dtype)
+        self._engine = TRTEngine(
+            self._engine_path, stream=self._stream, warmup_iterations=1, warmup=True
+        )
+        self._engine_output_binding = self._engine.output_bindings[0]
 
         # pre-allocate the input pointer list for the engine
         self._gpu_pointers = [
@@ -185,42 +177,6 @@ class TRTPreprocessor:
             self._scale_binding.allocation,
             self._offset_binding.allocation,
         ]
-
-        # allocate the trtengine
-        with tempfile.TemporaryDirectory() as tmpdir:
-            temp_output = (
-                Path(tmpdir).resolve() / f"{self._get_engine_name()}.engine"
-            )
-            build_engine(
-                YOLO_PREPROC_BASE,
-                temp_output,
-                default_device=trt.DeviceType.GPU,
-                workspace=1.0,
-                direct_io=True,
-                input_tensor_formats=[
-                    ("input", trt.DataType.UINT8, trt.TensorFormat.HWC),
-                    ("scale", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
-                    ("offset", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
-                ],
-                output_tensor_formats=[
-                    ("output", output_dtype, trt.TensorFormat.LINEAR)
-                ],
-                shapes=[
-                    ("input", (self._o_shape[1], self._o_shape[1], 3)),
-                    ("scale", (1,)),
-                    ("offset", (1,)),
-                ],
-                fp16=True,
-                cache=True,
-            )
-        self._engine_path = caching_tools.query_cache(self._get_engine_name())[1]
-        self._engine = TRTEngine(
-            self._engine_path, stream=self._stream, warmup_iterations=1, warmup=True
-        )
-        self._engine_output_binding = self._engine.output_bindings[0]
-
-    def _get_engine_name(self: Self) -> str:
-        return f"yolo_preproc_{self._o_shape[0]}_{self._o_shape[1]}_{self._o_range[0]}_{self._o_range[1]}_{self._o_dtype_str}"
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -292,7 +248,7 @@ class TRTPreprocessor:
             scale_x = o_width / width
             scale_y = o_height / height
             ratios = (scale_x, scale_y)
-            padding = (0.0, 0.0)
+            padding = (0, 0)
 
             # create args and assign kernel
             resize_kernel = self._linear_kernel

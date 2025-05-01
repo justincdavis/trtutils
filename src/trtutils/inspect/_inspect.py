@@ -23,8 +23,8 @@ def inspect_engine(
 ) -> tuple[
     int,
     int,
-    list[tuple[str, tuple[int, ...], trt.DataType]],
-    list[tuple[str, tuple[int, ...], trt.DataType]],
+    list[tuple[str, tuple[int, ...], trt.DataType, trt.TensorFormat]],
+    list[tuple[str, tuple[int, ...], trt.DataType, trt.TensorFormat]],
 ]:
     """
     Inspect a TensorRT engine.
@@ -38,7 +38,7 @@ def inspect_engine(
 
     Returns
     -------
-    tuple[int, int, list[tuple[str, tuple[int, ...], trt.DataType]], list[tuple[str, tuple[int, ...], trt.DataType]]]
+    tuple[int, int, list[tuple[str, tuple[int, ...], trt.DataType, trt.TensorFormat]], list[tuple[str, tuple[int, ...], trt.DataType, trt.TensorFormat]]]
         The size in bytes of the engine, the max batch size, and two lists of input and output tensors
 
     """
@@ -61,29 +61,32 @@ def inspect_engine(
     )
 
     for i in num_tensors:
+        # check
         if FLAGS.TRT_10:
             tensor_name = engine.get_tensor_name(i)
             shape = engine.get_tensor_shape(tensor_name)
             dtype = engine.get_tensor_dtype(tensor_name)
-            if engine.get_tensor_mode(tensor_name) == trt.TensorIOMode.INPUT:
-                input_tensors.append((tensor_name, shape, dtype))
-            else:
-                output_tensors.append((tensor_name, shape, dtype))
+            fmt = engine.get_tensor_format(tensor_name)
+            is_input = engine.get_tensor_mode(tensor_name) == trt.TensorIOMode.INPUT
         else:
             tensor_name = engine.get_binding_name(i)
             shape = engine.get_binding_shape(i)
             dtype = engine.get_binding_dtype(i)
-            if engine.binding_is_input(i):
-                input_tensors.append((tensor_name, shape, dtype))
-            else:
-                output_tensors.append((tensor_name, shape, dtype))
+            fmt = engine.get_binding_format(i)
+            is_input = engine.binding_is_input(i)
+
+        # store
+        if is_input:
+            input_tensors.append((tensor_name, shape, dtype, fmt))
+        else:
+            output_tensors.append((tensor_name, shape, dtype, fmt))
 
     batch_size: int = 0
     try:
         batch_size = engine.max_batch_size
     except AttributeError:
         if input_tensors:
-            _, shape, _ = input_tensors[0]
+            _, shape, _, _ = input_tensors[0]
             if shape and len(shape) > 0:
                 batch_size = shape[0]
 
@@ -93,11 +96,11 @@ def inspect_engine(
         LOG.info(f"\tNum IO Tensors: {num_tensors}")
         LOG.info(f"\tDevice Memory Size: {engine_mem_size / (1024 * 1024):.2f} MB")
         LOG.info("\tInput Tensors:")
-        for name, shape, dtype in input_tensors:
-            LOG.info(f"\t\t{name}: shape={shape}, dtype={dtype}")
+        for name, shape, dtype, fmt in input_tensors:
+            LOG.info(f"\t\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
         LOG.info("\tOutput Tensors:")
-        for name, shape, dtype in output_tensors:
-            LOG.info(f"\t\t{name}: shape={shape}, dtype={dtype}")
+        for name, shape, dtype, fmt in output_tensors:
+            LOG.info(f"\t\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
         LOG.info("")
 
     if loaded:

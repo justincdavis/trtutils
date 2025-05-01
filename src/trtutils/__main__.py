@@ -268,11 +268,11 @@ def _inspect(args: SimpleNamespace) -> None:
     LOG.info(f"Engine Size: {engine_size / (1024 * 1024):.2f} MB")
     LOG.info(f"Max Batch Size: {max_batch}")
     LOG.info("Inputs:")
-    for name, shape, dtype in inputs:
-        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}")
+    for name, shape, dtype, fmt in inputs:
+        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
     LOG.info("Outputs:")
-    for name, shape, dtype in outputs:
-        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}")
+    for name, shape, dtype, fmt in outputs:
+        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
 
 
 def _main() -> None:
