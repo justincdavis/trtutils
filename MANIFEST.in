@@ -1,2 +1,3 @@
 include src/trtutils/py.typed
 include src/trtutils/impls/_kernels/*.cu
+include src/trtutils/impls/_onnx/*.onnx

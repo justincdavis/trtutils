@@ -46,8 +46,8 @@ def create_engine(
 
     Returns
     -------
-    tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger]
-        The deserialized engine, execution context, and logger used.
+    tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger, cudart.cudaStream_t]
+        The deserialized engine, execution context, logger used, and stream created.
         Logger returned is the same as the input logger if not None.
 
     Raises

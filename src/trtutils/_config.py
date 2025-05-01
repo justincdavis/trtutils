@@ -29,4 +29,5 @@ class Config:
             trt.init_libnvinfer_plugins(LOG, "")
             Config._PLUGINS_LOADED = True
 
+
 CONFIG = Config()

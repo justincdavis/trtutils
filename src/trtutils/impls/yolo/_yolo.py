@@ -12,7 +12,7 @@ import numpy as np
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 
-from ._preprocessors import CPUPreprocessor, CUDAPreprocessor
+from ._preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 from ._process import get_detections, postprocess
 
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ class YOLO:
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
-        preprocessor: str = "cuda",
+        preprocessor: str = "trt",
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
@@ -58,7 +58,7 @@ class YOLO:
             X expects 0.0 through 255.0
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda'], default is 'cuda'.
+            The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'letterbox'.
@@ -122,10 +122,12 @@ class YOLO:
         self._input_range = input_range
 
         # assign the preprocessor
-        self._preprocessor: CPUPreprocessor | CUDAPreprocessor
+        self._preprocessor: CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
         # create both preprocessors to allow dynamic switching
         # CPU preprocessor has near zero-memory footprint
-        self._preprocessors: tuple[CPUPreprocessor, CUDAPreprocessor] = (
+        self._preprocessors: tuple[
+            CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+        ] = (
             CPUPreprocessor(
                 self._input_size,
                 self._input_range,
@@ -140,10 +142,20 @@ class YOLO:
                 stream=self._engine.stream,
                 tag=self._tag,
             ),
+            TRTPreprocessor(
+                self._input_size,
+                self._input_range,
+                self._dtype,
+                resize=self._resize_method,
+                stream=self._engine.stream,
+                tag=self._tag,
+            ),
         )
         self._preprocessor_type = preprocessor
         # only support uint8 to float32 CUDA kernel for now
-        if self._preprocessor_type == "cuda" and self._dtype == np.float32:
+        if self._preprocessor_type == "trt":
+            self._preprocessor = self._preprocessors[2]
+        elif self._preprocessor_type == "cuda" and self._dtype == np.float32:
             self._preprocessor = self._preprocessors[1]
         else:
             self._preprocessor = self._preprocessors[0]
@@ -224,10 +236,12 @@ class YOLO:
             LOG.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self._preprocessor
         if method is not None:
-            preprocessor = (
-                self._preprocessors[0] if method == "cpu" else self._preprocessors[1]
-            )
-        if isinstance(preprocessor, CUDAPreprocessor):
+            preprocessor = self._preprocessors[0]
+            if method == "cuda":
+                preprocessor = self._preprocessors[1]
+            elif method == "trt":
+                preprocessor = self._preprocessors[2]
+        if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             t0 = time.perf_counter()
             data = preprocessor(image, resize=resize, no_copy=no_copy, verbose=verbose)
             t1 = time.perf_counter()

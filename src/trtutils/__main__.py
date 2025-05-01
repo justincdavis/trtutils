@@ -40,6 +40,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup_iterations=args.warmup_iterations,
             tegra_interval=1,
             warmup=True,
+            verbose=args.verbose,
         )
         latency = jresult.latency
         energy = jresult.energy
@@ -50,6 +51,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             iterations=args.iterations,
             warmup_iterations=args.warmup_iterations,
             warmup=True,
+            verbose=args.verbose,
         )
         latency = result.latency
 
@@ -266,11 +268,11 @@ def _inspect(args: SimpleNamespace) -> None:
     LOG.info(f"Engine Size: {engine_size / (1024 * 1024):.2f} MB")
     LOG.info(f"Max Batch Size: {max_batch}")
     LOG.info("Inputs:")
-    for name, shape, dtype in inputs:
-        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}")
+    for name, shape, dtype, fmt in inputs:
+        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
     LOG.info("Outputs:")
-    for name, shape, dtype in outputs:
-        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}")
+    for name, shape, dtype, fmt in outputs:
+        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
 
 
 def _main() -> None:
@@ -313,6 +315,11 @@ def _main() -> None:
         "-j",
         action="store_true",
         help="If True, will use the trtutils.jetson submodule benchmarker to record energy and pwoerdraw as well.",
+    )
+    benchmark_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output during benchmarking.",
     )
     benchmark_parser.set_defaults(func=_benchmark)
 
@@ -621,9 +628,9 @@ def _main() -> None:
     yolo_parser.add_argument(
         "--preprocessor",
         "-p",
-        choices=["cpu", "cuda"],
-        default="cuda",
-        help="Preprocessor to use. Default is cuda.",
+        choices=["cpu", "cuda", "trt"],
+        default="trt",
+        help="Preprocessor to use. Default is trt.",
     )
     yolo_parser.add_argument(
         "--resize_method",
