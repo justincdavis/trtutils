@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
@@ -26,6 +27,12 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    with contextlib.suppress(Exception):
+        try:
+            import cuda.bindings.driver as cuda
+        except (ImportError, ModuleNotFoundError):
+            from cuda import cuda
+
 
 class TRTEngine(TRTEngineInterface):
     """
@@ -45,6 +52,7 @@ class TRTEngine(TRTEngineInterface):
         engine_path: Path | str,
         warmup_iterations: int = 5,
         backend: str = "auto",
+        stream: cuda.cudaStream_t | None = None,
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
@@ -65,6 +73,9 @@ class TRTEngine(TRTEngineInterface):
             What version of backend execution to use.
             By default 'auto', which will use v3 if available otherwise v2.
             Options are: ['auto', 'async_v3', 'async_v2]
+        stream : cuda.cudaStream_t, optional
+            The CUDA stream to use for this engine.
+            By default None, will allocate a new stream.
         warmup_iterations : int, optional
             The number of warmup iterations to do, by default 5
         pagelocked_mem : bool, optional
@@ -82,7 +93,13 @@ class TRTEngine(TRTEngineInterface):
             If the backend is not valid.
 
         """
-        super().__init__(engine_path, pagelocked_mem=pagelocked_mem, no_warn=no_warn)
+        super().__init__(
+            engine_path,
+            stream=stream,
+            pagelocked_mem=pagelocked_mem,
+            no_warn=no_warn,
+            verbose=verbose,
+        )
 
         # solve for execution method
         # only care about v2 or v3 async
@@ -110,7 +127,7 @@ class TRTEngine(TRTEngineInterface):
         self._sync_t: float = 0.0
 
         if warmup:
-            self.warmup(warmup_iterations)
+            self.warmup(warmup_iterations, verbose=self._verbose)
 
         LOG.debug(f"Creating TRTEngine: {self.name}")
 
@@ -123,6 +140,7 @@ class TRTEngine(TRTEngineInterface):
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
+        debug: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the network with the given inputs.
@@ -141,6 +159,8 @@ class TRTEngine(TRTEngineInterface):
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
             engines verbose setting.
+        debug : bool, optional
+            Enable intermediate stream synchronize for debugging.
 
         Returns
         -------
@@ -152,50 +172,52 @@ class TRTEngine(TRTEngineInterface):
         if verbose:
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
 
-        try:
-            # copy inputs
-            for i_idx in range(len(self._inputs)):
-                memcpy_host_to_device_async(
-                    self._inputs[i_idx].allocation,
-                    data[i_idx],
-                    self._stream,
-                )
+        # copy inputs
+        for i_idx in range(len(self._inputs)):
+            memcpy_host_to_device_async(
+                self._inputs[i_idx].allocation,
+                data[i_idx],
+                self._stream,
+            )
 
-            # execute
-            if self._async_v3:
-                self._context.execute_async_v3(self._stream)
-            else:
-                self._context.execute_async_v2(self._allocations, self._stream)
-
-            # copy outputs
-            for o_idx in range(len(self._outputs)):
-                memcpy_device_to_host_async(
-                    self._outputs[o_idx].host_allocation,
-                    self._outputs[o_idx].allocation,
-                    self._stream,
-                )
-
-            # make sure all operations are complete
+        if debug:
             stream_synchronize(self._stream)
 
-            if verbose:
-                LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
+        # execute
+        if self._async_v3:
+            self._context.execute_async_v3(self._stream)
+        else:
+            self._context.execute_async_v2(self._allocations, self._stream)
 
-            # return the results
-            if no_copy:
-                return [o.host_allocation for o in self._outputs]
-            return [o.host_allocation.copy() for o in self._outputs]
-
-        except Exception:
-            # If we encounter an error, make sure the stream is synchronized
+        if debug:
             stream_synchronize(self._stream)
-            raise
+
+        # copy outputs
+        for o_idx in range(len(self._outputs)):
+            memcpy_device_to_host_async(
+                self._outputs[o_idx].host_allocation,
+                self._outputs[o_idx].allocation,
+                self._stream,
+            )
+
+        # make sure all operations are complete
+        stream_synchronize(self._stream)
+
+        if verbose:
+            LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
+
+        # return the results
+        if no_copy:
+            return [o.host_allocation for o in self._outputs]
+        return [o.host_allocation.copy() for o in self._outputs]
 
     def direct_exec(
         self: Self,
         pointers: list[int],
         *,
         no_warn: bool | None = None,
+        verbose: bool | None = None,
+        debug: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the network with the given GPU memory pointers.
@@ -211,6 +233,12 @@ class TRTEngine(TRTEngineInterface):
             The inputs to the network.
         no_warn : bool, optional
             If True, do not warn about usage.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+        debug : bool, optional
+            Enable intermediate stream synchronize for debugging.
 
         Returns
         -------
@@ -218,42 +246,97 @@ class TRTEngine(TRTEngineInterface):
             The outputs of the network.
 
         """
+        verbose = verbose if verbose is not None else self._verbose
         if not no_warn:
             LOG.warning(
                 "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
             )
 
-        try:
-            # execute
-            if self._async_v3:
-                # need to set the input pointers to match the bindings, assume in same order
-                for i in range(len(pointers)):
-                    self._context.set_tensor_address(self._inputs[i].name, pointers[i])
-                self._context.execute_async_v3(self._stream)
-            else:
-                self._context.execute_async_v2(
-                    pointers + self._output_allocations,
-                    self._stream,
-                )
+        # execute
+        if self._async_v3:
+            # need to set the input pointers to match the bindings, assume in same order
+            for i in range(len(pointers)):
+                self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+            self._context.execute_async_v3(self._stream)
+        else:
+            self._context.execute_async_v2(
+                pointers + self._output_allocations,
+                self._stream,
+            )
 
-            # copy outputs
-            for o_idx in range(len(self._outputs)):
-                memcpy_device_to_host_async(
-                    self._outputs[o_idx].host_allocation,
-                    self._outputs[o_idx].allocation,
-                    self._stream,
-                )
-
-            # make sure all operations are complete
+        if debug:
             stream_synchronize(self._stream)
 
-            # return the results
-            return [o.host_allocation for o in self._outputs]
+        # copy outputs
+        for o_idx in range(len(self._outputs)):
+            memcpy_device_to_host_async(
+                self._outputs[o_idx].host_allocation,
+                self._outputs[o_idx].allocation,
+                self._stream,
+            )
 
-        except Exception:
-            # If we encounter an error, make sure the stream is synchronized
+        # make sure all operations are complete
+        stream_synchronize(self._stream)
+
+        # return the results
+        return [o.host_allocation for o in self._outputs]
+
+    def raw_exec(
+        self: Self,
+        pointers: list[int],
+        *,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
+        debug: bool | None = None,
+    ) -> list[int]:
+        """
+        Execute the network with the given GPU memory pointers.
+
+        The outputs of this function are the direct GPU pointers
+        of the output allocations.
+
+        Parameters
+        ----------
+        pointers : list[int]
+            The inputs to the network.
+        no_warn : bool, optional
+            If True, do not warn about usage.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+        debug : bool, optional
+            Enable intermediate stream synchronize for debugging.
+
+        Returns
+        -------
+        list[int]
+            The pointers to the network outputs.
+
+        """
+        verbose = verbose if verbose is not None else self._verbose
+        if not no_warn:
+            LOG.warning(
+                "Calling raw_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
+            )
+
+        # execute
+        if self._async_v3:
+            # need to set the input pointers to match the bindings, assume in same order
+            for i in range(len(pointers)):
+                self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+            self._context.execute_async_v3(self._stream)
+        else:
+            self._context.execute_async_v2(
+                pointers + self._output_allocations,
+                self._stream,
+            )
+
+        if debug:
             stream_synchronize(self._stream)
-            raise
+
+        # return the results
+        return [o.allocation for o in self._outputs]
 
 
 class QueuedTRTEngine:

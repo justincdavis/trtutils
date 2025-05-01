@@ -20,7 +20,9 @@ ONNX_PATHS: dict[int, Path] = {
     10: BASE / "data" / "trt_yolov10n.onnx",
     0: BASE / "data" / "trt_yoloxn.onnx",
 }
+HORSE_IMAGE_PATH: str = str(BASE / "data" / "horse.jpg")
+PEOPLE_IMAGE_PATH: str = str(BASE / "data" / "people.jpeg")
 IMAGE_PATHS: list[str] = [
-    str(BASE / "data" / "horse.jpg"),
-    str(BASE / "data" / "people.jpeg"),
+    HORSE_IMAGE_PATH,
+    PEOPLE_IMAGE_PATH,
 ]

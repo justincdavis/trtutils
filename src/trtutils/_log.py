@@ -97,7 +97,7 @@ if level is not None and level.upper() not in [
 
 
 # create a TensorRT compatible logger
-class TRTLogger(trt.ILogger):
+class TRTLogger(trt.ILogger):  # type: ignore[misc]
     """
     Logger that implements TensorRT's ILogger interface while using Python's logging system.
 

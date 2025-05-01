@@ -39,6 +39,7 @@ class Binding:
     is_input: bool
     allocation: int
     host_allocation: np.ndarray
+    tensor_format: trt.TensorFormat
 
     def free(self: Self) -> None:
         """Free the memory of the binding."""
@@ -54,6 +55,7 @@ def create_binding(
     array: np.ndarray,
     bind_id: int = 0,
     name: str = "binding",
+    tensor_format: trt.TensorFormat = trt.TensorFormat.LINEAR,
     *,
     is_input: bool | None = None,
     pagelocked_mem: bool | None = None,
@@ -88,6 +90,7 @@ def create_binding(
         bool(is_input),
         device_alloc,
         host_alloc,
+        tensor_format,
     )
 
 
@@ -96,7 +99,7 @@ def allocate_bindings(
     context: trt.IExecutionContext,
     *,
     pagelocked_mem: bool | None = None,
-) -> tuple[list[Binding], list[Binding], list[int], int]:
+) -> tuple[list[Binding], list[Binding], list[int]]:
     """
     Allocate memory for the input and output tensors of a TensorRT engine.
 
@@ -112,8 +115,8 @@ def allocate_bindings(
 
     Returns
     -------
-    tuple[list[Binding], list[Binding], list[int], int]
-        A tuple containing the input bindings, output bindings, allocations, and batch size.
+    tuple[list[Binding], list[Binding], list[int]]
+        A tuple containing the input bindings, output bindings, and gpu memory pointers.
 
     Raises
     ------
@@ -121,7 +124,6 @@ def allocate_bindings(
         If no optimization profiles are found.
         If the profile shape is not correct.
     ValueError
-        If the batch size is 0.
         If no input tensors are found.
         If no output tensors are found.
         If no memory allocations are found
@@ -134,7 +136,6 @@ def allocate_bindings(
     inputs: list[Binding] = []
     outputs: list[Binding] = []
     allocations: list[int] = []
-    batch_size = 0
 
     # magic numbers
     correct_profile_shape = 3
@@ -156,6 +157,7 @@ def allocate_bindings(
                 is_input = True
             dtype = np.dtype(trt.nptype(engine.get_tensor_dtype(name)))
             shape = context.get_tensor_shape(name)
+            data_format = engine.get_tensor_format(name)
             if is_input and shape[0] < 0:
                 if not engine.num_optimization_profiles > 0:
                     err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
@@ -175,6 +177,7 @@ def allocate_bindings(
             name = engine.get_binding_name(i)
             dtype = np.dtype(trt.nptype(engine.get_binding_dtype(i)))
             shape = context.get_binding_shape(i)
+            data_format = engine.get_binding_format(i)
             if is_input and shape[0] < 0:
                 if not engine.num_optimization_profiles > 0:
                     err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
@@ -188,9 +191,8 @@ def allocate_bindings(
                 context.set_binding_shape(i, profile_shape[2])
                 shape = context.get_binding_shape(i)
 
-        # get batch dim is we are an input tensor
-        if is_input:
-            batch_size = shape[0]
+        LOG.debug(f"Allocating for I/O tensor: {name} - is_input: {is_input}")
+
         # compute the size of the binding
         size = dtype.itemsize
         for s in shape:
@@ -213,6 +215,7 @@ def allocate_bindings(
             is_input=is_input,
             allocation=allocation,
             host_allocation=host_allocation,
+            tensor_format=data_format,
         )
         allocations.append(allocation)
         if is_input:
@@ -223,9 +226,6 @@ def allocate_bindings(
         log_msg = f"{input_str}-{i} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
         LOG.debug(log_msg)
 
-    if batch_size == 0:
-        err_msg = "Batch size is 0. Ensure that the engine has an input tensor with a valid batch size."
-        raise ValueError(err_msg)
     if len(inputs) == 0:
         err_msg = "No input tensors found. Ensure that the engine has at least one input tensor."
         raise ValueError(err_msg)
@@ -236,4 +236,4 @@ def allocate_bindings(
         err_msg = "No memory allocations found. Ensure that the engine has at least one input and output tensor."
         raise ValueError(err_msg)
 
-    return inputs, outputs, allocations, batch_size
+    return inputs, outputs, allocations

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from ._batcher import AbstractBatcher
 
 
-class EngineCalibrator(trt.IInt8EntropyCalibrator2):
+class EngineCalibrator(trt.IInt8EntropyCalibrator2):  # type: ignore[misc]
     """Implements the trt.IInt8EntropyCalibrator2."""
 
     def __init__(
