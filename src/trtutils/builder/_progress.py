@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class ProgressBar(trt.IProgressMonitor):
+class ProgressBar(trt.IProgressMonitor):  # type: ignore[misc]
     """A progress bar for building TensorRT engines."""
 
     def __init__(self: Self) -> None:

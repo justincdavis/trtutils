@@ -148,14 +148,14 @@ class TRTPreprocessor:
         self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
 
         # allocate the scale/offset CUDA locations
-        scale_arr = np.array((self._scale,), dtype=np.float32)
+        scale_arr: np.ndarray = np.array((self._scale,), dtype=np.float32)
         self._scale_binding = create_binding(scale_arr)
         memcpy_host_to_device_async(
             self._scale_binding.allocation,
             scale_arr,
             self._stream,
         )
-        offset_arr = np.array((self._offset,), dtype=np.float32)
+        offset_arr: np.ndarray = np.array((self._offset,), dtype=np.float32)
         self._offset_binding = create_binding(offset_arr)
         memcpy_host_to_device_async(
             self._offset_binding.allocation,
