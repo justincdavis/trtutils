@@ -36,6 +36,7 @@ class TRTEngineInterface(ABC):
         self: Self,
         engine_path: Path | str,
         stream: cuda.cudaStream_t | None = None,
+        dla_core: int | None = None,
         *,
         pagelocked_mem: bool | None = None,
         no_warn: bool | None = None,
@@ -51,6 +52,9 @@ class TRTEngineInterface(ABC):
         stream : cuda.cudaStream_t, optional
             The CUDA stream to use for this engine.
             By default None, will allocate a new stream.
+        dla_core : int, optional
+            The DLA core to assign DLA layers of the engine to. Default is None.
+            If None, any DLA layers will be assigned to DLA core 0.
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for host allocations.
             By default None, which means pagelocked memory will be used.
@@ -63,12 +67,14 @@ class TRTEngineInterface(ABC):
         """
         # store path stem as name
         self._name = Path(engine_path).stem
+        self._dla_core = dla_core
         self._verbose = verbose
 
         # engine, context, logger, and CUDA stream
         self._engine, self._context, self._logger, self._stream = create_engine(
             engine_path,
             stream=stream,
+            dla_core=dla_core,
             no_warn=no_warn,
         )
 
@@ -124,6 +130,11 @@ class TRTEngineInterface(ABC):
     def memsize(self: Self) -> int:
         """The size of the engine in bytes."""
         return self._memsize
+
+    @property
+    def dla_core(self: Self) -> int | None:
+        """The DLA core assigned to the engine."""
+        return self._dla_core
 
     @cached_property
     def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:

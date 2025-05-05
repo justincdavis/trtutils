@@ -53,6 +53,7 @@ class TRTEngine(TRTEngineInterface):
         warmup_iterations: int = 5,
         backend: str = "auto",
         stream: cuda.cudaStream_t | None = None,
+        dla_core: int | None = None,
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
@@ -76,6 +77,9 @@ class TRTEngine(TRTEngineInterface):
         stream : cuda.cudaStream_t, optional
             The CUDA stream to use for this engine.
             By default None, will allocate a new stream.
+        dla_core : int, optional
+            The DLA core to assign DLA layers of the engine to. Default is None.
+            If None, any DLA layers will be assigned to DLA core 0.
         warmup_iterations : int, optional
             The number of warmup iterations to do, by default 5
         pagelocked_mem : bool, optional
@@ -96,6 +100,7 @@ class TRTEngine(TRTEngineInterface):
         super().__init__(
             engine_path,
             stream=stream,
+            dla_core=dla_core,
             pagelocked_mem=pagelocked_mem,
             no_warn=no_warn,
             verbose=verbose,
