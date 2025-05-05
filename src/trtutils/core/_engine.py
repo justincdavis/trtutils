@@ -78,7 +78,7 @@ def create_engine(
     # https://docs.nvidia.com/deeplearning/tensorrt/latest/architecture/how-trt-works.html
     runtime = trt.Runtime(LOG)
     if dla_core is not None:
-        runtime.setDLACore(dla_core)
+        runtime.DLA_core = dla_core
     with Path.open(engine_path, "rb") as f:
         if runtime is None:
             err_msg = "Failed to create TRT runtime"
