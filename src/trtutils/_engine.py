@@ -349,8 +349,9 @@ class QueuedTRTEngine:
 
     def __init__(
         self: Self,
-        engine_path: Path | str,
+        engine: TRTEngine | Path | str,
         warmup_iterations: int = 5,
+        dla_core: int | None = None,
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -359,21 +360,29 @@ class QueuedTRTEngine:
 
         Parameters
         ----------
-        engine_path : Path, str
+        engine : Path, str
             The Path to the compiled TensorRT engine.
         warmup_iterations : int
             The number of iterations to warmup the engine.
             By default 5
+        dla_core : int, optional
+            The DLA core to assign DLA layers of the engine to. Default is None.
+            If None, any DLA layers will be assigned to DLA core 0.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
 
         """
         self._stopped = False  # flag for if user stopped thread
-        self._engine: TRTEngine = TRTEngine(
-            engine_path=engine_path,
-            warmup_iterations=warmup_iterations,
-            warmup=warmup,
-        )
+        self._engine: TRTEngine
+        if isinstance(engine, TRTEngine):
+            self._engine = engine
+        else:
+            self._engine = TRTEngine(
+                engine_path=engine,
+                warmup_iterations=warmup_iterations,
+                warmup=warmup,
+                dla_core=dla_core,
+            )
         self._input_queue: Queue[list[np.ndarray]] = Queue()
         self._output_queue: Queue[list[np.ndarray]] = Queue()
         self._thread = Thread(
@@ -552,7 +561,7 @@ class ParallelTRTEngines:
 
     def __init__(
         self: Self,
-        engine_paths: Sequence[Path | str],
+        engines: Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]],
         warmup_iterations: int = 5,
         *,
         warmup: bool | None = None,
@@ -562,23 +571,31 @@ class ParallelTRTEngines:
 
         Parameters
         ----------
-        engine_paths : Sequence[Path | str]
+        engines : Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]]
             The Paths to the compiled engines to use.
         warmup_iterations : int
-            The number of iteratiosn to perform warmup for.
+            The number of iterations to perform warmup for.
             By default 5
         warmup : bool, optional
             Whether or not to run warmup iterations on the engines.
 
         """
-        self._engines: list[QueuedTRTEngine] = [
-            QueuedTRTEngine(
-                engine_path=epath,
+        self._engines: list[QueuedTRTEngine] = []
+        for engine_info in engines:
+            engine: TRTEngine | Path | str
+            dla_core: int | None = None
+            if isinstance(engine_info, tuple):
+                engine = engine_info[0]
+                dla_core = engine_info[1]
+            else:
+                engine = engine_info
+            q_engine = QueuedTRTEngine(
+                engine=engine,
                 warmup_iterations=warmup_iterations,
                 warmup=warmup,
+                dla_core=dla_core,
             )
-            for epath in engine_paths
-        ]
+            self._engines.append(q_engine)
 
     def get_random_input(
         self: Self,

@@ -31,6 +31,7 @@ class YOLO:
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        dla_core: int | None = None,
         *,
         warmup: bool | None = None,
         extra_nms: bool | None = None,
@@ -68,6 +69,9 @@ class YOLO:
         nms_iou_thres : float, optional
             The IOU threshold to use the in the optional and additnal
             NMS operation. By default, 0.5
+        dla_core : int, optional
+            The DLA core to assign DLA layers of the engine to. Default is None.
+            If None, any DLA layers will be assigned to DLA core 0.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
         extra_nms : bool, optional
@@ -99,6 +103,7 @@ class YOLO:
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
+            dla_core=dla_core,
             no_warn=no_warn,
         )
         self._conf_thres = conf_thres
