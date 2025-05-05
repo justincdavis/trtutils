@@ -39,6 +39,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             iterations=args.iterations,
             warmup_iterations=args.warmup_iterations,
             tegra_interval=1,
+            dla_core=args.dla_core,
             warmup=True,
             verbose=args.verbose,
         )
@@ -50,6 +51,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             engine=mpath,
             iterations=args.iterations,
             warmup_iterations=args.warmup_iterations,
+            dla_core=args.dla_core,
             warmup=True,
             verbose=args.verbose,
         )
@@ -211,6 +213,7 @@ def _run_yolo(args: SimpleNamespace) -> None:
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
         conf_thres=args.conf_thres,
+        dla_core=args.dla_core,
         warmup=args.warmup,
         verbose=args.verbose,
     )
@@ -315,6 +318,12 @@ def _main() -> None:
         "-j",
         action="store_true",
         help="If True, will use the trtutils.jetson submodule benchmarker to record energy and pwoerdraw as well.",
+    )
+    benchmark_parser.add_argument(
+        "--dla_core",
+        type=int,
+        default=None,
+        help="DLA core to assign DLA layers of the engine to. Default is None.",
     )
     benchmark_parser.add_argument(
         "--verbose",
@@ -651,6 +660,12 @@ def _main() -> None:
         type=int,
         default=10,
         help="Number of warmup iterations. Default is 10.",
+    )
+    benchmark_parser.add_argument(
+        "--dla_core",
+        type=int,
+        default=None,
+        help="DLA core to assign DLA layers of the engine to. Default is None.",
     )
     yolo_parser.add_argument(
         "--show",
