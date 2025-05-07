@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 def create_engine(
     engine_path: Path | str,
     stream: cudart.cudaStream_t | None = None,
+    dla_core: int | None = None,
     *,
     no_warn: bool | None = None,
 ) -> tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger, cudart.cudaStream_t]:
@@ -41,6 +42,9 @@ def create_engine(
         Useful if you want multiple engines to share the same stream.
         Although there is no explicit link between engine and stream, the stream
         returned by this function should be used for execution.
+    dla_core : int, optional
+        The DLA core to assign DLA layers of the engine to. Default is None.
+        If None, any DLA layers will be assigned to DLA core 0.
     no_warn : bool | None, optional
         If True, suppresses warnings from TensorRT. Default is None.
 
@@ -73,6 +77,8 @@ def create_engine(
     # explicitly a thread-safe operation
     # https://docs.nvidia.com/deeplearning/tensorrt/latest/architecture/how-trt-works.html
     runtime = trt.Runtime(LOG)
+    if dla_core is not None:
+        runtime.DLA_core = dla_core
     with Path.open(engine_path, "rb") as f:
         if runtime is None:
             err_msg = "Failed to create TRT runtime"

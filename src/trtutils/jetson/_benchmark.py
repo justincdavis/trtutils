@@ -39,6 +39,7 @@ def benchmark_engine(
     iterations: int = 1000,
     warmup_iterations: int = 50,
     tegra_interval: int = 5,
+    dla_core: int | None = None,
     *,
     warmup: bool | None = None,
     verbose: bool | None = None,
@@ -59,6 +60,9 @@ def benchmark_engine(
         The number of milliseconds between each tegrastats sampling.
         The smaller the number, the more samples per second are generated.
         By default 5 milliseconds between samples.
+    dla_core : int, optional
+        The DLA core to assign DLA layers of the engine to. Default is None.
+        If None, any DLA layers will be assigned to DLA core 0.
     warmup : bool, optional
         Whether to do warmup iterations, by default None
         If None, warmup will be set to True.
@@ -74,7 +78,11 @@ def benchmark_engine(
     """
     if isinstance(engine, (Path, str)):
         engine = TRTEngine(
-            engine, warmup_iterations=warmup_iterations, warmup=warmup, verbose=verbose
+            engine,
+            warmup_iterations=warmup_iterations,
+            warmup=warmup,
+            dla_core=dla_core,
+            verbose=verbose,
         )
     else:
         if warmup:
@@ -139,7 +147,7 @@ def benchmark_engine(
 
 
 def benchmark_engines(
-    engine_paths: Sequence[Path | str],
+    engines: Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]],
     iterations: int = 1000,
     warmup_iterations: int = 50,
     tegra_interval: int = 5,
@@ -153,7 +161,7 @@ def benchmark_engines(
 
     Parameters
     ----------
-    engine_paths : Sequence[Path | str]
+    engines : Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]]
         The engines to benchmark as paths to the engine files.
     iterations : int, optional
         The number of iterations to run the benchmark for, by default 1000.
@@ -182,6 +190,21 @@ def benchmark_engines(
         If parallel was True, will only contain one item.
 
     """
+    temp_engines: list[Path | TRTEngine] = []
+    dla_assignments: list[int | None] = []
+    for engine_info in engines:
+        engine: TRTEngine | Path | str
+        dla_core: int | None = None
+        if isinstance(engine_info, tuple):
+            engine = engine_info[0]
+            dla_core = engine_info[1]
+        else:
+            engine = engine_info
+        if isinstance(engine, str):
+            engine = Path(engine)
+        temp_engines.append(engine)
+        dla_assignments.append(dla_core)
+
     if not parallel:
         return [
             benchmark_engine(
@@ -189,16 +212,19 @@ def benchmark_engines(
                 iterations,
                 warmup_iterations,
                 tegra_interval,
+                dla_core=dla_core,
                 warmup=warmup,
                 verbose=verbose,
             )
-            for engine in engine_paths
+            for engine, dla_core in zip(temp_engines, dla_assignments)
         ]
 
     # otherwise we need a parallel setup
-    engines_paths = [Path(ep) for ep in engine_paths]
-    engines = ParallelTRTEngines(
-        engines_paths,
+    trt_engines = ParallelTRTEngines(
+        [
+            (ep, dc) if dc is not None else ep
+            for ep, dc in zip(temp_engines, dla_assignments)
+        ],
         warmup_iterations=warmup_iterations,
         warmup=warmup,
     )
@@ -208,7 +234,7 @@ def benchmark_engines(
     raw: dict[str, list[float]] = {metric: [] for metric in metric_names}
 
     # pre-generate the false data
-    false_data = engines.get_random_input()
+    false_data = trt_engines.get_random_input()
 
     # create temp file location for data to go
     temp_file = Path(Path.cwd()) / "temptegra.txt"
@@ -217,8 +243,8 @@ def benchmark_engines(
     with Tegrastats(temp_file, interval=tegra_interval):
         for _ in range(iterations):
             t0 = time.time()
-            engines.submit(false_data)
-            engines.retrieve()
+            trt_engines.submit(false_data)
+            trt_engines.retrieve()
             t1 = time.time()
             raw["latency"].append(t1 - t0)
             start_stop_times.append((t0, t1))

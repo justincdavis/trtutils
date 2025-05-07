@@ -7,6 +7,7 @@ from __future__ import annotations
 import contextlib
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from queue import Empty, Queue
 from threading import Event, Thread
 from typing import TYPE_CHECKING
@@ -19,7 +20,6 @@ from ._yolo import YOLO
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from typing_extensions import Self
 
@@ -55,7 +55,7 @@ class ParallelYOLO:
 
     def __init__(
         self: Self,
-        engines: Sequence[Path],
+        engines: Sequence[Path | str | tuple[Path | str, int]],
         warmup_iterations: int = 100,
         *,
         warmup: bool | None = None,
@@ -67,8 +67,9 @@ class ParallelYOLO:
 
         Parameters
         ----------
-        engines : Sequence[Path]
+        engines : Sequence[Path | str | tuple[Path | str, int]]
             The engine paths of the YOLO models.
+            Can optionally include a DLA core assignment.
         warmup_iterations : int
             The number of warmup iterations to run.
             Warmup occurs in parallel in each thread.
@@ -87,7 +88,16 @@ class ParallelYOLO:
             If a YOLO model could not be created.
 
         """
-        self._engine_paths = engines
+        self._engine_paths: list[Path] = []
+        self._dla_assignments: list[int | None] = []
+        for engine_info in engines:
+            if isinstance(engine_info, tuple):
+                engine_path, dla_core = engine_info
+            else:
+                engine_path = engine_info
+                dla_core = None
+            self._engine_paths.append(Path(engine_path))
+            self._dla_assignments.append(dla_core)
         self._warmup_iterations = warmup_iterations
         self._warmup = warmup
         self._tag = str(len(self._engine_paths))
@@ -789,12 +799,14 @@ class ParallelYOLO:
     def _run(self: Self, threadid: int) -> None:
         # perform warmup
         engine = self._engine_paths[threadid]
+        dla_core = self._dla_assignments[threadid]
         flag = self._flags[threadid]
         try:
             yolo = YOLO(
                 engine,
                 warmup_iterations=self._warmup_iterations,
                 warmup=self._warmup,
+                dla_core=dla_core,
                 no_warn=self._no_warn,
                 verbose=self._verbose,
             )
