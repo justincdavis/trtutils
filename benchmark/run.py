@@ -65,7 +65,7 @@ ONNX_DIR = REPO_DIR / "data" / "yolov10"
 
 # global vars
 IMAGE_SIZES = [160, 320, 480, 640, 800, 960, 1120, 1280]
-FRAMEWORKS = ["ultralytics(torch)", "ultralytics(trt)", "trtutils"]
+FRAMEWORKS = ["ultralytics(torch)", "ultralytics(trt)", "trtutils(cpu)", "trtutils(trt)", "trtutils(cuda)"]
 
 
 def get_results(data: list[float]) -> dict[str, float]:
@@ -106,54 +106,56 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
     # get initial data
     data = get_data(device)
 
-    for imgsz in IMAGE_SIZES:
-        # if we can find the model nested, then we can skip
-        with contextlib.suppress(KeyError):
-            if data["trtutils"][MODELNAME][str(imgsz)] is not None and not overwrite:
-                continue
+    for preprocessor in ["cpu", "trt", "cuda"]:
+        for imgsz in IMAGE_SIZES:
+            # if we can find the model nested, then we can skip
+            with contextlib.suppress(KeyError):
+                if data["trtutils"][MODELNAME][str(imgsz)] is not None and not overwrite:
+                    continue
 
-        print(f"Processing trtutils on {MODELNAME} for imgsz={imgsz}...")
+            print(f"Processing trtutils on {MODELNAME} for imgsz={imgsz}...")
 
-        # resolve paths
-        weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
-        trt_path = weight_path.with_suffix(".engine")
+            # resolve paths
+            weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
+            trt_path = weight_path.with_suffix(".engine")
 
-        if not trt_path.exists():
-            print("\tBuilding trtutils engine...")
-            build_engine(
-                onnx=weight_path,
-                output=trt_path,
-                fp16=True,
-                timing_cache=str(Path(__file__).parent / "timing.cache"),
-                shapes=[("images", (1, 3, imgsz, imgsz))] if "yolov9" in MODELNAME else None,
-            )
-
-            # verify
             if not trt_path.exists():
-                err_msg = f"trtutils TensorRT engine not found: {trt_path}"
-                raise FileNotFoundError(err_msg)
+                print("\tBuilding trtutils engine...")
+                build_engine(
+                    onnx=weight_path,
+                    output=trt_path,
+                    fp16=True,
+                    timing_cache=str(Path(__file__).parent / "timing.cache"),
+                    shapes=[("images", (1, 3, imgsz, imgsz))] if "yolov9" in MODELNAME else None,
+                )
 
-        print("\tBenchmarking trtutils engine...")
-        trt_yolo = YOLO(
-            engine_path=trt_path,
-            warmup_iterations=warmup_iters,
-            warmup=True,
-            verbose=True,
-        )
-        t_timing = []
-        for _ in tqdm(range(bench_iters)):
-            t0 = time.perf_counter()
-            # trt_yolo.end2end(image)
-            trt_yolo.end2end(image, verbose=True)  # add verbose for debugging
-            t_timing.append(time.perf_counter() - t0)
-        del trt_yolo
+                # verify
+                if not trt_path.exists():
+                    err_msg = f"trtutils TensorRT engine not found: {trt_path}"
+                    raise FileNotFoundError(err_msg)
 
-        trt_results = get_results(t_timing)
+            print("\tBenchmarking trtutils engine...")
+            trt_yolo = YOLO(
+                engine_path=trt_path,
+                warmup_iterations=warmup_iters,
+                warmup=True,
+                preprocessor=preprocessor,
+                verbose=True,
+            )
+            t_timing = []
+            for _ in tqdm(range(bench_iters)):
+                t0 = time.perf_counter()
+                # trt_yolo.end2end(image)
+                trt_yolo.end2end(image, verbose=True)  # add verbose for debugging
+                t_timing.append(time.perf_counter() - t0)
+            del trt_yolo
 
-        if MODELNAME not in data["trtutils"]:
-            data["trtutils"][MODELNAME] = {}
-        data["trtutils"][MODELNAME][str(imgsz)] = trt_results
-        write_data(device, data)
+            trt_results = get_results(t_timing)
+
+            if MODELNAME not in data[f"trtutils({preprocessor})"]:
+                data[f"trtutils({preprocessor})"][MODELNAME] = {}
+            data[f"trtutils({preprocessor})"][MODELNAME][str(imgsz)] = trt_results
+            write_data(device, data)
 
 
 def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool) -> None:
