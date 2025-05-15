@@ -65,7 +65,7 @@ ONNX_DIR = REPO_DIR / "data" / "yolov10"
 
 # global vars
 IMAGE_SIZES = [160, 320, 480, 640, 800, 960, 1120, 1280]
-FRAMEWORKS = ["ultralytics(torch)", "ultralytics(trt)", "trtutils(cpu)", "trtutils(trt)", "trtutils(cuda)"]
+FRAMEWORKS = ["ultralytics(torch)", "ultralytics(trt)", "trtutils(cpu)", "trtutils(cuda)",  "trtutils(trt)", "tensorrt"]
 
 
 def get_results(data: list[float]) -> dict[str, float]:
@@ -97,6 +97,7 @@ def write_data(device: str, data: dict[str, dict[str, dict[str, dict[str, float]
 
 
 def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool) -> None:
+    from trtutils import TRTEngine
     from trtutils.impls.yolo import YOLO
     from trtutils.builder import build_engine
 
@@ -106,7 +107,7 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
     # get initial data
     data = get_data(device)
 
-    for preprocessor in ["cpu", "trt", "cuda"]:
+    for preprocessor in ["cpu", "cuda", "trt"]:
         for imgsz in IMAGE_SIZES:
             # if we can find the model nested, then we can skip
             with contextlib.suppress(KeyError):
@@ -157,6 +158,30 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
             data[f"trtutils({preprocessor})"][MODELNAME][str(imgsz)] = trt_results
             write_data(device, data)
 
+            # add the 'raw' engine execution when using cpu preprocessor
+            if preprocessor == "cpu":
+                print("\tBenchmarking tensorrt engine...")
+                base_engine = TRTEngine(
+                    engine_path=trt_path,
+                    warmup_iterations=warmup_iters,
+                    warmup=True,
+                    verbose=True,
+                )
+                input_ptrs = [binding.allocation for binding in base_engine.input_bindings]
+                r_timing = []
+                for _ in tqdm(range(bench_iters)):
+                    t00 = time.perf_counter()
+                    # use the debug flag so a stream sync is completed
+                    base_engine.raw_exec(input_ptrs, debug=True, no_warn=True)
+                    r_timing.append(time.perf_counter() - t00)
+                del base_engine
+
+                raw_results = get_results(r_timing)
+
+                if MODELNAME not in data["tensorrt"]:
+                    data["tensorrt"][MODELNAME] = {}
+                data["tensorrt"][MODELNAME][str(imgsz)] = raw_results
+                write_data(device, data)
 
 def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool) -> None:
     from ultralytics import YOLO

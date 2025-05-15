@@ -80,7 +80,7 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
         x = np.arange(n_groups)
         n_frameworks = len(sub_frameworks)
         bar_width = 0.8 / n_frameworks
-        _, ax = plt.subplots(figsize=(8, 5))
+        _, ax = plt.subplots(figsize=(10, 6))
         
         # Define font sizes based on a base font size
         fontsize = 12
@@ -137,6 +137,12 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Generate plots for each device based on benchmark results.")
     parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="The device to make the plots for, optional.",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Overwrite existing plots.",
@@ -146,4 +152,5 @@ if __name__ == "__main__":
     # parse all the data
     all_data = get_data()
     for name, data in all_data:
-        plot_device(name, data, overwrite=args.overwrite)
+        if args.device is None or name == args.device:
+            plot_device(name, data, overwrite=args.overwrite)
