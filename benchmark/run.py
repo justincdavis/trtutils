@@ -183,6 +183,7 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
                 data["tensorrt"][MODELNAME][str(imgsz)] = raw_results
                 write_data(device, data)
 
+
 def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool) -> None:
     from ultralytics import YOLO
 

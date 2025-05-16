@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from run import FRAMEWORKS
 
 IMAGE_SIZES = [160, 320, 480, 640, 800, 960, 1120, 1280]
+COLORS = {fm: plt.cm.tab10(idx) for idx, fm in enumerate(FRAMEWORKS)}
 
 
 def get_data() -> list[tuple[str, dict[str, dict[str, dict[str, dict[str, float]]]]]]:
@@ -51,9 +52,7 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
     # print(models)
     # print(image_sizes)
 
-    # Set the tab10 colorscheme for better aesthetics
     plt.style.use('seaborn-v0_8')
-    plt.rcParams['axes.prop_cycle'] = plt.cycler(color=plt.cm.tab10.colors)
 
     print(f"Plotting - {name}")
     for model in models:
@@ -79,8 +78,8 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
         n_groups = len(IMAGE_SIZES)
         x = np.arange(n_groups)
         n_frameworks = len(sub_frameworks)
-        bar_width = 0.8 / n_frameworks
-        _, ax = plt.subplots(figsize=(10, 6))
+        bar_width = 0.9 / n_frameworks
+        _, ax = plt.subplots(figsize=(11, 6))
         
         # Define font sizes based on a base font size
         fontsize = 12
@@ -117,7 +116,7 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
 
         for i, framework in enumerate(sub_frameworks):
             latencies = [latency for _, latency in mdata[framework]]
-            rects = ax.bar(x + i * bar_width, latencies, width=bar_width, label=framework)
+            rects = ax.bar(x + i * bar_width, latencies, width=bar_width, label=framework, color=COLORS[framework])
             autolabel(rects, ax)
 
         # Set y-axis limit with 10% padding to ensure all values and annotations fit
