@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -218,21 +219,79 @@ def _run_yolo(args: SimpleNamespace) -> None:
         verbose=args.verbose,
     )
 
+    def run(
+        img: np.ndarray,
+    ) -> tuple[
+        list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float
+    ]:
+        t0 = time.perf_counter()
+        tensor, ratios, pads = yolo.preprocess(img, no_copy=True)
+        t1 = time.perf_counter()
+        results = yolo.run(tensor, preprocessed=True, postprocess=False, no_copy=True)
+        t2 = time.perf_counter()
+        p_results = yolo.postprocess(results, ratios, pads, no_copy=True)
+        t3 = time.perf_counter()
+        dets = yolo.get_detections(p_results)
+        t4 = time.perf_counter()
+        return dets, t1 - t0, t2 - t1, t3 - t2, t4 - t3
+
+    def log(
+        dets: list[tuple[tuple[int, int, int, int], float, int]],
+        pre_t: float,
+        run_t: float,
+        post_t: float,
+        det_t: float,
+    ) -> None:
+        LOG.info(f"Found {len(dets)} detections")
+        LOG.info(f"Preprocessing time: {pre_t:.2f} ms")
+        LOG.info(f"Run time: {run_t:.2f} ms")
+        LOG.info(f"Postprocessing time: {post_t:.2f} ms")
+        LOG.info(f"Detection time: {det_t:.2f} ms")
+
+    def process_image(
+        img: np.ndarray,
+    ) -> tuple[
+        list[tuple[int, int, int, int]],
+        list[float],
+        list[int],
+        float,
+        float,
+        float,
+        float,
+    ]:
+        dets, pre_t, run_t, post_t, det_t = run(img)
+        log(dets, pre_t, run_t, post_t, det_t)
+        bboxes = [d[0] for d in dets]
+        scores = [d[1] for d in dets]
+        classes = [d[2] for d in dets]
+        return bboxes, scores, classes, pre_t, run_t, post_t, det_t
+
+    def draw(
+        img: np.ndarray,
+        bboxes: list[tuple[int, int, int, int]],
+        scores: list[float],
+        classes: list[int],
+        pre_t: float,
+        run_t: float,
+        post_t: float,
+        det_t: float,
+    ) -> np.ndarray:
+        canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
+        canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t:.2f} ms", (10, 30))
+        canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t:.2f} ms", (10, 60))
+        canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t:.2f} ms", (10, 90))
+        return cv2ext.image.draw.text(canvas, f"DET:  {det_t:.2f} ms", (10, 120))
+
     if is_image:
         img = cv2.imread(str(input_path))
         if img is None:
             err_msg = f"Failed to read image: {input_path}"
             raise ValueError(err_msg)
 
-        dets = yolo.end2end(img)
-        LOG.info(f"Found {len(dets)} detections")
-        bboxes = [d[0] for d in dets]
-        scores = [d[1] for d in dets]
-        classes = [d[2] for d in dets]
-
-        canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
+        bboxes, scores, classes, pre_t, run_t, post_t, det_t = process_image(img)
 
         if args.show:
+            canvas = draw(img, bboxes, scores, classes, pre_t, run_t, post_t, det_t)
             cv2.imshow("YOLO", canvas)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
@@ -246,15 +305,15 @@ def _run_yolo(args: SimpleNamespace) -> None:
             if display is not None and display.stopped:
                 break
 
-            dets = yolo.end2end(frame)
-            LOG.info(f"Frame {fid}:  {len(dets)} detections")
-            bboxes = [d[0] for d in dets]
-            scores = [d[1] for d in dets]
-            classes = [d[2] for d in dets]
+            LOG.info(f"Processing frame {fid}")
+            bboxes, scores, classes, pre_t, run_t, post_t, det_t = process_image(frame)
 
-            canvas = cv2ext.bboxes.draw_bboxes(frame, bboxes, scores, classes)
-            if display is not None:
-                display.update(canvas)
+            if args.show:
+                canvas = draw(
+                    frame, bboxes, scores, classes, pre_t, run_t, post_t, det_t
+                )
+                if display is not None:
+                    display.update(canvas)
 
         if display is not None:
             display.stop()
