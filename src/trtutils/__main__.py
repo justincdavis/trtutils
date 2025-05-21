@@ -233,7 +233,7 @@ def _run_yolo(args: SimpleNamespace) -> None:
         t3 = time.perf_counter()
         dets = yolo.get_detections(p_results)
         t4 = time.perf_counter()
-        return dets, t1 - t0, t2 - t1, t3 - t2, t4 - t3
+        return dets, round(1000 * (t1 - t0), 2), round(1000 * (t2 - t1), 2), round(1000 * (t3 - t2), 2), round(1000 * (t4 - t3), 2)
 
     def log(
         dets: list[tuple[tuple[int, int, int, int], float, int]],
@@ -243,10 +243,10 @@ def _run_yolo(args: SimpleNamespace) -> None:
         det_t: float,
     ) -> None:
         LOG.info(f"Found {len(dets)} detections")
-        LOG.info(f"Preprocessing time: {pre_t:.2f} ms")
-        LOG.info(f"Run time: {run_t:.2f} ms")
-        LOG.info(f"Postprocessing time: {post_t:.2f} ms")
-        LOG.info(f"Detection time: {det_t:.2f} ms")
+        LOG.info(f"Preprocessing time: {pre_t} ms")
+        LOG.info(f"Run time: {run_t} ms")
+        LOG.info(f"Postprocessing time: {post_t} ms")
+        LOG.info(f"Detection time: {det_t} ms")
 
     def process_image(
         img: np.ndarray,
@@ -277,10 +277,10 @@ def _run_yolo(args: SimpleNamespace) -> None:
         det_t: float,
     ) -> np.ndarray:
         canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
-        canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t:.2f} ms", (10, 30))
-        canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t:.2f} ms", (10, 60))
-        canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t:.2f} ms", (10, 90))
-        return cv2ext.image.draw.text(canvas, f"DET:  {det_t:.2f} ms", (10, 120))
+        canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
+        canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t} ms", (10, 60))
+        canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
+        return cv2ext.image.draw.text(canvas, f"DET:  {det_t} ms", (10, 120))
 
     if is_image:
         img = cv2.imread(str(input_path))
