@@ -903,7 +903,7 @@
             }
         }
     },
-    "trtutils": {
+    "trtutils(cuda)": {
         "yolov10n": {
             "160": {
                 "mean": 1.2638443500036374,

@@ -51,6 +51,7 @@ def main():
 
     # create the examples.rst file
     with open(os.path.join("docs", "examples.rst"), "w") as f:
+        f.write(".. _examples:\n\n")
         f.write("Examples\n")
         f.write("========\n\n")
         f.write(".. toctree::\n")
