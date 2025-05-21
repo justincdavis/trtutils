@@ -36,9 +36,17 @@ class Flags:
         Whether or not execute_v1 is available.
     IS_JETSON : bool
         Whether or not the system is a Jetson system
+    JIT : bool
+        Whether or not to use jit.
+    FOUND_NUMBA : bool
+        Whether or not a Numba installation was found.
+    WARNED_NUMBA_NOT_FOUND : bool
+        Whether or not the user has been warned that Numba was
+        not found when calling enable_jit.
 
     """
 
+    # TensorRT and CUDA flags
     TRT_10: bool = False
     NEW_CAN_RUN_ON_DLA: bool = False
     MEMSIZE_V2: bool = False
@@ -50,6 +58,11 @@ class Flags:
     EXEC_V2: bool = False
     EXEC_V1: bool = False
     IS_JETSON: bool = False
+
+    # Internal flags
+    JIT: bool = False
+    FOUND_NUMBA: bool = False
+    WARNED_NUMBA_NOT_FOUND: bool = False
 
 
 FLAGS = Flags()

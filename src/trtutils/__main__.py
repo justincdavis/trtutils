@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -217,6 +218,85 @@ def _run_yolo(args: SimpleNamespace) -> None:
         warmup=args.warmup,
         verbose=args.verbose,
     )
+    times: dict[str, list[float]] = {
+        "pre": [],
+        "run": [],
+        "post": [],
+        "det": [],
+    }
+
+    def run(
+        img: np.ndarray,
+    ) -> tuple[
+        list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float
+    ]:
+        t0 = time.perf_counter()
+        tensor, ratios, pads = yolo.preprocess(img, no_copy=True)
+        t1 = time.perf_counter()
+        results = yolo.run(tensor, preprocessed=True, postprocess=False, no_copy=True)
+        t2 = time.perf_counter()
+        p_results = yolo.postprocess(results, ratios, pads, no_copy=True)
+        t3 = time.perf_counter()
+        dets = yolo.get_detections(p_results)
+        t4 = time.perf_counter()
+        return (
+            dets,
+            round(1000 * (t1 - t0), 2),
+            round(1000 * (t2 - t1), 2),
+            round(1000 * (t3 - t2), 2),
+            round(1000 * (t4 - t3), 2),
+        )
+
+    def log(
+        dets: list[tuple[tuple[int, int, int, int], float, int]],
+        pre_t: float,
+        run_t: float,
+        post_t: float,
+        det_t: float,
+    ) -> None:
+        LOG.info(f"Found {len(dets)} detections")
+        LOG.info(f"Preprocessing time: {pre_t} ms")
+        LOG.info(f"Run time: {run_t} ms")
+        LOG.info(f"Postprocessing time: {post_t} ms")
+        LOG.info(f"Detection time: {det_t} ms")
+
+    def process_image(
+        img: np.ndarray,
+    ) -> tuple[
+        list[tuple[int, int, int, int]],
+        list[float],
+        list[int],
+        float,
+        float,
+        float,
+        float,
+    ]:
+        dets, pre_t, run_t, post_t, det_t = run(img)
+        log(dets, pre_t, run_t, post_t, det_t)
+        bboxes = [d[0] for d in dets]
+        scores = [d[1] for d in dets]
+        classes = [d[2] for d in dets]
+        times["pre"].append(pre_t)
+        times["run"].append(run_t)
+        times["post"].append(post_t)
+        times["det"].append(det_t)
+        return bboxes, scores, classes, pre_t, run_t, post_t, det_t
+
+    def draw(
+        img: np.ndarray,
+        bboxes: list[tuple[int, int, int, int]],
+        scores: list[float],
+        classes: list[int],
+        pre_t: float,
+        run_t: float,
+        post_t: float,
+        det_t: float,
+    ) -> np.ndarray:
+        canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
+        canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
+        canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t} ms", (10, 60))
+        canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
+        return cv2ext.image.draw.text(canvas, f"DET:  {det_t} ms", (10, 120))
 
     if is_image:
         img = cv2.imread(str(input_path))
@@ -224,15 +304,10 @@ def _run_yolo(args: SimpleNamespace) -> None:
             err_msg = f"Failed to read image: {input_path}"
             raise ValueError(err_msg)
 
-        dets = yolo.end2end(img)
-        LOG.info(f"Found {len(dets)} detections")
-        bboxes = [d[0] for d in dets]
-        scores = [d[1] for d in dets]
-        classes = [d[2] for d in dets]
-
-        canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
+        bboxes, scores, classes, pre_t, run_t, post_t, det_t = process_image(img)
 
         if args.show:
+            canvas = draw(img, bboxes, scores, classes, pre_t, run_t, post_t, det_t)
             cv2.imshow("YOLO", canvas)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
@@ -246,15 +321,15 @@ def _run_yolo(args: SimpleNamespace) -> None:
             if display is not None and display.stopped:
                 break
 
-            dets = yolo.end2end(frame)
-            LOG.info(f"Frame {fid}:  {len(dets)} detections")
-            bboxes = [d[0] for d in dets]
-            scores = [d[1] for d in dets]
-            classes = [d[2] for d in dets]
+            LOG.info(f"Processing frame {fid}")
+            bboxes, scores, classes, pre_t, run_t, post_t, det_t = process_image(frame)
 
-            canvas = cv2ext.bboxes.draw_bboxes(frame, bboxes, scores, classes)
-            if display is not None:
-                display.update(canvas)
+            if args.show:
+                canvas = draw(
+                    frame, bboxes, scores, classes, pre_t, run_t, post_t, det_t
+                )
+                if display is not None:
+                    display.update(canvas)
 
         if display is not None:
             display.stop()
@@ -262,6 +337,10 @@ def _run_yolo(args: SimpleNamespace) -> None:
     else:
         err_msg = f"Invalid input file: {input_path}"
         raise ValueError(err_msg)
+
+    LOG.info("Times:")
+    for k, v in times.items():
+        LOG.info(f"{k}: {np.mean(v):.2f} ms")
 
 
 def _inspect(args: SimpleNamespace) -> None:
@@ -279,6 +358,21 @@ def _inspect(args: SimpleNamespace) -> None:
 
 
 def _main() -> None:
+    # common arguments parser
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument(
+        "--dla_core",
+        type=int,
+        default=None,
+        help="DLA core to assign DLA layers of the engine to. Default is None.",
+    )
+    parent_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output.",
+    )
+
+    # main parser
     parser = argparse.ArgumentParser(description="Utilities for TensorRT.")
 
     # create subparser for each command
@@ -292,6 +386,7 @@ def _main() -> None:
     benchmark_parser = subparsers.add_parser(
         "benchmark",
         help="Benchmark a given TensorRT engine.",
+        parents=[parent_parser],
     )
     benchmark_parser.add_argument(
         "--engine",
@@ -319,17 +414,6 @@ def _main() -> None:
         action="store_true",
         help="If True, will use the trtutils.jetson submodule benchmarker to record energy and pwoerdraw as well.",
     )
-    benchmark_parser.add_argument(
-        "--dla_core",
-        type=int,
-        default=None,
-        help="DLA core to assign DLA layers of the engine to. Default is None.",
-    )
-    benchmark_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose output during benchmarking.",
-    )
     benchmark_parser.set_defaults(func=_benchmark)
 
     # trtexec parser
@@ -343,6 +427,7 @@ def _main() -> None:
     build_parser = subparsers.add_parser(
         "build",
         help="Build a TensorRT engine from an ONNX model.",
+        parents=[parent_parser],
     )
     build_parser.add_argument(
         "--onnx",
@@ -375,11 +460,6 @@ def _main() -> None:
         type=float,
         default=4.0,
         help="Workspace size in GB. Default is 4.0.",
-    )
-    build_parser.add_argument(
-        "--dla_core",
-        type=int,
-        help="Specify the DLA core. By default, the engine is built for GPU.",
     )
     build_parser.add_argument(
         "--calibration_cache",
@@ -476,17 +556,13 @@ def _main() -> None:
         action="store_true",
         help="Quantize the engine to INT8 precision.",
     )
-    build_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Verbose output from can_run_on_dla.",
-    )
     build_parser.set_defaults(func=_build)
 
     # run_on_dla parser
     can_run_on_dla_parser = subparsers.add_parser(
         "can_run_on_dla",
         help="Evaluate if the model can run on a DLA.",
+        parents=[parent_parser],
     )
     can_run_on_dla_parser.add_argument(
         "--onnx",
@@ -510,6 +586,7 @@ def _main() -> None:
     build_dla_parser = subparsers.add_parser(
         "build_dla",
         help="Build a TensorRT engine for DLA.",
+        parents=[parent_parser],
     )
     build_dla_parser.add_argument(
         "--onnx",
@@ -522,12 +599,6 @@ def _main() -> None:
         "-out",
         required=True,
         help="Path to save the TensorRT engine file.",
-    )
-    build_dla_parser.add_argument(
-        "--dla_core",
-        type=int,
-        default=0,
-        help="Specify the DLA core. By default, the engine is built for GPU.",
     )
     build_dla_parser.add_argument(
         "--max_chunks",
@@ -595,17 +666,13 @@ def _main() -> None:
         default=None,
         help="Path to store timing cache data. Default is 'timing.cache'.",
     )
-    build_dla_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Verbose output from can_run_on_dla.",
-    )
     build_dla_parser.set_defaults(func=_build_dla)
 
     # yolo parser
     yolo_parser = subparsers.add_parser(
         "yolo",
         help="Run YOLO object detection on an image or video.",
+        parents=[parent_parser],
     )
     yolo_parser.add_argument(
         "--engine",
@@ -661,21 +728,10 @@ def _main() -> None:
         default=10,
         help="Number of warmup iterations. Default is 10.",
     )
-    benchmark_parser.add_argument(
-        "--dla_core",
-        type=int,
-        default=None,
-        help="DLA core to assign DLA layers of the engine to. Default is None.",
-    )
     yolo_parser.add_argument(
         "--show",
         action="store_true",
         help="Show the detections.",
-    )
-    yolo_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Output additional debugging information.",
     )
     yolo_parser.set_defaults(func=_run_yolo)
 
@@ -683,6 +739,7 @@ def _main() -> None:
     inspect_parser = subparsers.add_parser(
         "inspect",
         help="Inspect a TensorRT engine.",
+        parents=[parent_parser],
     )
     inspect_parser.add_argument(
         "--engine",
