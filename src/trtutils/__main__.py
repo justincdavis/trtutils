@@ -239,7 +239,13 @@ def _run_yolo(args: SimpleNamespace) -> None:
         t3 = time.perf_counter()
         dets = yolo.get_detections(p_results)
         t4 = time.perf_counter()
-        return dets, round(1000 * (t1 - t0), 2), round(1000 * (t2 - t1), 2), round(1000 * (t3 - t2), 2), round(1000 * (t4 - t3), 2)
+        return (
+            dets,
+            round(1000 * (t1 - t0), 2),
+            round(1000 * (t2 - t1), 2),
+            round(1000 * (t3 - t2), 2),
+            round(1000 * (t4 - t3), 2),
+        )
 
     def log(
         dets: list[tuple[tuple[int, int, int, int], float, int]],
@@ -331,7 +337,7 @@ def _run_yolo(args: SimpleNamespace) -> None:
     else:
         err_msg = f"Invalid input file: {input_path}"
         raise ValueError(err_msg)
-    
+
     LOG.info("Times:")
     for k, v in times.items():
         LOG.info(f"{k}: {np.mean(v):.2f} ms")
