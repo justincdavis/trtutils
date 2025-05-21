@@ -60,6 +60,12 @@ Functions
     Run a command with trtexec.
 :func:`set_log_level`
     Set the log level of the trtutils package.
+:func:`enable_jit`
+    Enable just-in-time compilation using Numba.
+:func:`disable_jit`
+    Disable just-in-time compilation using Numba.
+:func:`register_jit`
+    Decorator for registering functions for potential JIT compilation.
 
 Objects
 -------
@@ -67,6 +73,8 @@ Objects
     The flag storage object for trtutils.
 :obj:`LOG`
     The TensorRT compatible logger for trtutils.
+:obj:`JIT`
+    A context manager for enabling just-in-time compilation using Numba.
 
 """
 
@@ -74,6 +82,7 @@ from __future__ import annotations
 
 from ._config import CONFIG
 from ._flags import FLAGS
+from ._jit import JIT, disable_jit, enable_jit, register_jit
 from ._log import LOG, set_log_level
 
 # output available execution api debug
@@ -97,6 +106,7 @@ from .trtexec import find_trtexec, run_trtexec
 __all__ = [
     "CONFIG",
     "FLAGS",
+    "JIT",
     "LOG",
     "BenchmarkResult",
     "Metric",
@@ -111,10 +121,13 @@ __all__ = [
     "build_engine",
     "builder",
     "core",
+    "disable_jit",
+    "enable_jit",
     "find_trtexec",
     "impls",
     "inspect",
     "inspect_engine",
+    "register_jit",
     "run_trtexec",
     "set_log_level",
     "trtexec",
@@ -125,3 +138,9 @@ with contextlib.suppress(ImportError):
     from . import jetson
 
     __all__ += ["jetson"]
+
+
+# if numba is found, automatically enable the jit
+if FLAGS.FOUND_NUMBA:
+    LOG.info("Numba found, enabling JIT")
+    enable_jit()

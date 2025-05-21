@@ -43,14 +43,11 @@ def _setup_logger(level: str | None = None) -> None:
     logger = logging.getLogger(__package__)
     logger.setLevel(log_level)
 
-    # if not logger.hasHandlers():
-    existing_handler = None
-    for handler in logger.handlers:
-        if isinstance(handler, logging.StreamHandler) and handler.level == log_level:
-            existing_handler = handler
-            break
+    has_handler = False
+    if len(logger.handlers) > 0:
+        has_handler = True
 
-    if not existing_handler:
+    if not has_handler:
         formatter = logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         )
@@ -58,6 +55,8 @@ def _setup_logger(level: str | None = None) -> None:
         stdout_handler.setLevel(log_level)
         stdout_handler.setFormatter(formatter)
         logger.addHandler(stdout_handler)
+    else:
+        logger.handlers[0].setLevel(log_level)
 
     logger.propagate = True
 

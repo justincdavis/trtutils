@@ -279,6 +279,21 @@ def _inspect(args: SimpleNamespace) -> None:
 
 
 def _main() -> None:
+    # common arguments parser
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument(
+        "--dla_core",
+        type=int,
+        default=None,
+        help="DLA core to assign DLA layers of the engine to. Default is None.",
+    )
+    parent_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output.",
+    )
+
+    # main parser
     parser = argparse.ArgumentParser(description="Utilities for TensorRT.")
 
     # create subparser for each command
@@ -292,6 +307,7 @@ def _main() -> None:
     benchmark_parser = subparsers.add_parser(
         "benchmark",
         help="Benchmark a given TensorRT engine.",
+        parents=[parent_parser],
     )
     benchmark_parser.add_argument(
         "--engine",
@@ -319,17 +335,6 @@ def _main() -> None:
         action="store_true",
         help="If True, will use the trtutils.jetson submodule benchmarker to record energy and pwoerdraw as well.",
     )
-    benchmark_parser.add_argument(
-        "--dla_core",
-        type=int,
-        default=None,
-        help="DLA core to assign DLA layers of the engine to. Default is None.",
-    )
-    benchmark_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose output during benchmarking.",
-    )
     benchmark_parser.set_defaults(func=_benchmark)
 
     # trtexec parser
@@ -343,6 +348,7 @@ def _main() -> None:
     build_parser = subparsers.add_parser(
         "build",
         help="Build a TensorRT engine from an ONNX model.",
+        parents=[parent_parser],
     )
     build_parser.add_argument(
         "--onnx",
@@ -375,11 +381,6 @@ def _main() -> None:
         type=float,
         default=4.0,
         help="Workspace size in GB. Default is 4.0.",
-    )
-    build_parser.add_argument(
-        "--dla_core",
-        type=int,
-        help="Specify the DLA core. By default, the engine is built for GPU.",
     )
     build_parser.add_argument(
         "--calibration_cache",
@@ -476,17 +477,13 @@ def _main() -> None:
         action="store_true",
         help="Quantize the engine to INT8 precision.",
     )
-    build_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Verbose output from can_run_on_dla.",
-    )
     build_parser.set_defaults(func=_build)
 
     # run_on_dla parser
     can_run_on_dla_parser = subparsers.add_parser(
         "can_run_on_dla",
         help="Evaluate if the model can run on a DLA.",
+        parents=[parent_parser],
     )
     can_run_on_dla_parser.add_argument(
         "--onnx",
@@ -510,6 +507,7 @@ def _main() -> None:
     build_dla_parser = subparsers.add_parser(
         "build_dla",
         help="Build a TensorRT engine for DLA.",
+        parents=[parent_parser],
     )
     build_dla_parser.add_argument(
         "--onnx",
@@ -522,12 +520,6 @@ def _main() -> None:
         "-out",
         required=True,
         help="Path to save the TensorRT engine file.",
-    )
-    build_dla_parser.add_argument(
-        "--dla_core",
-        type=int,
-        default=0,
-        help="Specify the DLA core. By default, the engine is built for GPU.",
     )
     build_dla_parser.add_argument(
         "--max_chunks",
@@ -595,17 +587,13 @@ def _main() -> None:
         default=None,
         help="Path to store timing cache data. Default is 'timing.cache'.",
     )
-    build_dla_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Verbose output from can_run_on_dla.",
-    )
     build_dla_parser.set_defaults(func=_build_dla)
 
     # yolo parser
     yolo_parser = subparsers.add_parser(
         "yolo",
         help="Run YOLO object detection on an image or video.",
+        parents=[parent_parser],
     )
     yolo_parser.add_argument(
         "--engine",
@@ -661,21 +649,10 @@ def _main() -> None:
         default=10,
         help="Number of warmup iterations. Default is 10.",
     )
-    benchmark_parser.add_argument(
-        "--dla_core",
-        type=int,
-        default=None,
-        help="DLA core to assign DLA layers of the engine to. Default is None.",
-    )
     yolo_parser.add_argument(
         "--show",
         action="store_true",
         help="Show the detections.",
-    )
-    yolo_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Output additional debugging information.",
     )
     yolo_parser.set_defaults(func=_run_yolo)
 
@@ -683,6 +660,7 @@ def _main() -> None:
     inspect_parser = subparsers.add_parser(
         "inspect",
         help="Inspect a TensorRT engine.",
+        parents=[parent_parser],
     )
     inspect_parser.add_argument(
         "--engine",
