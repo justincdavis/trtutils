@@ -218,6 +218,12 @@ def _run_yolo(args: SimpleNamespace) -> None:
         warmup=args.warmup,
         verbose=args.verbose,
     )
+    times: dict[str, list[float]] = {
+        "pre": [],
+        "run": [],
+        "post": [],
+        "det": [],
+    }
 
     def run(
         img: np.ndarray,
@@ -264,6 +270,10 @@ def _run_yolo(args: SimpleNamespace) -> None:
         bboxes = [d[0] for d in dets]
         scores = [d[1] for d in dets]
         classes = [d[2] for d in dets]
+        times["pre"].append(pre_t)
+        times["run"].append(run_t)
+        times["post"].append(post_t)
+        times["det"].append(det_t)
         return bboxes, scores, classes, pre_t, run_t, post_t, det_t
 
     def draw(
@@ -321,6 +331,10 @@ def _run_yolo(args: SimpleNamespace) -> None:
     else:
         err_msg = f"Invalid input file: {input_path}"
         raise ValueError(err_msg)
+    
+    LOG.info("Times:")
+    for k, v in times.items():
+        LOG.info(f"{k}: {np.mean(v):.2f} ms")
 
 
 def _inspect(args: SimpleNamespace) -> None:
