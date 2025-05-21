@@ -1,0 +1,3 @@
+cv2ext
+opencv-python
+trtutils
