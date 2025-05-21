@@ -43,7 +43,10 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
     # get all models
     model_set = set()
     for f in FRAMEWORKS:
-        for m in data[f]:
+        framework_data = data.get(f)
+        if framework_data is None:
+            continue
+        for m in framework_data:
             model_set.add(m)
     models: list[str] = list(model_set)
     models = sorted(models)
@@ -65,7 +68,10 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
         # unfold the model name so we have framework -> metrics
         mdata: dict[str, list[tuple[int, float]]] = defaultdict(list)
         for f in FRAMEWORKS:
-            model_data = data[f].get(model)
+            framework_data = data.get(f)
+            if framework_data is None:
+                continue
+            model_data = framework_data.get(model)
             if model_data is None:
                 continue
 

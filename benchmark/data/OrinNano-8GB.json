@@ -1,7 +1,7 @@
 {
     "ultralytics(torch)": {},
     "ultralytics(trt)": {},
-    "trtutils": {
+    "trtutils(cuda)": {
         "yolov8n": {
             "160": {
                 "mean": 5.077360248193145,
