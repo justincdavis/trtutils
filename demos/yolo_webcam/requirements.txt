@@ -1,3 +1,2 @@
-cv2ext
-opencv-python
-trtutils
+cv2ext>=0.1.1
+trtutils>=0.5.0
