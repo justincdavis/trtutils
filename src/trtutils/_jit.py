@@ -3,12 +3,12 @@
 # MIT License
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from typing_extensions import ParamSpec, TypeVar
 
 from ._flags import FLAGS
+from ._log import LOG
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -18,8 +18,6 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from typing_extensions import Self
-
-_log = logging.getLogger(__name__)
 
 try:
     from numba import jit as _jit  # type: ignore[import-untyped]
@@ -37,7 +35,7 @@ except ImportError:
         cache: bool,  # noqa: ARG001
         inline: str = "never",  # noqa: ARG001
     ) -> Callable[_P, _R]:
-        _log.debug(f"Using mock JIT on {func.__name__}")
+        LOG.debug(f"Using mock JIT on {func.__name__}")
         return func
 
 
@@ -85,7 +83,7 @@ def jit(
     """
     funcname = func.__name__
     if FLAGS.JIT:
-        _log.debug(f"Marking: {funcname} for JIT compilation")
+        LOG.debug(f"Marking: {funcname} for JIT compilation")
         func = _jit(
             func,
             nopython=True,
@@ -95,7 +93,7 @@ def jit(
             cache=cache,
             inline=inline,
         )
-    _log.debug(f"Resolved: {funcname} -> {type(func)}")
+    LOG.debug(f"Resolved: {funcname} -> {type(func)}")
     return func
 
 
@@ -144,12 +142,12 @@ def register_jit(
     ...     return x * x
 
     """
-    _log.debug(
+    LOG.debug(
         f"register_jit: fastmath={fastmath}, parallel={parallel}, nogil={nogil}, cache={cache}, inline={inline}",
     )
 
     def decorator(func: Callable[_P, _R]) -> Callable[_P, _R]:
-        _log.debug(f"Registering func: {func.__name__} for potential JIT")
+        LOG.debug(f"Registering func: {func.__name__} for potential JIT")
         _JIT_FUNCS.append(func)
         return jit(
             func,
@@ -172,10 +170,10 @@ def _reset_funcs() -> None:
 def enable_jit() -> None:
     """Enable just-in-time compilation using Numba for some functions."""
     FLAGS.JIT = True
-    _log.info(f"ENABLED JIT: {FLAGS}")
+    LOG.info(f"ENABLED JIT: {FLAGS}")
 
     if not FLAGS.FOUND_NUMBA and not FLAGS.WARNED_NUMBA_NOT_FOUND:
-        _log.warning("JIT has been enabled, but Numba could not be found.")
+        LOG.warning("JIT has been enabled, but Numba could not be found.")
         FLAGS.WARNED_NUMBA_NOT_FOUND = True
 
     _reset_funcs()
@@ -184,7 +182,7 @@ def enable_jit() -> None:
 def disable_jit() -> None:
     """Disable JIT compilation."""
     FLAGS.JIT = False
-    _log.info("DISABLED JIT")
+    LOG.info("DISABLED JIT")
 
     _reset_funcs()
 
