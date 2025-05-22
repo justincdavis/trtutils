@@ -45,7 +45,7 @@ def main(source: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("YOLO Demo")
-    parser.add_argument("--source", type=str, default=0)
+    parser.add_argument("--source", type=int, default=0)
     args = parser.parse_args()
 
     main(args.source)
