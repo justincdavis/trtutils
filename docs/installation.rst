@@ -99,6 +99,10 @@ Common Installation Issues
    - Use compatible CUDA version
    - Check Jetpack installation
 
+4. **libnvrtc.so.* Not Found**
+   - Ensure the version of cuda-python installed matches the version of CUDA installed
+   - If using a custom CUDA path, ensure it is correctly set in the environment variables
+
 Getting Started
 ---------------
 

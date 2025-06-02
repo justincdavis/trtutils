@@ -2,24 +2,25 @@
 #
 # MIT License
 # ruff: noqa: TRY004
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
-import logging
-from threading import Lock
 from typing import TypeVar
 
 import numpy as np
 
 with contextlib.suppress(Exception):
-    from cuda import cuda, nvrtc  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.driver as cuda
+        import cuda.bindings.nvrtc as nvrtc
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cuda, nvrtc
+
+from trtutils._log import LOG
 
 from ._cuda import cuda_call
-from ._memory import _MEM_ALLOC_LOCK
-
-_NVRTC_LOCK = Lock()
-
-_log = logging.getLogger(__name__)
+from ._lock import MEM_ALLOC_LOCK, NVRTC_LOCK
 
 
 def check_nvrtc_err(err: nvrtc.nvrtcResult) -> None:
@@ -97,25 +98,38 @@ def compile_kernel(
     tuple[np.char.chararray, str]
         The compiled PTX kernel and the kernel name.
 
+    Raises
+    ------
+    RuntimeError
+        If the version of cuda-python installed does not match the version of CUDA installed.
+
     """
     kernel_bytes = kernel.encode()
     kernel_name_bytes = f"{name}.cu".encode()
 
     if verbose:
-        _log.debug(f"Compiling kernel: {name}")
+        LOG.debug(f"Compiling kernel: {name}")
 
     # compile the kernel
-    with _NVRTC_LOCK, _MEM_ALLOC_LOCK:
-        prog = nvrtc_call(
-            nvrtc.nvrtcCreateProgram(kernel_bytes, kernel_name_bytes, 0, [], []),
-        )
-        opts = [] if opts is None else opts
+    try:
+        with MEM_ALLOC_LOCK, NVRTC_LOCK:
+            prog = nvrtc_call(
+                nvrtc.nvrtcCreateProgram(kernel_bytes, kernel_name_bytes, 0, [], []),
+            )
+    except RuntimeError as err:
+        if "Failed to dlopen libnvrtc" in str(err):
+            err_msg = str(err)
+            err_msg += " Ensure the version of cuda-python installed matches the version of CUDA installed."
+            raise RuntimeError(err_msg) from err
+        raise
+    opts = [] if opts is None else opts
+    with MEM_ALLOC_LOCK, NVRTC_LOCK:
         nvrtc_call(nvrtc.nvrtcCompileProgram(prog, len(opts), opts))
 
-        # generate the actual kernel ptx
-        ptx_size = nvrtc_call(nvrtc.nvrtcGetPTXSize(prog))
-        ptx_buffer = b"\0" * ptx_size
-        nvrtc_call(nvrtc.nvrtcGetPTX(prog, ptx_buffer))
+    # generate the actual kernel ptx
+    ptx_size = nvrtc_call(nvrtc.nvrtcGetPTXSize(prog))
+    ptx_buffer = b"\0" * ptx_size
+    nvrtc_call(nvrtc.nvrtcGetPTX(prog, ptx_buffer))
 
     return np.char.array(ptx_buffer)
 
@@ -147,13 +161,12 @@ def load_kernel(
 
     """
     if verbose:
-        _log.debug(f"Loading kernel: {name} from PTX")
+        LOG.debug(f"Loading kernel: {name} from PTX")
 
-    with _NVRTC_LOCK, _MEM_ALLOC_LOCK:
-        module: cuda.CUmodule = cuda_call(cuda.cuModuleLoadData(kernel_ptx.ctypes.data))
-        kernel: cuda.CUkernel = cuda_call(
-            cuda.cuModuleGetFunction(module, name.encode()),
-        )
+    module: cuda.CUmodule = cuda_call(cuda.cuModuleLoadData(kernel_ptx.ctypes.data))
+    kernel: cuda.CUkernel = cuda_call(
+        cuda.cuModuleGetFunction(module, name.encode()),
+    )
     return module, kernel
 
 

@@ -10,6 +10,8 @@ Classes
     Preprocess an image for YOLO on CPU.
 :class:`CUDAPreprocessor`
     Preprocess an image for YOLO using CUDA.
+:class:`TRTPreprocessor`
+    Preprocess an image for YOLO using TensorRT.
 :class:`ParallelYOLO`
     Multi-threaded YOLO models, useful for multi-accelerator systems.
 :class:`YOLO`
@@ -39,7 +41,7 @@ Functions
 from __future__ import annotations
 
 from ._parallel import ParallelYOLO
-from ._preprocessors import CPUPreprocessor, CUDAPreprocessor
+from ._preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 from ._process import get_detections, postprocess, preprocess
 from ._yolo import YOLO
 from ._yolos import YOLO7, YOLO8, YOLO9, YOLO10, YOLOX
@@ -54,6 +56,7 @@ __all__ = [
     "CPUPreprocessor",
     "CUDAPreprocessor",
     "ParallelYOLO",
+    "TRTPreprocessor",
     "get_detections",
     "postprocess",
     "preprocess",

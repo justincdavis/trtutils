@@ -27,26 +27,28 @@ def main() -> None:
             # all calls to binary so it is fast
             img = cv2.resize(img, (640, 640), cv2.INTER_LINEAR)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = img / 255.0
+            img = img / 255  # type: ignore[assignment]
             img = img[np.newaxis, :]
             img = np.transpose(img, (0, 3, 1, 2))
             return np.ascontiguousarray(img, dtype=np.float32)
 
         return [_process(img) for img in inputs]
 
-    def postprocess(outputs: np.ndarray) -> tuple[float, np.ndarray, int]:
+    def postprocess(outputs: list[np.ndarray]) -> list[np.ndarray]:
         # get the highest scoring bbox
-        score = outputs[2][0][0]
-        bbox = outputs[1][0][0]
-        cls = outputs[0][0][0]
-        return score, bbox, cls
+        results = []
+        for output in outputs:
+            score = output[2][0][0]
+            bbox = output[1][0][0]
+            cls = output[0][0][0]
+            results.append(np.array((score, bbox, cls)))
+        return results
 
     model = TRTModel(
         "yolo.engine",
         preprocess,
         postprocess,
         warmup=True,
-        dtype=np.float32,
     )
 
     img = cv2.imread("example.jpg")

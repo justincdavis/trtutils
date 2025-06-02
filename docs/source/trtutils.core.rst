@@ -1,6 +1,14 @@
 trtutils.core package
 =====================
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 4
+
+   trtutils.core.cache
+
 Module contents
 ---------------
 

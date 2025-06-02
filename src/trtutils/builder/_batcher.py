@@ -6,7 +6,6 @@ from __future__ import annotations
 import atexit
 import concurrent.futures
 import contextlib
-import logging
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -18,10 +17,10 @@ import cv2
 import numpy as np
 from cv2ext.image import letterbox, rescale
 
+from trtutils._log import LOG
+
 if TYPE_CHECKING:
     from typing_extensions import Self
-
-_log = logging.getLogger(__name__)
 
 
 class AbstractBatcher(ABC):
@@ -59,6 +58,8 @@ class ImageBatcher(AbstractBatcher):
         max_images: int | None = None,
         resize_method: str = "letterbox",
         input_scale: tuple[float, float] = (0.0, 1.0),
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Create batches of images for TensorRT calibration.
@@ -87,6 +88,8 @@ class ImageBatcher(AbstractBatcher):
             The range with which the image should have values in
             Examples are: (0.0, 255.0), (0.0, 1.0), (-1.0, 1.0)
             The default is (0.0, 1.0)
+        verbose : bool, optional
+            Whether to print verbose output, by default None
 
         Raises
         ------
@@ -102,6 +105,8 @@ class ImageBatcher(AbstractBatcher):
             If no valid batches could be formed
 
         """
+        self._verbose = verbose
+
         # verify resize method and input scale
         valid_resize_methods = ["letterbox", "linear"]
         if resize_method not in valid_resize_methods:
@@ -177,8 +182,8 @@ class ImageBatcher(AbstractBatcher):
             err_msg = "Could not form any valid batches."
             raise ValueError(err_msg)
 
-        _log.debug(f"ImageBatcher found images: {len(self._images)}")
-        _log.debug(f"ImageBatcher formed batches: {len(self._batches)}")
+        LOG.debug(f"ImageBatcher found images: {len(self._images)}")
+        LOG.debug(f"ImageBatcher formed batches: {len(self._batches)}")
 
         # tracking indices for iteration
         self._current_batch: int = 0
@@ -247,7 +252,7 @@ class ImageBatcher(AbstractBatcher):
             if self._event.is_set():
                 return
 
-            _log.debug(f"ImageBatcher getting batch: {idx}")
+            LOG.debug(f"ImageBatcher getting batch: {idx}")
 
             # get the batch
             results = list(self._pool.map(self._get_image, image_paths))
@@ -263,6 +268,12 @@ class ImageBatcher(AbstractBatcher):
             while not self._event.is_set():
                 try:
                     self._queue.put(data, timeout=0.1)
+
+                    if self._verbose:
+                        LOG.debug(
+                            f"ImageBatcher put batch: {idx} / {len(self._batches)}"
+                        )
+
                     break
                 except Full:
                     continue
@@ -284,6 +295,12 @@ class ImageBatcher(AbstractBatcher):
             with contextlib.suppress(Empty):
                 batch = self._queue.get(timeout=0.1)
                 self._current_batch += 1
+
+                if self._verbose:
+                    LOG.debug(
+                        f"ImageBatcher get batch: {self._current_batch} / {len(self._batches)}"
+                    )
+
                 return batch
 
         return None

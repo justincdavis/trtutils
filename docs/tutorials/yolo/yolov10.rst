@@ -18,7 +18,7 @@ Exporting ONNX Weights
 YOLOv10 is built on top of Ultralytics' framework and requires a virtual environment
 to avoid conflicts with other packages. Here's how to export the ONNX weights:
 
-.. code-block:: console
+.. code-block:: bash
 
     # Clone the YOLOv10 repository
     $ git clone https://github.com/THU-MIG/yolov10.git
@@ -52,7 +52,7 @@ Converting to End-to-End ONNX
 Since YOLOv10 is based on Ultralytics' framework, we can use the same conversion
 process as YOLOv8:
 
-.. code-block:: console
+.. code-block:: bash
 
     # Clone the YOLOv8-TensorRT repository
     $ git clone https://github.com/triple-Mu/YOLOv8-TensorRT.git

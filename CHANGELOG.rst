@@ -12,8 +12,7 @@ Added
 * General CLI fixes for trtexec
 * Experimental non-pagelocked memory addressing for TRTengines
   * Unstable, should be used with caution. Will be refined in the future
-  * Does not provide performance improvement, simply for testing speedup
-    of pagelocked memory utilization. As such, low-priority
+  * Does not provide performance improvement, simply for testing speedup of pagelocked memory utilization. As such, low-priority
 * Basic internal profiling setup for YOLO objects.
   * No current public access, but accessible through: (_pre)(_infer)(_post)_profile attributes
   * Only stores last timestamp tuple

@@ -1,46 +1,43 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
 from pathlib import Path
 
 with contextlib.suppress(ImportError):
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    import tensorrt as trt
+
+from trtutils._config import CONFIG
+from trtutils._log import LOG
 
 
 def read_onnx(
     onnx: Path | str,
-    logger: trt.ILogger | None = None,
-    log_level: trt.ILogger.Severity | None = None,
     workspace: float = 4.0,
 ) -> tuple[
     trt.INetworkDefinition,
     trt.IBuilder,
     trt.IBuilderConfig,
     trt.IOnnxParser,
-    trt.ILogger,
 ]:
     """
-    Open an ONNX model and generate TensorRT network, builder, config, parser, and logger.
+    Open an ONNX model and generate TensorRT network, builder, config, and parser.
 
     Parameters
     ----------
     onnx : Path, str
         The path to the onnx model.
-    logger : trt.ILogger, optional
-        The logger to use, by default None
-    log_level : trt.ILogger.Severity, optional
-        The log level to use if the logger is None, by default trt.Logger.WARNING
     workspace : float
         The size of the workspace in gigabytes.
         Default is 4.0 GiB.
 
     Returns
     -------
-    tuple[trt.INetworkDefinition, trt.IBuilder, trt.IBuilderConfig, trt.IOnnxParser, trt.ILogger]
-        The network, builder, config, parser, and logger.
+    tuple[trt.INetworkDefinition, trt.IBuilder, trt.IBuilderConfig, trt.IOnnxParser]
+        The network, builder, config, and parser.
 
     Raises
     ------
@@ -54,6 +51,9 @@ def read_onnx(
         If the ONNX model cannot be parsed
 
     """
+    # load libnvinfer plugins
+    CONFIG.load_plugins()
+
     onnx_path = Path(onnx).resolve()
     if not onnx_path.exists():
         err_msg = f"Could not find ONNX model at: {onnx_path}"
@@ -65,11 +65,7 @@ def read_onnx(
         err_msg = "File does not have .onnx extension"
         raise ValueError(err_msg)
 
-    if log_level is None:
-        log_level = trt.Logger.WARNING
-    trt_logger = logger or trt.Logger(log_level)
-
-    builder = trt.Builder(trt_logger)
+    builder = trt.Builder(LOG)
     config = builder.create_builder_config()
 
     # setup the workspace size
@@ -85,10 +81,12 @@ def read_onnx(
     )
 
     # setup parser
-    parser = trt.OnnxParser(network, trt_logger)
+    parser = trt.OnnxParser(network, LOG)
     with onnx_path.open("rb") as f:
         if not parser.parse(f.read()):
+            for error in range(parser.num_errors):
+                LOG.error(parser.get_error(error))
             err_msg = "Cannot parse ONNX file"
             raise RuntimeError(err_msg)
 
-    return network, builder, config, parser, trt_logger
+    return network, builder, config, parser

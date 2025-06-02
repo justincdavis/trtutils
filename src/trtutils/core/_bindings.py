@@ -1,31 +1,31 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
-import logging
 from dataclasses import dataclass
-from threading import Lock
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 with contextlib.suppress(Exception):
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
-    from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+    import tensorrt as trt
+
+    try:
+        import cuda.bindings.runtime as cudart
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cudart
 
 from trtutils._flags import FLAGS
+from trtutils._log import LOG
 
 from ._cuda import cuda_call
 from ._memory import allocate_pinned_memory, cuda_malloc
 
 if TYPE_CHECKING:
     from typing_extensions import Self
-
-_BINDING_LOCK = Lock()
-
-_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -39,6 +39,7 @@ class Binding:
     is_input: bool
     allocation: int
     host_allocation: np.ndarray
+    tensor_format: trt.TensorFormat
 
     def free(self: Self) -> None:
         """Free the memory of the binding."""
@@ -50,12 +51,55 @@ class Binding:
             self.free()
 
 
+def create_binding(
+    array: np.ndarray,
+    bind_id: int = 0,
+    name: str = "binding",
+    tensor_format: trt.TensorFormat = trt.TensorFormat.LINEAR,
+    *,
+    is_input: bool | None = None,
+    pagelocked_mem: bool | None = None,
+) -> Binding:
+    # info from the np.ndarray
+    shape = array.shape
+    dtype = array.dtype
+    size = array.itemsize
+    for s in shape:
+        size *= s
+
+    # allocate host and device memory
+    device_alloc = cuda_malloc(size)
+    if is_input:
+        # if the binding is an input binding
+        # can not allocate the host_alloc until populated later
+        host_alloc = np.zeros((1, 1), dtype)
+    elif pagelocked_mem:
+        # allocate the pagelocked memory
+        LOG.debug(f"Allocating pagelocked mem during Binding: {bind_id}, {name}")
+        host_alloc = allocate_pinned_memory(size, dtype, shape)
+    else:
+        # allocate non-pagelocked memory
+        host_alloc = np.zeros(shape, dtype)
+
+    # make the binding
+    return Binding(
+        bind_id,
+        name,
+        dtype,
+        list(shape),
+        bool(is_input),
+        device_alloc,
+        host_alloc,
+        tensor_format,
+    )
+
+
 def allocate_bindings(
     engine: trt.IEngine,
     context: trt.IExecutionContext,
     *,
     pagelocked_mem: bool | None = None,
-) -> tuple[list[Binding], list[Binding], list[int], int]:
+) -> tuple[list[Binding], list[Binding], list[int]]:
     """
     Allocate memory for the input and output tensors of a TensorRT engine.
 
@@ -71,8 +115,8 @@ def allocate_bindings(
 
     Returns
     -------
-    tuple[list[Binding], list[Binding], list[int], int]
-        A tuple containing the input bindings, output bindings, allocations, and batch size.
+    tuple[list[Binding], list[Binding], list[int]]
+        A tuple containing the input bindings, output bindings, and gpu memory pointers.
 
     Raises
     ------
@@ -80,7 +124,6 @@ def allocate_bindings(
         If no optimization profiles are found.
         If the profile shape is not correct.
     ValueError
-        If the batch size is 0.
         If no input tensors are found.
         If no output tensors are found.
         If no memory allocations are found
@@ -93,7 +136,6 @@ def allocate_bindings(
     inputs: list[Binding] = []
     outputs: list[Binding] = []
     allocations: list[int] = []
-    batch_size = 0
 
     # magic numbers
     correct_profile_shape = 3
@@ -115,6 +157,7 @@ def allocate_bindings(
                 is_input = True
             dtype = np.dtype(trt.nptype(engine.get_tensor_dtype(name)))
             shape = context.get_tensor_shape(name)
+            data_format = engine.get_tensor_format(name)
             if is_input and shape[0] < 0:
                 if not engine.num_optimization_profiles > 0:
                     err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
@@ -134,6 +177,7 @@ def allocate_bindings(
             name = engine.get_binding_name(i)
             dtype = np.dtype(trt.nptype(engine.get_binding_dtype(i)))
             shape = context.get_binding_shape(i)
+            data_format = engine.get_binding_format(i)
             if is_input and shape[0] < 0:
                 if not engine.num_optimization_profiles > 0:
                     err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
@@ -146,45 +190,42 @@ def allocate_bindings(
                 # Set the *max* profile as binding shape
                 context.set_binding_shape(i, profile_shape[2])
                 shape = context.get_binding_shape(i)
-        with _BINDING_LOCK:
-            # get batch dim is we are an input tensor
-            if is_input:
-                batch_size = shape[0]
-            # compute the size of the binding
-            size = dtype.itemsize
-            for s in shape:
-                size *= s
-            # allocate the device side memory
-            allocation = cuda_malloc(size)
-            # allocate the host side memory
-            if is_input:
-                host_allocation = np.zeros((1, 1), dtype=dtype)
-            elif pagelocked_mem:
-                host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
-            else:
-                host_allocation = np.zeros(size, dtype=dtype)
-            # create the binding
-            binding = Binding(
-                index=i,
-                name=name,
-                dtype=dtype,
-                shape=list(shape),
-                is_input=is_input,
-                allocation=allocation,
-                host_allocation=host_allocation,
-            )
-            allocations.append(allocation)
-            if is_input:
-                inputs.append(binding)
-            else:
-                outputs.append(binding)
-            input_str = "Input" if is_input else "Output"
-            log_msg = f"{input_str}-{i} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
-            _log.debug(log_msg)
 
-    if batch_size == 0:
-        err_msg = "Batch size is 0. Ensure that the engine has an input tensor with a valid batch size."
-        raise ValueError(err_msg)
+        LOG.debug(f"Allocating for I/O tensor: {name} - is_input: {is_input}")
+
+        # compute the size of the binding
+        size = dtype.itemsize
+        for s in shape:
+            size *= s
+        # allocate the device side memory
+        allocation = cuda_malloc(size)
+        # allocate the host side memory
+        if is_input:
+            host_allocation = np.zeros((1, 1), dtype=dtype)
+        elif pagelocked_mem:
+            host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
+        else:
+            host_allocation = np.zeros(size, dtype=dtype)
+        # create the binding
+        binding = Binding(
+            index=i,
+            name=name,
+            dtype=dtype,
+            shape=list(shape),
+            is_input=is_input,
+            allocation=allocation,
+            host_allocation=host_allocation,
+            tensor_format=data_format,
+        )
+        allocations.append(allocation)
+        if is_input:
+            inputs.append(binding)
+        else:
+            outputs.append(binding)
+        input_str = "Input" if is_input else "Output"
+        log_msg = f"{input_str}-{i} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
+        LOG.debug(log_msg)
+
     if len(inputs) == 0:
         err_msg = "No input tensors found. Ensure that the engine has at least one input tensor."
         raise ValueError(err_msg)
@@ -195,46 +236,4 @@ def allocate_bindings(
         err_msg = "No memory allocations found. Ensure that the engine has at least one input and output tensor."
         raise ValueError(err_msg)
 
-    return inputs, outputs, allocations, batch_size
-
-
-def create_binding(
-    array: np.ndarray,
-    bind_id: int = 0,
-    name: str = "binding",
-    *,
-    is_input: bool | None = None,
-    pagelocked_mem: bool | None = None,
-) -> Binding:
-    with _BINDING_LOCK:
-        # info from the np.ndarray
-        shape = array.shape
-        dtype = array.dtype
-        size = array.itemsize
-        for s in shape:
-            size *= s
-
-        # allocate host and device memory
-        device_alloc = cuda_malloc(size)
-        if is_input:
-            # if the binding is an input binding
-            # can not allocate the host_alloc until populated later
-            host_alloc = np.zeros((1, 1), dtype)
-        elif pagelocked_mem:
-            # allocate the pagelocked memory
-            _log.debug(f"Allocating pagelocked mem during Binding: {bind_id}, {name}")
-            host_alloc = allocate_pinned_memory(size, dtype, shape)
-        else:
-            # allocate non-pagelocked memory
-            host_alloc = np.zeros(shape, dtype)
-
-        # make the binding
-        return Binding(
-            bind_id,
-            name,
-            dtype,
-            list(shape),
-            bool(is_input),
-            device_alloc,
-            host_alloc,
-        )
+    return inputs, outputs, allocations

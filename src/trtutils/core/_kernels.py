@@ -2,17 +2,23 @@
 #
 # MIT License
 # ruff: noqa: PYI041
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
-import logging
 from collections import deque
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 with contextlib.suppress(Exception):
-    from cuda import cuda  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.driver as cuda
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cuda
+
+from trtutils._log import LOG
 
 from ._cuda import cuda_call
 from ._nvrtc import compile_and_load_kernel
@@ -21,9 +27,10 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     with contextlib.suppress(Exception):
-        from cuda import cudart  # type: ignore[import-untyped, import-not-found]
-
-_log = logging.getLogger(__name__)
+        try:
+            import cuda.bindings.runtime as cudart
+        except (ImportError, ModuleNotFoundError):
+            from cuda import cudart
 
 
 class Kernel:
@@ -31,7 +38,7 @@ class Kernel:
 
     def __init__(
         self: Self,
-        kernel_code: str,
+        kernel_file: Path | str,
         name: str,
         max_arg_cache: int = 1,
         *,
@@ -42,8 +49,8 @@ class Kernel:
 
         Parameters
         ----------
-        kernel_code : str
-            The CUDA code containing the kernel definition.
+        kernel_file : Path | str
+            The CUDA file containing the kernel definition.
         name : str
             The name of the kernel to compile.
         max_arg_cache : int
@@ -56,6 +63,11 @@ class Kernel:
             engines verbose setting.
 
         """
+        kernel_file = (
+            kernel_file if isinstance(kernel_file, Path) else Path(kernel_file)
+        )
+        with kernel_file.open("r") as f:
+            kernel_code: str = f.read()
         self._name = name
         self._module, self._kernel = compile_and_load_kernel(
             kernel_code,
@@ -149,7 +161,7 @@ class Kernel:
 
         """
         if verbose:
-            _log.debug(
+            LOG.debug(
                 f"Calling kernel: {self._name}, blocks: {num_blocks}, threads: {num_threads}, args: {args}",
             )
 
@@ -243,7 +255,7 @@ def create_kernel_args(
     """
     # verbose output
     if verbose:
-        _log.debug(f"Converting args: {args}")
+        LOG.debug(f"Converting args: {args}")
 
     # convert all args to np.ndarrays
     converted_args: list[np.ndarray] = []
@@ -260,7 +272,7 @@ def create_kernel_args(
 
         if verbose:
             last_arg = converted_args[-1]
-            _log.debug(f"Converted Arg: {arg} -> Array: {last_arg} {last_arg.dtype}")
+            LOG.debug(f"Converted Arg: {arg} -> Array: {last_arg} {last_arg.dtype}")
 
     # get a pointer to each np.ndarray and pack into new array
     ptrs: np.ndarray = np.array(
@@ -269,6 +281,6 @@ def create_kernel_args(
     )
 
     if verbose:
-        _log.debug(f"Generated pointers: {ptrs}")
+        LOG.debug(f"Generated pointers: {ptrs}")
 
     return ptrs, converted_args
