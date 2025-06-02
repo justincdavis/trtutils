@@ -13,24 +13,26 @@ from queue import Queue, Full, Empty
 
 import cv2
 import cv2ext
-import trtutils
 import numpy as np
+from trtutils.impls.yolo import YOLO
 
 
+EXP_DIR = Path(__file__).parent
+VIDEO_DIR = EXP_DIR / "videos"
 VIDEO_FILES = [
-    Path("videos/mot17_02.mp4"),
-    Path("videos/mot17_04.mp4"),
-    Path("videos/mot17_05.mp4"),
-    Path("videos/mot17_09.mp4"),
-    Path("videos/mot17_10.mp4"),
-    Path("videos/mot17_11.mp4"),
-    Path("videos/mot17_13.mp4"),
+    VIDEO_DIR / "mot17_02.mp4",
+    VIDEO_DIR / "mot17_04.mp4",
+    VIDEO_DIR / "mot17_05.mp4",
+    VIDEO_DIR / "mot17_09.mp4",
+    VIDEO_DIR / "mot17_10.mp4",
+    VIDEO_DIR / "mot17_11.mp4",
+    VIDEO_DIR / "mot17_13.mp4",
 ]
 
+ENGINE_DIR = EXP_DIR / "engines"
 ENGINE_FILES = {
-    "gpu": Path("engines/yoloxm_gpu.engine"),
-    "dla0": Path("engines/yoloxm_dla0.engine"),
-    "dla1": Path("engines/yoloxm_dla1.engine"),
+    "gpu": ENGINE_DIR / "yoloxm_gpu.engine",
+    "dla": ENGINE_DIR / "yoloxm_dla.engine",
 }
 
 FINISHED = 0
@@ -55,7 +57,7 @@ def _feed_frames(
 
 
 def _process_frames(
-    yolo: trtutils.impls.yolo.YOLO,
+    yolo: YOLO,
     in_queue: Queue[tuple[int, int, np.ndarray]],
     out_queue: Queue[tuple[int, int, np.ndarray, list[tuple[tuple[int, int, int, int], float, int]]]],
 ) -> None:
@@ -78,16 +80,14 @@ def _main() -> None:
     parser.add_argument("--dla1", action="store_true", help="Use DLA1 engine")
     args = parser.parse_args()
 
-    engines_files = [ENGINE_FILES["gpu"]]
-    if args.dla0:
-        engines_files.append(ENGINE_FILES["dla0"])
-    if args.dla1:
-        engines_files.append(ENGINE_FILES["dla1"])
-
     yolos = [
-        trtutils.impls.yolo.YOLO(engine_file, input_range=(0, 255), conf_thres=0.1, warmup_iterations=10, warmup=True)
-        for engine_file in engines_files
+        YOLO(ENGINE_FILES["gpu"], input_range=(0, 255), conf_thres=0.1, warmup_iterations=10, warmup=True)
     ]
+    if args.dla0:
+        yolos.append(YOLO(ENGINE_FILES["dla"], dla_core=0, input_range=(0, 255), conf_thres=0.1, warmup_iterations=10, warmup=True))
+    if args.dla1:
+        yolos.append(YOLO(ENGINE_FILES["dla"], dla_core=1, input_range=(0, 255), conf_thres=0.1, warmup_iterations=10, warmup=True))
+
     videos = [
         cv2ext.IterableVideo(video_file)
         for video_file in VIDEO_FILES
