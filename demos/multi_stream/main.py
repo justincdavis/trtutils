@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: PLW0603, PERF203
 """Demo showcasing multi-stream YOLO inference using GPU and DLA engines with parallel processing."""
 
 from __future__ import annotations
@@ -9,12 +10,16 @@ import argparse
 import threading
 import time
 from pathlib import Path
-from queue import Queue, Full, Empty
+from queue import Empty, Full, Queue
+from typing import TYPE_CHECKING
 
 import cv2
 import cv2ext
-import numpy as np
+
 from trtutils.impls.yolo import YOLO
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 EXP_DIR = Path(__file__).parent
@@ -59,9 +64,11 @@ def _feed_frames(
 def _process_frames(
     yolo: YOLO,
     in_queue: Queue[tuple[int, int, np.ndarray]],
-    out_queue: Queue[tuple[int, int, np.ndarray, list[tuple[tuple[int, int, int, int], float, int]]]],
+    out_queue: Queue[
+        tuple[int, int, np.ndarray, list[tuple[tuple[int, int, int, int], float, int]]]
+    ],
 ) -> None:
-    while FINISHED < len(VIDEO_FILES):
+    while len(VIDEO_FILES) > FINISHED:
         try:
             stream_id, frame_id, frame = in_queue.get(timeout=0.25)
             # print(f"Processing frame {frame_id} from stream {stream_id}")
@@ -81,19 +88,40 @@ def _main() -> None:
     args = parser.parse_args()
 
     yolos = [
-        YOLO(ENGINE_FILES["gpu"], input_range=(0, 255), conf_thres=0.1, warmup_iterations=10, warmup=True)
+        YOLO(
+            ENGINE_FILES["gpu"],
+            input_range=(0, 255),
+            conf_thres=0.1,
+            warmup_iterations=10,
+            warmup=True,
+        )
     ]
     if args.dla0:
-        yolos.append(YOLO(ENGINE_FILES["dla"], dla_core=0, input_range=(0, 255), conf_thres=0.1, warmup_iterations=10, warmup=True))
+        yolos.append(
+            YOLO(
+                ENGINE_FILES["dla"],
+                dla_core=0,
+                input_range=(0, 255),
+                conf_thres=0.1,
+                warmup_iterations=10,
+                warmup=True,
+            )
+        )
     if args.dla1:
-        yolos.append(YOLO(ENGINE_FILES["dla"], dla_core=1, input_range=(0, 255), conf_thres=0.1, warmup_iterations=10, warmup=True))
+        yolos.append(
+            YOLO(
+                ENGINE_FILES["dla"],
+                dla_core=1,
+                input_range=(0, 255),
+                conf_thres=0.1,
+                warmup_iterations=10,
+                warmup=True,
+            )
+        )
 
-    videos = [
-        cv2ext.IterableVideo(video_file)
-        for video_file in VIDEO_FILES
-    ]
+    videos = [cv2ext.IterableVideo(video_file) for video_file in VIDEO_FILES]
     total_frames = sum(len(video) for video in videos)
-    
+
     in_queue = Queue(maxsize=100)
     out_queue = Queue(maxsize=100 if args.display else 0)
 
@@ -106,13 +134,7 @@ def _main() -> None:
         for yolo in yolos
     ]
 
-    if args.display:
-        window_names = [
-            f"Stream {i}"
-            for i in range(len(videos))
-        ]
-    else:
-        window_names = None
+    window_names = [f"Stream {i}" for i in range(len(videos))] if args.display else None
 
     t00 = time.time()
     for thread in video_threads + yolo_threads:
@@ -120,11 +142,13 @@ def _main() -> None:
 
     if window_names:
         counter = 0
-        while FINISHED < len(VIDEO_FILES):
+        while len(VIDEO_FILES) > FINISHED:
             stream_id, frame_id, frame, dets = out_queue.get(timeout=0.25)
             # print(f"Frame {frame_id} from stream {stream_id} fetched")
             canvas = cv2ext.detection.draw_detections(frame, dets)
-            canvas = cv2ext.image.draw.text(canvas, str(frame_id), (10, 30), color=(0, 255, 0))
+            canvas = cv2ext.image.draw.text(
+                canvas, str(frame_id), (10, 30), color=(0, 255, 0)
+            )
             cv2.imshow(window_names[stream_id], canvas)
             if counter % 10 == 0:
                 cv2.waitKey(1)
