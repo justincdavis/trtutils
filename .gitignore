@@ -1,3 +1,13 @@
+# Custom/common files
+*.engine
+*.trt
+*.plan
+*.cache
+*.cache.lock
+
+# IDE setup
+.vscode
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

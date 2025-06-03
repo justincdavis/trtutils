@@ -9,43 +9,99 @@
 ![PyPi Build](https://github.com/justincdavis/trtutils/actions/workflows/build-check.yaml/badge.svg?branch=main)
 <!-- ![Black](https://github.com/justincdavis/trtutils/actions/workflows/black.yaml/badge.svg?branch=main) -->
 
-Utilities for enabling easier high-level usage of TensorRT in Python.
+A high-level Python interface for TensorRT inference, providing a simple and unified way to run arbitrary TensorRT engines. This library abstracts away the complexity of CUDA memory management, binding management, and engine execution, making it easy to perform inference with any TensorRT engine.
 
-## TRTEngine
-The TRTEngine is a high-level abstraction allowing easy use of TensorRT 
-engines through Python. Once an engine is built, it is simple and easy to use:
+## Features
+
+- Simple, high-level interface for TensorRT inference
+- Automatic CUDA memory management
+- Support for arbitrary TensorRT engines
+- Built-in preprocessing and postprocessing capabilities
+- Comprehensive type hints and documentation
+- Support for both basic engine execution and end-to-end model inference
+
+## Performance
+
+| Device            | YOLOv8m                                                                 | YOLOv8n                                                                 |
+|-------------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------|
+| OrinAGX-64GB      | ![OrinAGX-64GB YOLOv8m](benchmark/plots/OrinAGX-64GB/yolov8m.png)       | ![OrinAGX-64GB YOLOv8n](benchmark/plots/OrinAGX-64GB/yolov8n.png)       |
+| 3080Ti            | ![3080Ti YOLOv8m](benchmark/plots/3080Ti/yolov8m.png)                   | ![3080Ti YOLOv8n](benchmark/plots/3080Ti/yolov8n.png)                   |
+
+## Quick Start
+
+### Basic Engine Usage
+
+The `TRTEngine` class provides a simple interface for running any TensorRT engine:
 
 ```python
 from trtutils import TRTEngine
 
+# Load your TensorRT engine
 engine = TRTEngine("path_to_engine")
 
-inputs = read_your_data()
+# Get input specifications
+print(engine.input_shapes)  # Expected input shapes
+print(engine.input_dtypes)  # Expected input data types
 
-for i in inputs:
-    print(engine.execute(i))
+# Run inference
+inputs = read_your_data()
+outputs = engine.execute(inputs)
 ```
 
-We also provide an abstraction for defining higher-level models.
-The TRTModel is designed to allow a user to define a pre and post 
-processing step along with the engine to create an end-to-end 
-inference object.
+### End-to-End Model Inference
+
+The `TRTModel` class allows you to define preprocessing and postprocessing steps along with the engine for complete end-to-end inference:
 
 ```python
 from trtutils import TRTModel
 
-# scale some images down
-def pre(inputs):
+# Define preprocessing (e.g., image normalization)
+def preprocess(inputs):
     return [i / 255 for i in inputs]
 
-# access the output classes from object detection
-def post(outputs):
+# Define postprocessing (e.g., class selection)
+def postprocess(outputs):
     return [o[0][0] for o in outputs]
 
-model = TRTModel("path_to_engine", pre, post)
+# Create an end-to-end model
+model = TRTModel("path_to_engine", preprocess, postprocess)
 
+# Run inference
 inputs = read_your_data()
-
-for i in inputs:
-    print(model(i))
+results = model(inputs)
 ```
+
+## Installation
+
+```bash
+pip install trtutils
+```
+
+For additional features, you can install optional dependencies:
+
+```bash
+# For YOLO model support
+pip install "trtutils[yolo]"
+
+# For Jetson device support
+pip install "trtutils[jetson]"
+
+# For development
+pip install "trtutils[dev]"
+```
+
+## Documentation
+
+For detailed documentation, including advanced usage, examples, and API reference, visit our [documentation site](https://trtutils.readthedocs.io/).
+
+## Examples
+
+Check out our [examples directory](examples/) for more detailed usage examples, including:
+- Basic engine usage
+- End-to-end model inference
+- YOLO model implementation
+- Benchmarking utilities
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

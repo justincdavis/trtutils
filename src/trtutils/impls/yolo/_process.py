@@ -3,19 +3,17 @@
 # MIT License
 from __future__ import annotations
 
-import logging
-
 import cv2
 import numpy as np
 from cv2ext.bboxes import nms
 from cv2ext.image import letterbox, rescale, resize_linear
 
+from trtutils._jit import register_jit
+from trtutils._log import LOG
 from trtutils.impls.common import decode_efficient_nms, postprocess_efficient_nms
 
 # EfficientNMS as 4 outputs
 _EFF_NUM_OUTPUTS = 4
-
-_log = logging.getLogger(__name__)
 
 
 def preprocess(
@@ -60,7 +58,7 @@ def preprocess(
 
     """
     if verbose:
-        _log.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
+        LOG.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
 
     if method == "letterbox":
         tensor, ratios, padding = letterbox(image, new_shape=input_shape)
@@ -86,8 +84,8 @@ def preprocess(
     tensor = tensor.astype(dtype)
 
     if verbose:
-        _log.debug(f"Ratios: {ratios}")
-        _log.debug(f"Padding: {padding}")
+        LOG.debug(f"Ratios: {ratios}")
+        LOG.debug(f"Padding: {padding}")
     return tensor, ratios, padding
 
 
@@ -100,15 +98,33 @@ def _postprocess_v_10(
     no_copy: bool | None = None,
     verbose: bool | None = None,
 ) -> list[np.ndarray]:
+    if verbose:
+        LOG.debug(f"V10 postprocess, output shape: {outputs[0].shape}")
+
+    return _postprocess_v_10_core(
+        outputs,
+        ratios,
+        padding,
+        conf_thres=conf_thres,
+        no_copy=no_copy,
+    )
+
+
+@register_jit(nogil=True)
+def _postprocess_v_10_core(
+    outputs: list[np.ndarray],
+    ratios: tuple[float, float],
+    padding: tuple[float, float],
+    conf_thres: float | None = None,
+    *,
+    no_copy: bool | None = None,
+) -> list[np.ndarray]:
     # V10 outputs (1, 300, 6)
     # each final entry is (bbox (4 parts), score, classid)
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
 
     output = outputs[0]
-
-    if verbose:
-        _log.debug(f"V10 postprocess, output shape: {output.shape}")
 
     bboxes: np.ndarray = output[0, :, :4]
     scores: np.ndarray = output[0, :, 4]
@@ -201,6 +217,22 @@ def _get_detections_v_10(
     agnostic_nms: bool | None = None,
     verbose: bool | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
+    if verbose:
+        LOG.debug(f"Decoding: {outputs[0].shape[0]} bboxes")
+
+    results = _get_detections_v_10_core(outputs, conf_thres)
+
+    if extra_nms:
+        results = nms(results, iou_threshold=nms_iou_thres, agnostic=agnostic_nms)
+
+    return results
+
+
+@register_jit(nogil=True)
+def _get_detections_v_10_core(
+    outputs: list[np.ndarray],
+    conf_thres: float | None = None,
+) -> list[tuple[tuple[int, int, int, int], float, int]]:
     # set conf_thres to zero if not provided (include all bboxes)
     if conf_thres is None:
         conf_thres = 0.0
@@ -209,9 +241,6 @@ def _get_detections_v_10(
     bboxes = outputs[0]
     scores = outputs[1]
     class_ids = outputs[2]
-
-    if verbose:
-        _log.debug(f"Decoding: {bboxes.shape[0]} bboxes")
 
     # convert to output format
     results: list[tuple[tuple[int, int, int, int], float, int]] = []
@@ -224,9 +253,6 @@ def _get_detections_v_10(
                 int(class_ids[idx]),
             )
             results.append(entry)
-
-    if extra_nms:
-        results = nms(results, iou_threshold=nms_iou_thres, agnostic=agnostic_nms)
 
     return results
 
@@ -270,7 +296,7 @@ def get_detections(
     """
     if len(outputs) == _EFF_NUM_OUTPUTS:
         if verbose:
-            _log.debug("Using EfficientNMS decoding")
+            LOG.debug("Using EfficientNMS decoding")
         return decode_efficient_nms(
             outputs,
             conf_thres=conf_thres,
@@ -279,7 +305,7 @@ def get_detections(
             agnostic_nms=agnostic_nms,
         )
     if verbose:
-        _log.debug("Using V10 decoding")
+        LOG.debug("Using V10 decoding")
     return _get_detections_v_10(
         outputs,
         conf_thres=conf_thres,

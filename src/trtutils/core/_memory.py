@@ -1,23 +1,24 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
 import ctypes
-import logging
-from threading import Lock
 
 import numpy as np
 
 with contextlib.suppress(Exception):
-    from cuda import cudart  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.runtime as cudart
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cudart
+
+from trtutils._log import LOG
 
 from ._cuda import cuda_call
-
-_MEM_ALLOC_LOCK = Lock()
-
-_log = logging.getLogger(__name__)
+from ._lock import MEM_ALLOC_LOCK
 
 
 def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
@@ -33,7 +34,7 @@ def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
 
     """
     nbytes = host_arr.size * host_arr.itemsize
-    # _log.debug(f"MemcpyHtoD: {device_ptr} with size: {nbytes}")
+    # LOG.debug(f"MemcpyHtoD: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpy(
             device_ptr,
@@ -57,7 +58,7 @@ def memcpy_device_to_host(host_arr: np.ndarray, device_ptr: int) -> None:
 
     """
     nbytes = host_arr.size * host_arr.itemsize
-    # _log.debug(f"MemcpyDtoH: {device_ptr} with size: {nbytes}")
+    # LOG.debug(f"MemcpyDtoH: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpy(
             host_arr,
@@ -87,7 +88,7 @@ def memcpy_host_to_device_async(
 
     """
     nbytes = host_arr.size * host_arr.itemsize
-    # _log.debug(f"MemcpyHtoD_Async: {device_ptr} with size: {nbytes}")
+    # LOG.debug(f"MemcpyHtoD_Async: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpyAsync(
             device_ptr,
@@ -118,7 +119,7 @@ def memcpy_device_to_host_async(
 
     """
     nbytes = host_arr.size * host_arr.itemsize
-    # _log.debug(f"MemcpyDtoH_Async: {device_ptr} with size: {nbytes}")
+    # LOG.debug(f"MemcpyDtoH_Async: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpyAsync(
             host_arr,
@@ -147,9 +148,9 @@ def cuda_malloc(
         The pointer to the allocated memory.
 
     """
-    with _MEM_ALLOC_LOCK:
+    with MEM_ALLOC_LOCK:
         device_ptr: int = cuda_call(cudart.cudaMalloc(nbytes))
-    _log.debug(f"Allocated, device_ptr: {device_ptr}, size: {nbytes}")
+    LOG.debug(f"Allocated, device_ptr: {device_ptr}, size: {nbytes}")
     return device_ptr
 
 
@@ -182,7 +183,7 @@ def allocate_pinned_memory(
 
     """
     # allocate pinned memory and get a pointer to it directly
-    with _MEM_ALLOC_LOCK:
+    with MEM_ALLOC_LOCK:
         host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocDefault))
 
     # create the numpy array
@@ -193,7 +194,7 @@ def allocate_pinned_memory(
     array = array.view(dtype)
     shape = (nbytes // dtype.itemsize,) if shape is None else shape
 
-    _log.debug(
+    LOG.debug(
         f"Allocated-pagelocked, host_ptr: {host_ptr}, size: {nbytes}, shape: {shape}",
     )
 

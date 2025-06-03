@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 BASE = Path(__file__).parent.parent.parent.parent
 ENGINE_PATHS: dict[int, Path] = {
     7: BASE / "data" / "engines" / "trt_yolov7t.engine",
@@ -21,3 +20,9 @@ ONNX_PATHS: dict[int, Path] = {
     10: BASE / "data" / "trt_yolov10n.onnx",
     0: BASE / "data" / "trt_yoloxn.onnx",
 }
+HORSE_IMAGE_PATH: str = str(BASE / "data" / "horse.jpg")
+PEOPLE_IMAGE_PATH: str = str(BASE / "data" / "people.jpeg")
+IMAGE_PATHS: list[str] = [
+    HORSE_IMAGE_PATH,
+    PEOPLE_IMAGE_PATH,
+]

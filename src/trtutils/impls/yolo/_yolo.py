@@ -3,21 +3,20 @@
 # MIT License
 from __future__ import annotations
 
-import logging
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from trtutils._engine import TRTEngine
+from trtutils._log import LOG
 
-from ._preprocessors import CPUPreprocessor, CUDAPreprocessor
+from ._preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 from ._process import get_detections, postprocess
 
 if TYPE_CHECKING:
     from typing_extensions import Self
-
-_log = logging.getLogger(__name__)
 
 
 class YOLO:
@@ -28,14 +27,16 @@ class YOLO:
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
-        preprocessor: str = "cuda",
+        preprocessor: str = "trt",
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        dla_core: int | None = None,
         *,
         warmup: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -58,7 +59,7 @@ class YOLO:
             X expects 0.0 through 255.0
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda'], default is 'cuda'.
+            The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'letterbox'.
@@ -68,6 +69,9 @@ class YOLO:
         nms_iou_thres : float, optional
             The IOU threshold to use the in the optional and additnal
             NMS operation. By default, 0.5
+        dla_core : int, optional
+            The DLA core to assign DLA layers of the engine to. Default is None.
+            If None, any DLA layers will be assigned to DLA core 0.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
         extra_nms : bool, optional
@@ -76,6 +80,9 @@ class YOLO:
         agnostic_nms : bool, optional
             Whether or not the optional/additional NMS operation
             should perform class agnostic NMS.
+        no_warn : bool, optional
+            If True, suppresses warnings from TensorRT during engine deserialization.
+            Default is None, which means warnings will be shown.
         verbose : bool, optional
             Whether or not to log additional information.
             Only covers the initialization phase.
@@ -90,11 +97,14 @@ class YOLO:
         """
         self._tag: str = f"{Path(engine_path).stem}"
         if verbose:
-            _log.debug(f"Creating YOLO: {self._tag}")
+            LOG.debug(f"Creating YOLO: {self._tag}")
+
         self._engine = TRTEngine(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
+            dla_core=dla_core,
+            no_warn=no_warn,
         )
         self._conf_thres = conf_thres
         self._resize_method: str = resize_method
@@ -116,34 +126,57 @@ class YOLO:
         self._dtype = input_spec[1]
         self._input_range = input_range
 
-        # assign the preprocessor
-        self._preprocessor: CPUPreprocessor | CUDAPreprocessor
-        # create both preprocessors to allow dynamic switching
-        # CPU preprocessor has near zero-memory footprint
-        self._preprocessors: tuple[CPUPreprocessor, CUDAPreprocessor] = (
-            CPUPreprocessor(
-                self._input_size,
-                self._input_range,
-                self._dtype,
-            ),
-            CUDAPreprocessor(
-                self._input_size,
-                self._input_range,
-                self._dtype,
-                resize=self._resize_method,
-                stream=self._engine.stream,
-            ),
+        # set up the preprocessor
+        self._preprocessor: CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
+        valid_preprocessors = ["cpu", "cuda", "trt"]
+        if preprocessor not in valid_preprocessors:
+            err_msg = f"Invalid preprocessor found, options are: {valid_preprocessors}"
+            raise ValueError(err_msg)
+        self._preproc_cpu: CPUPreprocessor = CPUPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            tag=self._tag,
         )
-        self._preprocessor_type = preprocessor
-        # only support uint8 to float32 CUDA kernel for now
-        if self._preprocessor_type == "cuda" and self._dtype == np.float32:
-            self._preprocessor = self._preprocessors[1]
+        self._preproc_cuda: CUDAPreprocessor | None = None
+        self._preproc_trt: TRTPreprocessor | None = None
+        if preprocessor == "trt":
+            self._preproc_trt = self._setup_trt_preproc()
+            self._preprocessor = self._preproc_trt
+        elif preprocessor == "cuda" and self._dtype == np.float32:
+            self._preproc_cuda = self._setup_cuda_preproc()
+            self._preprocessor = self._preproc_cuda
         else:
-            self._preprocessor = self._preprocessors[0]
+            self._preprocessor = self._preproc_cpu
+
+        # basic profiler setup
+        self._pre_profile: tuple[float, float] = (0.0, 0.0)
+        self._infer_profile: tuple[float, float] = (0.0, 0.0)
+        self._post_profile: tuple[float, float] = (0.0, 0.0)
 
         # if warmup, warmup the preprocessors
         if warmup:
             self._preprocessor.warmup()
+
+    def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
+        return CUDAPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            resize=self._resize_method,
+            stream=self._engine.stream,
+            tag=self._tag,
+        )
+
+    def _setup_trt_preproc(self: Self) -> TRTPreprocessor:
+        return TRTPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            resize=self._resize_method,
+            stream=self._engine.stream,
+            tag=self._tag,
+        )
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -206,17 +239,31 @@ class YOLO:
         """
         resize = resize if resize is not None else self._resize_method
         if verbose:
-            _log.debug(
+            LOG.debug(
                 f"{self._tag}: Running preprocess, shape: {image.shape}, with method: {resize}",
             )
+            LOG.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self._preprocessor
         if method is not None:
-            preprocessor = (
-                self._preprocessors[0] if method == "cpu" else self._preprocessors[1]
-            )
-        if isinstance(preprocessor, CUDAPreprocessor):
-            return preprocessor(image, resize=resize, no_copy=no_copy)
-        return preprocessor(image, resize=resize)
+            preprocessor = self._preproc_cpu
+            if method == "cuda":
+                if self._preproc_cuda is None:
+                    self._preproc_cuda = self._setup_cuda_preproc()
+                preprocessor = self._preproc_cuda
+            elif method == "trt":
+                if self._preproc_trt is None:
+                    self._preproc_trt = self._setup_trt_preproc()
+                preprocessor = self._preproc_trt
+        if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+            t0 = time.perf_counter()
+            data = preprocessor(image, resize=resize, no_copy=no_copy, verbose=verbose)
+            t1 = time.perf_counter()
+        else:
+            t0 = time.perf_counter()
+            data = preprocessor(image, resize=resize, verbose=verbose)
+            t1 = time.perf_counter()
+        self._pre_profile = (t0, t1)
+        return data
 
     def postprocess(
         self: Self,
@@ -256,9 +303,14 @@ class YOLO:
 
         """
         if verbose:
-            _log.debug(f"{self._tag}: Running postprocess")
+            LOG.debug(f"{self._tag}: postprocess")
+
         conf_thres = conf_thres or self._conf_thres
-        return postprocess(outputs, ratios, padding, conf_thres, no_copy=no_copy)
+        t0 = time.perf_counter()
+        data = postprocess(outputs, ratios, padding, conf_thres, no_copy=no_copy)
+        t1 = time.perf_counter()
+        self._post_profile = (t0, t1)
+        return data
 
     def __call__(
         self: Self,
@@ -377,6 +429,9 @@ class YOLO:
             If postprocessing is running, but ratios/padding not found
 
         """
+        if verbose:
+            LOG.debug(f"{self._tag}: run")
+
         # assign flags
         if preprocessed is None:
             preprocessed = False
@@ -396,25 +451,27 @@ class YOLO:
             no_copy_post = no_copy
 
         if verbose:
-            _log.debug(
+            LOG.debug(
                 f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
             )
 
         # handle preprocessing
         if not preprocessed:
             if verbose:
-                _log.debug("Preprocessing inputs")
+                LOG.debug("Preprocessing inputs")
             tensor, ratios, padding = self.preprocess(image, no_copy=no_copy_pre)
         else:
             tensor = image
 
         # execute
+        t0 = time.perf_counter()
         outputs = self._engine([tensor], no_copy=no_copy_run)
+        t1 = time.perf_counter()
 
         # handle postprocessing
         if postprocess:
             if verbose:
-                _log.debug("Postprocessing outputs")
+                LOG.debug("Postprocessing outputs")
             if ratios is None or padding is None:
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
                 raise RuntimeError(err_msg)
@@ -425,6 +482,8 @@ class YOLO:
                 conf_thres,
                 no_copy=no_copy_post,
             )
+
+        self._infer_profile = (t0, t1)
 
         return outputs
 
@@ -507,7 +566,8 @@ class YOLO:
 
         """
         if verbose:
-            _log.debug(f"{self._tag}: Running get_detections")
+            LOG.debug(f"{self._tag}: get_detections")
+
         conf_thres = conf_thres or self._conf_thres
         nms_iou = nms_iou_thres or self._nms_iou
         use_nms = extra_nms if extra_nms is not None else self._nms
@@ -566,9 +626,15 @@ class YOLO:
             The detections where each entry is bbox, conf, class_id
 
         """
+        if verbose:
+            LOG.debug(f"{self._tag}: end2end")
+
         outputs: list[np.ndarray]
         # if using CPU preprocessor best you can do is remove host-to-host copies
-        if not isinstance(self._preprocessor, CUDAPreprocessor):
+        if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+            if verbose:
+                LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
+
             outputs = self.run(
                 image,
                 conf_thres=conf_thres,
@@ -578,11 +644,15 @@ class YOLO:
                 verbose=verbose,
             )
         else:
+            if verbose:
+                LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
+
             # if using CUDA, can remove much more
             gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
                 image,
                 resize=self._resize_method,
                 no_warn=True,
+                verbose=verbose,
             )
             outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
             outputs = self.postprocess(

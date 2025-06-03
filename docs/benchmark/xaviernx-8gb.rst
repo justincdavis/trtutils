@@ -1,0 +1,151 @@
+XavierNX-8GB
+============
+
+Developer Kit with Jetpack 5
+
+This section contains benchmarking results for various YOLO models on the XavierNX-8GB platform.
+
+
+Performance Plots
+-----------------
+
+The following plots show the performance comparison between different YOLO models and frameworks:
+
+
+yolov7m
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/XavierNX-8GB/yolov7m.png
+   :alt: yolov7m performance plot
+   :align: center
+
+
+yolov7t
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/XavierNX-8GB/yolov7t.png
+   :alt: yolov7t performance plot
+   :align: center
+
+
+yolov8m
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/XavierNX-8GB/yolov8m.png
+   :alt: yolov8m performance plot
+   :align: center
+
+
+yolov8n
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/XavierNX-8GB/yolov8n.png
+   :alt: yolov8n performance plot
+   :align: center
+
+
+yolov8s
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/XavierNX-8GB/yolov8s.png
+   :alt: yolov8s performance plot
+   :align: center
+
+
+yolov9m
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/XavierNX-8GB/yolov9m.png
+   :alt: yolov9m performance plot
+   :align: center
+
+
+yolov9s
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/XavierNX-8GB/yolov9s.png
+   :alt: yolov9s performance plot
+   :align: center
+
+
+yolov9t
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/XavierNX-8GB/yolov9t.png
+   :alt: yolov9t performance plot
+   :align: center
+
+
+Performance Table
+-----------------
+
+The following table shows detailed performance metrics for all tested models:
+
+.. csv-table:: Performance Metrics
+   :header: Framework,Model,Input Size,Mean (ms),Median (ms),Min (ms),Max (ms)
+   :widths: 10,10,10,10,10,10,10
+
+   trtutils,yolov8n,160,7.0,6.9,6.7,11.3
+   trtutils,yolov8n,320,8.2,8.2,8.1,11.2
+   trtutils,yolov8n,480,10.7,10.6,10.4,14.9
+   trtutils,yolov8n,640,13.8,13.8,13.5,22.8
+   trtutils,yolov8n,800,17.6,17.5,17.3,27.6
+   trtutils,yolov8n,960,22.4,22.4,22.0,24.5
+   trtutils,yolov8n,1120,28.2,28.1,27.9,30.7
+   trtutils,yolov8n,1280,34.4,34.3,34.1,37.1
+   trtutils,yolov8s,160,7.6,7.5,7.2,11.0
+   trtutils,yolov8s,320,10.1,10.1,9.9,21.2
+   trtutils,yolov8s,480,14.1,14.1,13.9,15.6
+   trtutils,yolov8s,640,19.8,19.8,19.4,21.6
+   trtutils,yolov8s,800,26.3,26.3,25.9,28.0
+   trtutils,yolov8s,960,34.7,34.7,34.4,37.1
+   trtutils,yolov8s,1120,44.6,44.6,44.2,50.3
+   trtutils,yolov8s,1280,55.2,55.2,54.8,58.2
+   trtutils,yolov8m,160,10.0,9.8,9.6,13.5
+   trtutils,yolov8m,320,15.1,15.0,14.8,17.5
+   trtutils,yolov8m,480,23.3,23.3,22.9,32.6
+   trtutils,yolov8m,640,36.1,36.1,35.8,38.1
+   trtutils,yolov8m,800,50.6,50.6,50.3,53.1
+   trtutils,yolov8m,960,68.2,68.2,67.9,70.3
+   trtutils,yolov8m,1120,88.6,88.5,88.2,90.8
+   trtutils,yolov8m,1280,113.5,113.4,112.8,119.4
+   trtutils,yolov9t,160,10.8,10.7,10.4,15.9
+   trtutils,yolov9t,320,11.2,11.2,11.0,16.9
+   trtutils,yolov9t,480,14.4,14.4,14.1,16.4
+   trtutils,yolov9t,640,18.7,18.7,18.4,20.7
+   trtutils,yolov9t,800,24.1,24.1,23.9,36.8
+   trtutils,yolov9t,960,30.7,30.7,30.4,35.5
+   trtutils,yolov9t,1120,38.1,38.1,37.8,41.1
+   trtutils,yolov9t,1280,47.0,47.0,46.6,55.3
+   trtutils,yolov9s,160,10.8,10.7,10.5,15.0
+   trtutils,yolov9s,320,13.3,13.3,12.9,17.1
+   trtutils,yolov9s,480,18.4,18.4,18.2,20.6
+   trtutils,yolov9s,640,25.2,25.2,24.8,26.4
+   trtutils,yolov9s,800,33.6,33.6,33.4,43.4
+   trtutils,yolov9s,960,43.8,43.7,43.5,46.2
+   trtutils,yolov9s,1120,56.0,56.0,55.7,58.7
+   trtutils,yolov9s,1280,69.8,69.7,69.4,72.5
+   trtutils,yolov9m,160,11.7,11.6,11.5,15.5
+   trtutils,yolov9m,320,17.9,17.8,17.7,19.6
+   trtutils,yolov9m,480,27.6,27.6,27.4,29.5
+   trtutils,yolov9m,640,42.2,42.2,41.8,46.9
+   trtutils,yolov9m,800,58.4,58.3,58.0,63.0
+   trtutils,yolov9m,960,79.6,79.5,79.1,81.9
+   trtutils,yolov9m,1120,103.2,103.2,102.8,106.3
+   trtutils,yolov9m,1280,131.7,131.7,131.3,138.2
+   trtutils,yolov7m,160,11.1,11.1,10.7,14.8
+   trtutils,yolov7m,320,18.2,18.2,17.9,29.8
+   trtutils,yolov7m,480,29.5,29.5,29.2,32.6
+   trtutils,yolov7m,640,45.8,45.8,45.4,50.0
+   trtutils,yolov7m,800,63.8,63.8,63.3,66.7
+   trtutils,yolov7m,960,88.5,88.4,88.0,91.6
+   trtutils,yolov7m,1120,115.7,115.7,115.1,120.8
+   trtutils,yolov7m,1280,148.1,148.0,147.0,153.0
+   trtutils,yolov7t,160,7.2,7.1,6.8,14.1
+   trtutils,yolov7t,320,8.8,8.7,8.5,10.5
+   trtutils,yolov7t,480,11.4,11.4,11.2,13.6
+   trtutils,yolov7t,640,15.6,15.6,15.3,17.1
+   trtutils,yolov7t,800,19.8,19.8,19.6,21.8
+   trtutils,yolov7t,960,26.0,26.0,25.6,27.9
+   trtutils,yolov7t,1120,32.8,32.8,32.5,34.7
+   trtutils,yolov7t,1280,41.1,41.0,40.7,43.5

@@ -10,8 +10,6 @@ Functions
     Build an engine from an ONNX file using trtexec.
 :func:`find_trtexec`
     Find an instance of the trtexec binary on the system.
-:func:`find_trtexec_binaries`
-    Find all instances of trtexec binaries on the system.
 :func:`run_trtexec`
     Run trtexec command.
 
@@ -20,7 +18,7 @@ Functions
 from __future__ import annotations
 
 from ._build import build_engine
-from ._find import find_trtexec, find_trtexec_binaries
+from ._find import find_trtexec
 from ._run import run_trtexec
 
-__all__ = ["build_engine", "find_trtexec", "find_trtexec_binaries", "run_trtexec"]
+__all__ = ["build_engine", "find_trtexec", "run_trtexec"]

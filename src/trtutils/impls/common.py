@@ -14,12 +14,11 @@ Functions
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 from cv2ext.bboxes import nms
 
-_log = logging.getLogger(__name__)
+from trtutils._jit import register_jit
+from trtutils._log import LOG
 
 
 def postprocess_efficient_nms(
@@ -65,14 +64,32 @@ def postprocess_efficient_nms(
         The postprocessed outputs, reshaped and scaled based on ratios/padding.
 
     """
+    if verbose:
+        LOG.debug(f"EfficientNMS postprocess, bboxes shape: {outputs[1].shape}")
+
+    return _postprocess_efficient_nms_core(
+        outputs,
+        ratios,
+        padding,
+        conf_thres,
+        no_copy=no_copy,
+    )
+
+
+@register_jit(nogil=True)
+def _postprocess_efficient_nms_core(
+    outputs: list[np.ndarray],
+    ratios: tuple[float, float],
+    padding: tuple[float, float],
+    conf_thres: float | None = None,
+    *,
+    no_copy: bool | None = None,
+) -> list[np.ndarray]:
     # efficient NMS postprocessor essentially
     # inputs are list[num_dets, bboxes, scores, classes]
     num_dets, bboxes, scores, class_ids = outputs
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
-
-    if verbose:
-        _log.debug(f"EfficientNMS postprocess, bboxes shape: {bboxes.shape}")
 
     # throw out all detections not included in the num_dets
     num_det_id = int(outputs[0][0])  # needs to be integer
@@ -140,15 +157,32 @@ def decode_efficient_nms(
         Bounding box (x1, y1, x2, y2), confidence score, classid
 
     """
+    if verbose:
+        LOG.debug(f"Generating detections for: {int(outputs[0][0])} bboxes")
+
+    frame_dects = _decode_efficient_nms_core(outputs, conf_thres)
+
+    if extra_nms:
+        frame_dects = nms(
+            frame_dects,
+            iou_threshold=nms_iou_thres,
+            agnostic=agnostic_nms,
+        )
+
+    return frame_dects
+
+
+@register_jit(nogil=True)
+def _decode_efficient_nms_core(
+    outputs: list[np.ndarray],
+    conf_thres: float | None = None,
+) -> list[tuple[tuple[int, int, int, int], float, int]]:
     num_dects: int = int(outputs[0][0])
     bboxes: np.ndarray = outputs[1][0]
     scores: np.ndarray = outputs[2][0]
     classes: np.ndarray = outputs[3][0]
 
     conf_thres = conf_thres or 0.0
-
-    if verbose:
-        _log.debug(f"Generating detections for: {num_dects} bboxes")
 
     frame_dects: list[tuple[tuple[int, int, int, int], float, int]] = []
     for idx in range(num_dects):
@@ -159,12 +193,5 @@ def decode_efficient_nms(
         if score >= conf_thres:
             entry = ((int(x1), int(y1), int(x2), int(y2)), score, int(np_classid))
             frame_dects.append(entry)
-
-    if extra_nms:
-        frame_dects = nms(
-            frame_dects,
-            iou_threshold=nms_iou_thres,
-            agnostic=agnostic_nms,
-        )
 
     return frame_dects

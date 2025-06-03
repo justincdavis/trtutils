@@ -17,6 +17,7 @@ Submodules
 
    trtutils.impls.common
    trtutils.impls.kernels
+   trtutils.impls.onnx_models
 
 Module contents
 ---------------

@@ -28,7 +28,9 @@ def main():
         relative_path = os.path.relpath(example_file, examples_dir)
 
         # create the path to the rst file
-        rst_file = os.path.join("docs", "examples", relative_path.replace(".py", ".rst"))
+        rst_file = os.path.join(
+            "docs", "examples", relative_path.replace(".py", ".rst")
+        )
 
         # create the directory for the rst file
         os.makedirs(os.path.dirname(rst_file), exist_ok=True)
@@ -49,6 +51,7 @@ def main():
 
     # create the examples.rst file
     with open(os.path.join("docs", "examples.rst"), "w") as f:
+        f.write(".. _examples:\n\n")
         f.write("Examples\n")
         f.write("========\n\n")
         f.write(".. toctree::\n")
@@ -61,6 +64,7 @@ def main():
             rst_file = os.path.join("examples", relative_path.replace(".py", ".rst"))
 
             f.write(f"    {rst_file}\n")
+
 
 if __name__ == "__main__":
     main()

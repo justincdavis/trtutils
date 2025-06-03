@@ -2,13 +2,20 @@
 #
 # MIT License
 # ruff: noqa: TRY004
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
 from typing import TypeVar
 
 with contextlib.suppress(Exception):
-    from cuda import cuda, cudart  # type: ignore[import-untyped, import-not-found]
+    try:
+        import cuda.bindings.driver as cuda
+        import cuda.bindings.runtime as cudart
+    except (ImportError, ModuleNotFoundError):
+        from cuda import cuda, cudart
+
+from trtutils._log import LOG
 
 
 def check_cuda_err(err: cuda.CUresult | cudart.cudaError_t) -> None:
@@ -66,3 +73,10 @@ def cuda_call(call: tuple[cuda.CUresult | cudart.cudaError_t, T]) -> T:
     if len(res) == 1:
         return res[0]
     return res
+
+
+def init_cuda() -> None:
+    """Initialize CUDA."""
+    cuda_call(cuda.cuInit(0))
+    device_count = cuda_call(cuda.cuDeviceGetCount())
+    LOG.info(f"Number of CUDA devices: {device_count}")
