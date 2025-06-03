@@ -209,7 +209,7 @@ def get_ptr_pair(host_array: np.ndarray) -> tuple[int, int]:
     ----------
     host_array : np.ndarray
         A np.ndarray allocated by the allocate_pinned_memory function.
-    
+
     Returns
     -------
     tuple[int, int]
@@ -217,10 +217,10 @@ def get_ptr_pair(host_array: np.ndarray) -> tuple[int, int]:
 
     """
     host_ptr = host_array.ctypes.data
-    with _MEM_ALLOC_LOCK:
+    with MEM_ALLOC_LOCK:
         device_ptr = cuda_call(cudart.cudaHostGetDevicePointer(host_ptr, 0))
 
-    _log.debug(
+    LOG.debug(
         f"Acquired pointers: (host: {host_ptr}, device: {device_ptr}) from ndarray"
     )
 
