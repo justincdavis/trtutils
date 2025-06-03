@@ -1,14 +1,16 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
 from pathlib import Path
 
 with contextlib.suppress(ImportError):
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    import tensorrt as trt
 
+from trtutils._config import CONFIG
 from trtutils._log import LOG
 
 
@@ -49,6 +51,9 @@ def read_onnx(
         If the ONNX model cannot be parsed
 
     """
+    # load libnvinfer plugins
+    CONFIG.load_plugins()
+
     onnx_path = Path(onnx).resolve()
     if not onnx_path.exists():
         err_msg = f"Could not find ONNX model at: {onnx_path}"

@@ -16,7 +16,7 @@ Exporting ONNX Weights
 
 YOLOv7 supports end-to-end export of ONNX weights directly. Here's how to do it:
 
-.. code-block:: console
+.. code-block:: bash
 
     # Clone the YOLOv7 repository
     $ git clone https://github.com/WongKinYiu/yolov7.git

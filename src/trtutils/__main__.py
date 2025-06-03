@@ -40,7 +40,9 @@ def _benchmark(args: SimpleNamespace) -> None:
             iterations=args.iterations,
             warmup_iterations=args.warmup_iterations,
             tegra_interval=1,
+            dla_core=args.dla_core,
             warmup=True,
+            verbose=args.verbose,
         )
         latency = jresult.latency
         energy = jresult.energy
@@ -50,7 +52,9 @@ def _benchmark(args: SimpleNamespace) -> None:
             engine=mpath,
             iterations=args.iterations,
             warmup_iterations=args.warmup_iterations,
+            dla_core=args.dla_core,
             warmup=True,
+            verbose=args.verbose,
         )
         latency = result.latency
 
@@ -185,6 +189,8 @@ def _build_dla(args: SimpleNamespace) -> None:
         output_path=Path(args.output),
         data_batcher=batcher,
         dla_core=args.dla_core,
+        max_chunks=args.max_chunks,
+        min_layers=args.min_layers,
         timing_cache=args.timing_cache,
         verbose=args.verbose,
     )
@@ -208,9 +214,89 @@ def _run_yolo(args: SimpleNamespace) -> None:
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
         conf_thres=args.conf_thres,
+        dla_core=args.dla_core,
         warmup=args.warmup,
         verbose=args.verbose,
     )
+    times: dict[str, list[float]] = {
+        "pre": [],
+        "run": [],
+        "post": [],
+        "det": [],
+    }
+
+    def run(
+        img: np.ndarray,
+    ) -> tuple[
+        list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float
+    ]:
+        t0 = time.perf_counter()
+        tensor, ratios, pads = yolo.preprocess(img, no_copy=True)
+        t1 = time.perf_counter()
+        results = yolo.run(tensor, preprocessed=True, postprocess=False, no_copy=True)
+        t2 = time.perf_counter()
+        p_results = yolo.postprocess(results, ratios, pads, no_copy=True)
+        t3 = time.perf_counter()
+        dets = yolo.get_detections(p_results)
+        t4 = time.perf_counter()
+        return (
+            dets,
+            round(1000 * (t1 - t0), 2),
+            round(1000 * (t2 - t1), 2),
+            round(1000 * (t3 - t2), 2),
+            round(1000 * (t4 - t3), 2),
+        )
+
+    def log(
+        dets: list[tuple[tuple[int, int, int, int], float, int]],
+        pre_t: float,
+        run_t: float,
+        post_t: float,
+        det_t: float,
+    ) -> None:
+        LOG.info(f"Found {len(dets)} detections")
+        LOG.info(f"Preprocessing time: {pre_t} ms")
+        LOG.info(f"Run time: {run_t} ms")
+        LOG.info(f"Postprocessing time: {post_t} ms")
+        LOG.info(f"Detection time: {det_t} ms")
+
+    def process_image(
+        img: np.ndarray,
+    ) -> tuple[
+        list[tuple[int, int, int, int]],
+        list[float],
+        list[int],
+        float,
+        float,
+        float,
+        float,
+    ]:
+        dets, pre_t, run_t, post_t, det_t = run(img)
+        log(dets, pre_t, run_t, post_t, det_t)
+        bboxes = [d[0] for d in dets]
+        scores = [d[1] for d in dets]
+        classes = [d[2] for d in dets]
+        times["pre"].append(pre_t)
+        times["run"].append(run_t)
+        times["post"].append(post_t)
+        times["det"].append(det_t)
+        return bboxes, scores, classes, pre_t, run_t, post_t, det_t
+
+    def draw(
+        img: np.ndarray,
+        bboxes: list[tuple[int, int, int, int]],
+        scores: list[float],
+        classes: list[int],
+        pre_t: float,
+        run_t: float,
+        post_t: float,
+        det_t: float,
+    ) -> np.ndarray:
+        canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
+        canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
+        canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t} ms", (10, 60))
+        canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
+        return cv2ext.image.draw.text(canvas, f"DET:  {det_t} ms", (10, 120))
 
     def _summarize_classes(dets: list[tuple[tuple[int, int, int, int], float, int]]) -> list[tuple[str, int]]:
         class_count = {}
@@ -226,20 +312,10 @@ def _run_yolo(args: SimpleNamespace) -> None:
             err_msg = f"Failed to read image: {input_path}"
             raise ValueError(err_msg)
 
-        t0 = time.time()
-        dets = yolo.end2end(img, conf_thres=args.conf_thres, verbose=args.verbose)
-        t1 = time.time()
-        if args.verbose:
-            LOG.info(f"Found {len(dets)} detections in {round((t1 - t0) * 1000.0, 2)} ms")
-            for class_id, count in _summarize_classes(dets):
-                LOG.info(f"\tClass {class_id} - {count} detections")
-        bboxes = [d[0] for d in dets]
-        scores = [d[1] for d in dets]
-        classes = [d[2] for d in dets]
-
-        canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
+        bboxes, scores, classes, pre_t, run_t, post_t, det_t = process_image(img)
 
         if args.show:
+            canvas = draw(img, bboxes, scores, classes, pre_t, run_t, post_t, det_t)
             cv2.imshow("YOLO", canvas)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
@@ -253,20 +329,15 @@ def _run_yolo(args: SimpleNamespace) -> None:
             if display is not None and display.stopped:
                 break
 
-            t0 = time.time()
-            dets = yolo.end2end(frame, conf_thres=args.conf_thres, verbose=args.verbose)
-            t1 = time.time()
-            if args.verbose:
-                LOG.info(f"Frame {fid}: {len(dets)} detections in {round((t1 - t0) * 1000.0, 2)} ms")
-                for class_id, count in _summarize_classes(dets):
-                    LOG.info(f"\tClass {class_id} - {count} detections")
-            bboxes = [d[0] for d in dets]
-            scores = [d[1] for d in dets]
-            classes = [d[2] for d in dets]
+            LOG.info(f"Processing frame {fid}")
+            bboxes, scores, classes, pre_t, run_t, post_t, det_t = process_image(frame)
 
-            canvas = cv2ext.bboxes.draw_bboxes(frame, bboxes, scores, classes)
-            if display is not None:
-                display.update(canvas)
+            if args.show:
+                canvas = draw(
+                    frame, bboxes, scores, classes, pre_t, run_t, post_t, det_t
+                )
+                if display is not None:
+                    display.update(canvas)
 
         if display is not None:
             display.stop()
@@ -274,6 +345,10 @@ def _run_yolo(args: SimpleNamespace) -> None:
     else:
         err_msg = f"Invalid input file: {input_path}"
         raise ValueError(err_msg)
+
+    LOG.info("Times:")
+    for k, v in times.items():
+        LOG.info(f"{k}: {np.mean(v):.2f} ms")
 
 
 def _inspect(args: SimpleNamespace) -> None:
@@ -283,14 +358,29 @@ def _inspect(args: SimpleNamespace) -> None:
     LOG.info(f"Engine Size: {engine_size / (1024 * 1024):.2f} MB")
     LOG.info(f"Max Batch Size: {max_batch}")
     LOG.info("Inputs:")
-    for name, shape, dtype in inputs:
-        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}")
+    for name, shape, dtype, fmt in inputs:
+        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
     LOG.info("Outputs:")
-    for name, shape, dtype in outputs:
-        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}")
+    for name, shape, dtype, fmt in outputs:
+        LOG.info(f"\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
 
 
 def _main() -> None:
+    # common arguments parser
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument(
+        "--dla_core",
+        type=int,
+        default=None,
+        help="DLA core to assign DLA layers of the engine to. Default is None.",
+    )
+    parent_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output.",
+    )
+
+    # main parser
     parser = argparse.ArgumentParser(description="Utilities for TensorRT.")
 
     # create subparser for each command
@@ -304,6 +394,7 @@ def _main() -> None:
     benchmark_parser = subparsers.add_parser(
         "benchmark",
         help="Benchmark a given TensorRT engine.",
+        parents=[parent_parser],
     )
     benchmark_parser.add_argument(
         "--engine",
@@ -344,6 +435,7 @@ def _main() -> None:
     build_parser = subparsers.add_parser(
         "build",
         help="Build a TensorRT engine from an ONNX model.",
+        parents=[parent_parser],
     )
     build_parser.add_argument(
         "--onnx",
@@ -376,11 +468,6 @@ def _main() -> None:
         type=float,
         default=4.0,
         help="Workspace size in GB. Default is 4.0.",
-    )
-    build_parser.add_argument(
-        "--dla_core",
-        type=int,
-        help="Specify the DLA core. By default, the engine is built for GPU.",
     )
     build_parser.add_argument(
         "--calibration_cache",
@@ -477,17 +564,13 @@ def _main() -> None:
         action="store_true",
         help="Quantize the engine to INT8 precision.",
     )
-    build_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Verbose output from can_run_on_dla.",
-    )
     build_parser.set_defaults(func=_build)
 
     # run_on_dla parser
     can_run_on_dla_parser = subparsers.add_parser(
         "can_run_on_dla",
         help="Evaluate if the model can run on a DLA.",
+        parents=[parent_parser],
     )
     can_run_on_dla_parser.add_argument(
         "--onnx",
@@ -511,6 +594,7 @@ def _main() -> None:
     build_dla_parser = subparsers.add_parser(
         "build_dla",
         help="Build a TensorRT engine for DLA.",
+        parents=[parent_parser],
     )
     build_dla_parser.add_argument(
         "--onnx",
@@ -525,10 +609,16 @@ def _main() -> None:
         help="Path to save the TensorRT engine file.",
     )
     build_dla_parser.add_argument(
-        "--dla_core",
+        "--max_chunks",
         type=int,
-        default=0,
-        help="Specify the DLA core. By default, the engine is built for GPU.",
+        default=1,
+        help="Maximum number of DLA chunks to assign. Default is 1.",
+    )
+    build_dla_parser.add_argument(
+        "--min_layers",
+        type=int,
+        default=20,
+        help="Minimum number of layers in a chunk to be assigned to DLA. Default is 20.",
     )
     build_dla_parser.add_argument(
         "--image_dir",
@@ -584,17 +674,13 @@ def _main() -> None:
         default=None,
         help="Path to store timing cache data. Default is 'timing.cache'.",
     )
-    build_dla_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Verbose output from can_run_on_dla.",
-    )
     build_dla_parser.set_defaults(func=_build_dla)
 
     # yolo parser
     yolo_parser = subparsers.add_parser(
         "yolo",
         help="Run YOLO object detection on an image or video.",
+        parents=[parent_parser],
     )
     yolo_parser.add_argument(
         "--engine",
@@ -626,9 +712,9 @@ def _main() -> None:
     yolo_parser.add_argument(
         "--preprocessor",
         "-p",
-        choices=["cpu", "cuda"],
-        default="cuda",
-        help="Preprocessor to use. Default is cuda.",
+        choices=["cpu", "cuda", "trt"],
+        default="trt",
+        help="Preprocessor to use. Default is trt.",
     )
     yolo_parser.add_argument(
         "--resize_method",
@@ -655,17 +741,13 @@ def _main() -> None:
         action="store_true",
         help="Show the detections.",
     )
-    yolo_parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Output additional debugging information.",
-    )
     yolo_parser.set_defaults(func=_run_yolo)
 
     # inspect parser
     inspect_parser = subparsers.add_parser(
         "inspect",
         help="Inspect a TensorRT engine.",
+        parents=[parent_parser],
     )
     inspect_parser.add_argument(
         "--engine",

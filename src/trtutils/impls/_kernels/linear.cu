@@ -11,11 +11,20 @@ void linearResize(
     const int ty = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (tx < widthOut && ty < heightOut) {
-        const float scaleWidth = 1.0f / (widthOut / (float)widthIn);
-        const float scaleHeight = 1.0f / (heightOut / (float)heightIn);
+        // const float scaleWidth = 1.0f / (widthOut / (float)widthIn);
+        // const float scaleHeight = 1.0f / (heightOut / (float)heightIn);
+        // const float inputX = tx * scaleWidth;
+        // const float inputY = ty * scaleHeight;
 
-        const float inputX = tx * scaleWidth;
-        const float inputY = ty * scaleHeight;
+        // compute exact scales
+        const float scaleWidth  = widthIn  / (float)widthOut;
+        const float scaleHeight = heightIn / (float)heightOut;
+        // apply half-pixel sampling like opencv does
+        float inputX = (tx + 0.5f) * scaleWidth  - 0.5f;
+        float inputY = (ty + 0.5f) * scaleHeight - 0.5f;
+        // clamp
+        inputX = fminf(fmaxf(inputX, 0.0f), widthIn  - 1.0f);
+        inputY = fminf(fmaxf(inputY, 0.0f), heightIn - 1.0f);
 
         // get four surrounding pixels
         const int x0 = floor(inputX);

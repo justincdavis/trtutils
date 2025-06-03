@@ -18,7 +18,7 @@ YOLOv9 is written by the same authors as YOLOv7 and supports similar exporting o
 However, it has a unique feature where the input size is explicitly marked as dynamic
 in the ONNX weights. Here's how to export:
 
-.. code-block:: console
+.. code-block:: bash
 
     # Clone the YOLOv9 repository
     $ git clone https://github.com/WongKinYiu/yolov9.git

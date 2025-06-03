@@ -28,10 +28,10 @@ API Reference
    :maxdepth: 1
    :caption: Contents:
 
-   Core API <source/trtutils.core>
-   YOLO Implementation <source/trtutils.impls.yolo>
-   Jetson Utilities <source/trtutils.jetson>
-   TensorRT Executable <source/trtutils.trtexec>
+   Core API <../source/trtutils.core>
+   YOLO Implementation <../source/trtutils.impls.yolo>
+   Jetson Utilities <../source/trtutils.jetson>
+   TensorRT Executable <../source/trtutils.trtexec>
 
 Additional Resources
 --------------------

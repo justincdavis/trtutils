@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
@@ -10,26 +11,31 @@ import sys
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    import tensorrt as trt
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from typing_extensions import Self
+
+
+_LEVEL_MAP: dict[str | None, int] = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "WARN": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+    None: logging.WARNING,
+}
 
 
 def _setup_logger(level: str | None = None) -> None:
     if level is not None:
         level = level.upper()
-    level_map: dict[str | None, int] = {
-        "DEBUG": logging.DEBUG,
-        "INFO": logging.INFO,
-        "WARNING": logging.WARNING,
-        "WARN": logging.WARNING,
-        "ERROR": logging.ERROR,
-        "CRITICAL": logging.CRITICAL,
-        None: logging.WARNING,
-    }
+
     try:
-        log_level = level_map[level]
+        log_level = _LEVEL_MAP[level]
     except KeyError:
         log_level = logging.WARNING
 
@@ -37,14 +43,11 @@ def _setup_logger(level: str | None = None) -> None:
     logger = logging.getLogger(__package__)
     logger.setLevel(log_level)
 
-    # if not logger.hasHandlers():
-    existing_handler = None
-    for handler in logger.handlers:
-        if isinstance(handler, logging.StreamHandler) and handler.level == log_level:
-            existing_handler = handler
-            break
+    has_handler = False
+    if len(logger.handlers) > 0:
+        has_handler = True
 
-    if not existing_handler:
+    if not has_handler:
         formatter = logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         )
@@ -52,6 +55,8 @@ def _setup_logger(level: str | None = None) -> None:
         stdout_handler.setLevel(log_level)
         stdout_handler.setFormatter(formatter)
         logger.addHandler(stdout_handler)
+    else:
+        logger.handlers[0].setLevel(log_level)
 
     logger.propagate = True
 
@@ -91,7 +96,7 @@ if level is not None and level.upper() not in [
 
 
 # create a TensorRT compatible logger
-class TRTLogger(trt.ILogger):
+class TRTLogger(trt.ILogger):  # type: ignore[misc]
     """
     Logger that implements TensorRT's ILogger interface while using Python's logging system.
 
@@ -118,6 +123,86 @@ class TRTLogger(trt.ILogger):
         """
         super().__init__()
         self._logger = logging.getLogger("trtutils")
+        self._level = self._logger.getEffectiveLevel()
+
+    @property
+    def logger(self: Self) -> logging.Logger:
+        """
+        Get the internal Python logger.
+
+        Returns
+        -------
+        logging.Logger
+            The internal Python logger instance.
+
+        """
+        return self._logger
+
+    @property
+    def level(self: Self) -> int:
+        """
+        Get the current log level.
+
+        Returns
+        -------
+        int
+            The current log level of the logger.
+
+        """
+        return self._level
+
+    class _LogLevelContext:
+        def __init__(self: Self, logger: TRTLogger, level: str | None) -> None:
+            self._logger = logger
+            self._level = level
+            self._old_level = logger.logger.getEffectiveLevel()
+
+        def __enter__(self: Self) -> TRTLogger:
+            if self._level:
+                lvl = self._level.upper()
+                log_level = _LEVEL_MAP.get(lvl)
+                if log_level is not None:
+                    self._logger.logger.setLevel(log_level)
+            return self._logger
+
+        def __exit__(
+            self: Self,
+            exc_type: type[BaseException] | None,
+            exc_val: BaseException | None,
+            exc_tb: TracebackType | None,
+        ) -> None:
+            self._logger.logger.setLevel(self._old_level)
+
+    def with_level(self: Self, level: str | None) -> _LogLevelContext:
+        """
+        Create a context manager to temporarily set the log level.
+
+        Parameters
+        ----------
+        level : str | None
+            The log level to set. One of "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL".
+
+        Returns
+        -------
+        _LogLevelContext
+            A context manager that sets the log level for the duration of the block.
+
+        """
+        return self._LogLevelContext(self, level)
+
+    def suppress(self: Self) -> _LogLevelContext:
+        """
+        Suppress all log messages.
+
+        This method sets the logger's level to CRITICAL, effectively silencing all log messages.
+
+        Returns
+        -------
+        _LogLevelContext
+            A context manager that suppresses all log messages.
+
+        """
+        return self._LogLevelContext(self, "CRITICAL")
 
     def log(self: Self, severity: trt.ILogger.Severity, msg: str) -> None:
         """

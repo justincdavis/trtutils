@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
@@ -9,13 +10,13 @@ from typing import TYPE_CHECKING
 from tqdm import tqdm
 
 with contextlib.suppress(ImportError):
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    import tensorrt as trt
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class ProgressBar(trt.IProgressMonitor):
+class ProgressBar(trt.IProgressMonitor):  # type: ignore[misc]
     """A progress bar for building TensorRT engines."""
 
     def __init__(self: Self) -> None:

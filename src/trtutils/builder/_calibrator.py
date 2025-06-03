@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
@@ -8,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    import tensorrt as trt
 
 from trtutils._log import LOG
 from trtutils.core import cuda_malloc, memcpy_host_to_device
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
     from ._batcher import AbstractBatcher
 
 
-class EngineCalibrator(trt.IInt8EntropyCalibrator2):
+class EngineCalibrator(trt.IInt8EntropyCalibrator2):  # type: ignore[misc]
     """Implements the trt.IInt8EntropyCalibrator2."""
 
     def __init__(

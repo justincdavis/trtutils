@@ -1,13 +1,14 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
 from pathlib import Path
 
 with contextlib.suppress(ImportError):
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    import tensorrt as trt
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
@@ -22,8 +23,8 @@ def inspect_engine(
 ) -> tuple[
     int,
     int,
-    list[tuple[str, tuple[int, ...], trt.DataType]],
-    list[tuple[str, tuple[int, ...], trt.DataType]],
+    list[tuple[str, tuple[int, ...], trt.DataType, trt.TensorFormat]],
+    list[tuple[str, tuple[int, ...], trt.DataType, trt.TensorFormat]],
 ]:
     """
     Inspect a TensorRT engine.
@@ -37,7 +38,7 @@ def inspect_engine(
 
     Returns
     -------
-    tuple[int, int, list[tuple[str, tuple[int, ...], trt.DataType]], list[tuple[str, tuple[int, ...], trt.DataType]]]
+    tuple[int, int, list[tuple[str, tuple[int, ...], trt.DataType, trt.TensorFormat]], list[tuple[str, tuple[int, ...], trt.DataType, trt.TensorFormat]]]
         The size in bytes of the engine, the max batch size, and two lists of input and output tensors
 
     """
@@ -46,15 +47,13 @@ def inspect_engine(
         engine, context, logger, stream = create_engine(engine)
         loaded = True
 
-    engine_mem_size = engine.device_memory_size
-    batch_size = engine.max_batch_size
+    engine_mem_size: int = 0
+    if FLAGS.MEMSIZE_V2:
+        engine_mem_size = engine.device_memory_size_v2
+    else:
+        engine_mem_size = engine.device_memory_size
 
-    if verbose:
-        LOG.info("Engine Info:")
-        LOG.info(f"\tMax Batch Size: {batch_size}")
-        LOG.info(f"\tNum IO Tensors: {engine.num_io_tensors}")
-        LOG.info(f"\tDevice Memory Size: {engine_mem_size / (1024 * 1024):.2f} MB")
-
+    # Get all input and output tensors first
     input_tensors = []
     output_tensors = []
     num_tensors = (
@@ -62,30 +61,46 @@ def inspect_engine(
     )
 
     for i in num_tensors:
+        # check
         if FLAGS.TRT_10:
             tensor_name = engine.get_tensor_name(i)
             shape = engine.get_tensor_shape(tensor_name)
             dtype = engine.get_tensor_dtype(tensor_name)
-            if engine.get_tensor_mode(tensor_name) == trt.TensorIOMode.INPUT:
-                input_tensors.append((tensor_name, shape, dtype))
-            else:
-                output_tensors.append((tensor_name, shape, dtype))
+            fmt = engine.get_tensor_format(tensor_name)
+            is_input = engine.get_tensor_mode(tensor_name) == trt.TensorIOMode.INPUT
         else:
             tensor_name = engine.get_binding_name(i)
             shape = engine.get_binding_shape(i)
             dtype = engine.get_binding_dtype(i)
-            if engine.binding_is_input(i):
-                input_tensors.append((tensor_name, shape, dtype))
-            else:
-                output_tensors.append((tensor_name, shape, dtype))
+            fmt = engine.get_binding_format(i)
+            is_input = engine.binding_is_input(i)
+
+        # store
+        if is_input:
+            input_tensors.append((tensor_name, shape, dtype, fmt))
+        else:
+            output_tensors.append((tensor_name, shape, dtype, fmt))
+
+    batch_size: int = 0
+    try:
+        batch_size = engine.max_batch_size
+    except AttributeError:
+        if input_tensors:
+            _, shape, _, _ = input_tensors[0]
+            if shape and len(shape) > 0:
+                batch_size = shape[0]
 
     if verbose:
+        LOG.info("Engine Info:")
+        LOG.info(f"\tMax Batch Size: {batch_size}")
+        LOG.info(f"\tNum IO Tensors: {num_tensors}")
+        LOG.info(f"\tDevice Memory Size: {engine_mem_size / (1024 * 1024):.2f} MB")
         LOG.info("\tInput Tensors:")
-        for name, shape, dtype in input_tensors:
-            LOG.info(f"\t\t{name}: shape={shape}, dtype={dtype}")
+        for name, shape, dtype, fmt in input_tensors:
+            LOG.info(f"\t\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
         LOG.info("\tOutput Tensors:")
-        for name, shape, dtype in output_tensors:
-            LOG.info(f"\t\t{name}: shape={shape}, dtype={dtype}")
+        for name, shape, dtype, fmt in output_tensors:
+            LOG.info(f"\t\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
         LOG.info("")
 
     if loaded:

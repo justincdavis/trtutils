@@ -1,23 +1,27 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    import tensorrt as trt
 
+from trtutils._config import CONFIG
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core import cache as caching_tools
 
 from ._calibrator import EngineCalibrator
 from ._onnx import read_onnx
 from ._utils import get_check_dla
 
-with contextlib.suppress(AttributeError):
+if FLAGS.BUILD_PROGRESS:
     from ._progress import ProgressBar
 
 if TYPE_CHECKING:
@@ -37,6 +41,13 @@ def build_engine(
     data_batcher: AbstractBatcher | None = None,
     layer_precision: list[tuple[int, trt.DataType | None]] | None = None,
     layer_device: list[tuple[int, trt.DeviceType | None]] | None = None,
+    shapes: list[tuple[str, tuple[int, ...]]] | None = None,
+    input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]]
+    | None = None,
+    output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]]
+    | None = None,
+    hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]]
+    | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -45,10 +56,35 @@ def build_engine(
     ignore_timing_mismatch: bool = False,
     fp16: bool | None = None,
     int8: bool | None = None,
+    cache: bool | None = None,
     verbose: bool | None = None,
 ) -> None:
     """
     Build a TensorRT engine from an ONNX model.
+
+    The order in which operations occur inside build_engine:
+
+    1. Parse the ONNX model
+
+    2. Apply any network hooks
+
+    3. Create optimization profile and apply any manual shapes
+
+    4. Apply builder flags (precision constraints, empty algorithms, direct I/O)
+
+    5. Configure tensor formats if specified
+
+    6. Configure precision (FP16, INT8)
+
+    7. Set default device and DLA core
+
+    8. Apply individual layer precision and device settings
+
+    9. Set up timing cache
+
+    10. Build the engine
+
+    11. Save timing cache and engine
 
     Parameters
     ----------
@@ -80,6 +116,24 @@ def build_engine(
     layer_device : list[tuple[int, trt.DeviceType | None]], optional
         The device to use for specific layers.
         By default, None.
+    shapes : list[tuple[str, tuple[int, ...]]], optional
+        A list of (input_name, shape) pairs to specify the shapes of the input layers.
+        For example, shapes=[("images", (1, 3, imgsz, imgsz))] will set the input
+        “images” to a fixed shape. This shape will be used as the min, optimal,
+        and max shape for the binding.
+        By default, None.
+    input_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
+        A list of (name, dtype format) to allow deep specification of input layers.
+        For example, input_tensor_formats=[("input", trt.DataType.UINT8, trt.TensorFormat.HWC)]
+        By default, None
+    output_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
+        A list of (name, dtype format) to allow deep specification of output layers.
+        For example, output_tensor_formats=[("output", trt.DataType.HALF, trt.TensorFormat.LINEAR)]
+        By default, None
+    hooks : list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]], optional
+        An optional list of 'hook' functions to modify the TensorRT network before
+        the remainder of the build phase occurs.
+        By default, None
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
         when building the engine for DLA.
@@ -101,6 +155,13 @@ def build_engine(
         If True, quantize the engine to FP16 precision.
     int8 : bool, optional
         If True, quantize the engine to INT8 precision.
+    cache : bool, optional
+        Whether or not to cache the engine in the trtutils engine cache.
+        If an existing version is found will use that.
+        Uses the name of the output file to assess if the engine has been compiled before.
+        As such, naming the output 'engine', 'model' or similiar will result in
+        unintended caching behavior.
+        By default None, will not cache the engine.
     verbose : bool, optional
         If True, print verbose output.
         By default, None or False
@@ -116,6 +177,18 @@ def build_engine(
         and gpu_fallback is False
 
     """
+    # load libnvinfer plugins
+    CONFIG.load_plugins()
+
+    output_path = Path(output).resolve()
+
+    # first thing is to check cache
+    if cache:
+        exists, location = caching_tools.query_cache(output_path.stem)
+        if exists:
+            shutil.copy(location, output_path)
+            return
+
     # match the device
     valid_gpu = ["gpu", "GPU"]
     valid_dla = ["dla", "DLA"]
@@ -136,13 +209,16 @@ def build_engine(
             else trt.DeviceType.DLA
         )
 
-    output_path = Path(output).resolve()
-
     # read the onnx model
     network, builder, config, _ = read_onnx(
         onnx,
         workspace,
     )
+
+    # handle all hooks to start
+    if hooks is not None:
+        for hook in hooks:
+            network = hook(network)
 
     # helper function for checking if layer can run on DLA
     check_dla: Callable[[trt.ILayer], bool] = get_check_dla(config)
@@ -153,27 +229,54 @@ def build_engine(
 
     # create profile and config
     profile = builder.create_optimization_profile()
+
+    # handle if manual shapes were passed for inputs
+    if shapes:
+        for input_name, shape in shapes:
+            # set the minimum, optimal, maximum to all the same
+            profile.set_shape(input_name, shape, shape, shape)
+
     config.add_optimization_profile(profile)
 
     # handle some flags
     if prefer_precision_constraints:
         config.set_flag(trt.BuilderFlag.PREFER_PRECISION_CONSTRAINTS)
-    if direct_io:
-        config.set_flag(trt.BuilderFlag.DIRECT_IO)
     if reject_empty_algorithms:
         config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
-
-    # load/setup the timing cache
-    timing_cache_path: Path | None = (
-        Path(timing_cache).resolve() if timing_cache else None
-    )
-    if timing_cache_path:
-        buffer = b""
-        if timing_cache_path.exists():
-            with timing_cache_path.open("rb") as timing_cache_file:
-                buffer = timing_cache_file.read()
-        t_cache = config.create_timing_cache(buffer)
-        config.set_timing_cache(t_cache, ignore_mismatch=ignore_timing_mismatch)
+    # handle custom datatype/format for input/output tensors
+    if (
+        input_tensor_formats is not None or output_tensor_formats is not None
+    ) and not direct_io:
+        LOG.warning(
+            "Direct IO not enabled, but some tensor formats specified. Enabling direct IO."
+        )
+        direct_io = True
+    if direct_io:
+        config.set_flag(trt.BuilderFlag.DIRECT_IO)
+    if input_tensor_formats is not None:
+        for tensor_name, tensor_dtype, tensor_format in input_tensor_formats:
+            found = False
+            for idx in range(network.num_inputs):
+                inp = network.get_input(idx)
+                if inp.name == tensor_name:
+                    inp.dtype = tensor_dtype
+                    inp.allowed_formats = 1 << int(tensor_format)
+                    found = True
+                    break
+            if not found:
+                LOG.warning(f"Input tensor '{tensor_name}' not found in network")
+    if output_tensor_formats is not None:
+        for tensor_name, tensor_dtype, tensor_format in output_tensor_formats:
+            found = False
+            for idx in range(network.num_outputs):
+                out = network.get_output(idx)
+                if out.name == tensor_name:
+                    out.dtype = tensor_dtype
+                    out.allowed_formats = 1 << int(tensor_format)
+                    found = True
+                    break
+            if not found:
+                LOG.warning(f"Output tensor '{tensor_name}' not found in network")
 
     # setup the precision sets
     if fp16 or int8:
@@ -236,6 +339,18 @@ def build_engine(
             else:
                 config.set_device_type(layer, device)
 
+    # load/setup the timing cache
+    timing_cache_path: Path | None = (
+        Path(timing_cache).resolve() if timing_cache else None
+    )
+    if timing_cache_path:
+        buffer = b""
+        if timing_cache_path.exists():
+            with timing_cache_path.open("rb") as timing_cache_file:
+                buffer = timing_cache_file.read()
+        t_cache = config.create_timing_cache(buffer)
+        config.set_timing_cache(t_cache, ignore_mismatch=ignore_timing_mismatch)
+
     # build the engine
     if FLAGS.BUILD_SERIALIZED:
         engine_bytes = builder.build_serialized_network(network, config)
@@ -254,3 +369,6 @@ def build_engine(
 
     with output_path.open("wb") as f:
         f.write(engine_bytes)
+
+    if cache:
+        caching_tools.store_in_cache(output_path, overwrite=False, clear_old=False)

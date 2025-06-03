@@ -6,14 +6,11 @@ CUDA kernel implementations for various preprocessing functions.
 
 Attributes
 ----------
-:attribute:`SCALE_SWAP_TRANSPOSE` : tuple[str, str]
+:attribute:`SCALE_SWAP_TRANSPOSE` : tuple[Path, str]
     Rescales an image, swaps channels, and transposes HWC -> CHW
-:attribute:`SCALE_SWAP_TRANSPOSE_FAST` : tuple[str, str]
-    Rescales an image, swaps channels, and transposes HWC -> CHW
-    Uses underlying optimizations
-:attribute:`LETTERBOX_RESIZE` : tuple[str, str]
+:attribute:`LETTERBOX_RESIZE` : tuple[Path, str]
     Resizes an image using the letterbox method.
-:attribute:`LINEAR_RESIZE` : tuple[str, str]
+:attribute:`LINEAR_RESIZE` : tuple[Path, str]
     Resizes and image using bilinear interpolation.
 
 """
@@ -28,30 +25,17 @@ _SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
 _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
 
-with _SST_FILE.open("r") as f:
-    _SCALE_SWAP_TRANSPOSE_KERNEL_CODE = f.read()
-SCALE_SWAP_TRANSPOSE: tuple[str, str] = (
-    _SCALE_SWAP_TRANSPOSE_KERNEL_CODE,
+SCALE_SWAP_TRANSPOSE: tuple[Path, str] = (
+    _SST_FILE,
     "scaleSwapTranspose",
 )
 
-with _SST_FAST_FILE.open("r") as f:
-    _SCALE_SWAP_TRANSPOSE_FAST_KERNEL_CODE = f.read()
-SCALE_SWAP_TRANSPOSE_FAST: tuple[str, str] = (
-    _SCALE_SWAP_TRANSPOSE_FAST_KERNEL_CODE,
-    "scaleSwapTranspose_opt",
-)
-
-with _LETTERBOX_FILE.open("r") as f:
-    _LETTERBOX_RESIZE_KERNEL_CODE = f.read()
-LETTERBOX_RESIZE: tuple[str, str] = (
-    _LETTERBOX_RESIZE_KERNEL_CODE,
+LETTERBOX_RESIZE: tuple[Path, str] = (
+    _LETTERBOX_FILE,
     "letterboxResize",
 )
 
-with _LINEAR_FILE.open("r") as f:
-    _LINEAR_RESIZE_KERNEL_CODE = f.read()
-LINEAR_RESIZE: tuple[str, str] = (
-    _LINEAR_RESIZE_KERNEL_CODE,
+LINEAR_RESIZE: tuple[Path, str] = (
+    _LINEAR_FILE,
     "linearResize",
 )

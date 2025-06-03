@@ -2,6 +2,7 @@
 #
 # MIT License
 # ruff: noqa: E402, F401
+# mypy: disable-error-code="import-untyped"
 """
 A package for enabling high-level usage of TensorRT in Python.
 
@@ -59,6 +60,12 @@ Functions
     Run a command with trtexec.
 :func:`set_log_level`
     Set the log level of the trtutils package.
+:func:`enable_jit`
+    Enable just-in-time compilation using Numba.
+:func:`disable_jit`
+    Disable just-in-time compilation using Numba.
+:func:`register_jit`
+    Decorator for registering functions for potential JIT compilation.
 
 Objects
 -------
@@ -66,12 +73,16 @@ Objects
     The flag storage object for trtutils.
 :obj:`LOG`
     The TensorRT compatible logger for trtutils.
+:obj:`JIT`
+    A context manager for enabling just-in-time compilation using Numba.
 
 """
 
 from __future__ import annotations
 
+from ._config import CONFIG
 from ._flags import FLAGS
+from ._jit import JIT, disable_jit, enable_jit, register_jit
 from ._log import LOG, set_log_level
 
 # output available execution api debug
@@ -80,7 +91,7 @@ for attr in [a for a in dir(FLAGS) if not a.startswith("_")]:
     LOG.debug(_flag_str)
 
 __author__ = "Justin Davis"
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 import contextlib
 
@@ -93,7 +104,9 @@ from .inspect import inspect_engine
 from .trtexec import find_trtexec, run_trtexec
 
 __all__ = [
+    "CONFIG",
     "FLAGS",
+    "JIT",
     "LOG",
     "BenchmarkResult",
     "Metric",
@@ -108,10 +121,13 @@ __all__ = [
     "build_engine",
     "builder",
     "core",
+    "disable_jit",
+    "enable_jit",
     "find_trtexec",
     "impls",
     "inspect",
     "inspect_engine",
+    "register_jit",
     "run_trtexec",
     "set_log_level",
     "trtexec",
@@ -124,17 +140,7 @@ with contextlib.suppress(ImportError):
     __all__ += ["jetson"]
 
 
-with contextlib.suppress(ImportError):
-    # always initialize TensorRT plugins
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
-
-    trt.init_libnvinfer_plugins(LOG, "")
-
-# # start CUDA
-# with contextlib.suppress(ImportError):
-#     from cuda import cuda  # type: ignore[import-untyped, import-not-found]
-
-#     core.cuda_call(cuda.cuInit(0))
-
-#     device_count = core.cuda_call(cuda.cuDeviceGetCount())
-#     _log.info(f"Number of CUDA devices: {device_count}")
+# if numba is found, automatically enable the jit
+if FLAGS.FOUND_NUMBA:
+    LOG.info("Numba found, enabling JIT")
+    enable_jit()

@@ -1,13 +1,14 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):
-    import tensorrt as trt  # type: ignore[import-untyped, import-not-found]
+    import tensorrt as trt
 
 from trtutils._log import LOG
 
@@ -118,6 +119,8 @@ def build_dla_engine(
     output_path: Path | str,
     data_batcher: AbstractBatcher,
     dla_core: int,
+    max_chunks: int = 1,
+    min_layers: int = 20,
     timing_cache: Path | str | None = None,
     *,
     verbose: bool | None = None,
@@ -141,6 +144,14 @@ def build_dla_engine(
         The data batcher instance for INT8 calibration
     dla_core : int
         The DLA core to use
+    max_chunks : int, optional
+        The maximum number of DLA-compatible chunks to assign to the DLA.
+        By default 1, which will assign the first compatible chunk.
+        Can set to 0 to assign all chunks which meet min_layers.
+    min_layers : int, optional
+        The minimum number of layers in a chunk to be assigned to DLA.
+        By default 20, which will assign chunks with at least 20 layers.
+        Can set to 0 to assign all chunks.
     timing_cache : Path, str, optional
         The path to the timing cache file
     verbose : bool, optional
@@ -167,6 +178,7 @@ def build_dla_engine(
         build_engine(
             onnx,
             output_path,
+            default_device=trt.DeviceType.DLA,
             data_batcher=data_batcher,
             dla_core=dla_core,
             fp16=True,
@@ -189,39 +201,56 @@ def build_dla_engine(
         )
         return
 
-    # Get the largest DLA chunk
-    _, largest_dla_chunk = max(dla_chunks, key=lambda x: len(x[1][0]))
-    dla_start, dla_end = largest_dla_chunk[1], largest_dla_chunk[2]
+    # sort chunks by len and filter by min_layers or until max_chunks is reached
+    dla_chunks = sorted(dla_chunks, key=lambda x: len(x[1][0]), reverse=True)
 
     if verbose:
-        LOG.info(f"Largest DLA chunk: layers {dla_start} to {dla_end}")
+        LOG.info(
+            f"Found {len(dla_chunks)} total chunks of which: {sum(1 if chunk[1][-1] else 0 for chunk in dla_chunks)} are DLA compatible."
+        )
 
+    # define lists for storing layer assignments
     layer_precision: list[tuple[int, trt.DataType | None]] = []
     layer_device: list[tuple[int, trt.DeviceType | None]] = []
 
-    # create specific DLA layer assignments
+    # assign default to GPU/FP16
     exclude_layer_types = [trt.LayerType.CONSTANT, trt.LayerType.SHUFFLE]
     for idx in range(network.num_layers):
         layer = network.get_layer(idx)
         layer_name: str = layer.name
         layer_name = layer_name.lower()
-        LOG.debug(f"Assigning layer: {idx} - ({layer_name})")
-        if dla_start <= idx <= dla_end:
-            layer_precision.append((idx, trt.DataType.INT8))
-            layer_device.append((idx, trt.DeviceType.DLA))
-            if verbose:
-                LOG.info(f"Assigning layer {idx} ({layer.name}) to DLA (INT8)")
+        layer_device.append((idx, trt.DeviceType.GPU))
+        # intelligently assign precision level to HALF unless layer
+        # is Constant, Shuffle, or Tile
+        if layer.type in exclude_layer_types or "tile" in layer_name:
+            layer_precision.append((idx, None))
         else:
-            # if the layer is not in the DLA chunk, simply assign to GPU
-            layer_device.append((idx, trt.DeviceType.GPU))
-            if verbose:
-                LOG.info(f"Assigning layer {idx} ({layer.name}) to GPU (FP16)")
-            # intelligently assign precision level to HALF unless layer
-            # is Constant, Shuffle, or Tile
-            if layer.type in exclude_layer_types or "tile" in layer_name:
-                layer_precision.append((idx, None))
-            else:
-                layer_precision.append((idx, trt.DataType.HALF))
+            layer_precision.append((idx, trt.DataType.HALF))
+
+    # iterate over chunks and assign to DLA
+    matched_chunks = 0
+    for _, (layers, start, end, on_dla) in dla_chunks:
+        if matched_chunks >= max_chunks and max_chunks > 0:
+            break
+        if not on_dla:
+            continue
+        if len(layers) < min_layers:
+            continue
+
+        for layer_id in range(start, end + 1, 1):
+            layer_precision[layer_id] = (layer_id, trt.DataType.INT8)
+            layer_device[layer_id] = (layer_id, trt.DeviceType.DLA)
+
+        matched_chunks += 1
+
+    # verbose iteration
+    if verbose:
+        for (idx, device), (_, datatype) in zip(layer_device, layer_precision):
+            LOG.info(
+                f"Layer {idx}: {network.get_layer(idx).name}, "
+                f"{'DLA' if device == trt.DeviceType.DLA else 'GPU'}, "
+                f"{'INT8' if datatype == trt.DataType.INT8 else 'FP16'}"
+            )
 
     # build engine with specific layer assignments
     build_engine(

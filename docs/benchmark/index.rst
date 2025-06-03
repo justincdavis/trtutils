@@ -1,5 +1,5 @@
 Benchmarking Results
-===================
+====================
 
 This section contains benchmarking results for various YOLO models using different frameworks on different devices.
 
@@ -7,4 +7,5 @@ This section contains benchmarking results for various YOLO models using differe
    :maxdepth: 2
    :caption: Contents:
 
-   orinagx
+   jetson
+   rtx
