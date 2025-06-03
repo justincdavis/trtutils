@@ -20,13 +20,13 @@ from __future__ import annotations
 from pathlib import Path
 
 _KERNEL_DIR = Path(__file__).parent / "_kernels"
-_SST_FILE = _KERNEL_DIR / "sst.cu"
+# _SST_FILE = _KERNEL_DIR / "sst.cu"
 _SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
 _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
 
 SCALE_SWAP_TRANSPOSE: tuple[Path, str] = (
-    _SST_FILE,
+    _SST_FAST_FILE,
     "scaleSwapTranspose",
 )
 
