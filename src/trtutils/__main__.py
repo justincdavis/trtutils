@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import operator
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -298,13 +299,15 @@ def _run_yolo(args: SimpleNamespace) -> None:
         canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
         return cv2ext.image.draw.text(canvas, f"DET:  {det_t} ms", (10, 120))
 
-    def _summarize_classes(dets: list[tuple[tuple[int, int, int, int], float, int]]) -> list[tuple[str, int]]:
-        class_count = {}
+    def _summarize_classes(
+        dets: list[tuple[tuple[int, int, int, int], float, int]],
+    ) -> list[tuple[int, int]]:
+        class_count: dict[int, int] = {}
         for _, _, class_id in dets:
             if class_id not in class_count:
                 class_count[class_id] = 0
-            class_count[class_id] += 1    
-        return sorted([(cid, count) for cid, count in class_count.items()], key=lambda x: x[0])
+            class_count[class_id] += 1
+        return sorted(class_count.items(), key=operator.itemgetter(0))
 
     if is_image:
         img = cv2.imread(str(input_path))

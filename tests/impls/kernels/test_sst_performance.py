@@ -1,11 +1,12 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: T201
 from __future__ import annotations
 
 import math
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
@@ -25,8 +26,11 @@ try:
     from .common import IMG_PATH
 except ImportError:
     from common import (  # type: ignore[no-redef, import-not-found]
-        IMG_PATH, 
+        IMG_PATH,
     )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _get_kernel_timings(kernel_data: tuple[Path, str]) -> list[float]:
@@ -121,6 +125,9 @@ def test_sst_performance() -> None:
 
     sst_fast_mean = np.mean(sst_fast)
     sst_mean = np.mean(sst)
+
+    print(f"sst_fast_mean: {sst_fast_mean}, sst_mean: {sst_mean}")
+    print(f"speedup: {sst_mean / sst_fast_mean}")
 
     assert sst_fast_mean < sst_mean
 
