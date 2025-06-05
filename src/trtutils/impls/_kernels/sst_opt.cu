@@ -36,17 +36,17 @@ void scaleSwapTranspose_opt(
     // Synchronize to ensure the tile is fully loaded.
     __syncthreads();
 
-    // Compute transposed coordinates for the output.
-    int out_row = blockIdx.x * TILE_DIM + threadIdx.y;  // Note the swap.
-    int out_col = blockIdx.y * TILE_DIM + threadIdx.x;
+    // Compute output coordinates - no transpose needed, output in same order as input
+    int out_row = blockIdx.y * TILE_DIM + threadIdx.y;
+    int out_col = blockIdx.x * TILE_DIM + threadIdx.x;
 
     if (out_row < shape && out_col < shape) {
         // Calculate the output base index in the planar (NCHW) format.
         int outIdx = out_row * shape + out_col;
         const int shapeSq = shape * shape;
-        // Read the pixel from shared memory using transposed indices.
-        outImg[outIdx + 0 * shapeSq] = tileR[threadIdx.x][threadIdx.y];
-        outImg[outIdx + 1 * shapeSq] = tileG[threadIdx.x][threadIdx.y];
-        outImg[outIdx + 2 * shapeSq] = tileB[threadIdx.x][threadIdx.y];
+        // Read from shared memory and write to output in RGB order (swap BGR to RGB)
+        outImg[outIdx + 0 * shapeSq] = tileR[threadIdx.y][threadIdx.x];
+        outImg[outIdx + 1 * shapeSq] = tileG[threadIdx.y][threadIdx.x];
+        outImg[outIdx + 2 * shapeSq] = tileB[threadIdx.y][threadIdx.x];
     }
 }
