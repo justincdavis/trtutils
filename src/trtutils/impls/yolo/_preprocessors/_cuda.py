@@ -18,7 +18,7 @@ from trtutils.core._memory import (
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
-from trtutils.impls.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE, SCALE_SWAP_TRANSPOSE
+from trtutils.impls.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE, SST_FAST
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -154,7 +154,7 @@ class CUDAPreprocessor:
 
         # load the kernels
         # sst kernel always used
-        self._sst_kernel = Kernel(*SCALE_SWAP_TRANSPOSE)
+        self._sst_kernel = Kernel(*SST_FAST)
         # either letterbox or linear is used
         self._linear_kernel = Kernel(*LINEAR_RESIZE)
         self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
