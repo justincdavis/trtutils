@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: T201
 from __future__ import annotations
 
 from pathlib import Path
@@ -60,8 +61,12 @@ def test_trt_preproc_engine() -> None:
 
     diff_mask = np.any(cpu_result != trt_result, axis=-1)
     avg_diff = np.mean(np.abs(cpu_result[diff_mask] - trt_result[diff_mask]))
-    assert avg_diff < 0.01, f"Num pixels: {np.sum(diff_mask)}, avg diff: {avg_diff}"
-    assert np.allclose(trt_result, cpu_result)
+    num_pixels = np.sum(diff_mask)
+    print(f"Num pixels: {num_pixels}, avg diff: {avg_diff}")
+
+    # use small tolerances since the TRT engine uses fp16, and CPU uses fp32
+    assert avg_diff < 0.0001, f"Num pixels: {num_pixels}, avg diff: {avg_diff}"
+    assert np.allclose(trt_result, cpu_result, rtol=5e-4, atol=5e-4)
 
     del engine
 

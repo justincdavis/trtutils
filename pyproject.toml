@@ -64,7 +64,7 @@ all = [
     "trtutils[jit]",
 ]
 jetson = [
-    "jetsontools>=0.0.4",
+    "jetsontools>=0.1.0",
 ]
 jit = [
     "numba>=0.57.0",
