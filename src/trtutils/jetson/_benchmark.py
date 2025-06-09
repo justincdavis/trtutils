@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from jetsontools import Tegrastats, filter_data, get_powerdraw, parse_tegrastats
+from jetsontools import TegraStats, filter_data, get_powerdraw, parse_tegrastats
 
 from trtutils._benchmark import Metric
 from trtutils._engine import ParallelTRTEngines, TRTEngine
@@ -100,7 +100,7 @@ def benchmark_engine(
     temp_file = Path(Path.cwd()) / "temptegra.txt"
     # store the start/stop times of the engine execution
     start_stop_times: list[tuple[float, float]] = []
-    with Tegrastats(temp_file, interval=tegra_interval):
+    with TegraStats(temp_file, interval=tegra_interval):
         for _ in range(iterations):
             t0 = time.time()
             engine.mock_execute(false_data, verbose=verbose)
@@ -112,7 +112,8 @@ def benchmark_engine(
     tegradata = parse_tegrastats(temp_file)
 
     # delete the temp file
-    temp_file.unlink()
+    if temp_file.exists():
+        temp_file.unlink()
 
     # filter the data by actual times during execution
     filtered_data, per_inference = filter_data(tegradata, start_stop_times)
@@ -240,7 +241,7 @@ def benchmark_engines(
     temp_file = Path(Path.cwd()) / "temptegra.txt"
     # store the start/stop times of the engine execution
     start_stop_times: list[tuple[float, float]] = []
-    with Tegrastats(temp_file, interval=tegra_interval):
+    with TegraStats(temp_file, interval=tegra_interval):
         for _ in range(iterations):
             t0 = time.time()
             trt_engines.submit(false_data)
@@ -253,7 +254,8 @@ def benchmark_engines(
     tegradata = parse_tegrastats(temp_file)
 
     # delete the temp file
-    temp_file.unlink()
+    if temp_file.exists():
+        temp_file.unlink()
 
     # filter the data by actual times during execution
     filtered_data, per_inference = filter_data(tegradata, start_stop_times)
