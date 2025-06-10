@@ -199,12 +199,15 @@ def allocate_bindings(
         size = dtype.itemsize
         for s in shape:
             size *= s
-        # allocate the device side memory
-        allocation = cuda_malloc(size)
-        # allocate the host side memory
+        
+        # allocate memory
         if pagelocked_mem:
             host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
+            _, allocation = get_ptr_pair(host_allocation)
         else:
+            # allocate the device side memory
+            allocation = cuda_malloc(size)
+            # allocate the host side memory
             host_allocation = np.zeros(tuple(shape), dtype=dtype)
 
         # create the binding
