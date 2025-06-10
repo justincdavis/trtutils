@@ -279,12 +279,13 @@ class TRTEngine(TRTEngineInterface):
             stream_synchronize(self._stream)
 
         # copy outputs
-        for o_idx in range(len(self._outputs)):
-            memcpy_device_to_host_async(
-                self._outputs[o_idx].host_allocation,
-                self._outputs[o_idx].allocation,
-                self._stream,
-            )
+        if not self._pagelocked_mem:
+            for o_idx in range(len(self._outputs)):
+                memcpy_device_to_host_async(
+                    self._outputs[o_idx].host_allocation,
+                    self._outputs[o_idx].allocation,
+                    self._stream,
+                )
 
         # make sure all operations are complete
         stream_synchronize(self._stream)

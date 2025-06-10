@@ -301,7 +301,7 @@ def yolo_pagelocked_perf(version: int, *, use_dla: bool | None = None) -> None:
         preprocessor="cuda",
         pagelocked_mem=True,
     )
-    
+
     times = []
     times_pagelocked = []
 
