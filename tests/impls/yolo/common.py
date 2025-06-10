@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from threading import Thread
 
@@ -277,3 +278,47 @@ def yolo_swapping_preproc_results(version: int, *, use_dla: bool | None = None) 
             assert len(bboxes) >= 1
 
     del yolo
+
+
+def yolo_pagelocked_perf(version: int, *, use_dla: bool | None = None) -> None:
+    """Check if the results are valid for a YOLO model."""
+    engine_path = build_yolo(version, use_dla=use_dla)
+
+    scale = (0, 1) if version != 0 else (0, 255)
+    yolo = trtutils.impls.yolo.YOLO(
+        engine_path,
+        conf_thres=0.25,
+        warmup=True,
+        input_range=scale,
+        preprocessor="cuda",
+        pagelocked_mem=False,
+    )
+    yolo_pagelocked = trtutils.impls.yolo.YOLO(
+        engine_path,
+        conf_thres=0.25,
+        warmup=True,
+        input_range=scale,
+        preprocessor="cuda",
+        pagelocked_mem=True,
+    )
+    
+    times = []
+    times_pagelocked = []
+
+    for _ in range(NUM_ITERS):
+        t0 = time.time()
+        yolo.mock_run()
+        t1 = time.time()
+        times.append(t1 - t0)
+
+        t00 = time.time()
+        yolo_pagelocked.mock_run()
+        t11 = time.time()
+        times_pagelocked.append(t11 - t00)
+
+    yolo_mean = sum(times) / len(times)
+    yolo_pagelocked_mean = sum(times_pagelocked) / len(times_pagelocked)
+    speedup = yolo_mean / yolo_pagelocked_mean
+
+    assert speedup > 1.0
+    print(f"YOLO Pagelocked Speedup: {speedup:.2f}x")

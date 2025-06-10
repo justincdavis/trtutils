@@ -12,6 +12,7 @@ from .common import (
     yolo_run_multiple,
     yolo_run_multiple_threads,
     yolo_swapping_preproc_results,
+    yolo_pagelocked_perf,
 )
 
 
