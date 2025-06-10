@@ -10,6 +10,8 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from ._flags import FLAGS
 from ._log import LOG
 from .core import (
@@ -24,7 +26,6 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import ClassVar
 
-    import numpy as np
     from typing_extensions import Self
 
     with contextlib.suppress(Exception):
@@ -178,12 +179,16 @@ class TRTEngine(TRTEngineInterface):
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
 
         # copy inputs
-        for i_idx in range(len(self._inputs)):
-            memcpy_host_to_device_async(
-                self._inputs[i_idx].allocation,
-                data[i_idx],
-                self._stream,
-            )
+        if self._pagelocked_mem:
+            for i_idx in range(len(self._inputs)):
+                np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
+        else:
+            for i_idx in range(len(self._inputs)):
+                memcpy_host_to_device_async(
+                    self._inputs[i_idx].allocation,
+                    data[i_idx],
+                    self._stream,
+                )
 
         if debug:
             stream_synchronize(self._stream)
@@ -198,12 +203,13 @@ class TRTEngine(TRTEngineInterface):
             stream_synchronize(self._stream)
 
         # copy outputs
-        for o_idx in range(len(self._outputs)):
-            memcpy_device_to_host_async(
-                self._outputs[o_idx].host_allocation,
-                self._outputs[o_idx].allocation,
-                self._stream,
-            )
+        if not self._pagelocked_mem:
+            for o_idx in range(len(self._outputs)):
+                memcpy_device_to_host_async(
+                    self._outputs[o_idx].host_allocation,
+                    self._outputs[o_idx].allocation,
+                    self._stream,
+                )
 
         # make sure all operations are complete
         stream_synchronize(self._stream)
@@ -273,12 +279,13 @@ class TRTEngine(TRTEngineInterface):
             stream_synchronize(self._stream)
 
         # copy outputs
-        for o_idx in range(len(self._outputs)):
-            memcpy_device_to_host_async(
-                self._outputs[o_idx].host_allocation,
-                self._outputs[o_idx].allocation,
-                self._stream,
-            )
+        if not self._pagelocked_mem:
+            for o_idx in range(len(self._outputs)):
+                memcpy_device_to_host_async(
+                    self._outputs[o_idx].host_allocation,
+                    self._outputs[o_idx].allocation,
+                    self._stream,
+                )
 
         # make sure all operations are complete
         stream_synchronize(self._stream)

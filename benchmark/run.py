@@ -141,6 +141,7 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
                 warmup_iterations=warmup_iters,
                 warmup=True,
                 preprocessor=preprocessor,
+                pagelocked_mem=True,
                 verbose=True,
             )
             t_timing = []

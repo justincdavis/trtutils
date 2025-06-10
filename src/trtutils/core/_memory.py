@@ -184,7 +184,7 @@ def allocate_pinned_memory(
     """
     # allocate pinned memory and get a pointer to it directly
     with MEM_ALLOC_LOCK:
-        host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocDefault))
+        host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocMapped))
 
     # create the numpy array
     array_type = ctypes.c_byte * nbytes
@@ -199,3 +199,60 @@ def allocate_pinned_memory(
     )
 
     return array.reshape(shape)
+
+
+def get_ptr_pair(host_array: np.ndarray) -> tuple[int, int]:
+    """
+    Get the pointer pairs (host/device) of a pagelocked allocation.
+
+    Parameters
+    ----------
+    host_array : np.ndarray
+        A np.ndarray allocated by the allocate_pinned_memory function.
+
+    Returns
+    -------
+    tuple[int, int]
+        The host and device pointer of the allocation.
+
+    """
+    host_ptr = host_array.ctypes.data
+    with MEM_ALLOC_LOCK:
+        device_ptr = cuda_call(cudart.cudaHostGetDevicePointer(host_ptr, 0))
+
+    LOG.debug(
+        f"Acquired pointers: (host: {host_ptr}, device: {device_ptr}) from ndarray"
+    )
+
+    return host_ptr, device_ptr
+
+
+def allocate_managed_memory(
+    nbytes: int,
+    stream: cudart.cudaStream_t | None = None,
+) -> int:
+    """
+    Allocate managed memory.
+
+    Parameters
+    ----------
+    nbytes : int
+        The number of bytes to allocate.
+    stream : cudart.cudaStream_t, optional
+        The stream to utilize.
+
+    Returns
+    -------
+    int
+        The pointer to the allocated memory.
+
+    """
+    with MEM_ALLOC_LOCK:
+        device_ptr: int = cuda_call(cudart.cudaMallocManaged(nbytes))
+
+    # if a stream is provided, we should attach the memory
+    if stream is not None:
+        cuda_call(cudart.cudaStreamAttachMemAsync(stream, device_ptr))
+
+    LOG.debug(f"Allocated-managed, device_ptr: {device_ptr}, size: {nbytes}")
+    return device_ptr

@@ -22,7 +22,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._cuda import cuda_call
-from ._memory import allocate_pinned_memory, cuda_malloc
+from ._memory import allocate_pinned_memory, cuda_malloc, get_ptr_pair
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -40,10 +40,14 @@ class Binding:
     allocation: int
     host_allocation: np.ndarray
     tensor_format: trt.TensorFormat
+    pagelocked_mem: bool
 
     def free(self: Self) -> None:
         """Free the memory of the binding."""
-        cuda_call(cudart.cudaFree(self.allocation))
+        if self.pagelocked_mem:
+            cuda_call(cudart.cudaFreeHost(self.host_allocation))
+        else:
+            cuda_call(cudart.cudaFree(self.allocation))
 
     def __del__(self: Self) -> None:
         # potentially already had free called on it previously
@@ -60,6 +64,33 @@ def create_binding(
     is_input: bool | None = None,
     pagelocked_mem: bool | None = None,
 ) -> Binding:
+    """
+    Create a binding for a TensorRT engine.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        The array to use for the binding.
+    bind_id : int, optional
+        The index of the binding.
+    name : str, optional
+        The name of the binding.
+    tensor_format : trt.TensorFormat, optional
+        The format of the tensor.
+    is_input : bool, optional
+        Whether the binding is an input or output.
+    pagelocked_mem : bool, optional
+        Whether or not to use pagelocked memory for host allocations.
+        By default None, which means pagelocked memory will be used.
+
+    Returns
+    -------
+    Binding
+        The binding for the host/device memory.
+
+    """
+    pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+
     # info from the np.ndarray
     shape = array.shape
     dtype = array.dtype
@@ -68,17 +99,12 @@ def create_binding(
         size *= s
 
     # allocate host and device memory
-    device_alloc = cuda_malloc(size)
-    if is_input:
-        # if the binding is an input binding
-        # can not allocate the host_alloc until populated later
-        host_alloc = np.zeros((1, 1), dtype)
-    elif pagelocked_mem:
-        # allocate the pagelocked memory
-        LOG.debug(f"Allocating pagelocked mem during Binding: {bind_id}, {name}")
+    if pagelocked_mem:
+        LOG.debug(f"Allocating pagelocked mem for Binding: {bind_id}, {name}")
         host_alloc = allocate_pinned_memory(size, dtype, shape)
+        _, device_alloc = get_ptr_pair(host_alloc)
     else:
-        # allocate non-pagelocked memory
+        device_alloc = cuda_malloc(size)
         host_alloc = np.zeros(shape, dtype)
 
     # make the binding
@@ -91,6 +117,7 @@ def create_binding(
         device_alloc,
         host_alloc,
         tensor_format,
+        pagelocked_mem,
     )
 
 
@@ -129,8 +156,7 @@ def allocate_bindings(
         If no memory allocations are found
 
     """
-    if pagelocked_mem is None:
-        pagelocked_mem = True
+    pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
 
     # lists for allocations
     inputs: list[Binding] = []
@@ -197,15 +223,17 @@ def allocate_bindings(
         size = dtype.itemsize
         for s in shape:
             size *= s
-        # allocate the device side memory
-        allocation = cuda_malloc(size)
-        # allocate the host side memory
-        if is_input:
-            host_allocation = np.zeros((1, 1), dtype=dtype)
-        elif pagelocked_mem:
+
+        # allocate memory
+        if pagelocked_mem:
             host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
+            _, allocation = get_ptr_pair(host_allocation)
         else:
-            host_allocation = np.zeros(size, dtype=dtype)
+            # allocate the device side memory
+            allocation = cuda_malloc(size)
+            # allocate the host side memory
+            host_allocation = np.zeros(tuple(shape), dtype=dtype)
+
         # create the binding
         binding = Binding(
             index=i,
@@ -216,6 +244,7 @@ def allocate_bindings(
             allocation=allocation,
             host_allocation=host_allocation,
             tensor_format=data_format,
+            pagelocked_mem=pagelocked_mem,
         )
         allocations.append(allocation)
         if is_input:

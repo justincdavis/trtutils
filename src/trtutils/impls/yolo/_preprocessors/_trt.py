@@ -10,9 +10,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-with contextlib.suppress(ImportError):
-    pass
-
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
@@ -49,6 +46,8 @@ class TRTPreprocessor:
         stream: cudart.cudaStream_t | None = None,
         threads: tuple[int, int, int] | None = None,
         tag: str | None = None,
+        *,
+        pagelocked_mem: bool | None = None,
     ) -> None:
         """
         Create a TRTPreprocessor for YOLO.
@@ -78,6 +77,9 @@ class TRTPreprocessor:
             The tag to prefix to all logging statements made.
             By default, 'TRTPreprocessor'
             If used within a YOLO class, will be the YOLO tag.
+        pagelocked_mem : bool, optional
+            Whether or not to allocate output memory as pagelocked.
+            By default, pagelocked memory will be used.
 
         Raises
         ------
@@ -94,6 +96,7 @@ class TRTPreprocessor:
         self._o_shape = output_shape
         self._o_range = output_range
         self._o_dtype = dtype
+        self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
 
         # compute scale and offset
         self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
@@ -126,6 +129,7 @@ class TRTPreprocessor:
         )
         self._input_binding = create_binding(
             dummy_input,
+            pagelocked_mem=self._pagelocked_mem,
         )
         dummy_intermediate: np.ndarray = np.zeros(
             (self._o_shape[1], self._o_shape[0], 3),
@@ -133,6 +137,7 @@ class TRTPreprocessor:
         )
         self._intermediate_binding = create_binding(
             dummy_intermediate,
+            pagelocked_mem=self._pagelocked_mem,
         )
 
         # block and thread info
@@ -280,6 +285,7 @@ class TRTPreprocessor:
         self._input_binding = create_binding(
             image,
             is_input=True,
+            pagelocked_mem=self._pagelocked_mem,
         )
 
     def _validate_input(
@@ -411,11 +417,12 @@ class TRTPreprocessor:
             verbose=verbose,
         )
 
-        memcpy_device_to_host_async(
-            self._engine_output_binding.host_allocation,
-            self._engine_output_binding.allocation,
-            self._stream,
-        )
+        if not self._pagelocked_mem:
+            memcpy_device_to_host_async(
+                self._engine_output_binding.host_allocation,
+                self._engine_output_binding.allocation,
+                self._stream,
+            )
 
         stream_synchronize(self._stream)
 
@@ -478,11 +485,14 @@ class TRTPreprocessor:
             LOG.debug(f"Ratios: {ratios}")
             LOG.debug(f"Padding: {padding}")
 
-        memcpy_host_to_device_async(
-            self._input_binding.allocation,
-            image,
-            self._stream,
-        )
+        if self._pagelocked_mem:
+            np.copyto(self._input_binding.host_allocation, image)
+        else:
+            memcpy_host_to_device_async(
+                self._input_binding.allocation,
+                image,
+                self._stream,
+            )
 
         resize_kernel.call(
             self._num_blocks,

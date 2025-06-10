@@ -68,6 +68,7 @@ class TRTEngineInterface(ABC):
         # store path stem as name
         self._name = Path(engine_path).stem
         self._dla_core = dla_core
+        self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._verbose = verbose
 
         # engine, context, logger, and CUDA stream
@@ -82,7 +83,7 @@ class TRTEngineInterface(ABC):
         self._inputs, self._outputs, self._allocations = allocate_bindings(
             self._engine,
             self._context,
-            pagelocked_mem=pagelocked_mem,
+            pagelocked_mem=self._pagelocked_mem,
         )
         self._input_allocations: list[int] = [
             input_b.allocation for input_b in self._inputs
@@ -364,10 +365,17 @@ class TRTEngineInterface(ABC):
         """
         verbose = verbose if verbose is not None else self._verbose
         if new or self._rand_input is None:
-            rand_input = [
-                self._rng.random(size=shape, dtype=np.float32).astype(dtype)
-                for (shape, dtype) in self.input_spec
-            ]
+            # generate in input datatype directly instead of casting (if possible)
+            rand_input = []
+            for shape, dtype in self.input_spec:
+                if np.issubdtype(dtype, np.floating):
+                    rand_arr = self._rng.random(size=shape, dtype=dtype)
+                else:
+                    # fallback to cast if not supported
+                    rand_arr = self._rng.random(size=shape, dtype=np.float32).astype(
+                        dtype
+                    )
+                rand_input.append(rand_arr)
             self._rand_input = rand_input
             if verbose:
                 LOG.debug(
@@ -452,7 +460,7 @@ class TRTEngineInterface(ABC):
             LOG.debug(f"Mock-execute: data={bool(data)}")
         if data is None:
             data = self.get_random_input(verbose=verbose)
-        return self.execute(data, verbose=verbose, debug=debug)
+        return self.execute(data, no_copy=True, verbose=verbose, debug=debug)
 
     def warmup(
         self: Self,
