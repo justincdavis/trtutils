@@ -22,7 +22,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._cuda import cuda_call
-from ._memory import allocate_pinned_memory, cuda_malloc
+from ._memory import allocate_pinned_memory, cuda_malloc, get_ptr_pair
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -40,6 +40,7 @@ class Binding:
     allocation: int
     host_allocation: np.ndarray
     tensor_format: trt.TensorFormat
+    pagelocked_mem: bool = False
 
     def free(self: Self) -> None:
         """Free the memory of the binding."""
@@ -91,6 +92,7 @@ def create_binding(
         device_alloc,
         host_alloc,
         tensor_format,
+        pagelocked_mem,
     )
 
 
@@ -200,12 +202,11 @@ def allocate_bindings(
         # allocate the device side memory
         allocation = cuda_malloc(size)
         # allocate the host side memory
-        if is_input:
-            host_allocation = np.zeros((1, 1), dtype=dtype)
-        elif pagelocked_mem:
+        if pagelocked_mem:
             host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
         else:
-            host_allocation = np.zeros(size, dtype=dtype)
+            host_allocation = np.zeros(tuple(shape), dtype=dtype)
+
         # create the binding
         binding = Binding(
             index=i,
@@ -216,6 +217,7 @@ def allocate_bindings(
             allocation=allocation,
             host_allocation=host_allocation,
             tensor_format=data_format,
+            pagelocked_mem=pagelocked_mem,
         )
         allocations.append(allocation)
         if is_input:

@@ -3,9 +3,11 @@
 # MIT License
 from __future__ import annotations
 
+import time
 from threading import Thread
 
 import trtutils
+import numpy as np
 
 from .common import build_engine
 
@@ -99,3 +101,86 @@ def test_multiple_engines_run_in_threads() -> None:
         thread.join()
     for r in result:
         assert r == NUM_ITERS
+
+
+def test_engine_run_no_pagelocked() -> None:
+    """Test the engine runs when pagelocked memory is disabled."""
+    engine_path = build_engine()
+
+    engine = trtutils.TRTEngine(
+        engine_path,
+        warmup=False,
+        pagelocked_mem=False,
+    )
+
+    outputs = engine.mock_execute()
+
+    assert outputs is not None
+
+
+def test_engine_parity_non_pagelocked() -> None:
+    """Test that the same engine gets same results with/without pagelocked memory."""
+    engine_path = build_engine()
+
+    engine = trtutils.TRTEngine(
+        engine_path,
+        warmup=False,
+        pagelocked_mem=True,
+    )
+    engine_no_pagelocked = trtutils.TRTEngine(
+        engine_path,
+        warmup=False,
+        pagelocked_mem=False,
+    )
+
+    rand_input = engine.get_random_input()
+
+    outputs = engine.execute(rand_input)
+    outputs_no_pagelocked = engine_no_pagelocked.execute(rand_input)
+
+    for out, out_no_page in zip(outputs, outputs_no_pagelocked):
+        assert np.allclose(out, out_no_page)
+
+
+def test_engine_pagelocked_performance() -> None:
+    """Test that the engine runs faster with pagelocked memory."""
+    engine_path = build_engine()
+
+    engine = trtutils.TRTEngine(
+        engine_path,
+        warmup=True,
+        warmup_iterations=10,
+        pagelocked_mem=True,
+    )
+
+    engine_no_pagelocked = trtutils.TRTEngine(
+        engine_path,
+        warmup=True,
+        warmup_iterations=10,
+        pagelocked_mem=False,
+    )
+
+    rand_input = engine.get_random_input()
+
+    pagelocked_times = []
+    non_pagelocked_times = []
+
+    for _ in range(NUM_ITERS * 5):
+        t0 = time.time()
+        engine.execute(rand_input)
+        t1 = time.time()
+        pagelocked_times.append(t1 - t0)
+
+        t00 = time.time()
+        engine_no_pagelocked.execute(rand_input)
+        t11 = time.time()
+        non_pagelocked_times.append(t11 - t00)
+
+    pagelock_mean = np.mean(pagelocked_times)
+    non_pagelock_mean = np.mean(non_pagelocked_times)
+    speedup = non_pagelock_mean / pagelock_mean
+    assert speedup > 1.0
+
+    print(
+        f"Pagelocked mean: {pagelock_mean}, Non-pagelocked mean: {non_pagelock_mean}, Speedup: {speedup}"
+    )

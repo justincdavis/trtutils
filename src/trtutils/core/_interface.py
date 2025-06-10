@@ -68,6 +68,7 @@ class TRTEngineInterface(ABC):
         # store path stem as name
         self._name = Path(engine_path).stem
         self._dla_core = dla_core
+        self._pagelocked_mem = pagelocked_mem
         self._verbose = verbose
 
         # engine, context, logger, and CUDA stream
