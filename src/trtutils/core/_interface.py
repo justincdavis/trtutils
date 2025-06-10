@@ -68,7 +68,7 @@ class TRTEngineInterface(ABC):
         # store path stem as name
         self._name = Path(engine_path).stem
         self._dla_core = dla_core
-        self._pagelocked_mem = pagelocked_mem
+        self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._verbose = verbose
 
         # engine, context, logger, and CUDA stream
@@ -83,7 +83,7 @@ class TRTEngineInterface(ABC):
         self._inputs, self._outputs, self._allocations = allocate_bindings(
             self._engine,
             self._context,
-            pagelocked_mem=pagelocked_mem,
+            pagelocked_mem=self._pagelocked_mem,
         )
         self._input_allocations: list[int] = [
             input_b.allocation for input_b in self._inputs

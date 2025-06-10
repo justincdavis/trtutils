@@ -241,10 +241,15 @@ def allocate_managed_memory(
     stream : cudart.cudaStream_t, optional
         The stream to utilize.
 
+    Returns
+    -------
+    int
+        The pointer to the allocated memory.
+
     """
     with MEM_ALLOC_LOCK:
-        device_ptr = cuda_call(cudart.cudaMallocManaged(nbytes))
-    
+        device_ptr: int = cuda_call(cudart.cudaMallocManaged(nbytes))
+
     # if a stream is provided, we should attach the memory
     if stream is not None:
         cuda_call(cudart.cudaStreamAttachMemAsync(stream, device_ptr))

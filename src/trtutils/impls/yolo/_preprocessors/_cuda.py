@@ -44,6 +44,8 @@ class CUDAPreprocessor:
         stream: cudart.cudaStream_t | None = None,
         threads: tuple[int, int, int] | None = None,
         tag: str | None = None,
+        *,
+        pagelocked_mem: bool | None = None,
     ) -> None:
         """
         Create a CUDAPreprocessor for YOLO.
@@ -73,6 +75,9 @@ class CUDAPreprocessor:
             The tag to prefix to all logging statements made.
             By default, 'CUDAPreprocessor'
             If used within a YOLO class, will be the YOLO tag.
+        pagelocked_mem : bool, optional
+            Whether or not to allocate output memory as pagelocked.
+            By default, pagelocked memory will be used.
 
         Raises
         ------
@@ -89,6 +94,7 @@ class CUDAPreprocessor:
         self._o_shape = output_shape
         self._o_range = output_range
         self._o_dtype = dtype
+        self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
 
         # compute scale and offset
         self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
@@ -123,7 +129,7 @@ class CUDAPreprocessor:
         self._input_binding = create_binding(
             dummy_input,
             is_input=True,
-            pagelocked_mem=True,
+            pagelocked_mem=self._pagelocked_mem,
         )
         # these two CUDA allocations are static size
         # sst kernel input binding
@@ -134,7 +140,7 @@ class CUDAPreprocessor:
         self._sst_input_binding = create_binding(
             dummy_sstinput,
             is_input=True,
-            pagelocked_mem=True,
+            pagelocked_mem=self._pagelocked_mem,
         )
         # sst kernel output binding
         dummy_output: np.ndarray = np.zeros(
@@ -143,7 +149,7 @@ class CUDAPreprocessor:
         )
         self._output_binding = create_binding(
             dummy_output,
-            pagelocked_mem=True,
+            pagelocked_mem=self._pagelocked_mem,
         )
 
         # block and thread info
@@ -272,7 +278,7 @@ class CUDAPreprocessor:
         self._input_binding = create_binding(
             image,
             is_input=True,
-            pagelocked_mem=True,
+            pagelocked_mem=self._pagelocked_mem,
         )
 
     def _validate_input(
@@ -404,11 +410,12 @@ class CUDAPreprocessor:
             verbose=verbose,
         )
 
-        memcpy_device_to_host_async(
-            self._output_binding.host_allocation,
-            self._output_binding.allocation,
-            self._stream,
-        )
+        if not self._pagelocked_mem:
+            memcpy_device_to_host_async(
+                self._output_binding.host_allocation,
+                self._output_binding.allocation,
+                self._stream,
+            )
 
         stream_synchronize(self._stream)
 
@@ -471,11 +478,14 @@ class CUDAPreprocessor:
             LOG.debug(f"Ratios: {ratios}")
             LOG.debug(f"Padding: {padding}")
 
-        memcpy_host_to_device_async(
-            self._input_binding.allocation,
-            image,
-            self._stream,
-        )
+        if self._pagelocked_mem:
+            np.copyto(self._input_binding.host_allocation, image)
+        else:
+            memcpy_host_to_device_async(
+                self._input_binding.allocation,
+                image,
+                self._stream,
+            )
 
         resize_kernel.call(
             self._num_blocks,

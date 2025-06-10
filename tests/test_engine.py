@@ -6,8 +6,9 @@ from __future__ import annotations
 import time
 from threading import Thread
 
-import trtutils
 import numpy as np
+
+import trtutils
 
 from .common import build_engine
 

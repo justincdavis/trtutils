@@ -34,6 +34,7 @@ class YOLO:
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
@@ -74,6 +75,9 @@ class YOLO:
             If None, any DLA layers will be assigned to DLA core 0.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
+        pagelocked_mem : bool, optional
+            Whether or not to use pagelocked memory for underlying CUDA operations.
+            By default, pagelocked memory will be used.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -99,11 +103,13 @@ class YOLO:
         if verbose:
             LOG.debug(f"Creating YOLO: {self._tag}")
 
+        self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._engine = TRTEngine(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
             dla_core=dla_core,
+            pagelocked_mem=self._pagelocked_mem,
             no_warn=no_warn,
         )
         self._conf_thres = conf_thres
@@ -165,6 +171,7 @@ class YOLO:
             self._dtype,
             resize=self._resize_method,
             stream=self._engine.stream,
+            pagelocked_mem=self._pagelocked_mem,
             tag=self._tag,
         )
 
@@ -175,6 +182,7 @@ class YOLO:
             self._dtype,
             resize=self._resize_method,
             stream=self._engine.stream,
+            pagelocked_mem=self._pagelocked_mem,
             tag=self._tag,
         )
 

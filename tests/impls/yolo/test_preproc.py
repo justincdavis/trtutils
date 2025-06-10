@@ -130,37 +130,61 @@ def _measure(
     return float(np.mean(profs))
 
 
-def test_cuda_perf() -> None:
-    """Test that the CUDA preprocessor is faster than the CPU preprocessor."""
+def _cuda_perf(*, pagelocked_mem: bool) -> tuple[float, float]:
     cpu = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
-    cuda = CUDAPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
-
+    cuda = CUDAPreprocessor(
+        (640, 640), (0.0, 1.0), np.dtype(np.float32), pagelocked_mem=pagelocked_mem
+    )
     img = cv2.imread(HORSE_IMAGE_PATH)
-
-    # warmup
     for _ in range(10):
         cpu.preprocess(img)
         cuda.preprocess(img)
+    return _measure(img, cpu), _measure(img, cuda)
 
-    cpu_time = _measure(img, cpu)
-    cuda_time = _measure(img, cuda)
 
+def test_cuda_perf() -> None:
+    """Test that the CUDA preprocessor is faster than the CPU preprocessor."""
+    cpu_time, cuda_time = _cuda_perf(pagelocked_mem=False)
     assert cpu_time > cuda_time
+    print(
+        f"CPU time: {cpu_time:.3f}s, CUDA time: {cuda_time:.3f}s, speed up: {cpu_time / cuda_time:.2f}x"
+    )
+
+
+def test_cuda_perf_pagelocked() -> None:
+    """Test that the CUDA preprocessor is faster than the CPU preprocessor."""
+    cpu_time, cuda_time = _cuda_perf(pagelocked_mem=True)
+    assert cpu_time > cuda_time
+    print(
+        f"Pagelocked - CPU time: {cpu_time:.3f}s, CUDA time: {cuda_time:.3f}s, speed up: {cpu_time / cuda_time:.2f}x"
+    )
+
+
+def _trt_perf(*, pagelocked_mem: bool) -> tuple[float, float]:
+    cpu = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
+    trt = TRTPreprocessor(
+        (640, 640), (0.0, 1.0), np.dtype(np.float32), pagelocked_mem=pagelocked_mem
+    )
+    img = cv2.imread(HORSE_IMAGE_PATH)
+    for _ in range(10):
+        cpu.preprocess(img)
+        trt.preprocess(img)
+    return _measure(img, cpu), _measure(img, trt)
 
 
 def test_trt_perf() -> None:
     """Test that the TRT preprocessor is faster than the CPU preprocessor."""
-    cpu = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
-    trt = TRTPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
-
-    img = cv2.imread(HORSE_IMAGE_PATH)
-
-    # warmup
-    for _ in range(10):
-        cpu.preprocess(img)
-        trt.preprocess(img)
-
-    cpu_time = _measure(img, cpu)
-    trt_time = _measure(img, trt)
-
+    cpu_time, trt_time = _trt_perf(pagelocked_mem=False)
     assert cpu_time > trt_time
+    print(
+        f"CPU time: {cpu_time:.3f}s, TRT time: {trt_time:.3f}s, speed up: {cpu_time / trt_time:.2f}x"
+    )
+
+
+def test_trt_perf_pagelocked() -> None:
+    """Test that the TRT preprocessor is faster than the CPU preprocessor."""
+    cpu_time, trt_time = _trt_perf(pagelocked_mem=True)
+    assert cpu_time > trt_time
+    print(
+        f"Pagelocked - CPU time: {cpu_time:.3f}s, TRT time: {trt_time:.3f}s, speed up: {cpu_time / trt_time:.2f}x"
+    )
