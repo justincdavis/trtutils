@@ -158,6 +158,8 @@ def allocate_pinned_memory(
     nbytes: int,
     dtype: np.dtype,
     shape: tuple[int, ...] | None = None,
+    *,
+    unified_mem: bool | None = None,
 ) -> np.ndarray:
     """
     Allocate pinned (page-locked) memory on the host, required for asynchronous memory transfers.
@@ -175,6 +177,8 @@ def allocate_pinned_memory(
     shape : tuple[int, ...], optional
         An optional shape for the pagelocked memory array.
         If not provided, the array will be 1D.
+    unified_mem : bool, optional
+        If True, use cudaHostAllocMapped to take advantage of unified memory.
 
     Returns
     -------
@@ -182,9 +186,10 @@ def allocate_pinned_memory(
         A numpy array backed by pinned memory.
 
     """
+    flags = cudart.cudaHostAllocMapped if unified_mem else cudart.cudaHostAllocDefault
     # allocate pinned memory and get a pointer to it directly
     with MEM_ALLOC_LOCK:
-        host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocMapped))
+        host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, flags))
 
     # create the numpy array
     array_type = ctypes.c_byte * nbytes

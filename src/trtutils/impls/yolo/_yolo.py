@@ -36,6 +36,7 @@ class YOLO:
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
@@ -79,6 +80,10 @@ class YOLO:
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for underlying CUDA operations.
             By default, pagelocked memory will be used.
+        unified_mem : bool, optional
+            Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which means the default host allocation will be used.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -111,8 +116,10 @@ class YOLO:
             warmup=warmup,
             dla_core=dla_core,
             pagelocked_mem=self._pagelocked_mem,
+            unified_mem=unified_mem,
             no_warn=no_warn,
         )
+        self._unified_mem = self._engine.unified_mem
         self._conf_thres = conf_thres
         self._resize_method: str = resize_method
         self._nms_iou: float = nms_iou_thres
@@ -180,6 +187,7 @@ class YOLO:
             resize=self._resize_method,
             stream=self._engine.stream,
             pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
             tag=self._tag,
         )
 
@@ -191,6 +199,7 @@ class YOLO:
             resize=self._resize_method,
             stream=self._engine.stream,
             pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
             tag=self._tag,
         )
 

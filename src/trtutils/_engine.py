@@ -58,6 +58,7 @@ class TRTEngine(TRTEngineInterface):
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -86,6 +87,10 @@ class TRTEngine(TRTEngineInterface):
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for host allocations.
             By default None, which means pagelocked memory will be used.
+        unified_mem : bool, optional
+            Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which will automatically determine what to use.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -103,6 +108,7 @@ class TRTEngine(TRTEngineInterface):
             stream=stream,
             dla_core=dla_core,
             pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -179,7 +185,7 @@ class TRTEngine(TRTEngineInterface):
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
 
         # copy inputs
-        if self._pagelocked_mem:
+        if self._pagelocked_mem and self._unified_mem:
             for i_idx in range(len(self._inputs)):
                 np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
         else:
@@ -203,7 +209,7 @@ class TRTEngine(TRTEngineInterface):
             stream_synchronize(self._stream)
 
         # copy outputs
-        if not self._pagelocked_mem:
+        if not self._unified_mem:
             for o_idx in range(len(self._outputs)):
                 memcpy_device_to_host_async(
                     self._outputs[o_idx].host_allocation,
@@ -279,7 +285,7 @@ class TRTEngine(TRTEngineInterface):
             stream_synchronize(self._stream)
 
         # copy outputs
-        if not self._pagelocked_mem:
+        if not self._unified_mem:
             for o_idx in range(len(self._outputs)):
                 memcpy_device_to_host_async(
                     self._outputs[o_idx].host_allocation,

@@ -48,6 +48,7 @@ class TRTPreprocessor:
         tag: str | None = None,
         *,
         pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
     ) -> None:
         """
         Create a TRTPreprocessor for YOLO.
@@ -80,6 +81,10 @@ class TRTPreprocessor:
         pagelocked_mem : bool, optional
             Whether or not to allocate output memory as pagelocked.
             By default, pagelocked memory will be used.
+        unified_mem : bool, optional
+            Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which means the default host allocation will be used.
 
         Raises
         ------
@@ -97,6 +102,7 @@ class TRTPreprocessor:
         self._o_range = output_range
         self._o_dtype = dtype
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+        self._unified_mem = unified_mem
 
         # compute scale and offset
         self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
@@ -130,6 +136,7 @@ class TRTPreprocessor:
         self._input_binding = create_binding(
             dummy_input,
             pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
         )
         dummy_intermediate: np.ndarray = np.zeros(
             (self._o_shape[1], self._o_shape[0], 3),
@@ -138,6 +145,7 @@ class TRTPreprocessor:
         self._intermediate_binding = create_binding(
             dummy_intermediate,
             pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
         )
 
         # block and thread info
@@ -172,7 +180,12 @@ class TRTPreprocessor:
         # allocate the trtengine
         self._engine_path = build_yolo_preproc(self._o_shape, self._o_dtype)
         self._engine = TRTEngine(
-            self._engine_path, stream=self._stream, warmup_iterations=1, warmup=True
+            self._engine_path,
+            stream=self._stream,
+            warmup_iterations=1,
+            warmup=True,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
         )
         self._engine_output_binding = self._engine.output_bindings[0]
 
@@ -286,6 +299,7 @@ class TRTPreprocessor:
             image,
             is_input=True,
             pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
         )
 
     def _validate_input(
@@ -417,7 +431,7 @@ class TRTPreprocessor:
             verbose=verbose,
         )
 
-        if not self._pagelocked_mem:
+        if not self._unified_mem:
             memcpy_device_to_host_async(
                 self._engine_output_binding.host_allocation,
                 self._engine_output_binding.allocation,
@@ -485,7 +499,7 @@ class TRTPreprocessor:
             LOG.debug(f"Ratios: {ratios}")
             LOG.debug(f"Padding: {padding}")
 
-        if self._pagelocked_mem:
+        if self._pagelocked_mem and self._unified_mem:
             np.copyto(self._input_binding.host_allocation, image)
         else:
             memcpy_host_to_device_async(
