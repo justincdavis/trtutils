@@ -150,7 +150,9 @@ class YOLO:
         # change the preprocessor setup to cuda if set to trt and trt doesnt have uint8 support
         if preprocessor == "trt" and not FLAGS.TRT_HAS_UINT8:
             preprocessor = "cuda"
-            LOG.warning("Preprocessing method set to TensorRT, but platform doesnt have UINT8 support, fallback to CUDA.")
+            LOG.warning(
+                "Preprocessing method set to TensorRT, but platform doesnt have UINT8 support, fallback to CUDA."
+            )
         # existing logic
         if preprocessor == "trt":
             self._preproc_trt = self._setup_trt_preproc()
@@ -260,8 +262,10 @@ class YOLO:
         preprocessor = self._preprocessor
         if method is not None:
             if method == "trt" and not FLAGS.TRT_HAS_UINT8:
-                method == "cuda"
-                LOG.warning("Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA.")
+                method = "cuda"
+                LOG.warning(
+                    "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
+                )
             preprocessor = self._preproc_cpu
             if method == "cuda":
                 if self._preproc_cuda is None:
