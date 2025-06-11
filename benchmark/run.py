@@ -97,7 +97,7 @@ def write_data(device: str, data: dict[str, dict[str, dict[str, dict[str, float]
 
 
 def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool) -> None:
-    from trtutils import TRTEngine
+    from trtutils import TRTEngine, FLAGS
     from trtutils.impls.yolo import YOLO
     from trtutils.builder import build_engine
 
@@ -108,6 +108,9 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
     data = get_data(device)
 
     for preprocessor in ["cpu", "cuda", "trt"]:
+        if preprocessor == "trt" and not FLAGS.TRT_HAS_UINT8:
+            continue
+
         framework = f"trtutils({preprocessor})"
         for imgsz in IMAGE_SIZES:
             # if we can find the model nested, then we can skip

@@ -18,6 +18,8 @@ class Flags:
     ----------
     TRT_10 : bool
         Whether or not TensorRT is version 10 or greater.
+    TRT_HAS_UINT8 : bool
+        Whether or not TensorRT suports UINT8 datatype.
     NEW_CAN_RUN_ON_DLA : bool
         Whether or not TensorRT supports the new can_run_on_dla method.
     BUILD_PROGRESS : bool
@@ -48,6 +50,7 @@ class Flags:
 
     # TensorRT and CUDA flags
     TRT_10: bool = False
+    TRT_HAS_UINT8: bool = False
     NEW_CAN_RUN_ON_DLA: bool = False
     MEMSIZE_V2: bool = False
     BUILD_PROGRESS: bool = False
@@ -72,6 +75,7 @@ with contextlib.suppress(ImportError):
     import tensorrt as trt
 
     FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
+    FLAGS.TRT_HAS_UINT8 = hasattr(trt.DataType, "UINT8")
     FLAGS.NEW_CAN_RUN_ON_DLA = hasattr(trt.IBuilderConfig, "can_run_on_DLA")
     FLAGS.MEMSIZE_V2 = hasattr(trt.ICudaEngine, "device_memory_size_v2")
     FLAGS.BUILD_PROGRESS = hasattr(trt, "IProgressMonitor")
