@@ -111,10 +111,10 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
         for imgsz in IMAGE_SIZES:
             # if we can find the model nested, then we can skip
             with contextlib.suppress(KeyError):
-                if data["trtutils"][MODELNAME][str(imgsz)] is not None and not overwrite:
+                if data[f"trtutils{preprocessor}"][MODELNAME][str(imgsz)] is not None and not overwrite:
                     continue
 
-            print(f"Processing trtutils on {MODELNAME} for imgsz={imgsz}...")
+            print(f"Processing trtutils({preprocessor}) on {MODELNAME} for imgsz={imgsz}...")
 
             # resolve paths
             weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
