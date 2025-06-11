@@ -108,13 +108,14 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
     data = get_data(device)
 
     for preprocessor in ["cpu", "cuda", "trt"]:
+        framework = f"trtutils({preprocessor})"
         for imgsz in IMAGE_SIZES:
             # if we can find the model nested, then we can skip
             with contextlib.suppress(KeyError):
-                if data[f"trtutils{preprocessor}"][MODELNAME][str(imgsz)] is not None and not overwrite:
+                if data[framework][MODELNAME][str(imgsz)] is not None and not overwrite:
                     continue
 
-            print(f"Processing trtutils({preprocessor}) on {MODELNAME} for imgsz={imgsz}...")
+            print(f"Processing {framework} on {MODELNAME} for imgsz={imgsz}...")
 
             # resolve paths
             weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
@@ -154,9 +155,9 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
 
             trt_results = get_results(t_timing)
 
-            if MODELNAME not in data[f"trtutils({preprocessor})"]:
-                data[f"trtutils({preprocessor})"][MODELNAME] = {}
-            data[f"trtutils({preprocessor})"][MODELNAME][str(imgsz)] = trt_results
+            if MODELNAME not in data[framework]:
+                data[framework][MODELNAME] = {}
+            data[framework][MODELNAME][str(imgsz)] = trt_results
             write_data(device, data)
 
             # add the 'raw' engine execution when using cpu preprocessor
