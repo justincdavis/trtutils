@@ -1,7 +1,6 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: TRY004
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 

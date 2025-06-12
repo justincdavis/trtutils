@@ -41,6 +41,7 @@ class Binding:
     host_allocation: np.ndarray
     tensor_format: trt.TensorFormat
     pagelocked_mem: bool
+    unified_mem: bool
 
     def free(self: Self) -> None:
         """Free the memory of the binding."""
@@ -63,6 +64,7 @@ def create_binding(
     *,
     is_input: bool | None = None,
     pagelocked_mem: bool | None = None,
+    unified_mem: bool | None = None,
 ) -> Binding:
     """
     Create a binding for a TensorRT engine.
@@ -82,6 +84,9 @@ def create_binding(
     pagelocked_mem : bool, optional
         Whether or not to use pagelocked memory for host allocations.
         By default None, which means pagelocked memory will be used.
+    unified_mem : bool, optional
+        Whether or not the system has unified memory.
+        If True, use cudaHostAllocMapped to take advantage of unified memory.
 
     Returns
     -------
@@ -99,13 +104,15 @@ def create_binding(
         size *= s
 
     # allocate host and device memory
-    if pagelocked_mem:
-        LOG.debug(f"Allocating pagelocked mem for Binding: {bind_id}, {name}")
-        host_alloc = allocate_pinned_memory(size, dtype, shape)
-        _, device_alloc = get_ptr_pair(host_alloc)
+    if pagelocked_mem and unified_mem:
+        host_allocation = allocate_pinned_memory(size, dtype, tuple(shape), unified_mem=unified_mem)
+        _, device_allocation = get_ptr_pair(host_allocation)
     else:
-        device_alloc = cuda_malloc(size)
-        host_alloc = np.zeros(shape, dtype)
+        device_allocation = cuda_malloc(size)
+        if pagelocked_mem:
+            host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
+        else:
+            host_allocation = np.zeros(tuple(shape), dtype=dtype)
 
     # make the binding
     return Binding(
@@ -114,10 +121,11 @@ def create_binding(
         dtype,
         list(shape),
         bool(is_input),
-        device_alloc,
-        host_alloc,
+        device_allocation,
+        host_allocation,
         tensor_format,
         pagelocked_mem,
+        unified_mem,
     )
 
 
@@ -126,6 +134,7 @@ def allocate_bindings(
     context: trt.IExecutionContext,
     *,
     pagelocked_mem: bool | None = None,
+    unified_mem: bool | None = None,
 ) -> tuple[list[Binding], list[Binding], list[int]]:
     """
     Allocate memory for the input and output tensors of a TensorRT engine.
@@ -139,6 +148,10 @@ def allocate_bindings(
     pagelocked_mem : bool, optional
         Whether or not to use pagelocked memory for host allocations.
         By default None, which means pagelocked memory will be used.
+    unified_mem : bool, optional
+        Whether or not the system has unified memory.
+        If True, use cudaHostAllocMapped to take advantage of unified memory.
+        By default None, which means the default host allocation will be used.
 
     Returns
     -------
@@ -157,6 +170,7 @@ def allocate_bindings(
 
     """
     pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+    unified_mem = unified_mem if unified_mem is not None else False
 
     # lists for allocations
     inputs: list[Binding] = []
@@ -219,34 +233,18 @@ def allocate_bindings(
 
         LOG.debug(f"Allocating for I/O tensor: {name} - is_input: {is_input}")
 
-        # compute the size of the binding
-        size = dtype.itemsize
-        for s in shape:
-            size *= s
-
-        # allocate memory
-        if pagelocked_mem:
-            host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
-            _, allocation = get_ptr_pair(host_allocation)
-        else:
-            # allocate the device side memory
-            allocation = cuda_malloc(size)
-            # allocate the host side memory
-            host_allocation = np.zeros(tuple(shape), dtype=dtype)
-
-        # create the binding
-        binding = Binding(
-            index=i,
+        #allocate memory and create binding
+        binding = create_binding(
+            np.zeros(shape, dtype),
+            bind_id=i,
             name=name,
-            dtype=dtype,
-            shape=list(shape),
-            is_input=is_input,
-            allocation=allocation,
-            host_allocation=host_allocation,
             tensor_format=data_format,
+            is_input=is_input,
             pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
         )
-        allocations.append(allocation)
+
+        allocations.append(binding.allocation)
         if is_input:
             inputs.append(binding)
         else:

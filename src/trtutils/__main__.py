@@ -1,7 +1,6 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: PLC0415
 """Main entry point for trtutils CLI."""
 
 from __future__ import annotations
@@ -376,6 +375,12 @@ def _main() -> None:
         type=int,
         default=None,
         help="DLA core to assign DLA layers of the engine to. Default is None.",
+    )
+    parent_parser.add_argument(
+        "--log_level",
+        choices=["DEBUG", "debug", "INFO", "info", "WARNING", "warning", "ERROR", "error", "CRITICAL", "critical"],
+        default="INFO",
+        help="Set the log level. Default is INFO.",
     )
     parent_parser.add_argument(
         "--verbose",
@@ -762,6 +767,11 @@ def _main() -> None:
 
     # parse args and call the function
     args, unknown = parser.parse_known_args()
+
+    # set log level
+    trtutils.set_log_level(args.log_level)
+
+    # call function with args
     if hasattr(args, "func"):
         if args.command == "trtexec":
             args.func(unknown)
@@ -772,5 +782,4 @@ def _main() -> None:
 
 
 if __name__ == "__main__":
-    trtutils.set_log_level("INFO")
     _main()

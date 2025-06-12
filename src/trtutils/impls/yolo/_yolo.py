@@ -36,6 +36,7 @@ class YOLO:
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
@@ -79,6 +80,10 @@ class YOLO:
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for underlying CUDA operations.
             By default, pagelocked memory will be used.
+        unified_mem : bool, optional
+            Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which means the default host allocation will be used.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -111,8 +116,10 @@ class YOLO:
             warmup=warmup,
             dla_core=dla_core,
             pagelocked_mem=self._pagelocked_mem,
+            unified_mem=unified_mem,
             no_warn=no_warn,
         )
+        self._unified_mem = self._engine.unified_mem
         self._conf_thres = conf_thres
         self._resize_method: str = resize_method
         self._nms_iou: float = nms_iou_thres
@@ -150,7 +157,9 @@ class YOLO:
         # change the preprocessor setup to cuda if set to trt and trt doesnt have uint8 support
         if preprocessor == "trt" and not FLAGS.TRT_HAS_UINT8:
             preprocessor = "cuda"
-            LOG.warning("Preprocessing method set to TensorRT, but platform doesnt have UINT8 support, fallback to CUDA.")
+            LOG.warning(
+                "Preprocessing method set to TensorRT, but platform doesnt have UINT8 support, fallback to CUDA."
+            )
         # existing logic
         if preprocessor == "trt":
             self._preproc_trt = self._setup_trt_preproc()
@@ -178,6 +187,7 @@ class YOLO:
             resize=self._resize_method,
             stream=self._engine.stream,
             pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
             tag=self._tag,
         )
 
@@ -189,6 +199,7 @@ class YOLO:
             resize=self._resize_method,
             stream=self._engine.stream,
             pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
             tag=self._tag,
         )
 
@@ -260,8 +271,10 @@ class YOLO:
         preprocessor = self._preprocessor
         if method is not None:
             if method == "trt" and not FLAGS.TRT_HAS_UINT8:
-                method == "cuda"
-                LOG.warning("Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA.")
+                method = "cuda"
+                LOG.warning(
+                    "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
+                )
             preprocessor = self._preproc_cpu
             if method == "cuda":
                 if self._preproc_cuda is None:
