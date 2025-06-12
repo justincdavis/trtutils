@@ -39,6 +39,7 @@ class TRTEngineInterface(ABC):
         dla_core: int | None = None,
         *,
         pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -58,6 +59,10 @@ class TRTEngineInterface(ABC):
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for host allocations.
             By default None, which means pagelocked memory will be used.
+        unified_mem : bool, optional
+            Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which means the default host allocation will be used.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -69,6 +74,7 @@ class TRTEngineInterface(ABC):
         self._name = Path(engine_path).stem
         self._dla_core = dla_core
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+        self._unified_mem = unified_mem if unified_mem is not None else FLAGS.IS_JETSON
         self._verbose = verbose
 
         # engine, context, logger, and CUDA stream
@@ -84,6 +90,7 @@ class TRTEngineInterface(ABC):
             self._engine,
             self._context,
             pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
         )
         self._input_allocations: list[int] = [
             input_b.allocation for input_b in self._inputs
@@ -136,6 +143,16 @@ class TRTEngineInterface(ABC):
     def dla_core(self: Self) -> int | None:
         """The DLA core assigned to the engine."""
         return self._dla_core
+
+    @property
+    def pagelocked_mem(self: Self) -> bool:
+        """Whether or not the system has pagelocked memory."""
+        return self._pagelocked_mem
+
+    @property
+    def unified_mem(self: Self) -> bool:
+        """Whether or not the system has unified memory."""
+        return self._unified_mem
 
     @cached_property
     def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:

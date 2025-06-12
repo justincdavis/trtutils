@@ -85,11 +85,6 @@ from ._flags import FLAGS
 from ._jit import JIT, disable_jit, enable_jit, register_jit
 from ._log import LOG, set_log_level
 
-# output available execution api debug
-for attr in [a for a in dir(FLAGS) if not a.startswith("_")]:
-    _flag_str = f"FLAG {attr}: {getattr(FLAGS, attr)}"
-    LOG.debug(_flag_str)
-
 __author__ = "Justin Davis"
 __version__ = "0.5.0"
 
@@ -144,3 +139,8 @@ with contextlib.suppress(ImportError):
 if FLAGS.FOUND_NUMBA:
     LOG.info("Numba found, enabling JIT")
     enable_jit()
+
+# output available execution api debug
+for attr in [a for a in dir(FLAGS) if not a.startswith("_")]:
+    _flag_str = f"FLAG - {attr}: {getattr(FLAGS, attr)}"
+    LOG.debug(_flag_str)

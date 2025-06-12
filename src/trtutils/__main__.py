@@ -377,6 +377,12 @@ def _main() -> None:
         help="DLA core to assign DLA layers of the engine to. Default is None.",
     )
     parent_parser.add_argument(
+        "--log_level",
+        choices=["DEBUG", "debug", "INFO", "info", "WARNING", "warning", "ERROR", "error", "CRITICAL", "critical"],
+        default="INFO",
+        help="Set the log level. Default is INFO.",
+    )
+    parent_parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose output.",
@@ -761,6 +767,11 @@ def _main() -> None:
 
     # parse args and call the function
     args, unknown = parser.parse_known_args()
+
+    # set log level
+    trtutils.set_log_level(args.log_level)
+
+    # call function with args
     if hasattr(args, "func"):
         if args.command == "trtexec":
             args.func(unknown)
@@ -771,5 +782,4 @@ def _main() -> None:
 
 
 if __name__ == "__main__":
-    trtutils.set_log_level("INFO")
     _main()
