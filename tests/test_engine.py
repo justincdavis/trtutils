@@ -36,6 +36,29 @@ def test_engine_run() -> None:
     assert outputs is not None
 
 
+def test_engine_run_backends() -> None:
+    """Test each backend of the engine."""
+    engine_path = build_engine()
+
+    backends: list[str] = []
+    if trtutils.FLAGS.EXEC_ASYNC_V3:
+        backends.append("async_v3")
+    if trtutils.FLAGS.EXEC_ASYNC_V2:
+        backends.append("async_v2")
+
+    # test the supported backends
+    for backend in backends:
+        engine = trtutils.TRTEngine(
+            engine_path,
+            warmup=False,
+            backend=backend,
+        )
+
+        outputs = engine.mock_execute()
+
+        assert outputs is not None
+
+
 def test_multiple_engines_run() -> None:
     """Test running multiple engines simultaneously."""
     engine_path = build_engine()
