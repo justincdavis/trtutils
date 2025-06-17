@@ -238,17 +238,17 @@ def test_engine_direct_exec_pointer_reset() -> None:
     _ = engine.direct_exec(device_ptrs, no_warn=True)
 
     # ensure different tensor pointers setup
-    for name in input_names:
-        assert context.get_tensor_address(name) != input_ptrs[0]
-        assert context.get_tensor_address(name) == device_ptrs[0]
+    for i, name in enumerate(input_names):
+        assert context.get_tensor_address(name) != input_ptrs[i]
+        assert context.get_tensor_address(name) == device_ptrs[i]
     assert engine._using_engine_tensors is False  # noqa: SLF001
 
     # normal execute pass
     _ = engine.execute(rand_input)
 
     # ensure the pointers are reset
-    for name in input_names:
-        assert context.get_tensor_address(name) == input_ptrs[0]
+    for i, name in enumerate(input_names):
+        assert context.get_tensor_address(name) == input_ptrs[i]
     assert engine._using_engine_tensors is True  # noqa: SLF001
 
     # free
@@ -309,17 +309,17 @@ def test_engine_raw_exec_pointer_reset() -> None:
     _ = engine.raw_exec(device_ptrs, no_warn=True)
 
     # ensure different tensor pointers setup
-    for name in input_names:
-        assert context.get_tensor_address(name) != input_ptrs[0]
-        assert context.get_tensor_address(name) == device_ptrs[0]
+    for i, name in enumerate(input_names):
+        assert context.get_tensor_address(name) != input_ptrs[i]
+        assert context.get_tensor_address(name) == device_ptrs[i]
     assert engine._using_engine_tensors is False  # noqa: SLF001
 
     # normal execute pass
     _ = engine.execute(rand_input)
 
     # ensure the pointers are reset
-    for name in input_names:
-        assert context.get_tensor_address(name) == input_ptrs[0]
+    for i, name in enumerate(input_names):
+        assert context.get_tensor_address(name) == input_ptrs[i]
     assert engine._using_engine_tensors is True  # noqa: SLF001
 
     # free
