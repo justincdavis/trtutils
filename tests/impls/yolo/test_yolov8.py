@@ -167,12 +167,12 @@ def test_yolo_8_dla_preproc_trt_results() -> None:
 
 def test_yolo_8_swapping_preproc_results() -> None:
     """Test swapping the preprocessing method at runtime and check results."""
-    yolo_swapping_preproc_results(7, use_dla=False)
+    yolo_swapping_preproc_results(8, use_dla=False)
 
 
 def test_yolo_8_swapping_preproc_results_dla() -> None:
     """Test swapping the preprocessing method at runtime and check results with DLA."""
-    yolo_swapping_preproc_results(7, use_dla=True)
+    yolo_swapping_preproc_results(8, use_dla=True)
 
 
 if __name__ == "__main__":
