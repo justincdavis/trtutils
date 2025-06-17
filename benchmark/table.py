@@ -20,15 +20,17 @@ def _make_rst_table(rows: list[list[str]], headers: list[str]) -> str:
     table = ".. csv-table:: Performance Metrics\n"
     table += "   :header: " + ",".join(headers) + "\n"
     table += "   :widths: " + ",".join(["10"] * len(headers)) + "\n\n"
-    
+
     # Add the rows
     for row in rows:
         table += "   " + ",".join(str(cell) for cell in row) + "\n"
-    
+
     return table
 
 
-def _get_device_rows(data: dict[str, dict[str, dict[str, dict[str, float]]]]) -> list[list[str]]:
+def _get_device_rows(
+    data: dict[str, dict[str, dict[str, dict[str, float]]]],
+) -> list[list[str]]:
     rows = []
     for framework in reversed(FRAMEWORKS):
         f_data = data.get(framework)
@@ -62,9 +64,7 @@ def _make_all_table(
     for device, d_data in data.items():
         device_rows = _get_device_rows(d_data)
         for r in device_rows:
-            rows.append(
-                [device] + r
-            )
+            rows.append([device] + r)
 
     headers = [
         "Device",

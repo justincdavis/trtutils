@@ -1,7 +1,6 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: E402
 # mypy: disable-error-code="import-untyped"
 """
 A package for enabling high-level usage of TensorRT in Python.

@@ -378,7 +378,18 @@ def _main() -> None:
     )
     parent_parser.add_argument(
         "--log_level",
-        choices=["DEBUG", "debug", "INFO", "info", "WARNING", "warning", "ERROR", "error", "CRITICAL", "critical"],
+        choices=[
+            "DEBUG",
+            "debug",
+            "INFO",
+            "info",
+            "WARNING",
+            "warning",
+            "ERROR",
+            "error",
+            "CRITICAL",
+            "critical",
+        ],
         default="INFO",
         help="Set the log level. Default is INFO.",
     )

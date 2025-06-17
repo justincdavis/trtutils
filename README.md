@@ -20,13 +20,6 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 - Comprehensive type hints and documentation
 - Support for both basic engine execution and end-to-end model inference
 
-## Performance
-
-| Device            | YOLOv8m                                                                 | YOLOv8n                                                                 |
-|-------------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------|
-| OrinAGX-64GB      | ![OrinAGX-64GB YOLOv8m](benchmark/plots/OrinAGX-64GB/yolov8m.png)       | ![OrinAGX-64GB YOLOv8n](benchmark/plots/OrinAGX-64GB/yolov8n.png)       |
-| 3080Ti            | ![3080Ti YOLOv8m](benchmark/plots/3080Ti/yolov8m.png)                   | ![3080Ti YOLOv8n](benchmark/plots/3080Ti/yolov8n.png)                   |
-
 ## Quick Start
 
 ### Basic Engine Usage
@@ -48,29 +41,6 @@ inputs = read_your_data()
 outputs = engine.execute(inputs)
 ```
 
-### End-to-End Model Inference
-
-The `TRTModel` class allows you to define preprocessing and postprocessing steps along with the engine for complete end-to-end inference:
-
-```python
-from trtutils import TRTModel
-
-# Define preprocessing (e.g., image normalization)
-def preprocess(inputs):
-    return [i / 255 for i in inputs]
-
-# Define postprocessing (e.g., class selection)
-def postprocess(outputs):
-    return [o[0][0] for o in outputs]
-
-# Create an end-to-end model
-model = TRTModel("path_to_engine", preprocess, postprocess)
-
-# Run inference
-inputs = read_your_data()
-results = model(inputs)
-```
-
 ## Installation
 
 ```bash
@@ -80,11 +50,8 @@ pip install trtutils
 For additional features, you can install optional dependencies:
 
 ```bash
-# For YOLO model support
-pip install "trtutils[yolo]"
-
-# For Jetson device support
-pip install "trtutils[jetson]"
+# For JIT compiler
+pip install "trtutils[jit]"
 
 # For development
 pip install "trtutils[dev]"
@@ -101,6 +68,18 @@ Check out our [examples directory](examples/) for more detailed usage examples, 
 - End-to-end model inference
 - YOLO model implementation
 - Benchmarking utilities
+
+## Performance
+
+| Device            | YOLOv8m                                                                 | YOLOv8n                                                                 |
+|-------------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------|
+| OrinAGX-64GB      | ![OrinAGX-64GB YOLOv8m](benchmark/plots/OrinAGX-64GB/yolov8m.png)       | ![OrinAGX-64GB YOLOv8n](benchmark/plots/OrinAGX-64GB/yolov8n.png)       |
+| OrinAGX-32GB      | ![OrinAGX-32GB YOLOv8m](benchmark/plots/OrinAGX-32GB/yolov8m.png)       | ![OrinAGX-32GB YOLOv8n](benchmark/plots/OrinAGX-32GB/yolov8n.png)       |
+| OrinNX-16GB       | ![OrinNX-16GB YOLOv8m](benchmark/plots/OrinNX-16GB/yolov8m.png)         | ![OrinNX-16GB YOLOv8n](benchmark/plots/OrinNX-16GB/yolov8n.png)        |
+| OrinNano-8GB      | ![OrinNano-8GB YOLOv8m](benchmark/plots/OrinNano-8GB/yolov8m.png)       | ![OrinNano-8GB YOLOv8n](benchmark/plots/OrinNano-8GB/yolov8n.png)       |
+| XavierNX-8GB      | ![XavierNX-8GB YOLOv8m](benchmark/plots/XavierNX-8GB/yolov8m.png)       | ![XavierNX-8GB YOLOv8n](benchmark/plots/XavierNX-8GB/yolov8n.png)       |
+| 3080Ti            | ![3080Ti YOLOv8m](benchmark/plots/3080Ti/yolov8m.png)                   | ![3080Ti YOLOv8n](benchmark/plots/3080Ti/yolov8n.png)                   |
+| TitanRTX          | ![TitanRTX YOLOv8m](benchmark/plots/TitanRTX/yolov8m.png)               | ![TitanRTX YOLOv8n](benchmark/plots/TitanRTX/yolov8n.png)               |
 
 ## License
 

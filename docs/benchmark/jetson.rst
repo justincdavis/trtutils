@@ -4,10 +4,13 @@ Jetson Devices
 .. toctree::
    :maxdepth: 1
 
+   orinagx-32gb
    orinagx-64gb
    orinnx-16gb
    orinnano-8gb
    xaviernx-8gb
+
+**OrinAGX-32GB**
 
 **OrinAGX-64GB**: Developer Kit with Jetpack 6
 

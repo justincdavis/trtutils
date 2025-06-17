@@ -1,0 +1,765 @@
+OrinAGX-32GB
+============
+
+This section contains benchmarking results for various YOLO models on the OrinAGX-32GB platform.
+
+
+Performance Plots
+-----------------
+
+The following plots show the performance comparison between different YOLO models and frameworks:
+
+
+yolov10m
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov10m.png
+   :alt: yolov10m performance plot
+   :align: center
+
+
+yolov10n
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov10n.png
+   :alt: yolov10n performance plot
+   :align: center
+
+
+yolov10s
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov10s.png
+   :alt: yolov10s performance plot
+   :align: center
+
+
+yolov7m
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov7m.png
+   :alt: yolov7m performance plot
+   :align: center
+
+
+yolov7t
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov7t.png
+   :alt: yolov7t performance plot
+   :align: center
+
+
+yolov8m
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov8m.png
+   :alt: yolov8m performance plot
+   :align: center
+
+
+yolov8n
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov8n.png
+   :alt: yolov8n performance plot
+   :align: center
+
+
+yolov8s
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov8s.png
+   :alt: yolov8s performance plot
+   :align: center
+
+
+yolov9m
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov9m.png
+   :alt: yolov9m performance plot
+   :align: center
+
+
+yolov9s
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov9s.png
+   :alt: yolov9s performance plot
+   :align: center
+
+
+yolov9t
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yolov9t.png
+   :alt: yolov9t performance plot
+   :align: center
+
+
+yoloxm
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yoloxm.png
+   :alt: yoloxm performance plot
+   :align: center
+
+
+yoloxn
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yoloxn.png
+   :alt: yoloxn performance plot
+   :align: center
+
+
+yoloxs
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yoloxs.png
+   :alt: yoloxs performance plot
+   :align: center
+
+
+yoloxt
+~~~~~~~~
+
+.. image:: ../../benchmark/plots/OrinAGX-32GB/yoloxt.png
+   :alt: yoloxt performance plot
+   :align: center
+
+
+Performance Table
+-----------------
+
+The following table shows detailed performance metrics for all tested models:
+
+.. csv-table:: Performance Metrics
+   :header: Framework,Model,Input Size,Mean (ms),Median (ms),Min (ms),Max (ms)
+   :widths: 10,10,10,10,10,10,10
+
+   tensorrt,yolov10n,160,1.4,1.4,1.3,1.8
+   tensorrt,yolov10n,320,1.6,1.6,1.6,2.0
+   tensorrt,yolov10n,480,2.1,2.1,2.0,2.5
+   tensorrt,yolov10n,640,2.6,2.6,2.6,3.0
+   tensorrt,yolov10n,800,3.7,3.7,3.6,4.0
+   tensorrt,yolov10n,960,4.7,4.6,4.6,5.0
+   tensorrt,yolov10n,1120,6.2,6.2,6.1,6.6
+   tensorrt,yolov10n,1280,7.1,7.1,7.1,7.5
+   tensorrt,yolov10s,160,1.6,1.6,1.6,2.0
+   tensorrt,yolov10s,320,2.0,2.0,2.0,2.4
+   tensorrt,yolov10s,480,2.8,2.8,2.8,4.2
+   tensorrt,yolov10s,640,3.9,3.9,3.9,4.3
+   tensorrt,yolov10s,800,5.7,5.7,5.7,6.2
+   tensorrt,yolov10s,960,7.2,7.2,7.2,7.7
+   tensorrt,yolov10s,1120,9.7,9.7,9.6,10.1
+   tensorrt,yolov10s,1280,11.7,11.6,11.6,12.0
+   tensorrt,yolov10m,160,2.3,2.2,2.2,2.6
+   tensorrt,yolov10m,320,3.3,3.3,3.2,3.7
+   tensorrt,yolov10m,480,4.8,4.8,4.8,5.2
+   tensorrt,yolov10m,640,7.3,7.3,7.2,7.6
+   tensorrt,yolov10m,800,9.8,9.7,9.7,10.2
+   tensorrt,yolov10m,960,13.5,13.5,13.4,13.9
+   tensorrt,yolov10m,1120,17.7,17.7,17.6,18.1
+   tensorrt,yolov10m,1280,21.6,21.5,21.4,22.0
+   tensorrt,yolov9t,160,2.6,2.6,2.5,2.9
+   tensorrt,yolov9t,320,2.9,2.9,2.8,3.2
+   tensorrt,yolov9t,480,3.5,3.5,3.4,3.8
+   tensorrt,yolov9t,640,4.2,4.2,4.2,4.6
+   tensorrt,yolov9t,800,5.4,5.4,5.3,5.8
+   tensorrt,yolov9t,960,6.8,6.8,6.7,7.1
+   tensorrt,yolov9t,1120,8.6,8.6,8.6,9.0
+   tensorrt,yolov9t,1280,10.5,10.4,10.4,10.8
+   tensorrt,yolov9s,160,2.7,2.7,2.7,3.1
+   tensorrt,yolov9s,320,3.2,3.2,3.2,3.6
+   tensorrt,yolov9s,480,4.1,4.1,4.0,5.3
+   tensorrt,yolov9s,640,5.5,5.5,5.5,5.9
+   tensorrt,yolov9s,800,7.4,7.4,7.3,7.7
+   tensorrt,yolov9s,960,9.3,9.3,9.2,9.6
+   tensorrt,yolov9s,1120,12.2,12.2,12.1,12.6
+   tensorrt,yolov9s,1280,15.1,15.1,15.0,15.4
+   tensorrt,yolov9m,160,2.8,2.7,2.7,3.1
+   tensorrt,yolov9m,320,4.0,4.0,3.9,4.4
+   tensorrt,yolov9m,480,5.8,5.8,5.8,6.2
+   tensorrt,yolov9m,640,8.8,8.7,8.7,9.1
+   tensorrt,yolov9m,800,12.2,12.2,12.1,12.6
+   tensorrt,yolov9m,960,16.4,16.4,16.3,16.7
+   tensorrt,yolov9m,1120,21.5,21.4,21.4,21.9
+   tensorrt,yolov9m,1280,27.2,27.2,27.0,27.7
+   tensorrt,yolov8n,160,1.0,1.0,1.0,1.4
+   tensorrt,yolov8n,320,1.3,1.3,1.3,1.6
+   tensorrt,yolov8n,480,1.7,1.7,1.7,2.0
+   tensorrt,yolov8n,640,2.3,2.3,2.3,2.7
+   tensorrt,yolov8n,800,3.2,3.2,3.1,3.5
+   tensorrt,yolov8n,960,4.1,4.1,4.0,4.4
+   tensorrt,yolov8n,1120,5.5,5.4,5.4,5.8
+   tensorrt,yolov8n,1280,6.7,6.7,6.6,7.0
+   tensorrt,yolov8s,160,1.2,1.2,1.2,1.6
+   tensorrt,yolov8s,320,1.7,1.7,1.6,2.0
+   tensorrt,yolov8s,480,2.4,2.4,2.3,2.7
+   tensorrt,yolov8s,640,3.5,3.5,3.4,3.8
+   tensorrt,yolov8s,800,4.9,4.9,4.9,5.3
+   tensorrt,yolov8s,960,6.3,6.3,6.3,6.6
+   tensorrt,yolov8s,1120,8.5,8.5,8.4,8.8
+   tensorrt,yolov8s,1280,10.6,10.6,10.5,11.0
+   tensorrt,yolov8m,160,1.9,1.9,1.8,2.2
+   tensorrt,yolov8m,320,2.9,2.9,2.9,4.2
+   tensorrt,yolov8m,480,4.4,4.4,4.4,4.7
+   tensorrt,yolov8m,640,6.8,6.8,6.8,7.2
+   tensorrt,yolov8m,800,8.9,8.9,8.9,9.3
+   tensorrt,yolov8m,960,12.8,12.7,12.7,13.1
+   tensorrt,yolov8m,1120,16.3,16.3,16.2,16.9
+   tensorrt,yolov8m,1280,20.9,20.8,20.7,21.5
+   tensorrt,yolov7t,160,1.1,1.1,1.1,1.5
+   tensorrt,yolov7t,320,1.4,1.4,1.4,1.8
+   tensorrt,yolov7t,480,2.1,2.1,2.0,2.4
+   tensorrt,yolov7t,640,3.0,3.0,3.0,3.3
+   tensorrt,yolov7t,800,4.2,4.2,4.1,4.5
+   tensorrt,yolov7t,960,5.4,5.3,5.3,5.7
+   tensorrt,yolov7t,1120,7.2,7.2,7.2,7.6
+   tensorrt,yolov7t,1280,8.9,8.9,8.8,9.2
+   tensorrt,yolov7m,160,2.1,2.1,2.1,2.4
+   tensorrt,yolov7m,320,3.3,3.3,3.3,3.7
+   tensorrt,yolov7m,480,5.2,5.2,5.2,5.5
+   tensorrt,yolov7m,640,8.1,8.1,8.0,8.4
+   tensorrt,yolov7m,800,11.7,11.7,11.6,12.1
+   tensorrt,yolov7m,960,15.5,15.4,15.3,15.9
+   tensorrt,yolov7m,1120,20.9,21.0,20.6,21.6
+   tensorrt,yolov7m,1280,26.4,26.4,26.0,27.1
+   tensorrt,yoloxt,160,1.2,1.2,1.2,1.6
+   tensorrt,yoloxt,320,1.5,1.5,1.5,1.9
+   tensorrt,yoloxt,480,2.1,2.1,2.0,2.4
+   tensorrt,yoloxt,640,2.9,2.9,2.9,3.3
+   tensorrt,yoloxt,800,3.9,3.9,3.8,4.2
+   tensorrt,yoloxt,960,5.2,5.2,5.2,5.5
+   tensorrt,yoloxt,1120,6.5,6.5,6.5,6.9
+   tensorrt,yoloxt,1280,8.3,8.3,8.3,8.7
+   tensorrt,yoloxm,160,1.9,1.9,1.9,2.2
+   tensorrt,yoloxm,320,2.7,2.7,2.7,3.1
+   tensorrt,yoloxm,480,4.1,4.1,4.1,4.5
+   tensorrt,yoloxm,640,6.3,6.3,6.2,6.6
+   tensorrt,yoloxm,800,8.3,8.3,8.3,8.7
+   tensorrt,yoloxm,960,11.9,11.9,11.8,12.3
+   tensorrt,yoloxm,1120,15.1,15.1,14.9,15.6
+   tensorrt,yoloxm,1280,19.5,19.4,19.1,20.0
+   tensorrt,yoloxn,160,1.2,1.2,1.2,1.6
+   tensorrt,yoloxn,320,1.4,1.4,1.4,3.6
+   tensorrt,yoloxn,480,1.8,1.8,1.8,2.2
+   tensorrt,yoloxn,640,2.4,2.4,2.3,2.7
+   tensorrt,yoloxn,800,3.1,3.1,3.1,3.5
+   tensorrt,yoloxn,960,4.0,4.0,3.9,4.3
+   tensorrt,yoloxn,1120,5.1,5.1,5.1,6.4
+   tensorrt,yoloxn,1280,6.3,6.3,6.2,6.6
+   tensorrt,yoloxs,160,1.2,1.2,1.2,1.6
+   tensorrt,yoloxs,320,1.6,1.6,1.6,2.0
+   tensorrt,yoloxs,480,2.2,2.2,2.2,2.6
+   tensorrt,yoloxs,640,3.2,3.2,3.2,3.6
+   tensorrt,yoloxs,800,4.5,4.5,4.5,4.9
+   tensorrt,yoloxs,960,5.8,5.8,5.8,6.2
+   tensorrt,yoloxs,1120,7.6,7.6,7.6,8.0
+   tensorrt,yoloxs,1280,9.5,9.5,9.5,9.9
+   trtutils(trt),yolov10n,160,2.7,2.7,2.6,3.1
+   trtutils(trt),yolov10n,320,3.0,3.0,2.9,3.4
+   trtutils(trt),yolov10n,480,3.5,3.5,3.4,4.3
+   trtutils(trt),yolov10n,640,4.2,4.2,4.2,5.0
+   trtutils(trt),yolov10n,800,5.3,5.3,5.3,6.3
+   trtutils(trt),yolov10n,960,6.5,6.5,6.4,7.4
+   trtutils(trt),yolov10n,1120,8.2,8.2,8.1,9.3
+   trtutils(trt),yolov10n,1280,9.4,9.4,9.3,10.6
+   trtutils(trt),yolov10s,160,2.9,2.9,2.8,3.3
+   trtutils(trt),yolov10s,320,3.4,3.4,3.3,3.8
+   trtutils(trt),yolov10s,480,4.2,4.2,4.2,5.0
+   trtutils(trt),yolov10s,640,5.5,5.5,5.4,6.3
+   trtutils(trt),yolov10s,800,7.4,7.4,7.3,8.4
+   trtutils(trt),yolov10s,960,9.0,9.0,9.0,10.1
+   trtutils(trt),yolov10s,1120,11.6,11.6,11.6,12.7
+   trtutils(trt),yolov10s,1280,13.8,13.8,13.8,15.4
+   trtutils(trt),yolov10m,160,3.6,3.6,3.5,4.0
+   trtutils(trt),yolov10m,320,4.6,4.6,4.6,5.0
+   trtutils(trt),yolov10m,480,6.3,6.3,6.2,7.0
+   trtutils(trt),yolov10m,640,8.8,8.8,8.7,9.6
+   trtutils(trt),yolov10m,800,11.4,11.4,11.3,12.5
+   trtutils(trt),yolov10m,960,15.3,15.3,15.2,16.2
+   trtutils(trt),yolov10m,1120,19.5,19.5,19.4,20.6
+   trtutils(trt),yolov10m,1280,23.8,23.8,23.7,24.9
+   trtutils(trt),yolov9t,160,4.0,4.0,4.0,4.7
+   trtutils(trt),yolov9t,320,4.3,4.3,4.3,4.7
+   trtutils(trt),yolov9t,480,4.9,4.9,4.9,5.6
+   trtutils(trt),yolov9t,640,5.9,5.9,5.8,6.5
+   trtutils(trt),yolov9t,800,7.2,7.2,7.1,8.1
+   trtutils(trt),yolov9t,960,8.7,8.7,8.6,9.6
+   trtutils(trt),yolov9t,1120,11.1,11.1,11.1,12.2
+   trtutils(trt),yolov9t,1280,12.8,12.8,12.7,13.8
+   trtutils(trt),yolov9s,160,4.2,4.2,4.1,4.6
+   trtutils(trt),yolov9s,320,4.7,4.7,4.6,5.1
+   trtutils(trt),yolov9s,480,5.5,5.5,5.5,6.2
+   trtutils(trt),yolov9s,640,7.1,7.1,7.1,7.9
+   trtutils(trt),yolov9s,800,9.1,9.1,9.1,10.1
+   trtutils(trt),yolov9s,960,11.1,11.1,11.1,12.1
+   trtutils(trt),yolov9s,1120,14.2,14.2,14.1,15.2
+   trtutils(trt),yolov9s,1280,17.3,17.3,17.2,18.4
+   trtutils(trt),yolov9m,160,4.1,4.1,4.1,4.6
+   trtutils(trt),yolov9m,320,5.4,5.4,5.4,5.9
+   trtutils(trt),yolov9m,480,7.3,7.3,7.3,8.1
+   trtutils(trt),yolov9m,640,10.3,10.3,10.3,11.1
+   trtutils(trt),yolov9m,800,13.9,13.9,13.9,15.0
+   trtutils(trt),yolov9m,960,18.3,18.3,18.2,19.2
+   trtutils(trt),yolov9m,1120,23.5,23.5,23.4,24.5
+   trtutils(trt),yolov9m,1280,29.4,29.4,29.2,30.4
+   trtutils(trt),yolov8n,160,2.4,2.4,2.3,2.9
+   trtutils(trt),yolov8n,320,2.7,2.7,2.6,3.1
+   trtutils(trt),yolov8n,480,3.1,3.1,3.1,3.9
+   trtutils(trt),yolov8n,640,3.9,3.9,3.8,4.7
+   trtutils(trt),yolov8n,800,4.9,4.9,4.8,5.9
+   trtutils(trt),yolov8n,960,6.0,6.0,5.9,6.9
+   trtutils(trt),yolov8n,1120,7.5,7.5,7.5,8.5
+   trtutils(trt),yolov8n,1280,8.9,8.9,8.9,10.0
+   trtutils(trt),yolov8s,160,2.6,2.6,2.5,3.1
+   trtutils(trt),yolov8s,320,3.0,3.0,3.0,3.6
+   trtutils(trt),yolov8s,480,3.8,3.8,3.8,4.6
+   trtutils(trt),yolov8s,640,5.0,5.0,5.0,5.8
+   trtutils(trt),yolov8s,800,6.7,6.7,6.6,7.7
+   trtutils(trt),yolov8s,960,8.1,8.1,8.1,9.1
+   trtutils(trt),yolov8s,1120,10.5,10.5,10.5,11.5
+   trtutils(trt),yolov8s,1280,12.9,12.9,12.8,14.0
+   trtutils(trt),yolov8m,160,3.3,3.3,3.2,3.8
+   trtutils(trt),yolov8m,320,4.3,4.3,4.2,4.7
+   trtutils(trt),yolov8m,480,5.8,5.8,5.8,6.6
+   trtutils(trt),yolov8m,640,8.4,8.4,8.4,9.2
+   trtutils(trt),yolov8m,800,10.6,10.6,10.6,11.6
+   trtutils(trt),yolov8m,960,14.7,14.7,14.6,15.6
+   trtutils(trt),yolov8m,1120,18.4,18.4,18.3,19.4
+   trtutils(trt),yolov8m,1280,23.3,23.2,23.1,24.3
+   trtutils(trt),yolov7t,160,2.5,2.5,2.4,2.9
+   trtutils(trt),yolov7t,320,2.8,2.8,2.8,3.3
+   trtutils(trt),yolov7t,480,3.5,3.5,3.4,4.3
+   trtutils(trt),yolov7t,640,4.6,4.6,4.5,5.3
+   trtutils(trt),yolov7t,800,5.9,5.9,5.8,6.9
+   trtutils(trt),yolov7t,960,7.2,7.2,7.2,8.1
+   trtutils(trt),yolov7t,1120,9.2,9.2,9.2,10.2
+   trtutils(trt),yolov7t,1280,11.1,11.1,11.1,12.1
+   trtutils(trt),yolov7m,160,3.5,3.5,3.4,3.9
+   trtutils(trt),yolov7m,320,4.7,4.7,4.7,5.2
+   trtutils(trt),yolov7m,480,6.6,6.6,6.6,7.4
+   trtutils(trt),yolov7m,640,9.7,9.7,9.7,10.5
+   trtutils(trt),yolov7m,800,13.5,13.5,13.3,14.5
+   trtutils(trt),yolov7m,960,17.3,17.3,17.2,18.2
+   trtutils(trt),yolov7m,1120,23.0,22.9,22.7,23.7
+   trtutils(trt),yolov7m,1280,28.8,28.8,28.4,29.7
+   trtutils(trt),yoloxt,160,2.5,2.5,2.4,3.0
+   trtutils(trt),yoloxt,320,2.9,2.9,2.8,3.5
+   trtutils(trt),yoloxt,480,3.5,3.5,3.5,4.3
+   trtutils(trt),yoloxt,640,4.6,4.6,4.5,5.8
+   trtutils(trt),yoloxt,800,5.8,5.8,5.7,7.5
+   trtutils(trt),yoloxt,960,7.3,7.3,7.3,9.2
+   trtutils(trt),yoloxt,1120,9.0,8.9,8.9,11.2
+   trtutils(trt),yoloxt,1280,11.1,11.1,11.0,13.7
+   trtutils(trt),yoloxn,160,2.4,2.4,2.4,3.1
+   trtutils(trt),yoloxn,320,2.8,2.8,2.8,3.4
+   trtutils(trt),yoloxn,480,3.3,3.3,3.2,4.0
+   trtutils(trt),yoloxn,640,4.1,4.1,4.0,5.3
+   trtutils(trt),yoloxn,800,5.1,5.1,5.1,6.8
+   trtutils(trt),yoloxn,960,6.3,6.3,6.3,8.2
+   trtutils(trt),yoloxn,1120,7.8,7.8,7.7,10.1
+   trtutils(trt),yoloxn,1280,9.3,9.3,9.3,12.2
+   trtutils(trt),yoloxs,160,2.5,2.5,2.4,3.0
+   trtutils(trt),yoloxs,320,3.0,3.0,2.9,3.6
+   trtutils(trt),yoloxs,480,3.7,3.7,3.7,4.5
+   trtutils(trt),yoloxs,640,4.9,4.9,4.8,6.2
+   trtutils(trt),yoloxs,800,6.4,6.4,6.3,8.1
+   trtutils(trt),yoloxs,960,7.9,7.9,7.8,9.7
+   trtutils(trt),yoloxs,1120,10.1,10.0,10.0,12.3
+   trtutils(trt),yoloxs,1280,12.2,12.2,12.2,15.0
+   trtutils(trt),yoloxm,160,3.1,3.1,3.1,3.6
+   trtutils(trt),yoloxm,320,4.1,4.1,4.0,4.7
+   trtutils(trt),yoloxm,480,5.6,5.6,5.5,6.4
+   trtutils(trt),yoloxm,640,8.0,7.9,7.9,9.2
+   trtutils(trt),yoloxm,800,10.2,10.2,10.1,12.0
+   trtutils(trt),yoloxm,960,14.0,14.0,13.9,15.8
+   trtutils(trt),yoloxm,1120,17.5,17.4,17.3,19.6
+   trtutils(trt),yoloxm,1280,22.2,22.3,21.9,25.1
+   trtutils(cuda),yolov10n,160,3.2,3.2,3.1,4.5
+   trtutils(cuda),yolov10n,320,3.4,3.4,3.4,4.0
+   trtutils(cuda),yolov10n,480,3.9,3.9,3.9,4.4
+   trtutils(cuda),yolov10n,640,4.5,4.5,4.5,5.5
+   trtutils(cuda),yolov10n,800,5.7,5.7,5.6,6.8
+   trtutils(cuda),yolov10n,960,6.7,6.7,6.6,7.8
+   trtutils(cuda),yolov10n,1120,8.3,8.3,8.3,9.5
+   trtutils(cuda),yolov10n,1280,9.4,9.4,9.3,10.7
+   trtutils(cuda),yolov10s,160,3.4,3.4,3.4,3.9
+   trtutils(cuda),yolov10s,320,3.9,3.9,3.8,4.3
+   trtutils(cuda),yolov10s,480,4.7,4.7,4.7,5.2
+   trtutils(cuda),yolov10s,640,5.8,5.8,5.8,6.7
+   trtutils(cuda),yolov10s,800,7.7,7.7,7.6,9.2
+   trtutils(cuda),yolov10s,960,9.3,9.3,9.2,10.3
+   trtutils(cuda),yolov10s,1120,11.8,11.8,11.8,13.1
+   trtutils(cuda),yolov10s,1280,13.9,13.9,13.9,15.3
+   trtutils(cuda),yolov10m,160,4.1,4.1,4.0,4.6
+   trtutils(cuda),yolov10m,320,5.1,5.1,5.0,5.7
+   trtutils(cuda),yolov10m,480,6.7,6.7,6.7,7.3
+   trtutils(cuda),yolov10m,640,9.2,9.2,9.1,10.0
+   trtutils(cuda),yolov10m,800,11.7,11.7,11.7,12.9
+   trtutils(cuda),yolov10m,960,15.5,15.5,15.4,16.6
+   trtutils(cuda),yolov10m,1120,19.7,19.7,19.6,20.9
+   trtutils(cuda),yolov10m,1280,23.8,23.8,23.7,25.2
+   trtutils(cuda),yolov9t,160,4.5,4.5,4.5,5.2
+   trtutils(cuda),yolov9t,320,4.8,4.8,4.7,5.3
+   trtutils(cuda),yolov9t,480,5.4,5.4,5.4,5.9
+   trtutils(cuda),yolov9t,640,6.3,6.2,6.2,7.3
+   trtutils(cuda),yolov9t,800,7.5,7.5,7.4,8.6
+   trtutils(cuda),yolov9t,960,8.9,8.9,8.9,10.0
+   trtutils(cuda),yolov9t,1120,10.9,10.9,10.9,12.0
+   trtutils(cuda),yolov9t,1280,12.9,12.9,12.8,14.1
+   trtutils(cuda),yolov9s,160,4.7,4.7,4.6,5.3
+   trtutils(cuda),yolov9s,320,5.1,5.1,5.1,5.6
+   trtutils(cuda),yolov9s,480,6.0,6.0,6.0,6.5
+   trtutils(cuda),yolov9s,640,7.5,7.5,7.4,8.5
+   trtutils(cuda),yolov9s,800,9.5,9.5,9.4,10.5
+   trtutils(cuda),yolov9s,960,11.4,11.4,11.3,12.4
+   trtutils(cuda),yolov9s,1120,14.4,14.4,14.3,15.5
+   trtutils(cuda),yolov9s,1280,17.4,17.4,17.3,18.7
+   trtutils(cuda),yolov9m,160,4.7,4.7,4.6,5.2
+   trtutils(cuda),yolov9m,320,5.9,5.9,5.9,6.5
+   trtutils(cuda),yolov9m,480,7.8,7.8,7.7,8.3
+   trtutils(cuda),yolov9m,640,10.7,10.7,10.7,11.8
+   trtutils(cuda),yolov9m,800,14.3,14.3,14.2,15.4
+   trtutils(cuda),yolov9m,960,18.5,18.5,18.5,19.6
+   trtutils(cuda),yolov9m,1120,23.7,23.7,23.6,24.7
+   trtutils(cuda),yolov9m,1280,29.4,29.4,29.3,30.7
+   trtutils(cuda),yolov8n,160,2.9,2.9,2.8,3.4
+   trtutils(cuda),yolov8n,320,3.1,3.1,3.1,3.8
+   trtutils(cuda),yolov8n,480,3.6,3.6,3.5,4.2
+   trtutils(cuda),yolov8n,640,4.2,4.2,4.2,5.4
+   trtutils(cuda),yolov8n,800,5.2,5.2,5.1,6.3
+   trtutils(cuda),yolov8n,960,6.2,6.2,6.2,7.3
+   trtutils(cuda),yolov8n,1120,7.7,7.7,7.6,8.8
+   trtutils(cuda),yolov8n,1280,9.0,9.0,9.0,10.2
+   trtutils(cuda),yolov8s,160,3.1,3.1,3.0,3.6
+   trtutils(cuda),yolov8s,320,3.5,3.5,3.5,4.1
+   trtutils(cuda),yolov8s,480,4.3,4.3,4.2,4.8
+   trtutils(cuda),yolov8s,640,5.4,5.4,5.3,6.5
+   trtutils(cuda),yolov8s,800,7.0,7.0,6.9,8.1
+   trtutils(cuda),yolov8s,960,8.4,8.4,8.3,9.4
+   trtutils(cuda),yolov8s,1120,10.7,10.7,10.6,11.8
+   trtutils(cuda),yolov8s,1280,12.9,12.9,12.9,14.1
+   trtutils(cuda),yolov8m,160,3.8,3.8,3.7,4.3
+   trtutils(cuda),yolov8m,320,4.8,4.7,4.7,5.4
+   trtutils(cuda),yolov8m,480,6.3,6.3,6.2,7.0
+   trtutils(cuda),yolov8m,640,8.8,8.8,8.7,9.9
+   trtutils(cuda),yolov8m,800,10.9,10.9,10.9,12.1
+   trtutils(cuda),yolov8m,960,14.9,14.9,14.8,15.9
+   trtutils(cuda),yolov8m,1120,18.5,18.5,18.4,19.6
+   trtutils(cuda),yolov8m,1280,23.3,23.3,23.1,24.3
+   trtutils(cuda),yolov7t,160,3.0,3.0,2.9,3.5
+   trtutils(cuda),yolov7t,320,3.3,3.3,3.3,3.9
+   trtutils(cuda),yolov7t,480,3.9,3.9,3.9,4.5
+   trtutils(cuda),yolov7t,640,4.9,4.9,4.9,6.0
+   trtutils(cuda),yolov7t,800,6.2,6.2,6.1,7.3
+   trtutils(cuda),yolov7t,960,7.4,7.4,7.4,8.5
+   trtutils(cuda),yolov7t,1120,9.4,9.4,9.3,10.5
+   trtutils(cuda),yolov7t,1280,11.2,11.2,11.1,12.4
+   trtutils(cuda),yolov7m,160,4.0,4.0,3.9,4.6
+   trtutils(cuda),yolov7m,320,5.2,5.2,5.2,5.9
+   trtutils(cuda),yolov7m,480,7.1,7.1,7.0,7.7
+   trtutils(cuda),yolov7m,640,10.1,10.1,10.0,11.3
+   trtutils(cuda),yolov7m,800,13.7,13.7,13.7,14.8
+   trtutils(cuda),yolov7m,960,17.6,17.6,17.4,18.6
+   trtutils(cuda),yolov7m,1120,23.1,23.0,22.8,23.9
+   trtutils(cuda),yolov7m,1280,28.8,28.8,28.4,29.8
+   trtutils(cuda),yoloxt,160,3.0,3.0,3.0,3.6
+   trtutils(cuda),yoloxt,320,3.4,3.4,3.3,4.4
+   trtutils(cuda),yoloxt,480,4.0,4.0,4.0,4.9
+   trtutils(cuda),yoloxt,640,5.0,5.0,4.9,6.3
+   trtutils(cuda),yoloxt,800,6.1,6.1,6.1,7.9
+   trtutils(cuda),yoloxt,960,7.6,7.6,7.5,9.7
+   trtutils(cuda),yoloxt,1120,9.2,9.2,9.1,11.7
+   trtutils(cuda),yoloxt,1280,11.2,11.2,11.1,14.2
+   trtutils(cuda),yoloxn,160,2.9,2.9,2.9,3.7
+   trtutils(cuda),yoloxn,320,3.3,3.3,3.2,4.3
+   trtutils(cuda),yoloxn,480,3.8,3.8,3.7,4.6
+   trtutils(cuda),yoloxn,640,4.5,4.5,4.4,5.8
+   trtutils(cuda),yoloxn,800,5.5,5.5,5.4,7.3
+   trtutils(cuda),yoloxn,960,6.6,6.6,6.5,8.7
+   trtutils(cuda),yoloxn,1120,8.0,8.0,7.9,10.7
+   trtutils(cuda),yoloxn,1280,9.4,9.4,9.3,12.7
+   trtutils(cuda),yoloxs,160,3.0,3.0,2.9,3.7
+   trtutils(cuda),yoloxs,320,3.4,3.4,3.4,4.5
+   trtutils(cuda),yoloxs,480,4.2,4.2,4.1,5.0
+   trtutils(cuda),yoloxs,640,5.3,5.3,5.2,6.9
+   trtutils(cuda),yoloxs,800,6.7,6.7,6.7,8.6
+   trtutils(cuda),yoloxs,960,8.2,8.2,8.1,10.3
+   trtutils(cuda),yoloxs,1120,10.2,10.2,10.2,12.7
+   trtutils(cuda),yoloxs,1280,12.4,12.4,12.3,15.5
+   trtutils(cuda),yoloxm,160,3.6,3.6,3.6,4.2
+   trtutils(cuda),yoloxm,320,4.5,4.5,4.5,5.5
+   trtutils(cuda),yoloxm,480,6.1,6.1,6.0,6.9
+   trtutils(cuda),yoloxm,640,8.3,8.3,8.3,9.7
+   trtutils(cuda),yoloxm,800,10.5,10.5,10.5,12.3
+   trtutils(cuda),yoloxm,960,14.3,14.3,14.2,16.4
+   trtutils(cuda),yoloxm,1120,17.7,17.6,17.5,20.4
+   trtutils(cuda),yoloxm,1280,22.4,22.4,22.0,25.5
+   trtutils(cpu),yolov10n,160,2.4,2.4,2.4,2.8
+   trtutils(cpu),yolov10n,320,4.1,4.1,4.0,4.3
+   trtutils(cpu),yolov10n,480,6.2,6.2,6.1,6.5
+   trtutils(cpu),yolov10n,640,9.4,9.4,9.3,11.5
+   trtutils(cpu),yolov10n,800,13.7,13.7,13.6,14.0
+   trtutils(cpu),yolov10n,960,19.0,19.1,18.5,22.0
+   trtutils(cpu),yolov10n,1120,43.8,36.5,34.3,87.5
+   trtutils(cpu),yolov10n,1280,39.5,39.5,39.3,41.2
+   trtutils(cpu),yolov10s,160,2.7,2.7,2.6,2.9
+   trtutils(cpu),yolov10s,320,4.6,4.6,4.5,5.4
+   trtutils(cpu),yolov10s,480,7.2,7.2,7.0,9.5
+   trtutils(cpu),yolov10s,640,10.8,10.8,10.7,11.9
+   trtutils(cpu),yolov10s,800,15.8,15.8,15.7,17.5
+   trtutils(cpu),yolov10s,960,21.3,21.2,21.1,23.1
+   trtutils(cpu),yolov10s,1120,32.9,32.9,32.8,34.6
+   trtutils(cpu),yolov10s,1280,43.9,43.9,43.7,44.8
+   trtutils(cpu),yolov10m,160,3.3,3.3,3.3,3.5
+   trtutils(cpu),yolov10m,320,5.9,5.9,5.8,8.0
+   trtutils(cpu),yolov10m,480,9.1,9.1,9.0,9.5
+   trtutils(cpu),yolov10m,640,14.0,14.0,14.0,14.2
+   trtutils(cpu),yolov10m,800,19.7,19.7,19.6,20.3
+   trtutils(cpu),yolov10m,960,27.5,27.4,27.3,29.0
+   trtutils(cpu),yolov10m,1120,36.1,36.1,35.9,37.2
+   trtutils(cpu),yolov10m,1280,56.6,52.3,51.5,127.2
+   trtutils(cpu),yolov9t,160,3.7,3.7,3.7,4.1
+   trtutils(cpu),yolov9t,320,5.5,5.5,5.5,5.8
+   trtutils(cpu),yolov9t,480,7.8,7.8,7.7,8.1
+   trtutils(cpu),yolov9t,640,11.0,11.0,10.9,11.2
+   trtutils(cpu),yolov9t,800,15.6,15.6,15.5,15.8
+   trtutils(cpu),yolov9t,960,20.9,20.9,20.8,22.4
+   trtutils(cpu),yolov9t,1120,27.3,27.3,27.2,28.5
+   trtutils(cpu),yolov9t,1280,42.9,42.9,42.6,43.7
+   trtutils(cpu),yolov9s,160,3.9,3.9,3.8,4.1
+   trtutils(cpu),yolov9s,320,5.9,5.9,5.8,6.0
+   trtutils(cpu),yolov9s,480,8.4,8.4,8.3,10.4
+   trtutils(cpu),yolov9s,640,12.3,12.3,12.2,12.4
+   trtutils(cpu),yolov9s,800,17.4,17.4,17.3,17.6
+   trtutils(cpu),yolov9s,960,23.3,23.3,23.2,24.0
+   trtutils(cpu),yolov9s,1120,30.7,30.7,30.6,31.4
+   trtutils(cpu),yolov9s,1280,42.0,42.0,41.8,51.1
+   trtutils(cpu),yolov9m,160,3.9,3.9,3.8,4.1
+   trtutils(cpu),yolov9m,320,6.6,6.6,6.6,6.8
+   trtutils(cpu),yolov9m,480,10.2,10.2,10.1,10.4
+   trtutils(cpu),yolov9m,640,15.6,15.6,15.5,15.7
+   trtutils(cpu),yolov9m,800,22.3,22.3,22.2,22.5
+   trtutils(cpu),yolov9m,960,30.4,30.4,30.2,31.1
+   trtutils(cpu),yolov9m,1120,40.0,40.0,39.9,43.8
+   trtutils(cpu),yolov9m,1280,67.8,60.7,59.7,106.6
+   trtutils(cpu),yolov8n,160,2.2,2.2,2.1,2.4
+   trtutils(cpu),yolov8n,320,3.9,3.9,3.8,4.1
+   trtutils(cpu),yolov8n,480,6.0,6.0,5.9,6.2
+   trtutils(cpu),yolov8n,640,9.2,9.2,9.1,9.4
+   trtutils(cpu),yolov8n,800,13.1,13.1,13.0,13.7
+   trtutils(cpu),yolov8n,960,18.2,18.1,18.0,18.7
+   trtutils(cpu),yolov8n,1120,24.0,24.0,23.9,25.3
+   trtutils(cpu),yolov8n,1280,33.8,33.7,33.6,81.0
+   trtutils(cpu),yolov8s,160,2.4,2.4,2.3,2.6
+   trtutils(cpu),yolov8s,320,4.3,4.3,4.2,4.4
+   trtutils(cpu),yolov8s,480,6.6,6.6,6.5,7.0
+   trtutils(cpu),yolov8s,640,10.2,10.2,10.1,11.0
+   trtutils(cpu),yolov8s,800,15.0,15.0,14.9,15.3
+   trtutils(cpu),yolov8s,960,20.3,20.2,20.1,22.2
+   trtutils(cpu),yolov8s,1120,27.1,27.1,27.0,29.2
+   trtutils(cpu),yolov8s,1280,37.8,37.8,37.6,38.3
+   trtutils(cpu),yolov8m,160,3.0,3.0,3.0,3.2
+   trtutils(cpu),yolov8m,320,5.5,5.5,5.4,7.6
+   trtutils(cpu),yolov8m,480,8.8,8.7,8.6,10.9
+   trtutils(cpu),yolov8m,640,13.7,13.7,13.6,15.8
+   trtutils(cpu),yolov8m,800,18.9,18.9,18.8,19.3
+   trtutils(cpu),yolov8m,960,27.1,27.2,26.6,28.8
+   trtutils(cpu),yolov8m,1120,35.1,35.1,35.0,38.0
+   trtutils(cpu),yolov8m,1280,68.0,58.7,55.4,106.1
+   trtutils(cpu),yolov7t,160,2.3,2.3,2.3,2.6
+   trtutils(cpu),yolov7t,320,4.1,4.1,4.0,4.4
+   trtutils(cpu),yolov7t,480,6.4,6.4,6.3,6.8
+   trtutils(cpu),yolov7t,640,9.9,9.9,9.8,10.6
+   trtutils(cpu),yolov7t,800,14.4,14.4,14.3,14.9
+   trtutils(cpu),yolov7t,960,19.6,19.6,19.5,20.2
+   trtutils(cpu),yolov7t,1120,26.2,26.2,26.0,27.8
+   trtutils(cpu),yolov7t,1280,41.9,41.4,41.2,124.1
+   trtutils(cpu),yolov7m,160,3.3,3.3,3.2,3.7
+   trtutils(cpu),yolov7m,320,5.9,5.9,5.9,6.2
+   trtutils(cpu),yolov7m,480,9.5,9.5,9.4,11.6
+   trtutils(cpu),yolov7m,640,15.1,15.1,15.0,15.3
+   trtutils(cpu),yolov7m,800,21.9,21.9,21.8,22.7
+   trtutils(cpu),yolov7m,960,29.8,29.7,29.5,32.8
+   trtutils(cpu),yolov7m,1120,47.4,46.9,46.5,239.4
+   trtutils(cpu),yolov7m,1280,54.2,53.8,53.4,110.2
+   trtutils(cpu),yoloxt,160,2.3,2.3,2.2,2.6
+   trtutils(cpu),yoloxt,320,4.0,4.0,4.0,4.4
+   trtutils(cpu),yoloxt,480,6.5,6.4,6.3,8.5
+   trtutils(cpu),yoloxt,640,9.8,9.8,9.7,10.5
+   trtutils(cpu),yoloxt,800,14.3,14.3,14.1,15.0
+   trtutils(cpu),yoloxt,960,19.7,19.5,19.4,20.9
+   trtutils(cpu),yoloxt,1120,25.8,25.8,25.6,29.0
+   trtutils(cpu),yoloxt,1280,42.4,42.4,42.2,44.0
+   trtutils(cpu),yoloxm,160,2.9,2.9,2.9,3.2
+   trtutils(cpu),yoloxm,320,5.2,5.2,5.2,5.6
+   trtutils(cpu),yoloxm,480,8.5,8.5,8.4,9.0
+   trtutils(cpu),yoloxm,640,13.2,13.2,13.1,14.5
+   trtutils(cpu),yoloxm,800,18.6,18.6,18.4,20.7
+   trtutils(cpu),yoloxm,960,26.3,26.3,26.1,28.1
+   trtutils(cpu),yoloxm,1120,34.2,34.1,33.9,39.7
+   trtutils(cpu),yoloxm,1280,49.0,47.0,46.7,135.8
+   trtutils(cpu),yoloxn,160,2.2,2.2,2.2,2.6
+   trtutils(cpu),yoloxn,320,4.1,4.1,4.0,4.4
+   trtutils(cpu),yoloxn,480,6.2,6.2,6.1,6.6
+   trtutils(cpu),yoloxn,640,9.5,9.5,9.4,10.2
+   trtutils(cpu),yoloxn,800,13.6,13.6,13.5,15.0
+   trtutils(cpu),yoloxn,960,18.6,18.8,18.3,20.1
+   trtutils(cpu),yoloxn,1120,24.5,24.5,24.4,26.4
+   trtutils(cpu),yoloxn,1280,35.2,35.2,34.9,36.8
+   trtutils(cpu),yoloxs,160,2.3,2.3,2.2,2.5
+   trtutils(cpu),yoloxs,320,4.2,4.2,4.1,4.4
+   trtutils(cpu),yoloxs,480,6.5,6.5,6.4,8.6
+   trtutils(cpu),yoloxs,640,10.2,10.2,10.1,10.7
+   trtutils(cpu),yoloxs,800,14.8,14.7,14.6,15.5
+   trtutils(cpu),yoloxs,960,20.1,20.3,19.8,21.1
+   trtutils(cpu),yoloxs,1120,26.6,26.6,26.5,29.2
+   trtutils(cpu),yoloxs,1280,37.5,37.5,37.3,39.0
+   ultralytics(trt),yolov10n,160,3.8,3.8,3.5,4.0
+   ultralytics(trt),yolov10n,320,4.7,4.7,4.6,5.0
+   ultralytics(trt),yolov10n,480,6.1,6.1,6.0,7.8
+   ultralytics(trt),yolov10n,640,8.0,7.9,7.8,8.4
+   ultralytics(trt),yolov10n,800,10.4,10.4,10.1,10.6
+   ultralytics(trt),yolov10n,960,13.2,13.1,12.9,13.5
+   ultralytics(trt),yolov10n,1120,16.3,16.3,16.1,16.7
+   ultralytics(trt),yolov10n,1280,19.1,19.1,18.9,21.7
+   ultralytics(trt),yolov10s,160,4.0,4.0,3.7,4.1
+   ultralytics(trt),yolov10s,320,5.3,5.3,4.9,5.5
+   ultralytics(trt),yolov10s,480,6.9,6.9,6.8,7.1
+   ultralytics(trt),yolov10s,640,9.2,9.2,9.0,9.6
+   ultralytics(trt),yolov10s,800,12.7,12.7,12.3,13.0
+   ultralytics(trt),yolov10s,960,15.7,15.7,15.5,16.0
+   ultralytics(trt),yolov10s,1120,19.8,19.8,19.7,20.2
+   ultralytics(trt),yolov10s,1280,23.6,23.6,23.4,25.2
+   ultralytics(trt),yolov10m,160,4.7,4.7,4.4,6.9
+   ultralytics(trt),yolov10m,320,6.5,6.6,6.3,6.7
+   ultralytics(trt),yolov10m,480,9.0,9.0,8.8,9.2
+   ultralytics(trt),yolov10m,640,12.6,12.5,12.4,12.9
+   ultralytics(trt),yolov10m,800,16.7,16.6,16.5,18.8
+   ultralytics(trt),yolov10m,960,22.0,22.0,21.8,22.4
+   ultralytics(trt),yolov10m,1120,27.8,27.8,27.7,30.0
+   ultralytics(trt),yolov10m,1280,33.7,33.7,33.5,36.3
+   ultralytics(trt),yolov9t,160,6.2,6.2,6.1,8.8
+   ultralytics(trt),yolov9t,320,7.3,7.3,7.1,7.6
+   ultralytics(trt),yolov9t,480,8.7,8.6,8.5,10.9
+   ultralytics(trt),yolov9t,640,10.8,10.9,10.4,11.0
+   ultralytics(trt),yolov9t,800,13.6,13.6,13.3,13.9
+   ultralytics(trt),yolov9t,960,16.2,16.2,16.0,16.3
+   ultralytics(trt),yolov9t,1120,19.3,19.3,19.1,19.7
+   ultralytics(trt),yolov9t,1280,22.5,22.5,22.3,23.0
+   ultralytics(trt),yolov9s,160,6.3,6.3,6.3,6.9
+   ultralytics(trt),yolov9s,320,7.6,7.6,7.4,7.8
+   ultralytics(trt),yolov9s,480,9.4,9.4,9.3,12.0
+   ultralytics(trt),yolov9s,640,12.4,12.4,12.1,12.7
+   ultralytics(trt),yolov9s,800,15.6,15.6,15.3,16.2
+   ultralytics(trt),yolov9s,960,18.8,18.8,18.7,18.9
+   ultralytics(trt),yolov9s,1120,23.0,23.0,22.8,23.5
+   ultralytics(trt),yolov9s,1280,27.1,27.1,26.9,27.4
+   ultralytics(trt),yolov9m,160,6.4,6.4,6.3,6.6
+   ultralytics(trt),yolov9m,320,8.4,8.4,8.2,10.9
+   ultralytics(trt),yolov9m,480,11.1,11.1,11.0,11.6
+   ultralytics(trt),yolov9m,640,15.6,15.6,15.1,18.0
+   ultralytics(trt),yolov9m,800,20.5,20.6,20.3,20.9
+   ultralytics(trt),yolov9m,960,25.9,25.9,25.7,28.0
+   ultralytics(trt),yolov9m,1120,32.4,32.4,32.2,35.5
+   ultralytics(trt),yolov9m,1280,39.4,39.4,39.2,40.2
+   ultralytics(trt),yolov8n,160,4.8,4.8,4.7,7.3
+   ultralytics(trt),yolov8n,320,5.9,5.9,5.7,8.4
+   ultralytics(trt),yolov8n,480,7.2,7.2,7.0,7.6
+   ultralytics(trt),yolov8n,640,9.5,9.6,8.9,11.4
+   ultralytics(trt),yolov8n,800,11.8,11.8,11.6,12.2
+   ultralytics(trt),yolov8n,960,14.1,14.1,13.9,14.6
+   ultralytics(trt),yolov8n,1120,16.9,16.9,16.8,17.3
+   ultralytics(trt),yolov8n,1280,19.9,19.9,19.7,21.9
+   ultralytics(trt),yolov8s,160,5.0,5.0,4.9,5.2
+   ultralytics(trt),yolov8s,320,6.3,6.3,6.0,6.5
+   ultralytics(trt),yolov8s,480,7.8,7.8,7.6,8.7
+   ultralytics(trt),yolov8s,640,10.6,10.6,10.0,10.7
+   ultralytics(trt),yolov8s,800,13.4,13.4,13.3,13.6
+   ultralytics(trt),yolov8s,960,16.2,16.2,16.0,16.4
+   ultralytics(trt),yolov8s,1120,19.9,19.9,19.6,20.2
+   ultralytics(trt),yolov8s,1280,23.6,23.6,23.3,23.8
+   ultralytics(trt),yolov8m,160,5.7,5.7,5.6,5.9
+   ultralytics(trt),yolov8m,320,7.5,7.5,7.3,7.8
+   ultralytics(trt),yolov8m,480,9.9,9.9,9.8,10.2
+   ultralytics(trt),yolov8m,640,14.0,14.0,13.4,14.1
+   ultralytics(trt),yolov8m,800,17.7,17.7,17.5,17.9
+   ultralytics(trt),yolov8m,960,22.9,22.9,22.7,23.5
+   ultralytics(trt),yolov8m,1120,28.0,28.0,27.7,28.7
+   ultralytics(trt),yolov8m,1280,34.0,34.0,33.6,34.8
+   ultralytics(torch),yolov10n,160,17.7,17.7,17.3,18.7
+   ultralytics(torch),yolov10n,320,18.4,18.4,18.0,18.6
+   ultralytics(torch),yolov10n,480,19.2,19.2,18.9,19.9
+   ultralytics(torch),yolov10n,640,20.6,20.6,20.3,22.0
+   ultralytics(torch),yolov10n,800,21.7,21.7,21.5,23.0
+   ultralytics(torch),yolov10n,960,23.7,23.7,23.4,24.8
+   ultralytics(torch),yolov10n,1120,25.2,25.2,24.9,27.7
+   ultralytics(torch),yolov10n,1280,27.0,27.0,26.8,29.7
+   ultralytics(torch),yolov10s,160,18.1,18.1,17.8,20.8
+   ultralytics(torch),yolov10s,320,18.9,18.9,18.5,19.7
+   ultralytics(torch),yolov10s,480,19.8,19.8,19.5,20.1
+   ultralytics(torch),yolov10s,640,20.9,20.9,20.5,22.3
+   ultralytics(torch),yolov10s,800,22.4,22.4,22.2,23.6
+   ultralytics(torch),yolov10s,960,24.1,24.1,23.9,25.8
+   ultralytics(torch),yolov10s,1120,30.1,30.1,29.9,30.8
+   ultralytics(torch),yolov10s,1280,37.2,37.2,37.1,39.3
+   ultralytics(torch),yolov10m,160,22.8,22.9,22.5,23.1
+   ultralytics(torch),yolov10m,320,23.4,23.4,23.0,25.6
+   ultralytics(torch),yolov10m,480,24.7,24.7,24.3,26.5
+   ultralytics(torch),yolov10m,640,25.8,25.8,25.5,27.2
+   ultralytics(torch),yolov10m,800,28.2,28.2,28.1,29.1
+   ultralytics(torch),yolov10m,960,37.8,37.8,37.5,38.6
+   ultralytics(torch),yolov10m,1120,51.5,51.5,51.3,52.2
+   ultralytics(torch),yolov10m,1280,60.7,60.7,60.5,62.8
+   ultralytics(torch),yolov9t,160,34.2,34.2,33.9,37.7
+   ultralytics(torch),yolov9t,320,35.3,35.2,35.0,39.1
+   ultralytics(torch),yolov9t,480,36.4,36.4,36.1,39.4
+   ultralytics(torch),yolov9t,640,38.2,38.1,37.9,40.8
+   ultralytics(torch),yolov9t,800,39.6,39.6,39.2,41.0
+   ultralytics(torch),yolov9t,960,41.4,41.4,41.0,44.0
+   ultralytics(torch),yolov9t,1120,43.2,43.2,42.8,45.1
+   ultralytics(torch),yolov9t,1280,44.3,44.3,43.9,46.2
+   ultralytics(torch),yolov9s,160,36.0,36.0,35.7,40.4
+   ultralytics(torch),yolov9s,320,37.1,37.1,36.8,39.8
+   ultralytics(torch),yolov9s,480,37.4,37.4,37.1,40.6
+   ultralytics(torch),yolov9s,640,38.7,38.6,38.3,41.2
+   ultralytics(torch),yolov9s,800,40.5,40.5,40.1,42.8
+   ultralytics(torch),yolov9s,960,42.5,42.5,41.8,46.0
+   ultralytics(torch),yolov9s,1120,44.6,44.6,44.2,48.1
+   ultralytics(torch),yolov9s,1280,46.3,46.3,45.9,48.7
+   ultralytics(torch),yolov9m,160,29.1,29.1,28.9,32.2
+   ultralytics(torch),yolov9m,320,29.6,29.6,29.4,32.5
+   ultralytics(torch),yolov9m,480,30.9,30.9,30.7,34.1
+   ultralytics(torch),yolov9m,640,32.0,31.9,31.7,35.0
+   ultralytics(torch),yolov9m,800,36.8,36.9,36.6,38.6
+   ultralytics(torch),yolov9m,960,49.0,49.0,48.8,51.3
+   ultralytics(torch),yolov9m,1120,58.7,58.7,58.2,60.9
+   ultralytics(torch),yolov9m,1280,72.9,72.9,72.6,74.9
+   ultralytics(torch),yolov8n,160,15.5,15.5,15.4,17.6
+   ultralytics(torch),yolov8n,320,16.3,16.3,16.2,18.7
+   ultralytics(torch),yolov8n,480,17.0,17.1,16.9,17.3
+   ultralytics(torch),yolov8n,640,18.2,18.2,18.1,18.5
+   ultralytics(torch),yolov8n,800,19.7,19.7,19.4,21.2
+   ultralytics(torch),yolov8n,960,21.4,21.3,21.1,24.1
+   ultralytics(torch),yolov8n,1120,23.3,23.3,23.0,24.3
+   ultralytics(torch),yolov8n,1280,25.0,25.0,24.6,26.0
+   ultralytics(torch),yolov8s,160,15.9,15.9,15.7,18.2
+   ultralytics(torch),yolov8s,320,16.6,16.6,16.5,16.8
+   ultralytics(torch),yolov8s,480,17.3,17.3,17.2,17.5
+   ultralytics(torch),yolov8s,640,18.4,18.3,18.2,18.8
+   ultralytics(torch),yolov8s,800,20.0,20.0,19.7,21.6
+   ultralytics(torch),yolov8s,960,23.4,23.4,23.2,25.8
+   ultralytics(torch),yolov8s,1120,29.7,29.7,29.4,30.4
+   ultralytics(torch),yolov8s,1280,35.7,35.7,35.3,38.9
+   ultralytics(torch),yolov8m,160,19.5,19.5,19.4,20.7
+   ultralytics(torch),yolov8m,320,20.0,20.0,19.9,21.5
+   ultralytics(torch),yolov8m,480,21.2,21.2,21.0,23.3
+   ultralytics(torch),yolov8m,640,22.2,22.2,22.0,23.7
+   ultralytics(torch),yolov8m,800,30.2,30.2,30.0,31.3
+   ultralytics(torch),yolov8m,960,39.7,39.7,39.4,42.8
+   ultralytics(torch),yolov8m,1120,50.3,50.3,50.0,52.5
+   ultralytics(torch),yolov8m,1280,59.9,59.9,59.6,61.2

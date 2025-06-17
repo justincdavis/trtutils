@@ -170,7 +170,7 @@ def _reset_funcs() -> None:
 def enable_jit() -> None:
     """Enable just-in-time compilation using Numba for some functions."""
     FLAGS.JIT = True
-    LOG.info(f"ENABLED JIT")
+    LOG.info("ENABLED JIT")
 
     if not FLAGS.FOUND_NUMBA and not FLAGS.WARNED_NUMBA_NOT_FOUND:
         LOG.warning("JIT has been enabled, but Numba could not be found.")

@@ -105,7 +105,9 @@ def create_binding(
 
     # allocate host and device memory
     if pagelocked_mem and unified_mem:
-        host_allocation = allocate_pinned_memory(size, dtype, tuple(shape), unified_mem=unified_mem)
+        host_allocation = allocate_pinned_memory(
+            size, dtype, tuple(shape), unified_mem=unified_mem
+        )
         _, device_allocation = get_ptr_pair(host_allocation)
     else:
         device_allocation = cuda_malloc(size)
@@ -125,7 +127,7 @@ def create_binding(
         host_allocation,
         tensor_format,
         pagelocked_mem,
-        unified_mem,
+        bool(unified_mem),
     )
 
 
@@ -233,7 +235,7 @@ def allocate_bindings(
 
         LOG.debug(f"Allocating for I/O tensor: {name} - is_input: {is_input}")
 
-        #allocate memory and create binding
+        # allocate memory and create binding
         binding = create_binding(
             np.zeros(shape, dtype),
             bind_id=i,
