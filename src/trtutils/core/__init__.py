@@ -8,6 +8,11 @@ This module provides the CUDA backend for the TRTEngine class. It provides
 utilities for managing device memory, copying data between host and device,
 and running inference on the engine.
 
+Submodules
+----------
+:mod:`cache`
+    Tools for managing cached TensorRT engines.
+
 Classes
 -------
 :class:`Binding`
@@ -23,6 +28,8 @@ Functions
     Allocate the bindings for a TensorRT engine.
 :func:`allocate_pinned_memory`
     Allocate pagelocked memory using CUDA.
+:func:`allocate_managed_memory`
+    Allocate managed memory using CUDA.
 :func:`create_binding`
     Create a Binding from a np.ndarray.
 :func:`create_context`
@@ -68,13 +75,19 @@ Functions
 
 from __future__ import annotations
 
-from ._bindings import Binding, allocate_bindings, create_binding
+from . import cache
+from ._bindings import (
+    Binding,
+    allocate_bindings,
+    create_binding,
+)
 from ._context import create_context, destroy_context
 from ._cuda import cuda_call, init_cuda
 from ._engine import create_engine
 from ._interface import TRTEngineInterface
 from ._kernels import Kernel, create_kernel_args, launch_kernel
 from ._memory import (
+    allocate_managed_memory,
     allocate_pinned_memory,
     cuda_malloc,
     memcpy_device_to_host,
@@ -90,7 +103,9 @@ __all__ = [
     "Kernel",
     "TRTEngineInterface",
     "allocate_bindings",
+    "allocate_managed_memory",
     "allocate_pinned_memory",
+    "cache",
     "compile_and_load_kernel",
     "compile_kernel",
     "create_binding",

@@ -26,8 +26,14 @@ void letterboxResize(
         const float scaleX = widthIn / (float)regionWidth;
         const float scaleY = heightIn / (float)regionHeight;
 
-        const float inputX = (tx - startX) * scaleX;
-        const float inputY = (ty - startY) * scaleY;
+        // const float inputX = (tx - startX) * scaleX;
+        // const float inputY = (ty - startY) * scaleY;
+        // apply half-pixel sampling like opencv does
+        float inputX = (tx - startX + 0.5f) * (widthIn  / float(regionWidth)) - 0.5f;
+        float inputY = (ty - startY + 0.5f) * (heightIn / float(regionHeight)) - 0.5f;
+        // clamp
+        inputX = fminf(fmaxf(inputX, 0.0f), widthIn  - 1.0f);
+        inputY = fminf(fmaxf(inputY, 0.0f), heightIn - 1.0f);
 
         // get four surrounding pixels
         const int x0 = floor(inputX);

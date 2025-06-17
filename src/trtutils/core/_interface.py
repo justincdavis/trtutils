@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils._flags import FLAGS
+from trtutils._log import LOG
 
-from ._bindings import allocate_bindings
+from ._bindings import Binding, allocate_bindings
 from ._engine import create_engine
-from ._stream import stream_synchronize
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -25,18 +25,23 @@ if TYPE_CHECKING:
         import tensorrt as trt
 
         try:
+            import cuda.bindings.driver as cuda
             import cuda.bindings.runtime as cudart
         except (ImportError, ModuleNotFoundError):
-            from cuda import cudart
+            from cuda import cuda, cudart
 
 
 class TRTEngineInterface(ABC):
     def __init__(
         self: Self,
         engine_path: Path | str,
+        stream: cuda.cudaStream_t | None = None,
+        dla_core: int | None = None,
         *,
         pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
         no_warn: bool | None = None,
+        verbose: bool | None = None,
     ) -> None:
         """
         Load the TensorRT engine from a file.
@@ -45,30 +50,47 @@ class TRTEngineInterface(ABC):
         ----------
         engine_path : Path | str
             The path to the serialized engine file.
+        stream : cuda.cudaStream_t, optional
+            The CUDA stream to use for this engine.
+            By default None, will allocate a new stream.
+        dla_core : int, optional
+            The DLA core to assign DLA layers of the engine to. Default is None.
+            If None, any DLA layers will be assigned to DLA core 0.
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for host allocations.
             By default None, which means pagelocked memory will be used.
+        unified_mem : bool, optional
+            Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which means the default host allocation will be used.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
+        verbose : bool, optional
+            Whether or not to give additional information over stdout.
 
         """
         # store path stem as name
         self._name = Path(engine_path).stem
+        self._dla_core = dla_core
+        self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+        self._unified_mem = unified_mem if unified_mem is not None else FLAGS.IS_JETSON
+        self._verbose = verbose
 
         # engine, context, logger, and CUDA stream
         self._engine, self._context, self._logger, self._stream = create_engine(
             engine_path,
+            stream=stream,
+            dla_core=dla_core,
             no_warn=no_warn,
         )
 
         # allocate memory for inputs and outputs
-        self._inputs, self._outputs, self._allocations, self._batch_size = (
-            allocate_bindings(
-                self._engine,
-                self._context,
-                pagelocked_mem=pagelocked_mem,
-            )
+        self._inputs, self._outputs, self._allocations = allocate_bindings(
+            self._engine,
+            self._context,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
         )
         self._input_allocations: list[int] = [
             input_b.allocation for input_b in self._inputs
@@ -116,6 +138,21 @@ class TRTEngineInterface(ABC):
     def memsize(self: Self) -> int:
         """The size of the engine in bytes."""
         return self._memsize
+
+    @property
+    def dla_core(self: Self) -> int | None:
+        """The DLA core assigned to the engine."""
+        return self._dla_core
+
+    @property
+    def pagelocked_mem(self: Self) -> bool:
+        """Whether or not the system has pagelocked memory."""
+        return self._pagelocked_mem
+
+    @property
+    def unified_mem(self: Self) -> bool:
+        """Whether or not the system has unified memory."""
+        return self._unified_mem
 
     @cached_property
     def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
@@ -195,11 +232,38 @@ class TRTEngineInterface(ABC):
         """
         return [o.dtype for o in self._outputs]
 
+    @property
+    def input_bindings(self: Self) -> list[Binding]:
+        """
+        Get the input bindings.
+
+        Returns
+        -------
+        list[Binding]
+            The input bindings.
+
+        """
+        return self._inputs
+
+    @property
+    def output_bindings(self: Self) -> list[Binding]:
+        """
+        Get the output bindings.
+
+        Returns
+        -------
+        list[Binding]
+            The output bindings.
+
+        """
+        return self._outputs
+
     def __del__(self: Self) -> None:
-        # Ensure CUDA stream is synchronized before freeing resources
-        # This prevents issues in multithreaded environments
-        with contextlib.suppress(Exception):
-            stream_synchronize(self._stream)
+        # NOTE: handle stream sync/cleanup better
+        # # Ensure CUDA stream is synchronized before freeing resources
+        # # This prevents issues in multithreaded environments
+        # with contextlib.suppress(Exception):
+        #     stream_synchronize(self._stream)
 
         def _del(obj: object, attr: str) -> None:
             with contextlib.suppress(AttributeError):
@@ -224,6 +288,8 @@ class TRTEngineInterface(ABC):
         data: list[np.ndarray],
         *,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
+        debug: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the network with the given inputs.
@@ -238,6 +304,12 @@ class TRTEngineInterface(ABC):
             the host memory will be returned directly.
             This memory WILL BE OVERWRITTEN INPLACE
             by future inferences.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+        debug : bool, optional
+            Enable intermediate stream synchronize for debugging.
 
         Returns
         -------
@@ -252,6 +324,8 @@ class TRTEngineInterface(ABC):
         pointers: list[int],
         *,
         no_warn: bool | None = None,
+        verbose: bool | None = None,
+        debug: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the network with the given GPU memory pointers.
@@ -267,6 +341,12 @@ class TRTEngineInterface(ABC):
             The inputs to the network.
         no_warn : bool, optional
             If True, do not warn about usage.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+        debug : bool, optional
+            Enable intermediate stream synchronize for debugging.
 
         Returns
         -------
@@ -279,7 +359,9 @@ class TRTEngineInterface(ABC):
     def _rng(self: Self) -> np.random.Generator:
         return np.random.default_rng()
 
-    def get_random_input(self: Self, *, new: bool | None = None) -> list[np.ndarray]:
+    def get_random_input(
+        self: Self, *, new: bool | None = None, verbose: bool | None = None
+    ) -> list[np.ndarray]:
         """
         Generate a random input for the network.
 
@@ -287,6 +369,10 @@ class TRTEngineInterface(ABC):
         ----------
         new : bool, optional
             Whether or not to generate new input. By default None/False.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
 
         Returns
         -------
@@ -294,13 +380,29 @@ class TRTEngineInterface(ABC):
             The random input to the network.
 
         """
+        verbose = verbose if verbose is not None else self._verbose
         if new or self._rand_input is None:
-            rand_input = [
-                self._rng.random(size=shape, dtype=np.float32).astype(dtype)
-                for (shape, dtype) in self.input_spec
-            ]
+            # generate in input datatype directly instead of casting (if possible)
+            rand_input = []
+            for shape, dtype in self.input_spec:
+                if np.issubdtype(dtype, np.floating):
+                    rand_arr = self._rng.random(size=shape, dtype=dtype)
+                else:
+                    # fallback to cast if not supported
+                    rand_arr = self._rng.random(size=shape, dtype=np.float32).astype(
+                        dtype
+                    )
+                rand_input.append(rand_arr)
             self._rand_input = rand_input
+            if verbose:
+                LOG.debug(
+                    f"Generated random input: {[(a.shape, a.dtype) for a in self._rand_input]}"
+                )
             return self._rand_input
+        if verbose:
+            LOG.debug(
+                f"Using random input: {[(a.shape, a.dtype) for a in self._rand_input]}"
+            )
         return self._rand_input
 
     def __call__(
@@ -308,6 +410,8 @@ class TRTEngineInterface(ABC):
         data: list[np.ndarray],
         *,
         no_copy: bool | None = None,
+        verbose: bool | None = None,
+        debug: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Execute the network with the given inputs.
@@ -322,6 +426,12 @@ class TRTEngineInterface(ABC):
             the host memory will be returned directly.
             This memory WILL BE OVERWRITTEN INPLACE
             by future inferences.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+        debug : bool, optional
+            Enable intermediate stream synchronize for debugging.
 
         Returns
         -------
@@ -329,11 +439,14 @@ class TRTEngineInterface(ABC):
             The outputs of the network.
 
         """
-        return self.execute(data, no_copy=no_copy)
+        return self.execute(data, no_copy=no_copy, verbose=verbose, debug=debug)
 
     def mock_execute(
         self: Self,
         data: list[np.ndarray] | None = None,
+        *,
+        verbose: bool | None = None,
+        debug: bool | None = None,
     ) -> list[np.ndarray]:
         """
         Perform a mock execution of the network.
@@ -346,6 +459,12 @@ class TRTEngineInterface(ABC):
         data : list[np.ndarray], optional
             The inputs to the network, by default None
             If None, random inputs will be generated.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+        debug : bool, optional
+            Enable intermediate stream synchronize for debugging.
 
         Returns
         -------
@@ -353,11 +472,20 @@ class TRTEngineInterface(ABC):
             The outputs of the network.
 
         """
+        verbose = verbose if verbose is not None else self._verbose
+        if verbose:
+            LOG.debug(f"Mock-execute: data={bool(data)}")
         if data is None:
-            data = self.get_random_input()
-        return self.execute(data)
+            data = self.get_random_input(verbose=verbose)
+        return self.execute(data, no_copy=True, verbose=verbose, debug=debug)
 
-    def warmup(self: Self, iterations: int) -> None:
+    def warmup(
+        self: Self,
+        iterations: int,
+        *,
+        verbose: bool | None = None,
+        debug: bool | None = None,
+    ) -> None:
         """
         Warmup the network for a given number of iterations.
 
@@ -365,7 +493,14 @@ class TRTEngineInterface(ABC):
         ----------
         iterations : int
             The number of iterations to warmup the network.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+        debug : bool, optional
+            Enable intermediate stream synchronize for debugging.
 
         """
+        verbose = verbose if verbose is not None else self._verbose
         for _ in range(iterations):
-            self.mock_execute()
+            self.mock_execute(verbose=verbose, debug=debug)

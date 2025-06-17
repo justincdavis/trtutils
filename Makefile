@@ -48,13 +48,15 @@ pyright:
 	python3 -m pyright --project=pyproject.toml
 
 format:
+	python3 -m ruff format ./demos
 	python3 -m ruff format ./examples
 	python3 -m ruff format ./tests
 	python3 -m ruff format ./src/trtutils
 
 check:
+	python3 -m ruff check ./demos --fix --preview --ignore=INP001,T201
 	python3 -m ruff check ./examples --fix --preview --ignore=INP001,T201
-	python3 -m ruff check ./tests --fix --preview --ignore=S101,D100,D104,PLR2004
+	python3 -m ruff check ./tests --fix --preview --ignore=S101,D100,D104,PLR2004,T201
 	python3 -m ruff check ./src/trtutils --fix --preview
 
 stubs:

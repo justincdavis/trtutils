@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trtutils"
-version = "0.5.0"
+version = "0.6.0"
 authors = [
   {name="Justin Davis", email="davisjustin302@gmail.com"},
 ]
@@ -50,6 +50,7 @@ dependencies = [
     "numpy>=1.19.0,<2.2.0",
     "cv2ext>=0.1.0",
     "opencv-python>=4.8.0",
+    "jetsontools>=0.1.0",
     "tqdm>=4.67.1",
     "typing_extensions>=4.0.0",
 ]
@@ -60,14 +61,21 @@ dependencies = [
 
 [project.optional-dependencies]
 all = [
-    "trtutils[jetson]",
+    "trtutils[jit]",
 ]
-jetson = [
-    "jetsontools>=0.0.4",
+jit = [
+    "numba>=0.57.0",
+]
+benchmark = [
+    "torch>=2.0.0",
+    "ultralytics>=8.3.100",
+    "onnx>=1.14.0",
+    "onnxslim>=0.1.20",
+    "matplotlib>=3.0.0",
 ]
 ci = [
-    "ruff>=0.11.2",
-    "mypy>=1.15.0",
+    "ruff>=0.11.13",
+    "mypy>=1.16.0",
     "types-tqdm>=4.67",
 ]
 test = [
@@ -92,7 +100,7 @@ dev = [
 ]
 
 [tool.bumpver]
-current_version = "0.5.0"
+current_version = "0.6.0"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message  = "Bump version {old_version} -> {new_version}"
 commit          = true
@@ -108,7 +116,7 @@ push            = false
 where = ["src"]
 
 [tool.setuptools.package-data]
-trtutils = ["src/*.cu", "src/trtutils/py.typed"]
+trtutils = ["src/*.cu", "src/*.onnx", "src/trtutils/py.typed"]
 
 [tool.ruff]
 fix = true
@@ -161,17 +169,25 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 python_version = "3.8"
 warn_unused_configs = true
 warn_redundant_casts = true
-warn_unused_ignores = false
+warn_unused_ignores = true
 strict_equality = true
 check_untyped_defs = true
-disallow_subclassing_any = false
-disallow_untyped_decorators = true
-disallow_any_generics = false
 disallow_untyped_calls = true
-disallow_incomplete_defs = true
 disallow_untyped_defs = true
-no_implicit_reexport = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
 warn_return_any = true
+no_implicit_reexport = true
+strict_optional = true
+implicit_reexport = true
+local_partial_types = true
+show_error_codes = true
+disallow_subclassing_any = true
+
+# Specific exclusions from strict mode:
+warn_unreachable = false
+disallow_any_generics = false
 
 # # set stub directory
 # mypy_path = "$MYPY_CONFIG_FILE_DIR/typings"

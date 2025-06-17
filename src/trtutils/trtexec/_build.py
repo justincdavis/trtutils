@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._run import run_trtexec
@@ -166,7 +167,9 @@ def build_engine(
         err_msg += " This is an internal error, please report."
         raise RuntimeError(err_msg)
 
-    command += f" --saveEngine={output_path_str} --skipInference"
+    command += f" --saveEngine={output_path_str}"
+    if FLAGS.TRT_10:
+        command += " --skipInference"
     if isinstance(use_dla_core, int):
         command += f" --useDLACore={use_dla_core}"
         command += " --memPoolSize=dlaSRAM:1"

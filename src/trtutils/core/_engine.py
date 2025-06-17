@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 with contextlib.suppress(Exception):
     import tensorrt as trt
 
+from trtutils._config import CONFIG
 from trtutils._log import LOG
 
 from ._stream import create_stream
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 def create_engine(
     engine_path: Path | str,
     stream: cudart.cudaStream_t | None = None,
+    dla_core: int | None = None,
     *,
     no_warn: bool | None = None,
 ) -> tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger, cudart.cudaStream_t]:
@@ -40,13 +42,16 @@ def create_engine(
         Useful if you want multiple engines to share the same stream.
         Although there is no explicit link between engine and stream, the stream
         returned by this function should be used for execution.
+    dla_core : int, optional
+        The DLA core to assign DLA layers of the engine to. Default is None.
+        If None, any DLA layers will be assigned to DLA core 0.
     no_warn : bool | None, optional
         If True, suppresses warnings from TensorRT. Default is None.
 
     Returns
     -------
-    tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger]
-        The deserialized engine, execution context, and logger used.
+    tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger, cudart.cudaStream_t]
+        The deserialized engine, execution context, logger used, and stream created.
         Logger returned is the same as the input logger if not None.
 
     Raises
@@ -59,6 +64,9 @@ def create_engine(
         If the execution context could not be created.
 
     """
+    # load libnvinfer plugins
+    CONFIG.load_plugins()
+
     engine_path = Path(engine_path) if isinstance(engine_path, str) else engine_path
 
     if not engine_path.exists():
@@ -69,6 +77,8 @@ def create_engine(
     # explicitly a thread-safe operation
     # https://docs.nvidia.com/deeplearning/tensorrt/latest/architecture/how-trt-works.html
     runtime = trt.Runtime(LOG)
+    if dla_core is not None:
+        runtime.DLA_core = dla_core
     with Path.open(engine_path, "rb") as f:
         if runtime is None:
             err_msg = "Failed to create TRT runtime"

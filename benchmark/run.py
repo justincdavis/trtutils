@@ -65,7 +65,14 @@ ONNX_DIR = REPO_DIR / "data" / "yolov10"
 
 # global vars
 IMAGE_SIZES = [160, 320, 480, 640, 800, 960, 1120, 1280]
-FRAMEWORKS = ["ultralytics(torch)", "ultralytics(trt)", "trtutils"]
+FRAMEWORKS = [
+    "ultralytics(torch)",
+    "ultralytics(trt)",
+    "trtutils(cpu)",
+    "trtutils(cuda)",
+    "trtutils(trt)",
+    "tensorrt",
+]
 
 
 def get_results(data: list[float]) -> dict[str, float]:
@@ -90,13 +97,18 @@ def get_data(device: str) -> dict[str, dict[str, dict[str, dict[str, float]]]]:
         return {f: {} for f in FRAMEWORKS}
 
 
-def write_data(device: str, data: dict[str, dict[str, dict[str, dict[str, float]]]]) -> None:
+def write_data(
+    device: str, data: dict[str, dict[str, dict[str, dict[str, float]]]]
+) -> None:
     file_path = DATA_DIR / f"{device}.json"
     with file_path.open("w") as f:
         json.dump(data, f, indent=4)
 
 
-def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool) -> None:
+def benchmark_trtutils(
+    device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool
+) -> None:
+    from trtutils import TRTEngine, FLAGS
     from trtutils.impls.yolo import YOLO
     from trtutils.builder import build_engine
 
@@ -106,61 +118,101 @@ def benchmark_trtutils(device: str, warmup_iters: int, bench_iters: int, *, over
     # get initial data
     data = get_data(device)
 
-    for imgsz in IMAGE_SIZES:
-        # if we can find the model nested, then we can skip
-        with contextlib.suppress(KeyError):
-            if data["trtutils"][MODELNAME][str(imgsz)] is not None and not overwrite:
-                continue
+    for preprocessor in ["cpu", "cuda", "trt"]:
+        if preprocessor == "trt" and not FLAGS.TRT_HAS_UINT8:
+            continue
 
-        print(f"Processing trtutils on {MODELNAME} for imgsz={imgsz}...")
+        framework = f"trtutils({preprocessor})"
+        for imgsz in IMAGE_SIZES:
+            # if we can find the model nested, then we can skip
+            with contextlib.suppress(KeyError):
+                if data[framework][MODELNAME][str(imgsz)] is not None and not overwrite:
+                    continue
 
-        # resolve paths
-        weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
-        trt_path = weight_path.with_suffix(".engine")
+            print(f"Processing {framework} on {MODELNAME} for imgsz={imgsz}...")
 
-        if not trt_path.exists():
-            print("\tBuilding trtutils engine...")
-            build_engine(
-                onnx=weight_path,
-                output=trt_path,
-                fp16=True,
-                timing_cache=str(Path(__file__).parent / "timing.cache"),
-                shapes=[("images", (1, 3, imgsz, imgsz))] if "yolov9" in MODELNAME else None,
-            )
+            # resolve paths
+            weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
+            trt_path = weight_path.with_suffix(".engine")
 
-            # verify
             if not trt_path.exists():
-                err_msg = f"trtutils TensorRT engine not found: {trt_path}"
-                raise FileNotFoundError(err_msg)
+                print("\tBuilding trtutils engine...")
+                build_engine(
+                    onnx=weight_path,
+                    output=trt_path,
+                    fp16=True,
+                    timing_cache=str(Path(__file__).parent / "timing.cache"),
+                    shapes=[("images", (1, 3, imgsz, imgsz))]
+                    if "yolov9" in MODELNAME
+                    else None,
+                )
 
-        print("\tBenchmarking trtutils engine...")
-        trt_yolo = YOLO(
-            engine_path=trt_path,
-            warmup_iterations=warmup_iters,
-            warmup=True,
-            verbose=True,
-        )
-        t_timing = []
-        for _ in tqdm(range(bench_iters)):
-            t0 = time.perf_counter()
-            # trt_yolo.end2end(image)
-            trt_yolo.end2end(image, verbose=True)  # add verbose for debugging
-            t_timing.append(time.perf_counter() - t0)
-        del trt_yolo
+                # verify
+                if not trt_path.exists():
+                    err_msg = f"trtutils TensorRT engine not found: {trt_path}"
+                    raise FileNotFoundError(err_msg)
 
-        trt_results = get_results(t_timing)
+            print("\tBenchmarking trtutils engine...")
+            trt_yolo = YOLO(
+                engine_path=trt_path,
+                warmup_iterations=warmup_iters,
+                warmup=True,
+                preprocessor=preprocessor,
+                pagelocked_mem=True,
+                verbose=True,
+            )
+            t_timing = []
+            for _ in tqdm(range(bench_iters)):
+                t0 = time.perf_counter()
+                # trt_yolo.end2end(image)
+                trt_yolo.end2end(image, verbose=True)  # add verbose for debugging
+                t_timing.append(time.perf_counter() - t0)
+            del trt_yolo
 
-        if MODELNAME not in data["trtutils"]:
-            data["trtutils"][MODELNAME] = {}
-        data["trtutils"][MODELNAME][str(imgsz)] = trt_results
-        write_data(device, data)
+            trt_results = get_results(t_timing)
+
+            if MODELNAME not in data[framework]:
+                data[framework][MODELNAME] = {}
+            data[framework][MODELNAME][str(imgsz)] = trt_results
+            write_data(device, data)
+
+            # add the 'raw' engine execution when using cpu preprocessor
+            if preprocessor == "cpu":
+                print("\tBenchmarking tensorrt engine...")
+                base_engine = TRTEngine(
+                    engine_path=trt_path,
+                    warmup_iterations=warmup_iters,
+                    warmup=True,
+                    verbose=True,
+                )
+                input_ptrs = [
+                    binding.allocation for binding in base_engine.input_bindings
+                ]
+                r_timing = []
+                for _ in tqdm(range(bench_iters)):
+                    t00 = time.perf_counter()
+                    # use the debug flag so a stream sync is completed
+                    base_engine.raw_exec(input_ptrs, debug=True, no_warn=True)
+                    r_timing.append(time.perf_counter() - t00)
+                del base_engine
+
+                raw_results = get_results(r_timing)
+
+                if MODELNAME not in data["tensorrt"]:
+                    data["tensorrt"][MODELNAME] = {}
+                data["tensorrt"][MODELNAME][str(imgsz)] = raw_results
+                write_data(device, data)
 
 
-def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool) -> None:
+def benchmark_ultralytics(
+    device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool
+) -> None:
     from ultralytics import YOLO
 
     # resolve paths
-    ultralytics_weight_path = (REPO_DIR / "data" / "ultralytics" / f"{MODELNAME}.pt").resolve()
+    ultralytics_weight_path = (
+        REPO_DIR / "data" / "ultralytics" / f"{MODELNAME}.pt"
+    ).resolve()
     utrt_base_path = ultralytics_weight_path.with_suffix(".engine")
     image = cv2.imread(IMAGE_PATH)
 
@@ -171,9 +223,15 @@ def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int, *, o
     for imgsz in IMAGE_SIZES:
         # resolve paths
         # make a "smarter" path
-        utrt_path = ultralytics_weight_path.parent / f"{ultralytics_weight_path.stem}_{imgsz}.engine"
+        utrt_path = (
+            ultralytics_weight_path.parent
+            / f"{ultralytics_weight_path.stem}_{imgsz}.engine"
+        )
         compile_engine = False
-        methods: list[tuple[str, Path, bool]] = [("ultralytics(torch)", ultralytics_weight_path, False), ("ultralytics(trt)", utrt_path, True)]
+        methods: list[tuple[str, Path, bool]] = [
+            ("ultralytics(torch)", ultralytics_weight_path, False),
+            ("ultralytics(trt)", utrt_path, True),
+        ]
 
         for utag, upath, compile_engine in methods:
             # if we can find the model nested, then we can skip
@@ -203,7 +261,7 @@ def benchmark_ultralytics(device: str, warmup_iters: int, bench_iters: int, *, o
                 if not utrt_base_path.exists():
                     err_msg = f"Ultralytics TensorRT engine not found: {upath}"
                     raise FileNotFoundError(err_msg)
-                
+
                 # copy the utrt_base_path to upath
                 utrt_base_path.rename(upath)
 
@@ -288,7 +346,13 @@ def main() -> None:
         MODELNAME = modelname
 
         # now solve for new onnx_dir
-        yolo_version = copy.copy(MODELNAME).replace("t", "").replace("n", "").replace("s", "").replace("m", "")
+        yolo_version = (
+            copy.copy(MODELNAME)
+            .replace("t", "")
+            .replace("n", "")
+            .replace("s", "")
+            .replace("m", "")
+        )
         global ONNX_DIR
         ONNX_DIR = REPO_DIR / "data" / yolo_version
 
@@ -316,7 +380,9 @@ def main() -> None:
                         overwrite=args.overwrite,
                     )
                 else:
-                    warnings.warn(f"Could not process: {MODELNAME}, since it is not a valid ultralytics model")
+                    warnings.warn(
+                        f"Could not process: {MODELNAME}, since it is not a valid ultralytics model"
+                    )
             except Exception as e:
                 warnings.warn(f"Failed to process {MODELNAME} with ultralytics: {e}")
                 continue

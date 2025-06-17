@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 @dataclass
-class _FLAGS:
+class Flags:
     """
     Class for storing flags for trtutils.
 
@@ -18,6 +18,8 @@ class _FLAGS:
     ----------
     TRT_10 : bool
         Whether or not TensorRT is version 10 or greater.
+    TRT_HAS_UINT8 : bool
+        Whether or not TensorRT suports UINT8 datatype.
     NEW_CAN_RUN_ON_DLA : bool
         Whether or not TensorRT supports the new can_run_on_dla method.
     BUILD_PROGRESS : bool
@@ -34,10 +36,21 @@ class _FLAGS:
         Whether or not execute_v2 is available.
     EXEC_V1 : bool
         Whether or not execute_v1 is available.
+    IS_JETSON : bool
+        Whether or not the system is a Jetson system
+    JIT : bool
+        Whether or not to use jit.
+    FOUND_NUMBA : bool
+        Whether or not a Numba installation was found.
+    WARNED_NUMBA_NOT_FOUND : bool
+        Whether or not the user has been warned that Numba was
+        not found when calling enable_jit.
 
     """
 
+    # TensorRT and CUDA flags
     TRT_10: bool = False
+    TRT_HAS_UINT8: bool = False
     NEW_CAN_RUN_ON_DLA: bool = False
     MEMSIZE_V2: bool = False
     BUILD_PROGRESS: bool = False
@@ -49,14 +62,20 @@ class _FLAGS:
     EXEC_V1: bool = False
     IS_JETSON: bool = False
 
+    # Internal flags
+    JIT: bool = False
+    FOUND_NUMBA: bool = False
+    WARNED_NUMBA_NOT_FOUND: bool = False
 
-FLAGS = _FLAGS()
+
+FLAGS = Flags()
 
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt
 
     FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
+    FLAGS.TRT_HAS_UINT8 = hasattr(trt.DataType, "UINT8")
     FLAGS.NEW_CAN_RUN_ON_DLA = hasattr(trt.IBuilderConfig, "can_run_on_DLA")
     FLAGS.MEMSIZE_V2 = hasattr(trt.ICudaEngine, "device_memory_size_v2")
     FLAGS.BUILD_PROGRESS = hasattr(trt, "IProgressMonitor")

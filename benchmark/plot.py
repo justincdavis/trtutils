@@ -10,30 +10,41 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
 import numpy as np
 import matplotlib.pyplot as plt
 
 from run import FRAMEWORKS
 
 IMAGE_SIZES = [160, 320, 480, 640, 800, 960, 1120, 1280]
+COLORS = {fm: plt.cm.tab10(idx) for idx, fm in enumerate(FRAMEWORKS)}
 
 
 def get_data() -> list[tuple[str, dict[str, dict[str, dict[str, dict[str, float]]]]]]:
     data_dir = Path(__file__).parent / "data"
 
-    device_data: list[tuple[str, dict[str, dict[str, dict[str, dict[str, float]]]]]] = []
+    device_data: list[
+        tuple[str, dict[str, dict[str, dict[str, dict[str, float]]]]]
+    ] = []
 
     for file in data_dir.iterdir():
         device_name = file.stem
         with file.open("r") as f:
             data = json.load(f)
-        
+
         device_data.append((device_name, data))
-    
+
     return device_data
 
 
-def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]]], *, overwrite: bool) -> None:
+def plot_device(
+    name: str,
+    data: dict[str, dict[str, dict[str, dict[str, float]]]],
+    *,
+    overwrite: bool,
+) -> None:
     plot_dir = Path(__file__).parent / "plots" / name
     plot_dir.mkdir(parents=True, exist_ok=True)
 
@@ -42,7 +53,10 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
     # get all models
     model_set = set()
     for f in FRAMEWORKS:
-        for m in data[f]:
+        framework_data = data.get(f)
+        if framework_data is None:
+            continue
+        for m in framework_data:
             model_set.add(m)
     models: list[str] = list(model_set)
     models = sorted(models)
@@ -51,22 +65,23 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
     # print(models)
     # print(image_sizes)
 
-    # Set the tab10 colorscheme for better aesthetics
-    plt.style.use('seaborn-v0_8')
-    plt.rcParams['axes.prop_cycle'] = plt.cycler(color=plt.cm.tab10.colors)
+    plt.style.use("seaborn-v0_8")
 
     print(f"Plotting - {name}")
     for model in models:
         plot_path = plot_dir / f"{model}.png"
         if plot_path.exists() and not overwrite:
             continue
-        
+
         print(f"\t{model}")
 
         # unfold the model name so we have framework -> metrics
         mdata: dict[str, list[tuple[int, float]]] = defaultdict(list)
         for f in FRAMEWORKS:
-            model_data = data[f].get(model)
+            framework_data = data.get(f)
+            if framework_data is None:
+                continue
+            model_data = framework_data.get(model)
             if model_data is None:
                 continue
 
@@ -79,9 +94,9 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
         n_groups = len(IMAGE_SIZES)
         x = np.arange(n_groups)
         n_frameworks = len(sub_frameworks)
-        bar_width = 0.8 / n_frameworks
-        _, ax = plt.subplots(figsize=(8, 5))
-        
+        bar_width = 0.9 / n_frameworks
+        _, ax = plt.subplots(figsize=(11, 6))
+
         # Define font sizes based on a base font size
         fontsize = 12
         title_fontsize = fontsize + 4
@@ -106,7 +121,7 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
                     textcoords="offset points",
                     ha="center",
                     va="bottom",
-                    fontsize=annotation_fontsize
+                    fontsize=annotation_fontsize,
                 )
 
         # Find the maximum latency value to set y-axis limit
@@ -117,7 +132,13 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
 
         for i, framework in enumerate(sub_frameworks):
             latencies = [latency for _, latency in mdata[framework]]
-            rects = ax.bar(x + i * bar_width, latencies, width=bar_width, label=framework)
+            rects = ax.bar(
+                x + i * bar_width,
+                latencies,
+                width=bar_width,
+                label=framework,
+                color=COLORS[framework],
+            )
             autolabel(rects, ax)
 
         # Set y-axis limit with 10% padding to ensure all values and annotations fit
@@ -125,17 +146,35 @@ def plot_device(name: str, data: dict[str, dict[str, dict[str, dict[str, float]]
 
         plt.xlabel("Input Size", fontsize=label_fontsize)
         plt.ylabel("Latency (ms)", fontsize=label_fontsize)
-        plt.suptitle(f"{name} - Input Size and Latency Comparision for {model}", y=0.95, fontsize=title_fontsize)
+        plt.suptitle(
+            f"{name} - Input Size and Latency Comparision for {model}",
+            y=0.95,
+            fontsize=title_fontsize,
+        )
         plt.title("Batch 1, end-to-end latency", fontsize=subtitle_fontsize)
-        plt.xticks(x + bar_width * (n_frameworks - 1) / 2, IMAGE_SIZES, fontsize=tick_fontsize)
+        plt.xticks(
+            x + bar_width * (n_frameworks - 1) / 2, IMAGE_SIZES, fontsize=tick_fontsize
+        )
         plt.yticks(fontsize=tick_fontsize)
-        plt.legend(title="Framework", fontsize=legend_fontsize, title_fontsize=legend_fontsize)
+        plt.legend(
+            title="Framework", fontsize=legend_fontsize, title_fontsize=legend_fontsize
+        )
         plt.tight_layout()
         plt.savefig(plot_path)
 
+    plt.close()
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Generate plots for each device based on benchmark results.")
+    parser = argparse.ArgumentParser(
+        "Generate plots for each device based on benchmark results."
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="The device to make the plots for, optional.",
+    )
     parser.add_argument(
         "--overwrite",
         action="store_true",
@@ -146,4 +185,5 @@ if __name__ == "__main__":
     # parse all the data
     all_data = get_data()
     for name, data in all_data:
-        plot_device(name, data, overwrite=args.overwrite)
+        if args.device is None or name == args.device:
+            plot_device(name, data, overwrite=args.overwrite)

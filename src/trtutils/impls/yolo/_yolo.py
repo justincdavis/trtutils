@@ -10,9 +10,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils._engine import TRTEngine
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
-from ._preprocessors import CPUPreprocessor, CUDAPreprocessor
+from ._preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 from ._process import get_detections, postprocess
 
 if TYPE_CHECKING:
@@ -27,12 +28,15 @@ class YOLO:
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
-        preprocessor: str = "cuda",
+        preprocessor: str = "trt",
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        dla_core: int | None = None,
         *,
         warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
@@ -58,7 +62,7 @@ class YOLO:
             X expects 0.0 through 255.0
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda'], default is 'cuda'.
+            The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'letterbox'.
@@ -68,8 +72,18 @@ class YOLO:
         nms_iou_thres : float, optional
             The IOU threshold to use the in the optional and additnal
             NMS operation. By default, 0.5
+        dla_core : int, optional
+            The DLA core to assign DLA layers of the engine to. Default is None.
+            If None, any DLA layers will be assigned to DLA core 0.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
+        pagelocked_mem : bool, optional
+            Whether or not to use pagelocked memory for underlying CUDA operations.
+            By default, pagelocked memory will be used.
+        unified_mem : bool, optional
+            Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which means the default host allocation will be used.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -95,12 +109,17 @@ class YOLO:
         if verbose:
             LOG.debug(f"Creating YOLO: {self._tag}")
 
+        self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._engine = TRTEngine(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             warmup=warmup,
+            dla_core=dla_core,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=unified_mem,
             no_warn=no_warn,
         )
+        self._unified_mem = self._engine.unified_mem
         self._conf_thres = conf_thres
         self._resize_method: str = resize_method
         self._nms_iou: float = nms_iou_thres
@@ -121,32 +140,35 @@ class YOLO:
         self._dtype = input_spec[1]
         self._input_range = input_range
 
-        # assign the preprocessor
-        self._preprocessor: CPUPreprocessor | CUDAPreprocessor
-        # create both preprocessors to allow dynamic switching
-        # CPU preprocessor has near zero-memory footprint
-        self._preprocessors: tuple[CPUPreprocessor, CUDAPreprocessor] = (
-            CPUPreprocessor(
-                self._input_size,
-                self._input_range,
-                self._dtype,
-                tag=self._tag,
-            ),
-            CUDAPreprocessor(
-                self._input_size,
-                self._input_range,
-                self._dtype,
-                resize=self._resize_method,
-                stream=self._engine.stream,
-                tag=self._tag,
-            ),
+        # set up the preprocessor
+        self._preprocessor: CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
+        valid_preprocessors = ["cpu", "cuda", "trt"]
+        if preprocessor not in valid_preprocessors:
+            err_msg = f"Invalid preprocessor found, options are: {valid_preprocessors}"
+            raise ValueError(err_msg)
+        self._preproc_cpu: CPUPreprocessor = CPUPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            tag=self._tag,
         )
-        self._preprocessor_type = preprocessor
-        # only support uint8 to float32 CUDA kernel for now
-        if self._preprocessor_type == "cuda" and self._dtype == np.float32:
-            self._preprocessor = self._preprocessors[1]
+        self._preproc_cuda: CUDAPreprocessor | None = None
+        self._preproc_trt: TRTPreprocessor | None = None
+        # change the preprocessor setup to cuda if set to trt and trt doesnt have uint8 support
+        if preprocessor == "trt" and not FLAGS.TRT_HAS_UINT8:
+            preprocessor = "cuda"
+            LOG.warning(
+                "Preprocessing method set to TensorRT, but platform doesnt have UINT8 support, fallback to CUDA."
+            )
+        # existing logic
+        if preprocessor == "trt":
+            self._preproc_trt = self._setup_trt_preproc()
+            self._preprocessor = self._preproc_trt
+        elif preprocessor == "cuda" and self._dtype == np.float32:
+            self._preproc_cuda = self._setup_cuda_preproc()
+            self._preprocessor = self._preproc_cuda
         else:
-            self._preprocessor = self._preprocessors[0]
+            self._preprocessor = self._preproc_cpu
 
         # basic profiler setup
         self._pre_profile: tuple[float, float] = (0.0, 0.0)
@@ -156,6 +178,30 @@ class YOLO:
         # if warmup, warmup the preprocessors
         if warmup:
             self._preprocessor.warmup()
+
+    def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
+        return CUDAPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            resize=self._resize_method,
+            stream=self._engine.stream,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+            tag=self._tag,
+        )
+
+    def _setup_trt_preproc(self: Self) -> TRTPreprocessor:
+        return TRTPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            resize=self._resize_method,
+            stream=self._engine.stream,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+            tag=self._tag,
+        )
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -200,7 +246,7 @@ class YOLO:
             during initialization.
         method : str, optional
             The underlying preprocessor to use.
-            Options are 'cpu' and 'cuda'. By default None, which
+            Options are 'cpu', 'cuda', or 'trt'. By default None, which
             will use the preprocessor stated in the constructor.
         no_copy : bool, optional
             If True and using CUDA, do not copy the
@@ -224,10 +270,21 @@ class YOLO:
             LOG.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self._preprocessor
         if method is not None:
-            preprocessor = (
-                self._preprocessors[0] if method == "cpu" else self._preprocessors[1]
-            )
-        if isinstance(preprocessor, CUDAPreprocessor):
+            if method == "trt" and not FLAGS.TRT_HAS_UINT8:
+                method = "cuda"
+                LOG.warning(
+                    "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
+                )
+            preprocessor = self._preproc_cpu
+            if method == "cuda":
+                if self._preproc_cuda is None:
+                    self._preproc_cuda = self._setup_cuda_preproc()
+                preprocessor = self._preproc_cuda
+            elif method == "trt":
+                if self._preproc_trt is None:
+                    self._preproc_trt = self._setup_trt_preproc()
+                preprocessor = self._preproc_trt
+        if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             t0 = time.perf_counter()
             data = preprocessor(image, resize=resize, no_copy=no_copy, verbose=verbose)
             t1 = time.perf_counter()
@@ -604,7 +661,7 @@ class YOLO:
 
         outputs: list[np.ndarray]
         # if using CPU preprocessor best you can do is remove host-to-host copies
-        if not isinstance(self._preprocessor, CUDAPreprocessor):
+        if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             if verbose:
                 LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
 

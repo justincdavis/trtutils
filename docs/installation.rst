@@ -37,31 +37,20 @@ Optional Dependencies
 trtutils provides several optional dependency groups that can be installed
 using pip's extras feature:
 
-YOLO Support
-~~~~~~~~~~~~
+JIT Compiler Support
+~~~~~~~~~~~~~~~~~~~~
 
-Install support for YOLO object detection models:
-
-.. code-block:: console
-
-    $ pip install "trtutils[yolo]"
-
-This includes dependencies for:
-- YOLO-specific preprocessing
-- Object detection utilities
-
-Jetson Support
-~~~~~~~~~~~~~~
-
-For NVIDIA Jetson devices, install additional utilities:
+Install support for the JIT compiler:
 
 .. code-block:: console
 
-    $ pip install "trtutils[jetson]"
+    $ pip install "trtutils[jit]"
 
-This enables:
-- Power consumption monitoring
-- Energy usage tracking
+This installs:
+- Numba
+- LLVM-Lite
+
+This enables the use of :func:`trtutils.enable_jit` to accelerate some CPU operations.
 
 Development Tools
 ~~~~~~~~~~~~~~~~~

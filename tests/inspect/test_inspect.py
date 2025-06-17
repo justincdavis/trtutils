@@ -16,8 +16,10 @@ def test_inspect_simple() -> None:
 
     # size and batch_size are weird for simple.engine
     assert size == 0
-    assert batch_size == 160
+    assert batch_size == 1
     assert len(inputs) > 0
+    for itensor in inputs:
+        assert itensor[1] == (160, 160)
     assert len(outputs) > 0
 
 
