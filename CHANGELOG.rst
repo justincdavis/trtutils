@@ -1,3 +1,55 @@
+0.6.0 (2025-06-16)
+------------------
+
+Added
+^^^^^
+* TensorRT-based image preprocessing pipeline (``impls.yolo._preprocessors._trt``)
+  * Automatically falls back to CUDA or CPU preprocessors when unsupported
+* Engine cache utilities (``core.cache``) enabling on-disk reuse of timing caches and faster start-up
+* Just-In-Time kernel generation via ``_jit`` module and ``--jit`` CLI flag
+* Managed (Unified) CUDA memory option for ``TRTEngine``
+* Device-specific DLA core selection through ``--dla-core`` flag
+* Faster scale-swap-transpose (SST) CUDA kernel implementation
+* Multi-stream and live-webcam demo applications residing in ``demos/``
+* Alternative preprocessing methods measured in benchmarking
+* Additional verbose / debug CLI flags and richer ``inspect`` command output
+
+Changed
+^^^^^^^
+* Lazy loading of TensorRT plugins and YOLO preprocessors reduces import overhead
+* Default host-side memory allocator uses pagelocked memory for all allocations; managed memory enabled by additional flag.
+
+Fixed
+^^^^^
+* Resolved occasional overwrite of benchmark result files
+* Miscellaneous stability fixes identified by the expanded CI test-suite
+
+
+0.5.0 (2025-04-24)
+------------------
+
+Added
+^^^^^
+* Comprehensive engine builder subpackage (``builder``) and ``trtutils build`` CLI command
+  * Layer-wise progress bar, timing cache support, and INT8 calibration via ``ImageBatcher`` / ``Calibrator``
+  * Dedicated DLA build helpers (``builder._dla``) with per-layer precision and chunk-size specification
+* Support for TensorRT ``execute_async_v3`` backend
+* Unified logging facility exported through ``trtutils.get_logger``
+* Extensive benchmarking scripts with automatic documentation generation
+* Continuous Integration pipelines and greatly expanded automated test-suite (#40)
+
+Improved
+^^^^^^^^
+* Enhanced YOLO CLI (image batching, new convenience flags)
+* Build and benchmarking documentation now generated automatically in CI
+* Utilization of timing caches when building engines with ``trtexec`` for faster rebuilds
+
+Fixed
+^^^^^
+* Memory leak in ``CUDAPreprocessor`` due to incorrect explicit free call
+* Numerous minor bugs uncovered by the new tests
+
+
 0.4.1 (2025-03-04)
 ------------------
 
