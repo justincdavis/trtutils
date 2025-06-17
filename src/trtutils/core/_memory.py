@@ -261,3 +261,70 @@ def allocate_managed_memory(
 
     LOG.debug(f"Allocated-managed, device_ptr: {device_ptr}, size: {nbytes}")
     return device_ptr
+
+
+def cuda_free(device_ptr: int) -> None:
+    """
+    Free a CUDA device pointer.
+
+    Parameters
+    ----------
+    device_ptr : int
+        The device pointer to free.
+
+    """
+    cuda_call(cudart.cudaFree(device_ptr))
+
+
+def cuda_host_free(host_ptr: int | np.ndarray) -> None:
+    """
+    Free a CUDA host pointer.
+
+    Parameters
+    ----------
+    host_ptr : int
+        The host pointer to free.
+
+    """
+    if isinstance(host_ptr, np.ndarray):
+        host_ptr = host_ptr.ctypes.data
+    cuda_call(cudart.cudaFreeHost(host_ptr))
+
+
+def free_device_ptrs(ptrs: list[int]) -> None:
+    """
+    Free a list of CUDA device pointers.
+
+    Parameters
+    ----------
+    ptrs : list[int]
+        The device pointers to free.
+
+    """
+    for p in ptrs:
+        cuda_free(p)
+
+
+def allocate_to_device(
+    data: list[np.ndarray],
+) -> list[int]:
+    """
+    Allocate device memory for each numpy array and copy the data over.
+
+    Parameters
+    ----------
+    data : list[np.ndarray]
+        The numpy arrays to copy.
+
+    Returns
+    -------
+    list[int]
+        The device pointers to the allocated memory.
+
+    """
+    device_ptrs: list[int] = []
+    for arr in data:
+        ptr = cuda_malloc(arr.nbytes)
+        memcpy_host_to_device(ptr, arr)
+        device_ptrs.append(ptr)
+    return device_ptrs

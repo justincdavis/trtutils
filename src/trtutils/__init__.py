@@ -85,7 +85,7 @@ from ._jit import JIT, disable_jit, enable_jit, register_jit
 from ._log import LOG, set_log_level
 
 __author__ = "Justin Davis"
-__version__ = "0.6.0"
+__version__ = "0.6.1"
 
 import contextlib
 
