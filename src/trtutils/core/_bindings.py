@@ -47,8 +47,8 @@ class Binding:
         """Free the memory of the binding."""
         if self.pagelocked_mem:
             cuda_call(cudart.cudaFreeHost(self.host_allocation))
-        else:
-            cuda_call(cudart.cudaFree(self.allocation))
+        # else:
+        cuda_call(cudart.cudaFree(self.allocation))
 
     def __del__(self: Self) -> None:
         # potentially already had free called on it previously

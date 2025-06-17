@@ -16,7 +16,9 @@ from ._flags import FLAGS
 from ._log import LOG
 from .core import (
     TRTEngineInterface,
+    memcpy_device_to_host,
     memcpy_device_to_host_async,
+    memcpy_host_to_device,
     memcpy_host_to_device_async,
     stream_synchronize,
 )
@@ -188,12 +190,18 @@ class TRTEngine(TRTEngineInterface):
         if self._pagelocked_mem and self._unified_mem:
             for i_idx in range(len(self._inputs)):
                 np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
-        else:
+        elif self._pagelocked_mem:
             for i_idx in range(len(self._inputs)):
                 memcpy_host_to_device_async(
                     self._inputs[i_idx].allocation,
                     data[i_idx],
                     self._stream,
+                )
+        else:
+            for i_idx in range(len(self._inputs)):
+                memcpy_host_to_device(
+                    self._inputs[i_idx].allocation,
+                    data[i_idx],
                 )
 
         if debug:
@@ -209,12 +217,20 @@ class TRTEngine(TRTEngineInterface):
             stream_synchronize(self._stream)
 
         # copy outputs
-        if not self._unified_mem:
+        if self._unified_mem and self._pagelocked_mem:
+            pass
+        elif self._pagelocked_mem:
             for o_idx in range(len(self._outputs)):
                 memcpy_device_to_host_async(
                     self._outputs[o_idx].host_allocation,
                     self._outputs[o_idx].allocation,
                     self._stream,
+                )
+        else:
+            for o_idx in range(len(self._outputs)):
+                memcpy_device_to_host(
+                    self._outputs[o_idx].host_allocation,
+                    self._outputs[o_idx].allocation,
                 )
 
         # make sure all operations are complete
@@ -285,12 +301,20 @@ class TRTEngine(TRTEngineInterface):
             stream_synchronize(self._stream)
 
         # copy outputs
-        if not self._unified_mem:
+        if self._unified_mem and self._pagelocked_mem:
+            pass
+        elif self._pagelocked_mem:
             for o_idx in range(len(self._outputs)):
                 memcpy_device_to_host_async(
                     self._outputs[o_idx].host_allocation,
                     self._outputs[o_idx].allocation,
                     self._stream,
+                )
+        else:
+            for o_idx in range(len(self._outputs)):
+                memcpy_device_to_host(
+                    self._outputs[o_idx].host_allocation,
+                    self._outputs[o_idx].allocation,
                 )
 
         # make sure all operations are complete

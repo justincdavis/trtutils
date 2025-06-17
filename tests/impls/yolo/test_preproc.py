@@ -40,7 +40,7 @@ def test_cpu_preproc_duplicate() -> None:
     img = cv2.imread(HORSE_IMAGE_PATH)
     result1 = preproc.preprocess(img)[0]
     result2 = preproc.preprocess(img)[0]
-    assert result1.all() == result2.all()
+    assert np.array_equal(result1, result2)
 
 
 def test_cuda_preproc_duplicate() -> None:
@@ -49,7 +49,7 @@ def test_cuda_preproc_duplicate() -> None:
     img = cv2.imread(HORSE_IMAGE_PATH)
     result1 = preproc.preprocess(img)[0]
     result2 = preproc.preprocess(img)[0]
-    assert result1.all() == result2.all()
+    assert np.array_equal(result1, result2)
 
 
 def test_trt_preproc_duplicate() -> None:
@@ -58,7 +58,7 @@ def test_trt_preproc_duplicate() -> None:
     img = cv2.imread(HORSE_IMAGE_PATH)
     result1 = preproc.preprocess(img)[0]
     result2 = preproc.preprocess(img)[0]
-    assert result1.all() == result2.all()
+    assert np.array_equal(result1, result2)
 
 
 def _assess_parity(
