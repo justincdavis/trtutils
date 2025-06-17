@@ -128,11 +128,11 @@ class TRTEngine(TRTEngineInterface):
         # 1.) need to do set_input_shape for all input bindings
         # 2.) need to do set_tensor_address for all input/output bindings
         if self._async_v3:
-            for i_binding in self._inputs:
-                self._context.set_input_shape(i_binding.name, i_binding.shape)
-                self._context.set_tensor_address(i_binding.name, i_binding.allocation)
-            for o_binding in self._outputs:
-                self._context.set_tensor_address(o_binding.name, o_binding.allocation)
+            self._set_input_bindings()
+            self._set_output_bindings()
+        # if using the v3 backend also need to track if we are pointing to the 'built-in' tensors
+        # only applies to the inputs
+        self._using_engine_tensors: bool = True
 
         # store verbose info
         self._verbose = verbose if verbose is not None else False
@@ -144,6 +144,15 @@ class TRTEngine(TRTEngineInterface):
             self.warmup(warmup_iterations, verbose=self._verbose)
 
         LOG.debug(f"Creating TRTEngine: {self.name}")
+
+    def _set_input_bindings(self: Self) -> None:
+        for i_binding in self._inputs:
+            self._context.set_input_shape(i_binding.name, i_binding.shape)
+            self._context.set_tensor_address(i_binding.name, i_binding.allocation)
+
+    def _set_output_bindings(self: Self) -> None:
+        for o_binding in self._outputs:
+            self._context.set_tensor_address(o_binding.name, o_binding.allocation)
 
     def __del__(self: Self) -> None:
         super().__del__()
@@ -185,6 +194,11 @@ class TRTEngine(TRTEngineInterface):
         verbose = verbose if verbose is not None else self._verbose
         if verbose:
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
+
+        # reset the input bindings if direct_exec or raw_exec were used
+        if not self._using_engine_tensors:
+            self._set_input_bindings()
+            self._using_engine_tensors = True
 
         # copy inputs
         if self._pagelocked_mem and self._unified_mem:
@@ -290,6 +304,9 @@ class TRTEngine(TRTEngineInterface):
             # need to set the input pointers to match the bindings, assume in same order
             for i in range(len(pointers)):
                 self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+            self._using_engine_tensors = (
+                False  # set flag to tell future execute calls to reset inputs
+            )
             self._context.execute_async_v3(self._stream)
         else:
             self._context.execute_async_v2(
@@ -367,6 +384,9 @@ class TRTEngine(TRTEngineInterface):
             # need to set the input pointers to match the bindings, assume in same order
             for i in range(len(pointers)):
                 self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+            self._using_engine_tensors = (
+                False  # set flag to tell future execute calls to reset inputs
+            )
             self._context.execute_async_v3(self._stream)
         else:
             self._context.execute_async_v2(

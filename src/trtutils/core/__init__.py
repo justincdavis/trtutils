@@ -70,6 +70,14 @@ Functions
     Create the argument array for a kernel call.
 :func:`init_cuda`
     Initialize CUDA.
+:func:`cuda_free`
+    Free a CUDA device pointer.
+:func:`cuda_host_free`
+    Free a CUDA host pointer.
+:func:`allocate_to_device`
+    Allocate device memory for each numpy array and copy the data over.
+:func:`free_device_ptrs`
+    Free a list of CUDA device pointers.
 
 """
 
@@ -89,7 +97,11 @@ from ._kernels import Kernel, create_kernel_args, launch_kernel
 from ._memory import (
     allocate_managed_memory,
     allocate_pinned_memory,
+    allocate_to_device,
+    cuda_free,
+    cuda_host_free,
     cuda_malloc,
+    free_device_ptrs,
     memcpy_device_to_host,
     memcpy_device_to_host_async,
     memcpy_host_to_device,
@@ -105,6 +117,7 @@ __all__ = [
     "allocate_bindings",
     "allocate_managed_memory",
     "allocate_pinned_memory",
+    "allocate_to_device",
     "cache",
     "compile_and_load_kernel",
     "compile_kernel",
@@ -114,9 +127,12 @@ __all__ = [
     "create_kernel_args",
     "create_stream",
     "cuda_call",
+    "cuda_free",
+    "cuda_host_free",
     "cuda_malloc",
     "destroy_context",
     "destroy_stream",
+    "free_device_ptrs",
     "init_cuda",
     "launch_kernel",
     "load_kernel",

@@ -9,6 +9,12 @@ from threading import Thread
 import numpy as np
 
 import trtutils
+from trtutils.core import (
+    allocate_to_device,
+    free_device_ptrs,
+    memcpy_device_to_host,
+    stream_synchronize,
+)
 
 from .common import build_engine
 
@@ -185,3 +191,153 @@ def test_engine_pagelocked_performance() -> None:
     print(
         f"Pagelocked mean: {pagelock_mean}, Non-pagelocked mean: {non_pagelock_mean}, Speedup: {speedup}"
     )
+
+
+def test_engine_direct_exec_pointer_reset() -> None:
+    """Ensure direct_exec followed by execute resets tensor pointers and maintains output parity."""
+    engine_path = build_engine()
+
+    engine = trtutils.TRTEngine(
+        engine_path,
+        warmup=False,
+    )
+    context = engine._context  # noqa: SLF001
+    input_ptrs = engine._input_allocations  # noqa: SLF001
+    input_names = [i.name for i in engine._inputs]  # noqa: SLF001
+
+    rand_input = engine.get_random_input()
+
+    device_ptrs = allocate_to_device(rand_input)
+    for custom_ptr, native_ptr in zip(device_ptrs, input_ptrs):
+        assert custom_ptr != native_ptr
+
+    # direct_exec pass
+    _ = engine.direct_exec(device_ptrs, no_warn=True)
+
+    # ensure different tensor pointers setup
+    for name in input_names:
+        assert context.get_tensor_address(name) != input_ptrs[0]
+        assert context.get_tensor_address(name) == device_ptrs[0]
+    assert engine._using_engine_tensors is False  # noqa: SLF001
+
+    # normal execute pass
+    _ = engine.execute(rand_input)
+
+    # ensure the pointers are reset
+    for name in input_names:
+        assert context.get_tensor_address(name) == input_ptrs[0]
+    assert engine._using_engine_tensors is True  # noqa: SLF001
+
+    # free
+    free_device_ptrs(device_ptrs)
+    del engine
+
+
+def test_engine_direct_exec_parity() -> None:
+    """Ensure direct_exec has the same output parity as execute."""
+    engine_path = build_engine()
+
+    engine = trtutils.TRTEngine(
+        engine_path,
+        warmup=False,
+    )
+
+    rand_input = engine.get_random_input()
+
+    device_ptrs = allocate_to_device(rand_input)
+
+    # direct_exec pass
+    outputs_direct = engine.direct_exec(device_ptrs, no_warn=True)
+    outputs_direct_copy = [o.copy() for o in outputs_direct]
+
+    # normal execute pass
+    outputs_execute = engine.execute(rand_input)
+
+    # compare parity
+    for out_direct, out_exec in zip(outputs_direct_copy, outputs_execute):
+        assert np.array_equal(out_direct, out_exec)
+
+    # free
+    free_device_ptrs(device_ptrs)
+    del engine
+
+
+def test_engine_raw_exec_pointer_reset() -> None:
+    """Ensure raw_exec followed by execute resets tensor pointers correctly."""
+    engine_path = build_engine()
+
+    engine = trtutils.TRTEngine(
+        engine_path,
+        warmup=False,
+    )
+
+    context = engine._context  # noqa: SLF001
+    input_ptrs = engine._input_allocations  # noqa: SLF001
+    input_names = [i.name for i in engine._inputs]  # noqa: SLF001
+
+    rand_input = engine.get_random_input()
+
+    device_ptrs = allocate_to_device(rand_input)
+
+    for custom_ptr, native_ptr in zip(device_ptrs, input_ptrs):
+        assert custom_ptr != native_ptr
+
+    # raw_exec pass
+    _ = engine.raw_exec(device_ptrs, no_warn=True)
+
+    # ensure different tensor pointers setup
+    for name in input_names:
+        assert context.get_tensor_address(name) != input_ptrs[0]
+        assert context.get_tensor_address(name) == device_ptrs[0]
+    assert engine._using_engine_tensors is False  # noqa: SLF001
+
+    # normal execute pass
+    _ = engine.execute(rand_input)
+
+    # ensure the pointers are reset
+    for name in input_names:
+        assert context.get_tensor_address(name) == input_ptrs[0]
+    assert engine._using_engine_tensors is True  # noqa: SLF001
+
+    # free
+    free_device_ptrs(device_ptrs)
+    del engine
+
+
+def test_engine_raw_exec_parity() -> None:
+    """Ensure raw_exec produces the same results as execute."""
+    engine_path = build_engine()
+
+    engine = trtutils.TRTEngine(
+        engine_path,
+        warmup=False,
+    )
+
+    rand_input = engine.get_random_input()
+
+    device_ptrs = allocate_to_device(rand_input)
+
+    # raw_exec pass
+    output_ptrs = engine.raw_exec(device_ptrs, no_warn=True)
+
+    # make sure computation is finished before copying results
+    stream_synchronize(engine._stream)  # noqa: SLF001
+
+    # copy outputs from device to host
+    outputs_raw = []
+    for idx, out_ptr in enumerate(output_ptrs):
+        shape, dtype = engine.output_spec[idx]
+        host_arr = np.empty(shape, dtype=dtype)
+        memcpy_device_to_host(host_arr, out_ptr)
+        outputs_raw.append(host_arr)
+
+    # execute pass
+    outputs_execute = engine.execute(rand_input)
+
+    # compare parity
+    for out_raw, out_exec in zip(outputs_raw, outputs_execute):
+        assert np.array_equal(out_raw, out_exec)
+
+    # free
+    free_device_ptrs(device_ptrs)
+    del engine

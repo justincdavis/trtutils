@@ -1,3 +1,15 @@
+0.6.1 (2025-06-17)
+------------------
+
+Added
+^^^^^
+* ``core.cuda_free`` and ``core.cuda_host_free`` for freeing CUDA device and host memory
+* ``core.allocate_to_device`` and ``core.free_device_ptrs`` for managing CUDA device memory
+
+Fixed
+^^^^^
+* ``TRTEngine``: Correctly reset input bindings when using ``direct_exec`` or ``raw_exec``
+
 0.6.0 (2025-06-16)
 ------------------
 
