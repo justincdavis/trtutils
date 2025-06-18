@@ -64,20 +64,35 @@ def _feed_frames(
 def _process_frames(
     yolo: YOLO,
     in_queue: Queue[tuple[int, int, np.ndarray]],
-    out_queue: Queue[
-        tuple[int, int, np.ndarray, list[tuple[tuple[int, int, int, int], float, int]]]
-    ],
+    out_queues: list[Queue[
+        tuple[int, np.ndarray, list[tuple[tuple[int, int, int, int], float, int]]]
+    ]],
 ) -> None:
     while len(VIDEO_FILES) > FINISHED:
         try:
             stream_id, frame_id, frame = in_queue.get(timeout=0.25)
             # print(f"Processing frame {frame_id} from stream {stream_id}")
             dets = yolo.end2end(frame)
-            out_queue.put((stream_id, frame_id, frame, dets))
+            out_queues[stream_id].put((frame_id, frame, dets))
         except Empty:
             # print(f"Stream {stream_id} queue is empty, waiting for 0.25s")
             time.sleep(0.25)
     # print(f"Stream {stream_id} finished")
+
+
+def _display_frames(
+    name: str,
+    queue: Queue[tuple[int, np.ndarray, list[tuple[tuple[int, int, int, int], float, int]]]],
+) -> None:
+    while True:
+        frame_id, frame, dets = queue.get(timeout=0.25)
+        canvas = cv2ext.detection.draw_detections(frame, dets)
+        canvas = cv2ext.image.draw.text(
+            canvas, str(frame_id), (10, 30), color=(0, 255, 0)
+        )
+        cv2.imshow(name, canvas)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
 
 def _main() -> None:
@@ -123,36 +138,28 @@ def _main() -> None:
     total_frames = sum(len(video) for video in videos)
 
     in_queue = Queue(maxsize=100)
-    out_queue = Queue(maxsize=100 if args.display else 0)
+    out_queues = [Queue(maxsize=100 if args.display else 0) for _ in videos]
 
     video_threads = [
         threading.Thread(target=_feed_frames, args=(video, i, in_queue))
         for i, video in enumerate(videos)
     ]
     yolo_threads = [
-        threading.Thread(target=_process_frames, args=(yolo, in_queue, out_queue))
+        threading.Thread(target=_process_frames, args=(yolo, in_queue, out_queues))
         for yolo in yolos
     ]
-
-    window_names = [f"Stream {i}" for i in range(len(videos))] if args.display else None
+    display_threads = []
+    if args.display:
+        display_threads = [
+            threading.Thread(target=_display_frames, args=(f"Stream {i}", out_queue))
+            for i, out_queue in enumerate(out_queues)
+        ]
+        for thread in display_threads:
+            thread.start()
 
     t00 = time.time()
     for thread in video_threads + yolo_threads:
         thread.start()
-
-    if window_names:
-        counter = 0
-        while len(VIDEO_FILES) > FINISHED:
-            stream_id, frame_id, frame, dets = out_queue.get(timeout=0.25)
-            # print(f"Frame {frame_id} from stream {stream_id} fetched")
-            canvas = cv2ext.detection.draw_detections(frame, dets)
-            canvas = cv2ext.image.draw.text(
-                canvas, str(frame_id), (10, 30), color=(0, 255, 0)
-            )
-            cv2.imshow(window_names[stream_id], canvas)
-            if counter % 10 == 0:
-                cv2.waitKey(1)
-            counter += 1
 
     for thread in video_threads + yolo_threads:
         thread.join()
@@ -161,7 +168,9 @@ def _main() -> None:
     print(f"Processing {total_frames} frames took {t11 - t00:.2f} seconds")
     print(f"Total FPS: {total_frames / (t11 - t00):.2f}")
 
-    if window_names:
+    if args.display:
+        for thread in display_threads:
+            thread.join()
         cv2.destroyAllWindows()
 
 
