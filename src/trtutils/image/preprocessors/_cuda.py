@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
@@ -19,8 +18,9 @@ from trtutils.core._memory import (
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
-from trtutils.impls.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
-from trtutils.impls.onnx_models import build_yolo_preproc
+from trtutils.impls.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE, SST_FAST
+
+from ._image_preproc import GPUImagePreprocessor
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -34,8 +34,8 @@ if TYPE_CHECKING:
 _COLOR_CHANNELS = 3
 
 
-class TRTPreprocessor:
-    """TRT-based preprocessor for YOLO."""
+class CUDAPreprocessor(GPUImagePreprocessor):
+    """CUDA-based preprocessor for image processing models."""
 
     def __init__(
         self: Self,
@@ -51,15 +51,15 @@ class TRTPreprocessor:
         unified_mem: bool | None = None,
     ) -> None:
         """
-        Create a TRTPreprocessor for YOLO.
+        Create a CUDAPreprocessor for image processing models.
 
         Parameters
         ----------
         output_shape : tuple[int, int]
-            The shape of the image YOLO expects.
+            The shape of the image the model expects.
             In the form [width, height]
         output_range : tuple[float, float]
-            The range of the image values YOLO expects.
+            The range of the image values the model expects.
             Examples: (0.0, 1.0), (0.0, 255.0)
         dtype : np.dtype
             The datatype of the image.
@@ -76,8 +76,8 @@ class TRTPreprocessor:
             Can be changed depending on GPU size.
         tag : str
             The tag to prefix to all logging statements made.
-            By default, 'TRTPreprocessor'
-            If used within a YOLO class, will be the YOLO tag.
+            By default, 'CUDAPreprocessor'
+            If used within a model class, will be the model tag.
         pagelocked_mem : bool, optional
             Whether or not to allocate output memory as pagelocked.
             By default, pagelocked memory will be used.
@@ -92,7 +92,7 @@ class TRTPreprocessor:
             If the resize method is not valid
 
         """
-        self._tag = "TRTPreprocessor" if tag is None else f"{tag}.TRTPreprocessor"
+        self._tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
 
         LOG.debug(
             f"{self._tag}: Creating preprocessor: {output_shape}, {output_range}, {dtype}",
@@ -124,7 +124,8 @@ class TRTPreprocessor:
             self._stream = create_stream()
             self._own_stream = True
 
-        # allocate input, output binding
+        # allocate input, sst_input, output binding
+        # call resize kernel then sst kernel
         # need input -> intermediate -> output
         # for now just allocate 1080p image, reallocate when needed
         # resize kernel input binding
@@ -135,15 +136,29 @@ class TRTPreprocessor:
         )
         self._input_binding = create_binding(
             dummy_input,
+            is_input=True,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
-        dummy_intermediate: np.ndarray = np.zeros(
+        # these two CUDA allocations are static size
+        # sst kernel input binding
+        dummy_sstinput: np.ndarray = np.zeros(
             (self._o_shape[1], self._o_shape[0], 3),
             dtype=np.uint8,
         )
-        self._intermediate_binding = create_binding(
-            dummy_intermediate,
+        self._sst_input_binding = create_binding(
+            dummy_sstinput,
+            is_input=True,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+        )
+        # sst kernel output binding
+        dummy_output: np.ndarray = np.zeros(
+            (1, 3, self._o_shape[1], self._o_shape[0]),
+            dtype=self._o_dtype,
+        )
+        self._output_binding = create_binding(
+            dummy_output,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
@@ -156,45 +171,12 @@ class TRTPreprocessor:
             1,
         )
 
+        # load the kernels
+        # sst kernel always used
+        self._sst_kernel = Kernel(*SST_FAST)
         # either letterbox or linear is used
         self._linear_kernel = Kernel(*LINEAR_RESIZE)
         self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
-
-        # allocate the scale/offset CUDA locations
-        scale_arr: np.ndarray = np.array((self._scale,), dtype=np.float32)
-        self._scale_binding = create_binding(scale_arr)
-        memcpy_host_to_device_async(
-            self._scale_binding.allocation,
-            scale_arr,
-            self._stream,
-        )
-        offset_arr: np.ndarray = np.array((self._offset,), dtype=np.float32)
-        self._offset_binding = create_binding(offset_arr)
-        memcpy_host_to_device_async(
-            self._offset_binding.allocation,
-            offset_arr,
-            self._stream,
-        )
-        stream_synchronize(self._stream)
-
-        # allocate the trtengine
-        self._engine_path = build_yolo_preproc(self._o_shape, self._o_dtype)
-        self._engine = TRTEngine(
-            self._engine_path,
-            stream=self._stream,
-            warmup_iterations=1,
-            warmup=True,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=self._unified_mem,
-        )
-        self._engine_output_binding = self._engine.output_bindings[0]
-
-        # pre-allocate the input pointer list for the engine
-        self._gpu_pointers = [
-            self._intermediate_binding.allocation,
-            self._scale_binding.allocation,
-            self._offset_binding.allocation,
-        ]
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -203,13 +185,9 @@ class TRTPreprocessor:
         with contextlib.suppress(AttributeError):
             del self._input_binding
         with contextlib.suppress(AttributeError):
-            del self._intermediate_binding
+            del self._output_binding
         with contextlib.suppress(AttributeError):
-            del self._scale_binding
-        with contextlib.suppress(AttributeError):
-            del self._offset_binding
-        with contextlib.suppress(AttributeError):
-            del self._engine
+            del self._sst_input_binding
 
     def _create_args(
         self: Self,
@@ -223,6 +201,7 @@ class TRTPreprocessor:
         np.ndarray,
         tuple[float, float],
         tuple[float, float],
+        np.ndarray,
     ]:
         if verbose:
             LOG.debug(f"{self._tag}: create_args")
@@ -247,7 +226,7 @@ class TRTPreprocessor:
             resize_kernel = self._letterbox_kernel
             resize_args = resize_kernel.create_args(
                 self._input_binding.allocation,
-                self._intermediate_binding.allocation,
+                self._sst_input_binding.allocation,
                 width,
                 height,
                 o_width,
@@ -272,7 +251,7 @@ class TRTPreprocessor:
             resize_kernel = self._linear_kernel
             resize_args = resize_kernel.create_args(
                 self._input_binding.allocation,
-                self._intermediate_binding.allocation,
+                self._sst_input_binding.allocation,
                 width,
                 height,
                 o_width,
@@ -280,7 +259,19 @@ class TRTPreprocessor:
                 verbose=verbose,
             )
 
-        return resize_kernel, resize_args, ratios, padding
+        if verbose:
+            LOG.debug(f"{self._tag}: Making sst args")
+
+        sst_args = self._sst_kernel.create_args(
+            self._sst_input_binding.allocation,
+            self._output_binding.allocation,
+            self._scale,
+            self._offset,
+            self._o_shape[0],
+            verbose=verbose,
+        )
+
+        return resize_kernel, resize_args, ratios, padding, sst_args
 
     def _reallocate_input(
         self: Self,
@@ -359,7 +350,7 @@ class TRTPreprocessor:
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
-        Preprocess an image for YOLO.
+        Preprocess an image for the model.
 
         Parameters
         ----------
@@ -397,7 +388,7 @@ class TRTPreprocessor:
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
         """
-        Preprocess an image for YOLO.
+        Preprocess an image for the model.
 
         Parameters
         ----------
@@ -433,16 +424,16 @@ class TRTPreprocessor:
 
         if not self._unified_mem:
             memcpy_device_to_host_async(
-                self._engine_output_binding.host_allocation,
-                self._engine_output_binding.allocation,
+                self._output_binding.host_allocation,
+                self._output_binding.allocation,
                 self._stream,
             )
 
         stream_synchronize(self._stream)
 
         if no_copy:
-            return self._engine_output_binding.host_allocation, ratios, padding
-        return self._engine_output_binding.host_allocation.copy(), ratios, padding
+            return self._output_binding.host_allocation, ratios, padding
+        return self._output_binding.host_allocation.copy(), ratios, padding
 
     def direct_preproc(
         self: Self,
@@ -453,7 +444,7 @@ class TRTPreprocessor:
         verbose: bool | None = None,
     ) -> tuple[int, tuple[float, float], tuple[float, float]]:
         """
-        Preprocess an image for YOLO.
+        Preprocess an image for the model.
 
         Parameters
         ----------
@@ -488,7 +479,7 @@ class TRTPreprocessor:
 
         # create the arguments
         height, width = image.shape[:2]
-        resize_kernel, resize_args, ratios, padding = self._create_args(
+        resize_kernel, resize_args, ratios, padding, sst_args = self._create_args(
             height,
             width,
             resize,
@@ -515,6 +506,11 @@ class TRTPreprocessor:
             resize_args,
         )
 
-        output_ptrs = self._engine.raw_exec(self._gpu_pointers, no_warn=True)
+        self._sst_kernel.call(
+            self._num_blocks,
+            self._num_threads,
+            self._stream,
+            sst_args,
+        )
 
-        return output_ptrs[0], ratios, padding
+        return self._output_binding.allocation, ratios, padding
