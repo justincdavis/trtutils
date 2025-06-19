@@ -7,8 +7,8 @@ ONNX model implementations.
 
 Attributes
 ----------
-:attribute:`YOLO_PREPROC_BASE` : Path
-    The path to the ONNX model for YOLO preprocessing.
+:attribute:`IMAGE_PREPROC_BASE` : Path
+    The path to the ONNX model for image preprocessing.
 
 """
 
@@ -26,19 +26,19 @@ with contextlib.suppress(ImportError):
 from trtutils.builder._build import build_engine
 from trtutils.core import cache as caching_tools
 
-YOLO_PREPROC_BASE: Path = Path(__file__).parent / "_onnx" / "yolo_preproc_base.onnx"
+IMAGE_PREPROC_BASE: Path = Path(__file__).parent / "_onnx" / "image_preproc_base.onnx"
 
 
-def build_yolo_preproc(input_shape: tuple[int, int], output_dtype: np.dtype) -> Path:
+def build_image_preproc(input_shape: tuple[int, int], output_dtype: np.dtype) -> Path:
     """
-    Build a YOLO preproc TensorRT engine.
+    Build a image preproc TensorRT engine.
 
     Parameters
     ----------
     input_shape : tuple[int, int]
-        The (width, height) of the YOLO network.
+        The (width, height) of the image network.
     output_dtype : np.dtype
-        The datatype to return, which the YOLO network will take as input.
+        The datatype to return, which the image network will take as input.
 
     Returns
     -------
@@ -54,13 +54,13 @@ def build_yolo_preproc(input_shape: tuple[int, int], output_dtype: np.dtype) -> 
         trt_output_dtype = trt.DataType.HALF
 
     # resolve the file name - only depends on the input size, scale/offset passed in
-    name = f"yolo_preproc_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}"
+    name = f"image_preproc_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}"
 
     # compile the engine
     with tempfile.TemporaryDirectory() as tmpdir:
         temp_output = Path(tmpdir).resolve() / f"{name}.engine"
         build_engine(
-            YOLO_PREPROC_BASE,
+            IMAGE_PREPROC_BASE,
             temp_output,
             default_device=trt.DeviceType.GPU,
             workspace=1.0,

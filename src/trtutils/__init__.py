@@ -17,8 +17,10 @@ Submodules
     A module for the core functionality of the package.
 :mod:`jetson`
     A module implementating additional functionality for Jetson devices.
-:mod:`impls`
-    A module containing implementations for different neural networks.
+:mod:`image`
+    A module for image processing with TensorRT.
+:mod:`models`
+    A module containing implementations of DNN models.
 :mod:`inspect`
     A module for inspecting TensorRT engines.
 :mod:`trtexec`
@@ -89,7 +91,7 @@ __version__ = "0.6.1"
 
 import contextlib
 
-from . import builder, core, impls, inspect, trtexec
+from . import builder, core, image, inspect, models, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
@@ -118,9 +120,10 @@ __all__ = [
     "disable_jit",
     "enable_jit",
     "find_trtexec",
-    "impls",
+    "image",
     "inspect",
     "inspect_engine",
+    "models",
     "register_jit",
     "run_trtexec",
     "set_log_level",

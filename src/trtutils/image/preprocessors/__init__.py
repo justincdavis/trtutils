@@ -17,6 +17,11 @@ Classes
 :class:`GPUImagePreprocessor`
     Abstract base class for GPU-based image preprocessors.
 
+Functions
+---------
+:func:`preprocess`
+    Preprocess an image for a model.
+
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ from __future__ import annotations
 from ._cpu import CPUPreprocessor
 from ._cuda import CUDAPreprocessor
 from ._image_preproc import GPUImagePreprocessor, ImagePreprocessor
+from ._process import preprocess
 from ._trt import TRTPreprocessor
 
 __all__ = [
@@ -32,4 +38,5 @@ __all__ = [
     "GPUImagePreprocessor",
     "ImagePreprocessor",
     "TRTPreprocessor",
+    "preprocess",
 ]

@@ -3,93 +3,18 @@
 # MIT License
 from __future__ import annotations
 
-import cv2
 import numpy as np
 from cv2ext.bboxes import nms
-from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils._jit import register_jit
 from trtutils._log import LOG
-from trtutils.impls.common import decode_efficient_nms, postprocess_efficient_nms
+from trtutils.image.common import decode_efficient_nms, postprocess_efficient_nms
 
 # EfficientNMS as 4 outputs
 _EFF_NUM_OUTPUTS = 4
 
 
-def preprocess(
-    image: np.ndarray,
-    input_shape: tuple[int, int],
-    dtype: np.dtype,
-    input_range: tuple[float, float] = (0.0, 1.0),
-    method: str = "letterbox",
-    *,
-    verbose: bool | None = None,
-) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
-    """
-    Preprocess inputs for a YOLO network.
-
-    Parameters
-    ----------
-    image : np.ndarray
-        The inputs to be preprocessed.
-    input_shape : tuple[int, int]
-        The shape to resize the inputs.
-    dtype : np.dtype
-        The datatype of the inputs to the network.
-    input_range : tuple[float, float]
-        The range of the model expects for inputs.
-        By default, [0.0, 1.0] (divide input by 255.0)
-    method : str
-        The method by which to resize the image.
-        By default letterbox will be used.
-        Options are [letterbox, linear]
-    verbose : bool, optional
-        Whether or not to log additional information.
-
-    Returns
-    -------
-    tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-        The preprocessed data.
-
-    Raises
-    ------
-    ValueError
-        If the method for resizing is not 'letterbox' or 'linear'
-
-    """
-    if verbose:
-        LOG.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
-
-    if method == "letterbox":
-        tensor, ratios, padding = letterbox(image, new_shape=input_shape)
-    elif method == "linear":
-        tensor, ratios = resize_linear(image, new_shape=input_shape)
-        padding = (0.0, 0.0)
-    else:
-        err_msg = (
-            "Unknown method for image resizing. Options are ['letterbox', 'linear']"
-        )
-        raise ValueError(err_msg)
-
-    tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
-
-    # tensor = tensor / 255.0  # type: ignore[assignment]
-    tensor = rescale(tensor, input_range)
-
-    tensor = tensor[np.newaxis, :]
-    tensor = np.transpose(tensor, (0, 3, 1, 2))
-    # large performance hit to assemble contiguous array
-    if not tensor.flags["C_CONTIGUOUS"]:
-        tensor = np.ascontiguousarray(tensor)
-    tensor = tensor.astype(dtype)
-
-    if verbose:
-        LOG.debug(f"Ratios: {ratios}")
-        LOG.debug(f"Padding: {padding}")
-    return tensor, ratios, padding
-
-
-def _postprocess_v_10(
+def _postprocess_yolov10(
     outputs: list[np.ndarray],
     ratios: tuple[float, float],
     padding: tuple[float, float],
@@ -101,7 +26,7 @@ def _postprocess_v_10(
     if verbose:
         LOG.debug(f"V10 postprocess, output shape: {outputs[0].shape}")
 
-    return _postprocess_v_10_core(
+    return _postprocess_yolov10_core(
         outputs,
         ratios,
         padding,
@@ -111,7 +36,7 @@ def _postprocess_v_10(
 
 
 @register_jit(nogil=True)
-def _postprocess_v_10_core(
+def _postprocess_yolov10_core(
     outputs: list[np.ndarray],
     ratios: tuple[float, float],
     padding: tuple[float, float],
@@ -152,7 +77,7 @@ def _postprocess_v_10_core(
     return [adjusted_bboxes.copy(), scores.copy(), class_ids.copy()]
 
 
-def postprocess(
+def postprocess_detections(
     outputs: list[np.ndarray],
     ratios: tuple[float, float] = (1.0, 1.0),
     padding: tuple[float, float] = (0.0, 0.0),
@@ -198,7 +123,7 @@ def postprocess(
             no_copy=no_copy,
             verbose=verbose,
         )
-    return _postprocess_v_10(
+    return _postprocess_yolov10(
         outputs,
         ratios,
         padding,
@@ -208,7 +133,7 @@ def postprocess(
     )
 
 
-def _get_detections_v_10(
+def _get_detections_yolov10(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,
     nms_iou_thres: float = 0.5,
@@ -220,7 +145,7 @@ def _get_detections_v_10(
     if verbose:
         LOG.debug(f"Decoding: {outputs[0].shape[0]} bboxes")
 
-    results = _get_detections_v_10_core(outputs, conf_thres)
+    results = _get_detections_yolov10_core(outputs, conf_thres)
 
     if extra_nms:
         results = nms(results, iou_threshold=nms_iou_thres, agnostic=agnostic_nms)
@@ -229,7 +154,7 @@ def _get_detections_v_10(
 
 
 @register_jit(nogil=True)
-def _get_detections_v_10_core(
+def _get_detections_yolov10_core(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
@@ -306,7 +231,7 @@ def get_detections(
         )
     if verbose:
         LOG.debug("Using V10 decoding")
-    return _get_detections_v_10(
+    return _get_detections_yolov10(
         outputs,
         conf_thres=conf_thres,
         nms_iou_thres=nms_iou_thres,

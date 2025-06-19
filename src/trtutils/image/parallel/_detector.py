@@ -15,8 +15,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils._log import LOG
-
-from ._yolo import YOLO
+from trtutils.image._detector import Detector
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -42,11 +41,11 @@ class _OutputPacket:
     postprocessed: bool | None = None
 
 
-class ParallelYOLO:
+class ParallelDetector:
     """
-    A parallel implementation of YOLO.
+    A parallel implementation of Detector.
 
-    Allows multiple version of YOLO to be allocated and executed
+    Allows multiple version of Detector to be allocated and executed
     at the same time. Primarily useful for multi-gpu/multi-accelerator
     systems such as the NVIDIA Jetson series. Since the TensorRT engines
     are compiled for a specific device, no device specification is needed
@@ -63,12 +62,12 @@ class ParallelYOLO:
         verbose: bool | None = None,
     ) -> None:
         """
-        Create a ParallelYOLO instance.
+        Create a ParallelDetector instance.
 
         Parameters
         ----------
         engines : Sequence[Path | str | tuple[Path | str, int]]
-            The engine paths of the YOLO models.
+            The engine paths of the Detector models.
             Can optionally include a DLA core assignment.
         warmup_iterations : int
             The number of warmup iterations to run.
@@ -85,7 +84,7 @@ class ParallelYOLO:
         Raises
         ------
         RuntimeError
-            If a YOLO model could not be created.
+            If a Detector model could not be created.
 
         """
         self._engine_paths: list[Path] = []
@@ -113,7 +112,7 @@ class ParallelYOLO:
             (0.0, 0.0) for _ in self._engine_paths
         ]
         self._flags: list[Event] = [Event() for _ in self._engine_paths]
-        self._models: list[YOLO | None] = [None for _ in self._engine_paths]
+        self._models: list[Detector | None] = [None for _ in self._engine_paths]
         self._threads: list[Thread] = [
             Thread(target=self._run, args=(idx,), daemon=True)
             for idx in range(len(self._engine_paths))
@@ -125,30 +124,30 @@ class ParallelYOLO:
         for idx, model in enumerate(self._models):
             if model is None:
                 self.stop()
-                err_msg = f"Error creating YOLO model: {self._engine_paths[idx]}"
+                err_msg = f"Error creating Detector model: {self._engine_paths[idx]}"
                 raise RuntimeError(err_msg)
 
         if self._verbose:
             LOG.debug(
-                f"{self._tag}: Initialized ParallelYOLO with tag: {self._tag}, num engines: {len(self._models)}",
+                f"{self._tag}: Initialized ParallelDetector with tag: {self._tag}, num engines: {len(self._models)}",
             )
 
     def __del__(self: Self) -> None:
         self.stop()
-        # if YOLO objects still exist, try manually del them
+        # if Detector objects still exist, try manually del them
         with contextlib.suppress(AttributeError):
             for model in self._models:
                 with contextlib.suppress(AttributeError):
                     del model
 
     @property
-    def models(self: Self) -> list[YOLO]:
+    def models(self: Self) -> list[Detector]:
         """
-        Get the underlying YOLO models.
+        Get the underlying Detector models.
 
         Returns
         -------
-        list[YOLO]
+        list[Detector]
             A list of the underlying models.
 
         Raises
@@ -163,9 +162,9 @@ class ParallelYOLO:
             raise RuntimeError(err_msg)
         return models  # type: ignore[return-value]
 
-    def get_model(self: Self, modelid: int) -> YOLO:
+    def get_model(self: Self, modelid: int) -> Detector:
         """
-        Get a YOLO model with id.
+        Get a Detector model with id.
 
         Parameters
         ----------
@@ -174,8 +173,8 @@ class ParallelYOLO:
 
         Returns
         -------
-        YOLO
-            The YOLO model
+        Detector
+            The Detector model
 
         Raises
         ------
@@ -802,7 +801,7 @@ class ParallelYOLO:
         dla_core = self._dla_assignments[threadid]
         flag = self._flags[threadid]
         try:
-            yolo = YOLO(
+            detector = Detector(
                 engine,
                 warmup_iterations=self._warmup_iterations,
                 warmup=self._warmup,
@@ -813,7 +812,7 @@ class ParallelYOLO:
         except Exception:
             flag.set()
             raise
-        self._models[threadid] = yolo
+        self._models[threadid] = detector
 
         # set flag that we are ready
         flag.set()
@@ -832,12 +831,12 @@ class ParallelYOLO:
 
             img = data.data
             if not data.preprocessed:
-                img, ratio, padding = yolo.preprocess(img, no_copy=data.no_copy)
+                img, ratio, padding = detector.preprocess(img, no_copy=data.no_copy)
             else:
                 ratio = data.ratio
                 padding = data.padding
             t0 = time.perf_counter()
-            results = yolo.run(
+            results = detector.run(
                 img,
                 preprocessed=True,
                 postprocess=data.postprocess,
@@ -848,7 +847,7 @@ class ParallelYOLO:
                 if ratio is None or padding is None:
                     err_msg = "Ratio/Padding is None, but postprocess set to True."
                     raise ValueError(err_msg)
-                results = yolo.postprocess(
+                results = detector.postprocess(
                     results,
                     ratio,
                     padding,

@@ -13,15 +13,15 @@ from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
-from ._preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
-from ._process import get_detections, postprocess
+from .postprocessors import get_detections, postprocess_detections
+from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class YOLO:
-    """Implementation of YOLO object detectors."""
+class Detector:
+    """Implementation of object detectors."""
 
     def __init__(
         self: Self,
@@ -43,23 +43,18 @@ class YOLO:
         verbose: bool | None = None,
     ) -> None:
         """
-        Create a YOLO object.
+        Create a Detector object.
 
         Parameters
         ----------
         engine_path : Path, str
             The Path or str to the compiled TensorRT engine.
-        version : int
-            What version of YOLO the compiled engine is.
-            Options are: [7, 8, 9, 10]
         warmup_iterations : int
             The number of warmup iterations to perform.
             The default is 10.
         input_range : tuple[float, float]
             The range of input values which should be passed to
             the model. By default [0.0, 1.0].
-            Versions 7/8/9/10 expect 0.0 through 1.0
-            X expects 0.0 through 255.0
         preprocessor : str
             The type of preprocessor to use.
             The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
@@ -100,14 +95,13 @@ class YOLO:
         Raises
         ------
         ValueError
-            If the version number given is not valid
             If input size format is incorrect
             If model does not take 3 channel input
 
         """
         self._tag: str = f"{Path(engine_path).stem}"
         if verbose:
-            LOG.debug(f"Creating YOLO: {self._tag}")
+            LOG.debug(f"Creating Detector: {self._tag}")
 
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._engine = TRTEngine(
@@ -127,14 +121,14 @@ class YOLO:
         self._agnostic_nms: bool | None = agnostic_nms
         input_spec = self._engine.input_spec[0]
         input_size: tuple[int, ...] = tuple(input_spec[0])
-        yolo_input_size = 4
-        if len(input_size) != yolo_input_size:
-            err_msg = "Expected YOLO model to have input size of form: (batch, channels, height, width)"
+        detector_input_size = 4
+        if len(input_size) != detector_input_size:
+            err_msg = "Expected model to have input size of form: (batch, channels, height, width)"
             err_msg += f", found {input_size}"
             raise ValueError(err_msg)
         rgb_channels = 3
         if input_size[1] != rgb_channels:
-            err_msg = f"Expected YOLO model to take {rgb_channels} channel input, found {input_size[1]}"
+            err_msg = f"Expected model to take {rgb_channels} channel input, found {input_size[1]}"
             raise ValueError(err_msg)
         self._input_size: tuple[int, int] = (input_size[3], input_size[2])
         self._dtype = input_spec[1]
@@ -337,7 +331,9 @@ class YOLO:
 
         conf_thres = conf_thres or self._conf_thres
         t0 = time.perf_counter()
-        data = postprocess(outputs, ratios, padding, conf_thres, no_copy=no_copy)
+        data = postprocess_detections(
+            outputs, ratios, padding, conf_thres, no_copy=no_copy
+        )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
         return data
@@ -355,12 +351,12 @@ class YOLO:
         verbose: bool | None = None,
     ) -> list[np.ndarray]:
         """
-        Run the YOLO network on input.
+        Run the model on input.
 
         Parameters
         ----------
         image : np.ndarray
-            The data to run the YOLO network on.
+            The data to run the model on.
         ratios : tuple[float, float], optional
             The ratios generated during preprocessing.
         padding : tuple[float, float], optional
@@ -386,7 +382,7 @@ class YOLO:
         Returns
         -------
         list[np.ndarray]
-            The outputs of the YOLO network.
+            The outputs of the model.
 
         """
         return self.run(
@@ -413,12 +409,12 @@ class YOLO:
         verbose: bool | None = None,
     ) -> list[np.ndarray]:
         """
-        Run the YOLO network on input.
+        Run the model on input.
 
         Parameters
         ----------
         image: np.ndarray
-            The data to run the YOLO network on.
+            The data to run the model on.
         ratios : tuple[float, float], optional
             The ratios generated during preprocessing.
         padding : tuple[float, float], optional
@@ -451,7 +447,7 @@ class YOLO:
         Returns
         -------
         list[np.ndarray]
-            The outputs of the YOLO network.
+            The outputs of the model.
 
         Raises
         ------
@@ -521,7 +517,7 @@ class YOLO:
         self: Self,
     ) -> np.ndarray:
         """
-        Generate a random image for the YOLO model.
+        Generate a random image for the model.
 
         Returns
         -------
@@ -536,7 +532,7 @@ class YOLO:
         image: np.ndarray | None = None,
     ) -> list[np.ndarray]:
         """
-        Mock an execution of the YOLO model.
+        Mock an execution of the model.
 
         Parameters
         ----------
@@ -622,7 +618,7 @@ class YOLO:
         verbose: bool | None = None,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
         """
-        Perform end to end inference for a YOLO model.
+        Perform end to end inference for a model.
 
         Equivalent to running preprocess, run, postprocess, and
         get_detections in that order. Makes some memory transfer
