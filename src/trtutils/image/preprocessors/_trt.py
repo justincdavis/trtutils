@@ -19,8 +19,8 @@ from trtutils.core._memory import (
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
-from trtutils.impls.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
-from trtutils.impls.onnx_models import build_yolo_preproc
+from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
+from trtutils.image.onnx_models import build_image_preproc
 
 from ._image_preproc import GPUImagePreprocessor
 
@@ -180,7 +180,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         stream_synchronize(self._stream)
 
         # allocate the trtengine
-        self._engine_path = build_yolo_preproc(self._o_shape, self._o_dtype)
+        self._engine_path = build_image_preproc(self._o_shape, self._o_dtype)
         self._engine = TRTEngine(
             self._engine_path,
             stream=self._stream,

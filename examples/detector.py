@@ -11,7 +11,7 @@ from pathlib import Path
 import cv2
 
 from trtutils import set_log_level
-from trtutils.impls.yolo import YOLO
+from trtutils.image import Detector
 
 
 # This example shows how to use the TRTEngine class
@@ -39,12 +39,12 @@ def main() -> None:
     img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
 
     for engine in engines:
-        yolo = YOLO(engine, warmup=True, preprocessor="cuda")
-        print(yolo.name)
+        detector = Detector(engine, warmup=True, preprocessor="cuda")
+        print(detector.name)
 
         t0 = time.perf_counter()
-        output = yolo.run(img)
-        bboxes = yolo.get_detections(output)
+        output = detector.run(img)
+        bboxes = detector.get_detections(output)
         t1 = time.perf_counter()
 
         print(f"RUN, bboxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
@@ -54,12 +54,12 @@ def main() -> None:
         # end2end makes a few memory optimzations by avoiding extra GPU
         # memory transfers
         t0 = time.perf_counter()
-        bboxes = yolo.end2end(img)
+        bboxes = detector.end2end(img)
         t1 = time.perf_counter()
 
         print(f"END2END: bboxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
 
-        del yolo
+        del detector
 
 
 if __name__ == "__main__":

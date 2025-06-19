@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils._log import LOG
-from trtutils.impls.yolo._process import preprocess
 
 from ._image_preproc import ImagePreprocessor
+from ._process import preprocess
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -103,7 +103,6 @@ class CPUPreprocessor(ImagePreprocessor):
             The preprocessed image, ratios, and padding used for resizing.
 
         """
-        resize = resize if resize is not None else self._resize
         return self.preprocess(image, resize=resize, no_copy=no_copy, verbose=verbose)
 
     def preprocess(

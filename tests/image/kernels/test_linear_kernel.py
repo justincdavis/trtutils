@@ -17,7 +17,7 @@ from trtutils.core import (
     memcpy_host_to_device_async,
     stream_synchronize,
 )
-from trtutils.impls import kernels
+from trtutils.image import kernels
 
 try:
     from .common import IMG_PATH, kernel_compile

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import trtutils
 from tests.common import build_engine
-from tests.impls.yolo.common import build_yolo
+from tests.models.yolo.common import build_yolo
 
 
 def test_inspect_simple() -> None:

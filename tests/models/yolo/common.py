@@ -9,7 +9,8 @@ from threading import Thread
 
 import cv2
 
-import trtutils
+from trtutils import build_engine
+from trtutils.models import YOLO
 
 from .paths import ENGINE_PATHS, IMAGE_PATHS, ONNX_PATHS
 
@@ -41,7 +42,7 @@ def build_yolo(version: int, *, use_dla: bool | None = None) -> Path:
     if engine_path.exists():
         return engine_path
 
-    trtutils.builder.build_engine(
+    build_engine(
         onnx_path,
         engine_path,
         timing_cache=Path(__file__).parent / "timing.cache",
@@ -61,7 +62,7 @@ def yolo_run(
     engine_path = build_yolo(version, use_dla=use_dla)
 
     scale = (0, 1) if version != 0 else (0, 255)
-    yolo = trtutils.impls.yolo.YOLO(
+    yolo = YOLO(
         engine_path,
         conf_thres=0.25,
         warmup=False,
@@ -91,7 +92,7 @@ def yolo_run_multiple(
 
     scale = (0, 1) if version != 0 else (0, 255)
     yolos = [
-        trtutils.impls.yolo.YOLO(
+        YOLO(
             engine_path,
             conf_thres=0.25,
             warmup=False,
@@ -124,7 +125,7 @@ def yolo_run_in_thread(
         engine_path = build_yolo(version, use_dla=use_dla)
 
         scale = (0, 1) if version != 0 else (0, 255)
-        yolo = trtutils.impls.yolo.YOLO(
+        yolo = YOLO(
             engine_path,
             conf_thres=0.25,
             warmup=False,
@@ -164,7 +165,7 @@ def yolo_run_multiple_threads(
 
     def run(tid: int, results: list[bool], engine_path: Path) -> None:
         scale = (0, 1) if version != 0 else (0, 255)
-        yolo = trtutils.impls.yolo.YOLO(
+        yolo = YOLO(
             engine_path,
             conf_thres=0.25,
             warmup=False,
@@ -213,7 +214,7 @@ def yolo_results(
     engine_path = build_yolo(version, use_dla=use_dla)
 
     scale = (0, 1) if version != 0 else (0, 255)
-    yolo = trtutils.impls.yolo.YOLO(
+    yolo = YOLO(
         engine_path,
         conf_thres=0.25,
         warmup=False,
@@ -244,7 +245,7 @@ def yolo_swapping_preproc_results(version: int, *, use_dla: bool | None = None) 
     engine_path = build_yolo(version, use_dla=use_dla)
 
     scale = (0, 1) if version != 0 else (0, 255)
-    yolo = trtutils.impls.yolo.YOLO(
+    yolo = YOLO(
         engine_path,
         conf_thres=0.25,
         warmup=False,
@@ -285,7 +286,7 @@ def yolo_pagelocked_perf(version: int, *, use_dla: bool | None = None) -> None:
     engine_path = build_yolo(version, use_dla=use_dla)
 
     scale = (0, 1) if version != 0 else (0, 255)
-    yolo = trtutils.impls.yolo.YOLO(
+    yolo = YOLO(
         engine_path,
         conf_thres=0.25,
         warmup=True,
@@ -293,7 +294,7 @@ def yolo_pagelocked_perf(version: int, *, use_dla: bool | None = None) -> None:
         preprocessor="cuda",
         pagelocked_mem=False,
     )
-    yolo_pagelocked = trtutils.impls.yolo.YOLO(
+    yolo_pagelocked = YOLO(
         engine_path,
         conf_thres=0.25,
         warmup=True,

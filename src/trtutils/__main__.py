@@ -207,7 +207,7 @@ def _run_yolo(args: SimpleNamespace) -> None:
         err_msg = f"Invalid input file: {input_path}"
         raise ValueError(err_msg)
 
-    yolo = trtutils.impls.yolo.YOLO(
+    yolo = trtutils.models.YOLO(
         engine_path=args.engine,
         warmup_iterations=args.warmup_iterations,
         input_range=args.input_range,

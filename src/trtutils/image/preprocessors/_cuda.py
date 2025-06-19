@@ -18,7 +18,7 @@ from trtutils.core._memory import (
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
-from trtutils.impls.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE, SST_FAST
+from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE, SST_FAST
 
 from ._image_preproc import GPUImagePreprocessor
 

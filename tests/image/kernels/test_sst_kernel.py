@@ -7,7 +7,6 @@ import math
 
 import cv2
 import numpy as np
-from cv2ext.image import letterbox
 
 from trtutils.core import (
     Kernel,
@@ -18,7 +17,8 @@ from trtutils.core import (
     memcpy_host_to_device_async,
     stream_synchronize,
 )
-from trtutils.impls import kernels
+from trtutils.image import kernels
+from trtutils.image.preprocessors import preprocess
 
 try:
     from .common import IMG_PATH, kernel_compile
@@ -28,42 +28,44 @@ except ImportError:
         kernel_compile,
     )
 
-SHOW = False
+
+def test_scale_swap_transpose_compile() -> None:
+    """Test compilation of the scale-swap-transpose kernel."""
+    kernel_compile(kernels.SCALE_SWAP_TRANSPOSE)
 
 
-def test_letterbox_compile() -> None:
-    """Test compilation of the letterbox kernel."""
-    kernel_compile(kernels.LETTERBOX_RESIZE)
-
-
-def test_letterbox_results() -> None:
-    """Test letterbox kernel results against CPU implementation."""
-    output_shape = (640, 480)
+def test_sst_results() -> None:
+    """Test scale-swap-transpose kernel results against CPU implementation."""
+    output_shape = 640
+    scale = 1.0 / 255.0
+    offset = 0.0
 
     img = cv2.imread(IMG_PATH)
-    resized_img, _, _ = letterbox(img, output_shape)
-
-    height, width = img.shape[:2]
-    o_width, o_height = output_shape
+    img = cv2.resize(img, (output_shape, output_shape))
 
     stream = create_stream()
 
     # block and thread info
     num_threads: tuple[int, int, int] = (32, 32, 1)
     num_blocks: tuple[int, int, int] = (
-        math.ceil(o_width / num_threads[1]),  # X-axis (width)
-        math.ceil(o_height / num_threads[0]),  # Y-axis (height)
+        math.ceil(output_shape / num_threads[0]),
+        math.ceil(output_shape / num_threads[1]),
         1,
     )
 
+    # allocate input/output binding
+    dummy_input: np.ndarray = np.zeros(
+        (output_shape, output_shape, 3),
+        dtype=np.uint8,
+    )
     # set is_input since we do not use the host_allocation here
     input_binding = create_binding(
-        img,
+        dummy_input,
         is_input=True,
     )
     dummy_output: np.ndarray = np.zeros(
-        (o_height, o_width, 3),
-        dtype=np.uint8,
+        (1, 3, output_shape, output_shape),
+        dtype=np.float32,
     )
     # set pagelocked memory since we read from the host allocation
     output_binding = create_binding(
@@ -71,32 +73,17 @@ def test_letterbox_results() -> None:
         pagelocked_mem=True,
     )
 
-    # compute the args
-    scale_x = o_width / width
-    scale_y = o_height / height
-    scale = min(scale_x, scale_y)
-    new_width = int(width * scale)
-    new_height = int(height * scale)
-    pad_x = int((o_width - new_width) / 2)
-    pad_y = int((o_height - new_height) / 2)
-
     # load the kernel
     kernel = Kernel(
-        *kernels.LETTERBOX_RESIZE,
+        *kernels.SCALE_SWAP_TRANSPOSE,
     )
 
     args = kernel.create_args(
         input_binding.allocation,
         output_binding.allocation,
-        width,
-        height,
-        o_width,
-        o_height,
-        pad_x,
-        pad_y,
-        new_width,
-        new_height,
-        verbose=True,
+        scale,
+        offset,
+        output_shape,
     )
 
     memcpy_host_to_device_async(
@@ -117,19 +104,13 @@ def test_letterbox_results() -> None:
 
     cuda_result = output_binding.host_allocation
 
-    assert cuda_result.shape == resized_img.shape
-    cpu_mean = np.mean(resized_img)
-    # allow up to an overall 0.5 out of 255.0 drift (1.0 abs)
-    assert cpu_mean - 0.5 <= np.mean(cuda_result) <= cpu_mean + 0.5
-    # Check pixels that are different
-    diff_mask = np.any(resized_img != cuda_result, axis=-1)
-    avg_diff = np.mean(np.abs(resized_img[diff_mask] - cuda_result[diff_mask]))
-    assert avg_diff < 1.0
+    cpu_result, _, _ = preprocess(img, (output_shape, output_shape), dummy_output.dtype)
 
-    if SHOW:
-        cv2.imshow("CPU", resized_img)
-        cv2.imshow("CUDA", cuda_result)
-        cv2.waitKey(0)
+    assert cuda_result.shape == cpu_result.shape
+    assert np.mean(cuda_result) == np.mean(cpu_result)
+    assert np.min(cuda_result) == np.min(cpu_result)
+    assert np.max(cuda_result) == np.max(cpu_result)
+    assert np.allclose(cuda_result, cpu_result)
 
     destroy_stream(stream)
     input_binding.free()
@@ -138,5 +119,4 @@ def test_letterbox_results() -> None:
 
 
 if __name__ == "__main__":
-    SHOW = True
-    test_letterbox_results()
+    test_sst_results()

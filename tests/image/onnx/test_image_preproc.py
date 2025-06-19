@@ -9,8 +9,8 @@ import cv2
 import numpy as np
 
 from trtutils import TRTEngine, set_log_level
-from trtutils.impls.onnx_models import build_yolo_preproc
-from trtutils.impls.yolo import preprocess
+from trtutils.image.onnx_models import build_image_preproc
+from trtutils.image.preprocessors import preprocess
 
 IMG_PATH = str(Path(__file__).parent.parent.parent.parent / "data" / "horse.jpg")
 
@@ -32,7 +32,9 @@ def test_trt_preproc_engine() -> None:
     )
 
     # trt version
-    engine_path = build_yolo_preproc((output_shape, output_shape), np.dtype(np.float32))
+    engine_path = build_image_preproc(
+        (output_shape, output_shape), np.dtype(np.float32)
+    )
     engine = TRTEngine(engine_path)
     engine.mock_execute()
 

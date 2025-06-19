@@ -25,8 +25,6 @@ Classes
     Wrapper around classification models.
 :class:`Detector`
     Wrapper around detection models.
-:class:`SAHI`
-    Simple implementation of SAHI.
 
 """
 
@@ -35,10 +33,8 @@ from __future__ import annotations
 from . import common, kernels, onnx_models, parallel, postprocessors, preprocessors
 from ._classifier import Classifier
 from ._detector import Detector
-from ._sahi import SAHI
 
 __all__ = [
-    "SAHI",
     "Classifier",
     "Detector",
     "common",

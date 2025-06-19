@@ -8,7 +8,11 @@ import time
 import cv2
 import numpy as np
 
-from trtutils.impls.yolo import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+from trtutils.image.preprocessors import (
+    CPUPreprocessor,
+    CUDAPreprocessor,
+    TRTPreprocessor,
+)
 
 from .paths import HORSE_IMAGE_PATH, IMAGE_PATHS
 
