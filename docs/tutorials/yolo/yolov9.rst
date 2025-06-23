@@ -72,13 +72,13 @@ the input shape since it's dynamic in the ONNX weights:
 Running Inference
 -----------------
 
-The :py:class:`~trtutils.impls.yolo.YOLO` class provides a high-level interface
+The :py:class:`~trtutils.models.YOLO` class provides a high-level interface
 for running YOLOv9 inference:
 
 .. code-block:: python
 
     import cv2
-    from trtutils.impls.yolo import YOLO, YOLO9
+    from trtutils.models import YOLO, YOLO9
 
     # Load the YOLOv9 model
     yolo = YOLO("yolov9.engine")
@@ -105,7 +105,7 @@ You can run multiple YOLOv9 models in parallel:
 
 .. code-block:: python
 
-    from trtutils.impls.yolo import ParallelYOLO
+    from trtutils.models import ParallelYOLO
 
     # Create a parallel YOLO instance with multiple engines
     yolo = ParallelYOLO(["yolov9_1.engine", "yolov9_2.engine"])

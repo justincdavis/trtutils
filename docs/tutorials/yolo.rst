@@ -34,7 +34,7 @@ Example:
 Running YOLO Inference
 ----------------------
 
-The :py:class:`~trtutils.impls.yolo.YOLO` class provides a high-level interface
+The :py:class:`~trtutils.models.YOLO` class provides a high-level interface
 for running YOLO inference. It handles all the preprocessing and postprocessing
 steps automatically.
 
@@ -43,7 +43,7 @@ Example:
 .. code-block:: python
 
     import cv2
-    from trtutils.impls.yolo import YOLO
+    from trtutils.models import YOLO
 
     # Load the YOLO model
     yolo = YOLO("yolo.engine")
@@ -67,7 +67,7 @@ You can run multiple YOLO models in parallel using the :py:class:`~trtutils.impl
 
 .. code-block:: python
 
-    from trtutils.impls.yolo import ParallelYOLO
+    from trtutils.models import ParallelYOLO
 
     # Create a parallel YOLO instance with multiple engines
     yolo = ParallelYOLO(["yolo1.engine", "yolo2.engine"])

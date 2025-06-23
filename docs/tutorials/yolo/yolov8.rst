@@ -83,13 +83,13 @@ Once you have the end-to-end ONNX weights, build a TensorRT engine:
 Running Inference
 -----------------
 
-The :py:class:`~trtutils.impls.yolo.YOLO` class provides a high-level interface
+The :py:class:`~trtutils.models.YOLO` class provides a high-level interface
 for running YOLOv8 inference:
 
 .. code-block:: python
 
     import cv2
-    from trtutils.impls.yolo import YOLO, YOLO8
+    from trtutils.models import YOLO, YOLO8
 
     # Load the YOLOv8 model
     yolo = YOLO("yolov8.engine")
@@ -116,7 +116,7 @@ You can run multiple YOLOv8 models in parallel:
 
 .. code-block:: python
 
-    from trtutils.impls.yolo import ParallelYOLO
+    from trtutils.models import ParallelYOLO
 
     # Create a parallel YOLO instance with multiple engines
     yolo = ParallelYOLO(["yolov8_1.engine", "yolov8_2.engine"])

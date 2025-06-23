@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""File showcasing the TRTEngine class."""
+"""File showcasing the Detector class."""
 
 from __future__ import annotations
 
@@ -14,17 +14,9 @@ from trtutils import set_log_level
 from trtutils.image import Detector
 
 
-# This example shows how to use the TRTEngine class
-# on running a Yolo model with a single input image.
-# The Yolo model is not included in this repository.
-# This works with a yolov7 engine created by
-# using the export script locating in the yolov7 repository.
-# Then generate an engine using TensorRT by:
-#  trtexec --onnx=yolo.onnx --saveEngine=yolo.engine
-# The resulting engine can be used with this example.
 def main() -> None:
     """Run the example."""
-    engine_dir = Path(__file__).parent.parent.parent / "data" / "engines"
+    engine_dir = Path(__file__).parent.parent / "data" / "engines"
     engines = [
         engine_dir / "trt_yolov7t.engine",
         engine_dir / "trt_yolov8n.engine",
@@ -36,7 +28,7 @@ def main() -> None:
         engine_dir / "trt_yolov10n_dla.engine",
     ]
 
-    img = cv2.imread(str(Path(__file__).parent.parent.parent / "data" / "horse.jpg"))
+    img = cv2.imread(str(Path(__file__).parent.parent / "data" / "horse.jpg"))
 
     for engine in engines:
         detector = Detector(engine, warmup=True, preprocessor="cuda")

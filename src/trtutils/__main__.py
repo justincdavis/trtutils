@@ -447,6 +447,7 @@ def _main() -> None:
     trtexec_parser = subparsers.add_parser(
         "trtexec",
         help="Run trtexec.",
+        parents=[parent_parser],
     )
     trtexec_parser.set_defaults(func=cli_trtexec)
 

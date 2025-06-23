@@ -49,16 +49,9 @@ def _postprocess_classifications_core(
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
-    # classification outputs are (batch_size, num_classes)
-    output = outputs[0]
-
-    # get the probabilities
-    exp_output = np.exp(output - np.max(output, axis=-1, keepdims=True))
-    probabilities = exp_output / np.sum(exp_output, axis=-1, keepdims=True)
-
     if no_copy:
-        return [probabilities]
-    return [probabilities.copy()]
+        return outputs
+    return [output.copy() for output in outputs]
 
 
 def get_classifications(
@@ -96,6 +89,6 @@ def _get_classifications_core(
     outputs: list[np.ndarray],
     top_k: int = 5,
 ) -> list[tuple[int, float]]:
-    probabilities = outputs[0]
+    probabilities = outputs[0][0]  # (1000,) - flatten from (1, 1000)
     top_indices = np.argsort(probabilities)[::-1][:top_k]
     return [(int(idx), float(probabilities[idx])) for idx in top_indices]
