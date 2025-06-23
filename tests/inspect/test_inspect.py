@@ -19,7 +19,7 @@ def test_inspect_simple() -> None:
     assert batch_size == 1
     assert len(inputs) > 0
     for itensor in inputs:
-        assert itensor[1] == (160, 160)
+        assert itensor[1] == (1, 3, 160, 160)
     assert len(outputs) > 0
 
 

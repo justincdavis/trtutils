@@ -11,9 +11,9 @@ from pathlib import Path
 from statistics import mean
 
 import cv2ext
+from trtutils.impls.yolo import YOLO
 
 import trtutils
-from trtutils.impls.yolo import YOLO
 
 _ONNX = Path(__file__).parent / "data" / "yolov10n.onnx"
 _ENGINE = Path(__file__).parent / "data" / "yolov10n.engine"
