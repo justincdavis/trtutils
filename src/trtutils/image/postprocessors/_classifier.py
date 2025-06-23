@@ -49,10 +49,15 @@ def _postprocess_classifications_core(
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
+    # convert logits to probabilities
+    for output in outputs:
+        exp_values = np.exp(output - np.max(output, axis=-1, keepdims=True))
+        probabilities = exp_values / np.sum(exp_values, axis=-1, keepdims=True)
+        output[:] = probabilities
+    
     if no_copy:
         return outputs
     return [output.copy() for output in outputs]
-
 
 def get_classifications(
     outputs: list[np.ndarray],
