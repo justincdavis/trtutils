@@ -84,7 +84,8 @@ def _display_frames(
     name: str,
     queue: Queue[tuple[int, np.ndarray, list[tuple[tuple[int, int, int, int], float, int]]]],
 ) -> None:
-    while True:
+    first_frame = True
+    while not queue.empty() or first_frame:
         frame_id, frame, dets = queue.get(timeout=0.25)
         canvas = cv2ext.detection.draw_detections(frame, dets)
         canvas = cv2ext.image.draw.text(
@@ -93,6 +94,7 @@ def _display_frames(
         cv2.imshow(name, canvas)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+        first_frame = False
 
 
 def _main() -> None:
