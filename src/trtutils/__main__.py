@@ -39,7 +39,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             engine=mpath,
             iterations=args.iterations,
             warmup_iterations=args.warmup_iterations,
-            tegra_interval=1,
+            tegra_interval=args.tegra_interval,
             dla_core=args.dla_core,
             warmup=True,
             verbose=args.verbose,
@@ -118,12 +118,13 @@ def _build(args: SimpleNamespace) -> None:
         batcher = trtutils.builder.ImageBatcher(
             image_dir=args.calibration_dir,
             shape=args.input_shape,
-            dtype=args.input_dtype,
+            dtype=getattr(np, args.input_dtype),
             batch_size=args.batch_size,
             order=args.data_order,
             max_images=args.max_images,
             resize_method=args.resize_method,
             input_scale=args.input_scale,
+            verbose=args.verbose,
         )
 
     # actual call
@@ -142,6 +143,7 @@ def _build(args: SimpleNamespace) -> None:
         ignore_timing_mismatch=args.ignore_timing_mismatch,
         fp16=args.fp16,
         int8=args.int8,
+        cache=args.cache,
         verbose=args.verbose,
     )
 
@@ -182,16 +184,10 @@ def _build_dla(args: SimpleNamespace) -> None:
     if args.dla_core is None:
         args.dla_core = 0
 
-    dtype: np.dtype = np.dtype("float32")
-    if args.input_dtype == "float16":
-        dtype = np.dtype("float16")
-    elif args.input_dtype == "int8":
-        dtype = np.dtype("int8")
-
     batcher = trtutils.builder.ImageBatcher(
         image_dir=args.calibration_dir,
         shape=args.input_shape,
-        dtype=dtype,
+        dtype=getattr(np, args.input_dtype),
         batch_size=args.batch_size,
         order=args.data_order,
         max_images=args.max_images,
@@ -213,6 +209,7 @@ def _build_dla(args: SimpleNamespace) -> None:
         prefer_precision_constraints=args.prefer_precision_constraints,
         reject_empty_algorithms=args.reject_empty_algorithms,
         ignore_timing_mismatch=args.ignore_timing_mismatch,
+        cache=args.cache,
         verbose=args.verbose,
     )
 
@@ -235,8 +232,14 @@ def _run_yolo(args: SimpleNamespace) -> None:
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
         conf_thres=args.conf_thres,
+        nms_iou_thres=args.nms_iou_thres,
         dla_core=args.dla_core,
         warmup=args.warmup,
+        pagelocked_mem=args.pagelocked_mem,
+        unified_mem=args.unified_mem,
+        extra_nms=args.extra_nms,
+        agnostic_nms=args.agnostic_nms,
+        no_warn=args.no_warn,
         verbose=args.verbose,
     )
     times: dict[str, list[float]] = {
@@ -376,7 +379,8 @@ def _run_yolo(args: SimpleNamespace) -> None:
 
 def _inspect(args: SimpleNamespace) -> None:
     engine_size, max_batch, inputs, outputs = trtutils.inspect.inspect_engine(
-        Path(args.engine)
+        Path(args.engine),
+        verbose=args.verbose,
     )
     LOG.info(f"Engine Size: {engine_size / (1024 * 1024):.2f} MB")
     LOG.info(f"Max Batch Size: {max_batch}")
@@ -447,60 +451,6 @@ def _main() -> None:
         help="Path to store calibration cache data. Default is None.",
     )
     build_common_parser.add_argument(
-        "--calibration_dir",
-        "-cd",
-        default=None,
-        help="Directory containing images for INT8 calibration.",
-    )
-    build_common_parser.add_argument(
-        "--input_shape",
-        "-is",
-        type=int,
-        nargs=3,
-        help="Input shape in HWC format (height, width, channels). Required when using calibration directory.",
-    )
-    build_common_parser.add_argument(
-        "--input_dtype",
-        "-id",
-        choices=["float32", "float16", "int8"],
-        help="Input data type. Required when using calibration directory.",
-    )
-    build_common_parser.add_argument(
-        "--batch_size",
-        "-bs",
-        type=int,
-        default=8,
-        help="Batch size for calibration. Default is 8.",
-    )
-    build_common_parser.add_argument(
-        "--data_order",
-        "-do",
-        choices=["NCHW", "NHWC"],
-        default="NCHW",
-        help="Data ordering expected by the network. Default is NCHW.",
-    )
-    build_common_parser.add_argument(
-        "--max_images",
-        "-mi",
-        type=int,
-        help="Maximum number of images to use for calibration.",
-    )
-    build_common_parser.add_argument(
-        "--resize_method",
-        "-rm",
-        choices=["letterbox", "linear"],
-        default="letterbox",
-        help="Method to resize images. Default is letterbox.",
-    )
-    build_common_parser.add_argument(
-        "--input_scale",
-        "-sc",
-        type=float,
-        nargs=2,
-        default=[0.0, 1.0],
-        help="Input value range. Default is [0.0, 1.0].",
-    )
-    build_common_parser.add_argument(
         "--workspace",
         "-w",
         type=float,
@@ -527,6 +477,101 @@ def _main() -> None:
         action="store_true",
         help="Allow different CUDA device timing caches to be used.",
     )
+    build_common_parser.add_argument(
+        "--cache",
+        action="store_true",
+        help="Cache the engine in the trtutils engine cache.",
+    )
+
+    # calibration arguments parser
+    calibration_parser = argparse.ArgumentParser(add_help=False)
+    calibration_parser.add_argument(
+        "--calibration_dir",
+        "-cd",
+        default=None,
+        help="Directory containing images for INT8 calibration.",
+    )
+    calibration_parser.add_argument(
+        "--input_shape",
+        "-is",
+        type=int,
+        nargs=3,
+        help="Input shape in HWC format (height, width, channels). Required when using calibration directory.",
+    )
+    calibration_parser.add_argument(
+        "--input_dtype",
+        "-id",
+        choices=["float32", "float16", "int8"],
+        help="Input data type. Required when using calibration directory.",
+    )
+    calibration_parser.add_argument(
+        "--batch_size",
+        "-bs",
+        type=int,
+        default=8,
+        help="Batch size for calibration. Default is 8.",
+    )
+    calibration_parser.add_argument(
+        "--data_order",
+        "-do",
+        choices=["NCHW", "NHWC"],
+        default="NCHW",
+        help="Data ordering expected by the network. Default is NCHW.",
+    )
+    calibration_parser.add_argument(
+        "--max_images",
+        "-mi",
+        type=int,
+        help="Maximum number of images to use for calibration.",
+    )
+    calibration_parser.add_argument(
+        "--resize_method",
+        "-rm",
+        choices=["letterbox", "linear"],
+        default="letterbox",
+        help="Method to resize images. Default is letterbox.",
+    )
+    calibration_parser.add_argument(
+        "--input_scale",
+        "-sc",
+        type=float,
+        nargs=2,
+        default=[0.0, 1.0],
+        help="Input value range. Default is [0.0, 1.0].",
+    )
+
+    # warmup arguments parser
+    warmup_parser = argparse.ArgumentParser(add_help=False)
+    warmup_parser.add_argument(
+        "--warmup",
+        action="store_true",
+        help="Perform warmup iterations.",
+    )
+    warmup_parser.add_argument(
+        "--warmup_iterations",
+        "-wi",
+        type=int,
+        default=10,
+        help="Number of warmup iterations. Default is 10.",
+    )
+
+    # memory arguments parser
+    memory_parser = argparse.ArgumentParser(add_help=False)
+    memory_parser.add_argument(
+        "--pagelocked_mem",
+        action="store_true",
+        help="Use pagelocked memory for CUDA operations.",
+    )
+    memory_parser.add_argument(
+        "--unified_mem",
+        action="store_true",
+        help="Use unified memory for CUDA operations.",
+    )
+    memory_parser.add_argument(
+        "--no_warn",
+        action="store_true",
+        help="Suppress warnings from TensorRT.",
+    )
 
     # main parser
     parser = argparse.ArgumentParser(description="Utilities for TensorRT.")
@@ -538,11 +583,11 @@ def _main() -> None:
         required=True,
     )
 
-    # benchmark command, will use benchmark engine by default, can pass jetson to use the jetson benchmarker
+    # benchmark command
     benchmark_parser = subparsers.add_parser(
         "benchmark",
         help="Benchmark a given TensorRT engine.",
-        parents=[global_parser],
+        parents=[global_parser, warmup_parser],
     )
     benchmark_parser.add_argument(
         "--engine",
@@ -558,17 +603,16 @@ def _main() -> None:
         help="Number of iterations to measure over.",
     )
     benchmark_parser.add_argument(
-        "--warmup_iterations",
-        "-wi",
-        type=int,
-        default=100,
-        help="The number of iterations to warmup the model before measuring.",
-    )
-    benchmark_parser.add_argument(
         "--jetson",
         "-j",
         action="store_true",
-        help="If True, will use the trtutils.jetson submodule benchmarker to record energy and pwoerdraw as well.",
+        help="If True, will use the trtutils.jetson submodule benchmarker to record energy and power draw as well.",
+    )
+    benchmark_parser.add_argument(
+        "--tegra_interval",
+        type=int,
+        default=5,
+        help="Milliseconds between each tegrastats sampling for Jetson benchmarking. Default is 5.",
     )
     benchmark_parser.set_defaults(func=_benchmark)
 
@@ -584,7 +628,7 @@ def _main() -> None:
     build_parser = subparsers.add_parser(
         "build",
         help="Build a TensorRT engine from an ONNX model.",
-        parents=[global_parser, build_common_parser],
+        parents=[global_parser, build_common_parser, calibration_parser],
     )
     build_parser.add_argument(
         "--device",
@@ -610,7 +654,7 @@ def _main() -> None:
     )
     build_parser.set_defaults(func=_build)
 
-    # run_on_dla parser
+    # can_run_on_dla parser
     can_run_on_dla_parser = subparsers.add_parser(
         "can_run_on_dla",
         help="Evaluate if the model can run on a DLA.",
@@ -638,7 +682,7 @@ def _main() -> None:
     build_dla_parser = subparsers.add_parser(
         "build_dla",
         help="Build a TensorRT engine for DLA with automatic layer assignments.",
-        parents=[global_parser, build_common_parser],
+        parents=[global_parser, build_common_parser, calibration_parser],
     )
     build_dla_parser.add_argument(
         "--max_chunks",
@@ -658,7 +702,7 @@ def _main() -> None:
     yolo_parser = subparsers.add_parser(
         "yolo",
         help="Run YOLO object detection on an image or video.",
-        parents=[global_parser],
+        parents=[global_parser, warmup_parser, memory_parser],
     )
     yolo_parser.add_argument(
         "--engine",
@@ -678,6 +722,12 @@ def _main() -> None:
         type=float,
         default=0.1,
         help="Confidence threshold for detections. Default is 0.1.",
+    )
+    yolo_parser.add_argument(
+        "--nms_iou_thres",
+        type=float,
+        default=0.5,
+        help="NMS IOU threshold for detections. Default is 0.5.",
     )
     yolo_parser.add_argument(
         "--input_range",
@@ -702,17 +752,14 @@ def _main() -> None:
         help="Method to resize images. Default is letterbox.",
     )
     yolo_parser.add_argument(
-        "--warmup",
-        "-w",
+        "--extra_nms",
         action="store_true",
-        help="Perform warmup iterations.",
+        help="Perform additional CPU-side NMS.",
     )
     yolo_parser.add_argument(
-        "--warmup_iterations",
-        "-wi",
-        type=int,
-        default=10,
-        help="Number of warmup iterations. Default is 10.",
+        "--agnostic_nms",
+        action="store_true",
+        help="Perform class-agnostic NMS.",
     )
     yolo_parser.add_argument(
         "--show",
