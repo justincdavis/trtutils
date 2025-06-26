@@ -167,18 +167,33 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
 
 
 def _build_dla(args: SimpleNamespace) -> None:
+    # require calibration data for dla builds
+    if args.calibration_dir is None:
+        err_msg = "Calibration directory is required for DLA builds"
+        raise ValueError(err_msg)
+    if args.input_shape is None:
+        err_msg = "Input shape is required for DLA builds"
+        raise ValueError(err_msg)
+    if args.input_dtype is None:
+        err_msg = "Input dtype is required for DLA builds"
+        raise ValueError(err_msg)
+
+    # Set default dla_core to 0 if not provided
+    if args.dla_core is None:
+        args.dla_core = 0
+
     dtype: np.dtype = np.dtype("float32")
-    if args.dtype == "float16":
+    if args.input_dtype == "float16":
         dtype = np.dtype("float16")
-    elif args.dtype == "int8":
+    elif args.input_dtype == "int8":
         dtype = np.dtype("int8")
 
     batcher = trtutils.builder.ImageBatcher(
-        image_dir=args.image_dir,
-        shape=args.shape,
+        image_dir=args.calibration_dir,
+        shape=args.input_shape,
         dtype=dtype,
         batch_size=args.batch_size,
-        order=args.order,
+        order=args.data_order,
         max_images=args.max_images,
         resize_method=args.resize_method,
         input_scale=args.input_scale,
@@ -191,7 +206,13 @@ def _build_dla(args: SimpleNamespace) -> None:
         dla_core=args.dla_core,
         max_chunks=args.max_chunks,
         min_layers=args.min_layers,
+        workspace=args.workspace,
+        calibration_cache=args.calibration_cache,
         timing_cache=args.timing_cache,
+        direct_io=args.direct_io,
+        prefer_precision_constraints=args.prefer_precision_constraints,
+        reject_empty_algorithms=args.reject_empty_algorithms,
+        ignore_timing_mismatch=args.ignore_timing_mismatch,
         verbose=args.verbose,
     )
 
@@ -369,14 +390,14 @@ def _inspect(args: SimpleNamespace) -> None:
 
 def _main() -> None:
     # common arguments parser
-    parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument(
+    global_parser = argparse.ArgumentParser(add_help=False)
+    global_parser.add_argument(
         "--dla_core",
         type=int,
         default=None,
         help="DLA core to assign DLA layers of the engine to. Default is None.",
     )
-    parent_parser.add_argument(
+    global_parser.add_argument(
         "--log_level",
         choices=[
             "DEBUG",
@@ -393,10 +414,118 @@ def _main() -> None:
         default="INFO",
         help="Set the log level. Default is INFO.",
     )
-    parent_parser.add_argument(
+    global_parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose output.",
+    )
+
+    # shared build arguments parser
+    build_common_parser = argparse.ArgumentParser(add_help=False)
+    build_common_parser.add_argument(
+        "--onnx",
+        "-o",
+        required=True,
+        help="Path to the ONNX model file.",
+    )
+    build_common_parser.add_argument(
+        "--output",
+        "-out",
+        required=True,
+        help="Path to save the TensorRT engine file.",
+    )
+    build_common_parser.add_argument(
+        "--timing_cache",
+        "-tc",
+        default=None,
+        help="Path to store timing cache data. Default is None.",
+    )
+    build_common_parser.add_argument(
+        "--calibration_cache",
+        "-cc",
+        default=None,
+        help="Path to store calibration cache data. Default is None.",
+    )
+    build_common_parser.add_argument(
+        "--calibration_dir",
+        "-cd",
+        default=None,
+        help="Directory containing images for INT8 calibration.",
+    )
+    build_common_parser.add_argument(
+        "--input_shape",
+        "-is",
+        type=int,
+        nargs=3,
+        help="Input shape in HWC format (height, width, channels). Required when using calibration directory.",
+    )
+    build_common_parser.add_argument(
+        "--input_dtype",
+        "-id",
+        choices=["float32", "float16", "int8"],
+        help="Input data type. Required when using calibration directory.",
+    )
+    build_common_parser.add_argument(
+        "--batch_size",
+        "-bs",
+        type=int,
+        default=8,
+        help="Batch size for calibration. Default is 8.",
+    )
+    build_common_parser.add_argument(
+        "--data_order",
+        "-do",
+        choices=["NCHW", "NHWC"],
+        default="NCHW",
+        help="Data ordering expected by the network. Default is NCHW.",
+    )
+    build_common_parser.add_argument(
+        "--max_images",
+        "-mi",
+        type=int,
+        help="Maximum number of images to use for calibration.",
+    )
+    build_common_parser.add_argument(
+        "--resize_method",
+        "-rm",
+        choices=["letterbox", "linear"],
+        default="letterbox",
+        help="Method to resize images. Default is letterbox.",
+    )
+    build_common_parser.add_argument(
+        "--input_scale",
+        "-sc",
+        type=float,
+        nargs=2,
+        default=[0.0, 1.0],
+        help="Input value range. Default is [0.0, 1.0].",
+    )
+    build_common_parser.add_argument(
+        "--workspace",
+        "-w",
+        type=float,
+        default=4.0,
+        help="Workspace size in GB. Default is 4.0.",
+    )
+    build_common_parser.add_argument(
+        "--direct_io",
+        action="store_true",
+        help="Use direct IO for the engine.",
+    )
+    build_common_parser.add_argument(
+        "--prefer_precision_constraints",
+        action="store_true",
+        help="Prefer precision constraints.",
+    )
+    build_common_parser.add_argument(
+        "--reject_empty_algorithms",
+        action="store_true",
+        help="Reject empty algorithms.",
+    )
+    build_common_parser.add_argument(
+        "--ignore_timing_mismatch",
+        action="store_true",
+        help="Allow different CUDA device timing caches to be used.",
     )
 
     # main parser
@@ -413,7 +542,7 @@ def _main() -> None:
     benchmark_parser = subparsers.add_parser(
         "benchmark",
         help="Benchmark a given TensorRT engine.",
-        parents=[parent_parser],
+        parents=[global_parser],
     )
     benchmark_parser.add_argument(
         "--engine",
@@ -447,7 +576,7 @@ def _main() -> None:
     trtexec_parser = subparsers.add_parser(
         "trtexec",
         help="Run trtexec.",
-        parents=[parent_parser],
+        parents=[global_parser],
     )
     trtexec_parser.set_defaults(func=cli_trtexec)
 
@@ -455,19 +584,7 @@ def _main() -> None:
     build_parser = subparsers.add_parser(
         "build",
         help="Build a TensorRT engine from an ONNX model.",
-        parents=[parent_parser],
-    )
-    build_parser.add_argument(
-        "--onnx",
-        "-o",
-        required=True,
-        help="Path to the ONNX model file.",
-    )
-    build_parser.add_argument(
-        "--output",
-        "-out",
-        required=True,
-        help="Path to save the TensorRT engine file.",
+        parents=[global_parser, build_common_parser],
     )
     build_parser.add_argument(
         "--device",
@@ -477,102 +594,9 @@ def _main() -> None:
         help="Device to use for the engine. Default is 'gpu'.",
     )
     build_parser.add_argument(
-        "--timing_cache",
-        "-tc",
-        default=None,
-        help="Path to store timing cache data. Default is 'timing.cache'.",
-    )
-    build_parser.add_argument(
-        "--workspace",
-        "-w",
-        type=float,
-        default=4.0,
-        help="Workspace size in GB. Default is 4.0.",
-    )
-    build_parser.add_argument(
-        "--calibration_cache",
-        "-cc",
-        default=None,
-        help="Path to store calibration cache data. Default is 'calibration.cache'.",
-    )
-    build_parser.add_argument(
-        "--calibration_dir",
-        "-cd",
-        default=None,
-        help="Directory containing images for INT8 calibration.",
-    )
-    build_parser.add_argument(
-        "--input_shape",
-        "-is",
-        type=int,
-        nargs=3,
-        help="Input shape in HWC format (height, width, channels). Required when using calibration directory.",
-    )
-    build_parser.add_argument(
-        "--input_dtype",
-        "-id",
-        choices=["float32", "float16", "int8"],
-        help="Input data type. Required when using calibration directory.",
-    )
-    build_parser.add_argument(
-        "--batch_size",
-        "-bs",
-        type=int,
-        default=8,
-        help="Batch size for calibration. Default is 8.",
-    )
-    build_parser.add_argument(
-        "--data_order",
-        "-do",
-        choices=["NCHW", "NHWC"],
-        default="NCHW",
-        help="Data ordering expected by the network. Default is NCHW.",
-    )
-    build_parser.add_argument(
-        "--max_images",
-        "-mi",
-        type=int,
-        help="Maximum number of images to use for calibration.",
-    )
-    build_parser.add_argument(
-        "--resize_method",
-        "-rm",
-        choices=["letterbox", "linear"],
-        default="letterbox",
-        help="Method to resize images. Default is letterbox.",
-    )
-    build_parser.add_argument(
-        "--input_scale",
-        "-sc",
-        type=float,
-        nargs=2,
-        default=[0.0, 1.0],
-        help="Input value range. Default is [0.0, 1.0].",
-    )
-    build_parser.add_argument(
         "--gpu_fallback",
         action="store_true",
         help="Allow GPU fallback for unsupported layers when building for DLA.",
-    )
-    build_parser.add_argument(
-        "--direct_io",
-        action="store_true",
-        help="Use direct IO for the engine.",
-    )
-    build_parser.add_argument(
-        "--prefer_precision_constraints",
-        action="store_true",
-        help="Prefer precision constraints.",
-    )
-    build_parser.add_argument(
-        "--reject_empty_algorithms",
-        action="store_true",
-        help="Reject empty algorithms.",
-    )
-    build_parser.add_argument(
-        "--ignore_timing_mismatch",
-        action="store_true",
-        help="Allow different CUDA device timing caches to be used.",
     )
     build_parser.add_argument(
         "--fp16",
@@ -590,7 +614,7 @@ def _main() -> None:
     can_run_on_dla_parser = subparsers.add_parser(
         "can_run_on_dla",
         help="Evaluate if the model can run on a DLA.",
-        parents=[parent_parser],
+        parents=[global_parser],
     )
     can_run_on_dla_parser.add_argument(
         "--onnx",
@@ -613,20 +637,8 @@ def _main() -> None:
     # build_dla parser
     build_dla_parser = subparsers.add_parser(
         "build_dla",
-        help="Build a TensorRT engine for DLA.",
-        parents=[parent_parser],
-    )
-    build_dla_parser.add_argument(
-        "--onnx",
-        "-o",
-        required=True,
-        help="Path to the ONNX model file.",
-    )
-    build_dla_parser.add_argument(
-        "--output",
-        "-out",
-        required=True,
-        help="Path to save the TensorRT engine file.",
+        help="Build a TensorRT engine for DLA with automatic layer assignments.",
+        parents=[global_parser, build_common_parser],
     )
     build_dla_parser.add_argument(
         "--max_chunks",
@@ -640,67 +652,13 @@ def _main() -> None:
         default=20,
         help="Minimum number of layers in a chunk to be assigned to DLA. Default is 20.",
     )
-    build_dla_parser.add_argument(
-        "--image_dir",
-        required=True,
-        help="Path to the directory containing images for calibration.",
-    )
-    build_dla_parser.add_argument(
-        "--shape",
-        type=int,
-        nargs=3,
-        default=(640, 640, 3),
-        help="Input shape in HWC format (height, width, channels).",
-    )
-    build_dla_parser.add_argument(
-        "--dtype",
-        choices=["float32", "float16", "int8"],
-        default="float32",
-        help="Input data type. Required when using calibration directory.",
-    )
-    build_dla_parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=8,
-        help="Batch size for calibration. Default is 8.",
-    )
-    build_dla_parser.add_argument(
-        "--order",
-        choices=["NCHW", "NHWC"],
-        default="NCHW",
-        help="Data ordering expected by the network. Default is NCHW.",
-    )
-    build_dla_parser.add_argument(
-        "--max_images",
-        type=int,
-        help="Maximum number of images to use for calibration.",
-    )
-    build_dla_parser.add_argument(
-        "--resize_method",
-        choices=["letterbox", "linear"],
-        default="letterbox",
-        help="Method to resize images. Default is letterbox.",
-    )
-    build_dla_parser.add_argument(
-        "--input_scale",
-        type=float,
-        nargs=2,
-        default=[0.0, 1.0],
-        help="Input value range. Default is [0.0, 1.0].",
-    )
-    build_dla_parser.add_argument(
-        "--timing_cache",
-        "-tc",
-        default=None,
-        help="Path to store timing cache data. Default is 'timing.cache'.",
-    )
     build_dla_parser.set_defaults(func=_build_dla)
 
     # yolo parser
     yolo_parser = subparsers.add_parser(
         "yolo",
         help="Run YOLO object detection on an image or video.",
-        parents=[parent_parser],
+        parents=[global_parser],
     )
     yolo_parser.add_argument(
         "--engine",
@@ -767,7 +725,7 @@ def _main() -> None:
     inspect_parser = subparsers.add_parser(
         "inspect",
         help="Inspect a TensorRT engine.",
-        parents=[parent_parser],
+        parents=[global_parser],
     )
     inspect_parser.add_argument(
         "--engine",

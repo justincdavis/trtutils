@@ -32,7 +32,7 @@ def main(args: argparse.Namespace) -> None:
     model.eval()
 
     dummy_input = torch.randn(args.batch_size, 3, args.imgsz, args.imgsz)
-    torch.onnx.export(model, dummy_input, args.output)
+    torch.onnx.export(model, dummy_input, args.output, opset_version=args.opset)
 
     # always slim the model
     o_model = onnx.load(args.output)
@@ -65,6 +65,12 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="The batch size of the input images.",
+    )
+    parser.add_argument(
+        "--opset",
+        type=int,
+        default=12,
+        help="The opset version to use for the exported model.",
     )
     args = parser.parse_args()
     main(args)
