@@ -15,12 +15,13 @@ from trtutils._log import LOG
 
 from .postprocessors import get_detections, postprocess_detections
 from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+from .interfaces import DetectorInterface
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class Detector:
+class Detector(DetectorInterface):
     """Implementation of object detectors."""
 
     def __init__(

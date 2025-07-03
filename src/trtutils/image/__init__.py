@@ -16,6 +16,8 @@ Submodules
     Preprocessors for images.
 :mod:`postprocessors`
     Postprocessors for images.
+:mod:`interfaces`
+    Interfaces for image models.
 :mod:`onnx_models`
     Base ONNX models for creating 'micro-engines' for image processing.
 
@@ -39,6 +41,7 @@ __all__ = [
     "Detector",
     "common",
     "kernels",
+    "interfaces",
     "onnx_models",
     "parallel",
     "postprocessors",

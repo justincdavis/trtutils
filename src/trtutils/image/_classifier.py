@@ -15,12 +15,13 @@ from trtutils._log import LOG
 
 from .postprocessors import get_classifications, postprocess_classifications
 from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+from .interfaces import ClassifierInterface
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class Classifier:
+class Classifier(ClassifierInterface):
     """Implementation of image classifiers."""
 
     def __init__(
