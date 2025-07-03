@@ -12,9 +12,10 @@ TRTUtils provides a command-line interface with several subcommands for working 
 * ``build``: Build a TensorRT engine from an ONNX model
 * ``build_dla``: Build a TensorRT engine with mixed GPU/DLA layers and precision automatically
 * ``can_run_on_dla``: Evaluate if a model can run on a DLA and specific layer/chunk compatibility.
+* ``classify``: Run image classification on an image
+* ``detect``: Run object detection on an image or video
 * ``inspect``: Inspect a TensorRT engine
 * ``trtexec``: Run trtexec with the provided options
-* ``yolo``: Run YOLO inference with TensorRT
 
 Global Options
 --------------
@@ -213,18 +214,76 @@ The command will output:
     * Number of layers in the chunk
     * Device assignment (DLA or GPU)
 
-YOLO
-~~~~
+Classify
+~~~~~~~~
 
-Run YOLO object detection on an image or video with comprehensive configuration options.
+Run image classification on an image with comprehensive configuration options.
+
+.. code-block:: console
+
+    # Basic image classification
+    python3 -m trtutils classify --engine model.engine --input image.jpg --show
+
+    # With warmup and custom configuration
+    python3 -m trtutils classify \
+        --engine model.engine \
+        --input image.jpg \
+        --warmup \
+        --warmup_iterations 20 \
+        --preprocessor cuda \
+        --input_range 0.0 1.0 \
+        --pagelocked_mem \
+        --verbose
+
+Options
+^^^^^^^
+
+**Required:**
+
+* ``--engine, -e``: Path to the TensorRT engine file
+* ``--input, -i``: Path to the input image file
+
+**Preprocessing:**
+
+* ``--input_range, -r``: Input value range (default: [0.0, 1.0])
+* ``--preprocessor, -p``: Preprocessor to use (choices: cpu, cuda, trt; default: trt)
+
+**Memory and Performance:**
+
+* ``--warmup``: Perform warmup iterations
+* ``--warmup_iterations, -wi``: Number of warmup iterations (default: 10)
+* ``--pagelocked_mem``: Use pagelocked memory for CUDA operations
+* ``--unified_mem``: Use unified memory for CUDA operations
+* ``--no_warn``: Suppress warnings from TensorRT
+
+**Display:**
+
+* ``--show``: Show the classification results (opens display window)
+
+Output
+^^^^^^
+
+The command will output:
+* Classification result (class index and confidence score)
+* Timing information for each stage:
+
+  * Preprocessing time in milliseconds
+  * Inference time in milliseconds
+  * Postprocessing time in milliseconds
+  * Classification parsing time in milliseconds
+
+Detect
+~~~~~~
+
+Run object detection on an image or video with comprehensive configuration options.
 
 .. code-block:: console
 
     # Basic image inference
-    python3 -m trtutils yolo --engine model.engine --input image.jpg --show
+    python3 -m trtutils detect --engine model.engine --input image.jpg --show
 
     # Video inference with custom thresholds
-    python3 -m trtutils yolo \
+    python3 -m trtutils detect \
         --engine model.engine \
         --input video.mp4 \
         --conf_thres 0.25 \
@@ -233,7 +292,7 @@ Run YOLO object detection on an image or video with comprehensive configuration 
         --show
 
     # Advanced configuration
-    python3 -m trtutils yolo \
+    python3 -m trtutils detect \
         --engine model.engine \
         --input image.jpg \
         --warmup \
