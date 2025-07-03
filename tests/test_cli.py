@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: PLC2701
 from __future__ import annotations
 
 from io import StringIO
@@ -9,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.trtutils.__main__ import (
+from trtutils.__main__ import (
     _benchmark,
     _build,
     _build_dla,
@@ -23,10 +24,11 @@ from src.trtutils.__main__ import (
 
 def test_main_no_args() -> None:
     """Test calling main without arguments."""
-    with patch("sys.argv", ["trtutils"]):
-        with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
-            _main()
-            assert "Utilities for TensorRT." in mock_stdout.getvalue()
+    with patch("sys.argv", ["trtutils"]), patch(
+        "sys.stdout", new_callable=StringIO
+    ) as mock_stdout:
+        _main()
+        assert "Utilities for TensorRT." in mock_stdout.getvalue()
 
 
 def test_benchmark_no_args() -> None:

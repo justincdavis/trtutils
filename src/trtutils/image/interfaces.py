@@ -18,9 +18,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 if TYPE_CHECKING:
+    import numpy as np
     from typing_extensions import Self
 
 
@@ -37,10 +36,7 @@ class ClassifierInterface(ABC):
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
-        """
-        Preprocess the input.
-        """
-        pass
+        """Preprocess the input."""
 
     @abstractmethod
     def postprocess(
@@ -50,10 +46,7 @@ class ClassifierInterface(ABC):
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> list[np.ndarray]:
-        """
-        Postprocess the outputs.
-        """
-        pass
+        """Postprocess the outputs."""
 
     @abstractmethod
     def __call__(
@@ -65,10 +58,7 @@ class ClassifierInterface(ABC):
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> list[np.ndarray]:
-        """
-        Run the model on input.
-        """
-        pass
+        """Run the model on input."""
 
     @abstractmethod
     def run(
@@ -80,10 +70,7 @@ class ClassifierInterface(ABC):
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> list[np.ndarray]:
-        """
-        Run the model on input.
-        """
-        pass
+        """Run the model on input."""
 
     @abstractmethod
     def get_classifications(
@@ -93,10 +80,7 @@ class ClassifierInterface(ABC):
         *,
         verbose: bool | None = None,
     ) -> list[tuple[int, float]]:
-        """
-        Get the classifications of the last output or provided output.
-        """
-        pass
+        """Get the classifications of the last output or provided output."""
 
     @abstractmethod
     def end2end(
@@ -106,10 +90,7 @@ class ClassifierInterface(ABC):
         *,
         verbose: bool | None = None,
     ) -> list[tuple[int, float]]:
-        """
-        Perform end to end inference for a model.
-        """
-        pass
+        """Perform end to end inference for a model."""
 
 
 class DetectorInterface(ABC):
@@ -125,23 +106,20 @@ class DetectorInterface(ABC):
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
-        """
-        Preprocess the input.
-        """
-        pass
+        """Preprocess the input."""
 
     @abstractmethod
     def postprocess(
         self: Self,
         outputs: list[np.ndarray],
+        ratios: tuple[float, float],
+        padding: tuple[float, float],
+        conf_thres: float | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> list[np.ndarray]:
-        """
-        Postprocess the outputs.
-        """
-        pass
+        """Postprocess the outputs."""
 
     @abstractmethod
     def run(
@@ -156,10 +134,7 @@ class DetectorInterface(ABC):
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> list[np.ndarray]:
-        """
-        Run the model on input.
-        """
-        pass
+        """Run the model on input."""
 
     @abstractmethod
     def __call__(
@@ -171,10 +146,7 @@ class DetectorInterface(ABC):
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> list[np.ndarray]:
-        """
-        Run the model on input.
-        """
-        pass
+        """Run the model on input."""
 
     @abstractmethod
     def get_detections(
@@ -187,10 +159,7 @@ class DetectorInterface(ABC):
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
-        """
-        Get the detections of the last output or provided output.
-        """
-        pass
+        """Get the detections of the last output or provided output."""
 
     @abstractmethod
     def end2end(
@@ -203,7 +172,4 @@ class DetectorInterface(ABC):
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
-        """
-        Perform end to end inference for a model.
-        """
-        pass
+        """Perform end to end inference for a model."""

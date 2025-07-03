@@ -13,9 +13,9 @@ from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
+from .interfaces import DetectorInterface
 from .postprocessors import get_detections, postprocess_detections
 from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
-from .interfaces import DetectorInterface
 
 if TYPE_CHECKING:
     from typing_extensions import Self

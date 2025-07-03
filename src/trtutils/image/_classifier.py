@@ -13,9 +13,9 @@ from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
+from .interfaces import ClassifierInterface
 from .postprocessors import get_classifications, postprocess_classifications
 from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
-from .interfaces import ClassifierInterface
 
 if TYPE_CHECKING:
     from typing_extensions import Self

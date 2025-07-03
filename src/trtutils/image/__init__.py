@@ -32,7 +32,15 @@ Classes
 
 from __future__ import annotations
 
-from . import common, kernels, onnx_models, parallel, postprocessors, preprocessors
+from . import (
+    common,
+    interfaces,
+    kernels,
+    onnx_models,
+    parallel,
+    postprocessors,
+    preprocessors,
+)
 from ._classifier import Classifier
 from ._detector import Detector
 
@@ -40,8 +48,8 @@ __all__ = [
     "Classifier",
     "Detector",
     "common",
-    "kernels",
     "interfaces",
+    "kernels",
     "onnx_models",
     "parallel",
     "postprocessors",
