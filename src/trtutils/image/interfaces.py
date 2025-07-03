@@ -22,9 +22,31 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    from trtutils._engine import TRTEngine
+
 
 class ClassifierInterface(ABC):
     """Interface for image classifiers."""
+
+    @property
+    @abstractmethod
+    def engine(self: Self) -> TRTEngine:
+        """Get the underlying TRTEngine."""
+
+    @property
+    @abstractmethod
+    def name(self: Self) -> str:
+        """Get the name of the engine."""
+
+    @property
+    @abstractmethod
+    def input_shape(self: Self) -> tuple[int, int]:
+        """Get the input shape of the model."""
+
+    @property
+    @abstractmethod
+    def dtype(self: Self) -> np.dtype:
+        """Get the dtype required by the model."""
 
     @abstractmethod
     def preprocess(
@@ -95,6 +117,26 @@ class ClassifierInterface(ABC):
 
 class DetectorInterface(ABC):
     """Interface for image detectors."""
+
+    @property
+    @abstractmethod
+    def engine(self: Self) -> TRTEngine:
+        """Get the underlying TRTEngine."""
+
+    @property
+    @abstractmethod
+    def name(self: Self) -> str:
+        """Get the name of the engine."""
+
+    @property
+    @abstractmethod
+    def input_shape(self: Self) -> tuple[int, int]:
+        """Get the input shape of the model."""
+
+    @property
+    @abstractmethod
+    def dtype(self: Self) -> np.dtype:
+        """Get the dtype required by the model."""
 
     @abstractmethod
     def preprocess(

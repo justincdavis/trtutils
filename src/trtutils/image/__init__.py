@@ -20,6 +20,8 @@ Submodules
     Interfaces for image models.
 :mod:`onnx_models`
     Base ONNX models for creating 'micro-engines' for image processing.
+:mod:`sahi`
+    SAHI (Slicing Aided Hyper Inference) for object detection.
 
 Classes
 -------
@@ -27,6 +29,8 @@ Classes
     Wrapper around classification models.
 :class:`Detector`
     Wrapper around detection models.
+:class:`SAHI`
+    SAHI wrapper for slicing aided inference.
 
 """
 
@@ -40,11 +44,14 @@ from . import (
     parallel,
     postprocessors,
     preprocessors,
+    sahi,
 )
 from ._classifier import Classifier
 from ._detector import Detector
+from .sahi import SAHI
 
 __all__ = [
+    "SAHI",
     "Classifier",
     "Detector",
     "common",
@@ -54,4 +61,5 @@ __all__ = [
     "parallel",
     "postprocessors",
     "preprocessors",
+    "sahi",
 ]
