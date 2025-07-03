@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import argparse
-import operator
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -214,7 +213,7 @@ def _build_dla(args: SimpleNamespace) -> None:
     )
 
 
-def _run_yolo(args: SimpleNamespace) -> None:
+def _detect(args: SimpleNamespace) -> None:
     img_extensions = [".jpg", ".jpeg", ".png"]
     video_extensions = [".mp4", ".avi", ".mov"]
 
@@ -225,7 +224,7 @@ def _run_yolo(args: SimpleNamespace) -> None:
         err_msg = f"Invalid input file: {input_path}"
         raise ValueError(err_msg)
 
-    yolo = trtutils.models.YOLO(
+    detector = trtutils.image.Detector(
         engine_path=args.engine,
         warmup_iterations=args.warmup_iterations,
         input_range=args.input_range,
@@ -255,13 +254,15 @@ def _run_yolo(args: SimpleNamespace) -> None:
         list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float
     ]:
         t0 = time.perf_counter()
-        tensor, ratios, pads = yolo.preprocess(img, no_copy=True)
+        tensor, ratios, pads = detector.preprocess(img, no_copy=True)
         t1 = time.perf_counter()
-        results = yolo.run(tensor, preprocessed=True, postprocess=False, no_copy=True)
+        results = detector.run(
+            tensor, preprocessed=True, postprocess=False, no_copy=True
+        )
         t2 = time.perf_counter()
-        p_results = yolo.postprocess(results, ratios, pads, no_copy=True)
+        p_results = detector.postprocess(results, ratios, pads, no_copy=True)
         t3 = time.perf_counter()
-        dets = yolo.get_detections(p_results)
+        dets = detector.get_detections(p_results)
         t4 = time.perf_counter()
         return (
             dets,
@@ -322,16 +323,6 @@ def _run_yolo(args: SimpleNamespace) -> None:
         canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
         return cv2ext.image.draw.text(canvas, f"DET:  {det_t} ms", (10, 120))
 
-    def _summarize_classes(
-        dets: list[tuple[tuple[int, int, int, int], float, int]],
-    ) -> list[tuple[int, int]]:
-        class_count: dict[int, int] = {}
-        for _, _, class_id in dets:
-            if class_id not in class_count:
-                class_count[class_id] = 0
-            class_count[class_id] += 1
-        return sorted(class_count.items(), key=operator.itemgetter(0))
-
     if is_image:
         img = cv2.imread(str(input_path))
         if img is None:
@@ -342,15 +333,13 @@ def _run_yolo(args: SimpleNamespace) -> None:
 
         if args.show:
             canvas = draw(img, bboxes, scores, classes, pre_t, run_t, post_t, det_t)
-            cv2.imshow("YOLO", canvas)
+            cv2.imshow("DETECT", canvas)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
     elif is_video:
-        if args.show:
-            display = cv2ext.Display(f"YOLO detection: {input_path.stem}")
-        else:
-            display = None
+        display = cv2ext.Display(f"DETECT: {input_path.stem}") if args.show else None
+
         for fid, frame in cv2ext.IterableVideo(input_path):
             if display is not None and display.stopped:
                 break
@@ -377,6 +366,125 @@ def _run_yolo(args: SimpleNamespace) -> None:
         LOG.info(f"{k}: {np.mean(v):.2f} ms")
 
 
+def _classify(args: SimpleNamespace) -> None:
+    img_extensions = [".jpg", ".jpeg", ".png"]
+
+    input_path = Path(args.input)
+    is_image = input_path.suffix in img_extensions
+    if not is_image:
+        err_msg = f"Invalid input file: {input_path}"
+        raise ValueError(err_msg)
+
+    classifier = trtutils.image.Classifier(
+        engine_path=args.engine,
+        warmup_iterations=args.warmup_iterations,
+        input_range=args.input_range,
+        preprocessor=args.preprocessor,
+        resize_method=args.resize_method,
+        dla_core=args.dla_core,
+        warmup=args.warmup,
+        pagelocked_mem=args.pagelocked_mem,
+        unified_mem=args.unified_mem,
+        no_warn=args.no_warn,
+        verbose=args.verbose,
+    )
+    times: dict[str, list[float]] = {
+        "pre": [],
+        "run": [],
+        "post": [],
+        "cls": [],
+    }
+
+    def run(
+        img: np.ndarray,
+    ) -> tuple[tuple[int, float], float, float, float, float]:
+        t0 = time.perf_counter()
+        tensor, _, _ = classifier.preprocess(img, no_copy=True)
+        t1 = time.perf_counter()
+        results = classifier.run(
+            tensor, preprocessed=True, postprocess=False, no_copy=True
+        )
+        t2 = time.perf_counter()
+        p_results = classifier.postprocess(results, no_copy=True)
+        t3 = time.perf_counter()
+        cls_results = classifier.get_classifications(p_results, top_k=1)[0]
+        t4 = time.perf_counter()
+        return (
+            cls_results,
+            round(1000 * (t1 - t0), 2),
+            round(1000 * (t2 - t1), 2),
+            round(1000 * (t3 - t2), 2),
+            round(1000 * (t4 - t3), 2),
+        )
+
+    def log(
+        cls_results: tuple[int, float],
+        pre_t: float,
+        run_t: float,
+        post_t: float,
+        det_t: float,
+    ) -> None:
+        LOG.info(f"Found {cls_results[0]} with confidence {cls_results[1]}")
+        LOG.info(f"Preprocessing time: {pre_t} ms")
+        LOG.info(f"Run time: {run_t} ms")
+        LOG.info(f"Postprocessing time: {post_t} ms")
+        LOG.info(f"Detection time: {det_t} ms")
+
+    def process_image(
+        img: np.ndarray,
+    ) -> tuple[
+        tuple[int, float],
+        float,
+        float,
+        float,
+        float,
+    ]:
+        cls_results, pre_t, run_t, post_t, det_t = run(img)
+        log(cls_results, pre_t, run_t, post_t, det_t)
+        times["pre"].append(pre_t)
+        times["run"].append(run_t)
+        times["post"].append(post_t)
+        times["det"].append(det_t)
+        return cls_results, pre_t, run_t, post_t, det_t
+
+    def draw(
+        img: np.ndarray,
+        cls_results: tuple[int, float],
+        pre_t: float,
+        run_t: float,
+        post_t: float,
+        det_t: float,
+    ) -> np.ndarray:
+        canvas = cv2ext.image.draw.text(img, f"CLASS: {cls_results[0]}", (50, 30))
+        canvas = cv2ext.image.draw.text(canvas, f"CONF: {cls_results[1]:.2f}", (50, 60))
+        canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
+        canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t} ms", (10, 60))
+        canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
+        return cv2ext.image.draw.text(canvas, f"CLS:  {det_t} ms", (10, 120))
+
+    if is_image:
+        img = cv2.imread(str(input_path))
+        if img is None:
+            err_msg = f"Failed to read image: {input_path}"
+            raise ValueError(err_msg)
+
+        cls_results, pre_t, run_t, post_t, det_t = process_image(img)
+
+        if args.show:
+            canvas = draw(img, cls_results, pre_t, run_t, post_t, det_t)
+            cv2.imshow("CLASSIFY", canvas)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+
+    else:
+        err_msg = f"Invalid input file: {input_path}"
+        raise ValueError(err_msg)
+
+    LOG.info("Times:")
+    for k, v in times.items():
+        LOG.info(f"{k}: {np.mean(v):.2f} ms")
+
+
 def _inspect(args: SimpleNamespace) -> None:
     engine_size, max_batch, inputs, outputs = trtutils.inspect.inspect_engine(
         Path(args.engine),
@@ -393,15 +501,9 @@ def _inspect(args: SimpleNamespace) -> None:
 
 
 def _main() -> None:
-    # common arguments parser
-    global_parser = argparse.ArgumentParser(add_help=False)
-    global_parser.add_argument(
-        "--dla_core",
-        type=int,
-        default=None,
-        help="DLA core to assign DLA layers of the engine to. Default is None.",
-    )
-    global_parser.add_argument(
+    # general arguments parser (for all commands)
+    general_parser = argparse.ArgumentParser(add_help=False)
+    general_parser.add_argument(
         "--log_level",
         choices=[
             "DEBUG",
@@ -418,10 +520,19 @@ def _main() -> None:
         default="INFO",
         help="Set the log level. Default is INFO.",
     )
-    global_parser.add_argument(
+    general_parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose output.",
+    )
+
+    # dla arguments parser (for commands that support DLA)
+    dla_parser = argparse.ArgumentParser(add_help=False)
+    dla_parser.add_argument(
+        "--dla_core",
+        type=int,
+        default=None,
+        help="DLA core to assign DLA layers of the engine to. Default is None.",
     )
 
     # shared build arguments parser
@@ -574,20 +685,23 @@ def _main() -> None:
     )
 
     # main parser
-    parser = argparse.ArgumentParser(description="Utilities for TensorRT.")
+    parser = argparse.ArgumentParser(
+        description="Utilities for TensorRT.",
+        parents=[general_parser],
+    )
 
     # create subparser for each command
     subparsers = parser.add_subparsers(
         title="subcommands",
         dest="command",
-        required=True,
+        required=False,
     )
 
     # benchmark command
     benchmark_parser = subparsers.add_parser(
         "benchmark",
         help="Benchmark a given TensorRT engine.",
-        parents=[global_parser, warmup_parser],
+        parents=[general_parser, dla_parser, warmup_parser],
     )
     benchmark_parser.add_argument(
         "--engine",
@@ -620,7 +734,7 @@ def _main() -> None:
     trtexec_parser = subparsers.add_parser(
         "trtexec",
         help="Run trtexec.",
-        parents=[global_parser],
+        parents=[general_parser],
     )
     trtexec_parser.set_defaults(func=cli_trtexec)
 
@@ -628,7 +742,7 @@ def _main() -> None:
     build_parser = subparsers.add_parser(
         "build",
         help="Build a TensorRT engine from an ONNX model.",
-        parents=[global_parser, build_common_parser, calibration_parser],
+        parents=[general_parser, dla_parser, build_common_parser, calibration_parser],
     )
     build_parser.add_argument(
         "--device",
@@ -658,7 +772,7 @@ def _main() -> None:
     can_run_on_dla_parser = subparsers.add_parser(
         "can_run_on_dla",
         help="Evaluate if the model can run on a DLA.",
-        parents=[global_parser],
+        parents=[general_parser],
     )
     can_run_on_dla_parser.add_argument(
         "--onnx",
@@ -682,7 +796,7 @@ def _main() -> None:
     build_dla_parser = subparsers.add_parser(
         "build_dla",
         help="Build a TensorRT engine for DLA with automatic layer assignments.",
-        parents=[global_parser, build_common_parser, calibration_parser],
+        parents=[general_parser, dla_parser, build_common_parser, calibration_parser],
     )
     build_dla_parser.add_argument(
         "--max_chunks",
@@ -698,38 +812,38 @@ def _main() -> None:
     )
     build_dla_parser.set_defaults(func=_build_dla)
 
-    # yolo parser
-    yolo_parser = subparsers.add_parser(
-        "yolo",
+    # detect parser
+    detect_parser = subparsers.add_parser(
+        "detect",
         help="Run YOLO object detection on an image or video.",
-        parents=[global_parser, warmup_parser, memory_parser],
+        parents=[general_parser, dla_parser, warmup_parser, memory_parser],
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--engine",
         "-e",
         required=True,
         help="Path to the TensorRT engine file.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--input",
         "-i",
         required=True,
         help="Path to the input image or video file.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--conf_thres",
         "-c",
         type=float,
         default=0.1,
         help="Confidence threshold for detections. Default is 0.1.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--nms_iou_thres",
         type=float,
         default=0.5,
         help="NMS IOU threshold for detections. Default is 0.5.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--input_range",
         "-r",
         type=float,
@@ -737,42 +851,82 @@ def _main() -> None:
         default=[0.0, 1.0],
         help="Input value range. Default is [0.0, 1.0].",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--preprocessor",
         "-p",
         choices=["cpu", "cuda", "trt"],
         default="trt",
         help="Preprocessor to use. Default is trt.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--resize_method",
         "-rm",
         choices=["letterbox", "linear"],
         default="letterbox",
         help="Method to resize images. Default is letterbox.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--extra_nms",
         action="store_true",
         help="Perform additional CPU-side NMS.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--agnostic_nms",
         action="store_true",
         help="Perform class-agnostic NMS.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--show",
         action="store_true",
         help="Show the detections.",
     )
-    yolo_parser.set_defaults(func=_run_yolo)
+    detect_parser.set_defaults(func=_detect)
+
+    # classify parser
+    classify_parser = subparsers.add_parser(
+        "classify",
+        help="Run image classification on an image.",
+        parents=[general_parser, dla_parser, warmup_parser, memory_parser],
+    )
+    classify_parser.add_argument(
+        "--engine",
+        "-e",
+        required=True,
+        help="Path to the TensorRT engine file.",
+    )
+    classify_parser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="Path to the input image file.",
+    )
+    classify_parser.add_argument(
+        "--input_range",
+        "-r",
+        type=float,
+        nargs=2,
+        default=[0.0, 1.0],
+        help="Input value range. Default is [0.0, 1.0].",
+    )
+    classify_parser.add_argument(
+        "--preprocessor",
+        "-p",
+        choices=["cpu", "cuda", "trt"],
+        default="trt",
+        help="Preprocessor to use. Default is trt.",
+    )
+    classify_parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Show the classifications.",
+    )
+    classify_parser.set_defaults(func=_classify)
 
     # inspect parser
     inspect_parser = subparsers.add_parser(
         "inspect",
         help="Inspect a TensorRT engine.",
-        parents=[global_parser],
+        parents=[general_parser],
     )
     inspect_parser.add_argument(
         "--engine",
