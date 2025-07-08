@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from cv2ext.bboxes import nms
+from cv2ext.image import patch as patch_image
 
 from trtutils._log import LOG
 
@@ -104,33 +105,48 @@ class SAHI:
             The detections where each entry is bbox, conf, class_id
 
         """
+        patches, offsets, (nw, nh) = patch_image(image, (self._slice_width, self._slice_height), overlap=self._slice_overlap)
+        height, width = image.shape[:2]
+        sx = width / nw
+        sy = height / nh
+
         dets: list[tuple[tuple[int, int, int, int], float, int]] = []
-        for y in range(0, image.shape[0], self._slice_height):
-            for x in range(0, image.shape[1], self._slice_width):
-                img_slice = image[y : y + self._slice_height, x : x + self._slice_width]
-                if not img_slice.flags.c_contiguous:
-                    img_slice = np.ascontiguousarray(img_slice)
+        for patch, (x, y) in zip(patches, offsets):
+            img_slice = patch
+            if not img_slice.flags.c_contiguous:
+                img_slice = np.ascontiguousarray(img_slice)
 
-                s_dets = self._detector.end2end(
-                    img_slice,
-                    conf_thres,
-                    nms_iou_thres,
-                    extra_nms=extra_nms,
-                    agnostic_nms=agnostic_nms,
-                    verbose=verbose,
-                )
+            s_dets = self._detector.end2end(
+                img_slice,
+                conf_thres,
+                nms_iou_thres,
+                extra_nms=extra_nms,
+                agnostic_nms=agnostic_nms,
+                verbose=verbose,
+            )
 
-                if self._verbose:
-                    LOG.info(f"SAHI: {len(s_dets)} detections in slice {(x, y)}")
+            if self._verbose:
+                LOG.info(f"SAHI: {len(s_dets)} detections in slice {(x, y)}")
 
-                for det in s_dets:
-                    bbox, conf, class_id = det
-                    x1, y1, x2, y2 = bbox
-                    x1 += x
-                    y1 += y
-                    x2 += x
-                    y2 += y
-                    dets.append(((x1, y1, x2, y2), conf, class_id))
+            for det in s_dets:
+                bbox, conf, class_id = det
+                x1, y1, x2, y2 = bbox
+                # offset based on patch
+                x1 += x
+                y1 += y
+                x2 += x
+                y2 += y
+                # scale based on what patches are generated on
+                x1 *= sx
+                x1 = int(x1)
+                y1 *= sy
+                y1 = int(y1)
+                x2 *= sx
+                x2 = int(x2)
+                y2 *= sy
+                y2 = int(y2)
+                # write back
+                dets.append(((x1, y1, x2, y2), conf, class_id))
 
         dets = nms(dets, self._iou_threshold, agnostic=self._agnostic_nms)
 
