@@ -5,11 +5,11 @@
 
 from __future__ import annotations
 
+import argparse
 import time
 from pathlib import Path
 
 import cv2
-import argparse
 import cv2ext
 
 from trtutils import set_log_level
@@ -52,8 +52,12 @@ def main() -> None:
     )
 
     if args.display:
-        canvas = cv2ext.bboxes.draw_bboxes(img.copy(), [bbox for bbox, _, _ in sahi_bboxes], color=(0, 255, 0))
-        canvas = cv2ext.bboxes.draw_bboxes(canvas, [bbox for bbox, _, _ in bboxes], color=(0, 0, 255))
+        canvas = cv2ext.bboxes.draw_bboxes(
+            img.copy(), [bbox for bbox, _, _ in sahi_bboxes], color=(0, 255, 0)
+        )
+        canvas = cv2ext.bboxes.draw_bboxes(
+            canvas, [bbox for bbox, _, _ in bboxes], color=(0, 0, 255)
+        )
         cv2.imshow("SAHI Detections", canvas)
         cv2.waitKey(0)
         cv2.destroyAllWindows()

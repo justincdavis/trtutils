@@ -3,6 +3,9 @@
 # MIT License
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -64,6 +67,56 @@ class SAHI:
         self._agnostic_nms = agnostic_nms
         self._verbose = verbose
 
+        # allocate the executor to process contiguous patchs in parallel
+        cpu_cores = os.cpu_count()
+        if cpu_cores is None:
+            cpu_cores = 1
+        else:
+            cpu_cores -= 1
+        self._executor = ThreadPoolExecutor(max_workers=cpu_cores)
+        self._lock = Lock()
+
+    def _execute(
+        self: Self,
+        patch: np.ndarray,
+        offset: tuple[int, int],
+        scale: tuple[float, float],
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
+    ) -> list[tuple[tuple[int, int, int, int], float, int]]:
+        if not patch.flags.c_contiguous:
+            patch = np.ascontiguousarray(patch)
+        with self._lock:
+            dets = self._detector.end2end(
+                patch,
+                conf_thres=conf_thres,
+                nms_iou_thres=nms_iou_thres,
+                extra_nms=extra_nms,
+                agnostic_nms=agnostic_nms,
+            )
+        x, y = offset
+        sx, sy = scale
+        corrected_dets = []
+        for det in dets:
+            bbox, conf, class_id = det
+            x1, y1, x2, y2 = bbox
+            # offset based on patch
+            x1 += x
+            y1 += y
+            x2 += x
+            y2 += y
+            # scale based on what patches are generated on
+            x1 = int(x1 * sx)
+            y1 = int(y1 * sy)
+            x2 = int(x2 * sx)
+            y2 = int(y2 * sy)
+            # write back
+            corrected_dets.append(((x1, y1, x2, y2), conf, class_id))
+        return corrected_dets
+
     def end2end(
         self: Self,
         image: np.ndarray,
@@ -105,52 +158,40 @@ class SAHI:
             The detections where each entry is bbox, conf, class_id
 
         """
-        patches, offsets, (nw, nh) = patch_image(image, (self._slice_width, self._slice_height), overlap=self._slice_overlap)
+        if verbose is None:
+            verbose = self._verbose
+
+        patches, offsets, (nw, nh) = patch_image(
+            image, (self._slice_width, self._slice_height), overlap=self._slice_overlap
+        )
         height, width = image.shape[:2]
         sx = width / nw
         sy = height / nh
 
-        dets: list[tuple[tuple[int, int, int, int], float, int]] = []
-        for patch, (x, y) in zip(patches, offsets):
-            img_slice = patch
-            if not img_slice.flags.c_contiguous:
-                img_slice = np.ascontiguousarray(img_slice)
-
-            s_dets = self._detector.end2end(
-                img_slice,
-                conf_thres,
-                nms_iou_thres,
-                extra_nms=extra_nms,
-                agnostic_nms=agnostic_nms,
-                verbose=verbose,
+        futures = []
+        for patch, offset in zip(patches, offsets):
+            futures.append(
+                self._executor.submit(
+                    self._execute,
+                    patch,
+                    offset,
+                    (sx, sy),
+                    conf_thres,
+                    nms_iou_thres,
+                    extra_nms=extra_nms,
+                    agnostic_nms=agnostic_nms,
+                )
             )
+        detections = []
+        for future in futures:
+            sub_dets = future.result()
+            if verbose:
+                LOG.info(f"SAHI: {len(sub_dets)} detections in slice {offset}")
+            detections.extend(sub_dets)
 
-            if self._verbose:
-                LOG.info(f"SAHI: {len(s_dets)} detections in slice {(x, y)}")
+        dets = nms(detections, self._iou_threshold, agnostic=self._agnostic_nms)
 
-            for det in s_dets:
-                bbox, conf, class_id = det
-                x1, y1, x2, y2 = bbox
-                # offset based on patch
-                x1 += x
-                y1 += y
-                x2 += x
-                y2 += y
-                # scale based on what patches are generated on
-                x1 *= sx
-                x1 = int(x1)
-                y1 *= sy
-                y1 = int(y1)
-                x2 *= sx
-                x2 = int(x2)
-                y2 *= sy
-                y2 = int(y2)
-                # write back
-                dets.append(((x1, y1, x2, y2), conf, class_id))
-
-        dets = nms(dets, self._iou_threshold, agnostic=self._agnostic_nms)
-
-        if self._verbose:
+        if verbose:
             LOG.info(f"SAHI: {len(dets)} detections overall")
 
         return dets

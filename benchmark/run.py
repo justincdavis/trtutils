@@ -305,7 +305,7 @@ def benchmark_sahi(
             pass
 
         def load_model(self):
-            self.model = YOLO(self.model_path)  
+            self.model = YOLO(self.model_path, task="detect", verbose=False)  
             
             if not self.category_mapping:
                 names = getattr(getattr(self.model, "model", None), "names", None)
@@ -426,7 +426,7 @@ def benchmark_sahi(
         timings = []
         detection_counts = []
         
-        for _ in tqdm(range(bench_iters), desc="\t\tTRTUtils SAHI"):
+        for _ in tqdm(range(bench_iters)):
             t0 = time.perf_counter()
             detections = sahi.end2end(image, conf_thres=conf_thres, verbose=False)
             t1 = time.perf_counter()
@@ -472,7 +472,7 @@ def benchmark_sahi(
         timings = []
         detection_counts = []
         
-        for _ in tqdm(range(bench_iters), desc="\t\tOfficial SAHI"):
+        for _ in tqdm(range(bench_iters)):
             t0 = time.perf_counter()
             result = get_sliced_prediction(
                 SAHI_IMAGE_PATH,
