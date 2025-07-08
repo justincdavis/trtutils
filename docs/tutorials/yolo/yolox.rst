@@ -86,14 +86,14 @@ You'll need to use the YOLOX-TensorRT repository:
 Running Inference
 -----------------
 
-The :py:class:`~trtutils.impls.yolo.YOLO` class provides a high-level interface
+The :py:class:`~trtutils.models.YOLO` class provides a high-level interface
 for running YOLOX inference. Note that YOLOX requires input images to be in
 the range [0, 255]:
 
 .. code-block:: python
 
     import cv2
-    from trtutils.impls.yolo import YOLO, YOLOX
+    from trtutils.models import YOLO, YOLOX
 
     # Load the YOLOX model with correct input range
     yolo = YOLO("yolox.engine", input_range=(0, 255))
@@ -120,7 +120,7 @@ You can run multiple YOLOX models in parallel:
 
 .. code-block:: python
 
-    from trtutils.impls.yolo import ParallelYOLO
+    from trtutils.models import ParallelYOLO
 
     # Create a parallel YOLO instance with multiple engines
     yolo = ParallelYOLO(["yolox_1.engine", "yolox_2.engine"])

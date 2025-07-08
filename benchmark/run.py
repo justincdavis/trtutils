@@ -74,6 +74,10 @@ FRAMEWORKS = [
     "tensorrt",
 ]
 
+# sahi paths
+SAHI_MODELS = ULTRALYTICS_MODELS.copy()
+SAHI_IMAGE_PATH = str((REPO_DIR / "data" / "street.jpg").resolve())
+
 
 def get_results(data: list[float]) -> dict[str, float]:
     return {
@@ -285,6 +289,231 @@ def benchmark_ultralytics(
             write_data(device, data)
 
 
+def benchmark_sahi(
+    device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool
+) -> None:
+    """Benchmark trtutils SAHI against official SAHI package."""
+    import numpy as np
+    from trtutils.image import SAHI, Detector
+    from sahi.predict import get_sliced_prediction
+    from sahi.models.base import DetectionModel
+    from sahi.prediction import ObjectPrediction
+    from ultralytics import YOLO
+
+    class UltralyticsTRTModel(DetectionModel):
+        def check_dependencies(self):
+            pass
+
+        def load_model(self):
+            self.model = YOLO(self.model_path, task="detect", verbose=False)  
+            
+            if not self.category_mapping:
+                names = getattr(getattr(self.model, "model", None), "names", None)
+                if isinstance(names, dict):
+                    self.category_mapping = {str(k): v for k, v in names.items()}
+                else:
+                    num_classes = getattr(getattr(self.model, "model", None), "nc", 1000)
+                    self.category_mapping = {str(i): str(i) for i in range(num_classes)}
+
+        @property
+        def has_mask(self) -> bool:
+            return False
+
+        def num_categories(self):
+            return len(self.category_mapping)
+
+        def perform_inference(self, image: np.ndarray, image_size: int | None = None):
+            self._original_predictions = self.model.predict(
+                image,
+                conf=self.confidence_threshold,
+                verbose=False,
+            )
+        
+        def _create_object_prediction_list_from_original_predictions(
+            self,
+            shift_amount_list: list[list[int]] | None = [[0, 0]],
+            full_shape_list: list[list[int]] | None = None,
+        ):
+            if isinstance(shift_amount_list[0], (list, tuple)):
+                shift_amount = shift_amount_list[0]
+            else:
+                shift_amount = shift_amount_list
+
+            if full_shape_list is None:
+                full_shape = None
+            else:
+                full_shape = full_shape_list[0] if isinstance(full_shape_list[0], (list, tuple)) else full_shape_list
+
+            predictions: list[ObjectPrediction] = []
+
+            result = self._original_predictions[0]
+            boxes = result.boxes
+
+            if boxes is None or len(boxes) == 0:
+                self._object_prediction_list_per_image = [predictions]
+                return
+
+            xyxy = boxes.xyxy.cpu().numpy()
+            scores = boxes.conf.cpu().numpy()
+            class_ids = boxes.cls.cpu().numpy()
+
+            for (x1, y1, x2, y2), score, class_id in zip(xyxy, scores, class_ids):
+                if score < self.confidence_threshold:
+                    continue
+
+                x1_i, y1_i, x2_i, y2_i = map(int, (x1, y1, x2, y2))
+
+                if full_shape is not None:
+                    h, w = full_shape
+                    x1_i, x2_i = max(0, x1_i), min(w, x2_i)
+                    y1_i, y2_i = max(0, y1_i), min(h, y2_i)
+                if x2_i <= x1_i or y2_i <= y1_i:
+                    continue
+                category_name = self.category_mapping.get(str(int(class_id)), str(int(class_id)))
+
+                predictions.append(
+                    ObjectPrediction(
+                        bbox=[x1_i, y1_i, x2_i, y2_i],
+                        score=float(score),
+                        category_id=int(class_id),
+                        category_name=category_name,
+                        shift_amount=shift_amount,
+                        full_shape=full_shape,
+                    )
+                )
+            self._object_prediction_list_per_image = [predictions]
+
+    # assess is model is supported
+    if MODELNAME not in SAHI_MODELS:
+        warnings.warn(f"SAHI benchmarking only supports {SAHI_MODELS}, skipping {MODELNAME}")
+        return
+    
+    # resolve the constants
+    image = cv2.imread(SAHI_IMAGE_PATH)
+    imgsz = 640
+    overlap = 0.2
+    conf_thres = 0.25
+
+    # get data and initialize if needed
+    data = get_data(device)
+    sahi_key = f"sahi_{MODELNAME}"
+    if sahi_key not in data:
+        data[sahi_key] = {}
+
+    # check that trtutils exists
+    trt_weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
+    trt_path = trt_weight_path.with_suffix(".engine")
+    if not trt_path.exists():
+        err_msg = f"trtutils TensorRT engine not found: {trt_path}, run benchmark of trtutils first."
+        raise FileNotFoundError(err_msg)
+    
+    # check that ultralytics exists
+    ultralytics_weight_path = (
+        REPO_DIR / "data" / "ultralytics" / f"{MODELNAME}.pt"
+    ).resolve()
+    utrt_path = (
+            ultralytics_weight_path.parent / f"{ultralytics_weight_path.stem}_{imgsz}.engine"
+        )
+    if not utrt_path.exists():
+        err_msg = f"Ultralytics TensorRT engine not found: {utrt_path}, run benchmark of ultralytics first."
+        raise FileNotFoundError(err_msg)
+    
+    # trtutils benchmark phase
+    if "trtutils(trt)" not in data[sahi_key] or overwrite:
+        detector = Detector(trt_path, warmup=True, warmup_iterations=warmup_iters, preprocessor="trt", verbose=False)
+        sahi = SAHI(detector, slice_size=(imgsz, imgsz), slice_overlap=(overlap, overlap), verbose=False)
+
+        timings = []
+        detection_counts = []
+        
+        for _ in tqdm(range(bench_iters)):
+            t0 = time.perf_counter()
+            detections = sahi.end2end(image, conf_thres=conf_thres, verbose=False)
+            t1 = time.perf_counter()
+            
+            timings.append(t1 - t0)
+            detection_counts.append(len(detections))
+
+        del sahi, detector
+                    
+        results = get_results(timings)
+        avg_detections = int(statistics.mean(detection_counts))
+        
+        data[sahi_key]["trtutils(trt)"] = {
+            "timing": results,
+            "detections": avg_detections,
+        }
+        
+        print(f"\t\tTRTUtils SAHI: {results['mean']:.2f}ms, {avg_detections} detections")
+        write_data(device, data)
+
+    # Benchmark official SAHI
+    if "official_sahi" not in data[sahi_key] or overwrite:
+        print("\tBenchmarking Official SAHI...")
+
+        detection_model = UltralyticsTRTModel(
+            model_path=str(utrt_path),
+            confidence_threshold=conf_thres,
+            device="cuda",
+        )
+
+        for _ in range(warmup_iters):
+            get_sliced_prediction(
+                SAHI_IMAGE_PATH,
+                detection_model,
+                slice_height=imgsz,
+                slice_width=imgsz,
+                overlap_height_ratio=overlap,
+                overlap_width_ratio=overlap,
+                verbose=0
+            )
+            
+        # Benchmark
+        timings = []
+        detection_counts = []
+        
+        for _ in tqdm(range(bench_iters)):
+            t0 = time.perf_counter()
+            result = get_sliced_prediction(
+                SAHI_IMAGE_PATH,
+                detection_model,
+                slice_height=imgsz,
+                slice_width=imgsz,
+                overlap_height_ratio=overlap,
+                overlap_width_ratio=overlap,
+                verbose=0
+            )
+            t1 = time.perf_counter()
+            
+            timings.append(t1 - t0)
+            detection_counts.append(len(result.object_prediction_list))
+            
+        results = get_results(timings)
+        avg_detections = int(statistics.mean(detection_counts))
+        
+        data[sahi_key]["official_sahi"] = {
+            "timing": results,
+            "detections": avg_detections,
+        }
+        
+        print(f"\t\tOfficial SAHI: {results['mean']:.2f}ms, {avg_detections} detections")
+        write_data(device, data)
+    
+    # Print comparison if both exist
+    if "trtutils_sahi" in data[sahi_key] and "official_sahi" in data[sahi_key]:
+        trt_data = data[sahi_key]["trtutils_sahi"]
+        off_data = data[sahi_key]["official_sahi"]
+        
+        trt_mean = trt_data["timing"]["mean"]
+        off_mean = off_data["timing"]["mean"]
+        speedup = off_mean / trt_mean if trt_mean > 0 else 0
+        
+        print(f"\tComparison Summary:")
+        print(f"\t\tTRTUtils SAHI: {trt_mean:.2f}ms, {trt_data['detections']} detections")
+        print(f"\t\tOfficial SAHI: {off_mean:.2f}ms, {off_data['detections']} detections")
+        print(f"\t\tSpeedup: {speedup:.2f}x {'(TRTUtils faster)' if speedup > 1 else '(Official faster)'}")
+
+
 def main() -> None:
     """Run the benchmarking."""
     parser = argparse.ArgumentParser("Run benchmarking against popular frameworks.")
@@ -321,6 +550,11 @@ def main() -> None:
         "--ultralytics",
         action="store_true",
         help="Run the benchmarks on the ultralytics framework.",
+    )
+    parser.add_argument(
+        "--sahi",
+        action="store_true",
+        help="Run SAHI comparison benchmarks (trtutils vs official SAHI).",
     )
     parser.add_argument(
         "--overwrite",
@@ -385,6 +619,19 @@ def main() -> None:
                     )
             except Exception as e:
                 warnings.warn(f"Failed to process {MODELNAME} with ultralytics: {e}")
+                continue
+
+        # SAHI benchmark
+        if args.sahi:
+            try:
+                benchmark_sahi(
+                    args.device,
+                    args.warmup,
+                    args.iterations,
+                    overwrite=args.overwrite,
+                )
+            except Exception as e:
+                warnings.warn(f"Failed to process {MODELNAME} with SAHI: {e}")
                 continue
 
 

@@ -26,7 +26,7 @@ def main() -> None:
     onnx_path = Path(__file__).parent.parent / "data" / "simple.onnx"
     torch.onnx.export(
         Simple(),
-        torch.rand((160, 160)),
+        torch.rand((1, 3, 160, 160)),
         onnx_path,
         export_params=True,
         opset_version=11,

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import argparse
-import operator
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -39,7 +38,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             engine=mpath,
             iterations=args.iterations,
             warmup_iterations=args.warmup_iterations,
-            tegra_interval=1,
+            tegra_interval=args.tegra_interval,
             dla_core=args.dla_core,
             warmup=True,
             verbose=args.verbose,
@@ -118,12 +117,13 @@ def _build(args: SimpleNamespace) -> None:
         batcher = trtutils.builder.ImageBatcher(
             image_dir=args.calibration_dir,
             shape=args.input_shape,
-            dtype=args.input_dtype,
+            dtype=getattr(np, args.input_dtype),
             batch_size=args.batch_size,
             order=args.data_order,
             max_images=args.max_images,
             resize_method=args.resize_method,
             input_scale=args.input_scale,
+            verbose=args.verbose,
         )
 
     # actual call
@@ -142,6 +142,7 @@ def _build(args: SimpleNamespace) -> None:
         ignore_timing_mismatch=args.ignore_timing_mismatch,
         fp16=args.fp16,
         int8=args.int8,
+        cache=args.cache,
         verbose=args.verbose,
     )
 
@@ -167,18 +168,27 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
 
 
 def _build_dla(args: SimpleNamespace) -> None:
-    dtype: np.dtype = np.dtype("float32")
-    if args.dtype == "float16":
-        dtype = np.dtype("float16")
-    elif args.dtype == "int8":
-        dtype = np.dtype("int8")
+    # require calibration data for dla builds
+    if args.calibration_dir is None:
+        err_msg = "Calibration directory is required for DLA builds"
+        raise ValueError(err_msg)
+    if args.input_shape is None:
+        err_msg = "Input shape is required for DLA builds"
+        raise ValueError(err_msg)
+    if args.input_dtype is None:
+        err_msg = "Input dtype is required for DLA builds"
+        raise ValueError(err_msg)
+
+    # Set default dla_core to 0 if not provided
+    if args.dla_core is None:
+        args.dla_core = 0
 
     batcher = trtutils.builder.ImageBatcher(
-        image_dir=args.image_dir,
-        shape=args.shape,
-        dtype=dtype,
+        image_dir=args.calibration_dir,
+        shape=args.input_shape,
+        dtype=getattr(np, args.input_dtype),
         batch_size=args.batch_size,
-        order=args.order,
+        order=args.data_order,
         max_images=args.max_images,
         resize_method=args.resize_method,
         input_scale=args.input_scale,
@@ -191,12 +201,19 @@ def _build_dla(args: SimpleNamespace) -> None:
         dla_core=args.dla_core,
         max_chunks=args.max_chunks,
         min_layers=args.min_layers,
+        workspace=args.workspace,
+        calibration_cache=args.calibration_cache,
         timing_cache=args.timing_cache,
+        direct_io=args.direct_io,
+        prefer_precision_constraints=args.prefer_precision_constraints,
+        reject_empty_algorithms=args.reject_empty_algorithms,
+        ignore_timing_mismatch=args.ignore_timing_mismatch,
+        cache=args.cache,
         verbose=args.verbose,
     )
 
 
-def _run_yolo(args: SimpleNamespace) -> None:
+def _detect(args: SimpleNamespace) -> None:
     img_extensions = [".jpg", ".jpeg", ".png"]
     video_extensions = [".mp4", ".avi", ".mov"]
 
@@ -207,15 +224,21 @@ def _run_yolo(args: SimpleNamespace) -> None:
         err_msg = f"Invalid input file: {input_path}"
         raise ValueError(err_msg)
 
-    yolo = trtutils.impls.yolo.YOLO(
+    detector = trtutils.image.Detector(
         engine_path=args.engine,
         warmup_iterations=args.warmup_iterations,
         input_range=args.input_range,
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
         conf_thres=args.conf_thres,
+        nms_iou_thres=args.nms_iou_thres,
         dla_core=args.dla_core,
         warmup=args.warmup,
+        pagelocked_mem=args.pagelocked_mem,
+        unified_mem=args.unified_mem,
+        extra_nms=args.extra_nms,
+        agnostic_nms=args.agnostic_nms,
+        no_warn=args.no_warn,
         verbose=args.verbose,
     )
     times: dict[str, list[float]] = {
@@ -231,13 +254,15 @@ def _run_yolo(args: SimpleNamespace) -> None:
         list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float
     ]:
         t0 = time.perf_counter()
-        tensor, ratios, pads = yolo.preprocess(img, no_copy=True)
+        tensor, ratios, pads = detector.preprocess(img, no_copy=True)
         t1 = time.perf_counter()
-        results = yolo.run(tensor, preprocessed=True, postprocess=False, no_copy=True)
+        results = detector.run(
+            tensor, preprocessed=True, postprocess=False, no_copy=True
+        )
         t2 = time.perf_counter()
-        p_results = yolo.postprocess(results, ratios, pads, no_copy=True)
+        p_results = detector.postprocess(results, ratios, pads, no_copy=True)
         t3 = time.perf_counter()
-        dets = yolo.get_detections(p_results)
+        dets = detector.get_detections(p_results)
         t4 = time.perf_counter()
         return (
             dets,
@@ -298,16 +323,6 @@ def _run_yolo(args: SimpleNamespace) -> None:
         canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
         return cv2ext.image.draw.text(canvas, f"DET:  {det_t} ms", (10, 120))
 
-    def _summarize_classes(
-        dets: list[tuple[tuple[int, int, int, int], float, int]],
-    ) -> list[tuple[int, int]]:
-        class_count: dict[int, int] = {}
-        for _, _, class_id in dets:
-            if class_id not in class_count:
-                class_count[class_id] = 0
-            class_count[class_id] += 1
-        return sorted(class_count.items(), key=operator.itemgetter(0))
-
     if is_image:
         img = cv2.imread(str(input_path))
         if img is None:
@@ -318,15 +333,13 @@ def _run_yolo(args: SimpleNamespace) -> None:
 
         if args.show:
             canvas = draw(img, bboxes, scores, classes, pre_t, run_t, post_t, det_t)
-            cv2.imshow("YOLO", canvas)
+            cv2.imshow("DETECT", canvas)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
     elif is_video:
-        if args.show:
-            display = cv2ext.Display(f"YOLO detection: {input_path.stem}")
-        else:
-            display = None
+        display = cv2ext.Display(f"DETECT: {input_path.stem}") if args.show else None
+
         for fid, frame in cv2ext.IterableVideo(input_path):
             if display is not None and display.stopped:
                 break
@@ -353,9 +366,129 @@ def _run_yolo(args: SimpleNamespace) -> None:
         LOG.info(f"{k}: {np.mean(v):.2f} ms")
 
 
+def _classify(args: SimpleNamespace) -> None:
+    img_extensions = [".jpg", ".jpeg", ".png"]
+
+    input_path = Path(args.input)
+    is_image = input_path.suffix in img_extensions
+    if not is_image:
+        err_msg = f"Invalid input file: {input_path}"
+        raise ValueError(err_msg)
+
+    classifier = trtutils.image.Classifier(
+        engine_path=args.engine,
+        warmup_iterations=args.warmup_iterations,
+        input_range=args.input_range,
+        preprocessor=args.preprocessor,
+        resize_method=args.resize_method,
+        dla_core=args.dla_core,
+        warmup=args.warmup,
+        pagelocked_mem=args.pagelocked_mem,
+        unified_mem=args.unified_mem,
+        no_warn=args.no_warn,
+        verbose=args.verbose,
+    )
+    times: dict[str, list[float]] = {
+        "pre": [],
+        "run": [],
+        "post": [],
+        "cls": [],
+    }
+
+    def run(
+        img: np.ndarray,
+    ) -> tuple[tuple[int, float], float, float, float, float]:
+        t0 = time.perf_counter()
+        tensor, _, _ = classifier.preprocess(img, no_copy=True)
+        t1 = time.perf_counter()
+        results = classifier.run(
+            tensor, preprocessed=True, postprocess=False, no_copy=True
+        )
+        t2 = time.perf_counter()
+        p_results = classifier.postprocess(results, no_copy=True)
+        t3 = time.perf_counter()
+        cls_results = classifier.get_classifications(p_results, top_k=1)[0]
+        t4 = time.perf_counter()
+        return (
+            cls_results,
+            round(1000 * (t1 - t0), 2),
+            round(1000 * (t2 - t1), 2),
+            round(1000 * (t3 - t2), 2),
+            round(1000 * (t4 - t3), 2),
+        )
+
+    def log(
+        cls_results: tuple[int, float],
+        pre_t: float,
+        run_t: float,
+        post_t: float,
+        det_t: float,
+    ) -> None:
+        LOG.info(f"Found {cls_results[0]} with confidence {cls_results[1]}")
+        LOG.info(f"Preprocessing time: {pre_t} ms")
+        LOG.info(f"Run time: {run_t} ms")
+        LOG.info(f"Postprocessing time: {post_t} ms")
+        LOG.info(f"Detection time: {det_t} ms")
+
+    def process_image(
+        img: np.ndarray,
+    ) -> tuple[
+        tuple[int, float],
+        float,
+        float,
+        float,
+        float,
+    ]:
+        cls_results, pre_t, run_t, post_t, det_t = run(img)
+        log(cls_results, pre_t, run_t, post_t, det_t)
+        times["pre"].append(pre_t)
+        times["run"].append(run_t)
+        times["post"].append(post_t)
+        times["det"].append(det_t)
+        return cls_results, pre_t, run_t, post_t, det_t
+
+    def draw(
+        img: np.ndarray,
+        cls_results: tuple[int, float],
+        pre_t: float,
+        run_t: float,
+        post_t: float,
+        det_t: float,
+    ) -> np.ndarray:
+        canvas = cv2ext.image.draw.text(img, f"CLASS: {cls_results[0]}", (50, 30))
+        canvas = cv2ext.image.draw.text(canvas, f"CONF: {cls_results[1]:.2f}", (50, 60))
+        canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
+        canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t} ms", (10, 60))
+        canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
+        return cv2ext.image.draw.text(canvas, f"CLS:  {det_t} ms", (10, 120))
+
+    if is_image:
+        img = cv2.imread(str(input_path))
+        if img is None:
+            err_msg = f"Failed to read image: {input_path}"
+            raise ValueError(err_msg)
+
+        cls_results, pre_t, run_t, post_t, det_t = process_image(img)
+
+        if args.show:
+            canvas = draw(img, cls_results, pre_t, run_t, post_t, det_t)
+            cv2.imshow("CLASSIFY", canvas)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+
+    else:
+        err_msg = f"Invalid input file: {input_path}"
+        raise ValueError(err_msg)
+
+    LOG.info("Times:")
+    for k, v in times.items():
+        LOG.info(f"{k}: {np.mean(v):.2f} ms")
+
+
 def _inspect(args: SimpleNamespace) -> None:
     engine_size, max_batch, inputs, outputs = trtutils.inspect.inspect_engine(
-        Path(args.engine)
+        Path(args.engine),
+        verbose=args.verbose,
     )
     LOG.info(f"Engine Size: {engine_size / (1024 * 1024):.2f} MB")
     LOG.info(f"Max Batch Size: {max_batch}")
@@ -368,15 +501,9 @@ def _inspect(args: SimpleNamespace) -> None:
 
 
 def _main() -> None:
-    # common arguments parser
-    parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument(
-        "--dla_core",
-        type=int,
-        default=None,
-        help="DLA core to assign DLA layers of the engine to. Default is None.",
-    )
-    parent_parser.add_argument(
+    # general arguments parser (for all commands)
+    general_parser = argparse.ArgumentParser(add_help=False)
+    general_parser.add_argument(
         "--log_level",
         choices=[
             "DEBUG",
@@ -393,27 +520,188 @@ def _main() -> None:
         default="INFO",
         help="Set the log level. Default is INFO.",
     )
-    parent_parser.add_argument(
+    general_parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose output.",
     )
 
+    # dla arguments parser (for commands that support DLA)
+    dla_parser = argparse.ArgumentParser(add_help=False)
+    dla_parser.add_argument(
+        "--dla_core",
+        type=int,
+        default=None,
+        help="DLA core to assign DLA layers of the engine to. Default is None.",
+    )
+
+    # shared build arguments parser
+    build_common_parser = argparse.ArgumentParser(add_help=False)
+    build_common_parser.add_argument(
+        "--onnx",
+        "-o",
+        required=True,
+        help="Path to the ONNX model file.",
+    )
+    build_common_parser.add_argument(
+        "--output",
+        "-out",
+        required=True,
+        help="Path to save the TensorRT engine file.",
+    )
+    build_common_parser.add_argument(
+        "--timing_cache",
+        "-tc",
+        default=None,
+        help="Path to store timing cache data. Default is None.",
+    )
+    build_common_parser.add_argument(
+        "--calibration_cache",
+        "-cc",
+        default=None,
+        help="Path to store calibration cache data. Default is None.",
+    )
+    build_common_parser.add_argument(
+        "--workspace",
+        "-w",
+        type=float,
+        default=4.0,
+        help="Workspace size in GB. Default is 4.0.",
+    )
+    build_common_parser.add_argument(
+        "--direct_io",
+        action="store_true",
+        help="Use direct IO for the engine.",
+    )
+    build_common_parser.add_argument(
+        "--prefer_precision_constraints",
+        action="store_true",
+        help="Prefer precision constraints.",
+    )
+    build_common_parser.add_argument(
+        "--reject_empty_algorithms",
+        action="store_true",
+        help="Reject empty algorithms.",
+    )
+    build_common_parser.add_argument(
+        "--ignore_timing_mismatch",
+        action="store_true",
+        help="Allow different CUDA device timing caches to be used.",
+    )
+    build_common_parser.add_argument(
+        "--cache",
+        action="store_true",
+        help="Cache the engine in the trtutils engine cache.",
+    )
+
+    # calibration arguments parser
+    calibration_parser = argparse.ArgumentParser(add_help=False)
+    calibration_parser.add_argument(
+        "--calibration_dir",
+        "-cd",
+        default=None,
+        help="Directory containing images for INT8 calibration.",
+    )
+    calibration_parser.add_argument(
+        "--input_shape",
+        "-is",
+        type=int,
+        nargs=3,
+        help="Input shape in HWC format (height, width, channels). Required when using calibration directory.",
+    )
+    calibration_parser.add_argument(
+        "--input_dtype",
+        "-id",
+        choices=["float32", "float16", "int8"],
+        help="Input data type. Required when using calibration directory.",
+    )
+    calibration_parser.add_argument(
+        "--batch_size",
+        "-bs",
+        type=int,
+        default=8,
+        help="Batch size for calibration. Default is 8.",
+    )
+    calibration_parser.add_argument(
+        "--data_order",
+        "-do",
+        choices=["NCHW", "NHWC"],
+        default="NCHW",
+        help="Data ordering expected by the network. Default is NCHW.",
+    )
+    calibration_parser.add_argument(
+        "--max_images",
+        "-mi",
+        type=int,
+        help="Maximum number of images to use for calibration.",
+    )
+    calibration_parser.add_argument(
+        "--resize_method",
+        "-rm",
+        choices=["letterbox", "linear"],
+        default="letterbox",
+        help="Method to resize images. Default is letterbox.",
+    )
+    calibration_parser.add_argument(
+        "--input_scale",
+        "-sc",
+        type=float,
+        nargs=2,
+        default=[0.0, 1.0],
+        help="Input value range. Default is [0.0, 1.0].",
+    )
+
+    # warmup arguments parser
+    warmup_parser = argparse.ArgumentParser(add_help=False)
+    warmup_parser.add_argument(
+        "--warmup",
+        action="store_true",
+        help="Perform warmup iterations.",
+    )
+    warmup_parser.add_argument(
+        "--warmup_iterations",
+        "-wi",
+        type=int,
+        default=10,
+        help="Number of warmup iterations. Default is 10.",
+    )
+
+    # memory arguments parser
+    memory_parser = argparse.ArgumentParser(add_help=False)
+    memory_parser.add_argument(
+        "--pagelocked_mem",
+        action="store_true",
+        help="Use pagelocked memory for CUDA operations.",
+    )
+    memory_parser.add_argument(
+        "--unified_mem",
+        action="store_true",
+        help="Use unified memory for CUDA operations.",
+    )
+    memory_parser.add_argument(
+        "--no_warn",
+        action="store_true",
+        help="Suppress warnings from TensorRT.",
+    )
+
     # main parser
-    parser = argparse.ArgumentParser(description="Utilities for TensorRT.")
+    parser = argparse.ArgumentParser(
+        description="Utilities for TensorRT.",
+        parents=[general_parser],
+    )
 
     # create subparser for each command
     subparsers = parser.add_subparsers(
         title="subcommands",
         dest="command",
-        required=True,
+        required=False,
     )
 
-    # benchmark command, will use benchmark engine by default, can pass jetson to use the jetson benchmarker
+    # benchmark command
     benchmark_parser = subparsers.add_parser(
         "benchmark",
         help="Benchmark a given TensorRT engine.",
-        parents=[parent_parser],
+        parents=[general_parser, dla_parser, warmup_parser],
     )
     benchmark_parser.add_argument(
         "--engine",
@@ -429,17 +717,16 @@ def _main() -> None:
         help="Number of iterations to measure over.",
     )
     benchmark_parser.add_argument(
-        "--warmup_iterations",
-        "-wi",
-        type=int,
-        default=100,
-        help="The number of iterations to warmup the model before measuring.",
-    )
-    benchmark_parser.add_argument(
         "--jetson",
         "-j",
         action="store_true",
-        help="If True, will use the trtutils.jetson submodule benchmarker to record energy and pwoerdraw as well.",
+        help="If True, will use the trtutils.jetson submodule benchmarker to record energy and power draw as well.",
+    )
+    benchmark_parser.add_argument(
+        "--tegra_interval",
+        type=int,
+        default=5,
+        help="Milliseconds between each tegrastats sampling for Jetson benchmarking. Default is 5.",
     )
     benchmark_parser.set_defaults(func=_benchmark)
 
@@ -447,6 +734,7 @@ def _main() -> None:
     trtexec_parser = subparsers.add_parser(
         "trtexec",
         help="Run trtexec.",
+        parents=[general_parser],
     )
     trtexec_parser.set_defaults(func=cli_trtexec)
 
@@ -454,19 +742,7 @@ def _main() -> None:
     build_parser = subparsers.add_parser(
         "build",
         help="Build a TensorRT engine from an ONNX model.",
-        parents=[parent_parser],
-    )
-    build_parser.add_argument(
-        "--onnx",
-        "-o",
-        required=True,
-        help="Path to the ONNX model file.",
-    )
-    build_parser.add_argument(
-        "--output",
-        "-out",
-        required=True,
-        help="Path to save the TensorRT engine file.",
+        parents=[general_parser, dla_parser, build_common_parser, calibration_parser],
     )
     build_parser.add_argument(
         "--device",
@@ -476,102 +752,9 @@ def _main() -> None:
         help="Device to use for the engine. Default is 'gpu'.",
     )
     build_parser.add_argument(
-        "--timing_cache",
-        "-tc",
-        default=None,
-        help="Path to store timing cache data. Default is 'timing.cache'.",
-    )
-    build_parser.add_argument(
-        "--workspace",
-        "-w",
-        type=float,
-        default=4.0,
-        help="Workspace size in GB. Default is 4.0.",
-    )
-    build_parser.add_argument(
-        "--calibration_cache",
-        "-cc",
-        default=None,
-        help="Path to store calibration cache data. Default is 'calibration.cache'.",
-    )
-    build_parser.add_argument(
-        "--calibration_dir",
-        "-cd",
-        default=None,
-        help="Directory containing images for INT8 calibration.",
-    )
-    build_parser.add_argument(
-        "--input_shape",
-        "-is",
-        type=int,
-        nargs=3,
-        help="Input shape in HWC format (height, width, channels). Required when using calibration directory.",
-    )
-    build_parser.add_argument(
-        "--input_dtype",
-        "-id",
-        choices=["float32", "float16", "int8"],
-        help="Input data type. Required when using calibration directory.",
-    )
-    build_parser.add_argument(
-        "--batch_size",
-        "-bs",
-        type=int,
-        default=8,
-        help="Batch size for calibration. Default is 8.",
-    )
-    build_parser.add_argument(
-        "--data_order",
-        "-do",
-        choices=["NCHW", "NHWC"],
-        default="NCHW",
-        help="Data ordering expected by the network. Default is NCHW.",
-    )
-    build_parser.add_argument(
-        "--max_images",
-        "-mi",
-        type=int,
-        help="Maximum number of images to use for calibration.",
-    )
-    build_parser.add_argument(
-        "--resize_method",
-        "-rm",
-        choices=["letterbox", "linear"],
-        default="letterbox",
-        help="Method to resize images. Default is letterbox.",
-    )
-    build_parser.add_argument(
-        "--input_scale",
-        "-sc",
-        type=float,
-        nargs=2,
-        default=[0.0, 1.0],
-        help="Input value range. Default is [0.0, 1.0].",
-    )
-    build_parser.add_argument(
         "--gpu_fallback",
         action="store_true",
         help="Allow GPU fallback for unsupported layers when building for DLA.",
-    )
-    build_parser.add_argument(
-        "--direct_io",
-        action="store_true",
-        help="Use direct IO for the engine.",
-    )
-    build_parser.add_argument(
-        "--prefer_precision_constraints",
-        action="store_true",
-        help="Prefer precision constraints.",
-    )
-    build_parser.add_argument(
-        "--reject_empty_algorithms",
-        action="store_true",
-        help="Reject empty algorithms.",
-    )
-    build_parser.add_argument(
-        "--ignore_timing_mismatch",
-        action="store_true",
-        help="Allow different CUDA device timing caches to be used.",
     )
     build_parser.add_argument(
         "--fp16",
@@ -585,11 +768,11 @@ def _main() -> None:
     )
     build_parser.set_defaults(func=_build)
 
-    # run_on_dla parser
+    # can_run_on_dla parser
     can_run_on_dla_parser = subparsers.add_parser(
         "can_run_on_dla",
         help="Evaluate if the model can run on a DLA.",
-        parents=[parent_parser],
+        parents=[general_parser],
     )
     can_run_on_dla_parser.add_argument(
         "--onnx",
@@ -612,20 +795,8 @@ def _main() -> None:
     # build_dla parser
     build_dla_parser = subparsers.add_parser(
         "build_dla",
-        help="Build a TensorRT engine for DLA.",
-        parents=[parent_parser],
-    )
-    build_dla_parser.add_argument(
-        "--onnx",
-        "-o",
-        required=True,
-        help="Path to the ONNX model file.",
-    )
-    build_dla_parser.add_argument(
-        "--output",
-        "-out",
-        required=True,
-        help="Path to save the TensorRT engine file.",
+        help="Build a TensorRT engine for DLA with automatic layer assignments.",
+        parents=[general_parser, dla_parser, build_common_parser, calibration_parser],
     )
     build_dla_parser.add_argument(
         "--max_chunks",
@@ -639,88 +810,40 @@ def _main() -> None:
         default=20,
         help="Minimum number of layers in a chunk to be assigned to DLA. Default is 20.",
     )
-    build_dla_parser.add_argument(
-        "--image_dir",
-        required=True,
-        help="Path to the directory containing images for calibration.",
-    )
-    build_dla_parser.add_argument(
-        "--shape",
-        type=int,
-        nargs=3,
-        default=(640, 640, 3),
-        help="Input shape in HWC format (height, width, channels).",
-    )
-    build_dla_parser.add_argument(
-        "--dtype",
-        choices=["float32", "float16", "int8"],
-        default="float32",
-        help="Input data type. Required when using calibration directory.",
-    )
-    build_dla_parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=8,
-        help="Batch size for calibration. Default is 8.",
-    )
-    build_dla_parser.add_argument(
-        "--order",
-        choices=["NCHW", "NHWC"],
-        default="NCHW",
-        help="Data ordering expected by the network. Default is NCHW.",
-    )
-    build_dla_parser.add_argument(
-        "--max_images",
-        type=int,
-        help="Maximum number of images to use for calibration.",
-    )
-    build_dla_parser.add_argument(
-        "--resize_method",
-        choices=["letterbox", "linear"],
-        default="letterbox",
-        help="Method to resize images. Default is letterbox.",
-    )
-    build_dla_parser.add_argument(
-        "--input_scale",
-        type=float,
-        nargs=2,
-        default=[0.0, 1.0],
-        help="Input value range. Default is [0.0, 1.0].",
-    )
-    build_dla_parser.add_argument(
-        "--timing_cache",
-        "-tc",
-        default=None,
-        help="Path to store timing cache data. Default is 'timing.cache'.",
-    )
     build_dla_parser.set_defaults(func=_build_dla)
 
-    # yolo parser
-    yolo_parser = subparsers.add_parser(
-        "yolo",
+    # detect parser
+    detect_parser = subparsers.add_parser(
+        "detect",
         help="Run YOLO object detection on an image or video.",
-        parents=[parent_parser],
+        parents=[general_parser, dla_parser, warmup_parser, memory_parser],
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--engine",
         "-e",
         required=True,
         help="Path to the TensorRT engine file.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--input",
         "-i",
         required=True,
         help="Path to the input image or video file.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--conf_thres",
         "-c",
         type=float,
         default=0.1,
         help="Confidence threshold for detections. Default is 0.1.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
+        "--nms_iou_thres",
+        type=float,
+        default=0.5,
+        help="NMS IOU threshold for detections. Default is 0.5.",
+    )
+    detect_parser.add_argument(
         "--input_range",
         "-r",
         type=float,
@@ -728,45 +851,82 @@ def _main() -> None:
         default=[0.0, 1.0],
         help="Input value range. Default is [0.0, 1.0].",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--preprocessor",
         "-p",
         choices=["cpu", "cuda", "trt"],
         default="trt",
         help="Preprocessor to use. Default is trt.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--resize_method",
         "-rm",
         choices=["letterbox", "linear"],
         default="letterbox",
         help="Method to resize images. Default is letterbox.",
     )
-    yolo_parser.add_argument(
-        "--warmup",
-        "-w",
+    detect_parser.add_argument(
+        "--extra_nms",
         action="store_true",
-        help="Perform warmup iterations.",
+        help="Perform additional CPU-side NMS.",
     )
-    yolo_parser.add_argument(
-        "--warmup_iterations",
-        "-wi",
-        type=int,
-        default=10,
-        help="Number of warmup iterations. Default is 10.",
+    detect_parser.add_argument(
+        "--agnostic_nms",
+        action="store_true",
+        help="Perform class-agnostic NMS.",
     )
-    yolo_parser.add_argument(
+    detect_parser.add_argument(
         "--show",
         action="store_true",
         help="Show the detections.",
     )
-    yolo_parser.set_defaults(func=_run_yolo)
+    detect_parser.set_defaults(func=_detect)
+
+    # classify parser
+    classify_parser = subparsers.add_parser(
+        "classify",
+        help="Run image classification on an image.",
+        parents=[general_parser, dla_parser, warmup_parser, memory_parser],
+    )
+    classify_parser.add_argument(
+        "--engine",
+        "-e",
+        required=True,
+        help="Path to the TensorRT engine file.",
+    )
+    classify_parser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="Path to the input image file.",
+    )
+    classify_parser.add_argument(
+        "--input_range",
+        "-r",
+        type=float,
+        nargs=2,
+        default=[0.0, 1.0],
+        help="Input value range. Default is [0.0, 1.0].",
+    )
+    classify_parser.add_argument(
+        "--preprocessor",
+        "-p",
+        choices=["cpu", "cuda", "trt"],
+        default="trt",
+        help="Preprocessor to use. Default is trt.",
+    )
+    classify_parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Show the classifications.",
+    )
+    classify_parser.set_defaults(func=_classify)
 
     # inspect parser
     inspect_parser = subparsers.add_parser(
         "inspect",
         help="Inspect a TensorRT engine.",
-        parents=[parent_parser],
+        parents=[general_parser],
     )
     inspect_parser.add_argument(
         "--engine",
