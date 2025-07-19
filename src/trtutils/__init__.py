@@ -13,6 +13,8 @@ Submodules
 ----------
 :mod:`builder`
     A module for building TensorRT engines.
+:mod:`compat`
+    A module for compatibility with other libraries.
 :mod:`core`
     A module for the core functionality of the package.
 :mod:`jetson`
@@ -91,7 +93,7 @@ __version__ = "0.6.1"
 
 import contextlib
 
-from . import builder, core, image, inspect, models, trtexec
+from . import builder, compat, core, image, inspect, models, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
@@ -116,6 +118,7 @@ __all__ = [
     "benchmark_engines",
     "build_engine",
     "builder",
+    "compat",
     "core",
     "disable_jit",
     "enable_jit",

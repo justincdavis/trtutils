@@ -293,96 +293,12 @@ def benchmark_sahi(
     device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool
 ) -> None:
     """Benchmark trtutils SAHI against official SAHI package."""
-    import numpy as np
     from trtutils.image import SAHI, Detector
+    from trtutils.compat.sahi import TRTDetectionModel
     from sahi.predict import get_sliced_prediction
-    from sahi.models.base import DetectionModel
-    from sahi.prediction import ObjectPrediction
-    from ultralytics import YOLO
-
-    class UltralyticsTRTModel(DetectionModel):
-        def check_dependencies(self):
-            pass
-
-        def load_model(self):
-            self.model = YOLO(self.model_path, task="detect", verbose=False)  
-            
-            if not self.category_mapping:
-                names = getattr(getattr(self.model, "model", None), "names", None)
-                if isinstance(names, dict):
-                    self.category_mapping = {str(k): v for k, v in names.items()}
-                else:
-                    num_classes = getattr(getattr(self.model, "model", None), "nc", 1000)
-                    self.category_mapping = {str(i): str(i) for i in range(num_classes)}
-
-        @property
-        def has_mask(self) -> bool:
-            return False
-
-        def num_categories(self):
-            return len(self.category_mapping)
-
-        def perform_inference(self, image: np.ndarray, image_size: int | None = None):
-            self._original_predictions = self.model.predict(
-                image,
-                conf=self.confidence_threshold,
-                verbose=False,
-            )
-        
-        def _create_object_prediction_list_from_original_predictions(
-            self,
-            shift_amount_list: list[list[int]] | None = [[0, 0]],
-            full_shape_list: list[list[int]] | None = None,
-        ):
-            if isinstance(shift_amount_list[0], (list, tuple)):
-                shift_amount = shift_amount_list[0]
-            else:
-                shift_amount = shift_amount_list
-
-            if full_shape_list is None:
-                full_shape = None
-            else:
-                full_shape = full_shape_list[0] if isinstance(full_shape_list[0], (list, tuple)) else full_shape_list
-
-            predictions: list[ObjectPrediction] = []
-
-            result = self._original_predictions[0]
-            boxes = result.boxes
-
-            if boxes is None or len(boxes) == 0:
-                self._object_prediction_list_per_image = [predictions]
-                return
-
-            xyxy = boxes.xyxy.cpu().numpy()
-            scores = boxes.conf.cpu().numpy()
-            class_ids = boxes.cls.cpu().numpy()
-
-            for (x1, y1, x2, y2), score, class_id in zip(xyxy, scores, class_ids):
-                if score < self.confidence_threshold:
-                    continue
-
-                x1_i, y1_i, x2_i, y2_i = map(int, (x1, y1, x2, y2))
-
-                if full_shape is not None:
-                    h, w = full_shape
-                    x1_i, x2_i = max(0, x1_i), min(w, x2_i)
-                    y1_i, y2_i = max(0, y1_i), min(h, y2_i)
-                if x2_i <= x1_i or y2_i <= y1_i:
-                    continue
-                category_name = self.category_mapping.get(str(int(class_id)), str(int(class_id)))
-
-                predictions.append(
-                    ObjectPrediction(
-                        bbox=[x1_i, y1_i, x2_i, y2_i],
-                        score=float(score),
-                        category_id=int(class_id),
-                        category_name=category_name,
-                        shift_amount=shift_amount,
-                        full_shape=full_shape,
-                    )
-                )
-            self._object_prediction_list_per_image = [predictions]
-
+    from sahi import AutoDetectionModel
+    from utils import UltralyticsTRTModel
+    
     # assess is model is supported
     if MODELNAME not in SAHI_MODELS:
         warnings.warn(f"SAHI benchmarking only supports {SAHI_MODELS}, skipping {MODELNAME}")
@@ -419,7 +335,7 @@ def benchmark_sahi(
         raise FileNotFoundError(err_msg)
     
     # trtutils benchmark phase
-    if "trtutils(trt)" not in data[sahi_key] or overwrite:
+    if "trtutils" not in data[sahi_key] or overwrite:
         detector = Detector(trt_path, warmup=True, warmup_iterations=warmup_iters, preprocessor="trt", verbose=False)
         sahi = SAHI(detector, slice_size=(imgsz, imgsz), slice_overlap=(overlap, overlap), verbose=False)
 
@@ -439,7 +355,7 @@ def benchmark_sahi(
         results = get_results(timings)
         avg_detections = int(statistics.mean(detection_counts))
         
-        data[sahi_key]["trtutils(trt)"] = {
+        data[sahi_key]["trtutils"] = {
             "timing": results,
             "detections": avg_detections,
         }
@@ -448,69 +364,85 @@ def benchmark_sahi(
         write_data(device, data)
 
     # Benchmark official SAHI
-    if "official_sahi" not in data[sahi_key] or overwrite:
-        print("\tBenchmarking Official SAHI...")
+    for sahi_type_key in ["sahi(ultralytics)(torch)", "sahi(ultralytics)(trt)", "sahi(trtutils)"]:
+        if sahi_type_key not in data[sahi_key] or overwrite:
+            print(f"\tBenchmarking {sahi_type_key}...")
 
-        detection_model = UltralyticsTRTModel(
-            model_path=str(utrt_path),
-            confidence_threshold=conf_thres,
-            device="cuda",
-        )
+            if sahi_type_key == "sahi(ultralytics)(torch)":
+                detection_model = AutoDetectionModel.from_pretrained(
+                    model_type="ultralytics",
+                    model_path=str(ultralytics_weight_path),
+                    confidence_threshold=conf_thres,
+                    device="cuda",
+                )
+            elif sahi_type_key == "sahi(ultralytics)(trt)":
+                detection_model = UltralyticsTRTModel(
+                    model_path=str(utrt_path),
+                    confidence_threshold=conf_thres,
+                    device="cuda",
+                )
+            else:
+                detection_model = TRTDetectionModel(
+                    model_path=str(trt_path),
+                    confidence_threshold=conf_thres,
+                )
 
-        for _ in range(warmup_iters):
-            get_sliced_prediction(
-                SAHI_IMAGE_PATH,
-                detection_model,
-                slice_height=imgsz,
-                slice_width=imgsz,
-                overlap_height_ratio=overlap,
-                overlap_width_ratio=overlap,
-                verbose=0
-            )
+            for _ in range(warmup_iters):
+                get_sliced_prediction(
+                    SAHI_IMAGE_PATH,
+                    detection_model,
+                    slice_height=imgsz,
+                    slice_width=imgsz,
+                    overlap_height_ratio=overlap,
+                    overlap_width_ratio=overlap,
+                    verbose=0
+                )
+                
+            # Benchmark
+            timings = []
+            detection_counts = []
             
-        # Benchmark
-        timings = []
-        detection_counts = []
-        
-        for _ in tqdm(range(bench_iters)):
-            t0 = time.perf_counter()
-            result = get_sliced_prediction(
-                SAHI_IMAGE_PATH,
-                detection_model,
-                slice_height=imgsz,
-                slice_width=imgsz,
-                overlap_height_ratio=overlap,
-                overlap_width_ratio=overlap,
-                verbose=0
-            )
-            t1 = time.perf_counter()
+            for _ in tqdm(range(bench_iters)):
+                t0 = time.perf_counter()
+                result = get_sliced_prediction(
+                    SAHI_IMAGE_PATH,
+                    detection_model,
+                    slice_height=imgsz,
+                    slice_width=imgsz,
+                    overlap_height_ratio=overlap,
+                    overlap_width_ratio=overlap,
+                    verbose=0
+                )
+                t1 = time.perf_counter()
+                
+                timings.append(t1 - t0)
+                detection_counts.append(len(result.object_prediction_list))
+                
+            results = get_results(timings)
+            avg_detections = int(statistics.mean(detection_counts))
             
-            timings.append(t1 - t0)
-            detection_counts.append(len(result.object_prediction_list))
+            data[sahi_key][sahi_type_key] = {
+                "timing": results,
+                "detections": avg_detections,
+            }
             
-        results = get_results(timings)
-        avg_detections = int(statistics.mean(detection_counts))
-        
-        data[sahi_key]["official_sahi"] = {
-            "timing": results,
-            "detections": avg_detections,
-        }
-        
-        print(f"\t\tOfficial SAHI: {results['mean']:.2f}ms, {avg_detections} detections")
-        write_data(device, data)
+            print(f"\t\tOfficial SAHI: {results['mean']:.2f}ms, {avg_detections} detections")
+            write_data(device, data)
     
     # Print comparison if both exist
-    if "trtutils_sahi" in data[sahi_key] and "official_sahi" in data[sahi_key]:
-        trt_data = data[sahi_key]["trtutils_sahi"]
-        off_data = data[sahi_key]["official_sahi"]
+    ours_key = "sahi(trtutils)(trt)"
+    theirs_key = "sahi(ultralytics)(torch)"
+    if ours_key in data[sahi_key] and theirs_key in data[sahi_key]:
+        ours_data = data[sahi_key][ours_key]
+        theirs_data = data[sahi_key][theirs_key]
         
-        trt_mean = trt_data["timing"]["mean"]
-        off_mean = off_data["timing"]["mean"]
-        speedup = off_mean / trt_mean if trt_mean > 0 else 0
+        ours_mean = ours_data["timing"]["mean"]
+        theirs_mean = theirs_data["timing"]["mean"]
+        speedup = ours_mean / theirs_mean if ours_mean > 0 else 0
         
         print(f"\tComparison Summary:")
-        print(f"\t\tTRTUtils SAHI: {trt_mean:.2f}ms, {trt_data['detections']} detections")
-        print(f"\t\tOfficial SAHI: {off_mean:.2f}ms, {off_data['detections']} detections")
+        print(f"\t\ttrtutils SAHI: {ours_mean:.2f}ms, {ours_data['detections']} detections")
+        print(f"\t\tOfficial SAHI: {theirs_mean:.2f}ms, {theirs_data['detections']} detections")
         print(f"\t\tSpeedup: {speedup:.2f}x {'(TRTUtils faster)' if speedup > 1 else '(Official faster)'}")
 
 
