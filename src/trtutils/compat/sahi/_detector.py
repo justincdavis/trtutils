@@ -1,12 +1,13 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: ARG002, B006
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sahi.models.base import DetectionModel
-from sahi.prediction import ObjectPrediction
+from sahi.models.base import DetectionModel  # type: ignore[import-untyped]
+from sahi.prediction import ObjectPrediction  # type: ignore[import-untyped]
 
 from trtutils.image import Detector
 
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class TRTDetectionModel(DetectionModel):
+class TRTDetectionModel(DetectionModel):  # type: ignore[misc]
     def check_dependencies(self: Self) -> None:
         pass
 
@@ -36,6 +37,8 @@ class TRTDetectionModel(DetectionModel):
         shift_amount_list: list[list[int]] | None = [[0, 0]],
         full_shape_list: list[list[int]] | None = None,
     ) -> None:
+        if shift_amount_list is None:
+            shift_amount_list = [[0, 0]]
         if isinstance(shift_amount_list[0], (list, tuple)):
             shift_amount = shift_amount_list[0]
         else:
