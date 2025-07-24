@@ -55,7 +55,7 @@ format:
 
 check:
 	python3 -m ruff check ./demos --fix --preview --ignore=INP001,T201
-	python3 -m ruff check ./examples --fix --preview --ignore=INP001,T201
+	python3 -m ruff check ./examples --fix --preview --ignore=INP001,T201,D103
 	python3 -m ruff check ./tests --fix --preview --ignore=S101,D100,D104,PLR2004,T201
 	python3 -m ruff check ./src/trtutils --fix --preview
 

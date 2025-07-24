@@ -2,12 +2,13 @@
 #
 # MIT License
 # ruff: noqa: ARG002, B006
+# mypy: disable-error-code="import-untyped, import-not-found"
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sahi.models.base import DetectionModel  # type: ignore[import-untyped]
-from sahi.prediction import ObjectPrediction  # type: ignore[import-untyped]
+from sahi.models.base import DetectionModel
+from sahi.prediction import ObjectPrediction
 
 from trtutils.image import Detector
 

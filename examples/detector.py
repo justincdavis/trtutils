@@ -15,7 +15,6 @@ from trtutils.image import Detector
 
 
 def main() -> None:
-    """Run the example."""
     engine_dir = Path(__file__).parent.parent / "data" / "engines"
     engines = [
         engine_dir / "trt_yolov7t.engine",
@@ -28,7 +27,11 @@ def main() -> None:
         engine_dir / "trt_yolov10n_dla.engine",
     ]
 
-    img = cv2.imread(str(Path(__file__).parent.parent / "data" / "horse.jpg"))
+    img_path = str(Path(__file__).parent.parent / "data" / "horse.jpg")
+    img = cv2.imread(img_path)
+    if img is None:
+        err_msg = f"Failed to load image from {img_path}"
+        raise FileNotFoundError(err_msg)
 
     for engine in engines:
         detector = Detector(engine, warmup=True, preprocessor="cuda")

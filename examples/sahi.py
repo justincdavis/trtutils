@@ -17,7 +17,6 @@ from trtutils.image import SAHI, Detector
 
 
 def main() -> None:
-    """Run the example."""
     parser = argparse.ArgumentParser(description="SAHI example.")
     parser.add_argument(
         "--display",
@@ -29,7 +28,11 @@ def main() -> None:
     engine_dir = Path(__file__).parent.parent / "data" / "engines"
     engine_path = engine_dir / "trt_yolov10n.engine"
 
-    img = cv2.imread(str(Path(__file__).parent.parent / "data" / "cars.jpeg"))
+    img_path = str(Path(__file__).parent.parent / "data" / "cars.jpeg")
+    img = cv2.imread(img_path)
+    if img is None:
+        err_msg = f"Failed to load image from {img_path}"
+        raise FileNotFoundError(err_msg)
 
     detector = Detector(engine_path, warmup=True, preprocessor="trt")
 

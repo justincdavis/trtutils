@@ -57,12 +57,12 @@ def test_trt_preproc_engine() -> None:
     assert cpu_mean * 0.99 <= trt_mean <= cpu_mean * 1.01, (
         f"CPU: {cpu_mean}, TRT: {trt_mean}"
     )
-    assert np.min(trt_result) == np.min(cpu_result)
-    assert np.max(trt_result) == np.max(cpu_result)
+    assert np.min(trt_result) == np.min(cpu_result)  # type: ignore[operator]
+    assert np.max(trt_result) == np.max(cpu_result)  # type: ignore[operator]
 
     diff_mask = np.any(cpu_result != trt_result, axis=-1)
     avg_diff = np.mean(np.abs(cpu_result[diff_mask] - trt_result[diff_mask]))
-    num_pixels = np.sum(diff_mask)
+    num_pixels: float = np.sum(diff_mask)
     print(f"Num pixels: {num_pixels}, avg diff: {avg_diff}")
 
     # use small tolerances since the TRT engine uses fp16, and CPU uses fp32

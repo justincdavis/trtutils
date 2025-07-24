@@ -70,7 +70,11 @@ jit = [
 # buildtime/offline dependencies
 benchmark = [
     "trtutils[torch]",
-    "ultralytics>=8.3.100",
+    "trtutils[sahi]",
+]
+compat = [
+    "trtutils[torch]",
+    "trtutils[sahi]",
 ]
 ci = [
     "ruff>=0.11.13",
@@ -93,13 +97,19 @@ torch = [
     "onnx>=1.14.0",
     "onnxslim>=0.1.20",
 ]
+sahi = [
+    "ultralytics>=8.3.100",
+    "sahi>=0.11.31",
+]
 dev = [
     "trtutils[all]",
     "trtutils[benchmark]",
+    "trtutils[compat]",
     "trtutils[ci]",
     "trtutils[docs]",
     "trtutils[test]",
     "trtutils[torch]",
+    "trtutils[sahi]",
     "twine>=4.0.0",
     "wheel>=0.37.0",
     "bumpver>=2023.1126",

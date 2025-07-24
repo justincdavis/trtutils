@@ -12,8 +12,8 @@ from statistics import mean
 
 import cv2ext
 
-import trtutils
-from trtutils.impls.yolo import YOLO
+from trtutils import build_engine
+from trtutils.models import YOLO
 
 _ONNX = Path(__file__).parent / "data" / "yolov10n.onnx"
 _ENGINE = Path(__file__).parent / "data" / "yolov10n.engine"
@@ -22,7 +22,7 @@ _FPS_BUFFER_SIZE = 30
 
 def _main(source: str) -> None:
     if not _ENGINE.exists():
-        trtutils.build_engine(
+        build_engine(
             _ONNX,
             _ENGINE,
             fp16=True,

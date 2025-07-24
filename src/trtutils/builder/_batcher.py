@@ -220,6 +220,9 @@ class ImageBatcher(AbstractBatcher):
     def _get_image(self: Self, image_path: Path) -> np.ndarray:
         # read image
         img = cv2.imread(str(image_path.resolve()))
+        if img is None:
+            err_msg = f"Failed to load image from {image_path}"
+            raise FileNotFoundError(err_msg)
 
         # resize and rescale the image
         if self._resize_method == "letterbox":

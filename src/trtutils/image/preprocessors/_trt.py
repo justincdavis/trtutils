@@ -296,7 +296,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
                 f"{self._tag}: Reallocation -> new shape: {image.shape}, old shape: {self._input_binding.shape}",
             )
 
-        self._allocated_input_shape = image.shape  # type: ignore[assignment]
+        self._allocated_input_shape = image.shape
         self._input_binding = create_binding(
             image,
             is_input=True,
@@ -320,7 +320,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
             err_msg = f"{self._tag}: Unknown method for image resizing. Options are {self._valid_methods}"
             raise ValueError(err_msg)
 
-        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
+        img_shape: tuple[int, int, int] = image.shape
 
         if verbose:
             LOG.debug(
