@@ -106,6 +106,18 @@ class TRTEngineInterface(ABC):
         else:
             self._memsize = self._engine.device_memory_size
 
+        # additional verbose output about loaded engine information
+        if self._verbose:
+            LOG.info(f"Loaded engine: {self._name}")
+            LOG.info(f"\tDLA Core: {self._dla_core}")
+            LOG.info(f"\tPagelocked Mem: {self._pagelocked_mem}")
+            LOG.info(f"\tUnified Mem: {self._unified_mem}")
+            LOG.info(f"\tMemsize: {self._memsize}")
+            for i_binding in self._inputs:
+                LOG.info(f"\tInput: {i_binding.name} {i_binding.shape} {i_binding.dtype}")
+            for o_binding in self._outputs:
+                LOG.info(f"\tOutput: {o_binding.name} {o_binding.shape} {o_binding.dtype}")
+
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None
 

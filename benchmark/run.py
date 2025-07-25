@@ -76,7 +76,7 @@ FRAMEWORKS = [
 
 # sahi paths
 SAHI_MODELS = ULTRALYTICS_MODELS.copy()
-SAHI_IMAGE_PATH = str((REPO_DIR / "data" / "street.jpg").resolve())
+SAHI_IMAGE_PATH = str((REPO_DIR / "data" / "cars.jpeg").resolve())
 
 
 def get_results(data: list[float]) -> dict[str, float]:
@@ -113,7 +113,7 @@ def benchmark_trtutils(
     device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool
 ) -> None:
     from trtutils import TRTEngine, FLAGS
-    from trtutils.impls.yolo import YOLO
+    from trtutils.image import Detector
     from trtutils.builder import build_engine
 
     # resolve paths
@@ -157,7 +157,7 @@ def benchmark_trtutils(
                     raise FileNotFoundError(err_msg)
 
             print("\tBenchmarking trtutils engine...")
-            trt_yolo = YOLO(
+            trt_yolo = Detector(
                 engine_path=trt_path,
                 warmup_iterations=warmup_iters,
                 warmup=True,
@@ -168,8 +168,7 @@ def benchmark_trtutils(
             t_timing = []
             for _ in tqdm(range(bench_iters)):
                 t0 = time.perf_counter()
-                # trt_yolo.end2end(image)
-                trt_yolo.end2end(image, verbose=True)  # add verbose for debugging
+                trt_yolo.end2end(image)
                 t_timing.append(time.perf_counter() - t0)
             del trt_yolo
 

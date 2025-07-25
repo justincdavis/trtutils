@@ -97,6 +97,7 @@ class Classifier(ClassifierInterface):
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=unified_mem,
             no_warn=no_warn,
+            verbose=verbose,
         )
         self._unified_mem = self._engine.unified_mem
         self._resize_method: str = resize_method

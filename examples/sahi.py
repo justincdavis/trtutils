@@ -23,6 +23,11 @@ def main() -> None:
         action="store_true",
         help="Display the detections using cv2ext.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose output.",
+    )
     args = parser.parse_args()
 
     engine_dir = Path(__file__).parent.parent / "data" / "engines"
@@ -34,7 +39,7 @@ def main() -> None:
         err_msg = f"Failed to load image from {img_path}"
         raise FileNotFoundError(err_msg)
 
-    detector = Detector(engine_path, warmup=True, preprocessor="trt")
+    detector = Detector(engine_path, warmup=True, preprocessor="trt", verbose=args.verbose)
 
     t0 = time.perf_counter()
     bboxes = detector.end2end(img)
