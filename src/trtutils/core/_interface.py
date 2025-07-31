@@ -114,9 +114,13 @@ class TRTEngineInterface(ABC):
             LOG.info(f"\tUnified Mem: {self._unified_mem}")
             LOG.info(f"\tMemsize: {self._memsize}")
             for i_binding in self._inputs:
-                LOG.info(f"\tInput: {i_binding.name} {i_binding.shape} {i_binding.dtype}")
+                LOG.info(
+                    f"\tInput: {i_binding.name} {i_binding.shape} {i_binding.dtype}"
+                )
             for o_binding in self._outputs:
-                LOG.info(f"\tOutput: {o_binding.name} {o_binding.shape} {o_binding.dtype}")
+                LOG.info(
+                    f"\tOutput: {o_binding.name} {o_binding.shape} {o_binding.dtype}"
+                )
 
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None

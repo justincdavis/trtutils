@@ -39,7 +39,9 @@ def main() -> None:
         err_msg = f"Failed to load image from {img_path}"
         raise FileNotFoundError(err_msg)
 
-    detector = Detector(engine_path, warmup=True, preprocessor="trt", verbose=args.verbose)
+    detector = Detector(
+        engine_path, warmup=True, preprocessor="trt", verbose=args.verbose
+    )
 
     t0 = time.perf_counter()
     bboxes = detector.end2end(img)

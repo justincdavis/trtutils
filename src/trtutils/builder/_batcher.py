@@ -236,7 +236,7 @@ class ImageBatcher(AbstractBatcher):
         rescaled_img = rescale(resized_img, self._input_scale)
 
         # run the transpose operations and make contiguous
-        new_img = rescaled_img[np.newaxis, :]
+        new_img: np.ndarray = rescaled_img[np.newaxis, :]
         if self._order == "NCHW":
             new_img = np.transpose(new_img, (0, 3, 1, 2))
         else:

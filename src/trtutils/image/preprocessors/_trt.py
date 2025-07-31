@@ -34,6 +34,7 @@ if TYPE_CHECKING:
             from cuda import cudart
 
 _COLOR_CHANNELS = 3
+_IMAGE_DIMENSIONS = 3
 
 
 class TRTPreprocessor(GPUImagePreprocessor):
@@ -287,16 +288,17 @@ class TRTPreprocessor(GPUImagePreprocessor):
     def _reallocate_input(
         self: Self,
         image: np.ndarray,
+        img_shape: tuple[int, int, int],
         *,
         verbose: bool | None = None,
     ) -> None:
         if verbose:
             LOG.debug(f"{self._tag}: Reallocating input bindings")
             LOG.debug(
-                f"{self._tag}: Reallocation -> new shape: {image.shape}, old shape: {self._input_binding.shape}",
+                f"{self._tag}: Reallocation -> new shape: {img_shape}, old shape: {self._allocated_input_shape}",
             )
 
-        self._allocated_input_shape = image.shape
+        self._allocated_input_shape = img_shape
         self._input_binding = create_binding(
             image,
             is_input=True,
@@ -320,20 +322,22 @@ class TRTPreprocessor(GPUImagePreprocessor):
             err_msg = f"{self._tag}: Unknown method for image resizing. Options are {self._valid_methods}"
             raise ValueError(err_msg)
 
-        img_shape: tuple[int, int, int] = image.shape
-
         if verbose:
             LOG.debug(
-                f"{self._tag}: Image shape: {img_shape}, Allocated shape: {self._allocated_input_shape}",
+                f"{self._tag}: Image shape: {image.shape}, Allocated shape: {self._allocated_input_shape}",
             )
 
         # check if the image shape is the same as re have allocated with, if not update
-        if img_shape != self._allocated_input_shape:
-            if img_shape[2] != _COLOR_CHANNELS:
+        if image.shape != self._allocated_input_shape:
+            if image.ndim != _IMAGE_DIMENSIONS:
+                err_msg = f"{self._tag}: Image must be (height, width, channels)"
+                raise ValueError(err_msg)
+
+            if image.shape[2] != _COLOR_CHANNELS:
                 err_msg = f"{self._tag}: Can only preprocess color images."
                 raise ValueError(err_msg)
 
-            self._reallocate_input(image, verbose=verbose)
+            self._reallocate_input(image, image.shape, verbose=verbose)
 
         return resize
 
