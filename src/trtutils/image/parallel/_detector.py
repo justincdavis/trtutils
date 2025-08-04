@@ -28,6 +28,7 @@ class _InputPacket:
     data: np.ndarray
     ratio: tuple[float, float] | None = None
     padding: tuple[float, float] | None = None
+    preprocess_method: str | None = "trt"
     preprocessed: bool | None = None
     postprocess: bool | None = None
     no_copy: bool | None = None
@@ -499,6 +500,7 @@ class ParallelDetector:
         inputs: list[np.ndarray],
         ratios: list[tuple[float, float]] | None = None,
         paddings: list[tuple[float, float]] | None = None,
+        preprocess_method: str | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -516,6 +518,10 @@ class ParallelDetector:
             The optional ratio values for each input
         paddings : list[tuple[float, float]], optional
             The optional padding values for each input
+        preprocess_method : str, optional
+            The method to use for preprocessing.
+            Options are 'cpu', 'cuda', 'trt'. By default None, which
+            will use the preprocessor stated in the constructor.
         preprocessed : bool, optional
             Whether or not the inputs are preprocessed
         postprocess : bool, optional
@@ -548,6 +554,7 @@ class ParallelDetector:
                 modelid,
                 ratio,
                 padding,
+                preprocess_method=preprocess_method,
                 preprocessed=preprocessed,
                 postprocess=postprocess,
                 no_copy=no_copy,
@@ -560,6 +567,7 @@ class ParallelDetector:
         modelid: int,
         ratio: tuple[float, float] | None = None,
         padding: tuple[float, float] | None = None,
+        preprocess_method: str | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -579,6 +587,10 @@ class ParallelDetector:
             The ratio (if generated) by preprocess.
         padding : tuple[float, float], optional
             The padding (if generated) by postprocess
+        preprocess_method : str, optional
+            The method to use for preprocessing.
+            Options are 'cpu', 'cuda', 'trt'. By default None, which
+            will use the preprocessor stated in the constructor.
         preprocessed : bool, optional
             Whether or not the inputs are preprocessed.
         postprocess : bool, optional
@@ -597,6 +609,7 @@ class ParallelDetector:
             data=inputs,
             ratio=ratio,
             padding=padding,
+            preprocess_method=preprocess_method,
             preprocessed=preprocessed,
             postprocess=postprocess,
             no_copy=no_copy,
@@ -830,19 +843,58 @@ class ParallelDetector:
             LOG.debug(f"{self._tag}: Received data")
 
             img = data.data
-            if not data.preprocessed:
-                img, ratio, padding = detector.preprocess(img, no_copy=data.no_copy)
+
+            # path 1: GPU preprocess needed, make end2end optimizations
+            if not data.preprocessed and (
+                data.preprocess_method == "cuda" or data.preprocess_method == "trt"
+            ):
+                preproc = (
+                    detector._preproc_trt  # noqa: SLF001
+                    if data.preprocess_method == "trt"
+                    else detector._preproc_cuda  # noqa: SLF001
+                )
+                # if the preprocessor is None, need to use preprocess method to create it
+                if preproc is None:
+                    img, ratio, padding = detector.preprocess(
+                        img,
+                        method=data.preprocess_method,
+                        no_copy=data.no_copy,
+                    )
+                    t0 = time.perf_counter()
+                    results = detector.run(
+                        img,
+                        preprocessed=True,
+                        postprocess=data.postprocess,
+                        no_copy=data.no_copy,
+                    )
+                    t1 = time.perf_counter()
+                else:
+                    gpu_img, ratio, padding = preproc.direct_preproc(img, no_warn=True)
+                    t0 = time.perf_counter()
+                    results = detector.engine.direct_exec([gpu_img], no_warn=True)
+                    t1 = time.perf_counter()
+
+            # path 2: preprocess not needed, or CPU preprocessing
             else:
-                ratio = data.ratio
-                padding = data.padding
-            t0 = time.perf_counter()
-            results = detector.run(
-                img,
-                preprocessed=True,
-                postprocess=data.postprocess,
-                no_copy=data.no_copy,
-            )
-            t1 = time.perf_counter()
+                if not data.preprocessed:
+                    img, ratio, padding = detector.preprocess(
+                        img,
+                        method=data.preprocess_method,
+                        no_copy=data.no_copy,
+                    )
+                else:
+                    ratio = data.ratio
+                    padding = data.padding
+                t0 = time.perf_counter()
+                results = detector.run(
+                    img,
+                    preprocessed=True,
+                    postprocess=data.postprocess,
+                    no_copy=data.no_copy,
+                )
+                t1 = time.perf_counter()
+
+            # run the postprocessing
             if data.postprocess:
                 if ratio is None or padding is None:
                     err_msg = "Ratio/Padding is None, but postprocess set to True."
@@ -853,6 +905,7 @@ class ParallelDetector:
                     padding,
                     no_copy=data.no_copy,
                 )
+
             packet = _OutputPacket(
                 data=results,
                 ratio=ratio,
