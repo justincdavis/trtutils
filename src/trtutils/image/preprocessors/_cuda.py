@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import contextlib
-import math
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -17,8 +16,8 @@ from trtutils.core._memory import (
     memcpy_device_to_host_async,
     memcpy_host_to_device_async,
 )
-from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
-from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE, SST_FAST
+from trtutils.core._stream import destroy_stream, stream_synchronize
+from trtutils.image.kernels import SST_FAST
 
 from ._image_preproc import GPUImagePreprocessor
 
@@ -87,61 +86,20 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
 
-        Raises
-        ------
-        ValueError
-            If the resize method is not valid
-
         """
-        self._tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
-
-        LOG.debug(
-            f"{self._tag}: Creating preprocessor: {output_shape}, {output_range}, {dtype}",
+        tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
+        super().__init__(
+            output_shape,
+            output_range,
+            dtype,
+            resize,
+            stream,
+            threads,
+            tag,
+            pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
         )
-        # allocate static output sizes
-        self._o_shape = output_shape
-        self._o_range = output_range
-        self._o_dtype = dtype
-        self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
-        self._unified_mem = unified_mem
 
-        # compute scale and offset
-        self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
-        self._offset: float = self._o_range[0]
-
-        # resize methods
-        self._valid_methods = ["letterbox", "linear"]
-        if resize not in self._valid_methods:
-            err_msg = f"{self._tag}: Unknown method for image resizing. Options are {self._valid_methods}"
-            raise ValueError(err_msg)
-        self._resize = resize
-
-        # handle stream
-        self._stream: cudart.cudaStream_t
-        self._own_stream = False
-        if stream is not None:
-            self._stream = stream
-        else:
-            self._stream = create_stream()
-            self._own_stream = True
-
-        # allocate input, sst_input, output binding
-        # call resize kernel then sst kernel
-        # need input -> intermediate -> output
-        # for now just allocate 1080p image, reallocate when needed
-        # resize kernel input binding
-        self._allocated_input_shape: tuple[int, int, int] = (1080, 1920, 3)
-        dummy_input: np.ndarray = np.zeros(
-            self._allocated_input_shape,
-            dtype=np.uint8,
-        )
-        self._input_binding = create_binding(
-            dummy_input,
-            is_input=True,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=self._unified_mem,
-        )
-        # these two CUDA allocations are static size
         # sst kernel input binding
         dummy_sstinput: np.ndarray = np.zeros(
             (self._o_shape[1], self._o_shape[0], 3),
@@ -164,20 +122,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             unified_mem=self._unified_mem,
         )
 
-        # block and thread info
-        self._num_threads: tuple[int, int, int] = threads or (32, 32, 1)
-        self._num_blocks: tuple[int, int, int] = (
-            math.ceil(self._o_shape[0] / self._num_threads[0]),
-            math.ceil(self._o_shape[1] / self._num_threads[1]),
-            1,
-        )
-
-        # load the kernels
         # sst kernel always used
         self._sst_kernel = Kernel(*SST_FAST)
-        # either letterbox or linear is used
-        self._linear_kernel = Kernel(*LINEAR_RESIZE)
-        self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):

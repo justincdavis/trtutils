@@ -8,8 +8,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils._log import LOG
-
 from ._image_preproc import ImagePreprocessor
 from ._process import preprocess
 
@@ -52,15 +50,14 @@ class CPUPreprocessor(ImagePreprocessor):
             If used within a model class, will be the model tag.
 
         """
-        self._tag = "CPUPreprocessor" if tag is None else f"{tag}.CPUPreprocessor"
-        self._resize = resize
-
-        LOG.debug(
-            f"{self._tag}: Creating preprocessor: {output_shape}, {output_range}, {dtype}",
+        tag = "CPUPreprocessor" if tag is None else f"{tag}.CPUPreprocessor"
+        super().__init__(
+            output_shape,
+            output_range,
+            dtype,
+            resize,
+            tag,
         )
-        self._o_shape = output_shape
-        self._o_range = output_range
-        self._o_dtype = dtype
 
     def warmup(self: Self) -> None:
         """Compatibility function for CPU/CUDA parity."""
