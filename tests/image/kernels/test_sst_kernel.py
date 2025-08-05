@@ -108,8 +108,8 @@ def test_sst_results() -> None:
 
     assert cuda_result.shape == cpu_result.shape
     assert np.mean(cuda_result) == np.mean(cpu_result)
-    assert np.min(cuda_result) == np.min(cpu_result)  # type: ignore[operator]
-    assert np.max(cuda_result) == np.max(cpu_result)  # type: ignore[operator]
+    assert np.min(cuda_result) == np.min(cpu_result)
+    assert np.max(cuda_result) == np.max(cpu_result)
     assert np.allclose(cuda_result, cpu_result)
 
     destroy_stream(stream)

@@ -39,25 +39,8 @@ ci: ruff mypy
 
 ruff: format check
 
-mypy:
-	python3 -m mypy examples --config-file=pyproject.toml
-	python3 -m mypy tests --config-file=pyproject.toml
-	python3 -m mypy src/trtutils --config-file=pyproject.toml
-
 pyright:
 	python3 -m pyright --project=pyproject.toml
-
-format:
-	python3 -m ruff format ./demos
-	python3 -m ruff format ./examples
-	python3 -m ruff format ./tests
-	python3 -m ruff format ./src/trtutils
-
-check:
-	python3 -m ruff check ./demos --fix --preview --ignore=INP001,T201
-	python3 -m ruff check ./examples --fix --preview --ignore=INP001,T201,D103
-	python3 -m ruff check ./tests --fix --preview --ignore=S101,D100,D104,PLR2004,T201
-	python3 -m ruff check ./src/trtutils --fix --preview
 
 stubs:
 	python3 ci/make_stubs.py
@@ -72,6 +55,22 @@ ci_env:
 	. .venv-ci/bin/activate && \
 	uv pip install ".[all]" ".[ci]"
 
-gh_ci: ci_env
+mypy: ci_env
 	. .venv-ci/bin/activate && \
+	python3 -m mypy examples --config-file=pyproject.toml
+	python3 -m mypy tests --config-file=pyproject.toml
 	python3 -m mypy src/trtutils --config-file=pyproject.toml
+
+format: ci_env
+	. .venv-ci/bin/activate && \
+	python3 -m ruff format ./demos
+	python3 -m ruff format ./examples
+	python3 -m ruff format ./tests
+	python3 -m ruff format ./src/trtutils
+
+check: ci_env
+	. .venv-ci/bin/activate && \
+	python3 -m ruff check ./demos --fix --preview --ignore=INP001,T201
+	python3 -m ruff check ./examples --fix --preview --ignore=INP001,T201,D103
+	python3 -m ruff check ./tests --fix --preview --ignore=S101,D100,D104,PLR2004,T201
+	python3 -m ruff check ./src/trtutils --fix --preview
