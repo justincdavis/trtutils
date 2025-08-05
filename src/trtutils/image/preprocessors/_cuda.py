@@ -30,9 +30,6 @@ if TYPE_CHECKING:
         except (ImportError, ModuleNotFoundError):
             from cuda import cudart
 
-_COLOR_CHANNELS = 3
-_IMAGE_DIMENSIONS = 3
-
 
 class CUDAPreprocessor(GPUImagePreprocessor):
     """CUDA-based preprocessor for image processing models."""
@@ -219,115 +216,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         )
 
         return resize_kernel, resize_args, ratios, padding, sst_args
-
-    def _reallocate_input(
-        self: Self,
-        image: np.ndarray,
-        img_shape: tuple[int, int, int],
-        *,
-        verbose: bool | None = None,
-    ) -> None:
-        if verbose:
-            LOG.debug(f"{self._tag}: Reallocating input bindings")
-            LOG.debug(
-                f"{self._tag}: Reallocation -> new shape: {img_shape}, old shape: {self._allocated_input_shape}",
-            )
-
-        self._allocated_input_shape = img_shape
-        self._input_binding = create_binding(
-            image,
-            is_input=True,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=self._unified_mem,
-        )
-
-    def _validate_input(
-        self: Self,
-        image: np.ndarray,
-        resize: str | None = None,
-        *,
-        verbose: bool | None = None,
-    ) -> str:
-        if verbose:
-            LOG.debug(f"{self._tag}: validate_input")
-
-        # valid the method
-        resize = resize if resize is not None else self._resize
-        if resize not in self._valid_methods:
-            err_msg = f"{self._tag}: Unknown method for image resizing. Options are {self._valid_methods}"
-            raise ValueError(err_msg)
-
-        if verbose:
-            LOG.debug(
-                f"{self._tag}: Image shape: {image.shape}, Allocated shape: {self._allocated_input_shape}",
-            )
-
-        # check if the image shape is the same as re have allocated with, if not update
-        if image.shape != self._allocated_input_shape:
-            if image.ndim != _IMAGE_DIMENSIONS:
-                err_msg = f"{self._tag}: Image must be (height, width, channels)"
-                raise ValueError(err_msg)
-
-            if image.shape[2] != _COLOR_CHANNELS:
-                err_msg = f"{self._tag}: Can only preprocess color images."
-                raise ValueError(err_msg)
-
-            self._reallocate_input(image, image.shape, verbose=verbose)
-
-        return resize
-
-    def warmup(self: Self) -> None:
-        """
-        Warmup the CUDA preprocessor.
-
-        Allocates all CUDA memory and enables future passes
-        to be significantly faster.
-        """
-        rand_data: np.ndarray = np.random.default_rng().integers(
-            0,
-            255,
-            (*self._o_shape, 3),
-            dtype=np.uint8,
-        )
-        self.preprocess(rand_data, resize=self._resize, no_copy=True)
-
-    def __call__(
-        self: Self,
-        image: np.ndarray,
-        resize: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
-        """
-        Preprocess an image for the model.
-
-        Parameters
-        ----------
-        image : np.ndarray
-            The image to preprocess.
-        resize : str, optional
-            The method to resize the image with.
-            Options are [letterbox, linear], will use method
-            provided in constructor by default.
-        no_copy : bool, optional
-            If True, the outputs will not be copied out
-            from the cuda allocated host memory. Instead,
-            the host memory will be returned directly.
-            This memory WILL BE OVERWRITTEN INPLACE
-            by future preprocessing calls.
-        verbose : bool, optional
-            Whether or not to output additional information
-            to stdout. If not provided, will default to overall
-            engines verbose setting.
-
-        Returns
-        -------
-        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-            The preprocessed image, ratios, and padding used for resizing.
-
-        """
-        return self.preprocess(image, resize=resize, no_copy=no_copy, verbose=verbose)
 
     def preprocess(
         self: Self,

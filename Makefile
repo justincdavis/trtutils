@@ -66,3 +66,12 @@ test:
 	./ci/run_tests.sh
 
 release: clean ci test docs
+
+ci_env:
+	uv venv .venv-ci --python 3.9
+	. .venv-ci/bin/activate && \
+	uv pip install ".[all]" ".[ci]"
+
+gh_ci: ci_env
+	. .venv-ci/bin/activate && \
+	python3 -m mypy src/trtutils --config-file=pyproject.toml
