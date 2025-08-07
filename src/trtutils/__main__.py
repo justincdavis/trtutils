@@ -100,7 +100,7 @@ def _benchmark(args: SimpleNamespace) -> None:
     LOG.info("=" * 40)
 
 
-def _build(args: SimpleNamespace) -> None:
+def _build(args: SimpleNamespace, add_yolo_hook: bool = False) -> None:
     if args.int8:
         LOG.warning("Build API is unstable and experimental with INT8 quantization.")
 
@@ -126,6 +126,13 @@ def _build(args: SimpleNamespace) -> None:
             verbose=args.verbose,
         )
 
+    # handle hooks
+    hooks = []
+    if add_yolo_hook:
+        hooks.append(
+            trtutils.builder.hooks.yolo_efficient_nms_hook()
+        )
+
     # actual call
     trtutils.build_engine(
         onnx=Path(args.onnx),
@@ -145,6 +152,10 @@ def _build(args: SimpleNamespace) -> None:
         cache=args.cache,
         verbose=args.verbose,
     )
+
+
+def _build_yolo(args: SimpleNamespace) -> None:
+    _build(args, add_yolo_hook=True)
 
 
 def _can_run_on_dla(args: SimpleNamespace) -> None:
@@ -739,10 +750,13 @@ def _main() -> None:
     trtexec_parser.set_defaults(func=cli_trtexec)
 
     # build_engine parser
+    # alias 'build_yolo' to reuse the same args
+    # dispatch build_yolo to _build_yolo if that alias is used
     build_parser = subparsers.add_parser(
         "build",
         help="Build a TensorRT engine from an ONNX model.",
         parents=[general_parser, dla_parser, build_common_parser, calibration_parser],
+        aliases=["build_yolo"],
     )
     build_parser.add_argument(
         "--device",
@@ -946,6 +960,8 @@ def _main() -> None:
     if hasattr(args, "func"):
         if args.command == "trtexec":
             args.func(unknown)
+        elif args.command == "build_yolo":
+            _build_yolo(args)
         else:
             args.func(args)
     else:

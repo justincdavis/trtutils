@@ -4,6 +4,11 @@
 """
 Submodule containing tools for building TensorRT engines.
 
+Submodules
+----------
+:mod:`hooks`
+    Submodule containing hooks for building TensorRT engines.
+
 Classes
 -------
 :class:`EngineCalibrator`
@@ -28,6 +33,7 @@ Functions
 
 from __future__ import annotations
 
+from . import hooks
 from ._batcher import ImageBatcher
 from ._build import build_engine
 from ._calibrator import EngineCalibrator
@@ -41,6 +47,7 @@ __all__ = [
     "build_engine",
     "can_run_on_dla",
     "read_onnx",
+    "hooks",
 ]
 
 import contextlib
