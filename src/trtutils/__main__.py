@@ -129,8 +129,27 @@ def _build(args: SimpleNamespace, add_yolo_hook: bool = False) -> None:
     # handle hooks
     hooks = []
     if add_yolo_hook:
+        # Collect YOLO EfficientNMS hook parameters from args (with defaults)
+        num_classes = getattr(args, "num_classes", 80)
+        score_threshold = getattr(args, "score_threshold", 0.25)
+        iou_threshold = getattr(args, "iou_threshold", 0.45)
+        max_output_boxes = getattr(args, "max_output_boxes", 100)
+        class_agnostic = getattr(args, "class_agnostic", False)
+        box_coding = getattr(args, "box_coding", "CENTER_SIZE")
+
+        # Normalize box_coding: allow numeric strings 0/1
+        if isinstance(box_coding, str) and box_coding in {"0", "1"}:
+            box_coding = int(box_coding)
+
         hooks.append(
-            trtutils.builder.hooks.yolo_efficient_nms_hook()
+            trtutils.builder.hooks.yolo_efficient_nms_hook(
+                num_classes=num_classes,
+                score_threshold=score_threshold,
+                iou_threshold=iou_threshold,
+                max_output_boxes=max_output_boxes,
+                class_agnostic=class_agnostic,
+                box_coding=box_coding,
+            )
         )
 
     # actual call
@@ -149,6 +168,7 @@ def _build(args: SimpleNamespace, add_yolo_hook: bool = False) -> None:
         ignore_timing_mismatch=args.ignore_timing_mismatch,
         fp16=args.fp16,
         int8=args.int8,
+        hooks=hooks,
         cache=args.cache,
         verbose=args.verbose,
     )
@@ -695,6 +715,31 @@ def _main() -> None:
         help="Suppress warnings from TensorRT.",
     )
 
+    # build device/precision args (to be inherited by build and build_yolo)
+    build_device_parser = argparse.ArgumentParser(add_help=False)
+    build_device_parser.add_argument(
+        "--device",
+        "-d",
+        choices=["gpu", "dla", "GPU", "DLA"],
+        default="gpu",
+        help="Device to use for the engine. Default is 'gpu'.",
+    )
+    build_device_parser.add_argument(
+        "--gpu_fallback",
+        action="store_true",
+        help="Allow GPU fallback for unsupported layers when building for DLA.",
+    )
+    build_device_parser.add_argument(
+        "--fp16",
+        action="store_true",
+        help="Quantize the engine to FP16 precision.",
+    )
+    build_device_parser.add_argument(
+        "--int8",
+        action="store_true",
+        help="Quantize the engine to INT8 precision.",
+    )
+
     # main parser
     parser = argparse.ArgumentParser(
         description="Utilities for TensorRT.",
@@ -750,37 +795,55 @@ def _main() -> None:
     trtexec_parser.set_defaults(func=cli_trtexec)
 
     # build_engine parser
-    # alias 'build_yolo' to reuse the same args
-    # dispatch build_yolo to _build_yolo if that alias is used
     build_parser = subparsers.add_parser(
         "build",
         help="Build a TensorRT engine from an ONNX model.",
-        parents=[general_parser, dla_parser, build_common_parser, calibration_parser],
-        aliases=["build_yolo"],
-    )
-    build_parser.add_argument(
-        "--device",
-        "-d",
-        choices=["gpu", "dla", "GPU", "DLA"],
-        default="gpu",
-        help="Device to use for the engine. Default is 'gpu'.",
-    )
-    build_parser.add_argument(
-        "--gpu_fallback",
-        action="store_true",
-        help="Allow GPU fallback for unsupported layers when building for DLA.",
-    )
-    build_parser.add_argument(
-        "--fp16",
-        action="store_true",
-        help="Quantize the engine to FP16 precision.",
-    )
-    build_parser.add_argument(
-        "--int8",
-        action="store_true",
-        help="Quantize the engine to INT8 precision.",
+        parents=[general_parser, dla_parser, build_common_parser, calibration_parser, build_device_parser],
     )
     build_parser.set_defaults(func=_build)
+
+    # build_yolo parser
+    build_yolo_parser = subparsers.add_parser(
+        "build_yolo",
+        help="Build a TensorRT engine from an ONNX model and inject NMS.",
+        parents=[general_parser, dla_parser, build_common_parser, calibration_parser, build_device_parser],
+    )
+    build_yolo_parser.add_argument(
+        "--num_classes",
+        type=int,
+        default=80,
+        help="Number of classes for NMS. Default is 80.",
+    )
+    build_yolo_parser.add_argument(
+        "--conf_threshold",
+        type=float,
+        default=0.25,
+        help="Score threshold for NMS. Default is 0.25.",
+    )
+    build_yolo_parser.add_argument(
+        "--iou_threshold",
+        type=float,
+        default=0.5,
+        help="IOU threshold for NMS. Default is 0.5.",
+    )
+    build_yolo_parser.add_argument(
+        "--topk",
+        type=int,
+        default=100,
+        help="Top-k boxes for NMS. Default is 100.",
+    )
+    build_yolo_parser.add_argument(
+        "--box_coding",
+        choices=["corner", "center_size"],
+        default="center_size",
+        help="Box coding for TRT EfficientNMS. 'corner' or 'center_size'. Default is center_size.",
+    )
+    build_yolo_parser.add_argument(
+        "--class_agnostic",
+        action="store_true",
+        help="Use class-agnostic NMS.",
+    )
+    build_yolo_parser.set_defaults(func=_build_yolo)
 
     # can_run_on_dla parser
     can_run_on_dla_parser = subparsers.add_parser(
@@ -960,8 +1023,6 @@ def _main() -> None:
     if hasattr(args, "func"):
         if args.command == "trtexec":
             args.func(unknown)
-        elif args.command == "build_yolo":
-            _build_yolo(args)
         else:
             args.func(args)
     else:
