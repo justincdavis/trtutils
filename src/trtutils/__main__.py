@@ -100,7 +100,7 @@ def _benchmark(args: SimpleNamespace) -> None:
     LOG.info("=" * 40)
 
 
-def _build(args: SimpleNamespace, add_yolo_hook: bool = False) -> None:
+def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
     if args.int8:
         LOG.warning("Build API is unstable and experimental with INT8 quantization.")
 
@@ -129,26 +129,14 @@ def _build(args: SimpleNamespace, add_yolo_hook: bool = False) -> None:
     # handle hooks
     hooks = []
     if add_yolo_hook:
-        # Collect YOLO EfficientNMS hook parameters from args (with defaults)
-        num_classes = getattr(args, "num_classes", 80)
-        score_threshold = getattr(args, "score_threshold", 0.25)
-        iou_threshold = getattr(args, "iou_threshold", 0.45)
-        max_output_boxes = getattr(args, "max_output_boxes", 100)
-        class_agnostic = getattr(args, "class_agnostic", False)
-        box_coding = getattr(args, "box_coding", "CENTER_SIZE")
-
-        # Normalize box_coding: allow numeric strings 0/1
-        if isinstance(box_coding, str) and box_coding in {"0", "1"}:
-            box_coding = int(box_coding)
-
         hooks.append(
             trtutils.builder.hooks.yolo_efficient_nms_hook(
-                num_classes=num_classes,
-                score_threshold=score_threshold,
-                iou_threshold=iou_threshold,
-                max_output_boxes=max_output_boxes,
-                class_agnostic=class_agnostic,
-                box_coding=box_coding,
+                num_classes=args.num_classes,
+                conf_threshold=args.conf_threshold,
+                iou_threshold=args.iou_threshold,
+                top_k=args.top_k,
+                class_agnostic=args.class_agnostic,
+                box_coding=args.box_coding,
             )
         )
 
@@ -798,7 +786,13 @@ def _main() -> None:
     build_parser = subparsers.add_parser(
         "build",
         help="Build a TensorRT engine from an ONNX model.",
-        parents=[general_parser, dla_parser, build_common_parser, calibration_parser, build_device_parser],
+        parents=[
+            general_parser,
+            dla_parser,
+            build_common_parser,
+            calibration_parser,
+            build_device_parser,
+        ],
     )
     build_parser.set_defaults(func=_build)
 
@@ -806,7 +800,13 @@ def _main() -> None:
     build_yolo_parser = subparsers.add_parser(
         "build_yolo",
         help="Build a TensorRT engine from an ONNX model and inject NMS.",
-        parents=[general_parser, dla_parser, build_common_parser, calibration_parser, build_device_parser],
+        parents=[
+            general_parser,
+            dla_parser,
+            build_common_parser,
+            calibration_parser,
+            build_device_parser,
+        ],
     )
     build_yolo_parser.add_argument(
         "--num_classes",
@@ -827,7 +827,7 @@ def _main() -> None:
         help="IOU threshold for NMS. Default is 0.5.",
     )
     build_yolo_parser.add_argument(
-        "--topk",
+        "--top_k",
         type=int,
         default=100,
         help="Top-k boxes for NMS. Default is 100.",

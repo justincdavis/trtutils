@@ -10,6 +10,7 @@ Functions
     Hook for building YOLO models with EfficientNMS.
 
 """
+
 from __future__ import annotations
 
 from ._yolo import yolo_efficient_nms_hook

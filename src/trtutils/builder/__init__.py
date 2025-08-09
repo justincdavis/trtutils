@@ -46,8 +46,8 @@ __all__ = [
     "build_dla_engine",
     "build_engine",
     "can_run_on_dla",
-    "read_onnx",
     "hooks",
+    "read_onnx",
 ]
 
 import contextlib

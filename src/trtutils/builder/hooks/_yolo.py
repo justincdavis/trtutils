@@ -11,38 +11,30 @@ import numpy as np
 with contextlib.suppress(ImportError):
     import tensorrt as trt
 
+from ._common import make_plugin_field
 
-def _make_plugin_field(name: str, value: int | float | list[int] | list[float]) -> trt.PluginField:
-    """Create a TensorRT PluginField with appropriate dtype inferred from value."""
-    if isinstance(value, (list, tuple)):
-        # Infer dtype from first element; default to float32 for floats, int32 for ints
-        dtype = trt.PluginFieldType.FLOAT32 if isinstance(value[0], float) else trt.PluginFieldType.INT32
-        arr = np.array(value, dtype=np.float32 if dtype == trt.PluginFieldType.FLOAT32 else np.int32)
-    elif isinstance(value, float):
-        dtype = trt.PluginFieldType.FLOAT32
-        arr = np.array([value], dtype=np.float32)
-    else:
-        dtype = trt.PluginFieldType.INT32
-        arr = np.array([value], dtype=np.int32)
-    return trt.PluginField(name, arr, dtype)
+_YOLO_LIKE_DIMS = 3
 
 
-def _get_output_like_yolo(network: trt.INetworkDefinition) -> trt.ITensor:
-    """Find a YOLO-like output tensor shaped (N, 84, M) or (N, M, 84)."""
+def _get_yolo_output_tensor(
+    network: trt.INetworkDefinition, num_classes: int
+) -> trt.ITensor:
     for i in range(network.num_outputs):
         out = network.get_output(i)
         dims = out.shape
-        if len(dims) != 3:
+        if len(dims) != _YOLO_LIKE_DIMS:
             continue
-        if dims[1] == 84 or dims[2] == 84:
+        if dims[1] == num_classes or dims[2] == num_classes:
             return out
-    raise RuntimeError("Could not find YOLO-like output with 3D shape containing channel size 84.")
+    err_msg = f"Could not find YOLO-like output with 3D shape containing channel size {num_classes}."
+    raise RuntimeError(err_msg)
 
 
-def _transpose_nc_to_nlc(network: trt.INetworkDefinition, tensor: trt.ITensor) -> trt.ITensor:
-    """Ensure tensor is (N, num_boxes, C=84). If it's (N, 84, num_boxes), transpose to (0, 2, 1)."""
+def _transpose_nc_to_nlc(
+    network: trt.INetworkDefinition, tensor: trt.ITensor, num_classes: int
+) -> trt.ITensor:
     dims = tensor.shape
-    if dims[1] == 84 and dims[2] != 84:
+    if dims[1] == num_classes and dims[2] != num_classes:
         shuffle = network.add_shuffle(tensor)
         shuffle.first_transpose = (0, 2, 1)
         return shuffle.get_output(0)
@@ -55,97 +47,113 @@ def _slice_dynamic(
     start_vals: list[int],
     size_last_dim: int,
 ) -> trt.ITensor:
-    """Slice tensor dynamically on the last dimension using shape tensors.
+    if len(start_vals) != _YOLO_LIKE_DIMS:
+        err_msg = f"Internal error: expected start_vals to be a list of length {_YOLO_LIKE_DIMS}, got {len(start_vals)}."
+        raise ValueError(err_msg)
 
-    Keeps batch and num_boxes from input, and sets last dim to provided constant size.
-    start_vals is a list of length 3 for (start_b, start_boxes, start_c).
-    """
-    assert len(start_vals) == 3
-
-    # Build dynamic size [B, num_boxes, size_last_dim]
     shape_layer = network.add_shape(tensor)
-    shape_tensor = shape_layer.get_output(0)  # [3] shape tensor (int32 or int64)
-
-    # Ensure all constants used with shape tensors match the shape tensor dtype
+    shape_tensor = shape_layer.get_output(0)
     st_dtype = shape_tensor.dtype
     np_int_dtype = np.int64 if st_dtype == trt.DataType.INT64 else np.int32
 
-    # Gather batch dim (0) and num_boxes dim (1)
     def gather_dim(dim_index: int) -> trt.ITensor:
-        idx_const = network.add_constant((1,), np.array([dim_index], dtype=np_int_dtype)).get_output(0)
+        idx_const = network.add_constant(
+            (1,), np.array([dim_index], dtype=np_int_dtype)
+        ).get_output(0)
         return network.add_gather(shape_tensor, idx_const, 0).get_output(0)
 
     b_dim = gather_dim(0)
     nb_dim = gather_dim(1)
-    last_const = network.add_constant((1,), np.array([size_last_dim], dtype=np_int_dtype)).get_output(0)
-
+    last_const = network.add_constant(
+        (1,), np.array([size_last_dim], dtype=np_int_dtype)
+    ).get_output(0)
     size_concat = network.add_concatenation([b_dim, nb_dim, last_const])
     size_concat.axis = 0
     dyn_size = size_concat.get_output(0)
 
-    # Start and stride tensors
-    start_const = network.add_constant((3,), np.array(start_vals, dtype=np_int_dtype)).get_output(0)
-    stride_const = network.add_constant((3,), np.array([1, 1, 1], dtype=np_int_dtype)).get_output(0)
-
-    # Create slice with dummy dims then set dynamic inputs
+    start_const = network.add_constant(
+        (3,), np.array(start_vals, dtype=np_int_dtype)
+    ).get_output(0)
+    stride_const = network.add_constant(
+        (3,), np.array([1, 1, 1], dtype=np_int_dtype)
+    ).get_output(0)
     slice_layer = network.add_slice(tensor, (0, 0, 0), (1, 1, size_last_dim), (1, 1, 1))
     slice_layer.set_input(1, start_const)
     slice_layer.set_input(2, dyn_size)
     slice_layer.set_input(3, stride_const)
+
     return slice_layer.get_output(0)
 
 
 def yolo_efficient_nms_hook(
     num_classes: int = 80,
-    score_threshold: float = 0.25,
-    iou_threshold: float = 0.45,
-    max_output_boxes: int = 100,
-    class_agnostic: bool = False,
+    conf_threshold: float = 0.25,
+    iou_threshold: float = 0.5,
+    top_k: int = 100,
     box_coding: str = "center_size",
+    *,
+    class_agnostic: bool | None = None,
 ) -> trt.INetworkDefinition:
     """
-    Create a hook that injects EfficientNMS into a YOLO network with raw output shaped
-    like (N, 84, num_boxes) or (N, num_boxes, 84).
+    Create a hook to add EfficientNMS_TRT plugin to YOLO-like output network.
+
+    Expects a network with output shaped (N, num_classes, num_boxes) or (N, num_boxes, num_classes).
 
     - Interprets first 4 channels as box coordinates and the remaining as class scores
-    - Uses EfficientNMS plugin if available; falls back to BatchedNMSDynamic otherwise
+    - Uses EfficientNMS_TRT plugin if available; falls back to BatchedNMSDynamic otherwise
     - Replaces raw network outputs with NMS outputs: num_dets, det_boxes, det_scores, det_classes
 
-    Parameters can be customized to match dataset/model specifics.
+    Parameters
+    ----------
+    num_classes : int, optional
+        Number of classes in the dataset.
+        Default is 80.
+    conf_threshold : float, optional
+        Confidence threshold for filtering boxes.
+        Default is 0.25.
+    iou_threshold : float, optional
+        IoU threshold for NMS.
+        Default is 0.5.
+    top_k : int, optional
+        Number of top detections to keep.
+        Default is 100.
+    class_agnostic : bool, optional
+        Whether to use class-agnostic NMS.
+        Default is False.
+    box_coding : str, optional
+        Coding of the bounding boxes.
+        Default is "center_size".
+
+    Returns
+    -------
+    Callable[[trt.INetworkDefinition], trt.INetworkDefinition]
+        A hook that can be used to modify a network.
+
     """
 
     def _hook(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
-        # Locate YOLO raw output and unmark it
-        raw_out = _get_output_like_yolo(network)
-        # Keep a copy of all outputs so we can unmark later
+        boxes_classes_dim = num_classes + 4
+        raw_out = _get_yolo_output_tensor(network, boxes_classes_dim)
         old_outputs = [network.get_output(i) for i in range(network.num_outputs)]
-
-        # Ensure layout is (N, num_boxes, 84)
-        yolo_out = _transpose_nc_to_nlc(network, raw_out)
-
-        # Boxes: first 4 channels; Scores: last num_classes channels
+        yolo_out = _transpose_nc_to_nlc(network, raw_out, boxes_classes_dim)
         boxes = _slice_dynamic(network, yolo_out, [0, 0, 0], 4)
-        scores = _slice_dynamic(network, yolo_out, [0, 0, 4], num_classes)
+        scores = _slice_dynamic(network, yolo_out, [0, 0, 4], boxes_classes_dim)
 
-        # Try EfficientNMS_TRT first
         registry = trt.get_plugin_registry()
         eff_creator = registry.get_plugin_creator("EfficientNMS_TRT", "1", "")
         if eff_creator is None:
             err_msg = "EfficientNMS_TRT plugin not found."
             raise RuntimeError(err_msg)
 
-        # Map box_coding to int
-        coding_map = {"corner": 0, "center_size": 1}
-        box_coding_int = coding_map.get(box_coding, 1)
-
+        box_coding_int = 0 if box_coding == "corner" else 1
         fields = [
-            _make_plugin_field("background_class", -1),
-            _make_plugin_field("max_output_boxes", int(max_output_boxes)),
-            _make_plugin_field("score_threshold", float(score_threshold)),
-            _make_plugin_field("iou_threshold", float(iou_threshold)),
-            _make_plugin_field("box_coding", int(box_coding_int)),
-            _make_plugin_field("score_activation", 0),
-            _make_plugin_field("class_agnostic", 1 if class_agnostic else 0),
+            make_plugin_field("background_class", -1),
+            make_plugin_field("max_output_boxes", int(top_k)),
+            make_plugin_field("score_threshold", float(conf_threshold)),
+            make_plugin_field("iou_threshold", float(iou_threshold)),
+            make_plugin_field("box_coding", int(box_coding_int)),
+            make_plugin_field("score_activation", 0),
+            make_plugin_field("class_agnostic", 1 if class_agnostic else 0),
         ]
         pfc = trt.PluginFieldCollection(fields)
         plugin = eff_creator.create_plugin("efficient_nms", pfc)
@@ -157,13 +165,10 @@ def yolo_efficient_nms_hook(
             plugin_layer.get_output(2),
             plugin_layer.get_output(3),
         )
-    
 
-        # Unmark old outputs
         for t in old_outputs:
             network.unmark_output(t)
 
-        # Mark new outputs
         num_dets.name = "num_dets"
         det_boxes.name = "det_boxes"
         det_scores.name = "det_scores"
@@ -177,4 +182,3 @@ def yolo_efficient_nms_hook(
         return network
 
     return _hook
-
