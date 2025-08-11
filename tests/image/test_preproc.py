@@ -20,6 +20,14 @@ CUDA_MAG_BOUNDS = 0.01
 TRT_MAG_BOUNDS = 0.01
 
 
+def _read_image(path: str) -> np.ndarray:
+    img = cv2.imread(path)
+    if img is None:
+        err_msg = f"Failed to read image: {path}"
+        raise FileNotFoundError(err_msg)
+    return img
+
+
 def test_cpu_preproc_loads() -> None:
     """Test if the CPUPreprocessor loads."""
     preproc = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
@@ -41,7 +49,7 @@ def test_trt_preproc_loads() -> None:
 def test_cpu_preproc_duplicate() -> None:
     """Checks that the same data will give same results with CPU."""
     preproc = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
-    img = cv2.imread(HORSE_IMAGE_PATH)
+    img = _read_image(HORSE_IMAGE_PATH)
     result1 = preproc.preprocess(img)[0]
     result2 = preproc.preprocess(img)[0]
     assert np.array_equal(result1, result2)
@@ -50,7 +58,7 @@ def test_cpu_preproc_duplicate() -> None:
 def test_cuda_preproc_duplicate() -> None:
     """Checks that the same data will give same results with CUDA."""
     preproc = CUDAPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
-    img = cv2.imread(HORSE_IMAGE_PATH)
+    img = _read_image(HORSE_IMAGE_PATH)
     result1 = preproc.preprocess(img)[0]
     result2 = preproc.preprocess(img)[0]
     assert np.array_equal(result1, result2)
@@ -59,7 +67,7 @@ def test_cuda_preproc_duplicate() -> None:
 def test_trt_preproc_duplicate() -> None:
     """Checks that the same data will give same results with TRT."""
     preproc = TRTPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32))
-    img = cv2.imread(HORSE_IMAGE_PATH)
+    img = _read_image(HORSE_IMAGE_PATH)
     result1 = preproc.preprocess(img)[0]
     result2 = preproc.preprocess(img)[0]
     assert np.array_equal(result1, result2)
@@ -73,7 +81,7 @@ def _assess_parity(
     method: str,
 ) -> None:
     for img_path in IMAGE_PATHS:
-        img = cv2.imread(img_path)
+        img = _read_image(img_path)
         result1, ratios1, padding1 = preproc1.preprocess(img, resize=method)
         result2, ratios2, padding2 = preproc2.preprocess(img, resize=method)
         assert ratios1 == ratios2
@@ -139,7 +147,7 @@ def _cuda_perf(*, pagelocked_mem: bool) -> tuple[float, float]:
     cuda = CUDAPreprocessor(
         (640, 640), (0.0, 1.0), np.dtype(np.float32), pagelocked_mem=pagelocked_mem
     )
-    img = cv2.imread(HORSE_IMAGE_PATH)
+    img = _read_image(HORSE_IMAGE_PATH)
     for _ in range(10):
         cpu.preprocess(img)
         cuda.preprocess(img)
@@ -169,7 +177,7 @@ def _trt_perf(*, pagelocked_mem: bool) -> tuple[float, float]:
     trt = TRTPreprocessor(
         (640, 640), (0.0, 1.0), np.dtype(np.float32), pagelocked_mem=pagelocked_mem
     )
-    img = cv2.imread(HORSE_IMAGE_PATH)
+    img = _read_image(HORSE_IMAGE_PATH)
     for _ in range(10):
         cpu.preprocess(img)
         trt.preprocess(img)

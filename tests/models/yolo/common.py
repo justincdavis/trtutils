@@ -210,7 +210,15 @@ def yolo_run_multiple_threads(
 def yolo_results(
     version: int, preprocessor: str = "cpu", *, use_dla: bool | None = None
 ) -> None:
-    """Check if the results are valid for a YOLO model."""
+    """
+    Check if the results are valid for a YOLO model.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the image file does not exist.
+
+    """
     engine_path = build_yolo(version, use_dla=use_dla)
 
     scale = (0, 1) if version != 0 else (0, 255)
@@ -228,6 +236,9 @@ def yolo_results(
         IMAGE_PATHS,
     ):
         image = cv2.imread(ipath)
+        if image is None:
+            err_msg = f"Failed to read image: {ipath}"
+            raise FileNotFoundError(err_msg)
 
         outputs = yolo.run(image)
         bboxes = [bbox for (bbox, _, _) in yolo.get_detections(outputs)]
@@ -241,7 +252,15 @@ def yolo_results(
 
 
 def yolo_swapping_preproc_results(version: int, *, use_dla: bool | None = None) -> None:
-    """Check if the results are valid for a YOLO model."""
+    """
+    Check if the results are valid for a YOLO model.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the image file does not exist.
+
+    """
     engine_path = build_yolo(version, use_dla=use_dla)
 
     scale = (0, 1) if version != 0 else (0, 255)
@@ -259,6 +278,10 @@ def yolo_swapping_preproc_results(version: int, *, use_dla: bool | None = None) 
         IMAGE_PATHS,
     ):
         image = cv2.imread(ipath)
+        if image is None:
+            err_msg = f"Failed to read image: {ipath}"
+            raise FileNotFoundError(err_msg)
+
         for preproc in ["cpu", "cuda", "trt"]:
             tensor, ratios, padding = yolo.preprocess(
                 image, method=preproc, no_copy=True

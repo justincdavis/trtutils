@@ -36,10 +36,22 @@ def test_linear_compile() -> None:
 
 
 def test_linear_results() -> None:
-    """Test linear resize kernel results against OpenCV's linear interpolation."""
+    """
+    Test linear resize kernel results against OpenCV's linear interpolation.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the image file does not exist.
+
+    """
     output_shape = (640, 480)
 
     img = cv2.imread(IMG_PATH)
+    if img is None:
+        err_msg = f"Failed to read image: {IMG_PATH}"
+        raise FileNotFoundError(err_msg)
+
     resized_img = cv2.resize(img, output_shape, interpolation=cv2.INTER_LINEAR)
 
     height, width = img.shape[:2]
