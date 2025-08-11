@@ -74,7 +74,7 @@ release: clean ci test docs
 ci_env:
 	uv venv .venv-ci --python 3.9
 	. .venv-ci/bin/activate && \
-	uv pip install ".[all]" ".[ci]"
+	uv pip install ".[all]" ".[ci]" ".[test]"
 
 mypy_venv: ci_env
 	. .venv-ci/bin/activate && \

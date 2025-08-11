@@ -37,10 +37,22 @@ def test_letterbox_compile() -> None:
 
 
 def test_letterbox_results() -> None:
-    """Test letterbox kernel results against CPU implementation."""
+    """
+    Test letterbox kernel results against CPU implementation.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the image file does not exist.
+
+    """
     output_shape = (640, 480)
 
     img = cv2.imread(IMG_PATH)
+    if img is None:
+        err_msg = f"Failed to read image: {IMG_PATH}"
+        raise FileNotFoundError(err_msg)
+
     resized_img, _, _ = letterbox(img, output_shape)
 
     height, width = img.shape[:2]
