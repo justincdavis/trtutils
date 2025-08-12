@@ -4,6 +4,13 @@
 """
 Postprocessors for images.
 
+Submodules
+----------
+classification
+    Classification postprocessing module.
+detection
+    Detection postprocessing module.
+
 Functions
 ---------
 :func:`postprocess_detections`
@@ -19,10 +26,13 @@ Functions
 
 from __future__ import annotations
 
-from ._classifier import get_classifications, postprocess_classifications
-from ._detection import get_detections, postprocess_detections
+from . import classification, detection
+from .classification._process import get_classifications, postprocess_classifications
+from .detection._process import get_detections, postprocess_detections
 
 __all__ = [
+    "classification",
+    "detection",
     "get_classifications",
     "get_detections",
     "postprocess_classifications",

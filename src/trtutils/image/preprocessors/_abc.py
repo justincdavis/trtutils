@@ -114,10 +114,24 @@ class ImagePreprocessor(ABC):
         self._scale = (self._o_range[1] - self._o_range[0]) / 255.0
         self._offset = self._o_range[0]
 
-    @abstractmethod
-    def warmup(self: Self) -> None: ...
+    def warmup(self: Self) -> None:
+        """
+        Warmup the preprocessor.
 
-    @abstractmethod
+        Allocates all memory and enables future passes
+        to be significantly faster.
+
+        CPU preprocessors perform a pass, but have no memory to allocate.
+        No speedup for CPU based preprocessors.
+        """
+        rand_data: np.ndarray = np.random.default_rng().integers(
+            0,
+            255,
+            (*self._o_shape, 3),
+            dtype=np.uint8,
+        )
+        self.preprocess(rand_data, resize=self._resize, no_copy=True)
+
     def __call__(
         self: Self,
         image: np.ndarray,
@@ -125,7 +139,31 @@ class ImagePreprocessor(ABC):
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]: ...
+    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+        """
+        Preprocess an image for the model.
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The image to preprocess.
+        resize : str
+            The method to resize the image with.
+            By default letterbox, options are [letterbox, linear]
+        no_copy : bool, optional
+            Compatibility parameter for CUDA parity.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+
+        Returns
+        -------
+        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
+            The preprocessed image, ratios, and padding used for resizing.
+
+        """
+        return self.preprocess(image, resize=resize, no_copy=no_copy, verbose=verbose)
 
     @abstractmethod
     def preprocess(
@@ -238,59 +276,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
         # either letterbox or linear is used
         self._linear_kernel = Kernel(*LINEAR_RESIZE)
         self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
-
-    def warmup(self: Self) -> None:
-        """
-        Warmup the CUDA preprocessor.
-
-        Allocates all CUDA memory and enables future passes
-        to be significantly faster.
-        """
-        rand_data: np.ndarray = np.random.default_rng().integers(
-            0,
-            255,
-            (*self._o_shape, 3),
-            dtype=np.uint8,
-        )
-        self.preprocess(rand_data, resize=self._resize, no_copy=True)
-
-    def __call__(
-        self: Self,
-        image: np.ndarray,
-        resize: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
-        """
-        Preprocess an image for the model.
-
-        Parameters
-        ----------
-        image : np.ndarray
-            The image to preprocess.
-        resize : str, optional
-            The method to resize the image with.
-            Options are [letterbox, linear], will use method
-            provided in constructor by default.
-        no_copy : bool, optional
-            If True, the outputs will not be copied out
-            from the cuda allocated host memory. Instead,
-            the host memory will be returned directly.
-            This memory WILL BE OVERWRITTEN INPLACE
-            by future preprocessing calls.
-        verbose : bool, optional
-            Whether or not to output additional information
-            to stdout. If not provided, will default to overall
-            engines verbose setting.
-
-        Returns
-        -------
-        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-            The preprocessed image, ratios, and padding used for resizing.
-
-        """
-        return self.preprocess(image, resize=resize, no_copy=no_copy, verbose=verbose)
 
     def _reallocate_input(
         self: Self,

@@ -128,7 +128,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
 
     # handle hooks
     hooks = []
-    if add_yolo_hook:
+    if add_yolo_hook or args.yolo:
         hooks.append(
             trtutils.builder.hooks.yolo_efficient_nms_hook(
                 num_classes=args.num_classes,
@@ -213,6 +213,21 @@ def _build_dla(args: SimpleNamespace) -> None:
         input_scale=args.input_scale,
         verbose=args.verbose,
     )
+
+    # handle hooks
+    hooks = []
+    if args.yolo:
+        hooks.append(
+            trtutils.builder.hooks.yolo_efficient_nms_hook(
+                num_classes=args.num_classes,
+                conf_threshold=args.conf_threshold,
+                iou_threshold=args.iou_threshold,
+                top_k=args.top_k,
+                class_agnostic=args.class_agnostic,
+                box_coding=args.box_coding,
+            )
+        )
+
     trtutils.builder.build_dla_engine(
         onnx=Path(args.onnx),
         output_path=Path(args.output),
@@ -229,6 +244,7 @@ def _build_dla(args: SimpleNamespace) -> None:
         ignore_timing_mismatch=args.ignore_timing_mismatch,
         cache=args.cache,
         verbose=args.verbose,
+        hooks=hooks,
     )
 
 
@@ -728,6 +744,44 @@ def _main() -> None:
         help="Quantize the engine to INT8 precision.",
     )
 
+    # arguments for yolo hook parsing
+    yolo_hook_parser = argparse.ArgumentParser(add_help=False)
+    yolo_hook_parser.add_argument(
+        "--num_classes",
+        type=int,
+        default=80,
+        help="Number of classes for NMS. Default is 80.",
+    )
+    yolo_hook_parser.add_argument(
+        "--conf_threshold",
+        type=float,
+        default=0.25,
+        help="Score threshold for NMS. Default is 0.25.",
+    )
+    yolo_hook_parser.add_argument(
+        "--iou_threshold",
+        type=float,
+        default=0.5,
+        help="IOU threshold for NMS. Default is 0.5.",
+    )
+    yolo_hook_parser.add_argument(
+        "--top_k",
+        type=int,
+        default=100,
+        help="Top-k boxes for NMS. Default is 100.",
+    )
+    yolo_hook_parser.add_argument(
+        "--box_coding",
+        choices=["corner", "center_size"],
+        default="center_size",
+        help="Box coding for TRT EfficientNMS. 'corner' or 'center_size'. Default is center_size.",
+    )
+    yolo_hook_parser.add_argument(
+        "--class_agnostic",
+        action="store_true",
+        help="Use class-agnostic NMS.",
+    )
+
     # main parser
     parser = argparse.ArgumentParser(
         description="Utilities for TensorRT.",
@@ -792,7 +846,13 @@ def _main() -> None:
             build_common_parser,
             calibration_parser,
             build_device_parser,
+            yolo_hook_parser,
         ],
+    )
+    build_parser.add_argument(
+        "--yolo",
+        action="store_true",
+        help="Add YOLO hook to the engine.",
     )
     build_parser.set_defaults(func=_build)
 
@@ -806,42 +866,8 @@ def _main() -> None:
             build_common_parser,
             calibration_parser,
             build_device_parser,
+            yolo_hook_parser,
         ],
-    )
-    build_yolo_parser.add_argument(
-        "--num_classes",
-        type=int,
-        default=80,
-        help="Number of classes for NMS. Default is 80.",
-    )
-    build_yolo_parser.add_argument(
-        "--conf_threshold",
-        type=float,
-        default=0.25,
-        help="Score threshold for NMS. Default is 0.25.",
-    )
-    build_yolo_parser.add_argument(
-        "--iou_threshold",
-        type=float,
-        default=0.5,
-        help="IOU threshold for NMS. Default is 0.5.",
-    )
-    build_yolo_parser.add_argument(
-        "--top_k",
-        type=int,
-        default=100,
-        help="Top-k boxes for NMS. Default is 100.",
-    )
-    build_yolo_parser.add_argument(
-        "--box_coding",
-        choices=["corner", "center_size"],
-        default="center_size",
-        help="Box coding for TRT EfficientNMS. 'corner' or 'center_size'. Default is center_size.",
-    )
-    build_yolo_parser.add_argument(
-        "--class_agnostic",
-        action="store_true",
-        help="Use class-agnostic NMS.",
     )
     build_yolo_parser.set_defaults(func=_build_yolo)
 
@@ -873,7 +899,13 @@ def _main() -> None:
     build_dla_parser = subparsers.add_parser(
         "build_dla",
         help="Build a TensorRT engine for DLA with automatic layer assignments.",
-        parents=[general_parser, dla_parser, build_common_parser, calibration_parser],
+        parents=[
+            general_parser,
+            dla_parser,
+            build_common_parser,
+            calibration_parser,
+            yolo_hook_parser,
+        ],
     )
     build_dla_parser.add_argument(
         "--max_chunks",
@@ -886,6 +918,11 @@ def _main() -> None:
         type=int,
         default=20,
         help="Minimum number of layers in a chunk to be assigned to DLA. Default is 20.",
+    )
+    build_dla_parser.add_argument(
+        "--yolo",
+        action="store_true",
+        help="Add YOLO hook to the engine.",
     )
     build_dla_parser.set_defaults(func=_build_dla)
 

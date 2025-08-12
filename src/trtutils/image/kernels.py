@@ -14,6 +14,8 @@ Attributes
     Resizes an image using the letterbox method.
 :attribute:`LINEAR_RESIZE` : tuple[Path, str]
     Resizes and image using bilinear interpolation.
+:attribute:`RESCALE_DETECTIONS` : tuple[Path, str]
+    Rescales bounding boxes for YOLOv10 and EfficientNMS style output.
 
 """
 
@@ -26,6 +28,8 @@ _SST_FILE = _KERNEL_DIR / "sst.cu"
 _SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
 _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
+_RESCALE_FILE = _KERNEL_DIR / "rescale.cu"
+
 
 SST_FAST: tuple[Path, str] = (
     _SST_FAST_FILE,
@@ -45,4 +49,9 @@ LETTERBOX_RESIZE: tuple[Path, str] = (
 LINEAR_RESIZE: tuple[Path, str] = (
     _LINEAR_FILE,
     "linearResize",
+)
+
+RESCALE_DETECTIONS: tuple[Path, str] = (
+    _RESCALE_FILE,
+    "rescaleDetections",
 )

@@ -26,9 +26,9 @@ Functions
 
 from __future__ import annotations
 
+from ._abc import GPUImagePreprocessor, ImagePreprocessor
 from ._cpu import CPUPreprocessor
 from ._cuda import CUDAPreprocessor
-from ._image_preproc import GPUImagePreprocessor, ImagePreprocessor
 from ._process import preprocess
 from ._trt import TRTPreprocessor
 

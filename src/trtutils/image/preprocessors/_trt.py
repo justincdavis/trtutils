@@ -19,7 +19,7 @@ from trtutils.core._memory import (
 from trtutils.core._stream import destroy_stream, stream_synchronize
 from trtutils.image.onnx_models import build_image_preproc
 
-from ._image_preproc import GPUImagePreprocessor
+from ._abc import GPUImagePreprocessor
 
 if TYPE_CHECKING:
     from typing_extensions import Self
