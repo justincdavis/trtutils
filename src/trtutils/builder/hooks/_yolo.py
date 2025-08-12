@@ -101,7 +101,6 @@ def yolo_efficient_nms_hook(
 
     - Interprets first 4 channels as box coordinates and the remaining as class scores
     - Supports outputs with or without an explicit objectness channel (4 + num_classes) or (4 + 1 + num_classes)
-    - Uses EfficientNMS_TRT plugin if available; falls back to BatchedNMSDynamic otherwise
     - Replaces raw network outputs with NMS outputs: num_dets, det_boxes, det_scores, det_classes
 
     Parameters
