@@ -29,7 +29,9 @@ from trtutils.core import cache as caching_tools
 IMAGE_PREPROC_BASE: Path = Path(__file__).parent / "_onnx" / "image_preproc_base.onnx"
 
 
-def build_image_preproc(input_shape: tuple[int, int], output_dtype: np.dtype) -> Path:
+def build_image_preproc(
+    input_shape: tuple[int, int], output_dtype: np.dtype, trt_version: str | None = None
+) -> Path:
     """
     Build a image preproc TensorRT engine.
 
@@ -39,6 +41,8 @@ def build_image_preproc(input_shape: tuple[int, int], output_dtype: np.dtype) ->
         The (width, height) of the image network.
     output_dtype : np.dtype
         The datatype to return, which the image network will take as input.
+    trt_version : str | None
+        The version of TensorRT to use. If none, will not be used in the cache name.
 
     Returns
     -------
@@ -55,6 +59,8 @@ def build_image_preproc(input_shape: tuple[int, int], output_dtype: np.dtype) ->
 
     # resolve the file name - only depends on the input size, scale/offset passed in
     name = f"image_preproc_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}"
+    if trt_version is not None:
+        name += f"_{trt_version}"
 
     # compile the engine
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -81,4 +87,4 @@ def build_image_preproc(input_shape: tuple[int, int], output_dtype: np.dtype) ->
         )
 
     # engine will exist or this function did not succeed, dont need to check return code
-    return caching_tools.query_cache(name)[1]
+    return caching_tools.query(name)[1]

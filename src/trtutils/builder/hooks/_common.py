@@ -34,6 +34,8 @@ def make_plugin_field(
     np_dtype: np.dtype = np.int32  # type: ignore[assignment]
     if isinstance(value, float):
         np_dtype = np.float32  # type: ignore[assignment]
+    elif isinstance(value, int):
+        np_dtype = np.int32
     else:
         np_dtype = np.float32 if isinstance(value[0], float) else np.int32  # type: ignore[assignment]
     dtype = (

@@ -13,14 +13,18 @@ Functions
 ---------
 :func:`get_cache_dir`
     Gets the cache directory inside of the trtutils install.
-:func:`clear_cache`
+:func:`clear`
     Clears the cache directory.
-:func:`query_cache`
+:func:`query`
     Queries the cache to see if an engine with that name already exists.
-:func:`store_in_cache`
+:func:`store`
     Stores a compiled TensorRT engine in the cache.
+:func:`remove`
+    Removes an engine file from the cache.
 
 """
+# POTENTIAL CHANGE: Update to use platformdirs behind the scenes
+# https://github.com/tox-dev/platformdirs/tree/main?tab=readme-ov-file
 
 from __future__ import annotations
 
@@ -53,7 +57,7 @@ def get_cache_dir() -> Path:
     return file_path.parent / "_engine_cache"
 
 
-def clear_cache(*, no_warn: bool | None = None) -> None:
+def clear(*, no_warn: bool | None = None) -> None:
     """
     Use to clear the cache folder for the trtutils engines.
 
@@ -71,7 +75,7 @@ def clear_cache(*, no_warn: bool | None = None) -> None:
     cache_dir.mkdir()
 
 
-def query_cache(filename: str) -> tuple[bool, Path]:
+def query(filename: str) -> tuple[bool, Path]:
     """
     Check if the engine filename is present in the cache.
 
@@ -91,9 +95,7 @@ def query_cache(filename: str) -> tuple[bool, Path]:
     return success, file_path
 
 
-def store_in_cache(
-    filepath: Path, *, overwrite: bool = False, clear_old: bool = False
-) -> Path:
+def store(filepath: Path, *, overwrite: bool = False, clear_old: bool = False) -> Path:
     """
     Store an engine file in the trtutils engine cache.
 
@@ -114,7 +116,7 @@ def store_in_cache(
         The new path of the file in the cache.
 
     """
-    exists, existing_path = query_cache(filepath.stem)
+    exists, existing_path = query(filepath.stem)
     if not overwrite and exists:
         if clear_old:
             filepath.unlink()
@@ -126,3 +128,25 @@ def store_in_cache(
     if clear_old:
         filepath.unlink()
     return new_file_path
+
+
+def remove(filename: str) -> None:
+    """
+    Remove an engine file from the cache.
+
+    Parameters
+    ----------
+    filename : str
+        The filename to remove from the cache.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist in the cache.
+
+    """
+    file_path = get_cache_dir() / f"{filename}.engine"
+    if not file_path.exists():
+        err_msg = f"File {file_path} does not exist in the cache"
+        raise FileNotFoundError(err_msg)
+    file_path.unlink()

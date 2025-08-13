@@ -137,7 +137,7 @@ def yolo_efficient_nms_hook(
         old_outputs = [network.get_output(i) for i in range(network.num_outputs)]
         yolo_out = _transpose_nc_to_nlc(network, raw_out, boxes_classes_dim)
         boxes = _slice_dynamic(network, yolo_out, [0, 0, 0], 4)
-        scores = _slice_dynamic(network, yolo_out, [0, 0, 4], boxes_classes_dim)
+        scores = _slice_dynamic(network, yolo_out, [0, 0, 4], num_classes)
 
         registry = trt.get_plugin_registry()
         eff_creator = registry.get_plugin_creator("EfficientNMS_TRT", "1", "")
