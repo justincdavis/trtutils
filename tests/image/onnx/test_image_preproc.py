@@ -1,12 +1,17 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+with contextlib.suppress(ImportError):
+    import tensorrt as trt
 
 from trtutils import TRTEngine, set_log_level
 from trtutils.image.onnx_models import build_image_preproc
@@ -28,12 +33,12 @@ def test_trt_preproc_engine() -> None:
 
     # cpu version
     cpu_result, _, _ = preprocess(
-        img, (output_shape, output_shape), np.dtype(np.float32)
+        img, (output_shape, output_shape), np.dtype(np.float32), trt.__version__
     )
 
     # trt version
     engine_path = build_image_preproc(
-        (output_shape, output_shape), np.dtype(np.float32)
+        (output_shape, output_shape), np.dtype(np.float32), trt.__version__
     )
     engine = TRTEngine(engine_path)
     engine.mock_execute()

@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+with contextlib.suppress(ImportError):
+    import tensorrt as trt
+
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
@@ -127,7 +130,9 @@ class TRTPreprocessor(GPUImagePreprocessor):
         stream_synchronize(self._stream)
 
         # allocate the trtengine
-        self._engine_path = build_image_preproc(self._o_shape, self._o_dtype)
+        self._engine_path = build_image_preproc(
+            self._o_shape, self._o_dtype, trt.__version__
+        )
         self._engine = TRTEngine(
             self._engine_path,
             stream=self._stream,
@@ -136,6 +141,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
+
         self._engine_output_binding = self._engine.output_bindings[0]
 
         # pre-allocate the input pointer list for the engine
