@@ -100,7 +100,7 @@ def yolo_efficient_nms_hook(
     Expects a network with output shaped (N, num_classes, num_boxes) or (N, num_boxes, num_classes).
 
     - Interprets first 4 channels as box coordinates and the remaining as class scores
-    - Uses EfficientNMS_TRT plugin if available; falls back to BatchedNMSDynamic otherwise
+    - Supports outputs with or without an explicit objectness channel (4 + num_classes) or (4 + 1 + num_classes)
     - Replaces raw network outputs with NMS outputs: num_dets, det_boxes, det_scores, det_classes
 
     Parameters
@@ -132,19 +132,52 @@ def yolo_efficient_nms_hook(
     """
 
     def _hook(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
-        boxes_classes_dim = num_classes + 4
-        raw_out = _get_yolo_output_tensor(network, boxes_classes_dim)
-        old_outputs = [network.get_output(i) for i in range(network.num_outputs)]
-        yolo_out = _transpose_nc_to_nlc(network, raw_out, boxes_classes_dim)
-        boxes = _slice_dynamic(network, yolo_out, [0, 0, 0], 4)
-        scores = _slice_dynamic(network, yolo_out, [0, 0, 4], num_classes)
+        # assess if the network is YOLOv10, in which case no processing needed
+        if network.get_output(0).shape == (1, 300, 6):
+            return network
 
+        # get the number of channels for the output
+        # two cases:
+        # 1. YOLOv8 style output: (N, num_classes + bbox_dim, num_boxes)
+        # 2. YOLOX style output: (N, num_boxes, num_classes + bbox_dim + objectness)
+        channels_without_obj = num_classes + 4
+        channels_with_obj = num_classes + 5
+
+        # resolve which case we are using
+        try:
+            raw_out = _get_yolo_output_tensor(network, channels_without_obj)
+            channel_count = channels_without_obj
+        except RuntimeError:
+            raw_out = _get_yolo_output_tensor(network, channels_with_obj)
+            channel_count = channels_with_obj
+
+        # get the outputs, transpose if needed so we have the following format:
+        # (N, num_boxes, num_classes + bbox_dim + objectness (if used))
+        old_outputs = [network.get_output(i) for i in range(network.num_outputs)]
+        yolo_out = _transpose_nc_to_nlc(network, raw_out, channel_count)
+        boxes = _slice_dynamic(network, yolo_out, [0, 0, 0], 4)
+
+        # assess if objectness is present
+        # objectness has dimension 4 for bboxes, 1 for objectness, and num_classes for classes
+        # if objectness is present, multiply it with class scores
+        # if objectness is not present, use class scores directly
+        if channel_count == channels_with_obj:
+            obj_score = _slice_dynamic(network, yolo_out, [0, 0, 4], 1)
+            class_scores = _slice_dynamic(network, yolo_out, [0, 0, 5], num_classes)
+            scores = network.add_elementwise(
+                obj_score, class_scores, trt.ElementWiseOperation.PROD
+            ).get_output(0)
+        else:
+            scores = _slice_dynamic(network, yolo_out, [0, 0, 4], num_classes)
+
+        # create the efficient nms plugin instance
         registry = trt.get_plugin_registry()
         eff_creator = registry.get_plugin_creator("EfficientNMS_TRT", "1", "")
         if eff_creator is None:
             err_msg = "EfficientNMS_TRT plugin not found."
             raise RuntimeError(err_msg)
 
+        # setup the plugin fields of the efficient nms plugin
         box_coding_int = 0 if box_coding == "corner" else 1
         fields = [
             make_plugin_field("background_class", -1),
@@ -159,6 +192,7 @@ def yolo_efficient_nms_hook(
         plugin = eff_creator.create_plugin("efficient_nms", pfc)
         plugin_layer = network.add_plugin_v2([boxes, scores], plugin)
 
+        # get outputs of the plugin
         num_dets, det_boxes, det_scores, det_classes = (
             plugin_layer.get_output(0),
             plugin_layer.get_output(1),
@@ -166,14 +200,15 @@ def yolo_efficient_nms_hook(
             plugin_layer.get_output(3),
         )
 
+        # unmark outputs of the old network
         for t in old_outputs:
             network.unmark_output(t)
 
+        # mark outputs of efficient nms as the new outputs
         num_dets.name = "num_dets"
         det_boxes.name = "det_boxes"
         det_scores.name = "det_scores"
         det_classes.name = "det_classes"
-
         network.mark_output(num_dets)
         network.mark_output(det_boxes)
         network.mark_output(det_scores)
