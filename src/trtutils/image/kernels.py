@@ -14,8 +14,10 @@ Attributes
     Resizes an image using the letterbox method.
 :attribute:`LINEAR_RESIZE` : tuple[Path, str]
     Resizes and image using bilinear interpolation.
-:attribute:`RESCALE_DETECTIONS` : tuple[Path, str]
-    Rescales bounding boxes for YOLOv10 and EfficientNMS style output.
+:attribute:`RESCALE_V10_DETECTIONS` : tuple[Path, str]
+    Rescales bounding boxes for YOLOv10 style output.
+:attribute:`RESCALE_EFF_NMS_DETECTIONS` : tuple[Path, str]
+    Rescales bounding boxes for EfficientNMS style output.
 
 """
 
@@ -28,7 +30,8 @@ _SST_FILE = _KERNEL_DIR / "sst.cu"
 _SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
 _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
-_RESCALE_FILE = _KERNEL_DIR / "rescale.cu"
+_RESCALE_V10_FILE = _KERNEL_DIR / "rescale_v10.cu"
+_RESCALE_EFF_NMS_FILE = _KERNEL_DIR / "rescale_eff_nms.cu"
 
 
 SST_FAST: tuple[Path, str] = (
@@ -51,7 +54,12 @@ LINEAR_RESIZE: tuple[Path, str] = (
     "linearResize",
 )
 
-RESCALE_DETECTIONS: tuple[Path, str] = (
-    _RESCALE_FILE,
-    "rescaleDetections",
+RESCALE_V10_DETECTIONS: tuple[Path, str] = (
+    _RESCALE_V10_FILE,
+    "rescaleV10Detections",
+)
+
+RESCALE_EFF_NMS_DETECTIONS: tuple[Path, str] = (
+    _RESCALE_EFF_NMS_FILE,
+    "rescaleEffNMSDetections",
 )

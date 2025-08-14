@@ -16,7 +16,7 @@ from trtutils.core._memory import (
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
-from trtutils.image.kernels import RESCALE_DETECTIONS
+from trtutils.image.kernels import RESCALE_V10_DETECTIONS, RESCALE_EFF_NMS_DETECTIONS
 
 from ._abc import DetectionPostprocessor
 
@@ -85,7 +85,7 @@ class _RescaleKernel:
         )
 
         # kernel
-        self._kernel = Kernel(*RESCALE_DETECTIONS)
+        self._kernel = Kernel(*RESCALE_V10_DETECTIONS)
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError):

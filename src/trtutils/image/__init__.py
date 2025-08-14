@@ -6,8 +6,6 @@ Utilities for using TensorRT on images.
 
 Submodules
 ----------
-:mod:`common`
-    Common utilities for image processing with TensorRT.
 :mod:`kernels`
     Kernels for image processing with TensorRT.
 :mod:`parallel`
@@ -37,7 +35,6 @@ Classes
 from __future__ import annotations
 
 from . import (
-    common,
     interfaces,
     kernels,
     onnx_models,
@@ -54,7 +51,6 @@ __all__ = [
     "SAHI",
     "Classifier",
     "Detector",
-    "common",
     "interfaces",
     "kernels",
     "onnx_models",
