@@ -888,6 +888,8 @@ class ParallelDetector:
                 t0 = time.perf_counter()
                 results = detector.run(
                     img,
+                    ratios=ratio,
+                    padding=padding,
                     preprocessed=True,
                     postprocess=data.postprocess,
                     no_copy=data.no_copy,
