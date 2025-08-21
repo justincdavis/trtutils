@@ -9,7 +9,6 @@ We will cover:
 1. Exporting ONNX weights from YOLOv9
 2. Building a TensorRT engine
 3. Running inference with the engine
-4. Advanced features and optimizations
 
 Exporting ONNX Weights
 ----------------------
@@ -47,26 +46,24 @@ the input shape since it's dynamic in the ONNX weights:
 
 .. code-block:: python
 
-    from trtutils.trtexec import build_engine
+    from trtutils.builder import build_engine
 
     # Build the engine with FP16 precision
     # Note: The input shape must match the img-size used during export
     build_engine(
-        weights="yolov9.onnx",
+        onnx="yolov9.onnx",
         output="yolov9.engine",
         fp16=True,
         shapes=[("images", (1, 3, 640, 640))],  # Must match export img-size
-        workspace_size=1 << 30,  # 1GB workspace
     )
 
     # For Jetson devices with DLA support
     build_engine(
-        weights="yolov9.onnx",
+        onnx="yolov9.onnx",
         output="yolov9_dla.engine",
         fp16=True,
         shapes=[("images", (1, 3, 640, 640))],
         dla_core=0,  # Use DLA core 0
-        workspace_size=1 << 30,
     )
 
 Running Inference
@@ -94,70 +91,3 @@ for running YOLOv9 inference:
     for bbox, confidence, class_id in detections:
         print(f"Class: {class_id}, Confidence: {confidence}")
         print(f"Bounding Box: {bbox}")
-
-Advanced Features
------------------
-
-Parallel Execution
-^^^^^^^^^^^^^^^^^^
-
-You can run multiple YOLOv9 models in parallel:
-
-.. code-block:: python
-
-    from trtutils.models import ParallelYOLO
-
-    # Create a parallel YOLO instance with multiple engines
-    yolo = ParallelYOLO(["yolov9_1.engine", "yolov9_2.engine"])
-
-    # Run inference on multiple images
-    images = [cv2.imread(f"image{i}.jpg") for i in range(2)]
-    results = yolo.end2end(images)
-
-Benchmarking
-^^^^^^^^^^^^
-
-Measure performance with the built-in benchmarking utilities:
-
-.. code-block:: python
-
-    from trtutils import benchmark_engine
-
-    # Run 1000 iterations
-    results = benchmark_engine("yolov9.engine", iterations=1000)
-    print(f"Average latency: {results.latency.mean:.2f}ms")
-    print(f"Throughput: {1000/results.latency.mean:.2f} FPS")
-
-    # On Jetson devices, measure power consumption
-    from trtutils.jetson import benchmark_engine as jetson_benchmark
-
-    results = jetson_benchmark(
-        "yolov9.engine",
-        iterations=1000,
-        tegra_interval=1  # More frequent power measurements
-    )
-    print(f"Average power draw: {results.power_draw.mean:.2f}W")
-    print(f"Total energy used: {results.energy.sum:.2f}J")
-
-Troubleshooting
----------------
-
-Common issues and solutions:
-
-1. **Engine Creation Fails**
-   - Ensure the input shape matches the img-size used during export
-   - Check if you have enough GPU memory (workspace_size parameter)
-   - Verify the ONNX weights are valid
-
-2. **Incorrect Detections**
-   - Verify the input image preprocessing matches the training
-   - Check if the confidence and IoU thresholds are appropriate
-
-3. **Performance Issues**
-   - Try enabling FP16 precision
-   - On Jetson devices, ensure MAXN power mode and enable jetson_clocks
-
-4. **Dynamic Shape Issues**
-   - Always specify the input shape when building the engine
-   - The shape must match the img-size used during export
-   - If you need multiple input sizes, build separate engines 
