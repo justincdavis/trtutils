@@ -20,6 +20,10 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 - Comprehensive type hints and documentation
 - Support for both basic engine execution and end-to-end model inference
 
+## Supported Models
+
+The models listed here[MODELS.md] are officially supported for inference.
+
 ## Quick Start
 
 ### Basic Engine Usage
