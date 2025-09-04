@@ -1,9 +1,10 @@
-.PHONY: help install clean docs test ci mypy pyright ruff format check release ci_env mypy_venv venv_format venv_check civ ruff_venv act
+.PHONY: help install clean download docs test ci mypy pyright ruff format check release ci_env mypy_venv venv_format venv_check civ ruff_venv act
 
 help: 
 	@echo "Please use \`make <target>' where <target> is one of"
 	@echo "  install    to install the package"
 	@echo "  clean      to clean the directory tree"
+	@echo "  download   to download and export models"
 	@echo "  docs       to generate the documentation"
 	@echo "  ci 	    to run the CI workflows - mypy & ruff"
 	@echo "  mypy       to run the mypy static type checker"
@@ -31,6 +32,9 @@ clean:
 	pyclean .
 	rm -rf .mypy_cache
 	rm -rf .ruff_cache
+
+download:
+	./scripts/download_all.sh
 
 docs:
 	rm -rf docs/_build/*

@@ -100,6 +100,29 @@ def _benchmark(args: SimpleNamespace) -> None:
     LOG.info("=" * 40)
 
 
+def _parse_shapes_arg(shape_args: list[str] | None) -> list[tuple[str, tuple[int, ...]]] | None:
+        if not shape_args:
+            return None
+        parsed: list[tuple[str, tuple[int, ...]]] = []
+        for spec in shape_args:
+            if ":" not in spec:
+                err_msg = (
+                    "Invalid --shapes specification. Expected NAME:dim1,dim2[,dim3...]"
+                )
+                raise ValueError(err_msg)
+            name, dims_str = spec.split(":", 1)
+            try:
+                dims = tuple(int(x) for x in dims_str.split(",") if x != "")
+            except ValueError as exc:
+                err_msg = f"Invalid dimension in --shapes: {dims_str}"
+                raise ValueError(err_msg) from exc
+            if len(dims) == 0:
+                err_msg = "No dimensions provided in --shapes"
+                raise ValueError(err_msg)
+            parsed.append((name, dims))
+        return parsed
+
+
 def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
     if args.int8:
         LOG.warning("Build API is unstable and experimental with INT8 quantization.")
@@ -140,6 +163,8 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
             )
         )
 
+    shapes = _parse_shapes_arg(getattr(args, "shape", None))
+
     # actual call
     trtutils.build_engine(
         onnx=Path(args.onnx),
@@ -149,6 +174,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
         dla_core=args.dla_core,
         calibration_cache=args.calibration_cache,
         data_batcher=batcher,
+        shapes=shapes,
         gpu_fallback=args.gpu_fallback,
         direct_io=args.direct_io,
         prefer_precision_constraints=args.prefer_precision_constraints,
@@ -213,6 +239,9 @@ def _build_dla(args: SimpleNamespace) -> None:
         input_scale=args.input_scale,
         verbose=args.verbose,
     )
+
+    shapes = _parse_shapes_arg(getattr(args, "shape", None))
+
     trtutils.builder.build_dla_engine(
         onnx=Path(args.onnx),
         output_path=Path(args.output),
@@ -223,6 +252,7 @@ def _build_dla(args: SimpleNamespace) -> None:
         workspace=args.workspace,
         calibration_cache=args.calibration_cache,
         timing_cache=args.timing_cache,
+        shapes=shapes,
         direct_io=args.direct_io,
         prefer_precision_constraints=args.prefer_precision_constraints,
         reject_empty_algorithms=args.reject_empty_algorithms,
@@ -586,6 +616,16 @@ def _main() -> None:
         type=float,
         default=4.0,
         help="Workspace size in GB. Default is 4.0.",
+    )
+    build_common_parser.add_argument(
+        "--shape",
+        "-s",
+        action="append",
+        default=None,
+        help=(
+            "Fix input binding shapes. Format NAME:dim1,dim2[,dim3...]. "
+            "Repeat --shapes for multiple inputs."
+        ),
     )
     build_common_parser.add_argument(
         "--direct_io",
