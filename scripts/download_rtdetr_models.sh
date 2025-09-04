@@ -9,7 +9,7 @@ DATA_DIR="$REPO_DIR/data"
 
 # Ensure required directories exist
 mkdir -p "$EXTERN_DIR"
-mkdir -p "$DATA_DIR"/rtdetrv1 "$DATA_DIR"/rtdetrv2 "$DATA_DIR"/rtdetrv3
+mkdir -p "$DATA_DIR"/rtdetrv1 "$DATA_DIR"/rtdetrv2 "$DATA_DIR"/rtdetrv3 "$DATA_DIR"/dfine
 
 cd "$EXTERN_DIR"
 
@@ -63,3 +63,19 @@ PY_BIN="$(pwd)/.venv/bin"
             --opset_version 16 \
             --save_file rtdetrv3_r18vd_6x_coco.onnx
 mv -f rtdetrv3_r18vd_6x_coco.onnx "$DATA_DIR/rtdetrv3/rtdetrv3_r18.onnx"
+cd ..
+
+# export d-fine (onnx)
+git clone https://github.com/Peterande/D-FINE || true
+cd D-FINE
+python3 -m venv .venv
+DFINE_PY="$(pwd)/.venv/bin/python"
+"$DFINE_PY" -m pip install -U pip setuptools wheel
+"$DFINE_PY" -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.4.1 torchvision==0.19.1
+"$DFINE_PY" -m pip install -r requirements.txt onnx onnxsim --no-cache-dir
+wget -nc https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_n_coco.pth
+# Inline patch: reduce exporter dummy batch size from 32 to 1 (idempotent)
+sed -i -E 's/(data = torch\\.rand\\()[[:space:]]*[0-9]+,[[:space:]]*/\\11, /' tools/deployment/export_onnx.py || true
+"$DFINE_PY" tools/deployment/export_onnx.py --check --simplify -c configs/dfine/dfine_hgnetv2_n_coco.yml -r dfine_n_coco.pth
+mv -f dfine_n_coco.onnx "$DATA_DIR/dfine/dfine_n.onnx"
+cd ..
