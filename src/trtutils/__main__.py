@@ -100,27 +100,29 @@ def _benchmark(args: SimpleNamespace) -> None:
     LOG.info("=" * 40)
 
 
-def _parse_shapes_arg(shape_args: list[str] | None) -> list[tuple[str, tuple[int, ...]]] | None:
-        if not shape_args:
-            return None
-        parsed: list[tuple[str, tuple[int, ...]]] = []
-        for spec in shape_args:
-            if ":" not in spec:
-                err_msg = (
-                    "Invalid --shapes specification. Expected NAME:dim1,dim2[,dim3...]"
-                )
-                raise ValueError(err_msg)
-            name, dims_str = spec.split(":", 1)
-            try:
-                dims = tuple(int(x) for x in dims_str.split(",") if x != "")
-            except ValueError as exc:
-                err_msg = f"Invalid dimension in --shapes: {dims_str}"
-                raise ValueError(err_msg) from exc
-            if len(dims) == 0:
-                err_msg = "No dimensions provided in --shapes"
-                raise ValueError(err_msg)
-            parsed.append((name, dims))
-        return parsed
+def _parse_shapes_arg(
+    shape_args: list[str] | None,
+) -> list[tuple[str, tuple[int, ...]]] | None:
+    if not shape_args:
+        return None
+    parsed: list[tuple[str, tuple[int, ...]]] = []
+    for spec in shape_args:
+        if ":" not in spec:
+            err_msg = (
+                "Invalid --shapes specification. Expected NAME:dim1,dim2[,dim3...]"
+            )
+            raise ValueError(err_msg)
+        name, dims_str = spec.split(":", 1)
+        try:
+            dims = tuple(int(x) for x in dims_str.split(",") if x)
+        except ValueError as exc:
+            err_msg = f"Invalid dimension in --shapes: {dims_str}"
+            raise ValueError(err_msg) from exc
+        if len(dims) == 0:
+            err_msg = "No dimensions provided in --shapes"
+            raise ValueError(err_msg)
+        parsed.append((name, dims))
+    return parsed
 
 
 def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:

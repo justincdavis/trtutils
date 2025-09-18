@@ -142,12 +142,7 @@ class Detector(DetectorInterface):
         if preprocessor not in valid_preprocessors:
             err_msg = f"Invalid preprocessor found, options are: {valid_preprocessors}"
             raise ValueError(err_msg)
-        self._preproc_cpu: CPUPreprocessor = CPUPreprocessor(
-            self._input_size,
-            self._input_range,
-            self._dtype,
-            tag=self._tag,
-        )
+        self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
         self._preproc_cuda: CUDAPreprocessor | None = None
         self._preproc_trt: TRTPreprocessor | None = None
         # change the preprocessor setup to cuda if set to trt and trt doesnt have uint8 support
@@ -174,6 +169,14 @@ class Detector(DetectorInterface):
         # if warmup, warmup the preprocessors
         if warmup:
             self._preprocessor.warmup()
+
+    def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
+        return CPUPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            tag=self._tag,
+        )
 
     def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
         return CUDAPreprocessor(
@@ -218,6 +221,27 @@ class Detector(DetectorInterface):
     def dtype(self: Self) -> np.dtype:
         """Get the dtype required by the model."""
         return self._dtype
+
+    def update_input_range(self: Self, input_range: tuple[float, float]) -> None:
+        """
+        Update the input range of the model.
+
+        This will re-create all preprocessors with the new input range.
+        Only preprocessors which have been created will be re-created.
+
+        Parameters
+        ----------
+        input_range : tuple[float, float]
+            The new input range.
+
+        """
+        self._input_range = input_range
+        if self._preproc_cpu is not None:
+            self._preproc_cpu = self._setup_cpu_preproc()
+        if self._preproc_cuda is not None:
+            self._preproc_cuda = self._setup_cuda_preproc()
+        if self._preproc_trt is not None:
+            self._preproc_trt = self._setup_trt_preproc()
 
     def preprocess(
         self: Self,

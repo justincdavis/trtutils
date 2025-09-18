@@ -30,7 +30,7 @@ def main() -> None:
             img = img / 255  # type: ignore[assignment]
             img = img[np.newaxis, :]
             img = np.transpose(img, (0, 3, 1, 2))
-            return np.ascontiguousarray(img, dtype=np.float32)
+            return np.ascontiguousarray(img, dtype=np.float32)  # type: ignore[no-any-return]
 
         return [_process(img) for img in inputs]
 

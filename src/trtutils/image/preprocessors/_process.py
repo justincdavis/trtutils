@@ -54,6 +54,7 @@ def preprocess(
     if verbose:
         LOG.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
 
+    tensor: np.ndarray
     if method == "letterbox":
         tensor, ratios, padding = letterbox(image, new_shape=input_shape)
     elif method == "linear":
