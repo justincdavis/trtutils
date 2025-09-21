@@ -31,6 +31,8 @@ Classes
     Wrapper around detection models.
 :class:`SAHI`
     SAHI wrapper for slicing aided inference.
+:class:`ImageModel`
+    Base class for models which process images.
 
 """
 
@@ -48,12 +50,14 @@ from . import (
 )
 from ._classifier import Classifier
 from ._detector import Detector
+from ._image_model import ImageModel
 from .sahi import SAHI
 
 __all__ = [
     "SAHI",
     "Classifier",
     "Detector",
+    "ImageModel",
     "common",
     "interfaces",
     "kernels",

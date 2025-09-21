@@ -1,12 +1,12 @@
 .. _tutorials_dfine:
 
-RT-DETRv2 Tutorial
-==================
+D-FINE Tutorial
+===============
 
-This tutorial will guide you through using trtutils with RT-DETRv2 models.
+This tutorial will guide you through using trtutils with D-FINE models.
 We will cover:
 
-1. Exporting ONNX weights from RT-DETRv2
+1. Exporting ONNX weights from D-FINE
 2. Building a TensorRT engine
 3. Running inference with the engine
 4. Advanced features and optimizations
@@ -14,11 +14,11 @@ We will cover:
 Exporting ONNX Weights
 ----------------------
 
-RT-DETRv2 supports end-to-end export of ONNX weights directly. Here's how to do it:
+D-FINE supports end-to-end export of ONNX weights directly. Here's how to do it:
 
 .. code-block:: bash
 
-    # Clone the RT-DETRv2 repository
+    # Clone the D-FINE repository
     $ git clone https://github.com/Peterande/D-FINE.git
     $ cd D-FINE
 

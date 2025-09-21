@@ -551,6 +551,16 @@ def _inspect(args: SimpleNamespace) -> None:
         LOG.info(f"\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
 
 
+def _download(args: SimpleNamespace) -> None:
+    trtutils.download.download(
+        args.model,
+        args.output,
+        args.opset,
+        args.imgsz,
+        verbose=args.verbose,
+    )
+
+
 def _main() -> None:
     # general arguments parser (for all commands)
     general_parser = argparse.ArgumentParser(add_help=False)
@@ -1054,6 +1064,38 @@ def _main() -> None:
         help="Path to the TensorRT engine file.",
     )
     inspect_parser.set_defaults(func=_inspect)
+
+    # download parser
+    download_parser = subparsers.add_parser(
+        "download",
+        help="Download a model from remote source and convert to ONNX.",
+        parents=[general_parser],
+    )
+    download_parser.add_argument(
+        "--model",
+        type=str,
+        required=True,
+        help="Name of the model to download.",
+    )
+    download_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Path to save the ONNX model file.",
+    )
+    download_parser.add_argument(
+        "--opset",
+        type=int,
+        default=17,
+        help="ONNX opset version to use. Default is 17.",
+    )
+    download_parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=640,
+        help="Image size to use for the model. Default is 640.",
+    )
+    download_parser.set_defaults(func=_download)
 
     # parse args and call the function
     args, unknown = parser.parse_known_args()

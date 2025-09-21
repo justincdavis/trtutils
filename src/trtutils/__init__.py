@@ -17,6 +17,8 @@ Submodules
     A module for compatibility with other libraries.
 :mod:`core`
     A module for the core functionality of the package.
+:mod:`download`
+    A module for downloading and converting models to ONNX.
 :mod:`jetson`
     A module implementating additional functionality for Jetson devices.
 :mod:`image`
@@ -93,7 +95,7 @@ __version__ = "0.6.1"
 
 import contextlib
 
-from . import builder, compat, core, image, inspect, models, trtexec
+from . import builder, compat, core, download, image, inspect, models, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
@@ -121,6 +123,7 @@ __all__ = [
     "compat",
     "core",
     "disable_jit",
+    "download",
     "enable_jit",
     "find_trtexec",
     "image",

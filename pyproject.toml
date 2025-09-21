@@ -89,7 +89,7 @@ docs = [
     "matplotlib>=3.0.0",
 ]
 test = [
-    "pytest>=6.2.0",
+    "pytest>=6.2.0,<8.4",
 ]
 torch = [
     "torch>=2.0.0",
@@ -199,13 +199,8 @@ implicit_reexport = true
 local_partial_types = true
 show_error_codes = true
 disallow_subclassing_any = true
-
-# Specific exclusions from strict mode:
 warn_unreachable = false
 disallow_any_generics = false
-
-# # set stub directory
-# mypy_path = "$MYPY_CONFIG_FILE_DIR/typings"
 
 [[tool.mypy.overrides]]
 module = [  
