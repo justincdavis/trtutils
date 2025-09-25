@@ -334,6 +334,58 @@ def _export_yolov12(
     return directory / "yolov12" / (config["name"] + ".onnx")
 
 
+def _export_rtdetrv1(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    bin_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int,
+) -> Path:
+    subprocess.run(
+        ["git", "clone", "https://github.com/lyuwenyu/RT-DETR"],
+        cwd=directory,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "-p",
+            str(bin_path.parent),
+            "-r",
+            "requirements.txt",
+            "onnxsim>=0.4",
+            "numpy==1.*",
+        ],
+        cwd=directory / "RT-DETR" / "rtdetr_pytorch",
+        check=True,
+    )
+    subprocess.run(
+        ["wget", "-nc", config["url"]],
+        cwd=directory / "RT-DETR" / "rtdetr_pytorch",
+        check=True,
+    )
+    subprocess.run(
+        [
+            python_path,
+            "tools/export_onnx.py",
+            "-c",
+            str(Path("configs") / "rtdetr" / config["config"]),
+            "-r",
+            config["name"] + ".pth",
+        ],
+        cwd=directory / "RT-DETR" / "rtdetr_pytorch",
+        check=True,
+    )
+    model_path = directory / "RT-DETR" / "rtdetr_pytorch" / "model.onnx"
+    new_model_path = model_path.with_name(model + model_path.suffix)
+    shutil.move(model_path, new_model_path)
+    return new_model_path
+
+
 def download_model(
     model: str,
     directory: Path,
@@ -510,6 +562,23 @@ def download_model(
                 "name": "yolov12x",
             },
         },
+        "rtdetrv1": {
+            "rtdetrv1_r18": {
+                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r18vd_5x_coco_objects365_from_paddle.pth",
+                "config": "rtdetr_r18vd_6x_coco.yml",
+                "name": "rtdetr_r18vd_5x_coco_objects365_from_paddle",
+            },
+            "rtdetrv1_r50": {
+                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r50vd_2x_coco_objects365_from_paddle.pth",
+                "config": "rtdetr_r50vd_6x_coco.yml",
+                "name": "rtdetr_r50vd_2x_coco_objects365_from_paddle",
+            },
+            "rtdetrv1_r101": {
+                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r101vd_2x_coco_objects365_from_paddle.pth",
+                "config": "rtdetr_r101vd_6x_coco.yml",
+                "name": "rtdetr_r101vd_2x_coco_objects365_from_paddle",
+            },
+        },
     }
     config: dict[str, str] | None = None
     for model_set in model_configs.values():
@@ -544,6 +613,8 @@ def download_model(
         model_path = _export_yolov10(*packet)
     if "yolov12" in model:
         model_path = _export_yolov12(*packet)
+    if "rtdetrv1" in model:
+        model_path = _export_rtdetrv1(*packet)
     if model_path is None:
         err_msg = f"Model {model} is not supported"
         raise ValueError(err_msg)
