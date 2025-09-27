@@ -334,6 +334,57 @@ def _export_yolov12(
     return directory / "yolov12" / (config["name"] + ".onnx")
 
 
+def _export_yolov13(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,  # noqa: ARG001
+    bin_path: Path,
+    model: str,  # noqa: ARG001
+    opset: int,
+    imgsz: int,
+) -> Path:
+    subprocess.run(
+        ["git", "clone", "https://github.com/iMoonLab/yolov13"],
+        cwd=directory,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "-p",
+            str(bin_path.parent),
+            ".",
+            "torch==2.4.*",
+            "onnx",
+            "onnxslim",
+            "onnxruntime-gpu",
+            "huggingface_hub",
+        ],
+        cwd=directory / "yolov13",
+        check=True,
+    )
+    subprocess.run(
+        ["wget", "-nc", config["url"]],
+        cwd=directory / "yolov13",
+        check=True,
+    )
+    subprocess.run(
+        [
+            str(bin_path / "yolo"),
+            "export",
+            f"model={config['name'] + '.pt'}",
+            "format=onnx",
+            f"opset={opset}",
+            f"imgsz={imgsz}",
+        ],
+        cwd=directory / "yolov13",
+        check=True,
+    )
+    return directory / "yolov13" / (config["name"] + ".onnx")
+
+
 def _export_rtdetrv1(
     directory: Path,
     config: dict[str, str],
@@ -370,17 +421,339 @@ def _export_rtdetrv1(
     )
     subprocess.run(
         [
+            "patch",
+            "tools/export_onnx.py",
+            "-i",
+            str((Path(__file__).parent / "patches" / "rtdetrv1_export_onnx.patch").resolve()),
+        ],
+        cwd=directory / "RT-DETR" / "rtdetr_pytorch",
+        check=True,
+    )
+    subprocess.run(
+        [
             python_path,
             "tools/export_onnx.py",
             "-c",
             str(Path("configs") / "rtdetr" / config["config"]),
             "-r",
             config["name"] + ".pth",
+            "--opset",
+            str(opset),
+            "--imgsz",
+            str(imgsz),
         ],
         cwd=directory / "RT-DETR" / "rtdetr_pytorch",
         check=True,
     )
     model_path = directory / "RT-DETR" / "rtdetr_pytorch" / "model.onnx"
+    new_model_path = model_path.with_name(model + model_path.suffix)
+    shutil.move(model_path, new_model_path)
+    return new_model_path
+
+
+def _export_rtdetrv2(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    bin_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int,
+) -> Path:
+    subprocess.run(
+        ["git", "clone", "https://github.com/lyuwenyu/RT-DETR"],
+        cwd=directory,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "-p",
+            str(bin_path.parent),
+            "-r",
+            "requirements.txt",
+            "onnxsim>=0.4",
+            "numpy==1.*",
+        ],
+        cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
+        check=True,
+    )
+    subprocess.run(
+        ["wget", "-nc", config["url"]],
+        cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
+        check=True,
+    )
+    subprocess.run(
+        [
+            "patch",
+            "tools/export_onnx.py",
+            "-i",
+            str((Path(__file__).parent / "patches" / "rtdetrv2_export_onnx.patch").resolve()),
+        ],
+        cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
+        check=True,
+    )
+    subprocess.run(
+        [
+            python_path,
+            "tools/export_onnx.py",
+            "-c",
+            str(Path("configs") / "rtdetrv2" / config["config"]),
+            "-r",
+            config["name"] + ".pth",
+            "--opset",
+            str(opset),
+            "--input_size",
+            str(imgsz),
+        ],
+        cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
+        check=True,
+    )
+    model_path = directory / "RT-DETR" / "rtdetrv2_pytorch" / "model.onnx"
+    new_model_path = model_path.with_name(model + model_path.suffix)
+    shutil.move(model_path, new_model_path)
+    return new_model_path
+
+
+def _export_rtdetrv3(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    bin_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int,
+) -> Path:
+    if opset > 16:
+        LOG.warning(f"RT-DETRv3 only supports opset <16, using opset 16")
+        opset = 16
+    subprocess.run(
+        ["git", "clone", "https://github.com/clxia12/RT-DETRv3"],
+        cwd=directory,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "-p",
+            str(bin_path.parent),
+            "-r",
+            "requirements.txt",
+            "paddlepaddle==2.6.1",
+            "paddle2onnx==1.0.5",
+            "onnx==1.13.0",
+            "onnxsim>=0.4",
+            "scikit-learn",
+            "gdown",
+        ],
+        cwd=directory / "RT-DETRv3",
+        check=True,
+    )
+    subprocess.run(
+        [
+            python_path,
+            "-m",
+            "gdown",
+            "--id",
+            config["id"],
+            "-O",
+            config["name"] + ".pdparams",
+        ],
+        cwd=directory / "RT-DETRv3",
+        check=True,
+    )
+    subprocess.run(
+        [
+            python_path,
+            "tools/export_model.py",
+            "-c",
+            str(Path("configs") / "rtdetrv3" / config["config"]),
+            "-o",
+            f"weights={config['name']}.pdparams",
+            "use_gpu=False",
+            "trt=True",
+            "--output_dir",
+            "output_weights",
+        ],
+        cwd=directory / "RT-DETRv3",
+        check=True,
+    )
+    subprocess.run(
+        [
+            bin_path / "paddle2onnx",
+            "--model_dir",
+            f"./output_weights/{config['name']}/",
+            "--model_filename",
+            "model.pdmodel",
+            "--params_filename",
+            "model.pdiparams",
+            "--opset_version",
+            str(opset),
+            "--save_file",
+            f"{config['name']}.onnx",
+        ],
+        cwd=directory / "RT-DETRv3",
+        check=True,
+    )
+    model_path = directory / "RT-DETRv3" / f"{config['name']}.onnx"
+    new_model_path = model_path.with_name(model + model_path.suffix)
+    shutil.move(model_path, new_model_path)
+    return new_model_path
+
+
+def _export_dfine(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    bin_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int,
+) -> Path:
+    subprocess.run(
+        ["git", "clone", "https://github.com/Peterande/D-FINE"],
+        cwd=directory,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "-p",
+            str(bin_path.parent),
+            "-r",
+            "requirements.txt",
+            "--extra-index-url",
+            "https://download.pytorch.org/whl/cpu",
+            "torch==2.4.1",
+            "torchvision==0.19.1",
+            "onnx",
+            "onnxsim",
+            "onnxruntime",
+        ],
+        cwd=directory / "D-FINE",
+        check=True,
+    )
+    subprocess.run(
+        ["wget", "-nc", config["url"]],
+        cwd=directory / "D-FINE",
+        check=True,
+    )
+    subprocess.run(
+        [
+            "patch",
+            "tools/deployment/export_onnx.py",
+            "-i",
+            str((Path(__file__).parent / "patches" / "dfine_export_onnx.patch").resolve()),
+        ],
+        cwd=directory / "D-FINE",
+        check=True,
+    )
+    subprocess.run(
+        [
+            python_path,
+            "tools/deployment/export_onnx.py",
+            "-c",
+            str(Path("configs") / "dfine" / config["config"]),
+            "-r",
+            config["name"] + ".pth",
+            "--opset",
+            str(opset),
+            "--imgsz",
+            str(imgsz),
+        ],
+        cwd=directory / "D-FINE",
+        check=True,
+    )
+    model_path = directory / "D-FINE" / f"{config['name']}.onnx"
+    new_model_path = model_path.with_name(model + model_path.suffix)
+    shutil.move(model_path, new_model_path)
+    return new_model_path
+
+
+def _export_deim(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    bin_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int,
+) -> Path:
+    subprocess.run(
+        ["git", "clone", "https://github.com/Intellindust-AI-Lab/DEIM"],
+        cwd=directory,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "-p",
+            str(bin_path.parent),
+            "-r",
+            "requirements.txt",
+            "--extra-index-url",
+            "https://download.pytorch.org/whl/cpu",
+            "torch==2.4.1",
+            "torchvision==0.19.1",
+            "onnx",
+            "onnxsim",
+            "onnxruntime",
+            "gdown",
+        ],
+        cwd=directory / "DEIM",
+        check=True,
+    )
+    subprocess.run(
+        [
+            python_path,
+            "-m",
+            "gdown",
+            "--id",
+            config["id"],
+            "-O",
+            config["name"] + ".pth",
+        ],
+        cwd=directory / "DEIM",
+        check=True,
+    )
+    subprocess.run(
+        [
+            "patch",
+            "tools/deployment/export_onnx.py",
+            "-i",
+            str((Path(__file__).parent / "patches" / "deim_export_onnx.patch").resolve()),
+        ],
+        cwd=directory / "DEIM",
+        check=True,
+    )
+    config_folder = "deim_dfine"
+    if "rtdetrv2" in config["name"]:
+        config_folder = "deim_rtdetrv2"
+    subprocess.run(
+        [
+            python_path,
+            "tools/deployment/export_onnx.py",
+            "-c",
+            str(Path("configs") / config_folder / config["config"]),
+            "-r",
+            config["name"] + ".pth",
+            "--opset",
+            str(opset),
+            "--imgsz",
+            str(imgsz),
+        ],
+        cwd=directory / "DEIM",
+        check=True,
+    )
+    model_path = directory / "DEIM" / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -562,6 +935,24 @@ def download_model(
                 "name": "yolov12x",
             },
         },
+        "yolov13": {
+            "yolov13n": {
+                "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13n.pt",
+                "name": "yolov13n",
+            },
+            "yolov13s": {
+                "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13s.pt",
+                "name": "yolov13s",
+            },
+            "yolov13l": {
+                "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13l.pt",
+                "name": "yolov13l",
+            },
+            "yolov13x": {
+                "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13x.pt",
+                "name": "yolov13x",
+            },
+        },
         "rtdetrv1": {
             "rtdetrv1_r18": {
                 "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r18vd_5x_coco_objects365_from_paddle.pth",
@@ -579,6 +970,129 @@ def download_model(
                 "name": "rtdetr_r101vd_2x_coco_objects365_from_paddle",
             },
         },
+        "rtdetrv2": {
+            "rtdetrv2_r18": {
+                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.2/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth",
+                "config": "rtdetrv2_r18vd_120e_coco.yml",
+                "name": "rtdetrv2_r18vd_120e_coco_rerun_48.1",
+            },
+            "rtdetrv2_r34": {
+                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r34vd_120e_coco_ema.pth",
+                "config": "rtdetrv2_r34vd_120e_coco.yml",
+                "name": "rtdetrv2_r34vd_120e_coco_ema",
+            },
+            "rtdetrv2_r50m": {
+                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r50vd_m_7x_coco_ema.pth",
+                "config": "rtdetrv2_r50vd_m_7x_coco.yml",
+                "name": "rtdetrv2_r50vd_m_7x_coco_ema",
+            },
+            "rtdetrv2_r50": {
+                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r50vd_6x_coco_ema.pth",
+                "config": "rtdetrv2_r50vd_6x_coco.yml",
+                "name": "rtdetrv2_r50vd_6x_coco_ema",
+            },
+            "rtdetrv2_r101": {
+                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r101vd_6x_coco_from_paddle.pth",
+                "config": "rtdetrv2_r101vd_6x_coco.yml",
+                "name": "rtdetrv2_r101vd_6x_coco_from_paddle",
+            },
+        },
+        "rtdetrv3": {
+            "rtdetrv3_r18": {
+                "id": "1zIDOjn1qDccC3TBsDlGQHOjVrehd26bk",
+                "config": "rtdetrv3_r18vd_6x_coco.yml",
+                "name": "rtdetrv3_r18vd_6x_coco",
+            },
+            "rtdetrv3_r34": {
+                "id": "12-wqAF8i67eqbocaWPK33d4tFkN2wGi2",
+                "config": "rtdetrv3_r34vd_6x_coco.yml",
+                "name": "rtdetrv3_r34vd_6x_coco",
+            },
+            "rtdetrv3_r50": {
+                "id": "1wfJE-QgdgqKE0IkiTuoD5HEbZwwZg3sQ",
+                "config": "rtdetrv3_r50vd_6x_coco.yml",
+                "name": "rtdetrv3_r50vd_6x_coco",
+            },
+        },
+        "dfine": {
+            "dfine_n": {
+                "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_n_coco.pth",
+                "config": "dfine_hgnetv2_n_coco.yml",
+                "name": "dfine_n_coco",
+            },
+            "dfine_s": {
+                "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_s_obj2coco.pth",
+                "config": "dfine_hgnetv2_s_obj2coco.yml",
+                "name": "dfine_s_obj2coco",
+            },
+            "dfine_m": {
+                "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_m_obj2coco.pth",
+                "config": "dfine_hgnetv2_m_obj2coco.yml",
+                "name": "dfine_m_obj2coco",
+            },
+            "dfine_l": {
+                "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_l_obj2coco_e25.pth",
+                "config": "dfine_hgnetv2_l_obj2coco.yml",
+                "name": "dfine_l_obj2coco",
+            },
+            "dfine_x": {
+                "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_x_obj2coco.pth",
+                "config": "dfine_hgnetv2_x_obj2coco.yml",
+                "name": "dfine_x_obj2coco",
+            },
+        },
+        "deim": {
+            "deim_dfine_n": {
+                "id": "1ZPEhiU9nhW4M5jLnYOFwTSLQC1Ugf62e",
+                "config": "deim_hgnetv2_n_coco.yml",
+                "name": "deim_dfine_hgnetv2_n_coco_160e",
+            },
+            "deim_dfine_s": {
+                "id": "1tB8gVJNrfb6dhFvoHJECKOF5VpkthhfC",
+                "config": "deim_hgnetv2_s_coco.yml",
+                "name": "deim_dfine_hgnetv2_s_coco_120e",
+            },
+            "deim_dfine_m": {
+                "id": "18Lj2a6UN6k_n_UzqnJyiaiLGpDzQQit8",
+                "config": "deim_hgnetv2_m_coco.yml",
+                "name": "deim_dfine_hgnetv2_m_coco_90e",
+            },
+            "deim_dfine_l": {
+                "id": "1PIRf02XkrA2xAD3wEiKE2FaamZgSGTAr",
+                "config": "deim_hgnetv2_l_coco.yml",
+                "name": "deim_dfine_hgnetv2_l_coco_50e",
+            },
+            "deim_dfine_x": {
+                "id": "1dPtbgtGgq1Oa7k_LgH1GXPelg1IVeu0j",
+                "config": "deim_hgnetv2_x_coco.yml",
+                "name": "deim_dfine_hgnetv2_x_coco_50e",
+            },
+            "deim_rtdetrv2_r18": {
+                "id": "153_JKff6EpFgiLKaqkJsoDcLal_0ux_F",
+                "config": "deim_r18vd_120e_coco.yml",
+                "name": "deim_rtdetrv2_r18vd_coco_120e",
+            },
+            "deim_rtdetrv2_r34": {
+                "id": "1O9RjZF6kdFWGv1Etn1Toml4r-YfdMDMM",
+                "config": "deim_r34vd_120e_coco.yml",
+                "name": "deim_rtdetrv2_r34vd_coco_120e",
+            },
+            "deim_rtdetrv2_r50m": {
+                "id": "10dLuqdBZ6H5ip9BbBiE6S7ZcmHkRbD0E",
+                "config": "deim_r50vd_m_60e_coco.yml",
+                "name": "deim_rtdetrv2_r50vd_m_coco_60e",
+            },
+            "deim_rtdetrv2_r50": {
+                "id": "1mWknAXD5JYknUQ94WCEvPfXz13jcNOTI",
+                "config": "deim_r50vd_60e_coco.yml",
+                "name": "deim_rtdetrv2_r50vd_coco_60e",
+            },
+            "deim_rtdetrv2_r101": {
+                "id": "1BIevZijOcBO17llTyDX32F_pYppBfnzu",
+                "config": "deim_r101vd_60e_coco.yml",
+                "name": "deim_rtdetrv2_r101vd_coco_60e",
+            },
+        }
     }
     config: dict[str, str] | None = None
     for model_set in model_configs.values():
@@ -603,18 +1117,28 @@ def download_model(
         imgsz,
     )
     model_path: Path | None = None
-    if "yolov7" in model:
+    if "deim" in model and not "deimv2" in model:
+        model_path = _export_deim(*packet)
+    elif "yolov7" in model:
         model_path = _export_yolov7(*packet)
-    if "yolov8" in model or "yolov11" in model:
+    elif "yolov8" in model or "yolov11" in model:
         model_path = _export_ultralytics(*packet)
-    if "yolov9" in model:
+    elif "yolov9" in model:
         model_path = _export_yolov9(*packet)
-    if "yolov10" in model:
+    elif "yolov10" in model:
         model_path = _export_yolov10(*packet)
-    if "yolov12" in model:
+    elif "yolov12" in model:
         model_path = _export_yolov12(*packet)
-    if "rtdetrv1" in model:
+    elif "yolov13" in model:
+        model_path = _export_yolov13(*packet)
+    elif "rtdetrv1" in model:
         model_path = _export_rtdetrv1(*packet)
+    elif "rtdetrv2" in model:
+        model_path = _export_rtdetrv2(*packet)
+    elif "rtdetrv3" in model:
+        model_path = _export_rtdetrv3(*packet)
+    elif "dfine" in model:
+        model_path = _export_dfine(*packet)
     if model_path is None:
         err_msg = f"Model {model} is not supported"
         raise ValueError(err_msg)
