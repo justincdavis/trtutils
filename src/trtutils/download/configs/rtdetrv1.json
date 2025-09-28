@@ -1,0 +1,17 @@
+{
+  "rtdetrv1_r18": {
+    "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r18vd_5x_coco_objects365_from_paddle.pth",
+    "config": "rtdetr_r18vd_6x_coco.yml",
+    "name": "rtdetr_r18vd_5x_coco_objects365_from_paddle"
+  },
+  "rtdetrv1_r50": {
+    "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r50vd_2x_coco_objects365_from_paddle.pth",
+    "config": "rtdetr_r50vd_6x_coco.yml",
+    "name": "rtdetr_r50vd_2x_coco_objects365_from_paddle"
+  },
+  "rtdetrv1_r101": {
+    "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r101vd_2x_coco_objects365_from_paddle.pth",
+    "config": "rtdetr_r101vd_6x_coco.yml",
+    "name": "rtdetr_r101vd_2x_coco_objects365_from_paddle"
+  }
+}

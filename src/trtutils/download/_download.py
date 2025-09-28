@@ -4,12 +4,44 @@
 # ruff: noqa: S607, S603, S404
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 from trtutils._log import LOG
+
+
+def _load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
+    configs_dir = Path(__file__).parent / "configs"
+    model_configs: dict[str, dict[str, dict[str, str]]] = {}
+
+    config_files = {
+        "yolov7": "yolov7.json",
+        "yolov8": "yolov8.json",
+        "yolov9": "yolov9.json",
+        "yolov10": "yolov10.json",
+        "yolov11": "yolov11.json",
+        "yolov12": "yolov12.json",
+        "yolov13": "yolov13.json",
+        "rtdetrv1": "rtdetrv1.json",
+        "rtdetrv2": "rtdetrv2.json",
+        "rtdetrv3": "rtdetrv3.json",
+        "dfine": "dfine.json",
+        "deim": "deim.json",
+        "rfdetr": "rfdetr.json",
+    }
+
+    for model_type, config_file in config_files.items():
+        config_path = configs_dir / config_file
+        if config_path.exists():
+            with config_path.open() as f:
+                model_configs[model_type] = json.load(f)
+        else:
+            LOG.warning(f"Configuration file {config_file} not found in {configs_dir}")
+
+    return model_configs
 
 
 def _make_venv(
@@ -1017,321 +1049,7 @@ def download_model(
         If the model is not supported.
 
     """
-    model_configs: dict[str, dict[str, dict[str, str]]] = {
-        "yolov7": {
-            "yolov7t": {
-                "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-tiny.pt",
-                "name": "yolov7-tiny",
-            },
-            "yolov7m": {
-                "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7.pt",
-                "name": "yolov7",
-            },
-            "yolov7x": {
-                "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7x.pt",
-                "name": "yolov7x",
-            },
-            "yolov7w6": {
-                "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-w6.pt",
-                "name": "yolov7-w6",
-            },
-            "yolov7e6": {
-                "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-e6.pt",
-                "name": "yolov7-e6",
-            },
-            "yolov7d6": {
-                "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-d6.pt",
-                "name": "yolov7-d6",
-            },
-            "yolov7e6e": {
-                "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-e6e.pt",
-                "name": "yolov7-e6e",
-            },
-        },
-        "yolov8": {
-            "yolov8n": {
-                "url": "ultralytics",
-                "name": "yolov8n",
-            },
-            "yolov8s": {
-                "url": "ultralytics",
-                "name": "yolov8s",
-            },
-            "yolov8m": {
-                "url": "ultralytics",
-                "name": "yolov8m",
-            },
-            "yolov8l": {
-                "url": "ultralytics",
-                "name": "yolov8l",
-            },
-            "yolov8x": {
-                "url": "ultralytics",
-                "name": "yolov8x",
-            },
-        },
-        "yolov9": {
-            "yolov9t": {
-                "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-t-converted.pt",
-                "name": "yolov9-t-converted",
-            },
-            "yolov9s": {
-                "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-s-converted.pt",
-                "name": "yolov9-s-converted",
-            },
-            "yolov9m": {
-                "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-m-converted.pt",
-                "name": "yolov9-m-converted",
-            },
-            "yolov9c": {
-                "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-c-converted.pt",
-                "name": "yolov9-c-converted",
-            },
-            "yolov9e": {
-                "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-e-converted.pt",
-                "name": "yolov9-e-converted",
-            },
-        },
-        "yolov10": {
-            "yolov10n": {
-                "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10n.pt",
-                "name": "yolov10n",
-            },
-            "yolov10s": {
-                "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10s.pt",
-                "name": "yolov10s",
-            },
-            "yolov10m": {
-                "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10m.pt",
-                "name": "yolov10m",
-            },
-            "yolov10b": {
-                "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10b.pt",
-                "name": "yolov10b",
-            },
-            "yolov10l": {
-                "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10l.pt",
-                "name": "yolov10l",
-            },
-            "yolov10x": {
-                "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10x.pt",
-                "name": "yolov10x",
-            },
-        },
-        "yolov11": {
-            "yolov11n": {
-                "url": "ultralytics",
-                "name": "yolo11n",
-            },
-            "yolov11s": {
-                "url": "ultralytics",
-                "name": "yolo11s",
-            },
-            "yolov11m": {
-                "url": "ultralytics",
-                "name": "yolo11m",
-            },
-            "yolov11l": {
-                "url": "ultralytics",
-                "name": "yolo11l",
-            },
-            "yolov11x": {
-                "url": "ultralytics",
-                "name": "yolo11x",
-            },
-        },
-        "yolov12": {
-            "yolov12n": {
-                "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12n.pt",
-                "name": "yolov12n",
-            },
-            "yolov12s": {
-                "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12s.pt",
-                "name": "yolov12s",
-            },
-            "yolov12m": {
-                "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12m.pt",
-                "name": "yolov12m",
-            },
-            "yolov12l": {
-                "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12l.pt",
-                "name": "yolov12l",
-            },
-            "yolov12x": {
-                "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12x.pt",
-                "name": "yolov12x",
-            },
-        },
-        "yolov13": {
-            "yolov13n": {
-                "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13n.pt",
-                "name": "yolov13n",
-            },
-            "yolov13s": {
-                "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13s.pt",
-                "name": "yolov13s",
-            },
-            "yolov13l": {
-                "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13l.pt",
-                "name": "yolov13l",
-            },
-            "yolov13x": {
-                "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13x.pt",
-                "name": "yolov13x",
-            },
-        },
-        "rtdetrv1": {
-            "rtdetrv1_r18": {
-                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r18vd_5x_coco_objects365_from_paddle.pth",
-                "config": "rtdetr_r18vd_6x_coco.yml",
-                "name": "rtdetr_r18vd_5x_coco_objects365_from_paddle",
-            },
-            "rtdetrv1_r50": {
-                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r50vd_2x_coco_objects365_from_paddle.pth",
-                "config": "rtdetr_r50vd_6x_coco.yml",
-                "name": "rtdetr_r50vd_2x_coco_objects365_from_paddle",
-            },
-            "rtdetrv1_r101": {
-                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r101vd_2x_coco_objects365_from_paddle.pth",
-                "config": "rtdetr_r101vd_6x_coco.yml",
-                "name": "rtdetr_r101vd_2x_coco_objects365_from_paddle",
-            },
-        },
-        "rtdetrv2": {
-            "rtdetrv2_r18": {
-                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.2/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth",
-                "config": "rtdetrv2_r18vd_120e_coco.yml",
-                "name": "rtdetrv2_r18vd_120e_coco_rerun_48.1",
-            },
-            "rtdetrv2_r34": {
-                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r34vd_120e_coco_ema.pth",
-                "config": "rtdetrv2_r34vd_120e_coco.yml",
-                "name": "rtdetrv2_r34vd_120e_coco_ema",
-            },
-            "rtdetrv2_r50m": {
-                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r50vd_m_7x_coco_ema.pth",
-                "config": "rtdetrv2_r50vd_m_7x_coco.yml",
-                "name": "rtdetrv2_r50vd_m_7x_coco_ema",
-            },
-            "rtdetrv2_r50": {
-                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r50vd_6x_coco_ema.pth",
-                "config": "rtdetrv2_r50vd_6x_coco.yml",
-                "name": "rtdetrv2_r50vd_6x_coco_ema",
-            },
-            "rtdetrv2_r101": {
-                "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r101vd_6x_coco_from_paddle.pth",
-                "config": "rtdetrv2_r101vd_6x_coco.yml",
-                "name": "rtdetrv2_r101vd_6x_coco_from_paddle",
-            },
-        },
-        "rtdetrv3": {
-            "rtdetrv3_r18": {
-                "id": "1zIDOjn1qDccC3TBsDlGQHOjVrehd26bk",
-                "config": "rtdetrv3_r18vd_6x_coco.yml",
-                "name": "rtdetrv3_r18vd_6x_coco",
-            },
-            "rtdetrv3_r34": {
-                "id": "12-wqAF8i67eqbocaWPK33d4tFkN2wGi2",
-                "config": "rtdetrv3_r34vd_6x_coco.yml",
-                "name": "rtdetrv3_r34vd_6x_coco",
-            },
-            "rtdetrv3_r50": {
-                "id": "1wfJE-QgdgqKE0IkiTuoD5HEbZwwZg3sQ",
-                "config": "rtdetrv3_r50vd_6x_coco.yml",
-                "name": "rtdetrv3_r50vd_6x_coco",
-            },
-        },
-        "dfine": {
-            "dfine_n": {
-                "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_n_coco.pth",
-                "config": "dfine_hgnetv2_n_coco.yml",
-                "name": "dfine_n_coco",
-            },
-            "dfine_s": {
-                "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_s_obj2coco.pth",
-                "config": "dfine_hgnetv2_s_obj2coco.yml",
-                "name": "dfine_s_obj2coco",
-            },
-            "dfine_m": {
-                "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_m_obj2coco.pth",
-                "config": "dfine_hgnetv2_m_obj2coco.yml",
-                "name": "dfine_m_obj2coco",
-            },
-            "dfine_l": {
-                "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_l_obj2coco_e25.pth",
-                "config": "dfine_hgnetv2_l_obj2coco.yml",
-                "name": "dfine_l_obj2coco",
-            },
-            "dfine_x": {
-                "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_x_obj2coco.pth",
-                "config": "dfine_hgnetv2_x_obj2coco.yml",
-                "name": "dfine_x_obj2coco",
-            },
-        },
-        "deim": {
-            "deim_dfine_n": {
-                "id": "1ZPEhiU9nhW4M5jLnYOFwTSLQC1Ugf62e",
-                "config": "deim_hgnetv2_n_coco.yml",
-                "name": "deim_dfine_hgnetv2_n_coco_160e",
-            },
-            "deim_dfine_s": {
-                "id": "1tB8gVJNrfb6dhFvoHJECKOF5VpkthhfC",
-                "config": "deim_hgnetv2_s_coco.yml",
-                "name": "deim_dfine_hgnetv2_s_coco_120e",
-            },
-            "deim_dfine_m": {
-                "id": "18Lj2a6UN6k_n_UzqnJyiaiLGpDzQQit8",
-                "config": "deim_hgnetv2_m_coco.yml",
-                "name": "deim_dfine_hgnetv2_m_coco_90e",
-            },
-            "deim_dfine_l": {
-                "id": "1PIRf02XkrA2xAD3wEiKE2FaamZgSGTAr",
-                "config": "deim_hgnetv2_l_coco.yml",
-                "name": "deim_dfine_hgnetv2_l_coco_50e",
-            },
-            "deim_dfine_x": {
-                "id": "1dPtbgtGgq1Oa7k_LgH1GXPelg1IVeu0j",
-                "config": "deim_hgnetv2_x_coco.yml",
-                "name": "deim_dfine_hgnetv2_x_coco_50e",
-            },
-            "deim_rtdetrv2_r18": {
-                "id": "153_JKff6EpFgiLKaqkJsoDcLal_0ux_F",
-                "config": "deim_r18vd_120e_coco.yml",
-                "name": "deim_rtdetrv2_r18vd_coco_120e",
-            },
-            "deim_rtdetrv2_r34": {
-                "id": "1O9RjZF6kdFWGv1Etn1Toml4r-YfdMDMM",
-                "config": "deim_r34vd_120e_coco.yml",
-                "name": "deim_rtdetrv2_r34vd_coco_120e",
-            },
-            "deim_rtdetrv2_r50m": {
-                "id": "10dLuqdBZ6H5ip9BbBiE6S7ZcmHkRbD0E",
-                "config": "deim_r50vd_m_60e_coco.yml",
-                "name": "deim_rtdetrv2_r50vd_m_coco_60e",
-            },
-            "deim_rtdetrv2_r50": {
-                "id": "1mWknAXD5JYknUQ94WCEvPfXz13jcNOTI",
-                "config": "deim_r50vd_60e_coco.yml",
-                "name": "deim_rtdetrv2_r50vd_coco_60e",
-            },
-            "deim_rtdetrv2_r101": {
-                "id": "1BIevZijOcBO17llTyDX32F_pYppBfnzu",
-                "config": "deim_r101vd_60e_coco.yml",
-                "name": "deim_rtdetrv2_r101vd_coco_60e",
-            },
-        },
-        "rfdetr": {
-            "rfdetr_n": {
-                "class": "RFDETRNano",
-            },
-            "rfdetr_s": {
-                "class": "RFDETRSmall",
-            },
-            "rfdetr_m": {
-                "class": "RFDETRMedium",
-            },
-        },
-    }
+    model_configs = _load_model_configs()
     config: dict[str, str] | None = None
     for model_set in model_configs.values():
         for model_name in model_set:

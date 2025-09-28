@@ -1,0 +1,22 @@
+{
+  "yolov12n": {
+    "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12n.pt",
+    "name": "yolov12n"
+  },
+  "yolov12s": {
+    "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12s.pt",
+    "name": "yolov12s"
+  },
+  "yolov12m": {
+    "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12m.pt",
+    "name": "yolov12m"
+  },
+  "yolov12l": {
+    "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12l.pt",
+    "name": "yolov12l"
+  },
+  "yolov12x": {
+    "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12x.pt",
+    "name": "yolov12x"
+  }
+}

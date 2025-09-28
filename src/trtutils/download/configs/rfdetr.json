@@ -1,0 +1,11 @@
+{
+  "rfdetr_n": {
+    "class": "RFDETRNano"
+  },
+  "rfdetr_s": {
+    "class": "RFDETRSmall"
+  },
+  "rfdetr_m": {
+    "class": "RFDETRMedium"
+  }
+}

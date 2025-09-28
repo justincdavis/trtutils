@@ -1,0 +1,22 @@
+{
+  "yolov9t": {
+    "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-t-converted.pt",
+    "name": "yolov9-t-converted"
+  },
+  "yolov9s": {
+    "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-s-converted.pt",
+    "name": "yolov9-s-converted"
+  },
+  "yolov9m": {
+    "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-m-converted.pt",
+    "name": "yolov9-m-converted"
+  },
+  "yolov9c": {
+    "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-c-converted.pt",
+    "name": "yolov9-c-converted"
+  },
+  "yolov9e": {
+    "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-e-converted.pt",
+    "name": "yolov9-e-converted"
+  }
+}

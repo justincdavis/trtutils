@@ -137,7 +137,8 @@ where = ["src"]
 trtutils = [
     "src/*.cu",
     "src/*.onnx",
-    "src/trtutils/download/patches*.patch",
+    "src/trtutils/download/patches/*.patch",
+    "src/trtutils/download/configs/*.json",
     "src/trtutils/py.typed",
 ]
 

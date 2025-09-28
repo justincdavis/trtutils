@@ -2,3 +2,4 @@ include src/trtutils/py.typed
 include src/trtutils/image/_kernels/*.cu
 include src/trtutils/image/_onnx/*.onnx
 include src/trtutils/download/patches/*.patch
+include src/trtutils/download/configs/*.json
