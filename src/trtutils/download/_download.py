@@ -43,11 +43,12 @@ def _export_yolov7(
     directory: Path,
     config: dict[str, str],
     python_path: Path,
-    bin_path: Path,  # noqa: ARG001
+    bin_path: Path,
     model: str,
     opset: int,
     imgsz: int,
 ) -> Path:
+    LOG.warning("YOLOv7 is a GPL-3.0 licensed model, be aware of license restrictions")
     subprocess.run(
         ["git", "clone", "https://github.com/WongKinYiu/yolov7"],
         cwd=directory,
@@ -117,10 +118,13 @@ def _export_ultralytics(
     config: dict[str, str],
     python_path: Path,  # noqa: ARG001
     bin_path: Path,
-    model: str,  # noqa: ARG001
+    model: str,
     opset: int,
     imgsz: int,
 ) -> Path:
+    LOG.warning(
+        "Ultralytics is a AGPL-3.0 and commercial licensed model, be aware of license restrictions"
+    )
     subprocess.run(
         [
             "uv",
@@ -158,11 +162,12 @@ def _export_yolov9(
     directory: Path,
     config: dict[str, str],
     python_path: Path,
-    bin_path: Path,  # noqa: ARG001
-    model: str,  # noqa: ARG001
+    bin_path: Path,
+    model: str,
     opset: int,
     imgsz: int,
 ) -> Path:
+    LOG.warning("YOLOv9 is a GPL-3.0 licensed model, be aware of license restrictions")
     subprocess.run(
         ["git", "clone", "https://github.com/WongKinYiu/yolov9"],
         cwd=directory,
@@ -223,6 +228,9 @@ def _export_yolov10(
     opset: int,
     imgsz: int,
 ) -> Path:
+    LOG.warning(
+        "YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions"
+    )
     subprocess.run(
         ["git", "clone", "https://github.com/THU-MIG/yolov10"],
         cwd=directory,
@@ -273,6 +281,9 @@ def _export_yolov12(
     opset: int,
     imgsz: int,
 ) -> Path:
+    LOG.warning(
+        "YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions"
+    )
     subprocess.run(
         ["git", "clone", "https://github.com/sunsmarterjie/yolov12"],
         cwd=directory,
@@ -343,6 +354,9 @@ def _export_yolov13(
     opset: int,
     imgsz: int,
 ) -> Path:
+    LOG.warning(
+        "YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions"
+    )
     subprocess.run(
         ["git", "clone", "https://github.com/iMoonLab/yolov13"],
         cwd=directory,
@@ -394,6 +408,9 @@ def _export_rtdetrv1(
     opset: int,
     imgsz: int,
 ) -> Path:
+    LOG.warning(
+        "RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions"
+    )
     subprocess.run(
         ["git", "clone", "https://github.com/lyuwenyu/RT-DETR"],
         cwd=directory,
@@ -424,7 +441,11 @@ def _export_rtdetrv1(
             "patch",
             "tools/export_onnx.py",
             "-i",
-            str((Path(__file__).parent / "patches" / "rtdetrv1_export_onnx.patch").resolve()),
+            str(
+                (
+                    Path(__file__).parent / "patches" / "rtdetrv1_export_onnx.patch"
+                ).resolve()
+            ),
         ],
         cwd=directory / "RT-DETR" / "rtdetr_pytorch",
         check=True,
@@ -460,6 +481,9 @@ def _export_rtdetrv2(
     opset: int,
     imgsz: int,
 ) -> Path:
+    LOG.warning(
+        "RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions"
+    )
     subprocess.run(
         ["git", "clone", "https://github.com/lyuwenyu/RT-DETR"],
         cwd=directory,
@@ -490,7 +514,11 @@ def _export_rtdetrv2(
             "patch",
             "tools/export_onnx.py",
             "-i",
-            str((Path(__file__).parent / "patches" / "rtdetrv2_export_onnx.patch").resolve()),
+            str(
+                (
+                    Path(__file__).parent / "patches" / "rtdetrv2_export_onnx.patch"
+                ).resolve()
+            ),
         ],
         cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
         check=True,
@@ -524,11 +552,18 @@ def _export_rtdetrv3(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int,  # noqa: ARG001
 ) -> Path:
-    if opset > 16:
-        LOG.warning(f"RT-DETRv3 only supports opset <16, using opset 16")
-        opset = 16
+    LOG.warning(
+        "RT-DETRv3 is a Apache-2.0 licensed model, be aware of license restrictions"
+    )
+    LOG.warning("RT-DETRv3 does not support setting alternative input sizes")
+    paddle2onnx_max_opset = 16
+    if opset > paddle2onnx_max_opset:
+        LOG.warning(
+            f"RT-DETRv3 only supports opset <{paddle2onnx_max_opset}, using opset {paddle2onnx_max_opset}"
+        )
+        opset = paddle2onnx_max_opset
     subprocess.run(
         ["git", "clone", "https://github.com/clxia12/RT-DETRv3"],
         cwd=directory,
@@ -614,6 +649,9 @@ def _export_dfine(
     opset: int,
     imgsz: int,
 ) -> Path:
+    LOG.warning(
+        "D-FINE is a Apache-2.0 licensed model, be aware of license restrictions"
+    )
     subprocess.run(
         ["git", "clone", "https://github.com/Peterande/D-FINE"],
         cwd=directory,
@@ -649,7 +687,11 @@ def _export_dfine(
             "patch",
             "tools/deployment/export_onnx.py",
             "-i",
-            str((Path(__file__).parent / "patches" / "dfine_export_onnx.patch").resolve()),
+            str(
+                (
+                    Path(__file__).parent / "patches" / "dfine_export_onnx.patch"
+                ).resolve()
+            ),
         ],
         cwd=directory / "D-FINE",
         check=True,
@@ -685,6 +727,7 @@ def _export_deim(
     opset: int,
     imgsz: int,
 ) -> Path:
+    LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
     subprocess.run(
         ["git", "clone", "https://github.com/Intellindust-AI-Lab/DEIM"],
         cwd=directory,
@@ -729,7 +772,9 @@ def _export_deim(
             "patch",
             "tools/deployment/export_onnx.py",
             "-i",
-            str((Path(__file__).parent / "patches" / "deim_export_onnx.patch").resolve()),
+            str(
+                (Path(__file__).parent / "patches" / "deim_export_onnx.patch").resolve()
+            ),
         ],
         cwd=directory / "DEIM",
         check=True,
@@ -754,6 +799,54 @@ def _export_deim(
         check=True,
     )
     model_path = directory / "DEIM" / f"{config['name']}.onnx"
+    new_model_path = model_path.with_name(model + model_path.suffix)
+    shutil.move(model_path, new_model_path)
+    return new_model_path
+
+
+def _export_rfdetr(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    bin_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int,  # noqa: ARG001
+) -> Path:
+    LOG.warning(
+        "RF-DETR is a Apache-2.0 licensed model, be aware of license restrictions"
+    )
+    LOG.warning("RF-DETR does not support setting alternative input sizes")
+    subprocess.run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "-p",
+            str(bin_path.parent),
+            "rfdetr[onnxexport]",
+        ],
+        cwd=directory,
+        check=True,
+    )
+    program = f"""
+import rfdetr
+model = rfdetr.{config["class"]}()
+model.export(
+    opset_version={opset},
+    simplify=True,
+)
+    """
+    subprocess.run(
+        [
+            python_path,
+            "-c",
+            program,
+        ],
+        cwd=directory,
+        check=True,
+    )
+    model_path = directory / "output" / "inference_model.sim.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -1092,7 +1185,18 @@ def download_model(
                 "config": "deim_r101vd_60e_coco.yml",
                 "name": "deim_rtdetrv2_r101vd_coco_60e",
             },
-        }
+        },
+        "rfdetr": {
+            "rfdetr_n": {
+                "class": "RFDETRNano",
+            },
+            "rfdetr_s": {
+                "class": "RFDETRSmall",
+            },
+            "rfdetr_m": {
+                "class": "RFDETRMedium",
+            },
+        },
     }
     config: dict[str, str] | None = None
     for model_set in model_configs.values():
@@ -1117,7 +1221,7 @@ def download_model(
         imgsz,
     )
     model_path: Path | None = None
-    if "deim" in model and not "deimv2" in model:
+    if "deim" in model and "deimv2" not in model:
         model_path = _export_deim(*packet)
     elif "yolov7" in model:
         model_path = _export_yolov7(*packet)
@@ -1139,6 +1243,8 @@ def download_model(
         model_path = _export_rtdetrv3(*packet)
     elif "dfine" in model:
         model_path = _export_dfine(*packet)
+    elif "rfdetr" in model:
+        model_path = _export_rfdetr(*packet)
     if model_path is None:
         err_msg = f"Model {model} is not supported"
         raise ValueError(err_msg)

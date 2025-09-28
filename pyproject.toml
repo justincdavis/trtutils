@@ -206,6 +206,8 @@ show_error_codes = true
 disallow_subclassing_any = true
 warn_unreachable = false
 disallow_any_generics = false
+follow_imports = "skip"
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [  
