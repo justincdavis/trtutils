@@ -59,6 +59,24 @@ def _git_clone(
     )
 
 
+def _run_uv_pip_install(
+    directory: Path,
+    venv_path: Path,
+    *packages: str,
+    verbose: bool | None = None,
+) -> None:
+    cmd = ["uv", "pip", "install", "-p", str(venv_path)]
+    cmd.extend(packages)
+    subprocess.run(
+        cmd,
+        cwd=directory,
+        check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
+    )
+
+
+
 def _make_venv(
     directory: Path,
     *,
@@ -74,24 +92,65 @@ def _make_venv(
     # Important: do NOT resolve symlinks here; keep .venv/bin/python so uv targets the venv
     bin_path: Path = directory / ".venv" / "bin"
     python_path: Path = bin_path / "python"
+    _run_uv_pip_install(
+        directory,
+        bin_path.parent,
+        "--upgrade",
+        "pip",
+        "setuptools",
+        "wheel",
+        verbose=verbose,
+    )
+    return python_path, bin_path
+
+
+def _run_download(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    *,
+    verbose: bool | None = None,
+) -> None:
+    if "id" in config:
+        subprocess.run(
+            [
+                python_path,
+                "-m",
+                "gdown",
+                "--id",
+                config["id"],
+                "-O",
+                config["name"] + ".pth",
+            ],
+            cwd=directory,
+            check=True,
+            stdout=subprocess.DEVNULL if not verbose else None,
+            stderr=subprocess.STDOUT if not verbose else None,
+        )
+    else:
+        subprocess.run(
+            ["wget", "-nc", config["url"]],
+            cwd=directory,
+            check=True,
+            stdout=subprocess.DEVNULL if not verbose else None,
+            stderr=subprocess.STDOUT if not verbose else None,
+        )
+
+
+def _run_patch(
+    directory: Path,
+    patch_file: str,
+    file_to_patch: str,
+    *,
+    verbose: bool | None = None,
+) -> None:
     subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            "--upgrade",
-            "pip",
-            "setuptools",
-            "wheel",
-        ],
+        ["patch", file_to_patch, "-i", patch_file],
         cwd=directory,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    return python_path, bin_path
 
 
 def _export_yolov7(
@@ -107,45 +166,26 @@ def _export_yolov7(
 ) -> Path:
     LOG.warning("YOLOv7 is a GPL-3.0 licensed model, be aware of license restrictions")
     _git_clone("https://github.com/WongKinYiu/yolov7", directory, verbose=verbose)
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            "-r",
-            "requirements.txt",
-            "torch==2.4.*",
-            "onnx",
-            "onnxruntime",
-            "onnxslim",
-            "onnxsim",
-            "onnx_graphsurgeon",
-        ],
-        cwd=directory / "yolov7",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    yolov7_dir = directory / "yolov7"
+    _run_uv_pip_install(
+        yolov7_dir,
+        bin_path.parent,
+        "-r",
+        "requirements.txt",
+        "torch==2.4.*",
+        "onnx",
+        "onnxruntime",
+        "onnxslim",
+        "onnxsim",
+        "onnx_graphsurgeon",
+        verbose=verbose,
     )
-    subprocess.run(
-        ["wget", "-nc", config["url"]],
-        cwd=directory / "yolov7",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
-    subprocess.run(
-        [
-            "patch",
-            "export.py",
-            "-i",
-            str((Path(__file__).parent / "patches" / "yolov7_export.patch").resolve()),
-        ],
-        cwd=directory / "yolov7",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    _run_download(yolov7_dir, config, python_path, verbose=verbose)
+    _run_patch(
+        yolov7_dir,
+        str((Path(__file__).parent / "patches" / "yolov7_export.patch").resolve()),
+        "export.py",
+        verbose=verbose,
     )
     subprocess.run(
         [
@@ -161,12 +201,12 @@ def _export_yolov7(
             "--opset",
             str(opset),
         ],
-        cwd=directory / "yolov7",
+        cwd=yolov7_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    model_path = directory / "yolov7" / (config["name"] + ".onnx")
+    model_path = yolov7_dir / (config["name"] + ".onnx")
 
     # patch names
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -188,22 +228,14 @@ def _export_ultralytics(
     LOG.warning(
         "Ultralytics is a AGPL-3.0 and commercial licensed model, be aware of license restrictions"
     )
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            "ultralytics",
-            "onnx",
-            "onnxruntime",
-            "onnxslim",
-        ],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    _run_uv_pip_install(
+        directory,
+        bin_path.parent,
+        "ultralytics",
+        "onnx",
+        "onnxruntime",
+        "onnxslim",
+        verbose=verbose,
     )
     subprocess.run(
         [
@@ -238,32 +270,19 @@ def _export_yolov9(
 ) -> Path:
     LOG.warning("YOLOv9 is a GPL-3.0 licensed model, be aware of license restrictions")
     _git_clone("https://github.com/WongKinYiu/yolov9", directory, verbose=verbose)
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            "-r",
-            "requirements.txt",
-            "torch==2.4.*",
-            "onnx",
-            "onnxruntime",
-            "onnx-simplifier>=0.4.1",
-        ],
-        cwd=directory / "yolov9",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    yolov9_dir = directory / "yolov9"
+    _run_uv_pip_install(
+        yolov9_dir,
+        bin_path.parent,
+        "-r",
+        "requirements.txt",
+        "torch==2.4.*",
+        "onnx",
+        "onnxruntime",
+        "onnx-simplifier>=0.4.1",
+        verbose=verbose,
     )
-    subprocess.run(
-        ["wget", "-nc", config["url"]],
-        cwd=directory / "yolov9",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _run_download(yolov9_dir, config, python_path, verbose=verbose)
     subprocess.run(
         [
             python_path,
@@ -279,12 +298,12 @@ def _export_yolov9(
             "--opset",
             str(opset),
         ],
-        cwd=directory / "yolov9",
+        cwd=yolov9_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    model_path = directory / "yolov9" / (config["name"] + ".onnx")
+    model_path = yolov9_dir / (config["name"] + ".onnx")
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -305,31 +324,18 @@ def _export_yolov10(
         "YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions"
     )
     _git_clone("https://github.com/THU-MIG/yolov10", directory, verbose=verbose)
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            ".",
-            "torch==2.4.*",
-            "onnx",
-            "onnxsim",
-            "huggingface_hub",
-        ],
-        cwd=directory / "yolov10",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    yolov10_dir = directory / "yolov10"
+    _run_uv_pip_install(
+        yolov10_dir,
+        bin_path.parent,
+        ".",
+        "torch==2.4.*",
+        "onnx",
+        "onnxsim",
+        "huggingface_hub",
+        verbose=verbose,
     )
-    subprocess.run(
-        ["wget", "-nc", config["url"]],
-        cwd=directory / "yolov10",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _run_download(yolov10_dir, config, python_path, verbose=verbose)
     subprocess.run(
         [
             str(bin_path / "yolo"),
@@ -339,12 +345,12 @@ def _export_yolov10(
             f"opset={opset}",
             f"imgsz={imgsz}",
         ],
-        cwd=directory / "yolov10",
+        cwd=yolov10_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    return directory / "yolov10" / (config["name"] + ".onnx")
+    return yolov10_dir / (config["name"] + ".onnx")
 
 
 def _export_yolov12(
@@ -362,50 +368,32 @@ def _export_yolov12(
         "YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions"
     )
     _git_clone("https://github.com/sunsmarterjie/yolov12", directory, verbose=verbose)
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            ".",
-            "torch==2.4.*",
-            "torchvision",
-            "timm",
-            "albumentations",
-            "onnx",
-            "onnxruntime",
-            "pycocotools",
-            "pyyaml",
-            "scipy",
-            "onnxslim",
-            "onnxruntime-gpu",
-            "gradio",
-            "opencv-python",
-            "psutil",
-            "huggingface-hub",
-            "safetensors",
-            "numpy",
-            "supervision",
-        ],
-        cwd=directory / "yolov12",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    yolov12_dir = directory / "yolov12"
+    _run_uv_pip_install(
+        yolov12_dir,
+        bin_path.parent,
+        ".",
+        "torch==2.4.*",
+        "torchvision",
+        "timm",
+        "albumentations",
+        "onnx",
+        "onnxruntime",
+        "pycocotools",
+        "pyyaml",
+        "scipy",
+        "onnxslim",
+        "onnxruntime-gpu",
+        "gradio",
+        "opencv-python",
+        "psutil",
+        "huggingface-hub",
+        "safetensors",
+        "numpy",
+        "supervision",
+        verbose=verbose,
     )
-    # subprocess.run(
-    #     ["uv", "pip", "install", "-p", str(bin_path.parent), "flash_attn", "--no-build-isolation"],
-    #     cwd=directory / "yolov12",
-    #     check=True,
-    # )
-    subprocess.run(
-        ["wget", "-nc", config["url"]],
-        cwd=directory / "yolov12",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _run_download(yolov12_dir, config, python_path, verbose=verbose)
     subprocess.run(
         [
             str(bin_path / "yolo"),
@@ -416,12 +404,12 @@ def _export_yolov12(
             f"imgsz={imgsz}",
             "simplify",
         ],
-        cwd=directory / "yolov12",
+        cwd=yolov12_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    return directory / "yolov12" / (config["name"] + ".onnx")
+    return yolov12_dir / (config["name"] + ".onnx")
 
 
 def _export_yolov13(
@@ -439,32 +427,19 @@ def _export_yolov13(
         "YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions"
     )
     _git_clone("https://github.com/iMoonLab/yolov13", directory, verbose=verbose)
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            ".",
-            "torch==2.4.*",
-            "onnx",
-            "onnxslim",
-            "onnxruntime-gpu",
-            "huggingface_hub",
-        ],
-        cwd=directory / "yolov13",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    yolov13_dir = directory / "yolov13"
+    _run_uv_pip_install(
+        yolov13_dir,
+        bin_path.parent,
+        ".",
+        "torch==2.4.*",
+        "onnx",
+        "onnxslim",
+        "onnxruntime-gpu",
+        "huggingface_hub",
+        verbose=verbose,
     )
-    subprocess.run(
-        ["wget", "-nc", config["url"]],
-        cwd=directory / "yolov13",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _run_download(yolov13_dir, config, python_path, verbose=verbose)
     subprocess.run(
         [
             str(bin_path / "yolo"),
@@ -474,12 +449,12 @@ def _export_yolov13(
             f"opset={opset}",
             f"imgsz={imgsz}",
         ],
-        cwd=directory / "yolov13",
+        cwd=yolov13_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    return directory / "yolov13" / (config["name"] + ".onnx")
+    return yolov13_dir / (config["name"] + ".onnx")
 
 
 def _export_rtdetrv1(
@@ -497,45 +472,26 @@ def _export_rtdetrv1(
         "RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions"
     )
     _git_clone("https://github.com/lyuwenyu/RT-DETR", directory, verbose=verbose)
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            "-r",
-            "requirements.txt",
-            "onnxsim>=0.4",
-            "numpy==1.*",
-        ],
-        cwd=directory / "RT-DETR" / "rtdetr_pytorch",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    rtdetr_dir = directory / "RT-DETR" / "rtdetr_pytorch"
+    _run_uv_pip_install(
+        rtdetr_dir,
+        bin_path.parent,
+        "-r",
+        "requirements.txt",
+        "onnxsim>=0.4",
+        "numpy==1.*",
+        verbose=verbose,
     )
-    subprocess.run(
-        ["wget", "-nc", config["url"]],
-        cwd=directory / "RT-DETR" / "rtdetr_pytorch",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
-    subprocess.run(
-        [
-            "patch",
-            "tools/export_onnx.py",
-            "-i",
-            str(
-                (
-                    Path(__file__).parent / "patches" / "rtdetrv1_export_onnx.patch"
-                ).resolve()
-            ),
-        ],
-        cwd=directory / "RT-DETR" / "rtdetr_pytorch",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    _run_download(rtdetr_dir, config, python_path, verbose=verbose)
+    _run_patch(
+        rtdetr_dir,
+        str(
+            (
+                Path(__file__).parent / "patches" / "rtdetrv1_export_onnx.patch"
+            ).resolve()
+        ),
+        "tools/export_onnx.py",
+        verbose=verbose,
     )
     subprocess.run(
         [
@@ -550,12 +506,12 @@ def _export_rtdetrv1(
             "--imgsz",
             str(imgsz),
         ],
-        cwd=directory / "RT-DETR" / "rtdetr_pytorch",
+        cwd=rtdetr_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    model_path = directory / "RT-DETR" / "rtdetr_pytorch" / "model.onnx"
+    model_path = rtdetr_dir / "model.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -576,45 +532,26 @@ def _export_rtdetrv2(
         "RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions"
     )
     _git_clone("https://github.com/lyuwenyu/RT-DETR", directory, verbose=verbose)
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            "-r",
-            "requirements.txt",
-            "onnxsim>=0.4",
-            "numpy==1.*",
-        ],
-        cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    rtdetrv2_dir = directory / "RT-DETR" / "rtdetrv2_pytorch"
+    _run_uv_pip_install(
+        rtdetrv2_dir,
+        bin_path.parent,
+        "-r",
+        "requirements.txt",
+        "onnxsim>=0.4",
+        "numpy==1.*",
+        verbose=verbose,
     )
-    subprocess.run(
-        ["wget", "-nc", config["url"]],
-        cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
-    subprocess.run(
-        [
-            "patch",
-            "tools/export_onnx.py",
-            "-i",
-            str(
-                (
-                    Path(__file__).parent / "patches" / "rtdetrv2_export_onnx.patch"
-                ).resolve()
-            ),
-        ],
-        cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    _run_download(rtdetrv2_dir, config, python_path, verbose=verbose)
+    _run_patch(
+        rtdetrv2_dir,
+        str(
+            (
+                Path(__file__).parent / "patches" / "rtdetrv2_export_onnx.patch"
+            ).resolve()
+        ),
+        "tools/export_onnx.py",
+        verbose=verbose,
     )
     subprocess.run(
         [
@@ -629,12 +566,12 @@ def _export_rtdetrv2(
             "--input_size",
             str(imgsz),
         ],
-        cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
+        cwd=rtdetrv2_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    model_path = directory / "RT-DETR" / "rtdetrv2_pytorch" / "model.onnx"
+    model_path = rtdetrv2_dir / "model.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -662,42 +599,21 @@ def _export_rtdetrv3(
         )
         opset = paddle2onnx_max_opset
     _git_clone("https://github.com/clxia12/RT-DETRv3", directory, verbose=verbose)
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            "-r",
-            "requirements.txt",
-            "paddlepaddle==2.6.1",
-            "paddle2onnx==1.0.5",
-            "onnx==1.13.0",
-            "onnxsim>=0.4",
-            "scikit-learn",
-            "gdown",
-        ],
-        cwd=directory / "RT-DETRv3",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    rtdetrv3_dir = directory / "RT-DETRv3"
+    _run_uv_pip_install(
+        rtdetrv3_dir,
+        bin_path.parent,
+        "-r",
+        "requirements.txt",
+        "paddlepaddle==2.6.1",
+        "paddle2onnx==1.0.5",
+        "onnx==1.13.0",
+        "onnxsim>=0.4",
+        "scikit-learn",
+        "gdown",
+        verbose=verbose,
     )
-    subprocess.run(
-        [
-            python_path,
-            "-m",
-            "gdown",
-            "--id",
-            config["id"],
-            "-O",
-            config["name"] + ".pdparams",
-        ],
-        cwd=directory / "RT-DETRv3",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _run_download(rtdetrv3_dir, config, python_path, verbose=verbose)
     subprocess.run(
         [
             python_path,
@@ -711,7 +627,7 @@ def _export_rtdetrv3(
             "--output_dir",
             "output_weights",
         ],
-        cwd=directory / "RT-DETRv3",
+        cwd=rtdetrv3_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
@@ -730,12 +646,12 @@ def _export_rtdetrv3(
             "--save_file",
             f"{config['name']}.onnx",
         ],
-        cwd=directory / "RT-DETRv3",
+        cwd=rtdetrv3_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    model_path = directory / "RT-DETRv3" / f"{config['name']}.onnx"
+    model_path = rtdetrv3_dir / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -756,50 +672,31 @@ def _export_dfine(
         "D-FINE is a Apache-2.0 licensed model, be aware of license restrictions"
     )
     _git_clone("https://github.com/Peterande/D-FINE", directory, verbose=verbose)
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            "-r",
-            "requirements.txt",
-            "--extra-index-url",
-            "https://download.pytorch.org/whl/cpu",
-            "torch==2.4.1",
-            "torchvision==0.19.1",
-            "onnx",
-            "onnxsim",
-            "onnxruntime",
-        ],
-        cwd=directory / "D-FINE",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    dfine_dir = directory / "D-FINE"
+    _run_uv_pip_install(
+        dfine_dir,
+        bin_path.parent,
+        "-r",
+        "requirements.txt",
+        "--extra-index-url",
+        "https://download.pytorch.org/whl/cpu",
+        "torch==2.4.1",
+        "torchvision==0.19.1",
+        "onnx",
+        "onnxsim",
+        "onnxruntime",
+        verbose=verbose,
     )
-    subprocess.run(
-        ["wget", "-nc", config["url"]],
-        cwd=directory / "D-FINE",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
-    subprocess.run(
-        [
-            "patch",
-            "tools/deployment/export_onnx.py",
-            "-i",
-            str(
-                (
-                    Path(__file__).parent / "patches" / "dfine_export_onnx.patch"
-                ).resolve()
-            ),
-        ],
-        cwd=directory / "D-FINE",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    _run_download(dfine_dir, config, python_path, verbose=verbose)
+    _run_patch(
+        dfine_dir,
+        str(
+            (
+                Path(__file__).parent / "patches" / "dfine_export_onnx.patch"
+            ).resolve()
+        ),
+        "tools/deployment/export_onnx.py",
+        verbose=verbose,
     )
     subprocess.run(
         [
@@ -814,12 +711,12 @@ def _export_dfine(
             "--imgsz",
             str(imgsz),
         ],
-        cwd=directory / "D-FINE",
+        cwd=dfine_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    model_path = directory / "D-FINE" / f"{config['name']}.onnx"
+    model_path = dfine_dir / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -838,57 +735,30 @@ def _export_deim(
 ) -> Path:
     LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
     _git_clone("https://github.com/Intellindust-AI-Lab/DEIM", directory, verbose=verbose)
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            "-r",
-            "requirements.txt",
-            "--extra-index-url",
-            "https://download.pytorch.org/whl/cpu",
-            "torch==2.4.1",
-            "torchvision==0.19.1",
-            "onnx",
-            "onnxsim",
-            "onnxruntime",
-            "gdown",
-        ],
-        cwd=directory / "DEIM",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    deim_dir = directory / "DEIM"
+    _run_uv_pip_install(
+        deim_dir,
+        bin_path.parent,
+        "-r",
+        "requirements.txt",
+        "--extra-index-url",
+        "https://download.pytorch.org/whl/cpu",
+        "torch==2.4.1",
+        "torchvision==0.19.1",
+        "onnx",
+        "onnxsim",
+        "onnxruntime",
+        "gdown",
+        verbose=verbose,
     )
-    subprocess.run(
-        [
-            python_path,
-            "-m",
-            "gdown",
-            "--id",
-            config["id"],
-            "-O",
-            config["name"] + ".pth",
-        ],
-        cwd=directory / "DEIM",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
-    subprocess.run(
-        [
-            "patch",
-            "tools/deployment/export_onnx.py",
-            "-i",
-            str(
-                (Path(__file__).parent / "patches" / "deim_export_onnx.patch").resolve()
-            ),
-        ],
-        cwd=directory / "DEIM",
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    _run_download(deim_dir, config, python_path, verbose=verbose)
+    _run_patch(
+        deim_dir,
+        str(
+            (Path(__file__).parent / "patches" / "deim_export_onnx.patch").resolve()
+        ),
+        "tools/deployment/export_onnx.py",
+        verbose=verbose,
     )
     config_folder = "deim_dfine"
     if "rtdetrv2" in config["name"]:
@@ -906,12 +776,12 @@ def _export_deim(
             "--imgsz",
             str(imgsz),
         ],
-        cwd=directory / "DEIM",
+        cwd=deim_dir,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    model_path = directory / "DEIM" / f"{config['name']}.onnx"
+    model_path = deim_dir / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -932,19 +802,11 @@ def _export_rfdetr(
         "RF-DETR is a Apache-2.0 licensed model, be aware of license restrictions"
     )
     LOG.warning("RF-DETR does not support setting alternative input sizes")
-    subprocess.run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "-p",
-            str(bin_path.parent),
-            "rfdetr[onnxexport]",
-        ],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+    _run_uv_pip_install(
+        directory,
+        bin_path.parent,
+        "rfdetr[onnxexport]",
+        verbose=verbose,
     )
     program = f"""
 import rfdetr
