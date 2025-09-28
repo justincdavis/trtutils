@@ -841,11 +841,12 @@ def _export_deim(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int,  # noqa: ARG001
     *,
     verbose: bool | None = None,
 ) -> Path:
-    LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
+    LOG.warning("DEIMv2 is a Apache-2.0 licensed model, be aware of license restrictions")
+    LOG.warning("DEIMv2 does not support setting alternative input sizes")
     _git_clone("https://github.com/Intellindust-AI-Lab/DEIMv2", directory, verbose=verbose)
     deim_dir = directory / "DEIMv2"
     _run_uv_pip_install(
