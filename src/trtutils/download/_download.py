@@ -775,6 +775,7 @@ def _export_deim(
             str(opset),
             "--imgsz",
             str(imgsz),
+            "--simplify",
         ],
         cwd=deim_dir,
         check=True,
@@ -828,6 +829,60 @@ model.export(
         stderr=subprocess.STDOUT if not verbose else None,
     )
     model_path = directory / "output" / "inference_model.sim.onnx"
+    new_model_path = model_path.with_name(model + model_path.suffix)
+    shutil.move(model_path, new_model_path)
+    return new_model_path
+
+
+def _export_deim(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    bin_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int,
+    *,
+    verbose: bool | None = None,
+) -> Path:
+    LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
+    _git_clone("https://github.com/Intellindust-AI-Lab/DEIMv2", directory, verbose=verbose)
+    deim_dir = directory / "DEIMv2"
+    _run_uv_pip_install(
+        deim_dir,
+        bin_path.parent,
+        "-r",
+        "requirements.txt",
+        "--extra-index-url",
+        "https://download.pytorch.org/whl/cpu",
+        "torch==2.4.1",
+        "torchvision==0.19.1",
+        "onnx",
+        "onnxsim",
+        "onnxruntime",
+        "gdown",
+        verbose=verbose,
+    )
+    _run_download(deim_dir, config, python_path, verbose=verbose)
+    config_folder = "deimv2"
+    subprocess.run(
+        [
+            python_path,
+            "tools/deployment/export_onnx.py",
+            "-c",
+            str(Path("configs") / config_folder / config["config"]),
+            "-r",
+            config["name"] + ".pth",
+            "--opset",
+            str(opset),
+            "--simplify",
+        ],
+        cwd=deim_dir,
+        check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
+    )
+    model_path = deim_dir / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -892,6 +947,8 @@ def download_model(
     model_path: Path | None = None
     if "deim" in model and "deimv2" not in model:
         model_path = _export_deim(*packet, verbose=verbose)
+    elif "deimv2" in model:
+        model_path = _export_deimv2(*packet, verbose=verbose)
     elif "yolov7" in model:
         model_path = _export_yolov7(*packet, verbose=verbose)
     elif "yolov8" in model or "yolov11" in model:
