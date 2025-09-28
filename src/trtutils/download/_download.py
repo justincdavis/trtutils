@@ -44,6 +44,21 @@ def _load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
     return model_configs
 
 
+def _git_clone(
+    url: str,
+    directory: Path,
+    *,
+    verbose: bool | None = None,
+) -> None:
+    subprocess.run(
+        ["git", "clone", url],
+        cwd=directory,
+        check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
+    )
+
+
 def _make_venv(
     directory: Path,
     *,
@@ -91,13 +106,7 @@ def _export_yolov7(
     verbose: bool | None = None,
 ) -> Path:
     LOG.warning("YOLOv7 is a GPL-3.0 licensed model, be aware of license restrictions")
-    subprocess.run(
-        ["git", "clone", "https://github.com/WongKinYiu/yolov7"],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _git_clone("https://github.com/WongKinYiu/yolov7", directory, verbose=verbose)
     subprocess.run(
         [
             "uv",
@@ -228,13 +237,7 @@ def _export_yolov9(
     verbose: bool | None = None,
 ) -> Path:
     LOG.warning("YOLOv9 is a GPL-3.0 licensed model, be aware of license restrictions")
-    subprocess.run(
-        ["git", "clone", "https://github.com/WongKinYiu/yolov9"],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _git_clone("https://github.com/WongKinYiu/yolov9", directory, verbose=verbose)
     subprocess.run(
         [
             "uv",
@@ -301,13 +304,7 @@ def _export_yolov10(
     LOG.warning(
         "YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions"
     )
-    subprocess.run(
-        ["git", "clone", "https://github.com/THU-MIG/yolov10"],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _git_clone("https://github.com/THU-MIG/yolov10", directory, verbose=verbose)
     subprocess.run(
         [
             "uv",
@@ -364,13 +361,7 @@ def _export_yolov12(
     LOG.warning(
         "YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions"
     )
-    subprocess.run(
-        ["git", "clone", "https://github.com/sunsmarterjie/yolov12"],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _git_clone("https://github.com/sunsmarterjie/yolov12", directory, verbose=verbose)
     subprocess.run(
         [
             "uv",
@@ -447,13 +438,7 @@ def _export_yolov13(
     LOG.warning(
         "YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions"
     )
-    subprocess.run(
-        ["git", "clone", "https://github.com/iMoonLab/yolov13"],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _git_clone("https://github.com/iMoonLab/yolov13", directory, verbose=verbose)
     subprocess.run(
         [
             "uv",
@@ -511,13 +496,7 @@ def _export_rtdetrv1(
     LOG.warning(
         "RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions"
     )
-    subprocess.run(
-        ["git", "clone", "https://github.com/lyuwenyu/RT-DETR"],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _git_clone("https://github.com/lyuwenyu/RT-DETR", directory, verbose=verbose)
     subprocess.run(
         [
             "uv",
@@ -596,13 +575,7 @@ def _export_rtdetrv2(
     LOG.warning(
         "RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions"
     )
-    subprocess.run(
-        ["git", "clone", "https://github.com/lyuwenyu/RT-DETR"],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _git_clone("https://github.com/lyuwenyu/RT-DETR", directory, verbose=verbose)
     subprocess.run(
         [
             "uv",
@@ -688,13 +661,7 @@ def _export_rtdetrv3(
             f"RT-DETRv3 only supports opset <{paddle2onnx_max_opset}, using opset {paddle2onnx_max_opset}"
         )
         opset = paddle2onnx_max_opset
-    subprocess.run(
-        ["git", "clone", "https://github.com/clxia12/RT-DETRv3"],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _git_clone("https://github.com/clxia12/RT-DETRv3", directory, verbose=verbose)
     subprocess.run(
         [
             "uv",
@@ -788,13 +755,7 @@ def _export_dfine(
     LOG.warning(
         "D-FINE is a Apache-2.0 licensed model, be aware of license restrictions"
     )
-    subprocess.run(
-        ["git", "clone", "https://github.com/Peterande/D-FINE"],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _git_clone("https://github.com/Peterande/D-FINE", directory, verbose=verbose)
     subprocess.run(
         [
             "uv",
@@ -876,13 +837,7 @@ def _export_deim(
     verbose: bool | None = None,
 ) -> Path:
     LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
-    subprocess.run(
-        ["git", "clone", "https://github.com/Intellindust-AI-Lab/DEIM"],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    _git_clone("https://github.com/Intellindust-AI-Lab/DEIM", directory, verbose=verbose)
     subprocess.run(
         [
             "uv",
