@@ -12,11 +12,17 @@ from pathlib import Path
 from trtutils._log import LOG
 
 
-def _make_venv(directory: Path) -> tuple[Path, Path]:
+def _make_venv(
+    directory: Path,
+    *,
+    verbose: bool | None = None,
+) -> tuple[Path, Path]:
     subprocess.run(
         ["uv", "venv", ".venv", "--python=3.10", "--clear"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     # Important: do NOT resolve symlinks here; keep .venv/bin/python so uv targets the venv
     bin_path: Path = directory / ".venv" / "bin"
@@ -35,6 +41,8 @@ def _make_venv(directory: Path) -> tuple[Path, Path]:
         ],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     return python_path, bin_path
 
@@ -47,12 +55,16 @@ def _export_yolov7(
     model: str,
     opset: int,
     imgsz: int,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning("YOLOv7 is a GPL-3.0 licensed model, be aware of license restrictions")
     subprocess.run(
         ["git", "clone", "https://github.com/WongKinYiu/yolov7"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -72,11 +84,15 @@ def _export_yolov7(
         ],
         cwd=directory / "yolov7",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         ["wget", "-nc", config["url"]],
         cwd=directory / "yolov7",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -87,6 +103,8 @@ def _export_yolov7(
         ],
         cwd=directory / "yolov7",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -104,6 +122,8 @@ def _export_yolov7(
         ],
         cwd=directory / "yolov7",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     model_path = directory / "yolov7" / (config["name"] + ".onnx")
 
@@ -121,6 +141,8 @@ def _export_ultralytics(
     model: str,
     opset: int,
     imgsz: int,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning(
         "Ultralytics is a AGPL-3.0 and commercial licensed model, be aware of license restrictions"
@@ -139,6 +161,8 @@ def _export_ultralytics(
         ],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -151,6 +175,8 @@ def _export_ultralytics(
         ],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     model_path = directory / (config["name"] + ".onnx")
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -166,12 +192,16 @@ def _export_yolov9(
     model: str,
     opset: int,
     imgsz: int,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning("YOLOv9 is a GPL-3.0 licensed model, be aware of license restrictions")
     subprocess.run(
         ["git", "clone", "https://github.com/WongKinYiu/yolov9"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -189,11 +219,15 @@ def _export_yolov9(
         ],
         cwd=directory / "yolov9",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         ["wget", "-nc", config["url"]],
         cwd=directory / "yolov9",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -212,6 +246,8 @@ def _export_yolov9(
         ],
         cwd=directory / "yolov9",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     model_path = directory / "yolov9" / (config["name"] + ".onnx")
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -227,6 +263,8 @@ def _export_yolov10(
     model: str,  # noqa: ARG001
     opset: int,
     imgsz: int,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning(
         "YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions"
@@ -235,6 +273,8 @@ def _export_yolov10(
         ["git", "clone", "https://github.com/THU-MIG/yolov10"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -251,11 +291,15 @@ def _export_yolov10(
         ],
         cwd=directory / "yolov10",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         ["wget", "-nc", config["url"]],
         cwd=directory / "yolov10",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -268,6 +312,8 @@ def _export_yolov10(
         ],
         cwd=directory / "yolov10",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     return directory / "yolov10" / (config["name"] + ".onnx")
 
@@ -280,6 +326,8 @@ def _export_yolov12(
     model: str,  # noqa: ARG001
     opset: int,
     imgsz: int,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning(
         "YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions"
@@ -288,6 +336,8 @@ def _export_yolov12(
         ["git", "clone", "https://github.com/sunsmarterjie/yolov12"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -318,6 +368,8 @@ def _export_yolov12(
         ],
         cwd=directory / "yolov12",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     # subprocess.run(
     #     ["uv", "pip", "install", "-p", str(bin_path.parent), "flash_attn", "--no-build-isolation"],
@@ -328,6 +380,8 @@ def _export_yolov12(
         ["wget", "-nc", config["url"]],
         cwd=directory / "yolov12",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -341,6 +395,8 @@ def _export_yolov12(
         ],
         cwd=directory / "yolov12",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     return directory / "yolov12" / (config["name"] + ".onnx")
 
@@ -353,6 +409,8 @@ def _export_yolov13(
     model: str,  # noqa: ARG001
     opset: int,
     imgsz: int,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning(
         "YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions"
@@ -361,6 +419,8 @@ def _export_yolov13(
         ["git", "clone", "https://github.com/iMoonLab/yolov13"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -378,11 +438,15 @@ def _export_yolov13(
         ],
         cwd=directory / "yolov13",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         ["wget", "-nc", config["url"]],
         cwd=directory / "yolov13",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -395,6 +459,8 @@ def _export_yolov13(
         ],
         cwd=directory / "yolov13",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     return directory / "yolov13" / (config["name"] + ".onnx")
 
@@ -407,6 +473,8 @@ def _export_rtdetrv1(
     model: str,
     opset: int,
     imgsz: int,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning(
         "RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions"
@@ -415,6 +483,8 @@ def _export_rtdetrv1(
         ["git", "clone", "https://github.com/lyuwenyu/RT-DETR"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -430,11 +500,15 @@ def _export_rtdetrv1(
         ],
         cwd=directory / "RT-DETR" / "rtdetr_pytorch",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         ["wget", "-nc", config["url"]],
         cwd=directory / "RT-DETR" / "rtdetr_pytorch",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -449,6 +523,8 @@ def _export_rtdetrv1(
         ],
         cwd=directory / "RT-DETR" / "rtdetr_pytorch",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -465,6 +541,8 @@ def _export_rtdetrv1(
         ],
         cwd=directory / "RT-DETR" / "rtdetr_pytorch",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     model_path = directory / "RT-DETR" / "rtdetr_pytorch" / "model.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -480,6 +558,8 @@ def _export_rtdetrv2(
     model: str,
     opset: int,
     imgsz: int,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning(
         "RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions"
@@ -488,6 +568,8 @@ def _export_rtdetrv2(
         ["git", "clone", "https://github.com/lyuwenyu/RT-DETR"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -503,11 +585,15 @@ def _export_rtdetrv2(
         ],
         cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         ["wget", "-nc", config["url"]],
         cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -522,6 +608,8 @@ def _export_rtdetrv2(
         ],
         cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -538,6 +626,8 @@ def _export_rtdetrv2(
         ],
         cwd=directory / "RT-DETR" / "rtdetrv2_pytorch",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     model_path = directory / "RT-DETR" / "rtdetrv2_pytorch" / "model.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -553,6 +643,8 @@ def _export_rtdetrv3(
     model: str,
     opset: int,
     imgsz: int,  # noqa: ARG001
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning(
         "RT-DETRv3 is a Apache-2.0 licensed model, be aware of license restrictions"
@@ -568,6 +660,8 @@ def _export_rtdetrv3(
         ["git", "clone", "https://github.com/clxia12/RT-DETRv3"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -587,6 +681,8 @@ def _export_rtdetrv3(
         ],
         cwd=directory / "RT-DETRv3",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -600,6 +696,8 @@ def _export_rtdetrv3(
         ],
         cwd=directory / "RT-DETRv3",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -616,6 +714,8 @@ def _export_rtdetrv3(
         ],
         cwd=directory / "RT-DETRv3",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -633,6 +733,8 @@ def _export_rtdetrv3(
         ],
         cwd=directory / "RT-DETRv3",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     model_path = directory / "RT-DETRv3" / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -648,6 +750,8 @@ def _export_dfine(
     model: str,
     opset: int,
     imgsz: int,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning(
         "D-FINE is a Apache-2.0 licensed model, be aware of license restrictions"
@@ -656,6 +760,8 @@ def _export_dfine(
         ["git", "clone", "https://github.com/Peterande/D-FINE"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -676,11 +782,15 @@ def _export_dfine(
         ],
         cwd=directory / "D-FINE",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         ["wget", "-nc", config["url"]],
         cwd=directory / "D-FINE",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -695,6 +805,8 @@ def _export_dfine(
         ],
         cwd=directory / "D-FINE",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -711,6 +823,8 @@ def _export_dfine(
         ],
         cwd=directory / "D-FINE",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     model_path = directory / "D-FINE" / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -726,12 +840,16 @@ def _export_deim(
     model: str,
     opset: int,
     imgsz: int,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
     subprocess.run(
         ["git", "clone", "https://github.com/Intellindust-AI-Lab/DEIM"],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -753,6 +871,8 @@ def _export_deim(
         ],
         cwd=directory / "DEIM",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -766,6 +886,8 @@ def _export_deim(
         ],
         cwd=directory / "DEIM",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     subprocess.run(
         [
@@ -778,6 +900,8 @@ def _export_deim(
         ],
         cwd=directory / "DEIM",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     config_folder = "deim_dfine"
     if "rtdetrv2" in config["name"]:
@@ -797,6 +921,8 @@ def _export_deim(
         ],
         cwd=directory / "DEIM",
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     model_path = directory / "DEIM" / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -812,6 +938,8 @@ def _export_rfdetr(
     model: str,
     opset: int,
     imgsz: int,  # noqa: ARG001
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     LOG.warning(
         "RF-DETR is a Apache-2.0 licensed model, be aware of license restrictions"
@@ -828,6 +956,8 @@ def _export_rfdetr(
         ],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     program = f"""
 import rfdetr
@@ -845,6 +975,8 @@ model.export(
         ],
         cwd=directory,
         check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
     )
     model_path = directory / "output" / "inference_model.sim.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -857,6 +989,8 @@ def download_model(
     directory: Path,
     opset: int = 17,
     imgsz: int = 640,
+    *,
+    verbose: bool | None = None,
 ) -> Path:
     """
     Download a model from remote source and convert to ONNX.
@@ -1210,7 +1344,7 @@ def download_model(
         err_msg = f"Model {model} is not supported"
         raise ValueError(err_msg)
 
-    python_path, bin_path = _make_venv(directory)
+    python_path, bin_path = _make_venv(directory, verbose=verbose)
     packet = (
         directory,
         config,
@@ -1222,29 +1356,29 @@ def download_model(
     )
     model_path: Path | None = None
     if "deim" in model and "deimv2" not in model:
-        model_path = _export_deim(*packet)
+        model_path = _export_deim(*packet, verbose=verbose)
     elif "yolov7" in model:
-        model_path = _export_yolov7(*packet)
+        model_path = _export_yolov7(*packet, verbose=verbose)
     elif "yolov8" in model or "yolov11" in model:
-        model_path = _export_ultralytics(*packet)
+        model_path = _export_ultralytics(*packet, verbose=verbose)
     elif "yolov9" in model:
-        model_path = _export_yolov9(*packet)
+        model_path = _export_yolov9(*packet, verbose=verbose)
     elif "yolov10" in model:
-        model_path = _export_yolov10(*packet)
+        model_path = _export_yolov10(*packet, verbose=verbose)
     elif "yolov12" in model:
-        model_path = _export_yolov12(*packet)
+        model_path = _export_yolov12(*packet, verbose=verbose)
     elif "yolov13" in model:
-        model_path = _export_yolov13(*packet)
+        model_path = _export_yolov13(*packet, verbose=verbose)
     elif "rtdetrv1" in model:
-        model_path = _export_rtdetrv1(*packet)
+        model_path = _export_rtdetrv1(*packet, verbose=verbose)
     elif "rtdetrv2" in model:
-        model_path = _export_rtdetrv2(*packet)
+        model_path = _export_rtdetrv2(*packet, verbose=verbose)
     elif "rtdetrv3" in model:
-        model_path = _export_rtdetrv3(*packet)
+        model_path = _export_rtdetrv3(*packet, verbose=verbose)
     elif "dfine" in model:
-        model_path = _export_dfine(*packet)
+        model_path = _export_dfine(*packet, verbose=verbose)
     elif "rfdetr" in model:
-        model_path = _export_rfdetr(*packet)
+        model_path = _export_rfdetr(*packet, verbose=verbose)
     if model_path is None:
         err_msg = f"Model {model} is not supported"
         raise ValueError(err_msg)
@@ -1277,7 +1411,7 @@ def download(
 
     """
     with tempfile.TemporaryDirectory() as temp_dir:
-        model_path = download_model(model, Path(temp_dir), opset, imgsz)
+        model_path = download_model(model, Path(temp_dir), opset, imgsz, verbose=verbose)
         shutil.copy(model_path, output)
 
     if verbose is not None:
