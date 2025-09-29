@@ -14,6 +14,7 @@ TRTUtils provides a command-line interface with several subcommands for working 
 * ``can_run_on_dla``: Evaluate if a model can run on a DLA and specific layer/chunk compatibility.
 * ``classify``: Run image classification on an image
 * ``detect``: Run object detection on an image or video
+* ``download``: Download a model from remote source and convert to ONNX
 * ``inspect``: Inspect a TensorRT engine
 * ``trtexec``: Run trtexec with the provided options
 
@@ -343,6 +344,64 @@ The command will output timing information for each stage:
 * Inference time in milliseconds
 * Postprocessing time in milliseconds
 * Detection parsing time in milliseconds
+
+Download
+~~~~~~~~
+
+Download a model from remote source and convert to ONNX format. This command supports automatic downloading and conversion of various YOLO and DETR models.
+
+.. code-block:: console
+
+    # Download YOLOv8n
+    python3 -m trtutils download --model yolov8n --output yolov8n.onnx
+
+    # Download YOLOv11m with custom settings
+    python3 -m trtutils download --model yolov11m --output yolov11m.onnx --imgsz 640 --opset 17
+
+    # Download RT-DETRv1 model
+    python3 -m trtutils download --model rtdetrv1_r18vd --output rtdetrv1.onnx
+
+Options
+^^^^^^^
+
+**Required:**
+
+* ``--model``: Name of the model to download. See MODELS.md for available models
+* ``--output``: Path to save the ONNX model file
+
+**Optional:**
+
+* ``--opset``: ONNX opset version to use (default: 17)
+* ``--imgsz``: Image size to use for the model (default: 640)
+
+Supported Models
+^^^^^^^^^^^^^^^^
+
+**YOLO Models:**
+
+* YOLOv7: All variants with pretrained weights
+* YOLOv8: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x (via Ultralytics)
+* YOLOv9: All variants with pretrained weights
+* YOLOv10: All variants with pretrained weights
+* YOLOv11: yolov11n, yolov11s, yolov11m, yolov11l, yolov11x (via Ultralytics)
+* YOLOv12: All variants with pretrained weights
+* YOLOv13: yolov13n, yolov13s, yolov13l, yolov13x
+
+**DETR Models:**
+
+* RT-DETRv1, RT-DETRv2, RT-DETRv3: Multiple configurations
+* D-FINE: Multiple configurations
+* DEIM: Multiple configurations
+* DEIMv2: deimv2_atto, deimv2_femto, deimv2_pico, deimv2_n, deimv2_s, deimv2_m, deimv2_l, deimv2_x
+* RF-DETR: Multiple configurations
+
+Notes
+^^^^^
+
+* The download process will create a temporary virtual environment to handle dependencies
+* Some models may have license restrictions (GPL-3.0, AGPL-3.0, Apache-2.0)
+* RT-DETRv3 and RF-DETR do not support custom input sizes
+* DEIMv2 does not support custom input sizes
 
 Inspect
 ~~~~~~~
