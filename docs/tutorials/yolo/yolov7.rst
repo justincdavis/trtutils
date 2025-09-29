@@ -6,36 +6,24 @@ YOLOv7 Tutorial
 This tutorial will guide you through using trtutils with YOLOv7 models.
 We will cover:
 
-1. Exporting ONNX weights from YOLOv7
+1. Downloading ONNX weights from YOLOv7
 2. Building a TensorRT engine
 3. Running inference with the engine
 4. Advanced features and optimizations
 
-Exporting ONNX Weights
-----------------------
+Downloading ONNX Weights
+-------------------------
 
-YOLOv7 supports end-to-end export of ONNX weights directly. Here's how to do it:
+YOLOv7 models can be automatically downloaded and converted to ONNX format using the trtutils CLI:
 
 .. code-block:: bash
 
-    # Clone the YOLOv7 repository
-    $ git clone https://github.com/WongKinYiu/yolov7.git
-    $ cd yolov7
+    # Download and convert YOLOv7 models to ONNX
+    # Available models: yolov7, yolov7x, yolov7-w6, yolov7-e6, yolov7-d6, yolov7-e6e
+    $ python3 -m trtutils download --model yolov7 --output yolov7.onnx --imgsz 640 --opset 17
 
-    # Export the ONNX weights
-    # Adjust parameters according to your needs:
-    # - topk-all: Maximum number of detections
-    # - iou-thres: IoU threshold for NMS
-    # - conf-thres: Confidence threshold
-    # - img-size: Input image size
-    $ python3 export.py -weights PATH_TO_WEIGHTS \
-                       --end2end \
-                       --grid \
-                       --simplify \
-                       --topk-all 100 \
-                       --iou-thres 0.5 \
-                       --conf-thres 0.25 \
-                       --img-size 640
+    # For other YOLOv7 variants
+    $ python3 -m trtutils download --model yolov7x --output yolov7x.onnx --imgsz 640 --opset 17
 
 Building TensorRT Engine
 ------------------------

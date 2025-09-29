@@ -6,30 +6,24 @@ RT-DETRv2 Tutorial
 This tutorial will guide you through using trtutils with RT-DETRv2 models.
 We will cover:
 
-1. Exporting ONNX weights from RT-DETRv2
+1. Downloading ONNX weights from RT-DETRv2
 2. Building a TensorRT engine
 3. Running inference with the engine
 4. Advanced features and optimizations
 
-Exporting ONNX Weights
-----------------------
+Downloading ONNX Weights
+-------------------------
 
-RT-DETRv2 supports end-to-end export of ONNX weights directly. Here's how to do it:
+RT-DETRv2 models can be automatically downloaded and converted to ONNX format using the trtutils CLI:
 
 .. code-block:: bash
 
-    # Clone the RT-DETRv2 repository
-    $ git clone https://github.com/lyuwenyu/RT-DETR.git
-    $ cd RT-DETR/rtdetrv2_pytorch
+    # Download and convert RT-DETRv2 models to ONNX
+    # Available models: rtdetrv2_r18, rtdetrv2_r34, rtdetrv2_r50, rtdetrv2_r101
+    $ python3 -m trtutils download --model rtdetrv2_r18 --output rtdetrv2_r18.onnx --imgsz 640 --opset 17
 
-    # Assumes you have already downloaded some weights
-
-    # Export the ONNX weights
-    # Adjust the config based on the weights you downloaded
-    $ python3 tools/export_onnx.py -c $CONFIG_PATH -r $WEIGHTS_PATH --check --simplify
-    # Example using actual weight names
-    # $ python3 tools/export_onnx.py -c configs/rtdetrv2/rtdetrv2_r18vd_120e_coco.yml -r rtdetrv2_r18vd_120e_coco_from_paddle.pth --check --simplify
-    # This saves to model.onnx
+    # For other RT-DETRv2 variants
+    $ python3 -m trtutils download --model rtdetrv2_r50 --output rtdetrv2_r50.onnx --imgsz 640 --opset 17
 
 Building TensorRT Engine
 ------------------------

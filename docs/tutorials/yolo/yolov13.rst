@@ -1,28 +1,28 @@
-.. _tutorials_yolo_v11:
+.. _tutorials_yolo_v13:
 
-YOLOv11 Tutorial
+YOLOv13 Tutorial
 ================
 
-This tutorial will guide you through using trtutils with YOLOv11 models.
+This tutorial will guide you through using trtutils with YOLOv13 models.
 We will cover:
 
-1. Downloading ONNX weights from YOLOv11
+1. Downloading ONNX weights from YOLOv13
 2. Building a TensorRT engine
 3. Running inference with the engine
 
 Downloading ONNX Weights
 -------------------------
 
-YOLOv11 models can be automatically downloaded and converted to ONNX format using the trtutils CLI:
+YOLOv13 models can be automatically downloaded and converted to ONNX format using the trtutils CLI:
 
 .. code-block:: bash
 
-    # Download and convert YOLOv11 models to ONNX
-    # Available models: yolov11n, yolov11s, yolov11m, yolov11l, yolov11x
-    $ python3 -m trtutils download --model yolov11n --output yolov11n.onnx --imgsz 640 --opset 17
+    # Download and convert YOLOv13 models to ONNX
+    # Available models: yolov13n, yolov13s, yolov13l, yolov13x
+    $ python3 -m trtutils download --model yolov13n --output yolov13n.onnx --imgsz 640 --opset 17
 
-    # For other YOLOv11 variants
-    $ python3 -m trtutils download --model yolov11s --output yolov11s.onnx --imgsz 640 --opset 17
+    # For other YOLOv13 variants
+    $ python3 -m trtutils download --model yolov13s --output yolov13s.onnx --imgsz 640 --opset 17
 
 Building TensorRT Engine
 ------------------------
@@ -48,8 +48,8 @@ Alternatively, if you want to export the engine using the Python API:
     from trtutils.builder import build_engine, hooks
 
     build_engine(
-        onnx="yolov11.onnx",
-        output="yolov11.engine",
+        onnx="yolov13.onnx",
+        output="yolov13.engine",
         fp16=True,
         hooks=[hooks.yolo_efficient_nms_hook(
             num_classes=80,
@@ -63,18 +63,18 @@ Running Inference
 -----------------
 
 The :py:class:`~trtutils.models.YOLO` class provides a high-level interface
-for running YOLOv11 inference:
+for running YOLOv13 inference:
 
 .. code-block:: python
 
     import cv2
-    from trtutils.models import YOLO, YOLO11
+    from trtutils.models import YOLO, YOLO13
 
-    # Load the YOLOv11 model
-    yolo = YOLO("yolov11.engine")
+    # Load the YOLOv13 model
+    yolo = YOLO("yolov13.engine")
 
-    # OR, use the YOLO11 class
-    yolo = YOLO11("yolov11.engine")
+    # OR, use the YOLO13 class
+    yolo = YOLO13("yolov13.engine")
 
     # Read and process an image
     img = cv2.imread("example.jpg")

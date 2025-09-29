@@ -6,30 +6,24 @@ D-FINE Tutorial
 This tutorial will guide you through using trtutils with D-FINE models.
 We will cover:
 
-1. Exporting ONNX weights from D-FINE
+1. Downloading ONNX weights from D-FINE
 2. Building a TensorRT engine
 3. Running inference with the engine
 4. Advanced features and optimizations
 
-Exporting ONNX Weights
-----------------------
+Downloading ONNX Weights
+-------------------------
 
-D-FINE supports end-to-end export of ONNX weights directly. Here's how to do it:
+D-FINE models can be automatically downloaded and converted to ONNX format using the trtutils CLI:
 
 .. code-block:: bash
 
-    # Clone the D-FINE repository
-    $ git clone https://github.com/Peterande/D-FINE.git
-    $ cd D-FINE
+    # Download and convert D-FINE models to ONNX
+    # Available models: dfine_n, dfine_s, dfine_m, dfine_l, dfine_x
+    $ python3 -m trtutils download --model dfine_n --output dfine_n.onnx --imgsz 640 --opset 17
 
-    # Assumes you have already downloaded some weights
-
-    # Export the ONNX weights
-    # Adjust the config based on the weights you downloaded
-    $ python3 tools/deployment/export_onnx.py -c $CONFIG_PATH -r $WEIGHTS_PATH --check --simplify
-    # Example using actual weight names
-    # $ python3 tools/export_onnx.py -c configs/dfine/dfine_hgnetv2_n_coco.yml -r dfine_n_coco.pthvd_120e_coco_from_paddle.pth --check --simplify
-    # This saves to dfine_n_coco.onnx
+    # For other D-FINE variants
+    $ python3 -m trtutils download --model dfine_s --output dfine_s.onnx --imgsz 640 --opset 17
 
 Building TensorRT Engine
 ------------------------
