@@ -834,7 +834,7 @@ model.export(
     return new_model_path
 
 
-def _export_deim(
+def _export_deimv2(
     directory: Path,
     config: dict[str, str],
     python_path: Path,

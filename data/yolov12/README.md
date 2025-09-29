@@ -1,4 +1,4 @@
-Folder for storing compiled engines for YOLOV12 models.
+Folder for storing compiled engines for YOLOv12 models.
 Engines should be compiled per docs.
 
-All weights licensed by APGL-3.0
+All weights licensed by AGPL-3.0

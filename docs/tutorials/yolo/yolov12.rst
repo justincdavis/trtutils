@@ -1,19 +1,19 @@
-.. _tutorials_yolo_v11:
+.. _tutorials_yolo_v12:
 
-YOLOv11 Tutorial
+YOLOv12 Tutorial
 ================
 
-This tutorial will guide you through using trtutils with YOLOv11 models.
+This tutorial will guide you through using trtutils with YOLOv12 models.
 We will cover:
 
-1. Exporting ONNX weights from YOLOv11
+1. Exporting ONNX weights from YOLOv12
 2. Building a TensorRT engine
 3. Running inference with the engine
 
 Exporting ONNX Weights
 ----------------------
 
-YOLOv10 is built on top of Ultralytics' framework and requires a virtual environment
+YOLOv12 is built on top of Ultralytics' framework and requires a virtual environment
 to avoid conflicts with other packages. Here's how to export the ONNX weights:
 
 .. code-block:: bash
@@ -90,7 +90,7 @@ for running YOLOv12 inference:
     import cv2
     from trtutils.models import YOLO, YOLO12
 
-    # Load the YOLO12 model
+    # Load the YOLOv12 model
     yolo = YOLO("yolov12.engine")
 
     # OR, use the YOLO12 class

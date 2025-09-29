@@ -73,7 +73,7 @@ for running YOLOv11 inference:
     # Load the YOLOv11 model
     yolo = YOLO("yolov11.engine")
 
-    # OR, use the YOLO8 class
+    # OR, use the YOLO11 class
     yolo = YOLO11("yolov11.engine")
 
     # Read and process an image
