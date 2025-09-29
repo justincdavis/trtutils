@@ -22,7 +22,7 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 
 ## Supported Models
 
-The models listed here[MODELS.md] are officially supported for inference.
+The models listed [here](MODELS.md) are officially supported for inference.
 
 ## Quick Start
 
@@ -77,7 +77,7 @@ Check out our [examples directory](examples/) for more detailed usage examples, 
 
 | Device            | YOLOv8m                                                                 | YOLOv8n                                                                 |
 |-------------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------|
-| OrinAGX-64GB      | ![OrinAGX-64GB YOLOv8m](benchmark/plots/OrinAGX-64GB/yolov8m.png)       | ![OrinAGX-64GB YOLOv8n](benchmark/plots/OrinAGX-64GB/yolov8n.png)       |
+| OrinAGX-64GB      | ![OrinAGX-64GB YOLOv8m](benchmark/plots/OrinAGX-64GB/yolov8m.png)      | ![OrinAGX-64GB YOLOv8n](benchmark/plots/OrinAGX-64GB/yolov8n.png)      |
 | OrinAGX-32GB      | ![OrinAGX-32GB YOLOv8m](benchmark/plots/OrinAGX-32GB/yolov8m.png)       | ![OrinAGX-32GB YOLOv8n](benchmark/plots/OrinAGX-32GB/yolov8n.png)       |
 | OrinNX-16GB       | ![OrinNX-16GB YOLOv8m](benchmark/plots/OrinNX-16GB/yolov8m.png)         | ![OrinNX-16GB YOLOv8n](benchmark/plots/OrinNX-16GB/yolov8n.png)        |
 | OrinNano-8GB      | ![OrinNano-8GB YOLOv8m](benchmark/plots/OrinNano-8GB/yolov8m.png)       | ![OrinNano-8GB YOLOv8n](benchmark/plots/OrinNano-8GB/yolov8n.png)       |
