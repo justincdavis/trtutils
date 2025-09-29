@@ -6,43 +6,23 @@ YOLOv12 Tutorial
 This tutorial will guide you through using trtutils with YOLOv12 models.
 We will cover:
 
-1. Exporting ONNX weights from YOLOv12
+1. Downloading ONNX weights from YOLOv12
 2. Building a TensorRT engine
 3. Running inference with the engine
 
-Exporting ONNX Weights
-----------------------
+Downloading ONNX Weights
+-------------------------
 
-YOLOv12 is built on top of Ultralytics' framework and requires a virtual environment
-to avoid conflicts with other packages. Here's how to export the ONNX weights:
+YOLOv12 models can be automatically downloaded and converted to ONNX format using the trtutils CLI:
 
 .. code-block:: bash
 
-    # Clone the YOLOv12 repository
-    $ git clone https://github.com/sunsmarterjie/yolov12
-    $ cd yolov12
+    # Download and convert YOLOv12 models to ONNX
+    # Available models: yolov12n, yolov12s, yolov12m, yolov12l, yolov12x
+    $ python3 -m trtutils download --model yolov12n --output yolov12n.onnx --imgsz 640 --opset 17
 
-    # Create and activate a virtual environment
-    $ python3 -m venv yolov12
-    $ source yolov12/bin/activate
-
-    # Install dependencies
-    $ pip install -r requirements.txt
-
-    # Export the ONNX weights
-    # Adjust parameters according to your needs:
-    # - opset: ONNX opset version
-    # - simplify: Enable ONNX simplification
-    # - imgsz: Input image size
-    $ yolo export \
-        model=PATH_TO_WEIGHTS \
-        format=onnx \
-        opset=13 \
-        simplify \
-        imgsz=640
-
-    # Deactivate the virtual environment when done
-    $ deactivate
+    # For other YOLOv12 variants
+    $ python3 -m trtutils download --model yolov12s --output yolov12s.onnx --imgsz 640 --opset 17
 
 Building TensorRT Engine
 ------------------------

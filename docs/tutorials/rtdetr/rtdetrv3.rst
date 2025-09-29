@@ -6,44 +6,24 @@ RT-DETRv3 Tutorial
 This tutorial will guide you through using trtutils with RT-DETRv3 models.
 We will cover:
 
-1. Exporting ONNX weights from RT-DETRv3
+1. Downloading ONNX weights from RT-DETRv3
 2. Building a TensorRT engine
 3. Running inference with the engine
 4. Advanced features and optimizations
 
-Exporting ONNX Weights
-----------------------
+Downloading ONNX Weights
+-------------------------
 
-RT-DETRv3 supports end-to-end export of ONNX weights directly. Here's how to do it:
+RT-DETRv3 models can be automatically downloaded and converted to ONNX format using the trtutils CLI:
 
 .. code-block:: bash
 
-    # Clone the RT-DETRv3 repository
-    $ git clone https://github.com/clxia12/RT-DETRv3
-    $ cd RT-DETRv3
+    # Download and convert RT-DETRv3 models to ONNX
+    # Available models: rtdetrv3_r18, rtdetrv3_r34, rtdetrv3_r50, rtdetrv3_r101
+    $ python3 -m trtutils download --model rtdetrv3_r18 --output rtdetrv3_r18.onnx --imgsz 640 --opset 16
 
-    # Install requirements
-    $ python3 -m venv .venv
-    $ source .venv/bin/activate
-    $ pip install -r requirements.txt paddlepaddle==2.6.1 paddle2onnx==1.0.5 onnx==1.13.0
-
-    # Assumes you have already downloaded some weights
-
-    # Export the Paddle weights
-    # Adjust the config based on the weights you downloaded
-    $ python3 tools/export_model.py -c $CONFIG_PATH -o weights=$WEIGHTS_PATH use_gpu=false trt=True --output_dir=output_inference
-    # Example using actual weight names
-    # $ python3 tools/export_model.py -c configs/rtdetrv3/rtdetrv3_r18vd_6x_coco.yml \
-    #          -o weights="$WEIGHTS_PATH" use_gpu=false trt=True \
-    #          --output_dir=output_inference
-    # This saves to output_inference/rtdetrv3_r18vd_6x_coco/model.onnx
-
-    # Export ONNX weights
-    $ .venv/bin/paddle2onnx --model_dir=output_inference/WEIGHTS_PATH \
-        --model_filename model.pdmodel \
-        --params_filename model.pdiparams \
-        --opset_version 16 \
-        --save_file rtdetrv3.onnx
+    # For other RT-DETRv3 variants
+    $ python3 -m trtutils download --model rtdetrv3_r50 --output rtdetrv3_r50.onnx --imgsz 640 --opset 16
 
 Building TensorRT Engine
 ------------------------

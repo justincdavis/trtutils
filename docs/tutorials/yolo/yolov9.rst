@@ -6,37 +6,23 @@ YOLOv9 Tutorial
 This tutorial will guide you through using trtutils with YOLOv9 models.
 We will cover:
 
-1. Exporting ONNX weights from YOLOv9
+1. Downloading ONNX weights from YOLOv9
 2. Building a TensorRT engine
 3. Running inference with the engine
 
-Exporting ONNX Weights
-----------------------
+Downloading ONNX Weights
+-------------------------
 
-YOLOv9 is written by the same authors as YOLOv7 and supports similar exporting options.
-However, it has a unique feature where the input size is explicitly marked as dynamic
-in the ONNX weights. Here's how to export:
+YOLOv9 models can be automatically downloaded and converted to ONNX format using the trtutils CLI:
 
 .. code-block:: bash
 
-    # Clone the YOLOv9 repository
-    $ git clone https://github.com/WongKinYiu/yolov9.git
-    $ cd yolov9
+    # Download and convert YOLOv9 models to ONNX
+    # Available models: yolov9, yolov9-c, yolov9-e, yolov9-m, yolov9-s, yolov9-t
+    $ python3 -m trtutils download --model yolov9 --output yolov9.onnx --imgsz 640 --opset 17
 
-    # Export the ONNX weights
-    # Adjust parameters according to your needs:
-    # - topk-all: Maximum number of detections
-    # - iou-thres: IoU threshold for NMS
-    # - conf-thres: Confidence threshold
-    # - img-size: Input image size (will be dynamic in ONNX)
-    $ python3 export.py \
-        --weights PATH_TO_WEIGHTS \
-        --include onnx_end2end \
-        --simplify \
-        --iou-thres 0.5 \
-        --conf-thres 0.25 \
-        --topk-all 100 \
-        --img-size 640 640
+    # For other YOLOv9 variants
+    $ python3 -m trtutils download --model yolov9-c --output yolov9-c.onnx --imgsz 640 --opset 17
 
 Building TensorRT Engine
 ------------------------
