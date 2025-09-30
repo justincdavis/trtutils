@@ -552,11 +552,20 @@ def _inspect(args: SimpleNamespace) -> None:
 
 
 def _download(args: SimpleNamespace) -> None:
+    if not args.accept:
+        LOG.info(f"You are about to download model '{args.model}' which may have license restrictions.")
+        LOG.info("Please ensure you comply with the model's license terms.")
+        response = input("Do you accept the license terms? (y/N): ").strip().lower()
+        if response not in ["y", "yes"]:
+            LOG.info("License not accepted. Aborting download.")
+            return
+
     trtutils.download.download(
         args.model,
         args.output,
         args.opset,
         args.imgsz,
+        accept=True,
         verbose=args.verbose,
     )
 
@@ -1094,6 +1103,11 @@ def _main() -> None:
         type=int,
         default=640,
         help="Image size to use for the model. Default is 640.",
+    )
+    download_parser.add_argument(
+        "--accept",
+        action="store_true",
+        help="Accept the license terms for the model. If not provided, you will be prompted.",
     )
     download_parser.set_defaults(func=_download)
 

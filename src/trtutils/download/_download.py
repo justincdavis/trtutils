@@ -895,6 +895,7 @@ def download_model(
     opset: int = 17,
     imgsz: int = 640,
     *,
+    accept: bool | None = None,
     verbose: bool | None = None,
 ) -> Path:
     """
@@ -910,6 +911,11 @@ def download_model(
         The ONNX opset version to use.
     imgsz : int, optional
         The image size to use for the model.
+    accept : bool, optional
+        Whether to accept the license terms for the model. If None or False, will raise an error.
+        Must be True to proceed with the download.
+    verbose : bool, optional
+        Whether to print verbose output.
 
     Returns
     -------
@@ -919,9 +925,13 @@ def download_model(
     Raises
     ------
     ValueError
-        If the model is not supported.
+        If the model is not supported or license is not accepted.
 
     """
+    if not accept:
+        err_msg = f"License acceptance required for model '{model}'. Please accept the license terms."
+        raise ValueError(err_msg)
+
     model_configs = _load_model_configs()
     config: dict[str, str] | None = None
     for model_set in model_configs.values():
@@ -984,6 +994,7 @@ def download(
     opset: int = 17,
     imgsz: int = 640,
     *,
+    accept: bool | None = None,
     verbose: bool | None = None,
 ) -> None:
     """
@@ -999,12 +1010,15 @@ def download(
         The ONNX opset version to use.
     imgsz : int, optional
         The image size to use for the model.
+    accept : bool, optional
+        Whether to accept the license terms for the model. If None, will prompt the user.
+        If False, will raise an error. If True, will proceed without prompting.
     verbose : bool, optional
         Whether to print verbose output.
 
     """
     with tempfile.TemporaryDirectory() as temp_dir:
-        model_path = download_model(model, Path(temp_dir), opset, imgsz, verbose=verbose)
+        model_path = download_model(model, Path(temp_dir), opset, imgsz, accept=accept, verbose=verbose)
         shutil.copy(model_path, output)
 
     if verbose is not None:

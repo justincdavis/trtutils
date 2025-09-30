@@ -353,13 +353,13 @@ Download a model from remote source and convert to ONNX format. This command sup
 .. code-block:: console
 
     # Download YOLOv8n
-    python3 -m trtutils download --model yolov8n --output yolov8n.onnx
+    python3 -m trtutils download --model yolov8n --output yolov8n.onnx --accept
 
     # Download YOLOv11m with custom settings
-    python3 -m trtutils download --model yolov11m --output yolov11m.onnx --imgsz 640 --opset 17
+    python3 -m trtutils download --model yolov11m --output yolov11m.onnx --imgsz 640 --opset 17 --accept
 
     # Download RT-DETRv1 model
-    python3 -m trtutils download --model rtdetrv1_r18vd --output rtdetrv1.onnx
+    python3 -m trtutils download --model rtdetrv1_r18vd --output rtdetrv1.onnx --accept
 
 Options
 ^^^^^^^
@@ -373,6 +373,7 @@ Options
 
 * ``--opset``: ONNX opset version to use (default: 17)
 * ``--imgsz``: Image size to use for the model (default: 640)
+* ``--accept``: Accept the license terms for the model. If not provided, you will be prompted.
 
 Supported Models
 ^^^^^^^^^^^^^^^^
