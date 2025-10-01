@@ -553,7 +553,9 @@ def _inspect(args: SimpleNamespace) -> None:
 
 def _download(args: SimpleNamespace) -> None:
     if not args.accept:
-        LOG.info(f"You are about to download model '{args.model}' which may have license restrictions.")
+        LOG.info(
+            f"You are about to download model '{args.model}' which may have license restrictions."
+        )
         LOG.info("Please ensure you comply with the model's license terms.")
         response = input("Do you accept the license terms? (y/N): ").strip().lower()
         if response not in ["y", "yes"]:

@@ -8,8 +8,8 @@ import json
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
 
 from trtutils._log import LOG
 
@@ -20,7 +20,7 @@ def _load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
     model_configs: dict[str, dict[str, dict[str, str]]] = {}
 
     for config_path in configs_dir.glob("*.json"):
-        model_type = config_path.stem 
+        model_type = config_path.stem
         try:
             with config_path.open() as f:
                 model_configs[model_type] = json.load(f)
@@ -60,7 +60,6 @@ def _run_uv_pip_install(
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-
 
 
 def _make_venv(
@@ -298,7 +297,7 @@ def _export_yolov9(
 def _export_yolov10(
     directory: Path,
     config: dict[str, str],
-    python_path: Path,  # noqa: ARG001
+    python_path: Path,
     bin_path: Path,
     model: str,  # noqa: ARG001
     opset: int,
@@ -342,7 +341,7 @@ def _export_yolov10(
 def _export_yolov12(
     directory: Path,
     config: dict[str, str],
-    python_path: Path,  # noqa: ARG001
+    python_path: Path,
     bin_path: Path,
     model: str,  # noqa: ARG001
     opset: int,
@@ -401,7 +400,7 @@ def _export_yolov12(
 def _export_yolov13(
     directory: Path,
     config: dict[str, str],
-    python_path: Path,  # noqa: ARG001
+    python_path: Path,
     bin_path: Path,
     model: str,  # noqa: ARG001
     opset: int,
@@ -472,9 +471,7 @@ def _export_rtdetrv1(
     _run_patch(
         rtdetr_dir,
         str(
-            (
-                Path(__file__).parent / "patches" / "rtdetrv1_export_onnx.patch"
-            ).resolve()
+            (Path(__file__).parent / "patches" / "rtdetrv1_export_onnx.patch").resolve()
         ),
         "tools/export_onnx.py",
         verbose=verbose,
@@ -532,9 +529,7 @@ def _export_rtdetrv2(
     _run_patch(
         rtdetrv2_dir,
         str(
-            (
-                Path(__file__).parent / "patches" / "rtdetrv2_export_onnx.patch"
-            ).resolve()
+            (Path(__file__).parent / "patches" / "rtdetrv2_export_onnx.patch").resolve()
         ),
         "tools/export_onnx.py",
         verbose=verbose,
@@ -676,11 +671,7 @@ def _export_dfine(
     _run_download(dfine_dir, config, python_path, verbose=verbose)
     _run_patch(
         dfine_dir,
-        str(
-            (
-                Path(__file__).parent / "patches" / "dfine_export_onnx.patch"
-            ).resolve()
-        ),
+        str((Path(__file__).parent / "patches" / "dfine_export_onnx.patch").resolve()),
         "tools/deployment/export_onnx.py",
         verbose=verbose,
     )
@@ -720,7 +711,9 @@ def _export_deim(
     verbose: bool | None = None,
 ) -> Path:
     LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
-    _git_clone("https://github.com/Intellindust-AI-Lab/DEIM", directory, verbose=verbose)
+    _git_clone(
+        "https://github.com/Intellindust-AI-Lab/DEIM", directory, verbose=verbose
+    )
     deim_dir = directory / "DEIM"
     _run_uv_pip_install(
         deim_dir,
@@ -740,9 +733,7 @@ def _export_deim(
     _run_download(deim_dir, config, python_path, verbose=verbose)
     _run_patch(
         deim_dir,
-        str(
-            (Path(__file__).parent / "patches" / "deim_export_onnx.patch").resolve()
-        ),
+        str((Path(__file__).parent / "patches" / "deim_export_onnx.patch").resolve()),
         "tools/deployment/export_onnx.py",
         verbose=verbose,
     )
@@ -831,9 +822,13 @@ def _export_deimv2(
     *,
     verbose: bool | None = None,
 ) -> Path:
-    LOG.warning("DEIMv2 is a Apache-2.0 licensed model, be aware of license restrictions")
+    LOG.warning(
+        "DEIMv2 is a Apache-2.0 licensed model, be aware of license restrictions"
+    )
     LOG.warning("DEIMv2 does not support setting alternative input sizes")
-    _git_clone("https://github.com/Intellindust-AI-Lab/DEIMv2", directory, verbose=verbose)
+    _git_clone(
+        "https://github.com/Intellindust-AI-Lab/DEIMv2", directory, verbose=verbose
+    )
     deim_dir = directory / "DEIMv2"
     _run_uv_pip_install(
         deim_dir,
@@ -886,8 +881,12 @@ def _export_yolox(
     *,
     verbose: bool | None = None,
 ) -> Path:
-    LOG.warning("YOLOX is a Apache-2.0 licensed model, be aware of license restrictions")
-    _git_clone("https://github.com/Megvii-BaseDetection/YOLOX", directory, verbose=verbose)
+    LOG.warning(
+        "YOLOX is a Apache-2.0 licensed model, be aware of license restrictions"
+    )
+    _git_clone(
+        "https://github.com/Megvii-BaseDetection/YOLOX", directory, verbose=verbose
+    )
     yolox_dir = directory / "YOLOX"
     _run_uv_pip_install(
         yolox_dir,
@@ -1054,7 +1053,9 @@ def download(
 
     """
     with tempfile.TemporaryDirectory() as temp_dir:
-        model_path = download_model(model, Path(temp_dir), opset, imgsz, accept=accept, verbose=verbose)
+        model_path = download_model(
+            model, Path(temp_dir), opset, imgsz, accept=accept, verbose=verbose
+        )
         shutil.copy(model_path, output)
 
     if verbose is not None:

@@ -11,7 +11,7 @@ Functions
 :func:`download_model`
     Lower-level function for downloading and converting a model to ONNX.
 
-Note
+Note:
 ----
 All models downloaded through this module may have license restrictions.
 Users must accept the license terms before downloading by using the accept parameter
