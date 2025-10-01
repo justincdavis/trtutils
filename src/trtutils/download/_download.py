@@ -9,37 +9,23 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from functools import lru_cache
 
 from trtutils._log import LOG
 
 
+@lru_cache(maxsize=1)
 def _load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
     configs_dir = Path(__file__).parent / "configs"
     model_configs: dict[str, dict[str, dict[str, str]]] = {}
 
-    config_files = {
-        "yolov7": "yolov7.json",
-        "yolov8": "yolov8.json",
-        "yolov9": "yolov9.json",
-        "yolov10": "yolov10.json",
-        "yolov11": "yolov11.json",
-        "yolov12": "yolov12.json",
-        "yolov13": "yolov13.json",
-        "rtdetrv1": "rtdetrv1.json",
-        "rtdetrv2": "rtdetrv2.json",
-        "rtdetrv3": "rtdetrv3.json",
-        "dfine": "dfine.json",
-        "deim": "deim.json",
-        "rfdetr": "rfdetr.json",
-    }
-
-    for model_type, config_file in config_files.items():
-        config_path = configs_dir / config_file
-        if config_path.exists():
+    for config_path in configs_dir.glob("*.json"):
+        model_type = config_path.stem 
+        try:
             with config_path.open() as f:
                 model_configs[model_type] = json.load(f)
-        else:
-            LOG.warning(f"Configuration file {config_file} not found in {configs_dir}")
+        except Exception as e:
+            LOG.warning(f"Failed to load configuration file {config_path.name}: {e}")
 
     return model_configs
 
@@ -889,6 +875,54 @@ def _export_deimv2(
     return new_model_path
 
 
+def _export_yolox(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    bin_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int,
+    *,
+    verbose: bool | None = None,
+) -> Path:
+    LOG.warning("YOLOX is a Apache-2.0 licensed model, be aware of license restrictions")
+    _git_clone("https://github.com/Megvii-BaseDetection/YOLOX", directory, verbose=verbose)
+    yolox_dir = directory / "YOLOX"
+    _run_uv_pip_install(
+        yolox_dir,
+        bin_path.parent,
+        "-r",
+        "requirements.txt",
+        "onnxruntime",
+        verbose=verbose,
+    )
+    _run_download(yolox_dir, config, python_path, verbose=verbose)
+    subprocess.run(
+        [
+            python_path,
+            "tools/export_onnx.py",
+            "--output-name",
+            f"{config['name']}.onnx",
+            "--name",
+            config["version"],
+            "--ckpt",
+            config["name"] + ".pth",
+            "--opset",
+            str(opset),
+            "--decode_in_inference",
+        ],
+        cwd=yolox_dir,
+        check=True,
+        stdout=subprocess.DEVNULL if not verbose else None,
+        stderr=subprocess.STDOUT if not verbose else None,
+    )
+    model_path = yolox_dir / f"{config['name']}.onnx"
+    new_model_path = model_path.with_name(model + model_path.suffix)
+    shutil.move(model_path, new_model_path)
+    return new_model_path
+
+
 def download_model(
     model: str,
     directory: Path,
@@ -960,6 +994,8 @@ def download_model(
         model_path = _export_deim(*packet, verbose=verbose)
     elif "deimv2" in model:
         model_path = _export_deimv2(*packet, verbose=verbose)
+    elif "yolox" in model:
+        model_path = _export_yolox(*packet, verbose=verbose)
     elif "yolov7" in model:
         model_path = _export_yolov7(*packet, verbose=verbose)
     elif "yolov8" in model or "yolov11" in model:

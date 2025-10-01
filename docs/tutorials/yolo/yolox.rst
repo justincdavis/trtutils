@@ -6,28 +6,23 @@ YOLOX Tutorial
 This tutorial will guide you through using trtutils with YOLOX models.
 We will cover:
 
-1. Exporting ONNX weights from YOLOX
+1. Downloading ONNX weights from YOLOX
 2. Building a TensorRT engine
 3. Running inference with the engine
 
-Exporting ONNX Weights
-----------------------
+Downloading ONNX Weights
+-------------------------
 
-Export the basic ONNX weights:
+YOLOX models can be automatically downloaded and converted to ONNX format using the trtutils CLI:
 
 .. code-block:: bash
 
-    # Clone the YOLOX repository
-    $ git clone https://github.com/Megvii-BaseDetection/YOLOX.git
-    $ cd YOLOX
+    # Download and convert YOLOX models to ONNX
+    # Available models: yoloxn, yoloxt, yoloxs, yoloxm, yoloxl, yoloxx, yolox_darknet
+    $ python3 -m trtutils download --model yoloxs --output yoloxs.onnx --imgsz 640 --opset 17 --accept
 
-    # Export the ONNX weights
-    # VERSION is one of the following: yolox-t, yolox-n, yolox-s, yolox-m
-    $ python3 tools/export-onnx.py \
-        --output-name ONNX_OUTPUT \
-        -n VERSION \
-        -c TORCH_WEIGHTS \
-        -decode_in_inference
+    # For other YOLOX variants
+    $ python3 -m trtutils download --model yoloxm --output yoloxm.onnx --imgsz 640 --opset 17 --accept
 
 Building TensorRT Engine
 ------------------------

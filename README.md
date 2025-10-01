@@ -22,7 +22,7 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 
 ## Supported Models
 
-The models listed [here](MODELS.md) are officially supported for inference.
+The models listed in the [documentation](https://trtutils.readthedocs.io/en/latest/models.html) are officially supported for inference.
 
 ## Quick Start
 

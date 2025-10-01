@@ -358,6 +358,9 @@ Download a model from remote source and convert to ONNX format. This command sup
     # Download YOLOv11m with custom settings
     python3 -m trtutils download --model yolov11m --output yolov11m.onnx --imgsz 640 --opset 17 --accept
 
+    # Download YOLOX small model
+    python3 -m trtutils download --model yoloxs --output yoloxs.onnx --imgsz 640 --opset 17 --accept
+
     # Download RT-DETRv1 model
     python3 -m trtutils download --model rtdetrv1_r18vd --output rtdetrv1.onnx --accept
 
@@ -366,7 +369,7 @@ Options
 
 **Required:**
 
-* ``--model``: Name of the model to download. See MODELS.md for available models
+* ``--model``: Name of the model to download. See :ref:`Supported Models <models>` for available models
 * ``--output``: Path to save the ONNX model file
 
 **Optional:**
@@ -387,6 +390,7 @@ Supported Models
 * YOLOv11: yolov11n, yolov11s, yolov11m, yolov11l, yolov11x (via Ultralytics)
 * YOLOv12: All variants with pretrained weights
 * YOLOv13: yolov13n, yolov13s, yolov13l, yolov13x
+* YOLOX: yoloxn, yoloxt, yoloxs, yoloxm, yoloxl, yoloxx, yolox_darknet
 
 **DETR Models:**
 
