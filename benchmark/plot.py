@@ -20,6 +20,14 @@ from run import FRAMEWORKS
 
 IMAGE_SIZES = [160, 320, 480, 640, 800, 960, 1120, 1280]
 COLORS = {fm: plt.cm.tab10(idx) for idx, fm in enumerate(FRAMEWORKS)}
+FAMILY_COLORS = {
+    "yolov10": "#1f77b4",  # blue
+    "yolov9": "#ff7f0e",   # orange
+    "yolov8": "#2ca02c",   # green
+    "yolov7": "#d62728",   # red
+    "yolox": "#9467bd",    # purple
+}
+MODEL_FAMILIES = ["yolov10", "yolov9", "yolov8", "yolov7", "yolox"]
 
 
 def get_data() -> list[tuple[str, dict[str, dict[str, dict[str, dict[str, float]]]]]]:
@@ -37,6 +45,48 @@ def get_data() -> list[tuple[str, dict[str, dict[str, dict[str, dict[str, float]
         device_data.append((device_name, data))
 
     return device_data
+
+
+def get_model_info() -> dict[str, dict[str, float]]:
+    info_dir = Path(__file__).parent / "info"
+    model_info_path = info_dir / "model_info.json"
+    with open(model_info_path, "r") as f:
+        return json.load(f)
+
+
+def get_model_family(model_name: str) -> str:
+    """Extract the model family from the model name."""
+    for family in MODEL_FAMILIES:
+        if model_name.startswith(family):
+            return family
+    return "unknown"
+
+
+def is_pareto_optimal(points: list[tuple[float, float]], idx: int) -> bool:
+    """
+    Check if a point is on the Pareto frontier.
+    
+    A point is Pareto optimal if no other point has both:
+    - Lower cost (x-axis, latency)
+    - Higher accuracy (y-axis)
+    
+    Args:
+        points: List of (cost, accuracy) tuples
+        idx: Index of the point to check
+        
+    Returns:
+        True if the point is Pareto optimal
+    """
+    cost, accuracy = points[idx]
+    
+    for i, (other_cost, other_accuracy) in enumerate(points):
+        if i == idx:
+            continue
+        # If another point has lower cost AND higher accuracy, current point is not optimal
+        if other_cost < cost and other_accuracy > accuracy:
+            return False
+    
+    return True
 
 
 def plot_device(
@@ -165,6 +215,170 @@ def plot_device(
     plt.close()
 
 
+def plot_accuracy_cost(
+    name: str,
+    data: dict[str, dict[str, dict[str, dict[str, float]]]],
+    model_info: dict[str, dict[str, float]],
+    framework: str,
+    *,
+    overwrite: bool,
+) -> None:
+    plot_dir = Path(__file__).parent / "plots" / name
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    plot_path = plot_dir / "accuracy_cost.png"
+    if plot_path.exists() and not overwrite:
+        return
+
+    print(f"\t{framework}")
+
+    # Extract framework data
+    framework_data = data.get(framework)
+    if framework_data is None:
+        print(f"\t  No data for framework: {framework}")
+        return
+
+    # Collect data points
+    points_data = []  # (cost, accuracy, model_name, family)
+
+    for model_name, model_benchmarks in framework_data.items():
+        if model_name not in model_info:
+            continue
+
+        accuracy = model_info[model_name].get("coco_map_50")
+        if accuracy is None:
+            continue
+
+        family = get_model_family(model_name)
+        if family not in MODEL_FAMILIES:
+            continue
+
+        # Use median latency at 640 image size as the "cost"
+        # 640 is a common benchmark size
+        if "640" in model_benchmarks:
+            cost = model_benchmarks["640"].get("median")
+            if cost is not None:
+                points_data.append((cost, accuracy, model_name, family))
+
+    if not points_data:
+        print(f"\t  No valid data points for {framework}")
+        return
+
+    # Determine Pareto optimal points
+    points_only = [(cost, acc) for cost, acc, _, _ in points_data]
+    pareto_mask = [is_pareto_optimal(points_only, i) for i in range(len(points_only))]
+
+    # Create plot
+    plt.style.use("seaborn-v0_8")
+    _, ax = plt.subplots(figsize=(12, 8))
+
+    # Define font sizes
+    fontsize = 12
+    title_fontsize = fontsize + 4
+    label_fontsize = fontsize + 2
+    tick_fontsize = fontsize
+    legend_fontsize = fontsize
+
+    # Plot each family separately
+    for family in MODEL_FAMILIES:
+        family_points = [
+            (cost, acc, model, is_pareto)
+            for (cost, acc, model, fam), is_pareto in zip(points_data, pareto_mask)
+            if fam == family
+        ]
+
+        if not family_points:
+            continue
+
+        # Separate Pareto optimal and non-optimal points
+        optimal_points = [(c, a, m) for c, a, m, p in family_points if p]
+        non_optimal_points = [(c, a, m) for c, a, m, p in family_points if not p]
+
+        color = FAMILY_COLORS[family]
+
+        # Plot non-optimal points with reduced alpha
+        if non_optimal_points:
+            costs, accs, models = zip(*non_optimal_points)
+            ax.scatter(
+                costs,
+                accs,
+                color=color,
+                alpha=0.3,
+                s=100,
+                marker="o",
+                edgecolors="none",
+            )
+            # Add labels for non-optimal points
+            for cost, acc, model in non_optimal_points:
+                ax.annotate(
+                    model,
+                    xy=(cost, acc),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=fontsize - 2,
+                    alpha=0.4,
+                )
+
+        # Plot optimal points with full alpha
+        if optimal_points:
+            costs, accs, models = zip(*optimal_points)
+            ax.scatter(
+                costs,
+                accs,
+                color=color,
+                alpha=1.0,
+                s=150,
+                marker="o",
+                label=family,
+                edgecolors="black",
+                linewidths=1.5,
+            )
+            # Add labels for optimal points
+            for cost, acc, model in optimal_points:
+                ax.annotate(
+                    model,
+                    xy=(cost, acc),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=fontsize - 1,
+                    fontweight="bold",
+                )
+
+    # Draw Pareto frontier line
+    pareto_points = [
+        (cost, acc)
+        for (cost, acc, _, _), is_pareto in zip(points_data, pareto_mask)
+        if is_pareto
+    ]
+    if pareto_points:
+        # Sort by cost
+        pareto_points_sorted = sorted(pareto_points, key=lambda x: x[0])
+        costs, accs = zip(*pareto_points_sorted)
+        ax.plot(
+            costs,
+            accs,
+            "k--",
+            alpha=0.3,
+            linewidth=1.5,
+            label="Pareto Frontier",
+        )
+
+    ax.set_xlabel("Latency (ms)", fontsize=label_fontsize)
+    ax.set_ylabel("COCO mAP@50", fontsize=label_fontsize)
+    ax.set_title(
+        f"{name} - Accuracy vs. Latency - {framework}",
+        fontsize=title_fontsize,
+        pad=20,
+    )
+    ax.tick_params(axis="both", labelsize=tick_fontsize)
+    ax.grid(True, alpha=0.3, linestyle="--")
+    ax.legend(fontsize=legend_fontsize, loc="best")
+
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         "Generate plots for each device based on benchmark results."
@@ -180,10 +394,33 @@ if __name__ == "__main__":
         action="store_true",
         help="Overwrite existing plots.",
     )
+    parser.add_argument(
+        "--accuracy-cost",
+        action="store_true",
+        help="Generate accuracy vs. cost plot instead of latency plots.",
+    )
+    parser.add_argument(
+        "--framework",
+        type=str,
+        default="trtutils(trt)",
+        help="Framework to use for accuracy vs. cost plot (default: trtutils(trt)).",
+    )
     args = parser.parse_args()
 
     # parse all the data
     all_data = get_data()
-    for name, data in all_data:
-        if args.device is None or name == args.device:
-            plot_device(name, data, overwrite=args.overwrite)
+    
+    if args.accuracy_cost:
+        # Load model info for accuracy cost plots
+        model_info = get_model_info()
+        
+        for name, data in all_data:
+            if args.device is None or name == args.device:
+                print(f"Plotting accuracy vs. cost - {name}")
+                plot_accuracy_cost(
+                    name, data, model_info, args.framework, overwrite=args.overwrite
+                )
+    else:
+        for name, data in all_data:
+            if args.device is None or name == args.device:
+                plot_device(name, data, overwrite=args.overwrite)

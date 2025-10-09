@@ -35,7 +35,7 @@ def generate_rst_docs():
     RST_DIR.mkdir(parents=True, exist_ok=True)
 
     # Load device info blurbs
-    device_info_path = BENCHMARK_DIR / "device_info.json"
+    device_info_path = BENCHMARK_DIR / "info" / "device_info.json"
     if device_info_path.exists():
         with open(device_info_path, "r") as f:
             device_info = json.load(f)

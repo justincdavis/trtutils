@@ -1,0 +1,47 @@
+{
+    "yolov10n": {
+        "coco_map_50": 50.0
+    },
+    "yolov10s": {
+        "coco_map_50": 50.0
+    },
+    "yolov10m": {
+        "coco_map_50": 50.0
+    },
+    "yolov9t": {
+        "coco_map_50": 50.0
+    },
+    "yolov9s": {
+        "coco_map_50": 50.0
+    },
+    "yolov9m": {
+        "coco_map_50": 50.0
+    },
+    "yolov8n": {
+        "coco_map_50": 50.0
+    },
+    "yolov8s": {
+        "coco_map_50": 50.0
+    },
+    "yolov8m": {
+        "coco_map_50": 50.0
+    },
+    "yolov7t": {
+        "coco_map_50": 50.0
+    },
+    "yolov7m": {
+        "coco_map_50": 50.0
+    },
+    "yoloxt": {
+        "coco_map_50": 50.0
+    },
+    "yoloxn": {
+        "coco_map_50": 50.0
+    },
+    "yoloxs": {
+        "coco_map_50": 50.0
+    },
+    "yoloxm": {
+        "coco_map_50": 50.0
+    }
+}
