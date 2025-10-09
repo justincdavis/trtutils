@@ -1,24 +1,25 @@
-.PHONY: help install clean download docs test ci mypy pyright ruff format check release ci_env mypy_venv venv_format venv_check civ ruff_venv act
+.PHONY: help install clean download benchmark-bootstrap docs test ci mypy pyright ruff format check release ci_env mypy_venv venv_format venv_check civ ruff_venv act
 
 help: 
 	@echo "Please use \`make <target>' where <target> is one of"
-	@echo "  install    to install the package"
-	@echo "  clean      to clean the directory tree"
-	@echo "  download   to download and export models"
-	@echo "  docs       to generate the documentation"
-	@echo "  ci 	    to run the CI workflows - mypy & ruff"
-	@echo "  mypy       to run the mypy static type checker"
-	@echo "  pyright    to run the pyright static type checker"
-	@echo "  format     to run the ruff formatter"
-	@echo "  check      to run the ruff linter"
-	@echo "  ruff 	    to run both the formatter and linter from ruff"
-	@echo "  mypy_venv  to run the mypy static type checker in the CI environment"
-	@echo "  civ    to run the CI workflows in the CI environment"
-	@echo "  ruff_venv  to run both the formatter and linter from ruff in the CI environment"
-	@echo "  stubs      to generate the stubs"
-	@echo "  test       to run the tests"
-	@echo "  release    to perform all actions required for a release"
-	@echo "  act        to run all GitHub Actions workflows locally with act (push event)"
+	@echo "  install            to install the package"
+	@echo "  clean              to clean the directory tree"
+	@echo "  download           to download and export models"
+	@echo "  benchmark-bootstrap to download all benchmark models upfront"
+	@echo "  docs               to generate the documentation"
+	@echo "  ci 	              to run the CI workflows - mypy & ruff"
+	@echo "  mypy               to run the mypy static type checker"
+	@echo "  pyright            to run the pyright static type checker"
+	@echo "  format             to run the ruff formatter"
+	@echo "  check              to run the ruff linter"
+	@echo "  ruff 	              to run both the formatter and linter from ruff"
+	@echo "  mypy_venv          to run the mypy static type checker in the CI environment"
+	@echo "  civ                to run the CI workflows in the CI environment"
+	@echo "  ruff_venv          to run both the formatter and linter from ruff in the CI environment"
+	@echo "  stubs              to generate the stubs"
+	@echo "  test               to run the tests"
+	@echo "  release            to perform all actions required for a release"
+	@echo "  act                to run all GitHub Actions workflows locally with act (push event)"
 
 install:
 	pip3 install .
@@ -35,6 +36,9 @@ clean:
 
 download:
 	./scripts/download_all.sh
+
+benchmark-bootstrap:
+	python3 benchmark/run.py --bootstrap --model all
 
 docs:
 	rm -rf docs/_build/*

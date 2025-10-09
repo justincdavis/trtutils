@@ -10,6 +10,7 @@ TRTUtils provides a command-line interface with several subcommands for working 
 
 * ``benchmark``: Benchmark a TensorRT engine
 * ``build``: Build a TensorRT engine from an ONNX model
+* ``build_yolo``: Build a TensorRT engine from an ONNX model with YOLO NMS injection
 * ``build_dla``: Build a TensorRT engine with mixed GPU/DLA layers and precision automatically
 * ``can_run_on_dla``: Evaluate if a model can run on a DLA and specific layer/chunk compatibility.
 * ``classify``: Run image classification on an image
@@ -86,6 +87,13 @@ Build a TensorRT engine from an ONNX model.
         --input_shape 640 640 3 \
         --input_dtype float32
 
+    # Build with fixed input shapes
+    python3 -m trtutils build \
+        --onnx model.onnx \
+        --output model.engine \
+        --shape input:1,3,640,640 \
+        --fp16
+
 Options
 ^^^^^^^
 
@@ -98,6 +106,7 @@ Options
 
 * ``--device, -d``: Device to use for the engine (choices: gpu, dla; default: gpu)
 * ``--workspace, -w``: Workspace size in GB (default: 4.0)
+* ``--shape, -s``: Fix input binding shapes. Format: NAME:dim1,dim2[,dim3...]. Can be specified multiple times for multiple inputs
 * ``--fp16``: Quantize the engine to FP16 precision
 * ``--int8``: Quantize the engine to INT8 precision
 * ``--gpu_fallback``: Allow GPU fallback for unsupported layers when building for DLA
@@ -128,6 +137,58 @@ Options
    * ``--calibration_dir``: Directory containing calibration images
    * ``--input_shape``: Expected input shape in HWC format
    * ``--input_dtype``: Expected input data type
+
+Build YOLO
+~~~~~~~~~~~
+
+Build a TensorRT engine from an ONNX model with YOLO NMS injection. This command automatically injects efficient Non-Maximum Suppression (NMS) operations optimized for YOLO object detection models.
+
+.. code-block:: console
+
+    # Basic YOLO build with NMS
+    python3 -m trtutils build_yolo --onnx yolo.onnx --output yolo.engine
+
+    # FP16 YOLO build with custom NMS parameters
+    python3 -m trtutils build_yolo \
+        --onnx yolo.onnx \
+        --output yolo.engine \
+        --fp16 \
+        --num_classes 80 \
+        --conf_threshold 0.25 \
+        --iou_threshold 0.45 \
+        --top_k 100
+
+    # INT8 YOLO build with calibration and custom NMS
+    python3 -m trtutils build_yolo \
+        --onnx yolo.onnx \
+        --output yolo.engine \
+        --int8 \
+        --calibration_dir ./calibration_images \
+        --input_shape 640 640 3 \
+        --input_dtype float32 \
+        --num_classes 80 \
+        --conf_threshold 0.25 \
+        --iou_threshold 0.5 \
+        --box_coding center_size
+
+Options
+^^^^^^^
+
+This command supports all options from the ``build`` command, plus the following YOLO-specific options:
+
+**YOLO NMS Configuration:**
+
+* ``--num_classes``: Number of classes for NMS (default: 80)
+* ``--conf_threshold``: Score threshold for NMS (default: 0.25)
+* ``--iou_threshold``: IOU threshold for NMS (default: 0.5)
+* ``--top_k``: Top-k boxes for NMS (default: 100)
+* ``--box_coding``: Box coding for TRT EfficientNMS (choices: corner, center_size; default: center_size)
+* ``--class_agnostic``: Use class-agnostic NMS
+
+.. note::
+   The YOLO NMS injection uses TensorRT's EfficientNMS plugin for optimal performance.
+   This is particularly useful when converting YOLO models from frameworks that don't
+   include optimized NMS operations in the exported ONNX model.
 
 Build DLA
 ~~~~~~~~~
@@ -248,6 +309,7 @@ Options
 
 * ``--input_range, -r``: Input value range (default: [0.0, 1.0])
 * ``--preprocessor, -p``: Preprocessor to use (choices: cpu, cuda, trt; default: trt)
+* ``--resize_method``: Method to resize images (choices: letterbox, linear; default: letterbox)
 
 **Memory and Performance:**
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from trtutils._flags import FLAGS
@@ -21,11 +22,10 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-_INPUT_PATTERNS: list[tuple[str, ...]] = [
-    ("image"),
-    ("images", "orig_image_size"),
-    ("image", "im_shape", "scale_factor"),
-]
+class InputSchema(Enum):
+    IMAGES = ("images",)
+    IMAGES_ORIG_SIZE = ("images", "orig_image_size")
+    IMAGE_SHAPE_SCALE = ("image", "im_shape", "scale_factor")
 
 
 class Detector(ImageModel, DetectorInterface):

@@ -25,6 +25,38 @@ if TYPE_CHECKING:
 
 
 def _benchmark(args: SimpleNamespace) -> None:
+    """
+    Benchmark a TensorRT engine.
+
+    Measures and reports performance metrics for a TensorRT engine, including latency,
+    and optionally energy consumption and power draw on Jetson devices.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - engine : str
+            Path to the TensorRT engine file.
+        - iterations : int
+            Number of iterations to benchmark.
+        - warmup_iterations : int
+            Number of warmup iterations.
+        - jetson : bool
+            Whether to use Jetson-specific benchmarking for energy/power metrics.
+        - tegra_interval : int
+            Milliseconds between tegrastats samples (Jetson only).
+        - dla_core : int or None
+            DLA core to use, if any.
+        - warmup : bool
+            Whether to perform warmup.
+        - verbose : bool
+            Enable verbose output.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the engine file does not exist.
+    """
     mpath = Path(args.engine)
     if not mpath.exists():
         err_msg = f"Cannot find provided engine: {mpath}"
@@ -103,6 +135,28 @@ def _benchmark(args: SimpleNamespace) -> None:
 def _parse_shapes_arg(
     shape_args: list[str] | None,
 ) -> list[tuple[str, tuple[int, ...]]] | None:
+    """
+    Parse shape specification arguments from the command line.
+
+    Converts string specifications in the format "NAME:dim1,dim2,dim3,..." into
+    a list of tuples containing the binding name and its dimensions.
+
+    Parameters
+    ----------
+    shape_args : list[str] or None
+        List of shape specifications in format "NAME:dim1,dim2[,dim3...]".
+        Example: ["input:1,3,224,224", "mask:1,1,224,224"]
+
+    Returns
+    -------
+    list[tuple[str, tuple[int, ...]]] or None
+        List of (name, dimensions) tuples, or None if shape_args is empty.
+
+    Raises
+    ------
+    ValueError
+        If shape specification is invalid or dimensions cannot be parsed.
+    """
     if not shape_args:
         return None
     parsed: list[tuple[str, tuple[int, ...]]] = []
@@ -126,6 +180,72 @@ def _parse_shapes_arg(
 
 
 def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
+    """
+    Build a TensorRT engine from an ONNX model.
+
+    Creates a TensorRT engine with specified precision (FP32, FP16, INT8) and
+    optimization settings. Optionally includes YOLO-specific NMS hooks.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - onnx : str
+            Path to the ONNX model file.
+        - output : str
+            Path to save the TensorRT engine.
+        - int8 : bool
+            Enable INT8 quantization.
+        - fp16 : bool
+            Enable FP16 precision.
+        - calibration_dir : str or None
+            Directory with calibration images for INT8.
+        - input_shape : tuple[int, int, int] or None
+            Input shape in HWC format for calibration.
+        - input_dtype : str or None
+            Input data type for calibration.
+        - batch_size : int
+            Batch size for calibration.
+        - data_order : str
+            Data ordering (NCHW or NHWC).
+        - max_images : int or None
+            Maximum images for calibration.
+        - resize_method : str
+            Image resize method (letterbox or linear).
+        - input_scale : list[float]
+            Input value range scaling.
+        - shape : list[str] or None
+            Fixed input shapes specification.
+        - timing_cache : str or None
+            Path to timing cache file.
+        - workspace : float
+            Workspace size in GB.
+        - dla_core : int or None
+            DLA core to use.
+        - calibration_cache : str or None
+            Path to calibration cache.
+        - gpu_fallback : bool
+            Allow GPU fallback for DLA.
+        - direct_io : bool
+            Use direct IO.
+        - prefer_precision_constraints : bool
+            Prefer precision constraints.
+        - reject_empty_algorithms : bool
+            Reject empty algorithms.
+        - ignore_timing_mismatch : bool
+            Ignore timing cache mismatches.
+        - cache : bool
+            Cache the engine.
+        - verbose : bool
+            Enable verbose output.
+    add_yolo_hook : bool, optional
+        Whether to add YOLO NMS hook, by default False.
+
+    Raises
+    ------
+    ValueError
+        If required parameters are missing for INT8 calibration.
+    """
     if args.int8:
         LOG.warning("Build API is unstable and experimental with INT8 quantization.")
 
@@ -191,10 +311,50 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
 
 
 def _build_yolo(args: SimpleNamespace) -> None:
+    """
+    Build a TensorRT engine from an ONNX model with YOLO NMS injection.
+
+    Wrapper around _build that automatically injects efficient NMS operations
+    for YOLO object detection models.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments (same as _build), plus YOLO-specific parameters:
+        - num_classes : int
+            Number of object classes.
+        - conf_threshold : float
+            Confidence threshold for NMS.
+        - iou_threshold : float
+            IOU threshold for NMS.
+        - top_k : int
+            Maximum number of boxes to keep.
+        - box_coding : str
+            Box encoding format ('corner' or 'center_size').
+        - class_agnostic : bool
+            Use class-agnostic NMS.
+    """
     _build(args, add_yolo_hook=True)
 
 
 def _can_run_on_dla(args: SimpleNamespace) -> None:
+    """
+    Evaluate if a model can run on DLA and report layer compatibility.
+
+    Analyzes an ONNX model to determine which layers are compatible with
+    NVIDIA Deep Learning Accelerator (DLA) and provides detailed statistics.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - onnx : str
+            Path to the ONNX model file.
+        - verbose_layers : bool
+            Print detailed per-layer compatibility information.
+        - verbose_chunks : bool
+            Print detailed chunk assignment information.
+    """
     full_dla, chunks = trtutils.builder.can_run_on_dla(
         onnx=Path(args.onnx),
         verbose_layers=args.verbose_layers,
@@ -215,6 +375,68 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
 
 
 def _build_dla(args: SimpleNamespace) -> None:
+    """
+    Build a TensorRT engine for DLA with automatic mixed GPU/DLA layer assignments.
+
+    Automatically analyzes the model and assigns compatible layers to DLA while
+    keeping incompatible layers on GPU. Requires INT8 precision and calibration data.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - onnx : str
+            Path to the ONNX model file.
+        - output : str
+            Path to save the TensorRT engine.
+        - calibration_dir : str
+            Directory with calibration images (required).
+        - input_shape : tuple[int, int, int]
+            Input shape in HWC format (required).
+        - input_dtype : str
+            Input data type (required).
+        - batch_size : int
+            Batch size for calibration.
+        - data_order : str
+            Data ordering (NCHW or NHWC).
+        - max_images : int or None
+            Maximum images for calibration.
+        - resize_method : str
+            Image resize method.
+        - input_scale : list[float]
+            Input value range scaling.
+        - dla_core : int or None
+            DLA core to use (defaults to 0 if not provided).
+        - max_chunks : int
+            Maximum number of DLA chunks.
+        - min_layers : int
+            Minimum layers per chunk.
+        - workspace : float
+            Workspace size in GB.
+        - calibration_cache : str or None
+            Path to calibration cache.
+        - timing_cache : str or None
+            Path to timing cache.
+        - shape : list[str] or None
+            Fixed input shapes specification.
+        - direct_io : bool
+            Use direct IO.
+        - prefer_precision_constraints : bool
+            Prefer precision constraints.
+        - reject_empty_algorithms : bool
+            Reject empty algorithms.
+        - ignore_timing_mismatch : bool
+            Ignore timing cache mismatches.
+        - cache : bool
+            Cache the engine.
+        - verbose : bool
+            Enable verbose output.
+
+    Raises
+    ------
+    ValueError
+        If required DLA build parameters are missing.
+    """
     # require calibration data for dla builds
     if args.calibration_dir is None:
         err_msg = "Calibration directory is required for DLA builds"
@@ -265,6 +487,56 @@ def _build_dla(args: SimpleNamespace) -> None:
 
 
 def _detect(args: SimpleNamespace) -> None:
+    """
+    Run object detection on images or videos using a TensorRT engine.
+
+    Performs YOLO-style object detection on input images or videos and optionally
+    displays results with bounding boxes and timing information.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - engine : str
+            Path to the TensorRT engine file.
+        - input : str
+            Path to input image or video file.
+        - warmup_iterations : int
+            Number of warmup iterations.
+        - input_range : list[float]
+            Input value range.
+        - preprocessor : str
+            Preprocessor type ('cpu', 'cuda', or 'trt').
+        - resize_method : str
+            Image resize method ('letterbox' or 'linear').
+        - conf_thres : float
+            Confidence threshold for detections.
+        - nms_iou_thres : float
+            IOU threshold for NMS.
+        - dla_core : int or None
+            DLA core to use.
+        - warmup : bool
+            Perform warmup iterations.
+        - pagelocked_mem : bool
+            Use pagelocked memory.
+        - unified_mem : bool
+            Use unified memory.
+        - extra_nms : bool
+            Apply additional CPU NMS.
+        - agnostic_nms : bool
+            Use class-agnostic NMS.
+        - no_warn : bool
+            Suppress warnings.
+        - verbose : bool
+            Enable verbose output.
+        - show : bool
+            Display results in window.
+
+    Raises
+    ------
+    ValueError
+        If input file is invalid or cannot be read.
+    """
     img_extensions = [".jpg", ".jpeg", ".png"]
     video_extensions = [".mp4", ".avi", ".mov"]
 
@@ -304,6 +576,7 @@ def _detect(args: SimpleNamespace) -> None:
     ) -> tuple[
         list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float
     ]:
+        """Run detection on an image and return detections with timing info."""
         t0 = time.perf_counter()
         tensor, ratios, pads = detector.preprocess(img, no_copy=True)
         t1 = time.perf_counter()
@@ -330,6 +603,7 @@ def _detect(args: SimpleNamespace) -> None:
         post_t: float,
         det_t: float,
     ) -> None:
+        """Log detection results and timing information."""
         LOG.info(f"Found {len(dets)} detections")
         LOG.info(f"Preprocessing time: {pre_t} ms")
         LOG.info(f"Run time: {run_t} ms")
@@ -347,6 +621,7 @@ def _detect(args: SimpleNamespace) -> None:
         float,
         float,
     ]:
+        """Process an image and return separated detection components and timing."""
         dets, pre_t, run_t, post_t, det_t = run(img)
         log(dets, pre_t, run_t, post_t, det_t)
         bboxes = [d[0] for d in dets]
@@ -368,6 +643,7 @@ def _detect(args: SimpleNamespace) -> None:
         post_t: float,
         det_t: float,
     ) -> np.ndarray:
+        """Draw bounding boxes and timing information on the image."""
         canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
         canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
         canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t} ms", (10, 60))
@@ -418,6 +694,48 @@ def _detect(args: SimpleNamespace) -> None:
 
 
 def _classify(args: SimpleNamespace) -> None:
+    """
+    Run image classification on an image using a TensorRT engine.
+
+    Performs image classification and reports the predicted class with confidence
+    score and timing information.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - engine : str
+            Path to the TensorRT engine file.
+        - input : str
+            Path to input image file.
+        - warmup_iterations : int
+            Number of warmup iterations.
+        - input_range : list[float]
+            Input value range.
+        - preprocessor : str
+            Preprocessor type ('cpu', 'cuda', or 'trt').
+        - resize_method : str
+            Image resize method ('letterbox' or 'linear').
+        - dla_core : int or None
+            DLA core to use.
+        - warmup : bool
+            Perform warmup iterations.
+        - pagelocked_mem : bool
+            Use pagelocked memory.
+        - unified_mem : bool
+            Use unified memory.
+        - no_warn : bool
+            Suppress warnings.
+        - verbose : bool
+            Enable verbose output.
+        - show : bool
+            Display results in window.
+
+    Raises
+    ------
+    ValueError
+        If input file is invalid or cannot be read.
+    """
     img_extensions = [".jpg", ".jpeg", ".png"]
 
     input_path = Path(args.input)
@@ -449,6 +767,7 @@ def _classify(args: SimpleNamespace) -> None:
     def run(
         img: np.ndarray,
     ) -> tuple[tuple[int, float], float, float, float, float]:
+        """Run classification on an image and return results with timing info."""
         t0 = time.perf_counter()
         tensor, _, _ = classifier.preprocess(img, no_copy=True)
         t1 = time.perf_counter()
@@ -475,6 +794,7 @@ def _classify(args: SimpleNamespace) -> None:
         post_t: float,
         det_t: float,
     ) -> None:
+        """Log classification results and timing information."""
         LOG.info(f"Found {cls_results[0]} with confidence {cls_results[1]}")
         LOG.info(f"Preprocessing time: {pre_t} ms")
         LOG.info(f"Run time: {run_t} ms")
@@ -490,6 +810,7 @@ def _classify(args: SimpleNamespace) -> None:
         float,
         float,
     ]:
+        """Process an image and return classification results and timing."""
         cls_results, pre_t, run_t, post_t, det_t = run(img)
         log(cls_results, pre_t, run_t, post_t, det_t)
         times["pre"].append(pre_t)
@@ -506,6 +827,7 @@ def _classify(args: SimpleNamespace) -> None:
         post_t: float,
         det_t: float,
     ) -> np.ndarray:
+        """Draw classification results and timing information on the image."""
         canvas = cv2ext.image.draw.text(img, f"CLASS: {cls_results[0]}", (50, 30))
         canvas = cv2ext.image.draw.text(canvas, f"CONF: {cls_results[1]:.2f}", (50, 60))
         canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
@@ -537,6 +859,21 @@ def _classify(args: SimpleNamespace) -> None:
 
 
 def _inspect(args: SimpleNamespace) -> None:
+    """
+    Inspect a TensorRT engine and report its properties.
+
+    Displays information about the engine including size, batch configuration,
+    and input/output tensor specifications.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - engine : str
+            Path to the TensorRT engine file.
+        - verbose : bool
+            Enable verbose output.
+    """
     engine_size, max_batch, inputs, outputs = trtutils.inspect.inspect_engine(
         Path(args.engine),
         verbose=args.verbose,
@@ -552,6 +889,29 @@ def _inspect(args: SimpleNamespace) -> None:
 
 
 def _download(args: SimpleNamespace) -> None:
+    """
+    Download a model from a remote source and convert it to ONNX format.
+
+    Downloads pre-trained models and automatically converts them to ONNX format
+    for use with TensorRT. Includes license acceptance flow for model usage.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - model : str
+            Name of the model to download.
+        - output : Path
+            Path to save the ONNX model file.
+        - opset : int
+            ONNX opset version to use.
+        - imgsz : int
+            Image size for the model.
+        - accept : bool
+            Whether to accept license terms automatically.
+        - verbose : bool
+            Enable verbose output.
+    """
     if not args.accept:
         LOG.info(
             f"You are about to download model '{args.model}' which may have license restrictions."
@@ -573,6 +933,35 @@ def _download(args: SimpleNamespace) -> None:
 
 
 def _main() -> None:
+    """
+    Main entry point for the trtutils command-line interface.
+
+    Sets up argument parsing for all CLI commands, processes arguments,
+    configures logging, and dispatches to the appropriate command handler.
+
+    Commands
+    --------
+    benchmark
+        Benchmark a TensorRT engine for performance metrics.
+    trtexec
+        Run trtexec with provided options.
+    build
+        Build a TensorRT engine from an ONNX model.
+    build_yolo
+        Build a TensorRT engine with YOLO NMS injection.
+    can_run_on_dla
+        Evaluate DLA compatibility of a model.
+    build_dla
+        Build an engine with automatic DLA layer assignments.
+    detect
+        Run object detection on images or videos.
+    classify
+        Run image classification on images.
+    inspect
+        Inspect a TensorRT engine's properties.
+    download
+        Download and convert models to ONNX.
+    """
     # general arguments parser (for all commands)
     general_parser = argparse.ArgumentParser(add_help=False)
     general_parser.add_argument(

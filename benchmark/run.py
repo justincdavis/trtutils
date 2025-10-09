@@ -19,6 +19,8 @@ from pathlib import Path
 import cv2
 from tqdm import tqdm
 
+from model_utils import ensure_model_available
+
 
 # global paths
 REPO_DIR = Path(__file__).parent.parent
@@ -27,6 +29,14 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_PATH = str((REPO_DIR / "data" / "horse.jpg").resolve())
 MODELNAME = "yolov10n"
 MODELNAMES = [
+    "yolov13n",
+    "yolov13s",
+    "yolov12n",
+    "yolov12s",
+    "yolov12m",
+    "yolov11n",
+    "yolov11s",
+    "yolov11m",
     "yolov10n",
     "yolov10s",
     "yolov10m",
@@ -44,6 +54,9 @@ MODELNAMES = [
     "yoloxm",
 ]
 ULTRALYTICS_MODELS = [
+    "yolov11n",
+    "yolov11s",
+    "yolov11m",
     "yolov10n",
     "yolov10s",
     "yolov10m",
@@ -55,6 +68,9 @@ ULTRALYTICS_MODELS = [
     "yolov8m",
 ]
 MODEL_DIRS = [
+    "yolov13",
+    "yolov12",
+    "yolov11",
     "yolov10",
     "yolov9",
     "yolov8",
@@ -74,7 +90,7 @@ FRAMEWORKS = [
     "tensorrt",
 ]
 
-# sahi paths
+# sahi paths - use ultralytics models for SAHI
 SAHI_MODELS = ULTRALYTICS_MODELS.copy()
 SAHI_IMAGE_PATH = str((REPO_DIR / "data" / "cars.jpeg").resolve())
 
@@ -135,8 +151,13 @@ def benchmark_trtutils(
 
             print(f"Processing {framework} on {MODELNAME} for imgsz={imgsz}...")
 
-            # resolve paths
-            weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
+            # resolve paths - ensure model is available
+            try:
+                weight_path = ensure_model_available(MODELNAME, imgsz, auto_download=True)
+            except Exception as e:
+                warnings.warn(f"Could not get model {MODELNAME} @ {imgsz}: {e}")
+                continue
+            
             trt_path = weight_path.with_suffix(".engine")
 
             if not trt_path.exists():
@@ -315,8 +336,13 @@ def benchmark_sahi(
     if sahi_key not in data:
         data[sahi_key] = {}
 
-    # check that trtutils exists
-    trt_weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
+    # check that trtutils exists - ensure model is available
+    try:
+        trt_weight_path = ensure_model_available(MODELNAME, imgsz, auto_download=True)
+    except Exception as e:
+        err_msg = f"Could not get model {MODELNAME} @ {imgsz}: {e}"
+        raise FileNotFoundError(err_msg) from e
+    
     trt_path = trt_weight_path.with_suffix(".engine")
     if not trt_path.exists():
         err_msg = f"trtutils TensorRT engine not found: {trt_path}, run benchmark of trtutils first."
@@ -445,13 +471,34 @@ def benchmark_sahi(
         print(f"\t\tSpeedup: {speedup:.2f}x {'(TRTUtils faster)' if speedup > 1 else '(Official faster)'}")
 
 
+def bootstrap_models(models: list[str], image_sizes: list[int]) -> None:
+    """Download all models for all image sizes upfront."""
+    print(f"\nBootstrapping models: {', '.join(models)}")
+    print(f"Image sizes: {image_sizes}")
+    print(f"Total downloads: {len(models)} models x {len(image_sizes)} sizes = {len(models) * len(image_sizes)}\n")
+    
+    failed = []
+    for model in models:
+        for imgsz in image_sizes:
+            try:
+                ensure_model_available(model, imgsz, auto_download=True)
+                print(f"✓ {model} @ {imgsz}")
+            except Exception as e:
+                print(f"✗ {model} @ {imgsz}: {e}")
+                failed.append((model, imgsz))
+    
+    if failed:
+        print(f"\n⚠ Failed to download {len(failed)} model(s)")
+    else:
+        print("\n✓ All models downloaded successfully")
+
+
 def main() -> None:
     """Run the benchmarking."""
     parser = argparse.ArgumentParser("Run benchmarking against popular frameworks.")
     parser.add_argument(
         "--device",
         type=str,
-        required=True,
         help="The name of the device you are generating a benchmark on.",
     )
     parser.add_argument(
@@ -492,7 +539,22 @@ def main() -> None:
         action="store_true",
         help="Overwrite existing data by rerunning benchmarks.",
     )
+    parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Download all models for all sizes upfront, then exit.",
+    )
     args = parser.parse_args()
+    
+    # Handle bootstrap mode
+    if args.bootstrap:
+        models = MODELNAMES if args.model == "all" else [args.model]
+        bootstrap_models(models, IMAGE_SIZES)
+        return
+    
+    # Validate required arguments
+    if not args.device:
+        parser.error("--device is required (unless using --bootstrap)")
 
     # check if iterating over all possible models
     models: list[str] = []
