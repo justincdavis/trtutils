@@ -48,10 +48,23 @@ def get_data() -> list[tuple[str, dict[str, dict[str, dict[str, dict[str, float]
 
 
 def get_model_info() -> dict[str, dict[str, float]]:
-    info_dir = Path(__file__).parent / "info"
-    model_info_path = info_dir / "model_info.json"
-    with open(model_info_path, "r") as f:
-        return json.load(f)
+    info_dir = Path(__file__).parent / "info" / "model_info"
+    overall_data: dict[str, dict[str, float]] = {}
+
+    # for each file in the directory
+    for file in info_dir.iterdir():
+        if not file.is_file():
+            continue
+
+        # load the data
+        with file.open("r") as f:
+            data: dict[str, dict[str, float]] = json.load(f)
+
+        # add each entry to the overall data
+        for model, info in data.items():
+            overall_data[model] = info
+
+    return overall_data
 
 
 def get_model_family(model_name: str) -> str:
@@ -253,12 +266,15 @@ def plot_accuracy_cost(
         if family not in MODEL_FAMILIES:
             continue
 
-        # Use median latency at 640 image size as the "cost"
-        # 640 is a common benchmark size
-        if "640" in model_benchmarks:
-            cost = model_benchmarks["640"].get("median")
-            if cost is not None:
-                points_data.append((cost, accuracy, model_name, family))
+        # Grab the median latency of the image size
+        # that is presnet in the model_info entry
+        imgsz = str(model_info[model_name]["imgsz"])
+        entry = model_benchmarks.get(imgsz)
+        if entry is None:
+            continue
+        cost = entry.get("median")
+        if cost is not None:
+            points_data.append((cost, accuracy, model_name, family))
 
     if not points_data:
         print(f"\t  No valid data points for {framework}")

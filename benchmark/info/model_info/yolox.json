@@ -1,0 +1,18 @@
+{
+    "yoloxn": {
+        "coco_map_50": 25.8,
+        "imgsz": 416
+    },
+    "yoloxt": {
+        "coco_map_50": 32.8,
+        "imgsz": 416
+    },
+    "yoloxs": {
+        "coco_map_50": 40.5,
+        "imgsz": 640
+    },
+    "yoloxm": {
+        "coco_map_50": 46.9,
+        "imgsz": 640
+    }
+}
