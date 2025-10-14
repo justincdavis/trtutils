@@ -2,16 +2,19 @@
   "rtdetrv3_r18": {
     "id": "1zIDOjn1qDccC3TBsDlGQHOjVrehd26bk",
     "config": "rtdetrv3_r18vd_6x_coco.yml",
-    "name": "rtdetrv3_r18vd_6x_coco"
+    "name": "rtdetrv3_r18vd_6x_coco",
+    "extension": "pdparams"
   },
   "rtdetrv3_r34": {
     "id": "12-wqAF8i67eqbocaWPK33d4tFkN2wGi2",
     "config": "rtdetrv3_r34vd_6x_coco.yml",
-    "name": "rtdetrv3_r34vd_6x_coco"
+    "name": "rtdetrv3_r34vd_6x_coco",
+    "extension": "pdparams"
   },
   "rtdetrv3_r50": {
     "id": "1wfJE-QgdgqKE0IkiTuoD5HEbZwwZg3sQ",
     "config": "rtdetrv3_r50vd_6x_coco.yml",
-    "name": "rtdetrv3_r50vd_6x_coco"
+    "name": "rtdetrv3_r50vd_6x_coco",
+    "extension": "pdparams"
   }
 }
