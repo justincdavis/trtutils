@@ -1,0 +1,14 @@
+{
+    "dfine_n": {
+        "coco_map_50": 42.8,
+        "imgsz": 640
+    },
+    "dfine_s": {
+        "coco_map_50": 50.7,
+        "imgsz": 640
+    },
+    "dfine_m": {
+        "coco_map_50": 55.1,
+        "imgsz": 640
+    }
+}

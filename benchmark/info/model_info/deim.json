@@ -1,0 +1,26 @@
+{
+    "deim_dfine_n": {
+        "coco_map_50": 43.0,
+        "imgsz": 640
+    },
+    "deim_dfine_s": {
+        "coco_map_50": 49.0,
+        "imgsz": 640
+    },
+    "deim_dfine_m": {
+        "coco_map_50": 52.7,
+        "imgsz": 640
+    },
+    "deim_rtdetrv2_r18": {
+        "coco_map_50": 49.0,
+        "imgsz": 640
+    },
+    "deim_rtdetrv2_r34": {
+        "coco_map_50": 50.9,
+        "imgsz": 640
+    },
+    "deim_rtdetrv2_r50m": {
+        "coco_map_50": 53.2,
+        "imgsz": 640
+    }
+}

@@ -1,0 +1,14 @@
+{
+    "yolov11n": {
+        "coco_map_50": 39.5,
+        "imgsz": 640
+    },
+    "yolov11s": {
+        "coco_map_50": 47.0,
+        "imgsz": 640
+    },
+    "yolov11m": {
+        "coco_map_50": 51.5,
+        "imgsz": 640
+    }
+}

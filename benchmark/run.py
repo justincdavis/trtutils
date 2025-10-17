@@ -126,11 +126,12 @@ def write_data(
 
 
 def benchmark_trtutils(
-    device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool
+    device: str, warmup_iters: int, bench_iters: int, image_sizes: list[int], *, overwrite: bool
 ) -> None:
     from trtutils import TRTEngine, FLAGS
     from trtutils.image import Detector
     from trtutils.builder import build_engine
+    from trtutils.builder.hooks import yolo_efficient_nms_hook
 
     # resolve paths
     image = cv2.imread(IMAGE_PATH)
@@ -143,7 +144,7 @@ def benchmark_trtutils(
             continue
 
         framework = f"trtutils({preprocessor})"
-        for imgsz in IMAGE_SIZES:
+        for imgsz in image_sizes:
             # if we can find the model nested, then we can skip
             with contextlib.suppress(KeyError):
                 if data[framework][MODELNAME][str(imgsz)] is not None and not overwrite:
@@ -162,14 +163,17 @@ def benchmark_trtutils(
 
             if not trt_path.exists():
                 print("\tBuilding trtutils engine...")
+                shapes = [("images", (1, 3, imgsz, imgsz))]
+                hooks = []
+                if "yolo" in MODELNAME and ("yolov7" in MODELNAME or "yolov10" in MODELNAME):
+                    hooks.append(yolo_efficient_nms_hook())
                 build_engine(
                     onnx=weight_path,
                     output=trt_path,
                     fp16=True,
                     timing_cache=str(Path(__file__).parent / "timing.cache"),
-                    shapes=[("images", (1, 3, imgsz, imgsz))]
-                    if "yolov9" in MODELNAME
-                    else None,
+                    shapes=shapes,
+                    hooks=hooks,
                 )
 
                 # verify
@@ -229,7 +233,7 @@ def benchmark_trtutils(
 
 
 def benchmark_ultralytics(
-    device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool
+    device: str, warmup_iters: int, bench_iters: int, image_sizes: list[int], *, overwrite: bool
 ) -> None:
     from ultralytics import YOLO
 
@@ -244,7 +248,7 @@ def benchmark_ultralytics(
     data = get_data(device)
 
     # handle both Torch and TensorRT backed
-    for imgsz in IMAGE_SIZES:
+    for imgsz in image_sizes:
         # resolve paths
         # make a "smarter" path
         utrt_path = (
@@ -544,12 +548,23 @@ def main() -> None:
         action="store_true",
         help="Download all models for all sizes upfront, then exit.",
     )
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        nargs="?",
+        const=None,
+        default=None,
+        help="Specific input image size to benchmark (e.g., 640). If not specified, all sizes will be tested.",
+    )
     args = parser.parse_args()
+    
+    # Determine which image sizes to test
+    image_sizes = [args.imgsz] if args.imgsz is not None else IMAGE_SIZES
     
     # Handle bootstrap mode
     if args.bootstrap:
         models = MODELNAMES if args.model == "all" else [args.model]
-        bootstrap_models(models, IMAGE_SIZES)
+        bootstrap_models(models, image_sizes)
         return
     
     # Validate required arguments
@@ -590,6 +605,7 @@ def main() -> None:
                     args.device,
                     args.warmup,
                     args.iterations,
+                    image_sizes,
                     overwrite=args.overwrite,
                 )
             except Exception as e:
@@ -604,6 +620,7 @@ def main() -> None:
                         args.device,
                         args.warmup,
                         args.iterations,
+                        image_sizes,
                         overwrite=args.overwrite,
                     )
                 else:

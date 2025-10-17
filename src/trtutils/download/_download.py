@@ -5,13 +5,36 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
+import time
 from functools import lru_cache
 from pathlib import Path
 
 from trtutils._log import LOG
+
+
+def _get_cache_dir() -> Path:
+    """Get or create the cache directory for trtutils downloads."""
+    cache_dir = Path.home() / ".cache" / "trtutils"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def _get_repo_cache_dir() -> Path:
+    """Get or create the repository cache directory."""
+    repo_cache = _get_cache_dir() / "repos"
+    repo_cache.mkdir(parents=True, exist_ok=True)
+    return repo_cache
+
+
+def _get_weights_cache_dir() -> Path:
+    """Get or create the weights cache directory."""
+    weights_cache = _get_cache_dir() / "weights"
+    weights_cache.mkdir(parents=True, exist_ok=True)
+    return weights_cache
 
 
 @lru_cache(maxsize=1)
@@ -36,13 +59,29 @@ def _git_clone(
     *,
     verbose: bool | None = None,
 ) -> None:
-    subprocess.run(
-        ["git", "clone", url],
-        cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
-    )
+    # Extract repo name from URL
+    repo_name = url.rstrip("/").split("/")[-1].replace(".git", "")
+    cache_repo_path = _get_repo_cache_dir() / repo_name
+    target_path = directory / repo_name
+    
+    # Check if repo exists in cache
+    if cache_repo_path.exists():
+        # Copy from cache
+        LOG.info(f"Using cached repository: {repo_name}")
+        shutil.copytree(cache_repo_path, target_path)
+    else:
+        LOG.info(f"Cloning repository: {repo_name}")
+        # Clone fresh
+        subprocess.run(
+            ["git", "clone", url],
+            cwd=directory,
+            check=True,
+            stdout=subprocess.DEVNULL if not verbose else None,
+            stderr=subprocess.STDOUT if not verbose else None,
+        )
+        # Cache the cloned repo
+        shutil.copytree(target_path, cache_repo_path)
+        LOG.info(f"Cached repository: {repo_name}")
 
 
 def _run_uv_pip_install(
@@ -96,30 +135,61 @@ def _run_download(
     *,
     verbose: bool | None = None,
 ) -> None:
+    weights_cache_dir = _get_weights_cache_dir()
+    
+    # Determine the filename based on download method
     if "id" in config:
-        subprocess.run(
-            [
-                python_path,
-                "-m",
-                "gdown",
-                "--id",
-                config["id"],
-                "-O",
-                config["name"] + ".pth",
-            ],
-            cwd=directory,
-            check=True,
-            stdout=subprocess.DEVNULL if not verbose else None,
-            stderr=subprocess.STDOUT if not verbose else None,
-        )
+        filename = config["name"] + "." + config["ext"]
+        cache_key = f"gdown_{config['id']}_{filename}"
+    # RF-DETR and Ultralytics based models are downloaded via their packages
+    # Handle caching inside their own functions
+    elif config.get("url") is None or config["url"] == "ultralytics":
+        seed = time.monotonic_ns()  # use this to get unique filename
+        cache_key = f"unused_{seed}"
+        filename = f"unused_{seed}"
+    # Handle URL based models
     else:
-        subprocess.run(
-            ["wget", "-nc", config["url"]],
-            cwd=directory,
-            check=True,
-            stdout=subprocess.DEVNULL if not verbose else None,
-            stderr=subprocess.STDOUT if not verbose else None,
-        )
+        filename = config["url"].rstrip("/").split("/")[-1]
+        cache_key = f"wget_{filename}"
+    
+    cached_file = weights_cache_dir / cache_key
+    target_file = directory / filename
+    
+    # Check if file exists in cache
+    if cached_file.exists():
+        LOG.info(f"Using cached weights: {filename}")
+        shutil.copy(cached_file, target_file)
+    else:
+        LOG.info(f"Downloading weights: {filename}")
+        # Download fresh
+        if "id" in config:
+            subprocess.run(
+                [
+                    python_path,
+                    "-m",
+                    "gdown",
+                    "--id",
+                    config["id"],
+                    "-O",
+                    filename,
+                ],
+                cwd=directory,
+                check=True,
+                stdout=subprocess.DEVNULL if not verbose else None,
+                stderr=subprocess.STDOUT if not verbose else None,
+            )
+        else:
+            subprocess.run(
+                ["wget", "-nc", config["url"]],
+                cwd=directory,
+                check=True,
+                stdout=subprocess.DEVNULL if not verbose else None,
+                stderr=subprocess.STDOUT if not verbose else None,
+            )
+        
+        # Cache the downloaded file
+        shutil.copy(target_file, cached_file)
+        LOG.info(f"Cached weights: {filename}")
 
 
 def _run_patch(
@@ -222,11 +292,26 @@ def _export_ultralytics(
         "onnxslim",
         verbose=verbose,
     )
+    modelname = f"model={config['name']}"
+
+    # Handle caching of ultralytics downloaded .pt weights
+    weights_cache_dir = _get_weights_cache_dir()
+    pt_filename = config["name"] + ".pt"
+    cache_key = f"ultralytics_{pt_filename}"
+    cached_pt_file = weights_cache_dir / cache_key
+    target_pt_file = directory / pt_filename
+    
+    # Check if .pt file exists in cache
+    if cached_pt_file.exists():
+        LOG.info(f"Using cached ultralytics weights: {pt_filename}")
+        shutil.copy(cached_pt_file, target_pt_file)
+        modelname = f"model={pt_filename}"
+    
     subprocess.run(
         [
             str(bin_path / "yolo"),
             "export",
-            f"model={config['name']}",
+            modelname,
             "format=onnx",
             f"opset={opset}",
             f"imgsz={imgsz}",
@@ -236,6 +321,12 @@ def _export_ultralytics(
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
+    
+    # Cache the .pt file if it was downloaded and not already cached
+    if target_pt_file.exists() and not cached_pt_file.exists():
+        shutil.copy(target_pt_file, cached_pt_file)
+        LOG.info(f"Cached ultralytics weights: {pt_filename}")
+    
     model_path = directory / (config["name"] + ".onnx")
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
@@ -368,7 +459,7 @@ def _export_yolov12(
         "pyyaml",
         "scipy",
         "onnxslim",
-        "onnxruntime-gpu",
+        "onnxruntime",
         "gradio",
         "opencv-python",
         "psutil",
@@ -420,7 +511,7 @@ def _export_yolov13(
         "torch==2.4.*",
         "onnx",
         "onnxslim",
-        "onnxruntime-gpu",
+        "onnxruntime",
         "huggingface_hub",
         verbose=verbose,
     )
@@ -783,9 +874,20 @@ def _export_rfdetr(
     _run_uv_pip_install(
         directory,
         bin_path.parent,
-        "rfdetr[onnxexport]",
+        "rfdetr[onnxexport]==1.3.0",
         verbose=verbose,
     )
+    
+    # Set up HuggingFace cache directory for rfdetr weights
+    # rfdetr downloads models from HuggingFace Hub
+    hf_cache_dir = _get_cache_dir() / "huggingface"
+    hf_cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Set environment variable to use our cache directory
+    env = os.environ.copy()
+    env["HF_HOME"] = str(hf_cache_dir)
+    env["HUGGINGFACE_HUB_CACHE"] = str(hf_cache_dir / "hub")
+    
     program = f"""
 import rfdetr
 model = rfdetr.{config["class"]}()
@@ -801,6 +903,7 @@ model.export(
             program,
         ],
         cwd=directory,
+        env=env,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,

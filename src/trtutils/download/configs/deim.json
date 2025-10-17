@@ -2,51 +2,61 @@
   "deim_dfine_n": {
     "id": "1ZPEhiU9nhW4M5jLnYOFwTSLQC1Ugf62e",
     "config": "deim_hgnetv2_n_coco.yml",
-    "name": "deim_dfine_hgnetv2_n_coco_160e"
+    "name": "deim_dfine_hgnetv2_n_coco_160e",
+    "extension": "pth"
   },
   "deim_dfine_s": {
     "id": "1tB8gVJNrfb6dhFvoHJECKOF5VpkthhfC",
     "config": "deim_hgnetv2_s_coco.yml",
-    "name": "deim_dfine_hgnetv2_s_coco_120e"
+    "name": "deim_dfine_hgnetv2_s_coco_120e",
+    "extension": "pth"
   },
   "deim_dfine_m": {
     "id": "18Lj2a6UN6k_n_UzqnJyiaiLGpDzQQit8",
     "config": "deim_hgnetv2_m_coco.yml",
-    "name": "deim_dfine_hgnetv2_m_coco_90e"
+    "name": "deim_dfine_hgnetv2_m_coco_90e",
+    "extension": "pth"
   },
   "deim_dfine_l": {
     "id": "1PIRf02XkrA2xAD3wEiKE2FaamZgSGTAr",
     "config": "deim_hgnetv2_l_coco.yml",
-    "name": "deim_dfine_hgnetv2_l_coco_50e"
+    "name": "deim_dfine_hgnetv2_l_coco_50e",
+    "extension": "pth"
   },
   "deim_dfine_x": {
     "id": "1dPtbgtGgq1Oa7k_LgH1GXPelg1IVeu0j",
     "config": "deim_hgnetv2_x_coco.yml",
-    "name": "deim_dfine_hgnetv2_x_coco_50e"
+    "name": "deim_dfine_hgnetv2_x_coco_50e",
+    "extension": "pth"
   },
   "deim_rtdetrv2_r18": {
     "id": "153_JKff6EpFgiLKaqkJsoDcLal_0ux_F",
     "config": "deim_r18vd_120e_coco.yml",
-    "name": "deim_rtdetrv2_r18vd_coco_120e"
+    "name": "deim_rtdetrv2_r18vd_coco_120e",
+    "extension": "pth"
   },
   "deim_rtdetrv2_r34": {
     "id": "1O9RjZF6kdFWGv1Etn1Toml4r-YfdMDMM",
     "config": "deim_r34vd_120e_coco.yml",
-    "name": "deim_rtdetrv2_r34vd_coco_120e"
+    "name": "deim_rtdetrv2_r34vd_coco_120e",
+    "extension": "pth"
   },
   "deim_rtdetrv2_r50m": {
     "id": "10dLuqdBZ6H5ip9BbBiE6S7ZcmHkRbD0E",
     "config": "deim_r50vd_m_60e_coco.yml",
-    "name": "deim_rtdetrv2_r50vd_m_coco_60e"
+    "name": "deim_rtdetrv2_r50vd_m_coco_60e",
+    "extension": "pth"
   },
   "deim_rtdetrv2_r50": {
     "id": "1mWknAXD5JYknUQ94WCEvPfXz13jcNOTI",
     "config": "deim_r50vd_60e_coco.yml",
-    "name": "deim_rtdetrv2_r50vd_coco_60e"
+    "name": "deim_rtdetrv2_r50vd_coco_60e",
+    "extension": "pth"
   },
   "deim_rtdetrv2_r101": {
     "id": "1BIevZijOcBO17llTyDX32F_pYppBfnzu",
     "config": "deim_r101vd_60e_coco.yml",
-    "name": "deim_rtdetrv2_r101vd_coco_60e"
+    "name": "deim_rtdetrv2_r101vd_coco_60e",
+    "extension": "pth"
   }
 }
