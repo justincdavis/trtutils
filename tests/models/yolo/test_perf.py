@@ -44,3 +44,43 @@ def test_yolo_10_pagelocked_perf() -> None:
 def test_yolo_10_pagelocked_perf_dla() -> None:
     """Test the performance of the YOLOv10 model with DLA."""
     yolo_pagelocked_perf(10, use_dla=True)
+
+
+def test_yolo_11_pagelocked_perf() -> None:
+    """Test the performance of the YOLOv11 model."""
+    yolo_pagelocked_perf(11, use_dla=False)
+
+
+def test_yolo_11_pagelocked_perf_dla() -> None:
+    """Test the performance of the YOLOv11 model with DLA."""
+    yolo_pagelocked_perf(11, use_dla=True)
+
+
+def test_yolo_12_pagelocked_perf() -> None:
+    """Test the performance of the YOLOv12 model."""
+    yolo_pagelocked_perf(12, use_dla=False)
+
+
+def test_yolo_12_pagelocked_perf_dla() -> None:
+    """Test the performance of the YOLOv12 model with DLA."""
+    yolo_pagelocked_perf(12, use_dla=True)
+
+
+def test_yolo_13_pagelocked_perf() -> None:
+    """Test the performance of the YOLOv13 model."""
+    yolo_pagelocked_perf(13, use_dla=False)
+
+
+def test_yolo_13_pagelocked_perf_dla() -> None:
+    """Test the performance of the YOLOv13 model with DLA."""
+    yolo_pagelocked_perf(13, use_dla=True)
+
+
+def test_yolox_pagelocked_perf() -> None:
+    """Test the performance of the YOLOX model."""
+    yolo_pagelocked_perf(0, use_dla=False)
+
+
+def test_yolox_pagelocked_perf_dla() -> None:
+    """Test the performance of the YOLOX model with DLA."""
+    yolo_pagelocked_perf(0, use_dla=True)

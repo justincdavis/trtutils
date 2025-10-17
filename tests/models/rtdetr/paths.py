@@ -1,7 +1,7 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""YOLO model path definitions - imports from consolidated paths."""
+"""RT-DETR model path definitions - imports from consolidated paths."""
 from __future__ import annotations
 
 from ..paths import (
@@ -9,8 +9,8 @@ from ..paths import (
     HORSE_IMAGE_PATH,
     IMAGE_PATHS,
     PEOPLE_IMAGE_PATH,
-    YOLO_ENGINE_PATHS as ENGINE_PATHS,
-    YOLO_ONNX_PATHS as ONNX_PATHS,
+    RTDETR_ENGINE_PATHS as ENGINE_PATHS,
+    RTDETR_ONNX_PATHS as ONNX_PATHS,
 )
 
 __all__ = [
