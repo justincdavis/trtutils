@@ -1,3 +1,6 @@
+# Ignore models in the data directory
+data/**
+
 # Ignore extern directory since models are downloaded and exported there
 extern/
 
