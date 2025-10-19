@@ -861,14 +861,20 @@ def _export_rfdetr(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,  # noqa: ARG001
+    imgsz: int,
     *,
     verbose: bool | None = None,
 ) -> Path:
     LOG.warning(
         "RF-DETR is a Apache-2.0 licensed model, be aware of license restrictions"
     )
-    LOG.warning("RF-DETR does not support setting alternative input sizes")
+    if imgsz % 32 != 0:
+        new_imgsz = max(imgsz // 32, 1) * 32
+        wrn_msg = f"RF-DETR does not support input size {imgsz}, "
+        wrn_msg += f"using {new_imgsz} (closest divisible by 32)"
+        LOG.warning(wrn_msg)
+        imgsz = new_imgsz
+
     _run_uv_pip_install(
         directory,
         bin_path.parent,
@@ -876,19 +882,19 @@ def _export_rfdetr(
         verbose=verbose,
     )
 
-    # Set up HuggingFace cache directory for rfdetr weights
-    # rfdetr downloads models from HuggingFace Hub
-    hf_cache_dir = _get_cache_dir() / "huggingface"
-    hf_cache_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Set environment variable to use our cache directory
-    env = os.environ.copy()
-    env["HF_HOME"] = str(hf_cache_dir)
-    env["HUGGINGFACE_HUB_CACHE"] = str(hf_cache_dir / "hub")
-    
+    # Handle caching of rfdetr downloaded .pth weights
+    weights_cache_dir = _get_weights_cache_dir()
+    cached_pth_file = weights_cache_dir / config["weights"]
+    target_pth_file = directory / config["weights"]
+
+    # Check if .pth file exists in cache
+    if cached_pth_file.exists():
+        LOG.info(f"Using cached rfdetr weights: {config['weights']}")
+        shutil.copy(cached_pth_file, target_pth_file)
+
     program = f"""
 import rfdetr
-model = rfdetr.{config["class"]}()
+model = rfdetr.{config["class"]}(resolution={imgsz})
 model.export(
     opset_version={opset},
     simplify=True,
@@ -901,11 +907,16 @@ model.export(
             program,
         ],
         cwd=directory,
-        env=env,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
+
+    # Cache the .pth file if it was downloaded and not already cached
+    if target_pth_file.exists() and not cached_pth_file.exists():
+        shutil.copy(target_pth_file, cached_pth_file)
+        LOG.info(f"Cached rfdetr weights: {config['weights']}")
+
     model_path = directory / "output" / "inference_model.sim.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)

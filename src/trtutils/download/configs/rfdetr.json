@@ -1,11 +1,14 @@
 {
   "rfdetr_n": {
-    "class": "RFDETRNano"
+    "class": "RFDETRNano",
+    "weights": "rf-detr-nano.pth"
   },
   "rfdetr_s": {
-    "class": "RFDETRSmall"
+    "class": "RFDETRSmall",
+    "weights": "rf-detr-small.pth"
   },
   "rfdetr_m": {
-    "class": "RFDETRMedium"
+    "class": "RFDETRMedium",
+    "weights": "rf-detr-medium.pth"
   }
 }

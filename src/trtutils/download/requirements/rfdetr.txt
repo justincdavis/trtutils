@@ -1,1 +1,3 @@
 rfdetr[onnxexport]==1.3.0
+torch==2.8.0
+onnxscript==0.5.4
