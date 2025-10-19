@@ -23,7 +23,9 @@ if TYPE_CHECKING:
 
 
 class InputSchema(Enum):
+    # YOLO-X,v7,v8,v9,v10,v11,v12,v13
     IMAGES = ("images",)
+    # DEIM-v1/v2, RTDETR-v1
     IMAGES_ORIG_SIZE = ("images", "orig_image_size")
     IMAGE_SHAPE_SCALE = ("image", "im_shape", "scale_factor")
 

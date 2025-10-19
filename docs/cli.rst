@@ -106,6 +106,7 @@ Options
 
 * ``--device, -d``: Device to use for the engine (choices: gpu, dla; default: gpu)
 * ``--workspace, -w``: Workspace size in GB (default: 4.0)
+* ``--optimization_level``: TensorRT builder optimization level (0-5). Default is 3.
 * ``--shape, -s``: Fix input binding shapes. Format: NAME:dim1,dim2[,dim3...]. Can be specified multiple times for multiple inputs
 * ``--fp16``: Quantize the engine to FP16 precision
 * ``--int8``: Quantize the engine to INT8 precision

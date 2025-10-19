@@ -16,6 +16,7 @@ from pathlib import Path
 from trtutils._log import LOG
 
 
+@lru_cache(maxsize=1)
 def _get_cache_dir() -> Path:
     """Get or create the cache directory for trtutils downloads."""
     cache_dir = Path.home() / ".cache" / "trtutils"
@@ -23,6 +24,7 @@ def _get_cache_dir() -> Path:
     return cache_dir
 
 
+@lru_cache(maxsize=1)
 def _get_repo_cache_dir() -> Path:
     """Get or create the repository cache directory."""
     repo_cache = _get_cache_dir() / "repos"
@@ -30,11 +32,19 @@ def _get_repo_cache_dir() -> Path:
     return repo_cache
 
 
+@lru_cache(maxsize=1)
 def _get_weights_cache_dir() -> Path:
     """Get or create the weights cache directory."""
     weights_cache = _get_cache_dir() / "weights"
     weights_cache.mkdir(parents=True, exist_ok=True)
     return weights_cache
+
+
+@lru_cache(maxsize=0)
+def _get_model_requirements(model: str) -> str:
+    """Get the requirements file for the model."""
+    file_path = Path(__file__).parent / "requirements" / f"{model}.txt"
+    return str(file_path.resolve())
 
 
 @lru_cache(maxsize=1)
@@ -56,6 +66,7 @@ def _load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
 def _git_clone(
     url: str,
     directory: Path,
+    commit: str | None = None,
     *,
     verbose: bool | None = None,
 ) -> None:
@@ -83,15 +94,37 @@ def _git_clone(
         shutil.copytree(target_path, cache_repo_path)
         LOG.info(f"Cached repository: {repo_name}")
 
+    if commit:
+        subprocess.run(
+            ["git", "checkout", commit],
+            cwd=target_path,
+            check=True,
+            stdout=subprocess.DEVNULL if not verbose else None,
+            stderr=subprocess.STDOUT if not verbose else None,
+        )
+
 
 def _run_uv_pip_install(
     directory: Path,
     venv_path: Path,
-    *packages: str,
+    model: str | None,
+    packages: list[str] | None = None,
     verbose: bool | None = None,
 ) -> None:
     cmd = ["uv", "pip", "install", "-p", str(venv_path)]
-    cmd.extend(packages)
+    if model is not None:
+        LOG.info(f"Creating venv for model: {model}")
+        cmd.extend([
+            "-r",
+            _get_model_requirements(model),
+            "--extra-index-url",
+            "https://download.pytorch.org/whl/cpu",
+            "--index-strategy",
+            "unsafe-best-match",
+        ])
+    if packages is not None:
+        cmd.extend(packages)
+    LOG.info(f"Running command: {' '.join(cmd)}")
     subprocess.run(
         cmd,
         cwd=directory,
@@ -99,6 +132,25 @@ def _run_uv_pip_install(
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
+
+
+def _export_requirements(
+    venv_path: Path,
+    output_path: Path,
+    *,
+    verbose: bool | None = None,
+) -> None:
+    output_path = output_path.expanduser()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if verbose:
+        LOG.info(f"Exporting virtual environment requirements to {output_path}")
+    with output_path.open("w", encoding="utf-8") as requirements_file:
+        subprocess.run(
+            ["uv", "pip", "freeze", "-p", str(venv_path)],
+            check=True,
+            stdout=requirements_file,
+            stderr=subprocess.DEVNULL if not verbose else None,
+        )
 
 
 def _make_venv(
@@ -119,10 +171,13 @@ def _make_venv(
     _run_uv_pip_install(
         directory,
         bin_path.parent,
-        "--upgrade",
-        "pip",
-        "setuptools",
-        "wheel",
+        model=None,
+        packages=[
+            "--upgrade",
+            "pip",
+            "setuptools",
+            "wheel",
+        ],
         verbose=verbose,
     )
     return python_path, bin_path
@@ -139,7 +194,7 @@ def _run_download(
     
     # Determine the filename based on download method
     if "id" in config:
-        filename = config["name"] + "." + config["ext"]
+        filename = config["name"] + "." + config["extension"]
         cache_key = f"gdown_{config['id']}_{filename}"
     # RF-DETR and Ultralytics based models are downloaded via their packages
     # Handle caching inside their own functions
@@ -186,7 +241,7 @@ def _run_download(
                 stdout=subprocess.DEVNULL if not verbose else None,
                 stderr=subprocess.STDOUT if not verbose else None,
             )
-        
+
         # Cache the downloaded file
         shutil.copy(target_file, cached_file)
         LOG.info(f"Cached weights: {filename}")
@@ -199,6 +254,7 @@ def _run_patch(
     *,
     verbose: bool | None = None,
 ) -> None:
+    LOG.info(f"Patching {file_to_patch} with {patch_file}")
     subprocess.run(
         ["patch", file_to_patch, "-i", patch_file],
         cwd=directory,
@@ -220,19 +276,12 @@ def _export_yolov7(
     verbose: bool | None = None,
 ) -> Path:
     LOG.warning("YOLOv7 is a GPL-3.0 licensed model, be aware of license restrictions")
-    _git_clone("https://github.com/WongKinYiu/yolov7", directory, verbose=verbose)
+    _git_clone("https://github.com/WongKinYiu/yolov7", directory, "a207844b1ce82d204ab36d87d496728d3d2348e7", verbose=verbose)
     yolov7_dir = directory / "yolov7"
     _run_uv_pip_install(
         yolov7_dir,
         bin_path.parent,
-        "-r",
-        "requirements.txt",
-        "torch==2.4.*",
-        "onnx",
-        "onnxruntime",
-        "onnxslim",
-        "onnxsim",
-        "onnx_graphsurgeon",
+        "yolov7",
         verbose=verbose,
     )
     _run_download(yolov7_dir, config, python_path, verbose=verbose)
@@ -287,9 +336,6 @@ def _export_ultralytics(
         directory,
         bin_path.parent,
         "ultralytics",
-        "onnx",
-        "onnxruntime",
-        "onnxslim",
         verbose=verbose,
     )
     modelname = f"model={config['name']}"
@@ -345,17 +391,18 @@ def _export_yolov9(
     verbose: bool | None = None,
 ) -> Path:
     LOG.warning("YOLOv9 is a GPL-3.0 licensed model, be aware of license restrictions")
-    _git_clone("https://github.com/WongKinYiu/yolov9", directory, verbose=verbose)
+    _git_clone("https://github.com/WongKinYiu/yolov9", directory, "5b1ea9a8b3f0ffe4fe0e203ec6232d788bb3fcff", verbose=verbose)
     yolov9_dir = directory / "yolov9"
+    _run_patch(
+        yolov9_dir,
+        str((Path(__file__).parent / "patches" / "yolov9_export.patch").resolve()),
+        "export.py",
+        verbose=verbose,
+    )
     _run_uv_pip_install(
         yolov9_dir,
         bin_path.parent,
-        "-r",
-        "requirements.txt",
-        "torch==2.4.*",
-        "onnx",
-        "onnxruntime",
-        "onnx-simplifier>=0.4.1",
+        "yolov9",
         verbose=verbose,
     )
     _run_download(yolov9_dir, config, python_path, verbose=verbose)
@@ -366,7 +413,7 @@ def _export_yolov9(
             "--weights",
             config["name"] + ".pt",
             "--include",
-            "onnx",
+            "onnx_end2end",
             "--simplify",
             "--img-size",
             str(imgsz),
@@ -379,7 +426,7 @@ def _export_yolov9(
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
     )
-    model_path = yolov9_dir / (config["name"] + ".onnx")
+    model_path = yolov9_dir / (config["name"] + "-end2end.onnx")
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -399,16 +446,13 @@ def _export_yolov10(
     LOG.warning(
         "YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions"
     )
-    _git_clone("https://github.com/THU-MIG/yolov10", directory, verbose=verbose)
+    _git_clone("https://github.com/THU-MIG/yolov10", directory, "453c6e38a51e9d1d5a2aa5fb7f1014a711913397", verbose=verbose)
     yolov10_dir = directory / "yolov10"
     _run_uv_pip_install(
         yolov10_dir,
         bin_path.parent,
-        ".",
-        "torch==2.4.*",
-        "onnx",
-        "onnxsim",
-        "huggingface_hub",
+        "yolov10",
+        packages=["."],
         verbose=verbose,
     )
     _run_download(yolov10_dir, config, python_path, verbose=verbose)
@@ -443,30 +487,13 @@ def _export_yolov12(
     LOG.warning(
         "YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions"
     )
-    _git_clone("https://github.com/sunsmarterjie/yolov12", directory, verbose=verbose)
+    _git_clone("https://github.com/sunsmarterjie/yolov12", directory, "3bca22b336e96cfdabfec4c062b84eef210e9563", verbose=verbose)
     yolov12_dir = directory / "yolov12"
     _run_uv_pip_install(
         yolov12_dir,
         bin_path.parent,
-        ".",
-        "torch==2.4.*",
-        "torchvision",
-        "timm",
-        "albumentations",
-        "onnx",
-        "onnxruntime",
-        "pycocotools",
-        "pyyaml",
-        "scipy",
-        "onnxslim",
-        "onnxruntime",
-        "gradio",
-        "opencv-python",
-        "psutil",
-        "huggingface-hub",
-        "safetensors",
-        "numpy",
-        "supervision",
+        "yolov12",
+        packages=["."],
         verbose=verbose,
     )
     _run_download(yolov12_dir, config, python_path, verbose=verbose)
@@ -502,17 +529,13 @@ def _export_yolov13(
     LOG.warning(
         "YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions"
     )
-    _git_clone("https://github.com/iMoonLab/yolov13", directory, verbose=verbose)
+    _git_clone("https://github.com/iMoonLab/yolov13", directory, "d09f2efa512bff266d558b562ae06b41e3af00d8", verbose=verbose)
     yolov13_dir = directory / "yolov13"
     _run_uv_pip_install(
         yolov13_dir,
         bin_path.parent,
-        ".",
-        "torch==2.4.*",
-        "onnx",
-        "onnxslim",
-        "onnxruntime",
-        "huggingface_hub",
+        "yolov13",
+        packages=["."],
         verbose=verbose,
     )
     _run_download(yolov13_dir, config, python_path, verbose=verbose)
@@ -547,15 +570,12 @@ def _export_rtdetrv1(
     LOG.warning(
         "RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions"
     )
-    _git_clone("https://github.com/lyuwenyu/RT-DETR", directory, verbose=verbose)
+    _git_clone("https://github.com/lyuwenyu/RT-DETR", directory, "f9417e3acfa48bcb649e5ec0bc3de1e8677c8961", verbose=verbose)
     rtdetr_dir = directory / "RT-DETR" / "rtdetr_pytorch"
     _run_uv_pip_install(
         rtdetr_dir,
         bin_path.parent,
-        "-r",
-        "requirements.txt",
-        "onnxsim>=0.4",
-        "numpy==1.*",
+        "rtdetrv1",
         verbose=verbose,
     )
     _run_download(rtdetr_dir, config, python_path, verbose=verbose)
@@ -605,16 +625,17 @@ def _export_rtdetrv2(
     LOG.warning(
         "RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions"
     )
-    _git_clone("https://github.com/lyuwenyu/RT-DETR", directory, verbose=verbose)
+    _git_clone("https://github.com/lyuwenyu/RT-DETR", directory, "f9417e3acfa48bcb649e5ec0bc3de1e8677c8961", verbose=verbose)
     rtdetrv2_dir = directory / "RT-DETR" / "rtdetrv2_pytorch"
     _run_uv_pip_install(
         rtdetrv2_dir,
         bin_path.parent,
-        "-r",
-        "requirements.txt",
-        "onnxsim>=0.4",
-        "numpy==1.*",
+        "rtdetrv2",
         verbose=verbose,
+    )
+    subprocess.run(
+        ["uv", "pip", "list", "-p", str(bin_path.parent)],
+        cwd=rtdetrv2_dir,
     )
     _run_download(rtdetrv2_dir, config, python_path, verbose=verbose)
     _run_patch(
@@ -637,6 +658,7 @@ def _export_rtdetrv2(
             str(opset),
             "--input_size",
             str(imgsz),
+            "--simplify",
         ],
         cwd=rtdetrv2_dir,
         check=True,
@@ -670,19 +692,12 @@ def _export_rtdetrv3(
             f"RT-DETRv3 only supports opset <{paddle2onnx_max_opset}, using opset {paddle2onnx_max_opset}"
         )
         opset = paddle2onnx_max_opset
-    _git_clone("https://github.com/clxia12/RT-DETRv3", directory, verbose=verbose)
+    _git_clone("https://github.com/clxia12/RT-DETRv3", directory, "349e7d99a5065e7b684118912e6a74178d4f4625", verbose=verbose)
     rtdetrv3_dir = directory / "RT-DETRv3"
     _run_uv_pip_install(
         rtdetrv3_dir,
         bin_path.parent,
-        "-r",
-        "requirements.txt",
-        "paddlepaddle==2.6.1",
-        "paddle2onnx==1.0.5",
-        "onnx==1.13.0",
-        "onnxsim>=0.4",
-        "scikit-learn",
-        "gdown",
+        "rtdetrv3",
         verbose=verbose,
     )
     _run_download(rtdetrv3_dir, config, python_path, verbose=verbose)
@@ -743,20 +758,12 @@ def _export_dfine(
     LOG.warning(
         "D-FINE is a Apache-2.0 licensed model, be aware of license restrictions"
     )
-    _git_clone("https://github.com/Peterande/D-FINE", directory, verbose=verbose)
+    _git_clone("https://github.com/Peterande/D-FINE", directory, "d6694750683b0c7e9f523ba6953d16f112a376ae", verbose=verbose)
     dfine_dir = directory / "D-FINE"
     _run_uv_pip_install(
         dfine_dir,
         bin_path.parent,
-        "-r",
-        "requirements.txt",
-        "--extra-index-url",
-        "https://download.pytorch.org/whl/cpu",
-        "torch==2.4.1",
-        "torchvision==0.19.1",
-        "onnx",
-        "onnxsim",
-        "onnxruntime",
+        "dfine",
         verbose=verbose,
     )
     _run_download(dfine_dir, config, python_path, verbose=verbose)
@@ -803,22 +810,13 @@ def _export_deim(
 ) -> Path:
     LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
     _git_clone(
-        "https://github.com/Intellindust-AI-Lab/DEIM", directory, verbose=verbose
+        "https://github.com/Intellindust-AI-Lab/DEIM", directory, "8f28fe63cca4bd2a0f4abaf9b0814b69d5abb658", verbose=verbose
     )
     deim_dir = directory / "DEIM"
     _run_uv_pip_install(
         deim_dir,
         bin_path.parent,
-        "-r",
-        "requirements.txt",
-        "--extra-index-url",
-        "https://download.pytorch.org/whl/cpu",
-        "torch==2.4.1",
-        "torchvision==0.19.1",
-        "onnx",
-        "onnxsim",
-        "onnxruntime",
-        "gdown",
+        "deim",
         verbose=verbose,
     )
     _run_download(deim_dir, config, python_path, verbose=verbose)
@@ -874,10 +872,10 @@ def _export_rfdetr(
     _run_uv_pip_install(
         directory,
         bin_path.parent,
-        "rfdetr[onnxexport]==1.3.0",
+        "rfdetr",
         verbose=verbose,
     )
-    
+
     # Set up HuggingFace cache directory for rfdetr weights
     # rfdetr downloads models from HuggingFace Hub
     hf_cache_dir = _get_cache_dir() / "huggingface"
@@ -930,22 +928,13 @@ def _export_deimv2(
     )
     LOG.warning("DEIMv2 does not support setting alternative input sizes")
     _git_clone(
-        "https://github.com/Intellindust-AI-Lab/DEIMv2", directory, verbose=verbose
+        "https://github.com/Intellindust-AI-Lab/DEIMv2", directory, "19d5b19a58c229dd7ad5f079947bbe398e005d01", verbose=verbose
     )
     deim_dir = directory / "DEIMv2"
     _run_uv_pip_install(
         deim_dir,
         bin_path.parent,
-        "-r",
-        "requirements.txt",
-        "--extra-index-url",
-        "https://download.pytorch.org/whl/cpu",
-        "torch==2.4.1",
-        "torchvision==0.19.1",
-        "onnx",
-        "onnxsim",
-        "onnxruntime",
-        "gdown",
+        "deimv2",
         verbose=verbose,
     )
     _run_download(deim_dir, config, python_path, verbose=verbose)
@@ -988,33 +977,54 @@ def _export_yolox(
         "YOLOX is a Apache-2.0 licensed model, be aware of license restrictions"
     )
     _git_clone(
-        "https://github.com/Megvii-BaseDetection/YOLOX", directory, verbose=verbose
+        "https://github.com/Megvii-BaseDetection/YOLOX", directory, "6ddff4824372906469a7fae2dc3206c7aa4bbaee", verbose=verbose
     )
     yolox_dir = directory / "YOLOX"
+    _run_patch(
+        yolox_dir,
+        str((Path(__file__).parent / "patches" / "yolox_requirements.patch").resolve()),
+        "requirements.txt",
+        verbose=verbose,
+    )
+    _run_patch(
+        yolox_dir,
+        str((Path(__file__).parent / "patches" / "yolox_export_onnx.patch").resolve()),
+        "tools/export_onnx.py",
+        verbose=verbose,
+    )
     _run_uv_pip_install(
         yolox_dir,
         bin_path.parent,
-        "-r",
-        "requirements.txt",
-        "onnxruntime",
+        model="yolox",
         verbose=verbose,
     )
     _run_download(yolox_dir, config, python_path, verbose=verbose)
+    # Use exp_file instead of name to avoid module import issues
+    exp_file = yolox_dir / "exps" / "default" / f"{config['name']}.py"
+    # Set PYTHONPATH so yolox imports work without installing the package
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        env["PYTHONPATH"] = f"{yolox_dir}{os.pathsep}{existing_pythonpath}"
+    else:
+        env["PYTHONPATH"] = str(yolox_dir)
     subprocess.run(
         [
             python_path,
             "tools/export_onnx.py",
             "--output-name",
             f"{config['name']}.onnx",
-            "--name",
-            config["version"],
+            "-f",
+            str(exp_file),
             "--ckpt",
             config["name"] + ".pth",
             "--opset",
             str(opset),
             "--decode_in_inference",
+            "--no-onnxsim",  # Disable onnxslim due to compatibility issues with newer onnx
         ],
         cwd=yolox_dir,
+        env=env,
         check=True,
         stdout=subprocess.DEVNULL if not verbose else None,
         stderr=subprocess.STDOUT if not verbose else None,
@@ -1030,6 +1040,7 @@ def download_model(
     directory: Path,
     opset: int = 17,
     imgsz: int = 640,
+    requirements_export: Path | None = None,
     *,
     accept: bool | None = None,
     verbose: bool | None = None,
@@ -1047,6 +1058,8 @@ def download_model(
         The ONNX opset version to use.
     imgsz : int, optional
         The image size to use for the model.
+    requirements_export : Path, optional
+        Export the created virtual environment's requirements to this path using uv pip freeze.
     accept : bool, optional
         Whether to accept the license terms for the model. If None or False, will raise an error.
         Must be True to proceed with the download.
@@ -1082,6 +1095,9 @@ def download_model(
         raise ValueError(err_msg)
 
     python_path, bin_path = _make_venv(directory, verbose=verbose)
+    requirements_export_path = (
+        Path(requirements_export) if requirements_export is not None else None
+    )
     packet = (
         directory,
         config,
@@ -1123,6 +1139,8 @@ def download_model(
     if model_path is None:
         err_msg = f"Model {model} is not supported"
         raise ValueError(err_msg)
+    if requirements_export_path is not None:
+        _export_requirements(bin_path.parent, requirements_export_path, verbose=verbose)
     return model_path.with_name(model + model_path.suffix)
 
 
@@ -1131,6 +1149,7 @@ def download(
     output: Path,
     opset: int = 17,
     imgsz: int = 640,
+    requirements_export: Path | None = None,
     *,
     accept: bool | None = None,
     verbose: bool | None = None,
@@ -1148,6 +1167,8 @@ def download(
         The ONNX opset version to use.
     imgsz : int, optional
         The image size to use for the model.
+    requirements_export : Path, optional
+        Export the created virtual environment's requirements to this path using uv pip freeze.
     accept : bool, optional
         Whether to accept the license terms for the model. If None, will prompt the user.
         If False, will raise an error. If True, will proceed without prompting.
@@ -1157,7 +1178,13 @@ def download(
     """
     with tempfile.TemporaryDirectory() as temp_dir:
         model_path = download_model(
-            model, Path(temp_dir), opset, imgsz, accept=accept, verbose=verbose
+            model,
+            Path(temp_dir),
+            opset,
+            imgsz,
+            requirements_export=requirements_export,
+            accept=accept,
+            verbose=verbose,
         )
         shutil.copy(model_path, output)
 

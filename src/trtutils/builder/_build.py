@@ -48,6 +48,7 @@ def build_engine(
     | None = None,
     hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]]
     | None = None,
+    optimization_level: int = 3,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -134,6 +135,9 @@ def build_engine(
         An optional list of 'hook' functions to modify the TensorRT network before
         the remainder of the build phase occurs.
         By default, None
+    optimization_level : int, optional
+        Optimization level to apply to the TensorRT builder config (0-5).
+        By default, 3.
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
         when building the engine for DLA.
@@ -237,6 +241,11 @@ def build_engine(
             profile.set_shape(input_name, shape, shape, shape)
 
     config.add_optimization_profile(profile)
+
+    if not (0 <= optimization_level <= 5):
+        err_msg = "Builder optimization level must be between 0 and 5."
+        raise ValueError(err_msg)
+    config.builder_optimization_level = int(optimization_level)
 
     # handle some flags
     if prefer_precision_constraints:

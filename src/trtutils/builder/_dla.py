@@ -131,6 +131,7 @@ def build_dla_engine(
     | None = None,
     hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]]
     | None = None,
+    optimization_level: int = 3,
     *,
     direct_io: bool = False,
     prefer_precision_constraints: bool = False,
@@ -192,6 +193,9 @@ def build_dla_engine(
         An optional list of 'hook' functions to modify the TensorRT network before
         the remainder of the build phase occurs.
         By default, None
+    optimization_level : int, optional
+        Optimization level to apply to the TensorRT builder config (0-5).
+        By default, 3.
     direct_io : bool
         Use direct IO for the engine.
         By default, False
@@ -352,6 +356,7 @@ def build_dla_engine(
         input_tensor_formats=input_tensor_formats,
         output_tensor_formats=output_tensor_formats,
         hooks=hooks,
+        optimization_level=optimization_level,
         gpu_fallback=True,  # enable GPU fallback to account for input/copy
         direct_io=direct_io,
         prefer_precision_constraints=prefer_precision_constraints,

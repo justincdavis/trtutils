@@ -1,0 +1,29 @@
+--- export_onnx.py	2025-10-18 23:20:07.788165846 -0500
++++ export_onnx_fix.py	2025-10-19 00:08:18.188361543 -0500
+@@ -88,7 +88,7 @@
+     logger.info("loading checkpoint done.")
+     dummy_input = torch.randn(args.batch_size, 3, exp.test_size[0], exp.test_size[1])
+ 
+-    torch.onnx._export(
++    torch.onnx.export(
+         model,
+         dummy_input,
+         args.output_name,
+@@ -102,15 +102,13 @@
+ 
+     if not args.no_onnxsim:
+         import onnx
+-        from onnxsim import simplify
++        import onnxslim
+ 
+         # use onnx-simplifier to reduce reduent model.
+         onnx_model = onnx.load(args.output_name)
+-        model_simp, check = simplify(onnx_model)
+-        assert check, "Simplified ONNX model could not be validated"
++        model_simp = onnxslim.slim(onnx_model)
+         onnx.save(model_simp, args.output_name)
+         logger.info("generated simplified onnx model named {}".format(args.output_name))
+ 
+-
+ if __name__ == "__main__":
+     main()

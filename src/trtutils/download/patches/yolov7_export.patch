@@ -1,10 +1,10 @@
---- src/trtutils/_download/export.py	2025-09-20 12:41:26.012614646 -0700
-+++ src/trtutils/_download/new_export.py	2025-09-20 12:41:24.387614562 -0700
+--- export.py	2025-10-18 21:32:26.370397260 -0500
++++ export_fix.py	2025-10-18 21:33:00.500170163 -0500
 @@ -34,6 +34,7 @@
      parser.add_argument('--include-nms', action='store_true', help='export end2end onnx')
      parser.add_argument('--fp16', action='store_true', help='CoreML FP16 half-precision export')
      parser.add_argument('--int8', action='store_true', help='CoreML INT8 quantization')
-+    parser.add_argument('--opset', type=int, default=12, help='ONNX opset version')
++    parser.add_argument('--opset', type=int, default=17, help='ONNX opset version')
      opt = parser.parse_args()
      opt.img_size *= 2 if len(opt.img_size) == 1 else 1  # expand
      opt.dynamic = opt.dynamic and not opt.end2end

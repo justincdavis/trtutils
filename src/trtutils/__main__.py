@@ -297,6 +297,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
         calibration_cache=args.calibration_cache,
         data_batcher=batcher,
         shapes=shapes,
+        optimization_level=args.optimization_level,
         gpu_fallback=args.gpu_fallback,
         direct_io=args.direct_io,
         prefer_precision_constraints=args.prefer_precision_constraints,
@@ -477,6 +478,7 @@ def _build_dla(args: SimpleNamespace) -> None:
         calibration_cache=args.calibration_cache,
         timing_cache=args.timing_cache,
         shapes=shapes,
+        optimization_level=args.optimization_level,
         direct_io=args.direct_io,
         prefer_precision_constraints=args.prefer_precision_constraints,
         reject_empty_algorithms=args.reject_empty_algorithms,
@@ -907,6 +909,8 @@ def _download(args: SimpleNamespace) -> None:
             ONNX opset version to use.
         - imgsz : int
             Image size for the model.
+        - requirements_export : Path | None
+            Optional path to export the created virtual environment's requirements file.
         - accept : bool
             Whether to accept license terms automatically.
         - verbose : bool
@@ -927,6 +931,7 @@ def _download(args: SimpleNamespace) -> None:
         args.output,
         args.opset,
         args.imgsz,
+        requirements_export=args.requirements_export,
         accept=True,
         verbose=args.verbose,
     )
@@ -1028,6 +1033,13 @@ def _main() -> None:
         type=float,
         default=4.0,
         help="Workspace size in GB. Default is 4.0.",
+    )
+    build_common_parser.add_argument(
+        "--optimization_level",
+        type=int,
+        choices=range(6),
+        default=3,
+        help="TensorRT builder optimization level (0-5). Default is 3.",
     )
     build_common_parser.add_argument(
         "--shape",
@@ -1494,6 +1506,12 @@ def _main() -> None:
         type=int,
         default=640,
         help="Image size to use for the model. Default is 640.",
+    )
+    download_parser.add_argument(
+        "--requirements_export",
+        type=Path,
+        default=None,
+        help="Export the created virtual environment's requirements to this path using uv pip freeze.",
     )
     download_parser.add_argument(
         "--accept",
