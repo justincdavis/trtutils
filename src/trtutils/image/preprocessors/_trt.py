@@ -348,6 +348,9 @@ class TRTPreprocessor(GPUImagePreprocessor):
             LOG.debug(f"Ratios: {ratios}")
             LOG.debug(f"Padding: {padding}")
 
+        # Update extra GPU buffers for input schemas
+        self._update_extra_buffers(height, width, ratios)
+
         if self._pagelocked_mem and self._unified_mem:
             np.copyto(self._input_binding.host_allocation, image)
         else:

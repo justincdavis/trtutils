@@ -4,6 +4,7 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import contextlib
 import math
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
@@ -14,6 +15,7 @@ from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
 from trtutils.core._stream import create_stream
+from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
 
 if TYPE_CHECKING:
@@ -239,6 +241,24 @@ class GPUImagePreprocessor(ImagePreprocessor):
         self._linear_kernel = Kernel(*LINEAR_RESIZE)
         self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
 
+        # Allocate GPU buffers for alternative input schemas
+        orig_size_arr: np.ndarray = np.array([1080, 1920], dtype=np.int32)
+        self._orig_size_host = orig_size_arr
+        self._orig_size_buffer = create_binding(orig_size_arr)
+
+        scale_factor_arr: np.ndarray = np.array([1.0, 1.0], dtype=np.float32)
+        self._scale_factor_host = scale_factor_arr
+        self._scale_factor_buffer = create_binding(scale_factor_arr)
+
+        self._buffers_valid = False
+        self._last_transferred_shape: tuple[int, int] | None = None
+
+    def __del__(self: Self) -> None:
+        with contextlib.suppress(AttributeError):
+            del self._orig_size_buffer
+        with contextlib.suppress(AttributeError):
+            del self._scale_factor_buffer
+
     def warmup(self: Self) -> None:
         """
         Warmup the CUDA preprocessor.
@@ -361,3 +381,72 @@ class GPUImagePreprocessor(ImagePreprocessor):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[int, tuple[float, float], tuple[float, float]]: ...
+
+    @property
+    def orig_size_allocation(self: Self) -> tuple[int, bool]:
+        """
+        Get GPU pointer and validity for orig_image_size buffer.
+
+        Returns
+        -------
+        tuple[int, bool]
+            The GPU pointer and validity flag.
+
+        """
+        return (self._orig_size_buffer.allocation, self._buffers_valid)
+
+    @property
+    def scale_factor_allocation(self: Self) -> tuple[int, bool]:
+        """
+        Get GPU pointer and validity for scale_factor buffer.
+
+        Returns
+        -------
+        tuple[int, bool]
+            The GPU pointer and validity flag.
+
+        """
+        return (self._scale_factor_buffer.allocation, self._buffers_valid)
+
+    def _update_extra_buffers(
+        self: Self,
+        height: int,
+        width: int,
+        ratios: tuple[float, float],
+    ) -> None:
+        """
+        Update GPU buffers for orig_image_size and scale_factor.
+
+        Parameters
+        ----------
+        height : int
+            The original image height.
+        width : int
+            The original image width.
+        ratios : tuple[float, float]
+            The scale ratios (scale_x, scale_y).
+
+        """
+        current_shape = (height, width)
+        if self._last_transferred_shape == current_shape:
+            return
+
+        # Update host arrays
+        self._orig_size_host[0] = height
+        self._orig_size_host[1] = width
+        self._scale_factor_host[0] = ratios[0]
+        self._scale_factor_host[1] = ratios[1]
+
+        memcpy_host_to_device_async(
+            self._orig_size_buffer.allocation,
+            self._orig_size_host,
+            self._stream,
+        )
+        memcpy_host_to_device_async(
+            self._scale_factor_buffer.allocation,
+            self._scale_factor_host,
+            self._stream,
+        )
+
+        self._last_transferred_shape = current_shape
+        self._buffers_valid = True

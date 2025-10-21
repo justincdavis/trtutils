@@ -82,7 +82,8 @@ class ImageModel:
 
         """
         self._tag: str = f"{Path(engine_path).stem}"
-        if verbose:
+        self._verbose: bool = verbose if verbose is not None else False
+        if self._verbose:
             LOG.debug(f"Creating ImageModel: {self._tag}")
 
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True

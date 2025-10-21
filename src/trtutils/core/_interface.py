@@ -14,6 +14,7 @@ import numpy as np
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.inspect._names import get_engine_names
 
 from ._bindings import Binding, allocate_bindings
 from ._engine import create_engine
@@ -84,6 +85,9 @@ class TRTEngineInterface(ABC):
             dla_core=dla_core,
             no_warn=no_warn,
         )
+
+        # get the input and output names
+        self._input_names, self._output_names = get_engine_names(self._engine)
 
         # allocate memory for inputs and outputs
         self._inputs, self._outputs, self._allocations = allocate_bindings(
@@ -209,6 +213,18 @@ class TRTEngineInterface(ABC):
         """
         return [i.dtype for i in self._inputs]
 
+    @property
+    def input_names(self: Self) -> list[str]:
+        """
+        Get the names of the input tensors of the network.
+
+        Returns
+        -------
+        list[str]
+            A list with the name of each input tensor.
+        """
+        return self._input_names
+
     @cached_property
     def output_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
         """
@@ -247,6 +263,18 @@ class TRTEngineInterface(ABC):
 
         """
         return [o.dtype for o in self._outputs]
+
+    @property
+    def output_names(self: Self) -> list[str]:
+        """
+        Get the names of the output tensors of the network.
+
+        Returns
+        -------
+        list[str]
+            A list with the name of each output tensor.
+        """
+        return self._output_names
 
     @property
     def input_bindings(self: Self) -> list[Binding]:

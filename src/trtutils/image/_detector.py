@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils._engine import TRTEngine
 
 from ._image_model import ImageModel
 from .interfaces import DetectorInterface
@@ -24,10 +25,78 @@ if TYPE_CHECKING:
 
 class InputSchema(Enum):
     # YOLO-X,v7,v8,v9,v10,v11,v12,v13
-    IMAGES = ("images",)
-    # DEIM-v1/v2, RTDETR-v1
-    IMAGES_ORIG_SIZE = ("images", "orig_image_size")
-    IMAGE_SHAPE_SCALE = ("image", "im_shape", "scale_factor")
+    YOLO = ["images"]
+    # RF-DETR
+    RF_DETR = ["input"]
+    # DEIM-v1/v2, RTDETR-v1/v2
+    RT_DETR = ["images", "orig_image_size"]
+    # RT-DETR-v3
+    RT_DETR_V3 = ["image", "im_shape", "scale_factor"]
+
+
+class OutputSchema(Enum):
+    # YOLO-v7,v8,v9,v11,v12,v13
+    EFFICIENT_NMS = ["num_dets", "det_boxes", "det_scores", "det_classes"]
+    # YOLO-v10
+    YOLO_V10 = ["output0"]
+    # Rf-DETR
+    RF_DETR = ["dets", "labels"]
+
+
+def _get_engine_io_schema(
+    engine: TRTEngine,
+) -> tuple[InputSchema, OutputSchema]:
+    # solve for the input scheme
+    input_schema: InputSchema
+    if engine.input_names == InputSchema.YOLO.value:
+        input_schema = InputSchema.YOLO
+    elif engine.input_names == InputSchema.RF_DETR.value:
+        input_schema = InputSchema.RF_DETR
+    elif engine.input_names == InputSchema.RT_DETR.value:
+        input_schema = InputSchema.RT_DETR
+    elif engine.input_names == InputSchema.RT_DETR_V3.value:
+        input_schema = InputSchema.RT_DETR_V3
+    else:
+        warn_msg = f"Could not determine input schema directly from input names. "
+        warn_msg += f"Input names: {engine.input_names}, "
+        warn_msg += f"Input scheme: {engine.input_spec}. "
+        warn_msg += f"Attemping input schema solve from input spec length."
+        LOG.warning(warn_msg)
+        if len(engine.input_spec) == len(InputSchema.YOLO.value):
+            input_schema = InputSchema.YOLO
+        elif len(engine.input_spec) == len(InputSchema.RT_DETR.value):
+            input_schema = InputSchema.RT_DETR
+        elif len(engine.input_spec) == len(InputSchema.RT_DETR_V3.value):
+            input_schema = InputSchema.RT_DETR_V3
+        else:
+            err_msg = f"Expected 1, 2, or 3 inputs, found {len(engine.input_spec)}"
+            raise ValueError(err_msg)
+
+    # solve for the output schema
+    output_schema: OutputSchema
+    if engine.output_names == OutputSchema.EFFICIENT_NMS.value:
+        output_schema = OutputSchema.EFFICIENT_NMS
+    elif engine.output_names == OutputSchema.YOLO_V10.value:
+        output_schema = OutputSchema.YOLO_V10
+    elif engine.output_names == OutputSchema.RF_DETR.value:
+        output_schema = OutputSchema.RF_DETR
+    else:
+        err_msg = f"Could not determine output schema directly from output names. "
+        err_msg += f"Output names: {engine.output_names}, "
+        err_msg += f"Output scheme: {engine.output_spec}. "
+        err_msg += f"Attemping output schema solve from output spec length."
+        LOG.warning(err_msg)
+        if len(engine.output_spec) == len(OutputSchema.EFFICIENT_NMS.value):
+            output_schema = OutputSchema.EFFICIENT_NMS
+        elif len(engine.output_spec) == len(OutputSchema.YOLO_V10.value):
+            output_schema = OutputSchema.YOLO_V10
+        elif len(engine.output_spec) == len(OutputSchema.RF_DETR.value):
+            output_schema = OutputSchema.RF_DETR
+        else:
+            err_msg = f"Expected 1, 2, or 4 outputs, found {len(engine.output_spec)}"
+            raise ValueError(err_msg)
+
+    return (input_schema, output_schema)
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -120,6 +189,26 @@ class Detector(ImageModel, DetectorInterface):
         self._nms_iou: float = nms_iou_thres
         self._nms: bool | None = extra_nms
         self._agnostic_nms: bool | None = agnostic_nms
+
+        # get the input and output schema
+        self._input_schema, self._output_schema = _get_engine_io_schema(self._engine)
+        if self._verbose:
+            LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
+            LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
+
+        # based on the input scheme, we will need to allocate additional attrs
+        self._use_image_size: bool = False
+        self._use_scale_factor: bool = False
+        if self._input_schema == InputSchema.RT_DETR:
+            self._use_image_size = True
+        elif self._input_schema == InputSchema.RT_DETR_V3:
+            self._use_image_size = True
+            self._use_scale_factor = True
+        
+        if self._verbose:
+            LOG.debug(f"{self._tag}: Using image size: {self._use_image_size}")
+            LOG.debug(f"{self._tag}: Using scale factor: {self._use_scale_factor}")
+
 
     def preprocess(
         self: Self,
@@ -393,9 +482,20 @@ class Detector(ImageModel, DetectorInterface):
         else:
             tensor = image
 
+        # build input list based on schema
+        engine_inputs = [tensor]
+        if self._use_image_size:
+            engine_inputs.append(
+                np.array(image.shape[:2], dtype=np.int32).reshape(1, 2),
+            )
+        if self._use_scale_factor:
+            engine_inputs.append(
+                np.array([ratios], dtype=np.float32).reshape(1, 2),
+            )
+
         # execute
         t0 = time.perf_counter()
-        outputs = self._engine([tensor], no_copy=no_copy_run)
+        outputs = self._engine(engine_inputs, no_copy=no_copy_run)
         t1 = time.perf_counter()
 
         # handle postprocessing
@@ -547,7 +647,25 @@ class Detector(ImageModel, DetectorInterface):
                 no_warn=True,
                 verbose=verbose,
             )
-            outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
+
+            # Build input pointers based on InputSchema
+            input_ptrs = [gpu_ptr]
+            if self._use_image_size:
+                orig_size_ptr, valid = self._preprocessor.orig_size_allocation
+                if valid:
+                    input_ptrs.append(orig_size_ptr)
+                else:
+                    err_msg = "orig_image_size buffer not valid"
+                    raise RuntimeError(err_msg)
+            if self._use_scale_factor:
+                scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation
+                if scale_valid:
+                    input_ptrs.append(scale_ptr)
+                else:
+                    err_msg = "Extra input buffers not valid"
+                    raise RuntimeError(err_msg)
+
+            outputs = self._engine.direct_exec(input_ptrs, no_warn=True)
             outputs = self.postprocess(
                 outputs,
                 ratios,
