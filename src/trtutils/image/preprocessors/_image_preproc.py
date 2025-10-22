@@ -14,8 +14,8 @@ import numpy as np
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
-from trtutils.core._stream import create_stream
 from trtutils.core._memory import memcpy_host_to_device_async
+from trtutils.core._stream import create_stream
 from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
 
 if TYPE_CHECKING:

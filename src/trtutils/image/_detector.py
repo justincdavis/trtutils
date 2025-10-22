@@ -7,9 +7,9 @@ import time
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
-from trtutils._engine import TRTEngine
 
 from ._image_model import ImageModel
 from .interfaces import DetectorInterface
@@ -57,10 +57,10 @@ def _get_engine_io_schema(
     elif engine.input_names == InputSchema.RT_DETR_V3.value:
         input_schema = InputSchema.RT_DETR_V3
     else:
-        warn_msg = f"Could not determine input schema directly from input names. "
+        warn_msg = "Could not determine input schema directly from input names. "
         warn_msg += f"Input names: {engine.input_names}, "
         warn_msg += f"Input scheme: {engine.input_spec}. "
-        warn_msg += f"Attemping input schema solve from input spec length."
+        warn_msg += "Attemping input schema solve from input spec length."
         LOG.warning(warn_msg)
         if len(engine.input_spec) == len(InputSchema.YOLO.value):
             input_schema = InputSchema.YOLO
@@ -81,10 +81,10 @@ def _get_engine_io_schema(
     elif engine.output_names == OutputSchema.RF_DETR.value:
         output_schema = OutputSchema.RF_DETR
     else:
-        err_msg = f"Could not determine output schema directly from output names. "
+        err_msg = "Could not determine output schema directly from output names. "
         err_msg += f"Output names: {engine.output_names}, "
         err_msg += f"Output scheme: {engine.output_spec}. "
-        err_msg += f"Attemping output schema solve from output spec length."
+        err_msg += "Attemping output schema solve from output spec length."
         LOG.warning(err_msg)
         if len(engine.output_spec) == len(OutputSchema.EFFICIENT_NMS.value):
             output_schema = OutputSchema.EFFICIENT_NMS
@@ -204,11 +204,10 @@ class Detector(ImageModel, DetectorInterface):
         elif self._input_schema == InputSchema.RT_DETR_V3:
             self._use_image_size = True
             self._use_scale_factor = True
-        
+
         if self._verbose:
             LOG.debug(f"{self._tag}: Using image size: {self._use_image_size}")
             LOG.debug(f"{self._tag}: Using scale factor: {self._use_scale_factor}")
-
 
     def preprocess(
         self: Self,

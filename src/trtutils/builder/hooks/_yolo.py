@@ -62,6 +62,7 @@ def _slice_dynamic(
         np_int_dtype = np.int64 if st_dtype == trt.DataType.INT64 else np.int32
     else:
         np_int_dtype = np.int32
+
     def gather_dim(dim_index: int) -> trt.ITensor:
         idx_const = network.add_constant(
             (1,), np.array([dim_index], dtype=np_int_dtype)

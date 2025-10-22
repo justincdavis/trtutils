@@ -56,6 +56,7 @@ def _benchmark(args: SimpleNamespace) -> None:
     ------
     FileNotFoundError
         If the engine file does not exist.
+
     """
     mpath = Path(args.engine)
     if not mpath.exists():
@@ -156,6 +157,7 @@ def _parse_shapes_arg(
     ------
     ValueError
         If shape specification is invalid or dimensions cannot be parsed.
+
     """
     if not shape_args:
         return None
@@ -245,6 +247,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
     ------
     ValueError
         If required parameters are missing for INT8 calibration.
+
     """
     if args.int8:
         LOG.warning("Build API is unstable and experimental with INT8 quantization.")
@@ -334,6 +337,7 @@ def _build_yolo(args: SimpleNamespace) -> None:
             Box encoding format ('corner' or 'center_size').
         - class_agnostic : bool
             Use class-agnostic NMS.
+
     """
     _build(args, add_yolo_hook=True)
 
@@ -355,6 +359,7 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
             Print detailed per-layer compatibility information.
         - verbose_chunks : bool
             Print detailed chunk assignment information.
+
     """
     full_dla, chunks = trtutils.builder.can_run_on_dla(
         onnx=Path(args.onnx),
@@ -437,6 +442,7 @@ def _build_dla(args: SimpleNamespace) -> None:
     ------
     ValueError
         If required DLA build parameters are missing.
+
     """
     # require calibration data for dla builds
     if args.calibration_dir is None:
@@ -538,6 +544,7 @@ def _detect(args: SimpleNamespace) -> None:
     ------
     ValueError
         If input file is invalid or cannot be read.
+
     """
     img_extensions = [".jpg", ".jpeg", ".png"]
     video_extensions = [".mp4", ".avi", ".mov"]
@@ -737,6 +744,7 @@ def _classify(args: SimpleNamespace) -> None:
     ------
     ValueError
         If input file is invalid or cannot be read.
+
     """
     img_extensions = [".jpg", ".jpeg", ".png"]
 
@@ -875,6 +883,7 @@ def _inspect(args: SimpleNamespace) -> None:
             Path to the TensorRT engine file.
         - verbose : bool
             Enable verbose output.
+
     """
     engine_size, max_batch, inputs, outputs = trtutils.inspect.inspect_engine(
         Path(args.engine),
@@ -915,6 +924,7 @@ def _download(args: SimpleNamespace) -> None:
             Whether to accept license terms automatically.
         - verbose : bool
             Enable verbose output.
+
     """
     if not args.accept:
         LOG.info(

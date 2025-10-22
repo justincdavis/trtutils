@@ -222,6 +222,7 @@ class TRTEngineInterface(ABC):
         -------
         list[str]
             A list with the name of each input tensor.
+
         """
         return self._input_names
 
@@ -273,6 +274,7 @@ class TRTEngineInterface(ABC):
         -------
         list[str]
             A list with the name of each output tensor.
+
         """
         return self._output_names
 

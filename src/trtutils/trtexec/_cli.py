@@ -46,6 +46,7 @@ def cli_trtexec(args: list[str] | None = None) -> None:
         ...     "--optShapes=input:4x3x224x224",
         ...     "--maxShapes=input:8x3x224x224"
         ... ])
+
     """
     trtexec_path = find_trtexec()
     if args is not None:
