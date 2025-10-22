@@ -633,10 +633,6 @@ def _export_rtdetrv2(
         "rtdetrv2",
         verbose=verbose,
     )
-    subprocess.run(
-        ["uv", "pip", "list", "-p", str(bin_path.parent)],
-        cwd=rtdetrv2_dir,
-    )
     _run_download(rtdetrv2_dir, config, python_path, verbose=verbose)
     _run_patch(
         rtdetrv2_dir,

@@ -5,11 +5,15 @@
 from __future__ import annotations
 
 import contextlib
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from ._common import make_plugin_field
 
@@ -95,7 +99,7 @@ def yolo_efficient_nms_hook(
     box_coding: str = "center_size",
     *,
     class_agnostic: bool | None = None,
-) -> trt.INetworkDefinition:
+) -> Callable[[trt.INetworkDefinition], trt.INetworkDefinition]:
     """
     Create a hook to add EfficientNMS_TRT plugin to YOLO-like output network.
 
