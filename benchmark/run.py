@@ -19,7 +19,42 @@ from pathlib import Path
 import cv2
 from tqdm import tqdm
 
-from model_utils import ensure_model_available
+from model_utils import build_model, ensure_model_available
+
+
+def _load_model_info() -> tuple[list[str], list[str], dict[str, str]]:
+    model_info_dir = Path(__file__).parent / "info" / "model_info"
+    
+    if not model_info_dir.exists():
+        err_msg = f"Model info directory not found: {model_info_dir}"
+        raise FileNotFoundError(err_msg)
+
+    model_dirs: list[str] = []
+    all_model_names: list[str] = []
+    model_to_dir: dict[str, str] = {}
+    
+    for json_file in sorted(model_info_dir.glob("*.json")):
+        model_dir = json_file.stem
+        model_dirs.append(model_dir)
+
+        with json_file.open("r") as f:
+            model_data = json.load(f)
+            for model_name in model_data.keys():
+                all_model_names.append(model_name)
+                model_to_dir[model_name] = model_dir
+    
+    return model_dirs, all_model_names, model_to_dir
+
+
+def _load_model_imgsizes() -> dict[str, list[int]]:
+    imgsz_file = Path(__file__).parent / "info" / "model_imgsz.json"
+    
+    if not imgsz_file.exists():
+        err_msg = f"Model image size config not found: {imgsz_file}"
+        raise FileNotFoundError(err_msg)
+    
+    with imgsz_file.open("r") as f:
+        return json.load(f)
 
 
 # global paths
@@ -28,31 +63,9 @@ DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_PATH = str((REPO_DIR / "data" / "horse.jpg").resolve())
 MODELNAME = "yolov10n"
-MODELNAMES = [
-    "yolov13n",
-    "yolov13s",
-    "yolov12n",
-    "yolov12s",
-    "yolov12m",
-    "yolov11n",
-    "yolov11s",
-    "yolov11m",
-    "yolov10n",
-    "yolov10s",
-    "yolov10m",
-    "yolov9t",
-    "yolov9s",
-    "yolov9m",
-    "yolov8n",
-    "yolov8s",
-    "yolov8m",
-    "yolov7t",
-    "yolov7m",
-    "yoloxt",
-    "yoloxn",
-    "yoloxs",
-    "yoloxm",
-]
+MODEL_DIRS, MODELNAMES, MODEL_TO_DIR = _load_model_info()
+MODEL_TO_IMGSIZES = _load_model_imgsizes()
+
 ULTRALYTICS_MODELS = [
     "yolov11n",
     "yolov11s",
@@ -67,20 +80,7 @@ ULTRALYTICS_MODELS = [
     "yolov8s",
     "yolov8m",
 ]
-MODEL_DIRS = [
-    "yolov13",
-    "yolov12",
-    "yolov11",
-    "yolov10",
-    "yolov9",
-    "yolov8",
-    "yolov7",
-    "yolox",
-]
 ONNX_DIR = REPO_DIR / "data" / "yolov10"
-
-# global vars
-IMAGE_SIZES = [160, 320, 480, 640, 800, 960, 1120, 1280]
 FRAMEWORKS = [
     "ultralytics(torch)",
     "ultralytics(trt)",
@@ -130,8 +130,6 @@ def benchmark_trtutils(
 ) -> None:
     from trtutils import TRTEngine, FLAGS
     from trtutils.image import Detector
-    from trtutils.builder import build_engine
-    from trtutils.builder.hooks import yolo_efficient_nms_hook
 
     # resolve paths
     image = cv2.imread(IMAGE_PATH)
@@ -154,7 +152,7 @@ def benchmark_trtutils(
 
             # resolve paths - ensure model is available
             try:
-                weight_path = ensure_model_available(MODELNAME, imgsz, auto_download=True)
+                weight_path = ensure_model_available(MODELNAME, imgsz, MODEL_TO_DIR, auto_download=True)
             except Exception as e:
                 warnings.warn(f"Could not get model {MODELNAME} @ {imgsz}: {e}")
                 continue
@@ -163,17 +161,11 @@ def benchmark_trtutils(
 
             if not trt_path.exists():
                 print("\tBuilding trtutils engine...")
-                shapes = [("images", (1, 3, imgsz, imgsz))]
-                hooks = []
-                if "yolo" in MODELNAME and ("yolov7" in MODELNAME or "yolov10" in MODELNAME):
-                    hooks.append(yolo_efficient_nms_hook())
-                build_engine(
+                build_model(
                     onnx=weight_path,
                     output=trt_path,
-                    fp16=True,
-                    timing_cache=str(Path(__file__).parent / "timing.cache"),
-                    shapes=shapes,
-                    hooks=hooks,
+                    imgsz=imgsz,
+                    opt_level=1,
                 )
 
                 # verify
@@ -342,7 +334,7 @@ def benchmark_sahi(
 
     # check that trtutils exists - ensure model is available
     try:
-        trt_weight_path = ensure_model_available(MODELNAME, imgsz, auto_download=True)
+        trt_weight_path = ensure_model_available(MODELNAME, imgsz, MODEL_TO_DIR, auto_download=True)
     except Exception as e:
         err_msg = f"Could not get model {MODELNAME} @ {imgsz}: {e}"
         raise FileNotFoundError(err_msg) from e
@@ -475,26 +467,35 @@ def benchmark_sahi(
         print(f"\t\tSpeedup: {speedup:.2f}x {'(TRTUtils faster)' if speedup > 1 else '(Official faster)'}")
 
 
-def bootstrap_models(models: list[str], image_sizes: list[int]) -> None:
-    """Download all models for all image sizes upfront."""
+def bootstrap_models(models: list[str]) -> None:
+    """Download all models for their configured image sizes."""
+    total_downloads = sum(len(MODEL_TO_IMGSIZES.get(model, [])) for model in models)
+    
     print(f"\nBootstrapping models: {', '.join(models)}")
-    print(f"Image sizes: {image_sizes}")
-    print(f"Total downloads: {len(models)} models x {len(image_sizes)} sizes = {len(models) * len(image_sizes)}\n")
+    print(f"Total downloads: {total_downloads}\n")
     
     failed = []
     for model in models:
-        for imgsz in image_sizes:
+        model_sizes = MODEL_TO_IMGSIZES.get(model, [])
+        
+        if not model_sizes:
+            warnings.warn(f"No image sizes configured for {model}, skipping")
+            continue
+        
+        for imgsz in model_sizes:
             try:
-                ensure_model_available(model, imgsz, auto_download=True)
-                print(f"✓ {model} @ {imgsz}")
+                ensure_model_available(model, imgsz, MODEL_TO_DIR, auto_download=True)
+                print(f"SUCCESS - {model} @ {imgsz}")
             except Exception as e:
-                print(f"✗ {model} @ {imgsz}: {e}")
+                print(f"FAILED - {model} @ {imgsz}: {e}")
                 failed.append((model, imgsz))
     
     if failed:
-        print(f"\n⚠ Failed to download {len(failed)} model(s)")
+        print(f"\nFAILED - Failed to download {len(failed)} model(s)")
+        for model, imgsz in failed:
+            print(f"\t{model} @ {imgsz}")
     else:
-        print("\n✓ All models downloaded successfully")
+        print("\nSUCCESS - All models downloaded successfully")
 
 
 def main() -> None:
@@ -558,14 +559,18 @@ def main() -> None:
     )
     args = parser.parse_args()
     
-    # Determine which image sizes to test
-    image_sizes = [args.imgsz] if args.imgsz is not None else IMAGE_SIZES
+    # Filter MODEL_TO_IMGSIZES globally based on --imgsz argument
+    global MODEL_TO_IMGSIZES
+    if args.imgsz is not None:
+        MODEL_TO_IMGSIZES = {
+            model: [args.imgsz] if args.imgsz in sizes else []
+            for model, sizes in MODEL_TO_IMGSIZES.items()
+        }
     
     # Handle bootstrap mode
     if args.bootstrap:
         models = MODELNAMES if args.model == "all" else [args.model]
-        bootstrap_models(models, image_sizes)
-        return
+        bootstrap_models(models)
     
     # Validate required arguments
     if not args.device:
@@ -581,22 +586,26 @@ def main() -> None:
     # process each model
     for modelname in models:
         # solve for MODELNAME and ONNX_DIR
-        global MODELNAME
+        global MODELNAME, ONNX_DIR
         if modelname not in MODELNAMES:
             err_msg = f"Could not find: {modelname}"
             raise ValueError(err_msg)
         MODELNAME = modelname
 
-        # now solve for new onnx_dir
-        yolo_version = (
-            copy.copy(MODELNAME)
-            .replace("t", "")
-            .replace("n", "")
-            .replace("s", "")
-            .replace("m", "")
-        )
-        global ONNX_DIR
-        ONNX_DIR = REPO_DIR / "data" / yolo_version
+        # Get the model directory from the mapping
+        if modelname not in MODEL_TO_DIR:
+            err_msg = f"Could not find directory mapping for: {modelname}"
+            raise ValueError(err_msg)
+        
+        model_dir = MODEL_TO_DIR[modelname]
+        ONNX_DIR = REPO_DIR / "data" / model_dir
+
+        # Get model-specific image sizes
+        model_imgsizes = MODEL_TO_IMGSIZES.get(modelname, [])
+        
+        if not model_imgsizes:
+            warnings.warn(f"No image sizes configured for {modelname}, skipping")
+            continue
 
         # trtutils benchmark
         if args.trtutils:
@@ -605,7 +614,7 @@ def main() -> None:
                     args.device,
                     args.warmup,
                     args.iterations,
-                    image_sizes,
+                    model_imgsizes,
                     overwrite=args.overwrite,
                 )
             except Exception as e:
@@ -620,7 +629,7 @@ def main() -> None:
                         args.device,
                         args.warmup,
                         args.iterations,
-                        image_sizes,
+                        model_imgsizes,
                         overwrite=args.overwrite,
                     )
                 else:

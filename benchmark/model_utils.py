@@ -6,43 +6,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from trtutils.download import download
-
 REPO_DIR = Path(__file__).parent.parent
-
-
-def get_model_dir(model_name: str) -> Path:
-    """Get the directory for a model based on its name."""
-    if "yolov10" in model_name:
-        model_type = "yolov10"
-    elif "yolov9" in model_name:
-        model_type = "yolov9"
-    elif "yolov8" in model_name:
-        model_type = "yolov8"
-    elif "yolov11" in model_name:
-        model_type = "yolov11"
-    elif "yolov12" in model_name:
-        model_type = "yolov12"
-    elif "yolov13" in model_name:
-        model_type = "yolov13"
-    elif "yolov7" in model_name:
-        model_type = "yolov7"
-    elif "yolox" in model_name:
-        model_type = "yolox"
-    else:
-        raise ValueError(f"Unknown model type for {model_name}")
-    return REPO_DIR / "data" / model_type
 
 
 def ensure_model_available(
     model_name: str,
     imgsz: int,
+    model_to_dir: dict[str, str],
     opset: int = 17,
     *,
     auto_download: bool = True,
 ) -> Path:
     """Ensure a model is available, downloading it if necessary."""
-    model_dir = get_model_dir(model_name)
+    from trtutils.download import download
+
+    if model_name not in model_to_dir:
+        err_msg = f"Unknown model: {model_name}. Not found in model directory mapping."
+        raise ValueError(err_msg)
+    
+    model_dir = REPO_DIR / "data" / model_to_dir[model_name]
     model_path = model_dir / f"{model_name}_{imgsz}.onnx"
     
     if model_path.exists():
@@ -65,3 +47,54 @@ def ensure_model_available(
         verbose=False,
     )
     return model_path
+
+
+def build_model(
+    onnx: Path,
+    output: Path,
+    imgsz: int,
+    opt_level: int = 3,
+) -> None:
+    """Build a model from an ONNX file."""
+    from trtutils.builder import build_engine
+    from trtutils.builder.hooks import yolo_efficient_nms_hook
+
+    # define the shapes, all yolo models have the "images" shape
+    shapes = []
+    if "rfdetr" in onnx.stem:
+        shapes.append(
+            ("input", (1, 3, imgsz, imgsz)),
+        )
+    elif "rtdetrv1" in onnx.stem or "rtdetrv2" in onnx.stem or "deim" in onnx.stem:
+        shapes.extend([
+            ("image", (1, 3, imgsz, imgsz)),
+            ("orig_image_size", (1, 2)),
+        ])
+    elif "rtdetrv3" in onnx.stem:
+        shapes.extend([
+            ("image", (1, 3, imgsz, imgsz)),
+            ("im_shape", (1, 2)),
+            ("scale_factor", (1, 2)),
+        ])
+    else:
+        shapes.append(
+            ("images", (1, 3, imgsz, imgsz)),
+        )
+
+    # setup the hooks
+    # setup the shapes based on the modelname
+    yolo_add_nms = ["yolov8", "yolov11", "yolov12", "yolov13", "yolox"]
+
+    # only yolo models may need NMS hook
+    hooks = []
+    if sum(1 for m in yolo_add_nms if m in onnx.stem) > 0:
+        hooks.append(yolo_efficient_nms_hook())
+
+    build_engine(
+        onnx=onnx,
+        output=output,
+        fp16=True,
+        optimization_level=opt_level,
+        shapes=shapes,
+        hooks=hooks,
+    )

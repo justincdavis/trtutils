@@ -898,6 +898,9 @@ def _export_deim(
     verbose: bool | None = None,
 ) -> Path:
     LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
+    if imgsz != 640:
+        LOG.warning(f"DEIM supports only an imgsz of 640, ignoring provided imgsz of: {imgsz}")
+        imgsz = 640
     _git_clone(
         "https://github.com/Intellindust-AI-Lab/DEIM",
         directory,

@@ -4,16 +4,24 @@
 from __future__ import annotations
 
 import time
-from enum import Enum
 from typing import TYPE_CHECKING
 
-from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
+from ._schema import InputSchema, OutputSchema, get_detector_io_schema
 from .interfaces import DetectorInterface
-from .postprocessors import get_detections, postprocess_detections
+from .postprocessors import (
+    get_detections_detr,
+    get_detections_efficient_nms,
+    get_detections_rfdetr,
+    get_detections_yolov10,
+    postprocess_detr,
+    postprocess_efficient_nms,
+    postprocess_rfdetr,
+    postprocess_yolov10,
+)
 from .preprocessors import CUDAPreprocessor, TRTPreprocessor
 
 if TYPE_CHECKING:
@@ -21,82 +29,6 @@ if TYPE_CHECKING:
 
     import numpy as np
     from typing_extensions import Self
-
-
-class InputSchema(Enum):
-    # YOLO-X,v7,v8,v9,v10,v11,v12,v13
-    YOLO = ["images"]
-    # RF-DETR
-    RF_DETR = ["input"]
-    # DEIM-v1/v2, RTDETR-v1/v2
-    RT_DETR = ["images", "orig_image_size"]
-    # RT-DETR-v3
-    RT_DETR_V3 = ["image", "im_shape", "scale_factor"]
-
-
-class OutputSchema(Enum):
-    # YOLO-v7,v8,v9,v11,v12,v13
-    EFFICIENT_NMS = ["num_dets", "det_boxes", "det_scores", "det_classes"]
-    # YOLO-v10
-    YOLO_V10 = ["output0"]
-    # Rf-DETR
-    RF_DETR = ["dets", "labels"]
-
-
-def _get_engine_io_schema(
-    engine: TRTEngine,
-) -> tuple[InputSchema, OutputSchema]:
-    # solve for the input scheme
-    input_schema: InputSchema
-    if engine.input_names == InputSchema.YOLO.value:
-        input_schema = InputSchema.YOLO
-    elif engine.input_names == InputSchema.RF_DETR.value:
-        input_schema = InputSchema.RF_DETR
-    elif engine.input_names == InputSchema.RT_DETR.value:
-        input_schema = InputSchema.RT_DETR
-    elif engine.input_names == InputSchema.RT_DETR_V3.value:
-        input_schema = InputSchema.RT_DETR_V3
-    else:
-        warn_msg = "Could not determine input schema directly from input names. "
-        warn_msg += f"Input names: {engine.input_names}, "
-        warn_msg += f"Input scheme: {engine.input_spec}. "
-        warn_msg += "Attemping input schema solve from input spec length."
-        LOG.warning(warn_msg)
-        if len(engine.input_spec) == len(InputSchema.YOLO.value):
-            input_schema = InputSchema.YOLO
-        elif len(engine.input_spec) == len(InputSchema.RT_DETR.value):
-            input_schema = InputSchema.RT_DETR
-        elif len(engine.input_spec) == len(InputSchema.RT_DETR_V3.value):
-            input_schema = InputSchema.RT_DETR_V3
-        else:
-            err_msg = f"Expected 1, 2, or 3 inputs, found {len(engine.input_spec)}"
-            raise ValueError(err_msg)
-
-    # solve for the output schema
-    output_schema: OutputSchema
-    if engine.output_names == OutputSchema.EFFICIENT_NMS.value:
-        output_schema = OutputSchema.EFFICIENT_NMS
-    elif engine.output_names == OutputSchema.YOLO_V10.value:
-        output_schema = OutputSchema.YOLO_V10
-    elif engine.output_names == OutputSchema.RF_DETR.value:
-        output_schema = OutputSchema.RF_DETR
-    else:
-        err_msg = "Could not determine output schema directly from output names. "
-        err_msg += f"Output names: {engine.output_names}, "
-        err_msg += f"Output scheme: {engine.output_spec}. "
-        err_msg += "Attemping output schema solve from output spec length."
-        LOG.warning(err_msg)
-        if len(engine.output_spec) == len(OutputSchema.EFFICIENT_NMS.value):
-            output_schema = OutputSchema.EFFICIENT_NMS
-        elif len(engine.output_spec) == len(OutputSchema.YOLO_V10.value):
-            output_schema = OutputSchema.YOLO_V10
-        elif len(engine.output_spec) == len(OutputSchema.RF_DETR.value):
-            output_schema = OutputSchema.RF_DETR
-        else:
-            err_msg = f"Expected 1, 2, or 4 outputs, found {len(engine.output_spec)}"
-            raise ValueError(err_msg)
-
-    return (input_schema, output_schema)
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -191,7 +123,9 @@ class Detector(ImageModel, DetectorInterface):
         self._agnostic_nms: bool | None = agnostic_nms
 
         # get the input and output schema
-        self._input_schema, self._output_schema = _get_engine_io_schema(self._engine)
+        self._input_schema: InputSchema
+        self._output_schema: OutputSchema
+        self._input_schema, self._output_schema = get_detector_io_schema(self._engine)
         if self._verbose:
             LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
@@ -204,6 +138,26 @@ class Detector(ImageModel, DetectorInterface):
         elif self._input_schema == InputSchema.RT_DETR_V3:
             self._use_image_size = True
             self._use_scale_factor = True
+
+        # solve for the postprocessing function
+        if self._output_schema == OutputSchema.YOLO_V10:
+            self._postprocess_fn = postprocess_yolov10
+        elif self._output_schema == OutputSchema.RF_DETR:
+            self._postprocess_fn = postprocess_rfdetr
+        elif self._output_schema == OutputSchema.DETR:
+            self._postprocess_fn = postprocess_detr
+        else:
+            self._postprocess_fn = postprocess_efficient_nms
+
+        # solve for the get detections function
+        if self._output_schema == OutputSchema.YOLO_V10:
+            self._get_detections_fn = get_detections_yolov10
+        elif self._output_schema == OutputSchema.RF_DETR:
+            self._get_detections_fn = get_detections_rfdetr
+        elif self._output_schema == OutputSchema.DETR:
+            self._get_detections_fn = get_detections_detr
+        else:
+            self._get_detections_fn = get_detections_efficient_nms
 
         if self._verbose:
             LOG.debug(f"{self._tag}: Using image size: {self._use_image_size}")
@@ -323,8 +277,13 @@ class Detector(ImageModel, DetectorInterface):
 
         conf_thres = conf_thres or self._conf_thres
         t0 = time.perf_counter()
-        data = postprocess_detections(
-            outputs, ratios, padding, conf_thres, no_copy=no_copy
+        data = self._postprocess_fn(
+            outputs,
+            ratios=ratios,
+            padding=padding,
+            conf_thres=conf_thres,
+            no_copy=no_copy,
+            verbose=verbose,
         )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
@@ -564,7 +523,7 @@ class Detector(ImageModel, DetectorInterface):
         nms_iou = nms_iou_thres or self._nms_iou
         use_nms = extra_nms if extra_nms is not None else self._nms
         agnostic = agnostic_nms if agnostic_nms is not None else self._agnostic_nms
-        return get_detections(
+        return self._get_detections_fn(
             outputs,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou,
@@ -661,7 +620,7 @@ class Detector(ImageModel, DetectorInterface):
                 if scale_valid:
                     input_ptrs.append(scale_ptr)
                 else:
-                    err_msg = "Extra input buffers not valid"
+                    err_msg = "scale_factor buffer not valid"
                     raise RuntimeError(err_msg)
 
             outputs = self._engine.direct_exec(input_ptrs, no_warn=True)

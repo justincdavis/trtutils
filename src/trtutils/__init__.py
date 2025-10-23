@@ -74,6 +74,8 @@ Functions
 
 Objects
 -------
+:obj:`CONFIG`
+    The config storage object for trtutils.
 :obj:`FLAGS`
     The flag storage object for trtutils.
 :obj:`LOG`
