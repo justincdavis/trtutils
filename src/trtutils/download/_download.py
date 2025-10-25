@@ -48,7 +48,7 @@ def _get_model_requirements(model: str) -> str:
 
 
 @lru_cache(maxsize=1)
-def _load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
+def load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
     configs_dir = Path(__file__).parent / "configs"
     model_configs: dict[str, dict[str, dict[str, str]]] = {}
 
@@ -1212,7 +1212,7 @@ def download_model(
         err_msg = f"License acceptance required for model '{model}'. Please accept the license terms."
         raise ValueError(err_msg)
 
-    model_configs = _load_model_configs()
+    model_configs: dict[str, dict[str, dict[str, str]]] = load_model_configs()
     config: dict[str, str] | None = None
     for model_set in model_configs.values():
         for model_name in model_set:

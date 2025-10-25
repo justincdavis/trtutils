@@ -587,15 +587,15 @@ def _detect(args: SimpleNamespace) -> None:
     ]:
         """Run detection on an image and return detections with timing info."""
         t0 = time.perf_counter()
-        tensor, ratios, pads = detector.preprocess(img, no_copy=True)
+        tensor, ratios, pads = detector.preprocess(img, no_copy=True, verbose=args.verbose)
         t1 = time.perf_counter()
         results = detector.run(
-            tensor, preprocessed=True, postprocess=False, no_copy=True
+            tensor, preprocessed=True, postprocess=False, no_copy=True, verbose=args.verbose
         )
         t2 = time.perf_counter()
-        p_results = detector.postprocess(results, ratios, pads, no_copy=True)
+        p_results = detector.postprocess(results, ratios, pads, no_copy=True, verbose=args.verbose)
         t3 = time.perf_counter()
-        dets = detector.get_detections(p_results)
+        dets = detector.get_detections(p_results, verbose=args.verbose)
         t4 = time.perf_counter()
         return (
             dets,

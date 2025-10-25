@@ -24,26 +24,28 @@ Classes
     Alias for the YOLO class with args preset for YOLO13.
 :class:`YOLOX`
     Alias for the YOLO class with args preset for YOLOX.
+:class:`DETR`
+    Alias for the Detector class with args preset for DETR.
 :class:`RTDETRv1`
-    Alias for the Detector class with args preset for RT-DETRv1.
+    Alias for the DETR class with args preset for RT-DETRv1.
 :class:`RTDETRv2`
-    Alias for the Detector class with args preset for RT-DETRv2.
+    Alias for the DETR class with args preset for RT-DETRv2.
 :class:`RTDETRv3`
-    Alias for the Detector class with args preset for RT-DETRv3.
+    Alias for the DETR class with args preset for RT-DETRv3.
 :class:`DFINE`
-    Alias for the Detector class with args preset for D-FINE.
+    Alias for the DETR class with args preset for D-FINE.
 :class:`DEIM`
-    Alias for the Detector class with args preset for DEIM.
+    Alias for the DETR class with args preset for DEIM.
 :class:`DEIMv2`
-    Alias for the Detector class with args preset for DEIMv2.
+    Alias for the DETR class with args preset for DEIMv2.
 :class:`RFDETR`
-    Alias for the Detector class with args preset for RF-DETR.
+    Alias for the DETR class with args preset for RF-DETR.
 
 """
 
 from __future__ import annotations
 
-from ._rtdetr import DEIM, DFINE, RFDETR, DEIMv2, RTDETRv1, RTDETRv2, RTDETRv3
+from ._detr import DETR, DEIM, DFINE, RFDETR, DEIMv2, RTDETRv1, RTDETRv2, RTDETRv3
 from ._yolo import YOLO, YOLO7, YOLO8, YOLO9, YOLO10, YOLO11, YOLO12, YOLO13, YOLOX
 
 __all__ = [
@@ -60,6 +62,7 @@ __all__ = [
     "YOLO13",
     "YOLOX",
     "DEIMv2",
+    "DETR",
     "RTDETRv1",
     "RTDETRv2",
     "RTDETRv3",

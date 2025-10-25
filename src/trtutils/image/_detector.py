@@ -6,6 +6,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
@@ -13,10 +15,7 @@ from ._image_model import ImageModel
 from ._schema import InputSchema, OutputSchema, get_detector_io_schema
 from .interfaces import DetectorInterface
 from .postprocessors import (
-    get_detections_detr,
-    get_detections_efficient_nms,
-    get_detections_rfdetr,
-    get_detections_yolov10,
+    get_detections,
     postprocess_detr,
     postprocess_efficient_nms,
     postprocess_rfdetr,
@@ -27,7 +26,6 @@ from .preprocessors import CUDAPreprocessor, TRTPreprocessor
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import numpy as np
     from typing_extensions import Self
 
 
@@ -149,15 +147,8 @@ class Detector(ImageModel, DetectorInterface):
         else:
             self._postprocess_fn = postprocess_efficient_nms
 
-        # solve for the get detections function
-        if self._output_schema == OutputSchema.YOLO_V10:
-            self._get_detections_fn = get_detections_yolov10
-        elif self._output_schema == OutputSchema.RF_DETR:
-            self._get_detections_fn = get_detections_rfdetr
-        elif self._output_schema == OutputSchema.DETR:
-            self._get_detections_fn = get_detections_detr
-        else:
-            self._get_detections_fn = get_detections_efficient_nms
+        # use unified get detections function
+        self._get_detections_fn = get_detections
 
         if self._verbose:
             LOG.debug(f"{self._tag}: Using image size: {self._use_image_size}")
@@ -282,6 +273,7 @@ class Detector(ImageModel, DetectorInterface):
             ratios=ratios,
             padding=padding,
             conf_thres=conf_thres,
+            input_size=self._input_size,
             no_copy=no_copy,
             verbose=verbose,
         )

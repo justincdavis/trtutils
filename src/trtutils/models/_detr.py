@@ -1,22 +1,20 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from trtutils.image._detector import Detector
-from trtutils.image._schema import InputSchema
 from ._utils import download_model_internal, build_internal
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from typing_extensions import Self
 
 
-class YOLO(Detector):
-    """Alias of Detector with default args for YOLO."""
+class DETR(Detector):
+    """Alias of Detector with default args for DETR."""
 
     def __init__(
         self: Self,
@@ -56,14 +54,14 @@ class YOLO(Detector):
         )
 
 
-class YOLOX(YOLO):
-    """Alias of Detector with default args for YOLOX."""
+class RTDETRv1(DETR):
+    """Alias of DETR with default args for RT-DETRv1."""
 
     def __init__(
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
-        input_range: tuple[float, float] = (0, 255),
+        input_range: tuple[float, float] = (0, 1),
         preprocessor: str = "trt",
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
@@ -107,33 +105,26 @@ class YOLOX(YOLO):
         verbose: bool | None = None,
     ) -> None:
         """
-        Download a YOLOX model.
+        Download an RT-DETRv1 model.
 
         Parameters
         ----------
         model: str
-            The model to download.
+            Model identifier to download.
         output: Path | str
-            The output path to save the model to.
+            Output path to save the ONNX model.
         imgsz: int = 640
-            The image size to use for the model.
+            Image size used for export.
         opset: int = 17
-            The ONNX opset to use for the model.
-        *,
-        no_cache: bool | None = None,
-            Disable caching of downloaded weights and repos.
-        verbose: bool | None = None,
-            Print verbose output.
-
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOX model.
-
+            ONNX opset to export with.
+        no_cache: bool | None = None
+            Disable caching of downloads.
+        verbose: bool | None = None
+            Enable verbose logging.
         """
         download_model_internal(
-            model_type="yolox",
-            friendly_name="YOLOX",
+            model_type="rtdetrv1",
+            friendly_name="RT-DETRv1",
             model=model,
             output=output,
             imgsz=imgsz,
@@ -150,7 +141,7 @@ class YOLOX(YOLO):
         batch_size: int = 1,
     ) -> None:
         """
-        Build a TensorRT engine for YOLOX.
+        Build a TensorRT engine for RT-DETRv1.
 
         Parameters
         ----------
@@ -163,12 +154,15 @@ class YOLOX(YOLO):
         batch_size: int = 1
             Batch size for the engine.
         """
-        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
+        shapes = [
+            ("images", (batch_size, 3, imgsz, imgsz)),
+            ("orig_target_sizes", (batch_size, 2)),
+        ]
         build_internal(onnx=onnx, output=output, shapes=shapes)
 
 
-class YOLO7(YOLO):
-    """Alias of Detector with default args for YOLO7."""
+class RTDETRv2(DETR):
+    """Alias of DETR with default args for RT-DETRv2."""
 
     def __init__(
         self: Self,
@@ -218,33 +212,26 @@ class YOLO7(YOLO):
         verbose: bool | None = None,
     ) -> None:
         """
-        Download a YOLOv7 model.
+        Download an RT-DETRv2 model.
 
         Parameters
         ----------
         model: str
-            The model to download.
+            Model identifier to download.
         output: Path | str
-            The output path to save the model to.
+            Output path to save the ONNX model.
         imgsz: int = 640
-            The image size to use for the model.
+            Image size used for export.
         opset: int = 17
-            The ONNX opset to use for the model.
-        *,
-        no_cache: bool | None = None,
-            Disable caching of downloaded weights and repos.
-        verbose: bool | None = None,
-            Print verbose output.
-
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv7 model.
-
+            ONNX opset to export with.
+        no_cache: bool | None = None
+            Disable caching of downloads.
+        verbose: bool | None = None
+            Enable verbose logging.
         """
         download_model_internal(
-            model_type="yolov7",
-            friendly_name="YOLOv7",
+            model_type="rtdetrv2",
+            friendly_name="RT-DETRv2",
             model=model,
             output=output,
             imgsz=imgsz,
@@ -252,7 +239,7 @@ class YOLO7(YOLO):
             no_cache=no_cache,
             verbose=verbose,
         )
-    
+
     @staticmethod
     def build(
         onnx: Path | str,
@@ -261,7 +248,7 @@ class YOLO7(YOLO):
         batch_size: int = 1,
     ) -> None:
         """
-        Build a TensorRT engine for YOLOv7.
+        Build a TensorRT engine for RT-DETRv2.
 
         Parameters
         ----------
@@ -274,12 +261,15 @@ class YOLO7(YOLO):
         batch_size: int = 1
             Batch size for the engine.
         """
-        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
+        shapes = [
+            ("image", (batch_size, 3, imgsz, imgsz)),
+            ("orig_target_sizes", (batch_size, 2)),
+        ]
         build_internal(onnx=onnx, output=output, shapes=shapes)
 
 
-class YOLO8(YOLO):
-    """Alias of Detector with default args for YOLO8."""
+class RTDETRv3(DETR):
+    """Alias of DETR with default args for RT-DETRv3."""
 
     def __init__(
         self: Self,
@@ -329,33 +319,26 @@ class YOLO8(YOLO):
         verbose: bool | None = None,
     ) -> None:
         """
-        Download a YOLOv8 model.
+        Download an RT-DETRv3 model.
 
         Parameters
         ----------
         model: str
-            The model to download.
+            Model identifier to download.
         output: Path | str
-            The output path to save the model to.
+            Output path to save the ONNX model.
         imgsz: int = 640
-            The image size to use for the model.
+            Image size used for export.
         opset: int = 17
-            The ONNX opset to use for the model.
-        *,
-        no_cache: bool | None = None,
-            Disable caching of downloaded weights and repos.
-        verbose: bool | None = None,
-            Print verbose output.
-
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv8 model.
-
+            ONNX opset to export with.
+        no_cache: bool | None = None
+            Disable caching of downloads.
+        verbose: bool | None = None
+            Enable verbose logging.
         """
         download_model_internal(
-            model_type="yolov8",
-            friendly_name="YOLOv8",
+            model_type="rtdetrv3",
+            friendly_name="RT-DETRv3",
             model=model,
             output=output,
             imgsz=imgsz,
@@ -372,7 +355,7 @@ class YOLO8(YOLO):
         batch_size: int = 1,
     ) -> None:
         """
-        Build a TensorRT engine for YOLOv8.
+        Build a TensorRT engine for RT-DETRv3.
 
         Parameters
         ----------
@@ -385,12 +368,16 @@ class YOLO8(YOLO):
         batch_size: int = 1
             Batch size for the engine.
         """
-        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
+        shapes = [
+            ("image", (batch_size, 3, imgsz, imgsz)),
+            ("im_shape", (batch_size, 2)),
+            ("scale_factor", (batch_size, 2)),
+        ]
         build_internal(onnx=onnx, output=output, shapes=shapes)
 
 
-class YOLO9(YOLO):
-    """Alias of Detector with default args for YOLO9."""
+class DFINE(DETR):
+    """Alias of DETR with default args for D-FINE."""
 
     def __init__(
         self: Self,
@@ -440,33 +427,26 @@ class YOLO9(YOLO):
         verbose: bool | None = None,
     ) -> None:
         """
-        Download a YOLOv9 model.
+        Download a D-FINE model.
 
         Parameters
         ----------
         model: str
-            The model to download.
+            Model identifier to download.
         output: Path | str
-            The output path to save the model to.
+            Output path to save the ONNX model.
         imgsz: int = 640
-            The image size to use for the model.
+            Image size used for export.
         opset: int = 17
-            The ONNX opset to use for the model.
-        *,
-        no_cache: bool | None = None,
-            Disable caching of downloaded weights and repos.
-        verbose: bool | None = None,
-            Print verbose output.
-
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv9 model.
-
+            ONNX opset to export with.
+        no_cache: bool | None = None
+            Disable caching of downloads.
+        verbose: bool | None = None
+            Enable verbose logging.
         """
         download_model_internal(
-            model_type="yolov9",
-            friendly_name="YOLOv9",
+            model_type="dfine",
+            friendly_name="D-FINE",
             model=model,
             output=output,
             imgsz=imgsz,
@@ -483,7 +463,7 @@ class YOLO9(YOLO):
         batch_size: int = 1,
     ) -> None:
         """
-        Build a TensorRT engine for YOLOv9.
+        Build a TensorRT engine for D-FINE.
 
         Parameters
         ----------
@@ -496,12 +476,15 @@ class YOLO9(YOLO):
         batch_size: int = 1
             Batch size for the engine.
         """
-        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
+        shapes = [
+            ("images", (batch_size, 3, imgsz, imgsz)),
+            ("orig_target_sizes", (batch_size, 2)),
+        ]
         build_internal(onnx=onnx, output=output, shapes=shapes)
 
 
-class YOLO10(YOLO):
-    """Alias of Detector with default args for YOLO10."""
+class DEIM(DETR):
+    """Alias of DETR with default args for DEIM."""
 
     def __init__(
         self: Self,
@@ -551,33 +534,26 @@ class YOLO10(YOLO):
         verbose: bool | None = None,
     ) -> None:
         """
-        Download a YOLOv10 model.
+        Download a DEIM model.
 
         Parameters
         ----------
         model: str
-            The model to download.
+            Model identifier to download.
         output: Path | str
-            The output path to save the model to.
+            Output path to save the ONNX model.
         imgsz: int = 640
-            The image size to use for the model.
+            Image size used for export.
         opset: int = 17
-            The ONNX opset to use for the model.
-        *,
-        no_cache: bool | None = None,
-            Disable caching of downloaded weights and repos.
-        verbose: bool | None = None,
-            Print verbose output.
-
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv10 model.
-
+            ONNX opset to export with.
+        no_cache: bool | None = None
+            Disable caching of downloads.
+        verbose: bool | None = None
+            Enable verbose logging.
         """
         download_model_internal(
-            model_type="yolov10",
-            friendly_name="YOLOv10",
+            model_type="deim",
+            friendly_name="DEIM",
             model=model,
             output=output,
             imgsz=imgsz,
@@ -594,7 +570,7 @@ class YOLO10(YOLO):
         batch_size: int = 1,
     ) -> None:
         """
-        Build a TensorRT engine for YOLOv10.
+        Build a TensorRT engine for DEIM.
 
         Parameters
         ----------
@@ -607,12 +583,15 @@ class YOLO10(YOLO):
         batch_size: int = 1
             Batch size for the engine.
         """
-        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
+        shapes = [
+            ("images", (batch_size, 3, imgsz, imgsz)),
+            ("orig_target_sizes", (batch_size, 2)),
+        ]
         build_internal(onnx=onnx, output=output, shapes=shapes)
 
 
-class YOLO11(YOLO):
-    """Alias of Detector with default args for YOLO11."""
+class DEIMv2(DETR):
+    """Alias of DETR with default args for DEIMv2."""
 
     def __init__(
         self: Self,
@@ -662,33 +641,26 @@ class YOLO11(YOLO):
         verbose: bool | None = None,
     ) -> None:
         """
-        Download a YOLOv11 model.
+        Download a DEIMv2 model.
 
         Parameters
         ----------
         model: str
-            The model to download.
+            Model identifier to download.
         output: Path | str
-            The output path to save the model to.
+            Output path to save the ONNX model.
         imgsz: int = 640
-            The image size to use for the model.
+            Image size used for export.
         opset: int = 17
-            The ONNX opset to use for the model.
-        *,
-        no_cache: bool | None = None,
-            Disable caching of downloaded weights and repos.
-        verbose: bool | None = None,
-            Print verbose output.
-
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv11 model.
-
+            ONNX opset to export with.
+        no_cache: bool | None = None
+            Disable caching of downloads.
+        verbose: bool | None = None
+            Enable verbose logging.
         """
         download_model_internal(
-            model_type="yolov11",
-            friendly_name="YOLOv11",
+            model_type="deimv2",
+            friendly_name="DEIMv2",
             model=model,
             output=output,
             imgsz=imgsz,
@@ -705,7 +677,7 @@ class YOLO11(YOLO):
         batch_size: int = 1,
     ) -> None:
         """
-        Build a TensorRT engine for YOLOv11.
+        Build a TensorRT engine for DEIMv2.
 
         Parameters
         ----------
@@ -718,12 +690,15 @@ class YOLO11(YOLO):
         batch_size: int = 1
             Batch size for the engine.
         """
-        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
+        shapes = [
+            ("images", (batch_size, 3, imgsz, imgsz)),
+            ("orig_target_sizes", (batch_size, 2)),
+        ]
         build_internal(onnx=onnx, output=output, shapes=shapes)
 
 
-class YOLO12(YOLO):
-    """Alias of Detector with default args for YOLO12."""
+class RFDETR(DETR):
+    """Alias of DETR with default args for RF-DETR."""
 
     def __init__(
         self: Self,
@@ -773,33 +748,26 @@ class YOLO12(YOLO):
         verbose: bool | None = None,
     ) -> None:
         """
-        Download a YOLOv12 model.
+        Download an RF-DETR model.
 
         Parameters
         ----------
         model: str
-            The model to download.
+            Model identifier to download.
         output: Path | str
-            The output path to save the model to.
+            Output path to save the ONNX model.
         imgsz: int = 640
-            The image size to use for the model.
+            Image size used for export.
         opset: int = 17
-            The ONNX opset to use for the model.
-        *,
-        no_cache: bool | None = None,
-            Disable caching of downloaded weights and repos.
-        verbose: bool | None = None,
-            Print verbose output.
-
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv12 model.
-
+            ONNX opset to export with.
+        no_cache: bool | None = None
+            Disable caching of downloads.
+        verbose: bool | None = None
+            Enable verbose logging.
         """
         download_model_internal(
-            model_type="yolov12",
-            friendly_name="YOLOv12",
+            model_type="rfdetr",
+            friendly_name="RF-DETR",
             model=model,
             output=output,
             imgsz=imgsz,
@@ -816,7 +784,7 @@ class YOLO12(YOLO):
         batch_size: int = 1,
     ) -> None:
         """
-        Build a TensorRT engine for YOLOv12.
+        Build a TensorRT engine for RF-DETR.
 
         Parameters
         ----------
@@ -829,116 +797,7 @@ class YOLO12(YOLO):
         batch_size: int = 1
             Batch size for the engine.
         """
-        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
-
-
-class YOLO13(YOLO):
-    """Alias of Detector with default args for YOLO13."""
-
-    def __init__(
-        self: Self,
-        engine_path: Path | str,
-        warmup_iterations: int = 10,
-        input_range: tuple[float, float] = (0, 1),
-        preprocessor: str = "trt",
-        resize_method: str = "letterbox",
-        conf_thres: float = 0.1,
-        nms_iou_thres: float = 0.5,
-        dla_core: int | None = None,
-        *,
-        warmup: bool | None = None,
-        pagelocked_mem: bool | None = None,
-        unified_mem: bool | None = None,
-        extra_nms: bool | None = None,
-        agnostic_nms: bool | None = None,
-        no_warn: bool | None = None,
-        verbose: bool | None = None,
-    ) -> None:
-        super().__init__(
-            engine_path=engine_path,
-            warmup_iterations=warmup_iterations,
-            input_range=input_range,
-            preprocessor=preprocessor,
-            resize_method=resize_method,
-            conf_thres=conf_thres,
-            nms_iou_thres=nms_iou_thres,
-            dla_core=dla_core,
-            warmup=warmup,
-            pagelocked_mem=pagelocked_mem,
-            unified_mem=unified_mem,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
-            no_warn=no_warn,
-            verbose=verbose,
-        )
-
-    @staticmethod
-    def download(
-        model: str,
-        output: Path | str,
-        imgsz: int = 640,
-        opset: int = 17,
-        *,
-        no_cache: bool | None = None,
-        verbose: bool | None = None,
-    ) -> None:
-        """
-        Download a YOLOv13 model.
-
-        Parameters
-        ----------
-        model: str
-            The model to download.
-        output: Path | str
-            The output path to save the model to.
-        imgsz: int = 640
-            The image size to use for the model.
-        opset: int = 17
-            The ONNX opset to use for the model.
-        *,
-        no_cache: bool | None = None,
-            Disable caching of downloaded weights and repos.
-        verbose: bool | None = None,
-            Print verbose output.
-
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv13 model.
-
-        """
-        download_model_internal(
-            model_type="yolov13",
-            friendly_name="YOLOv13",
-            model=model,
-            output=output,
-            imgsz=imgsz,
-            opset=opset,
-            no_cache=no_cache,
-            verbose=verbose,
-        )
-
-    @staticmethod
-    def build(
-        onnx: Path | str,
-        output: Path | str,
-        imgsz: int,
-        batch_size: int = 1,
-    ) -> None:
-        """
-        Build a TensorRT engine for YOLOv13.
-
-        Parameters
-        ----------
-        onnx: Path | str
-            Path to the ONNX model.
-        output: Path | str
-            Output path for the built engine.
-        imgsz: int
-            Input image size used for shapes.
-        batch_size: int = 1
-            Batch size for the engine.
-        """
-        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
+        shapes = [
+            ("input", (batch_size, 3, imgsz, imgsz)),
+        ]
         build_internal(onnx=onnx, output=output, shapes=shapes)

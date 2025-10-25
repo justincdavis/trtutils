@@ -10,20 +10,14 @@ Functions
     Get the classifications from the output of a classification model.
 :func:`postprocess_classifications`
     Postprocess the output of a classification model.
-:func:`get_detections_yolov10`
-    Get the detections from the output of a YOLO-v10 model.
+:func:`get_detections`
+    Get the detections from unified postprocessed outputs.
 :func:`postprocess_yolov10`
     Postprocess the output of a YOLO-v10 model.
-:func:`get_detections_rfdetr`
-    Get the detections from the output of a RF-DETR model.
 :func:`postprocess_rfdetr`
     Postprocess the output of a RF-DETR model.
-:func:`get_detections_detr`
-    Get the detections from the output of a DETR-based model.
 :func:`postprocess_detr`
     Postprocess the output of a DETR-based model.
-:func:`get_detections_efficient_nms`
-    Get the detections from the output of an EfficientNMS model.
 :func:`postprocess_efficient_nms`
     Postprocess the output of an EfficientNMS model.
 
@@ -37,10 +31,7 @@ from ._detection import (
     postprocess_rfdetr,
     postprocess_detr,
     postprocess_efficient_nms,
-    get_detections_yolov10,
-    get_detections_rfdetr,
-    get_detections_detr,
-    get_detections_efficient_nms,
+    get_detections,
 )
 
 __all__ = [
@@ -52,8 +43,5 @@ __all__ = [
     "postprocess_rfdetr",
     "postprocess_detr",
     "postprocess_efficient_nms",
-    "get_detections_yolov10",
-    "get_detections_rfdetr",
-    "get_detections_detr",
-    "get_detections_efficient_nms",
+    "get_detections",
 ]

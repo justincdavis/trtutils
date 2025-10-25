@@ -15,7 +15,7 @@ class InputSchema(Enum):
     # RF-DETR
     RF_DETR = ["input"]
     # DEIM v1/v2, RT-DETR v1/v2, D-FINE
-    RT_DETR = ["images", "orig_image_size"]
+    RT_DETR = ["images", "orig_target_sizes"]
     # RT-DETR v3
     RT_DETR_V3 = ["image", "im_shape", "scale_factor"]
 
@@ -28,7 +28,7 @@ class OutputSchema(Enum):
     # RF-DETR
     RF_DETR = ["dets", "labels"]
     # DEIM v1/v2, RT-DETR v1/v2/v3, D-FINE
-    DETR = ["labels", "boxes", "scores"]
+    DETR = ["scores", "labels", "boxes"]
 
 
 def get_detector_io_schema(
