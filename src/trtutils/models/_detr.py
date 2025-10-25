@@ -139,6 +139,8 @@ class RTDETRv1(DETR):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for RT-DETRv1.
@@ -153,12 +155,14 @@ class RTDETRv1(DETR):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [
             ("images", (batch_size, 3, imgsz, imgsz)),
             ("orig_target_sizes", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class RTDETRv2(DETR):
@@ -246,6 +250,8 @@ class RTDETRv2(DETR):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for RT-DETRv2.
@@ -260,12 +266,14 @@ class RTDETRv2(DETR):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [
             ("image", (batch_size, 3, imgsz, imgsz)),
             ("orig_target_sizes", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class RTDETRv3(DETR):
@@ -353,6 +361,8 @@ class RTDETRv3(DETR):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for RT-DETRv3.
@@ -367,13 +377,15 @@ class RTDETRv3(DETR):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [
             ("image", (batch_size, 3, imgsz, imgsz)),
             ("im_shape", (batch_size, 2)),
             ("scale_factor", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class DFINE(DETR):
@@ -461,6 +473,8 @@ class DFINE(DETR):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for D-FINE.
@@ -475,12 +489,14 @@ class DFINE(DETR):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [
             ("images", (batch_size, 3, imgsz, imgsz)),
             ("orig_target_sizes", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class DEIM(DETR):
@@ -568,6 +584,8 @@ class DEIM(DETR):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for DEIM.
@@ -582,12 +600,14 @@ class DEIM(DETR):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [
             ("images", (batch_size, 3, imgsz, imgsz)),
             ("orig_target_sizes", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class DEIMv2(DETR):
@@ -675,6 +695,8 @@ class DEIMv2(DETR):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for DEIMv2.
@@ -689,12 +711,14 @@ class DEIMv2(DETR):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [
             ("images", (batch_size, 3, imgsz, imgsz)),
             ("orig_target_sizes", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class RFDETR(DETR):
@@ -796,6 +820,8 @@ class RFDETR(DETR):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [
             ("input", (batch_size, 3, imgsz, imgsz)),

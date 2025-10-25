@@ -148,6 +148,8 @@ class YOLOX(YOLO):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for YOLOX.
@@ -162,9 +164,11 @@ class YOLOX(YOLO):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class YOLO7(YOLO):
@@ -259,6 +263,8 @@ class YOLO7(YOLO):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for YOLOv7.
@@ -273,9 +279,11 @@ class YOLO7(YOLO):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class YOLO8(YOLO):
@@ -370,6 +378,8 @@ class YOLO8(YOLO):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for YOLOv8.
@@ -384,9 +394,11 @@ class YOLO8(YOLO):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class YOLO9(YOLO):
@@ -481,6 +493,8 @@ class YOLO9(YOLO):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for YOLOv9.
@@ -495,9 +509,11 @@ class YOLO9(YOLO):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class YOLO10(YOLO):
@@ -592,6 +608,8 @@ class YOLO10(YOLO):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for YOLOv10.
@@ -606,9 +624,11 @@ class YOLO10(YOLO):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class YOLO11(YOLO):
@@ -703,6 +723,8 @@ class YOLO11(YOLO):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for YOLOv11.
@@ -717,9 +739,11 @@ class YOLO11(YOLO):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class YOLO12(YOLO):
@@ -814,6 +838,8 @@ class YOLO12(YOLO):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for YOLOv12.
@@ -828,9 +854,11 @@ class YOLO12(YOLO):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
 
 
 class YOLO13(YOLO):
@@ -925,6 +953,8 @@ class YOLO13(YOLO):
         output: Path | str,
         imgsz: int,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for YOLOv13.
@@ -939,6 +969,8 @@ class YOLO13(YOLO):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        verbose: bool | None = None
+            Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)

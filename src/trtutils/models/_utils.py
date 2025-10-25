@@ -89,7 +89,9 @@ def build_internal(
     onnx: Path | str,
     output: Path | str,
     shapes: list[tuple[str, tuple[int, ...]]] | None = None,
-    hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
+    hooks: list[Callable[[object], object]] | None = None,
+    *,
+    verbose: bool | None = None,
 ) -> None:
     """
     Build a TensorRT engine from an ONNX model.
@@ -104,6 +106,8 @@ def build_internal(
         A list of (input_name, shape) pairs to specify the shapes of the input layers.
     hooks : list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
         A list of hooks to apply to the network definition.
+    verbose : bool, optional
+        If True, print verbose output during build.
 
     """
     onnx_path = Path(onnx)
@@ -115,4 +119,5 @@ def build_internal(
         shapes=shapes,
         hooks=hooks,
         fp16=True,
+        verbose=verbose,
     )
