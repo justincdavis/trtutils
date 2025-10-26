@@ -25,6 +25,8 @@ Submodules
     A module for image processing with TensorRT.
 :mod:`models`
     A module containing implementations of DNN models.
+:mod:`research`
+    A module containing research implementations.
 :mod:`inspect`
     A module for inspecting TensorRT engines.
 :mod:`trtexec`
@@ -154,3 +156,9 @@ if FLAGS.FOUND_NUMBA:
 for attr in [a for a in dir(FLAGS) if not a.startswith("_")]:
     _flag_str = f"FLAG - {attr}: {getattr(FLAGS, attr)}"
     LOG.debug(_flag_str)
+
+# resolve research submodule last
+with contextlib.suppress(ImportError):
+    from . import research
+
+    __all__ += ["research"]
