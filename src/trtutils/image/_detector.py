@@ -287,6 +287,7 @@ class Detector(ImageModel, DetectorInterface):
         ratios: tuple[float, float] | None = None,
         padding: tuple[float, float] | None = None,
         conf_thres: float | None = None,
+        image_size: tuple[int, int] | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -307,6 +308,9 @@ class Detector(ImageModel, DetectorInterface):
         conf_thres : float, optional
             Optional confidence threshold to filter detections
             via during postprocessing.
+        image_size : tuple[int, int], optional
+            The original image size in (width, height) format.
+            Required for RT-DETR models when preprocessed=True.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -333,6 +337,7 @@ class Detector(ImageModel, DetectorInterface):
             ratios,
             padding,
             conf_thres,
+            image_size=image_size,
             preprocessed=preprocessed,
             postprocess=postprocess,
             no_copy=no_copy,
@@ -345,6 +350,7 @@ class Detector(ImageModel, DetectorInterface):
         ratios: tuple[float, float] | None = None,
         padding: tuple[float, float] | None = None,
         conf_thres: float | None = None,
+        image_size: tuple[int, int] | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -365,6 +371,9 @@ class Detector(ImageModel, DetectorInterface):
         conf_thres : float, optional
             Optional confidence threshold to filter detections
             via during postprocessing.
+        image_size : tuple[int, int], optional
+            The original image size in (width, height) format.
+            Required for RT-DETR models when preprocessed=True.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -396,6 +405,7 @@ class Detector(ImageModel, DetectorInterface):
         ------
         RuntimeError
             If postprocessing is running, but ratios/padding not found
+            If RT-DETR model requires image_size but it's not provided
 
         """
         if verbose:
@@ -435,8 +445,20 @@ class Detector(ImageModel, DetectorInterface):
         # build input list based on schema
         engine_inputs = [tensor]
         if self._use_image_size:
+            # Determine original image size (width, height format for RT-DETR)
+            if image_size is not None:
+                # User provided it explicitly (width, height)
+                width, height = image_size
+            elif not preprocessed:
+                # Extract from original input image (HWC format: height, width, channels)
+                height, width = image.shape[:2]
+            else:
+                err_msg = "Must pass image_size=(width, height) when using preprocessed=True with RT-DETR models"
+                raise RuntimeError(err_msg)
+            
+            # RT-DETR expects [width, height] in int64 format
             engine_inputs.append(
-                np.array(image.shape[:2], dtype=np.int32).reshape(1, 2),
+                np.array([[width, height]], dtype=np.int64),
             )
         if self._use_scale_factor:
             engine_inputs.append(
@@ -544,7 +566,7 @@ class Detector(ImageModel, DetectorInterface):
         Parameters
         ----------
         image : np.ndarray
-            The image to perform inference with.
+            The image to perform inference with (HWC format: height, width, channels).
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
             By default None
@@ -599,6 +621,8 @@ class Detector(ImageModel, DetectorInterface):
             )
 
             # Build input pointers based on InputSchema
+            # Note: The preprocessor automatically handles orig_size and scale_factor
+            # buffers internally via _update_extra_buffers() during direct_preproc()
             input_ptrs = [gpu_ptr]
             if self._use_image_size:
                 orig_size_ptr, valid = self._preprocessor.orig_size_allocation

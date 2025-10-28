@@ -432,8 +432,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             return
 
         # Update host arrays
-        self._orig_size_host[0] = height
-        self._orig_size_host[1] = width
+        # RT-DETR expects [width, height] format, not [height, width]
+        self._orig_size_host[0] = width
+        self._orig_size_host[1] = height
         self._scale_factor_host[0] = ratios[0]
         self._scale_factor_host[1] = ratios[1]
 
