@@ -843,6 +843,7 @@ class ParallelDetector:
             LOG.debug(f"{self._tag}: Received data")
 
             img = data.data
+            height, width = img.shape[:2]
 
             # path 1: GPU preprocess needed, make end2end optimizations
             if not data.preprocessed and (
@@ -865,6 +866,7 @@ class ParallelDetector:
                         img,
                         preprocessed=True,
                         postprocess=data.postprocess,
+                        image_size=(width, height),
                         no_copy=data.no_copy,
                     )
                     t1 = time.perf_counter()
@@ -892,6 +894,7 @@ class ParallelDetector:
                     padding=padding,
                     preprocessed=True,
                     postprocess=data.postprocess,
+                    image_size=(width, height),
                     no_copy=data.no_copy,
                 )
                 t1 = time.perf_counter()

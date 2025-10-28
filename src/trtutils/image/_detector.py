@@ -48,6 +48,8 @@ class Detector(ImageModel, DetectorInterface):
         unified_mem: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        imagenet_mean: np.ndarray | None = None,
+        imagenet_std: np.ndarray | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -94,6 +96,14 @@ class Detector(ImageModel, DetectorInterface):
         agnostic_nms : bool, optional
             Whether or not the optional/additional NMS operation
             should perform class agnostic NMS.
+        imagenet_mean : np.ndarray, optional
+            Mean values for ImageNet normalization when using TRT preprocessor.
+            Shape should be (3,) or (1, 3, 1, 1). By default None.
+            If provided along with imagenet_std, enables ImageNet normalization.
+        imagenet_std : np.ndarray, optional
+            Standard deviation values for ImageNet normalization when using TRT preprocessor.
+            Shape should be (3,) or (1, 3, 1, 1). By default None.
+            If provided along with imagenet_mean, enables ImageNet normalization.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -102,6 +112,11 @@ class Detector(ImageModel, DetectorInterface):
             Only covers the initialization phase.
 
         """
+        # Store ImageNet normalization parameters before super().__init__
+        # so they can be picked up by _setup_trt_preproc
+        self._imagenet_mean = imagenet_mean
+        self._imagenet_std = imagenet_std
+        
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -658,3 +673,38 @@ class Detector(ImageModel, DetectorInterface):
             agnostic_nms=agnostic_nms,
             verbose=verbose,
         )
+
+    def update_mean_std(
+        self: Self,
+        mean: np.ndarray,
+        std: np.ndarray,
+    ) -> None:
+        """
+        Update the mean and std values for ImageNet normalization.
+
+        This method updates the normalization parameters for the TRT preprocessor.
+        Only works when using TRT preprocessor with ImageNet normalization enabled.
+
+        Parameters
+        ----------
+        mean : np.ndarray
+            Mean values for ImageNet normalization, shape (3,) or (1, 3, 1, 1)
+        std : np.ndarray
+            Standard deviation values for ImageNet normalization, shape (3,) or (1, 3, 1, 1)
+
+        Raises
+        ------
+        RuntimeError
+            If not using TRT preprocessor or ImageNet normalization is not enabled
+
+        """
+        if not isinstance(self._preprocessor, TRTPreprocessor):
+            err_msg = "update_mean_std only works with TRT preprocessor"
+            raise RuntimeError(err_msg)
+        
+        # Update the preprocessor's mean/std
+        self._preprocessor.update_mean_std(mean, std)
+        
+        # Store the updated values
+        self._imagenet_mean = mean
+        self._imagenet_std = std

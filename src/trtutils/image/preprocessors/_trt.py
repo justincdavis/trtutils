@@ -20,7 +20,7 @@ from trtutils.core._memory import (
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import destroy_stream, stream_synchronize
-from trtutils.image.onnx_models import build_image_preproc
+from trtutils.image.onnx_models import build_image_preproc, build_image_preproc_imagenet
 
 from ._image_preproc import GPUImagePreprocessor
 
@@ -48,9 +48,12 @@ class TRTPreprocessor(GPUImagePreprocessor):
         stream: cudart.cudaStream_t | None = None,
         threads: tuple[int, int, int] | None = None,
         tag: str | None = None,
+        imagenet_mean: np.ndarray | None = None,
+        imagenet_std: np.ndarray | None = None,
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        use_imagenet_norm: bool | None = None,
     ) -> None:
         """
         Create a TRTPreprocessor for image processing models.
@@ -87,6 +90,15 @@ class TRTPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        use_imagenet_norm : bool, optional
+            Whether to use ImageNet normalization instead of standard scale/offset.
+            By default None, which will enable ImageNet normalization if mean/std are provided.
+        imagenet_mean : np.ndarray, optional
+            Mean values for ImageNet normalization, shape (1, 3, 1, 1) or (3,).
+            By default None.
+        imagenet_std : np.ndarray, optional
+            Standard deviation values for ImageNet normalization, shape (1, 3, 1, 1) or (3,).
+            By default None.
 
         """
         tag = "TRTPreprocessor" if tag is None else f"{tag}.TRTPreprocessor"
@@ -112,44 +124,97 @@ class TRTPreprocessor(GPUImagePreprocessor):
             unified_mem=self._unified_mem,
         )
 
-        # allocate the scale/offset CUDA locations
-        scale_arr: np.ndarray = np.array((self._scale,), dtype=np.float32)
-        self._scale_binding = create_binding(scale_arr)
-        memcpy_host_to_device_async(
-            self._scale_binding.allocation,
-            scale_arr,
-            self._stream,
-        )
-        offset_arr: np.ndarray = np.array((self._offset,), dtype=np.float32)
-        self._offset_binding = create_binding(offset_arr)
-        memcpy_host_to_device_async(
-            self._offset_binding.allocation,
-            offset_arr,
-            self._stream,
-        )
-        stream_synchronize(self._stream)
+        # Determine if we should use ImageNet normalization
+        self._use_imagenet_norm = use_imagenet_norm
+        if self._use_imagenet_norm is None:
+            self._use_imagenet_norm = (imagenet_mean is not None and imagenet_std is not None)
 
-        # allocate the trtengine
-        self._engine_path = build_image_preproc(
-            self._o_shape, self._o_dtype, trt.__version__
-        )
-        self._engine = TRTEngine(
-            self._engine_path,
-            stream=self._stream,
-            warmup_iterations=1,
-            warmup=True,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=self._unified_mem,
-        )
+        if self._use_imagenet_norm:
+            # Validate and prepare mean/std
+            print("IMAGENET")
+            if imagenet_mean is None or imagenet_std is None:
+                err_msg = "imagenet_mean and imagenet_std must be provided when use_imagenet_norm is True"
+                raise ValueError(err_msg)
+            
+            # Reshape if needed
+            mean_arr = self._prepare_norm_array(imagenet_mean, "mean")
+            std_arr = self._prepare_norm_array(imagenet_std, "std")
+            
+            # Allocate mean/std CUDA locations
+            self._mean_binding = create_binding(mean_arr)
+            self._std_binding = create_binding(std_arr)
+            memcpy_host_to_device_async(
+                self._mean_binding.allocation,
+                mean_arr,
+                self._stream,
+            )
+            memcpy_host_to_device_async(
+                self._std_binding.allocation,
+                std_arr,
+                self._stream,
+            )
+            stream_synchronize(self._stream)
 
-        self._engine_output_binding = self._engine.output_bindings[0]
+            # allocate the ImageNet preprocessing engine
+            self._engine_path = build_image_preproc_imagenet(
+                self._o_shape, self._o_dtype, trt.__version__
+            )
+            self._engine = TRTEngine(
+                self._engine_path,
+                stream=self._stream,
+                warmup_iterations=1,
+                warmup=True,
+                pagelocked_mem=self._pagelocked_mem,
+                unified_mem=self._unified_mem,
+            )
 
-        # pre-allocate the input pointer list for the engine
-        self._gpu_pointers = [
-            self._intermediate_binding.allocation,
-            self._scale_binding.allocation,
-            self._offset_binding.allocation,
-        ]
+            self._engine_output_binding = self._engine.output_bindings[0]
+
+            # pre-allocate the input pointer list for the engine
+            self._gpu_pointers = [
+                self._intermediate_binding.allocation,
+                self._mean_binding.allocation,
+                self._std_binding.allocation,
+            ]
+        else:
+            # allocate the scale/offset CUDA locations
+            scale_arr: np.ndarray = np.array((self._scale,), dtype=np.float32)
+            self._scale_binding = create_binding(scale_arr)
+            memcpy_host_to_device_async(
+                self._scale_binding.allocation,
+                scale_arr,
+                self._stream,
+            )
+            offset_arr: np.ndarray = np.array((self._offset,), dtype=np.float32)
+            self._offset_binding = create_binding(offset_arr)
+            memcpy_host_to_device_async(
+                self._offset_binding.allocation,
+                offset_arr,
+                self._stream,
+            )
+            stream_synchronize(self._stream)
+
+            # allocate the trtengine
+            self._engine_path = build_image_preproc(
+                self._o_shape, self._o_dtype, trt.__version__
+            )
+            self._engine = TRTEngine(
+                self._engine_path,
+                stream=self._stream,
+                warmup_iterations=1,
+                warmup=True,
+                pagelocked_mem=self._pagelocked_mem,
+                unified_mem=self._unified_mem,
+            )
+
+            self._engine_output_binding = self._engine.output_bindings[0]
+
+            # pre-allocate the input pointer list for the engine
+            self._gpu_pointers = [
+                self._intermediate_binding.allocation,
+                self._scale_binding.allocation,
+                self._offset_binding.allocation,
+            ]
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -164,7 +229,124 @@ class TRTPreprocessor(GPUImagePreprocessor):
         with contextlib.suppress(AttributeError):
             del self._offset_binding
         with contextlib.suppress(AttributeError):
+            del self._mean_binding
+        with contextlib.suppress(AttributeError):
+            del self._std_binding
+        with contextlib.suppress(AttributeError):
             del self._engine
+
+    def _prepare_norm_array(
+        self: Self,
+        arr: np.ndarray,
+        name: str,
+    ) -> np.ndarray:
+        """
+        Prepare normalization array (mean or std) to correct shape.
+
+        Parameters
+        ----------
+        arr : np.ndarray
+            Input array, can be shape (3,) or (1, 3, 1, 1)
+        name : str
+            Name of the array for error messages
+
+        Returns
+        -------
+        np.ndarray
+            Array reshaped to (1, 3, 1, 1) with dtype float32
+
+        Raises
+        ------
+        ValueError
+            If array has incorrect shape
+
+        """
+        arr = np.asarray(arr, dtype=np.float32)
+        
+        if arr.shape == (3,):
+            # Reshape from (3,) to (1, 3, 1, 1)
+            arr = arr.reshape(1, 3, 1, 1)
+        elif arr.shape == (1, 3, 1, 1):
+            # Already correct shape
+            pass
+        else:
+            err_msg = f"{name} must have shape (3,) or (1, 3, 1, 1), got {arr.shape}"
+            raise ValueError(err_msg)
+        
+        return arr
+
+    def update_mean_std(
+        self: Self,
+        mean: np.ndarray,
+        std: np.ndarray,
+    ) -> None:
+        """
+        Update the mean and std values for ImageNet normalization.
+
+        Parameters
+        ----------
+        mean : np.ndarray
+            Mean values, shape (3,) or (1, 3, 1, 1)
+        std : np.ndarray
+            Standard deviation values, shape (3,) or (1, 3, 1, 1)
+
+        Raises
+        ------
+        RuntimeError
+            If ImageNet normalization is not enabled
+
+        """
+        if not self._use_imagenet_norm:
+            err_msg = "Cannot update mean/std when ImageNet normalization is not enabled"
+            raise RuntimeError(err_msg)
+        
+        # Prepare arrays
+        mean_arr = self._prepare_norm_array(mean, "mean")
+        std_arr = self._prepare_norm_array(std, "std")
+        
+        # Update GPU memory
+        memcpy_host_to_device_async(
+            self._mean_binding.allocation,
+            mean_arr,
+            self._stream,
+        )
+        memcpy_host_to_device_async(
+            self._std_binding.allocation,
+            std_arr,
+            self._stream,
+        )
+        stream_synchronize(self._stream)
+
+    @property
+    def use_imagenet_norm(self: Self) -> bool:
+        """Get whether ImageNet normalization is enabled."""
+        return self._use_imagenet_norm
+
+    @use_imagenet_norm.setter
+    def use_imagenet_norm(self: Self, value: bool) -> None:
+        """
+        Set whether ImageNet normalization is enabled.
+
+        Parameters
+        ----------
+        value : bool
+            Whether to enable ImageNet normalization
+
+        Raises
+        ------
+        RuntimeError
+            If trying to enable ImageNet normalization but mean/std not allocated
+
+        """
+        if value and not hasattr(self, "_mean_binding"):
+            err_msg = "Cannot enable ImageNet normalization: mean/std not allocated. Create a new preprocessor with imagenet_mean and imagenet_std parameters."
+            raise RuntimeError(err_msg)
+        if not value and not hasattr(self, "_scale_binding"):
+            err_msg = "Cannot disable ImageNet normalization: scale/offset not allocated. Create a new preprocessor without imagenet normalization."
+            raise RuntimeError(err_msg)
+        
+        err_msg = "Cannot dynamically switch between ImageNet and standard normalization modes. Create a new preprocessor instead."
+        raise RuntimeError(err_msg)
 
     def _create_args(
         self: Self,

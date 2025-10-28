@@ -6,6 +6,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from trtutils.image._detector import Detector
 from ._utils import download_model_internal, build_internal
 
@@ -32,6 +34,8 @@ class DETR(Detector):
         unified_mem: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        imagenet_mean: np.ndarray | None = None,
+        imagenet_std: np.ndarray | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -49,6 +53,8 @@ class DETR(Detector):
             unified_mem=unified_mem,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            imagenet_mean=imagenet_mean,
+            imagenet_std=imagenet_std,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -734,6 +740,8 @@ class RFDETR(DETR):
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
         dla_core: int | None = None,
+        imagenet_mean: np.ndarray = np.array([0.485, 0.456, 0.406]),
+        imagenet_std: np.ndarray = np.array([0.229, 0.224, 0.225]),
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
@@ -757,6 +765,8 @@ class RFDETR(DETR):
             unified_mem=unified_mem,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            imagenet_mean=imagenet_mean,
+            imagenet_std=imagenet_std,
             no_warn=no_warn,
             verbose=verbose,
         )

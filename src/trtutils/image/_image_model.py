@@ -170,6 +170,10 @@ class ImageModel:
         )
 
     def _setup_trt_preproc(self: Self) -> TRTPreprocessor:
+        # Check for ImageNet normalization attributes
+        imagenet_mean = getattr(self, "_imagenet_mean", None)
+        imagenet_std = getattr(self, "_imagenet_std", None)
+        
         return TRTPreprocessor(
             self._input_size,
             self._input_range,
@@ -179,6 +183,8 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
+            imagenet_mean=imagenet_mean,
+            imagenet_std=imagenet_std,
         )
 
     @property
