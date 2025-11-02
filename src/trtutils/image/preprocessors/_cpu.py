@@ -24,6 +24,8 @@ class CPUPreprocessor(ImagePreprocessor):
         output_range: tuple[float, float],
         dtype: np.dtype,
         resize: str = "letterbox",
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
         tag: str | None = None,
     ) -> None:
         """
@@ -44,6 +46,12 @@ class CPUPreprocessor(ImagePreprocessor):
             The method to resize the image with.
             Options are [letterbox, linear], will use method
             provided in constructor by default.
+        mean : tuple[float, float, float], optional
+            The mean to subtract from the image.
+            By default, None, which will not subtract any mean.
+        std : tuple[float, float, float], optional
+            The standard deviation to divide the image by.
+            By default, None, which will not divide by any standard deviation.
         tag : str
             The tag to prefix to all logging statements made.
             By default, 'CPUPreprocessor'
@@ -57,6 +65,8 @@ class CPUPreprocessor(ImagePreprocessor):
             dtype,
             resize,
             tag,
+            mean,
+            std,
         )
 
     def warmup(self: Self) -> None:
@@ -140,5 +150,7 @@ class CPUPreprocessor(ImagePreprocessor):
             self._o_dtype,
             self._o_range,
             resize,
+            self._mean,
+            self._std,
             verbose=verbose,
         )

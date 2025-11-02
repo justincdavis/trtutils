@@ -16,6 +16,8 @@ def preprocess(
     dtype: np.dtype,
     input_range: tuple[float, float] = (0.0, 1.0),
     method: str = "letterbox",
+    mean: tuple[float, float, float] | None = None,
+    std: tuple[float, float, float] | None = None,
     *,
     verbose: bool | None = None,
 ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
@@ -37,6 +39,12 @@ def preprocess(
         The method by which to resize the image.
         By default letterbox will be used.
         Options are [letterbox, linear]
+    mean : tuple[float, float, float], optional
+        The mean to subtract from the image.
+        By default, None, which will not subtract any mean.
+    std : tuple[float, float, float], optional
+        The standard deviation to divide the image by.
+        By default, None, which will not divide by any standard deviation.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -49,10 +57,20 @@ def preprocess(
     ------
     ValueError
         If the method for resizing is not 'letterbox' or 'linear'
+    ValueError
+        If only one of mean or std is provided
 
     """
     if verbose:
         LOG.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
+
+    # asses if mean and std are provided and valid
+    if mean is not None and std is None:
+        err_msg = "Mean provided but std is not"
+        raise ValueError(err_msg)
+    if std is not None and mean is None:
+        err_msg = "Std provided but mean is not"
+        raise ValueError(err_msg)
 
     tensor: np.ndarray
     if method == "letterbox":
@@ -69,7 +87,10 @@ def preprocess(
     tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
 
     # tensor = tensor / 255.0  # type: ignore[assignment]
-    tensor = rescale(tensor, input_range)
+    if mean is not None and std is not None:
+        tensor = (tensor - mean) / std
+    else:
+        tensor = rescale(tensor, input_range)
 
     tensor = tensor[np.newaxis, :]
     tensor = np.transpose(tensor, (0, 3, 1, 2))

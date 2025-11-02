@@ -45,6 +45,8 @@ class ImagePreprocessor(ABC):
         output_range: tuple[float, float],
         dtype: np.dtype,
         resize: str = "letterbox",
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
         tag: str | None = None,
     ) -> None:
         """
@@ -65,6 +67,12 @@ class ImagePreprocessor(ABC):
             The default resize method to use.
             By default, letterbox resizing will be used.
             Options are: ['letterbox', 'linear']
+        mean : tuple[float, float, float], optional
+            The mean to subtract from the image.
+            By default, None, which will not subtract any mean.
+        std : tuple[float, float, float], optional
+            The standard deviation to divide the image by.
+            By default, None, which will not divide by any standard deviation.
         tag : str
             The tag to prefix to all logging statements made.
             By default, 'TRTPreprocessor'
@@ -84,6 +92,8 @@ class ImagePreprocessor(ABC):
         # preprocessing info
         self._scale = 255.0
         self._offset = 0.0
+        self._mean = mean
+        self._std = std
 
         # class info
         self._tag = tag
@@ -115,6 +125,21 @@ class ImagePreprocessor(ABC):
         self._o_range = output_range
         self._scale = (self._o_range[1] - self._o_range[0]) / 255.0
         self._offset = self._o_range[0]
+
+    def update_mean_std(self: Self, mean: tuple[float, float, float], std: tuple[float, float, float]) -> None:
+        """
+        Update the mean and standard deviation of the preprocessor.
+
+        Parameters
+        ----------
+        mean : tuple[float, float, float]
+            The new mean.
+        std : tuple[float, float, float]
+            The new standard deviation.
+
+        """
+        self._mean = mean
+        self._std = std
 
     @abstractmethod
     def warmup(self: Self) -> None: ...
@@ -149,6 +174,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
         output_range: tuple[float, float],
         dtype: np.dtype,
         resize: str = "letterbox",
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
         stream: cudart.cudaStream_t | None = None,
         threads: tuple[int, int, int] | None = None,
         tag: str | None = None,
@@ -174,6 +201,12 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The default resize method to use.
             By default, letterbox resizing will be used.
             Options are: ['letterbox', 'linear']
+        mean : tuple[float, float, float], optional
+            The mean to subtract from the image.
+            By default, None, which will not subtract any mean.
+        std : tuple[float, float, float], optional
+            The standard deviation to divide the image by.
+            By default, None, which will not divide by any standard deviation.
         stream : cudart.cudaStream_t, optional
             The CUDA stream to use for preprocessing execution.
             If not provided, the preprocessor will use its own stream.
@@ -198,6 +231,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             output_range,
             dtype,
             resize,
+            mean,
+            std,
             tag,
         )
 
