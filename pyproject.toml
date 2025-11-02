@@ -61,6 +61,27 @@ dependencies = [
 
 [project.optional-dependencies]
 # runtime/library dependencies
+cu11 = [
+    "cuda-python==11.*",
+    "tensorrt<10.0.0",
+    "cvcuda-cu11==0.15.0",
+    "nvidia-nvimgcodec-cu11>=0.6.0.32",
+    "PyNvVideoCodec>=2.0.2",
+]
+cu12 = [
+    "cuda-python==12.*",
+    "tensorrt>10.0.0,<10.13.0",
+    "cvcuda-cu12==0.15.0",
+    "nvidia-nvimgcodec-cu12>=0.6.0.32",
+    "PyNvVideoCodec>=2.0.2",
+]
+cu13 = [
+    "cuda-python==13.*",
+    "tensorrt>=10.13.0",
+    "cvcuda-cu13==0.16.0",
+    "nvidia-nvimgcodec-cu13>=0.6.0.32",
+    "PyNvVideoCodec>=2.0.2",
+]
 all = [
     "trtutils[jit]",
 ]
