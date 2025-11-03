@@ -85,27 +85,30 @@ class ImagePreprocessor(ABC):
 
         """
         # output info
-        self._o_shape = output_shape
-        self._o_range = output_range
-        self._o_dtype = dtype
+        self._o_shape: tuple[int, int] = output_shape
+        self._o_range: tuple[float, float] = output_range
+        self._o_dtype: np.dtype = dtype
 
         # preprocessing info
-        self._scale = 255.0
-        self._offset = 0.0
-        self._mean = mean
-        self._std = std
+        self._scale: float = 255.0
+        self._offset: float = 0.0
+        self._mean: np.ndarray | None = None
+        self._std: np.ndarray | None = None
 
         # class info
-        self._tag = tag
+        self._tag: str | None = tag
 
         # compute scale, offset
         self.update_output_range(output_range)
+        # setup the mean and std arrays
+        if mean is not None and std is not None:
+            self.update_mean_std(mean, std)
 
         # check resize method
         if resize not in ImagePreprocessor._valid_methods:
             err_msg = f"{self._tag}: Unknown method for image resizing. Options are {ImagePreprocessor._valid_methods}"
             raise ValueError(err_msg)
-        self._resize = resize
+        self._resize: str = resize
 
         # mark setup in logs
         LOG.debug(
@@ -137,9 +140,20 @@ class ImagePreprocessor(ABC):
         std : tuple[float, float, float]
             The new standard deviation.
 
+        Raises
+        ------
+        ValueError
+            If the mean or std is not a tuple of 3 floats
+
         """
-        self._mean = mean
-        self._std = std
+        if len(mean) != 3:
+            err_msg = f"{self._tag}: Mean must be a tuple of 3 floats"
+            raise ValueError(err_msg)
+        if len(std) != 3:
+            err_msg = f"{self._tag}: Std must be a tuple of 3 floats"
+            raise ValueError(err_msg)
+        self._mean = np.array(mean, dtype=np.float32).reshape(1, 3, 1, 1)
+        self._std = np.array(std, dtype=np.float32).reshape(1, 3, 1, 1)
 
     @abstractmethod
     def warmup(self: Self) -> None: ...
@@ -227,13 +241,13 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         """
         super().__init__(
-            output_shape,
-            output_range,
-            dtype,
-            resize,
-            mean,
-            std,
-            tag,
+            output_shape=output_shape,
+            output_range=output_range,
+            dtype=dtype,
+            resize=resize,
+            mean=mean,
+            std=std,
+            tag=tag,
         )
 
         # handle memory flags
@@ -276,6 +290,12 @@ class GPUImagePreprocessor(ImagePreprocessor):
         self._linear_kernel = Kernel(*LINEAR_RESIZE)
         self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
 
+        # if the imagenet mean/std are supplied, allocate the cuda buffers
+        self._mean_buffer: Binding | None = None
+        self._std_buffer: Binding | None = None
+        if mean is not None and std is not None:
+            self._allocate_imagenet_buffers()
+
         # Allocate GPU buffers for alternative input schemas
         orig_size_arr: np.ndarray = np.array([1080, 1920], dtype=np.int32)
         self._orig_size_host = orig_size_arr
@@ -293,6 +313,12 @@ class GPUImagePreprocessor(ImagePreprocessor):
             del self._orig_size_buffer
         with contextlib.suppress(AttributeError):
             del self._scale_factor_buffer
+        with contextlib.suppress(AttributeError):
+            del self._mean_buffer
+        with contextlib.suppress(AttributeError):
+            del self._std_buffer
+        with contextlib.suppress(AttributeError):
+            del self._input_binding
 
     def warmup(self: Self) -> None:
         """
@@ -346,6 +372,21 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         """
         return self.preprocess(image, resize=resize, no_copy=no_copy, verbose=verbose)
+
+    def _allocate_imagenet_buffers(self: Self) -> None:
+        # self._mean and self._std are set during the initialiation of ImagePreprocessor
+        self._mean_buffer = create_binding(self._mean)
+        memcpy_host_to_device_async(
+            self._mean_buffer.allocation,
+            self._mean,
+            self._stream,
+        )
+        self._std_buffer = create_binding(self._std)
+        memcpy_host_to_device_async(
+            self._std_buffer.allocation,
+            self._std,
+            self._stream,
+        )
 
     def _reallocate_input(
         self: Self,

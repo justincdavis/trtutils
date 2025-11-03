@@ -12,6 +12,8 @@ import numpy as np
 with contextlib.suppress(ImportError):
     import tensorrt as trt
 
+from trtutils._flags import FLAGS
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -58,8 +60,8 @@ def _slice_dynamic(
     shape_layer = network.add_shape(tensor)
     shape_tensor = shape_layer.get_output(0)
     st_dtype = shape_tensor.dtype
-    if hasattr(trt.DataType, "INT64"):
-        np_int_dtype = np.int64 if st_dtype == trt.DataType.INT64 else np.int32
+    if FLAGS.TRT_HAS_INT64 and st_dtype == trt.DataType.INT64:
+        np_int_dtype = np.int64
     else:
         np_int_dtype = np.int32
 

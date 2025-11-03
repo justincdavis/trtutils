@@ -88,6 +88,7 @@ def preprocess(
 
     # tensor = tensor / 255.0  # type: ignore[assignment]
     if mean is not None and std is not None:
+        tensor = tensor / 255.0
         tensor = (tensor - mean) / std
     else:
         tensor = rescale(tensor, input_range)

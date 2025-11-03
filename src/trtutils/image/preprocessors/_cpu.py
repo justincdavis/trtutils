@@ -60,13 +60,13 @@ class CPUPreprocessor(ImagePreprocessor):
         """
         tag = "CPUPreprocessor" if tag is None else f"{tag}.CPUPreprocessor"
         super().__init__(
-            output_shape,
-            output_range,
-            dtype,
-            resize,
-            tag,
-            mean,
-            std,
+            output_shape=output_shape,
+            output_range=output_range,
+            dtype=dtype,
+            resize=resize,
+            mean=mean,
+            std=std,
+            tag=tag,
         )
 
     def warmup(self: Self) -> None:
@@ -144,13 +144,19 @@ class CPUPreprocessor(ImagePreprocessor):
 
         """
         resize = resize if resize is not None else self._resize
+        mean = self._mean
+        std = self._std
+        if mean is not None:
+            mean: tuple[float, float, float] = tuple(mean.reshape(-1) if mean.size == 3 else mean.flatten()[:3])
+        if std is not None:
+            std: tuple[float, float, float] = tuple(std.reshape(-1) if std.size == 3 else std.flatten()[:3])
         return preprocess(
             image,
             self._o_shape,
             self._o_dtype,
             self._o_range,
             resize,
-            self._mean,
-            self._std,
+            mean,
+            std,
             verbose=verbose,
         )

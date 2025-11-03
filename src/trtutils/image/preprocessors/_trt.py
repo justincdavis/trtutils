@@ -20,7 +20,7 @@ from trtutils.core._memory import (
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import destroy_stream, stream_synchronize
-from trtutils.image.onnx_models import build_image_preproc
+from trtutils.image.onnx_models import build_image_preproc, build_image_preproc_imagenet
 
 from ._image_preproc import GPUImagePreprocessor
 
@@ -122,27 +122,42 @@ class TRTPreprocessor(GPUImagePreprocessor):
             unified_mem=self._unified_mem,
         )
 
-        # allocate the scale/offset CUDA locations
-        scale_arr: np.ndarray = np.array((self._scale,), dtype=np.float32)
-        self._scale_binding = create_binding(scale_arr)
-        memcpy_host_to_device_async(
-            self._scale_binding.allocation,
-            scale_arr,
-            self._stream,
-        )
-        offset_arr: np.ndarray = np.array((self._offset,), dtype=np.float32)
-        self._offset_binding = create_binding(offset_arr)
-        memcpy_host_to_device_async(
-            self._offset_binding.allocation,
-            offset_arr,
-            self._stream,
-        )
-        stream_synchronize(self._stream)
+        # determine preprocessing mode, imagenet or yolo
+        self._use_imagenet: bool = self._mean_buffer is not None and self._std_buffer is not None
+        # if not imagenet, allocate the scale/offset CUDA locations
+        # this is unique to TRT (relative to CUDA) since CUDA
+        # passes these as arguments to the kernel
+        if not self._use_imagenet:
+            # allocate the scale/offset CUDA locations
+            scale_arr: np.ndarray = np.array((self._scale,), dtype=np.float32)
+            self._scale_binding = create_binding(scale_arr)
+            memcpy_host_to_device_async(
+                self._scale_binding.allocation,
+                scale_arr,
+                self._stream,
+            )
+            offset_arr: np.ndarray = np.array((self._offset,), dtype=np.float32)
+            self._offset_binding = create_binding(offset_arr)
+            memcpy_host_to_device_async(
+                self._offset_binding.allocation,
+                offset_arr,
+                self._stream,
+            )
+            stream_synchronize(self._stream)
+        # else case if imagenet
+        # these bindings are allocated in GPUImagePreprocessor if provided
 
-        # allocate the trtengine
-        self._engine_path = build_image_preproc(
-            self._o_shape, self._o_dtype, trt.__version__
-        )
+        # assign the built engine path based on preprocessing mode
+        if self._use_imagenet:
+            self._engine_path = build_image_preproc_imagenet(
+                self._o_shape, self._o_dtype, trt.__version__
+            )
+        else:
+            self._engine_path = build_image_preproc(
+                self._o_shape, self._o_dtype, trt.__version__
+            )
+        # create the engine with same settings always
+        # use a single warmup iteration to ensure all memory is allocated
         self._engine = TRTEngine(
             self._engine_path,
             stream=self._stream,
@@ -152,27 +167,30 @@ class TRTPreprocessor(GPUImagePreprocessor):
             unified_mem=self._unified_mem,
         )
 
+        # each engine will only have a single output binding
         self._engine_output_binding = self._engine.output_bindings[0]
 
         # pre-allocate the input pointer list for the engine
         self._gpu_pointers = [
             self._intermediate_binding.allocation,
-            self._scale_binding.allocation,
-            self._offset_binding.allocation,
         ]
+        if not self._use_imagenet:
+            self._gpu_pointers.extend([
+                self._scale_binding.allocation,
+                self._offset_binding.allocation,
+            ])
+        else:
+            self._gpu_pointers.extend([
+                self._mean_buffer.allocation,
+                self._std_buffer.allocation,
+            ])
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
             if self._own_stream:
                 destroy_stream(self._stream)
         with contextlib.suppress(AttributeError):
-            del self._input_binding
-        with contextlib.suppress(AttributeError):
             del self._intermediate_binding
-        with contextlib.suppress(AttributeError):
-            del self._scale_binding
-        with contextlib.suppress(AttributeError):
-            del self._offset_binding
         with contextlib.suppress(AttributeError):
             del self._engine
 

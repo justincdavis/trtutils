@@ -62,6 +62,7 @@ def create_binding(
     name: str = "binding",
     tensor_format: trt.TensorFormat = trt.TensorFormat.LINEAR,
     *,
+    use_array_data: bool | None = None,
     is_input: bool | None = None,
     pagelocked_mem: bool | None = None,
     unified_mem: bool | None = None,
@@ -79,6 +80,9 @@ def create_binding(
         The name of the binding.
     tensor_format : trt.TensorFormat, optional
         The format of the tensor.
+    use_array_data : bool, optional
+        Whether to use the data from the array for the binding.
+        By default None, which means the data will not be copied.
     is_input : bool, optional
         Whether the binding is an input or output.
     pagelocked_mem : bool, optional
@@ -115,6 +119,10 @@ def create_binding(
             host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
         else:
             host_allocation = np.zeros(tuple(shape), dtype=dtype)
+
+    # copy the data from the host array to the host allocation
+    if use_array_data:
+        np.copyto(host_allocation, array)
 
     # make the binding
     return Binding(
