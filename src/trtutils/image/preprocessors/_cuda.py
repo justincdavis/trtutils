@@ -17,7 +17,7 @@ from trtutils.core._memory import (
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import destroy_stream, stream_synchronize
-from trtutils.image.kernels import SST_FAST
+from trtutils.image.kernels import SST_FAST, IMAGENET_SST
 
 from ._image_preproc import GPUImagePreprocessor
 
@@ -129,8 +129,12 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             unified_mem=self._unified_mem,
         )
 
-        # sst kernel always used
-        self._sst_kernel = Kernel(*SST_FAST)
+        # choose sst kernel based on whether imagenet mean/std are provided
+        self._use_imagenet: bool = self._mean is not None and self._std is not None
+        if self._use_imagenet:
+            self._sst_kernel = Kernel(*IMAGENET_SST)
+        else:
+            self._sst_kernel = Kernel(*SST_FAST)
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -216,14 +220,25 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         if verbose:
             LOG.debug(f"{self._tag}: Making sst args")
 
-        sst_args = self._sst_kernel.create_args(
-            self._sst_input_binding.allocation,
-            self._output_binding.allocation,
-            self._scale,
-            self._offset,
-            self._o_shape[0],
-            verbose=verbose,
-        )
+        if self._use_imagenet:
+            # imagenet normalization: (x/255 - mean) / std
+            sst_args = self._sst_kernel.create_args(
+                self._sst_input_binding.allocation,
+                self._output_binding.allocation,
+                self._mean_buffer.allocation,
+                self._std_buffer.allocation,
+                self._o_shape[0],
+                verbose=verbose,
+            )
+        else:
+            sst_args = self._sst_kernel.create_args(
+                self._sst_input_binding.allocation,
+                self._output_binding.allocation,
+                self._scale,
+                self._offset,
+                self._o_shape[0],
+                verbose=verbose,
+            )
 
         return resize_kernel, resize_args, ratios, padding, sst_args
 

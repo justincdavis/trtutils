@@ -26,6 +26,7 @@ _SST_FILE = _KERNEL_DIR / "sst.cu"
 _SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
 _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
+_SST_IMAGENET_FILE = _KERNEL_DIR / "sst_imagenet.cu"
 
 SST_FAST: tuple[Path, str] = (
     _SST_FAST_FILE,
@@ -45,4 +46,9 @@ LETTERBOX_RESIZE: tuple[Path, str] = (
 LINEAR_RESIZE: tuple[Path, str] = (
     _LINEAR_FILE,
     "linearResize",
+)
+
+IMAGENET_SST: tuple[Path, str] = (
+    _SST_IMAGENET_FILE,
+    "scaleSwapTransposeImagenet",
 )
