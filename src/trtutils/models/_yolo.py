@@ -6,8 +6,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from trtutils.image._detector import Detector
-from trtutils.image._schema import InputSchema
-from ._utils import download_model_internal, build_internal
+from trtutils.builder._build import build_engine
+from ._utils import download_model_internal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -146,7 +146,7 @@ class YOLOX(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -162,13 +162,20 @@ class YOLOX(YOLO):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class YOLO7(YOLO):
@@ -261,7 +268,7 @@ class YOLO7(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -277,13 +284,20 @@ class YOLO7(YOLO):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class YOLO8(YOLO):
@@ -376,7 +390,7 @@ class YOLO8(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -392,13 +406,20 @@ class YOLO8(YOLO):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class YOLO9(YOLO):
@@ -491,7 +512,7 @@ class YOLO9(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -507,13 +528,20 @@ class YOLO9(YOLO):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class YOLO10(YOLO):
@@ -606,7 +634,7 @@ class YOLO10(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -622,13 +650,20 @@ class YOLO10(YOLO):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class YOLO11(YOLO):
@@ -721,7 +756,7 @@ class YOLO11(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -737,13 +772,20 @@ class YOLO11(YOLO):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class YOLO12(YOLO):
@@ -836,7 +878,7 @@ class YOLO12(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -852,13 +894,20 @@ class YOLO12(YOLO):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class YOLO13(YOLO):
@@ -951,7 +1000,7 @@ class YOLO13(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -967,10 +1016,17 @@ class YOLO13(YOLO):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )

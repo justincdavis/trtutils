@@ -31,6 +31,8 @@ class Classifier(ImageModel, ClassifierInterface):
         input_range: tuple[float, float] = (0.0, 1.0),
         preprocessor: str = "trt",
         resize_method: str = "linear",
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -58,6 +60,12 @@ class Classifier(ImageModel, ClassifierInterface):
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'linear'.
+        mean : tuple[float, float, float] | None, optional
+            The mean values to use for the imagenet normalization.
+            By default, None, which means no normalization will be applied.
+        std : tuple[float, float, float] | None, optional
+            The standard deviation values to use for the imagenet normalization.
+            By default, None, which means no normalization will be applied.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -84,6 +92,8 @@ class Classifier(ImageModel, ClassifierInterface):
             input_range=input_range,
             preprocessor=preprocessor,
             resize_method=resize_method,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,

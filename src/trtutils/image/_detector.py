@@ -41,6 +41,8 @@ class Detector(ImageModel, DetectorInterface):
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -76,6 +78,12 @@ class Detector(ImageModel, DetectorInterface):
         nms_iou_thres : float, optional
             The IOU threshold to use the in the optional and additnal
             NMS operation. By default, 0.5
+        mean : tuple[float, float, float] | None, optional
+            The mean values to use for the imagenet normalization.
+            By default, None, which means no normalization will be applied.
+        std : tuple[float, float, float] | None, optional
+            The standard deviation values to use for the imagenet normalization.
+            By default, None, which means no normalization will be applied.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -108,6 +116,8 @@ class Detector(ImageModel, DetectorInterface):
             input_range=input_range,
             preprocessor=preprocessor,
             resize_method=resize_method,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,

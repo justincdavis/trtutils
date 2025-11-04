@@ -28,6 +28,8 @@ class ImageModel:
         input_range: tuple[float, float] = (0.0, 1.0),
         preprocessor: str = "trt",
         resize_method: str = "linear",
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -55,6 +57,12 @@ class ImageModel:
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'linear'.
+        mean : tuple[float, float, float] | None, optional
+            The mean values to use for the imagenet normalization.
+            By default, None, which means no normalization will be applied.
+        std : tuple[float, float, float] | None, optional
+            The standard deviation values to use for the imagenet normalization.
+            By default, None, which means no normalization will be applied.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -114,6 +122,8 @@ class ImageModel:
         self._input_size: tuple[int, int] = (input_size[3], input_size[2])
         self._dtype = input_spec[1]
         self._input_range = input_range
+        self._mean = mean
+        self._std = std
 
         # set up the preprocessor
         self._preprocessor: CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
@@ -154,6 +164,8 @@ class ImageModel:
             self._input_size,
             self._input_range,
             self._dtype,
+            mean=self._mean,
+            std=self._std,
             tag=self._tag,
         )
 
@@ -164,6 +176,8 @@ class ImageModel:
             self._dtype,
             resize=self._resize_method,
             stream=self._engine.stream,
+            mean=self._mean,
+            std=self._std,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
@@ -176,6 +190,8 @@ class ImageModel:
             self._dtype,
             resize=self._resize_method,
             stream=self._engine.stream,
+            mean=self._mean,
+            std=self._std,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
@@ -201,6 +217,14 @@ class ImageModel:
         """Get the dtype required by the model."""
         return self._dtype
 
+    def _update_preprocessors(self: Self) -> None:
+        if self._preproc_cpu is not None:
+            self._preproc_cpu = self._setup_cpu_preproc()
+        if self._preproc_cuda is not None:
+            self._preproc_cuda = self._setup_cuda_preproc()
+        if self._preproc_trt is not None:
+            self._preproc_trt = self._setup_trt_preproc()
+
     def update_input_range(self: Self, input_range: tuple[float, float]) -> None:
         """
         Update the input range of the model.
@@ -215,12 +239,33 @@ class ImageModel:
 
         """
         self._input_range = input_range
-        if self._preproc_cpu is not None:
-            self._preproc_cpu = self._setup_cpu_preproc()
-        if self._preproc_cuda is not None:
-            self._preproc_cuda = self._setup_cuda_preproc()
-        if self._preproc_trt is not None:
-            self._preproc_trt = self._setup_trt_preproc()
+        self._update_preprocessors()
+    
+    def update_mean_std(self: Self, mean: tuple[float, float, float], std: tuple[float, float, float]) -> None:
+        """
+        Update the mean and standard deviation of the model.
+    
+        Parameters
+        ----------
+        mean : tuple[float, float, float]
+            The new mean.
+        std : tuple[float, float, float]
+            The new standard deviation.
+
+        Raises
+        ------
+        ValueError
+            If the mean or std is not a tuple of 3 floats
+        """
+        if len(mean) != 3:
+            err_msg = f"{self._tag}: Mean must be a tuple of 3 floats"
+            raise ValueError(err_msg)
+        if len(std) != 3:
+            err_msg = f"{self._tag}: Std must be a tuple of 3 floats"
+            raise ValueError(err_msg)
+        self._mean = mean
+        self._std = std
+        self._update_preprocessors()
 
     def get_random_input(
         self: Self,

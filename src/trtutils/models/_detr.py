@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from trtutils.image._detector import Detector
-from ._utils import download_model_internal, build_internal
+from trtutils.builder._build import build_engine
+from ._utils import download_model_internal
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -22,9 +23,11 @@ class DETR(Detector):
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0, 1),
         preprocessor: str = "trt",
-        resize_method: str = "letterbox",
+        resize_method: str = "linear",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -43,6 +46,8 @@ class DETR(Detector):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
@@ -61,11 +66,13 @@ class RTDETRv1(DETR):
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
-        input_range: tuple[float, float] = (0, 1),
+        input_range: tuple[float, float] = (0, 255),
         preprocessor: str = "trt",
-        resize_method: str = "letterbox",
+        resize_method: str = "linear",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -84,6 +91,8 @@ class RTDETRv1(DETR):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
@@ -137,7 +146,7 @@ class RTDETRv1(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -153,6 +162,7 @@ class RTDETRv1(DETR):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
@@ -162,7 +172,13 @@ class RTDETRv1(DETR):
             ("images", (batch_size, 3, imgsz, imgsz)),
             ("orig_target_sizes", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class RTDETRv2(DETR):
@@ -172,11 +188,13 @@ class RTDETRv2(DETR):
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
-        input_range: tuple[float, float] = (0, 1),
+        input_range: tuple[float, float] = (0, 255),
         preprocessor: str = "trt",
-        resize_method: str = "letterbox",
+        resize_method: str = "linear",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -195,6 +213,8 @@ class RTDETRv2(DETR):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
@@ -248,7 +268,7 @@ class RTDETRv2(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -264,6 +284,7 @@ class RTDETRv2(DETR):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
@@ -273,7 +294,13 @@ class RTDETRv2(DETR):
             ("image", (batch_size, 3, imgsz, imgsz)),
             ("orig_target_sizes", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class RTDETRv3(DETR):
@@ -283,11 +310,13 @@ class RTDETRv3(DETR):
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
-        input_range: tuple[float, float] = (0, 1),
+        input_range: tuple[float, float] = (0, 255),
         preprocessor: str = "trt",
-        resize_method: str = "letterbox",
+        resize_method: str = "linear",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -306,6 +335,8 @@ class RTDETRv3(DETR):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
@@ -359,7 +390,7 @@ class RTDETRv3(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -375,6 +406,7 @@ class RTDETRv3(DETR):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
@@ -385,7 +417,13 @@ class RTDETRv3(DETR):
             ("im_shape", (batch_size, 2)),
             ("scale_factor", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class DFINE(DETR):
@@ -397,9 +435,11 @@ class DFINE(DETR):
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0, 1),
         preprocessor: str = "trt",
-        resize_method: str = "letterbox",
+        resize_method: str = "linear",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -418,6 +458,8 @@ class DFINE(DETR):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
@@ -471,7 +513,7 @@ class DFINE(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -487,6 +529,7 @@ class DFINE(DETR):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
@@ -496,7 +539,13 @@ class DFINE(DETR):
             ("images", (batch_size, 3, imgsz, imgsz)),
             ("orig_target_sizes", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class DEIM(DETR):
@@ -511,6 +560,8 @@ class DEIM(DETR):
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -529,6 +580,8 @@ class DEIM(DETR):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
@@ -582,7 +635,7 @@ class DEIM(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -598,6 +651,7 @@ class DEIM(DETR):
             Output path for the built engine.
         imgsz: int
             Input image size used for shapes.
+            Default is 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
@@ -607,7 +661,13 @@ class DEIM(DETR):
             ("images", (batch_size, 3, imgsz, imgsz)),
             ("orig_target_sizes", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class DEIMv2(DETR):
@@ -622,6 +682,8 @@ class DEIMv2(DETR):
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -640,6 +702,8 @@ class DEIMv2(DETR):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
@@ -677,6 +741,7 @@ class DEIMv2(DETR):
             Disable caching of downloads.
         verbose: bool | None = None
             Enable verbose logging.
+
         """
         download_model_internal(
             model_type="deimv2",
@@ -693,7 +758,7 @@ class DEIMv2(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 640,
         batch_size: int = 1,
         *,
         verbose: bool | None = None,
@@ -707,18 +772,28 @@ class DEIMv2(DETR):
             Path to the ONNX model.
         output: Path | str
             Output path for the built engine.
-        imgsz: int
+        imgsz: int = 640
             Input image size used for shapes.
+            Atto is 320, 320
+            Femto is 416, 416
+            All others are 640, 640
         batch_size: int = 1
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
+
         """
         shapes = [
             ("images", (batch_size, 3, imgsz, imgsz)),
             ("orig_target_sizes", (batch_size, 2)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes, verbose=verbose)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
 
 
 class RFDETR(DETR):
@@ -733,6 +808,8 @@ class RFDETR(DETR):
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -751,6 +828,8 @@ class RFDETR(DETR):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
@@ -765,7 +844,7 @@ class RFDETR(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int = 576,
         opset: int = 17,
         *,
         no_cache: bool | None = None,
@@ -780,7 +859,7 @@ class RFDETR(DETR):
             Model identifier to download.
         output: Path | str
             Output path to save the ONNX model.
-        imgsz: int = 640
+        imgsz: int = 576
             Image size used for export.
         opset: int = 17
             ONNX opset to export with.
@@ -788,6 +867,7 @@ class RFDETR(DETR):
             Disable caching of downloads.
         verbose: bool | None = None
             Enable verbose logging.
+
         """
         download_model_internal(
             model_type="rfdetr",
@@ -804,8 +884,10 @@ class RFDETR(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int,
+        imgsz: int = 576,
         batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for RF-DETR.
@@ -822,8 +904,15 @@ class RFDETR(DETR):
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
+
         """
         shapes = [
             ("input", (batch_size, 3, imgsz, imgsz)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )

@@ -12,7 +12,6 @@ with contextlib.suppress(Exception):
 
 from trtutils.download._download import load_model_configs
 from trtutils.download._download import download as _download
-from trtutils.builder._build import build_engine
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -81,43 +80,5 @@ def download_model_internal(
         imgsz=imgsz,
         opset=opset,
         no_cache=no_cache,
-        verbose=verbose,
-    )
-
-
-def build_internal(
-    onnx: Path | str,
-    output: Path | str,
-    shapes: list[tuple[str, tuple[int, ...]]] | None = None,
-    hooks: list[Callable[[object], object]] | None = None,
-    *,
-    verbose: bool | None = None,
-) -> None:
-    """
-    Build a TensorRT engine from an ONNX model.
-
-    Parameters
-    ----------
-    onnx : Path | str
-        Path to the ONNX model to compile.
-    output : Path | str
-        Path to save the compiled engine to.
-    shapes : list[tuple[str, tuple[int, ...]]] | None = None,
-        A list of (input_name, shape) pairs to specify the shapes of the input layers.
-    hooks : list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
-        A list of hooks to apply to the network definition.
-    verbose : bool, optional
-        If True, print verbose output during build.
-
-    """
-    onnx_path = Path(onnx)
-    output_path = Path(output)
-
-    build_engine(
-        onnx=onnx_path,
-        output=output_path,
-        shapes=shapes,
-        hooks=hooks,
-        fp16=True,
         verbose=verbose,
     )
