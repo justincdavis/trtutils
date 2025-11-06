@@ -1,0 +1,22 @@
+{
+    "yolov6nu": {
+        "url": "ultralytics",
+        "name": "yolov6nu"
+    },
+    "yolov6su": {
+        "url": "ultralytics",
+        "name": "yolov6su"
+    },
+    "yolov6mu": {
+        "url": "ultralytics",
+        "name": "yolov6mu"
+    },
+    "yolov6lu": {
+        "url": "ultralytics",
+        "name": "yolov6lu"
+    },
+    "yolov6xu": {
+        "url": "ultralytics",
+        "name": "yolov6xu"
+    }
+}

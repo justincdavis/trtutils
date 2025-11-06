@@ -18,5 +18,25 @@
   "yolov9e": {
     "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-e-converted.pt",
     "name": "yolov9-e-converted"
+  },
+  "yolov9tu": {
+    "url": "ultralytics",
+    "name": "yolov9t"
+  },
+  "yolov9su": {
+    "url": "ultralytics",
+    "name": "yolov9s"
+  },
+  "yolov9mu": {
+    "url": "ultralytics",
+    "name": "yolov9m"
+  },
+  "yolov9cu": {
+    "url": "ultralytics",
+    "name": "yolov9c"
+  },
+  "yolov9eu": {
+    "url": "ultralytics",
+    "name": "yolov9e"
   }
 }

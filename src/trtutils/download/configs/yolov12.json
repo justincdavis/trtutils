@@ -18,5 +18,25 @@
   "yolov12x": {
     "url": "https://github.com/sunsmarterjie/yolov12/releases/download/turbo/yolov12x.pt",
     "name": "yolov12x"
+  },
+  "yolov12nu": {
+    "url": "ultralytics",
+    "name": "yolov12n"
+  },
+  "yolov12su": {
+    "url": "ultralytics",
+    "name": "yolov12s"
+  },
+  "yolov12mu": {
+    "url": "ultralytics",
+    "name": "yolov12m"
+  },
+  "yolov12lu": {
+    "url": "ultralytics",
+    "name": "yolov12l"
+  },
+  "yolov12xu": {
+    "url": "ultralytics",
+    "name": "yolov12x"
   }
 }

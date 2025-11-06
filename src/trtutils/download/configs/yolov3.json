@@ -1,0 +1,14 @@
+{
+    "yolov3tu": {
+      "url": "ultralytics",
+      "name": "yolov3-tinyu"
+    },
+    "yolov3u": {
+      "url": "ultralytics",
+      "name": "yolov3u"
+    },
+    "yolov3sppu": {
+      "url": "ultralytics",
+      "name": "yolov3-sppu"
+    }
+}

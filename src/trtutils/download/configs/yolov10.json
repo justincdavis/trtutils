@@ -22,5 +22,25 @@
   "yolov10x": {
     "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10x.pt",
     "name": "yolov10x"
+  },
+  "yolov10nu": {
+    "url": "ultralytics",
+    "name": "yolov10n"
+  },
+  "yolov10su": {
+    "url": "ultralytics",
+    "name": "yolov10s"
+  },
+  "yolov10mu": {
+    "url": "ultralytics",
+    "name": "yolov10m"
+  },
+  "yolov10lu": {
+    "url": "ultralytics",
+    "name": "yolov10l"
+  },
+  "yolov10xu": {
+    "url": "ultralytics",
+    "name": "yolov10x"
   }
 }

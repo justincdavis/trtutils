@@ -1,0 +1,14 @@
+{
+    "yolo_nas_su": {
+        "url": "ultralytics",
+        "name": "yolo_nas_s"
+    },
+    "yolo_nas_mu": {
+        "url": "ultralytics",
+        "name": "yolo_nas_m"
+    },
+    "yolo_nas_lu": {
+        "url": "ultralytics",
+        "name": "yolo_nas_l"
+    }
+}
