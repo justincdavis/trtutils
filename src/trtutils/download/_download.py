@@ -1292,7 +1292,11 @@ def download_model(
         imgsz,
     )
     model_path: Path | None = None
-    if "deim" in model and "deimv2" not in model:
+    if config["url"] == "ultralytics":
+        model_path = _export_ultralytics(
+            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
+        )
+    elif "deim" in model and "deimv2" not in model:
         model_path = _export_deim(
             *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
         )
@@ -1306,10 +1310,6 @@ def download_model(
         )
     elif "yolov7" in model:
         model_path = _export_yolov7(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov8" in model or "yolov11" in model:
-        model_path = _export_ultralytics(
             *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
         )
     elif "yolov9" in model:
