@@ -87,6 +87,34 @@ Objects
 
 from __future__ import annotations
 
+# before handling anything check if tensorrt and cuda-python are available
+not_found_modules = []
+try:
+    import tensorrt
+except ModuleNotFoundError:
+    not_found_modules.append("tensorrt")
+
+try:
+    import cuda
+except ModuleNotFoundError:
+    not_found_modules.append("cuda-python")
+
+try:
+    from nvidia import nvimgcodec
+except ModuleNotFoundError:
+    not_found_modules.append("nvimgcodec")
+
+if len(not_found_modules) > 0:
+    err_msg = "Could not find the following core modules: "
+    err_msg += ", ".join(not_found_modules)
+    err_msg += ", ensure you installed trtutils with CUDA."
+    err_msg += " Available CUDA variants: cu11, cu12, cu13\n"
+    err_msg += " Example: pip install trtutils[cu11]\n"
+    err_msg += " Example: pip install trtutils[cu12]\n"
+    err_msg += " Example: pip install trtutils[cu13]\n"
+    raise ImportError(err_msg)
+
+
 from ._config import CONFIG
 from ._flags import FLAGS
 from ._jit import JIT, disable_jit, enable_jit, register_jit

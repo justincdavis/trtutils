@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=64", "tomli; python_version < '3.11'"]
+requires = [
+    "setuptools>=64",
+    "tomli; python_version < '3.11'",
+]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -47,8 +50,6 @@ classifiers = [
 requires-python=">=3.8, <=3.14"
 dependencies = [
     "numpy>=1.19.0,<3.0.0",
-    "cv2ext>=0.1.0",
-    "opencv-python>=4.8.0,<5.0.0",
     "jetsontools>=0.1.0",
     "tqdm>=4.67.1,<5.0.0",
     "typing_extensions>=4.0.0",
@@ -60,26 +61,27 @@ dependencies = [
 
 [project.optional-dependencies]
 # runtime/library dependencies
+cpu = [
+    "cv2ext>=0.1.0",
+    "opencv-python>=4.8.0,<5.0.0",
+]
 cu11 = [
     "cuda-python==11.*",
     "tensorrt_cu11>=8.0.0",
     "cvcuda-cu11==0.15.0",
     "nvidia-nvimgcodec-cu11>=0.6.0.32",
-    "PyNvVideoCodec>=2.0.2; python_version != '3.9' and platform_machine != 'arm64'",
 ]
 cu12 = [
     "cuda-python==12.*",
     "tensorrt_cu12>=10.0.0",
     "cvcuda-cu12>=0.15.0",
     "nvidia-nvimgcodec-cu12>=0.6.0.32",
-    "PyNvVideoCodec>=2.0.2; python_version != '3.9' and platform_machine != 'arm64'",
 ]
 cu13 = [
     "cuda-python==13.*",
     "tensorrt_cu13>=10.13.0",
     "cvcuda-cu13>=0.16.0",
     "nvidia-nvimgcodec-cu13>=0.6.0.32",
-    "PyNvVideoCodec>=2.0.2; python_version != '3.9' and platform_machine != 'arm64'",
 ]
 onnx = [
     "onnx>=1.17.0,<2.0.0",
@@ -125,6 +127,8 @@ sahi = [
     "sahi>=0.11.31",
 ]
 dev = [
+    "trtutils[cpu]",
+    "trtutils[jit]",
     "trtutils[benchmark]",
     "trtutils[compat]",
     "trtutils[ci]",
