@@ -147,9 +147,13 @@ class CPUPreprocessor(ImagePreprocessor):
         mean = self._mean
         std = self._std
         if mean is not None:
-            mean: tuple[float, float, float] = tuple(mean.reshape(-1) if mean.size == 3 else mean.flatten()[:3])
+            mean: tuple[float, float, float] = tuple(
+                mean.reshape(-1) if mean.size == 3 else mean.flatten()[:3]
+            )
         if std is not None:
-            std: tuple[float, float, float] = tuple(std.reshape(-1) if std.size == 3 else std.flatten()[:3])
+            std: tuple[float, float, float] = tuple(
+                std.reshape(-1) if std.size == 3 else std.flatten()[:3]
+            )
         return preprocess(
             image,
             self._o_shape,

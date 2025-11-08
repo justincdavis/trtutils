@@ -22,9 +22,7 @@ from ._common import make_plugin_field
 _YOLO_LIKE_DIMS = 3
 
 
-def _get_yolo_output_tensor(
-    network: trt.INetworkDefinition, num_classes: int
-) -> trt.ITensor:
+def _get_yolo_output_tensor(network: trt.INetworkDefinition, num_classes: int) -> trt.ITensor:
     for i in range(network.num_outputs):
         out = network.get_output(i)
         dims = out.shape
@@ -66,9 +64,9 @@ def _slice_dynamic(
         np_int_dtype = np.int32
 
     def gather_dim(dim_index: int) -> trt.ITensor:
-        idx_const = network.add_constant(
-            (1,), np.array([dim_index], dtype=np_int_dtype)
-        ).get_output(0)
+        idx_const = network.add_constant((1,), np.array([dim_index], dtype=np_int_dtype)).get_output(
+            0
+        )
         return network.add_gather(shape_tensor, idx_const, 0).get_output(0)
 
     b_dim = gather_dim(0)
@@ -80,12 +78,8 @@ def _slice_dynamic(
     size_concat.axis = 0
     dyn_size = size_concat.get_output(0)
 
-    start_const = network.add_constant(
-        (3,), np.array(start_vals, dtype=np_int_dtype)
-    ).get_output(0)
-    stride_const = network.add_constant(
-        (3,), np.array([1, 1, 1], dtype=np_int_dtype)
-    ).get_output(0)
+    start_const = network.add_constant((3,), np.array(start_vals, dtype=np_int_dtype)).get_output(0)
+    stride_const = network.add_constant((3,), np.array([1, 1, 1], dtype=np_int_dtype)).get_output(0)
     slice_layer = network.add_slice(tensor, (0, 0, 0), (1, 1, size_last_dim), (1, 1, 1))
     slice_layer.set_input(1, start_const)
     slice_layer.set_input(2, dyn_size)

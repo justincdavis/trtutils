@@ -56,9 +56,7 @@ def inspect_engine(
     # Get all input and output tensors first
     input_tensors = []
     output_tensors = []
-    num_tensors = (
-        range(engine.num_io_tensors) if FLAGS.TRT_10 else range(engine.num_bindings)
-    )
+    num_tensors = range(engine.num_io_tensors) if FLAGS.TRT_10 else range(engine.num_bindings)
 
     for i in num_tensors:
         # check

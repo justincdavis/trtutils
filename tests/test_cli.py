@@ -24,9 +24,7 @@ from trtutils.__main__ import (
 
 def test_main_no_args() -> None:
     """Test calling main without arguments."""
-    with patch("sys.argv", ["trtutils"]), patch(
-        "sys.stdout", new_callable=StringIO
-    ) as mock_stdout:
+    with patch("sys.argv", ["trtutils"]), patch("sys.stdout", new_callable=StringIO) as mock_stdout:
         _main()
         assert "Utilities for TensorRT." in mock_stdout.getvalue()
 

@@ -240,11 +240,13 @@ class ImageModel:
         """
         self._input_range = input_range
         self._update_preprocessors()
-    
-    def update_mean_std(self: Self, mean: tuple[float, float, float], std: tuple[float, float, float]) -> None:
+
+    def update_mean_std(
+        self: Self, mean: tuple[float, float, float], std: tuple[float, float, float]
+    ) -> None:
         """
         Update the mean and standard deviation of the model.
-    
+
         Parameters
         ----------
         mean : tuple[float, float, float]

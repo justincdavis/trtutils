@@ -79,9 +79,7 @@ def preprocess(
         tensor, ratios = resize_linear(image, new_shape=input_shape)
         padding = (0.0, 0.0)
     else:
-        err_msg = (
-            "Unknown method for image resizing. Options are ['letterbox', 'linear']"
-        )
+        err_msg = "Unknown method for image resizing. Options are ['letterbox', 'linear']"
         raise ValueError(err_msg)
 
     tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)

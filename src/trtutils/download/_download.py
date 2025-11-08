@@ -481,9 +481,7 @@ def _export_yolov10(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning(
-            "YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions"
-        )
+        LOG.warning("YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions")
     _git_clone(
         "https://github.com/THU-MIG/yolov10",
         directory,
@@ -533,9 +531,7 @@ def _export_yolov12(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning(
-            "YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions"
-        )
+        LOG.warning("YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions")
     _git_clone(
         "https://github.com/sunsmarterjie/yolov12",
         directory,
@@ -586,9 +582,7 @@ def _export_yolov13(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning(
-            "YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions"
-        )
+        LOG.warning("YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions")
     _git_clone(
         "https://github.com/iMoonLab/yolov13",
         directory,
@@ -638,9 +632,7 @@ def _export_rtdetrv1(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning(
-            "RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions"
-        )
+        LOG.warning("RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions")
     if imgsz != 640:
         err_msg = f"RT-DETRv1 supports only an imgsz of 640, got {imgsz}"
         raise ValueError(err_msg)
@@ -662,9 +654,7 @@ def _export_rtdetrv1(
     _run_download(rtdetr_dir, config, python_path, no_cache=no_cache, verbose=verbose)
     _run_patch(
         rtdetr_dir,
-        str(
-            (Path(__file__).parent / "patches" / "rtdetrv1_export_onnx.patch").resolve()
-        ),
+        str((Path(__file__).parent / "patches" / "rtdetrv1_export_onnx.patch").resolve()),
         "tools/export_onnx.py",
         verbose=verbose,
     )
@@ -707,9 +697,7 @@ def _export_rtdetrv2(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning(
-            "RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions"
-        )
+        LOG.warning("RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions")
     if imgsz != 640:
         err_msg = f"RT-DETRv2 supports only an imgsz of 640, got {imgsz}"
         raise ValueError(err_msg)
@@ -731,9 +719,7 @@ def _export_rtdetrv2(
     _run_download(rtdetrv2_dir, config, python_path, no_cache=no_cache, verbose=verbose)
     _run_patch(
         rtdetrv2_dir,
-        str(
-            (Path(__file__).parent / "patches" / "rtdetrv2_export_onnx.patch").resolve()
-        ),
+        str((Path(__file__).parent / "patches" / "rtdetrv2_export_onnx.patch").resolve()),
         "tools/export_onnx.py",
         verbose=verbose,
     )
@@ -777,9 +763,7 @@ def _export_rtdetrv3(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning(
-            "RT-DETRv3 is a Apache-2.0 licensed model, be aware of license restrictions"
-        )
+        LOG.warning("RT-DETRv3 is a Apache-2.0 licensed model, be aware of license restrictions")
     if imgsz != 640:
         err_msg = f"RT-DETRv3 supports only an imgsz of 640, got {imgsz}"
         raise ValueError(err_msg)
@@ -863,9 +847,7 @@ def _export_dfine(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning(
-            "D-FINE is a Apache-2.0 licensed model, be aware of license restrictions"
-        )
+        LOG.warning("D-FINE is a Apache-2.0 licensed model, be aware of license restrictions")
     if imgsz != 640:
         err_msg = f"D-FINE supports only an imgsz of 640, got {imgsz}"
         raise ValueError(err_msg)
@@ -999,9 +981,7 @@ def _export_rfdetr(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning(
-            "RF-DETR is a Apache-2.0 licensed model, be aware of license restrictions"
-        )
+        LOG.warning("RF-DETR is a Apache-2.0 licensed model, be aware of license restrictions")
     if imgsz % 32 != 0:
         new_imgsz = max(imgsz // 32, 1) * 32
         wrn_msg = f"RF-DETR does not support input size {imgsz}, "
@@ -1073,9 +1053,7 @@ def _export_deimv2(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning(
-            "DEIMv2 is a Apache-2.0 licensed model, be aware of license restrictions"
-        )
+        LOG.warning("DEIMv2 is a Apache-2.0 licensed model, be aware of license restrictions")
     # atto is 320, femto is 416, all others 640
     if imgsz is not None:
         if "atto" in model:
@@ -1088,7 +1066,9 @@ def _export_deimv2(
                 raise ValueError(err_msg)
         else:
             if imgsz != 640:
-                err_msg = f"DEIMv2 models (excluding atto/femto) require an imgsz of 640, got {imgsz}"
+                err_msg = (
+                    f"DEIMv2 models (excluding atto/femto) require an imgsz of 640, got {imgsz}"
+                )
                 raise ValueError(err_msg)
     _git_clone(
         "https://github.com/Intellindust-AI-Lab/DEIMv2",
@@ -1145,9 +1125,7 @@ def _export_yolox(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning(
-            "YOLOX is a Apache-2.0 licensed model, be aware of license restrictions"
-        )
+        LOG.warning("YOLOX is a Apache-2.0 licensed model, be aware of license restrictions")
     _git_clone(
         "https://github.com/Megvii-BaseDetection/YOLOX",
         directory,
@@ -1262,7 +1240,9 @@ def download_model(
 
     """
     if not accept:
-        err_msg = f"License acceptance required for model '{model}'. Please accept the license terms."
+        err_msg = (
+            f"License acceptance required for model '{model}'. Please accept the license terms."
+        )
         raise ValueError(err_msg)
 
     model_configs: dict[str, dict[str, dict[str, str]]] = load_model_configs()
@@ -1279,9 +1259,7 @@ def download_model(
         raise ValueError(err_msg)
 
     python_path, bin_path = _make_venv(directory, no_cache=no_uv_cache, verbose=verbose)
-    requirements_export_path = (
-        Path(requirements_export) if requirements_export is not None else None
-    )
+    requirements_export_path = Path(requirements_export) if requirements_export is not None else None
     packet = (
         directory,
         config,

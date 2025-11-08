@@ -263,7 +263,7 @@ class YOLO7(YOLO):
             no_cache=no_cache,
             verbose=verbose,
         )
-    
+
     @staticmethod
     def build(
         onnx: Path | str,

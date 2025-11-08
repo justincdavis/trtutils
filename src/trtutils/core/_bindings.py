@@ -109,9 +109,7 @@ def create_binding(
 
     # allocate host and device memory
     if pagelocked_mem and unified_mem:
-        host_allocation = allocate_pinned_memory(
-            size, dtype, tuple(shape), unified_mem=unified_mem
-        )
+        host_allocation = allocate_pinned_memory(size, dtype, tuple(shape), unified_mem=unified_mem)
         _, device_allocation = get_ptr_pair(host_allocation)
     else:
         device_allocation = cuda_malloc(size)
@@ -193,9 +191,7 @@ def allocate_bindings(
     # version information to compare againist
     # >= 8.5 must use tensor API, otherwise binding
     # simplify by just checking hasattr
-    num_tensors = (
-        range(engine.num_io_tensors) if FLAGS.TRT_10 else range(engine.num_bindings)
-    )
+    num_tensors = range(engine.num_io_tensors) if FLAGS.TRT_10 else range(engine.num_bindings)
 
     # based on the version of tensorrt, num_io_tensors is not available in IEngine
     # first case: version 9 or higher OR version 8.5 and higher
@@ -260,7 +256,9 @@ def allocate_bindings(
         else:
             outputs.append(binding)
         input_str = "Input" if is_input else "Output"
-        log_msg = f"{input_str}-{i} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
+        log_msg = (
+            f"{input_str}-{i} '{binding.name}' with shape {binding.shape} and dtype {binding.dtype}"
+        )
         LOG.debug(log_msg)
 
     if len(inputs) == 0:

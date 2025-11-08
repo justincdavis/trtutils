@@ -106,12 +106,8 @@ class ParallelDetector:
 
         self._stopflag = Event()
         self._iqueues: list[Queue[_InputPacket]] = [Queue() for _ in self._engine_paths]
-        self._oqueues: list[Queue[_OutputPacket]] = [
-            Queue() for _ in self._engine_paths
-        ]
-        self._profilers: list[tuple[float, float]] = [
-            (0.0, 0.0) for _ in self._engine_paths
-        ]
+        self._oqueues: list[Queue[_OutputPacket]] = [Queue() for _ in self._engine_paths]
+        self._profilers: list[tuple[float, float]] = [(0.0, 0.0) for _ in self._engine_paths]
         self._flags: list[Event] = [Event() for _ in self._engine_paths]
         self._models: list[Detector | None] = [None for _ in self._engine_paths]
         self._threads: list[Thread] = [
@@ -385,9 +381,7 @@ class ParallelDetector:
             err_msg = "Outputs do not match models"
             raise ValueError(err_msg)
         return [
-            self.postprocess_model(
-                output, modelid, ratio, padding, no_copy=no_copy, verbose=verbose
-            )
+            self.postprocess_model(output, modelid, ratio, padding, no_copy=no_copy, verbose=verbose)
             for modelid, (output, ratio, padding) in enumerate(
                 zip(outputs, ratios, paddings),
             )
@@ -628,9 +622,7 @@ class ParallelDetector:
             The random inputs
 
         """
-        return [
-            self.get_model(mid).get_random_input() for mid in range(len(self._models))
-        ]
+        return [self.get_model(mid).get_random_input() for mid in range(len(self._models))]
 
     def mock_submit(
         self,
@@ -681,16 +673,11 @@ class ParallelDetector:
             if isinstance(data, list):
                 self.submit(data, preprocessed=True, postprocess=False, no_copy=True)
             elif isinstance(data, np.ndarray):
-                err_msg = (
-                    "Submitted np.ndarray, but no model ID to specify which model."
-                )
+                err_msg = "Submitted np.ndarray, but no model ID to specify which model."
                 raise ValueError(err_msg)
             else:
                 # need to generate the data
-                inputs = [
-                    self.get_model(mid).get_random_input()
-                    for mid in range(len(self._models))
-                ]
+                inputs = [self.get_model(mid).get_random_input() for mid in range(len(self._models))]
                 self.submit(inputs, preprocessed=True, postprocess=False, no_copy=True)
 
     def retrieve(

@@ -39,9 +39,7 @@ def get_engine_names(
 
     input_names: list[str] = []
     output_names: list[str] = []
-    num_tensors = (
-        range(engine.num_io_tensors) if FLAGS.TRT_10 else range(engine.num_bindings)
-    )
+    num_tensors = range(engine.num_io_tensors) if FLAGS.TRT_10 else range(engine.num_bindings)
 
     for i in num_tensors:
         # get the tensor name in-order

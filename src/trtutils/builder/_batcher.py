@@ -110,9 +110,7 @@ class ImageBatcher(AbstractBatcher):
         # verify resize method and input scale
         valid_resize_methods = ["letterbox", "linear"]
         if resize_method not in valid_resize_methods:
-            err_msg = (
-                f"Invalid resize method found, options are: {valid_resize_methods}"
-            )
+            err_msg = f"Invalid resize method found, options are: {valid_resize_methods}"
             raise ValueError(err_msg)
         self._resize_method = resize_method
         self._input_scale = input_scale
@@ -273,9 +271,7 @@ class ImageBatcher(AbstractBatcher):
                     self._queue.put(data, timeout=0.1)
 
                     if self._verbose:
-                        LOG.debug(
-                            f"ImageBatcher put batch: {idx} / {len(self._batches)}"
-                        )
+                        LOG.debug(f"ImageBatcher put batch: {idx} / {len(self._batches)}")
 
                     break
                 except Full:

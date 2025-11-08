@@ -55,9 +55,7 @@ def build_yolo(version: int, *, use_dla: bool | None = None) -> Path:
     return engine_path
 
 
-def yolo_run(
-    version: int, preprocessor: str = "cpu", *, use_dla: bool | None = None
-) -> None:
+def yolo_run(version: int, preprocessor: str = "cpu", *, use_dla: bool | None = None) -> None:
     """Check if a YOLO engine will run."""
     engine_path = build_yolo(version, use_dla=use_dla)
 
@@ -207,9 +205,7 @@ def yolo_run_multiple_threads(
         assert result
 
 
-def yolo_results(
-    version: int, preprocessor: str = "cpu", *, use_dla: bool | None = None
-) -> None:
+def yolo_results(version: int, preprocessor: str = "cpu", *, use_dla: bool | None = None) -> None:
     """
     Check if the results are valid for a YOLO model.
 
@@ -283,9 +279,7 @@ def yolo_swapping_preproc_results(version: int, *, use_dla: bool | None = None) 
             raise FileNotFoundError(err_msg)
 
         for preproc in ["cpu", "cuda", "trt"]:
-            tensor, ratios, padding = yolo.preprocess(
-                image, method=preproc, no_copy=True
-            )
+            tensor, ratios, padding = yolo.preprocess(image, method=preproc, no_copy=True)
             outputs = yolo.run(
                 tensor,
                 ratios,

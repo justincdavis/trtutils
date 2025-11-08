@@ -23,6 +23,7 @@ class InputSchema(Enum):
 class OutputSchema(Enum):
     # YOLO-X, v7, v8, v9, v11, v12, v13
     EFFICIENT_NMS = ["num_dets", "det_boxes", "det_scores", "det_classes"]
+    EFFICIENT_NMS_2 = ["num", "boxes", "scores", "classes"]
     # YOLO-v10
     YOLO_V10 = ["output0"]
     # RF-DETR
@@ -62,7 +63,10 @@ def get_detector_io_schema(
 
     # solve for the output schema
     output_schema: OutputSchema
-    if engine.output_names == OutputSchema.EFFICIENT_NMS.value:
+    if (
+        engine.output_names == OutputSchema.EFFICIENT_NMS.value
+        or engine.output_names == OutputSchema.EFFICIENT_NMS_2.value
+    ):
         output_schema = OutputSchema.EFFICIENT_NMS
     elif engine.output_names == OutputSchema.YOLO_V10.value:
         output_schema = OutputSchema.YOLO_V10

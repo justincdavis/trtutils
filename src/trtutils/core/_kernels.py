@@ -63,9 +63,7 @@ class Kernel:
             engines verbose setting.
 
         """
-        kernel_file = (
-            kernel_file if isinstance(kernel_file, Path) else Path(kernel_file)
-        )
+        kernel_file = kernel_file if isinstance(kernel_file, Path) else Path(kernel_file)
         with kernel_file.open("r") as f:
             kernel_code: str = f.read()
         self._name = name

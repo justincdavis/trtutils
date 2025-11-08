@@ -847,7 +847,7 @@ class DEIMv2(DETR):
             expected_imgsz = 320
         elif "femto" in model:
             expected_imgsz = 416
-        
+
         if imgsz != expected_imgsz:
             err_msg = f"DEIMv2 {model} requires imgsz of {expected_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
@@ -889,7 +889,7 @@ class DEIMv2(DETR):
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
-        
+
         Raises
         ------
             ValueError: If imgsz is not 320, 416, or 640.

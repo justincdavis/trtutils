@@ -225,9 +225,7 @@ def get_ptr_pair(host_array: np.ndarray) -> tuple[int, int]:
     with MEM_ALLOC_LOCK:
         device_ptr = cuda_call(cudart.cudaHostGetDevicePointer(host_ptr, 0))
 
-    LOG.debug(
-        f"Acquired pointers: (host: {host_ptr}, device: {device_ptr}) from ndarray"
-    )
+    LOG.debug(f"Acquired pointers: (host: {host_ptr}, device: {device_ptr}) from ndarray")
 
     return host_ptr, device_ptr
 

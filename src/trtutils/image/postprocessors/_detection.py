@@ -349,10 +349,10 @@ def _postprocess_rfdetr_core(
     # labels are (1, 300, num_classes) - contains raw logits
     bboxes: np.ndarray = dets[0, :, :]
     logits: np.ndarray = labels[0, :, :]
-    
+
     # Convert logits to probabilities using sigmoid
     probs = 1.0 / (1.0 + np.exp(-logits))
-    
+
     # Get the max probability as the confidence score and argmax as class ID
     scores: np.ndarray = np.max(probs, axis=1)
     class_ids: np.ndarray = np.argmax(probs, axis=1).astype(int)
@@ -376,18 +376,18 @@ def _postprocess_rfdetr_core(
     cy = bboxes[:, 1] * input_h
     w = bboxes[:, 2] * input_w
     h = bboxes[:, 3] * input_h
-    
+
     x1 = cx - w / 2
     y1 = cy - h / 2
     x2 = cx + w / 2
     y2 = cy + h / 2
-    
+
     # Adjust bounding boxes based on padding and ratios to get original image coords
     adjusted_x1 = (x1 - pad_x) / ratio_width
     adjusted_y1 = (y1 - pad_y) / ratio_height
     adjusted_x2 = (x2 - pad_x) / ratio_width
     adjusted_y2 = (y2 - pad_y) / ratio_height
-    
+
     # Stack back into bbox array
     adjusted_bboxes = np.stack([adjusted_x1, adjusted_y1, adjusted_x2, adjusted_y2], axis=1)
 

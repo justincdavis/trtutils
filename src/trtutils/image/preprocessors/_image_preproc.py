@@ -129,7 +129,9 @@ class ImagePreprocessor(ABC):
         self._scale = (self._o_range[1] - self._o_range[0]) / 255.0
         self._offset = self._o_range[0]
 
-    def update_mean_std(self: Self, mean: tuple[float, float, float], std: tuple[float, float, float]) -> None:
+    def update_mean_std(
+        self: Self, mean: tuple[float, float, float], std: tuple[float, float, float]
+    ) -> None:
         """
         Update the mean and standard deviation of the preprocessor.
 
@@ -422,7 +424,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
         # valid the method
         resize = resize if resize is not None else self._resize
         if resize not in self._valid_methods:
-            err_msg = f"{self._tag}: Unknown method for image resizing. Options are {self._valid_methods}"
+            err_msg = (
+                f"{self._tag}: Unknown method for image resizing. Options are {self._valid_methods}"
+            )
             raise ValueError(err_msg)
 
         if image.ndim != _IMAGE_DIMENSIONS:

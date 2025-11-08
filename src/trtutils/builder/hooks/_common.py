@@ -12,9 +12,7 @@ with contextlib.suppress(ImportError):
     import tensorrt as trt
 
 
-def make_plugin_field(
-    name: str, value: float | list[int] | list[float]
-) -> trt.PluginField:
+def make_plugin_field(name: str, value: float | list[int] | list[float]) -> trt.PluginField:
     """
     Create a plugin field for a TensorRT plugin.
 
@@ -38,11 +36,7 @@ def make_plugin_field(
         np_dtype = np.int32
     else:
         np_dtype = np.float32 if isinstance(value[0], float) else np.int32  # type: ignore[assignment]
-    dtype = (
-        trt.PluginFieldType.INT32
-        if np_dtype == np.int32
-        else trt.PluginFieldType.FLOAT32
-    )
+    dtype = trt.PluginFieldType.INT32 if np_dtype == np.int32 else trt.PluginFieldType.FLOAT32
 
     value_arr = [value] if not isinstance(value, (list, tuple)) else value
 

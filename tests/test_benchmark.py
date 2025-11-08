@@ -65,9 +65,7 @@ def test_benchmark_engine() -> None:
     """Test benchmarking a single engine."""
     engine_path = build_engine()
 
-    result = benchmark_engine(
-        engine_path, iterations=ITERS, warmup_iterations=WARMUP_ITERS
-    )
+    result = benchmark_engine(engine_path, iterations=ITERS, warmup_iterations=WARMUP_ITERS)
 
     assert isinstance(result, BenchmarkResult)
     assert isinstance(result.latency, Metric)

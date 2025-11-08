@@ -96,12 +96,8 @@ class TRTEngineInterface(ABC):
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
-        self._input_allocations: list[int] = [
-            input_b.allocation for input_b in self._inputs
-        ]
-        self._output_allocations: list[int] = [
-            output_b.allocation for output_b in self._outputs
-        ]
+        self._input_allocations: list[int] = [input_b.allocation for input_b in self._inputs]
+        self._output_allocations: list[int] = [output_b.allocation for output_b in self._outputs]
 
         # store useful properties about the engine
         self._memsize: int = 0
@@ -118,13 +114,9 @@ class TRTEngineInterface(ABC):
             LOG.info(f"\tUnified Mem: {self._unified_mem}")
             LOG.info(f"\tMemsize: {self._memsize}")
             for i_binding in self._inputs:
-                LOG.info(
-                    f"\tInput: {i_binding.name} {i_binding.shape} {i_binding.dtype}"
-                )
+                LOG.info(f"\tInput: {i_binding.name} {i_binding.shape} {i_binding.dtype}")
             for o_binding in self._outputs:
-                LOG.info(
-                    f"\tOutput: {o_binding.name} {o_binding.shape} {o_binding.dtype}"
-                )
+                LOG.info(f"\tOutput: {o_binding.name} {o_binding.shape} {o_binding.dtype}")
 
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None
@@ -435,9 +427,7 @@ class TRTEngineInterface(ABC):
                     rand_arr = self._rng.random(size=shape, dtype=dtype)
                 else:
                     # fallback to cast if not supported
-                    rand_arr = self._rng.random(size=shape, dtype=np.float32).astype(
-                        dtype
-                    )
+                    rand_arr = self._rng.random(size=shape, dtype=np.float32).astype(dtype)
                 rand_input.append(rand_arr)
             self._rand_input = rand_input
             if verbose:
@@ -446,9 +436,7 @@ class TRTEngineInterface(ABC):
                 )
             return self._rand_input
         if verbose:
-            LOG.debug(
-                f"Using random input: {[(a.shape, a.dtype) for a in self._rand_input]}"
-            )
+            LOG.debug(f"Using random input: {[(a.shape, a.dtype) for a in self._rand_input]}")
         return self._rand_input
 
     def __call__(

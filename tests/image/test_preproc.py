@@ -36,7 +36,13 @@ def test_cpu_preproc_loads() -> None:
 
 def test_cpu_preproc_loads_with_mean_std() -> None:
     """Test if the CPUPreprocessor loads with mean and std."""
-    preproc = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    preproc = CPUPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
     assert preproc
 
 
@@ -48,7 +54,13 @@ def test_cuda_preproc_loads() -> None:
 
 def test_cuda_preproc_loads_with_mean_std() -> None:
     """Test if the CUDAPreprocessor loads with mean and std."""
-    preproc = CUDAPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    preproc = CUDAPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
     assert preproc
 
 
@@ -60,7 +72,13 @@ def test_trt_preproc_loads() -> None:
 
 def test_trt_preproc_loads_with_mean_std() -> None:
     """Test if the TRTPreprocessor loads with mean and std."""
-    preproc = TRTPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    preproc = TRTPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
     assert preproc
 
 
@@ -75,7 +93,13 @@ def test_cpu_preproc_duplicate() -> None:
 
 def test_cpu_preproc_duplicate_with_mean_std() -> None:
     """Checks that the same data will give same results with CPU."""
-    preproc = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    preproc = CPUPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
     img = _read_image(HORSE_IMAGE_PATH)
     result1 = preproc.preprocess(img)[0]
     result2 = preproc.preprocess(img)[0]
@@ -93,7 +117,13 @@ def test_cuda_preproc_duplicate() -> None:
 
 def test_cuda_preproc_duplicate_with_mean_std() -> None:
     """Checks that the same data will give same results with CUDA."""
-    preproc = CUDAPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    preproc = CUDAPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
     img = _read_image(HORSE_IMAGE_PATH)
     result1 = preproc.preprocess(img)[0]
     result2 = preproc.preprocess(img)[0]
@@ -111,7 +141,13 @@ def test_trt_preproc_duplicate() -> None:
 
 def test_trt_preproc_duplicate_with_mean_std() -> None:
     """Checks that the same data will give same results with TRT."""
-    preproc = TRTPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    preproc = TRTPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
     img = _read_image(HORSE_IMAGE_PATH)
     result1 = preproc.preprocess(img)[0]
     result2 = preproc.preprocess(img)[0]
@@ -161,16 +197,40 @@ def test_cuda_parity_letterbox() -> None:
 
 def test_cuda_parity_linear_with_mean_std() -> None:
     """Test the results of the CUDA preprocessor againist the CPU preprocessor."""
-    cpu = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-    cuda = CUDAPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    cpu = CPUPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
+    cuda = CUDAPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
 
     _assess_parity(cpu, "CPU", cuda, "CUDA", "linear")
 
 
 def test_cuda_parity_letterbox_with_mean_std() -> None:
     """Test the results of the CUDA preprocessor againist the CPU preprocessor."""
-    cpu = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-    cuda = CUDAPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    cpu = CPUPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
+    cuda = CUDAPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
 
     _assess_parity(cpu, "CPU", cuda, "CUDA", "letterbox")
 
@@ -193,16 +253,40 @@ def test_trt_parity_letterbox() -> None:
 
 def test_trt_parity_linear_with_mean_std() -> None:
     """Test the results of the TRT preprocessor againist the CPU preprocessor."""
-    cpu = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-    trt = TRTPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    cpu = CPUPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
+    trt = TRTPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
 
     _assess_parity(cpu, "CPU", trt, "TRT", "linear")
 
 
 def test_trt_parity_letterbox_with_mean_std() -> None:
     """Test the results of the TRT preprocessor againist the CPU preprocessor."""
-    cpu = CPUPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-    trt = TRTPreprocessor((640, 640), (0.0, 1.0), np.dtype(np.float32), mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    cpu = CPUPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
+    trt = TRTPreprocessor(
+        (640, 640),
+        (0.0, 1.0),
+        np.dtype(np.float32),
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225),
+    )
 
     _assess_parity(cpu, "CPU", trt, "TRT", "letterbox")
 

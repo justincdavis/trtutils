@@ -118,7 +118,9 @@ def compile_kernel(
     except RuntimeError as err:
         if "Failed to dlopen libnvrtc" in str(err):
             err_msg = str(err)
-            err_msg += " Ensure the version of cuda-python installed matches the version of CUDA installed."
+            err_msg += (
+                " Ensure the version of cuda-python installed matches the version of CUDA installed."
+            )
             raise RuntimeError(err_msg) from err
         raise
     opts = [] if opts is None else opts

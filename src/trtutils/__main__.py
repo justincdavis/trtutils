@@ -164,9 +164,7 @@ def _parse_shapes_arg(
     parsed: list[tuple[str, tuple[int, ...]]] = []
     for spec in shape_args:
         if ":" not in spec:
-            err_msg = (
-                "Invalid --shapes specification. Expected NAME:dim1,dim2[,dim3...]"
-            )
+            err_msg = "Invalid --shapes specification. Expected NAME:dim1,dim2[,dim3...]"
             raise ValueError(err_msg)
         name, dims_str = spec.split(":", 1)
         try:
@@ -582,9 +580,7 @@ def _detect(args: SimpleNamespace) -> None:
 
     def run(
         img: np.ndarray,
-    ) -> tuple[
-        list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float
-    ]:
+    ) -> tuple[list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float]:
         """Run detection on an image and return detections with timing info."""
         t0 = time.perf_counter()
         tensor, ratios, pads = detector.preprocess(img, no_copy=True, verbose=args.verbose)
@@ -684,9 +680,7 @@ def _detect(args: SimpleNamespace) -> None:
             bboxes, scores, classes, pre_t, run_t, post_t, det_t = process_image(frame)
 
             if args.show:
-                canvas = draw(
-                    frame, bboxes, scores, classes, pre_t, run_t, post_t, det_t
-                )
+                canvas = draw(frame, bboxes, scores, classes, pre_t, run_t, post_t, det_t)
                 if display is not None:
                     display.update(canvas)
 
@@ -781,9 +775,7 @@ def _classify(args: SimpleNamespace) -> None:
         t0 = time.perf_counter()
         tensor, _, _ = classifier.preprocess(img, no_copy=True)
         t1 = time.perf_counter()
-        results = classifier.run(
-            tensor, preprocessed=True, postprocess=False, no_copy=True
-        )
+        results = classifier.run(tensor, preprocessed=True, postprocess=False, no_copy=True)
         t2 = time.perf_counter()
         p_results = classifier.postprocess(results, no_copy=True)
         t3 = time.perf_counter()

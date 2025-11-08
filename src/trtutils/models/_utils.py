@@ -34,7 +34,7 @@ def get_valid_models(model_type: str) -> list[str]:
     """
     # model family -> specific models -> config data (ignore here)
     model_configs: dict[str, dict[str, dict[str, str]]] = load_model_configs()
-    
+
     return list(model_configs[model_type].keys())
 
 

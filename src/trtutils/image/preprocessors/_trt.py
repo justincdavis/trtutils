@@ -153,9 +153,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
                 self._o_shape, self._o_dtype, trt.__version__
             )
         else:
-            self._engine_path = build_image_preproc(
-                self._o_shape, self._o_dtype, trt.__version__
-            )
+            self._engine_path = build_image_preproc(self._o_shape, self._o_dtype, trt.__version__)
         # create the engine with same settings always
         # use a single warmup iteration to ensure all memory is allocated
         self._engine = TRTEngine(
@@ -175,15 +173,19 @@ class TRTPreprocessor(GPUImagePreprocessor):
             self._intermediate_binding.allocation,
         ]
         if not self._use_imagenet:
-            self._gpu_pointers.extend([
-                self._scale_binding.allocation,
-                self._offset_binding.allocation,
-            ])
+            self._gpu_pointers.extend(
+                [
+                    self._scale_binding.allocation,
+                    self._offset_binding.allocation,
+                ]
+            )
         else:
-            self._gpu_pointers.extend([
-                self._mean_buffer.allocation,
-                self._std_buffer.allocation,
-            ])
+            self._gpu_pointers.extend(
+                [
+                    self._mean_buffer.allocation,
+                    self._std_buffer.allocation,
+                ]
+            )
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):

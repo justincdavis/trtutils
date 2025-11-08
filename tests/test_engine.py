@@ -63,9 +63,7 @@ def test_multiple_engines_run() -> None:
     """Test running multiple engines simultaneously."""
     engine_path = build_engine()
 
-    engines = [
-        trtutils.TRTEngine(engine_path, warmup=False) for _ in range(NUM_ENGINES)
-    ]
+    engines = [trtutils.TRTEngine(engine_path, warmup=False) for _ in range(NUM_ENGINES)]
 
     outputs = [engine.mock_execute() for engine in engines]
 

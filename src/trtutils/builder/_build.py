@@ -42,12 +42,9 @@ def build_engine(
     layer_precision: list[tuple[int, trt.DataType | None]] | None = None,
     layer_device: list[tuple[int, trt.DeviceType | None]] | None = None,
     shapes: list[tuple[str, tuple[int, ...]]] | None = None,
-    input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]]
-    | None = None,
-    output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]]
-    | None = None,
-    hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]]
-    | None = None,
+    input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
+    output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
+    hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
     optimization_level: int = 3,
     *,
     gpu_fallback: bool = False,
@@ -198,19 +195,19 @@ def build_engine(
     valid_dla = ["dla", "DLA"]
     if isinstance(default_device, str):
         if default_device not in valid_gpu + valid_dla:
-            err_msg = f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            err_msg = (
+                f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            )
             raise ValueError(err_msg)
-        default_device = (
-            trt.DeviceType.GPU if default_device in valid_gpu else trt.DeviceType.DLA
-        )
+        default_device = trt.DeviceType.GPU if default_device in valid_gpu else trt.DeviceType.DLA
     else:
         if default_device not in [trt.DeviceType.GPU, trt.DeviceType.DLA]:
-            err_msg = f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            err_msg = (
+                f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            )
             raise ValueError(err_msg)
         default_device = (
-            trt.DeviceType.GPU
-            if default_device == trt.DeviceType.GPU
-            else trt.DeviceType.DLA
+            trt.DeviceType.GPU if default_device == trt.DeviceType.GPU else trt.DeviceType.DLA
         )
 
     # read the onnx model
@@ -253,12 +250,8 @@ def build_engine(
     if reject_empty_algorithms:
         config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
     # handle custom datatype/format for input/output tensors
-    if (
-        input_tensor_formats is not None or output_tensor_formats is not None
-    ) and not direct_io:
-        LOG.warning(
-            "Direct IO not enabled, but some tensor formats specified. Enabling direct IO."
-        )
+    if (input_tensor_formats is not None or output_tensor_formats is not None) and not direct_io:
+        LOG.warning("Direct IO not enabled, but some tensor formats specified. Enabling direct IO.")
         direct_io = True
     if direct_io:
         config.set_flag(trt.BuilderFlag.DIRECT_IO)
@@ -330,7 +323,9 @@ def build_engine(
     if layer_device is not None:
         # validate length
         if len(layer_device) != network.num_layers:
-            err_msg = "Layer device list must be the same length as the number of layers in the network."
+            err_msg = (
+                "Layer device list must be the same length as the number of layers in the network."
+            )
             raise ValueError(err_msg)
         # handle device assignment
         for layer_idx, device in layer_device:
@@ -349,9 +344,7 @@ def build_engine(
                 config.set_device_type(layer, device)
 
     # load/setup the timing cache
-    timing_cache_path: Path | None = (
-        Path(timing_cache).resolve() if timing_cache else None
-    )
+    timing_cache_path: Path | None = Path(timing_cache).resolve() if timing_cache else None
     if timing_cache_path:
         buffer = b""
         if timing_cache_path.exists():

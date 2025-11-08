@@ -403,14 +403,10 @@ class ParallelTRTModels:
 
         """
         preprocessors = (
-            preprocess
-            if isinstance(preprocess, list)
-            else [preprocess] * len(engine_paths)
+            preprocess if isinstance(preprocess, list) else [preprocess] * len(engine_paths)
         )
         postprocessors = (
-            postprocess
-            if isinstance(postprocess, list)
-            else [postprocess] * len(engine_paths)
+            postprocess if isinstance(postprocess, list) else [postprocess] * len(engine_paths)
         )
         self._engines: list[QueuedTRTModel] = [
             QueuedTRTModel(
@@ -452,9 +448,7 @@ class ParallelTRTModels:
 
         """
         if len(inputs) != len(self._engines):
-            err_msg = (
-                f"Cannot match {len(inputs)} inputs to {len(self._engines)} engines."
-            )
+            err_msg = f"Cannot match {len(inputs)} inputs to {len(self._engines)} engines."
             raise ValueError(err_msg)
         for data, engine in zip(inputs, self._engines):
             engine.submit(data, preprocessed=preprocessed)

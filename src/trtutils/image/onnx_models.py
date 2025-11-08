@@ -79,9 +79,7 @@ def build_image_preproc(
                 ("scale", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
                 ("offset", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
             ],
-            output_tensor_formats=[
-                ("output", trt_output_dtype, trt.TensorFormat.LINEAR)
-            ],
+            output_tensor_formats=[("output", trt_output_dtype, trt.TensorFormat.LINEAR)],
             shapes=[
                 ("input", (input_shape[1], input_shape[0], 3)),
             ],
@@ -140,9 +138,7 @@ def build_image_preproc_imagenet(
                 ("mean", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
                 ("std", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
             ],
-            output_tensor_formats=[
-                ("output", trt_output_dtype, trt.TensorFormat.LINEAR)
-            ],
+            output_tensor_formats=[("output", trt_output_dtype, trt.TensorFormat.LINEAR)],
             shapes=[
                 ("input", (input_shape[1], input_shape[0], 3)),
                 ("mean", (1, 3, 1, 1)),

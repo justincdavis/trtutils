@@ -3,8 +3,6 @@
 # MIT License
 from __future__ import annotations
 
-from pathlib import Path
-
 from .common import download_with_args
 
 

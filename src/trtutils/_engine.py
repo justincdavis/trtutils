@@ -121,9 +121,7 @@ class TRTEngine(TRTEngineInterface):
             err_msg = f"Invalid backend {backend}, options are: {TRTEngine._backends}"
             raise ValueError(err_msg)
 
-        self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (
-            backend == "async_v3" or backend == "auto"
-        )
+        self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (backend == "async_v3" or backend == "auto")
         # if using v3
         # 1.) need to do set_input_shape for all input bindings
         # 2.) need to do set_tensor_address for all input/output bindings
@@ -701,9 +699,7 @@ class ParallelTRTEngines:
 
         """
         if len(inputs) != len(self._engines):
-            err_msg = (
-                f"Cannot match {len(inputs)} inputs to {len(self._engines)} engines."
-            )
+            err_msg = f"Cannot match {len(inputs)} inputs to {len(self._engines)} engines."
             raise ValueError(err_msg)
         for data, engine in zip(inputs, self._engines):
             engine.submit(data)

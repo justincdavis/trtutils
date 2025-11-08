@@ -125,12 +125,9 @@ def build_dla_engine(
     calibration_cache: Path | str | None = None,
     timing_cache: Path | str | None = None,
     shapes: list[tuple[str, tuple[int, ...]]] | None = None,
-    input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]]
-    | None = None,
-    output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]]
-    | None = None,
-    hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]]
-    | None = None,
+    input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
+    output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
+    hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
     optimization_level: int = 3,
     *,
     direct_io: bool = False,
