@@ -308,10 +308,11 @@ def build_engine(
 
     # handle individual layer precision
     if layer_precision is not None:
-        # validate length
-        if len(layer_precision) != network.num_layers:
-            err_msg = "Layer precision list must be the same length as the number of layers in the network."
-            raise ValueError(err_msg)
+        # remove the validation since we bundle the layer idx with the precision
+        # # validate length
+        # if len(layer_precision) != network.num_layers:
+        #     err_msg = "Layer precision list must be the same length as the number of layers in the network."
+        #     raise ValueError(err_msg)
         # handle precision assignment
         for layer_idx, precision in layer_precision:
             if precision is None:
@@ -321,12 +322,13 @@ def build_engine(
 
     # handle individual layer device
     if layer_device is not None:
-        # validate length
-        if len(layer_device) != network.num_layers:
-            err_msg = (
-                "Layer device list must be the same length as the number of layers in the network."
-            )
-            raise ValueError(err_msg)
+        # remove the validation since we bundle the layer idx with the device
+        # # validate length
+        # if len(layer_device) != network.num_layers:
+        #     err_msg = (
+        #         "Layer device list must be the same length as the number of layers in the network."
+        #     )
+        #     raise ValueError(err_msg)
         # handle device assignment
         for layer_idx, device in layer_device:
             if device is None:

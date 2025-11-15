@@ -16,6 +16,7 @@ import numpy as np
 
 from trtutils._log import LOG
 from trtutils.image._detector import Detector
+from trtutils.image.interfaces import DetectorInterface
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -42,6 +43,13 @@ class _OutputPacket:
     postprocessed: bool | None = None
 
 
+@dataclass
+class EngineInfo:
+    engine_path: Path | str
+    dla_core: int | None = None
+    detector_class: type[DetectorInterface] = Detector
+
+
 class ParallelDetector:
     """
     A parallel implementation of Detector.
@@ -55,7 +63,7 @@ class ParallelDetector:
 
     def __init__(
         self: Self,
-        engines: Sequence[Path | str | tuple[Path | str, int]],
+        engines: Sequence[EngineInfo],
         warmup_iterations: int = 100,
         *,
         warmup: bool | None = None,
@@ -67,9 +75,8 @@ class ParallelDetector:
 
         Parameters
         ----------
-        engines : Sequence[Path | str | tuple[Path | str, int]]
-            The engine paths of the Detector models.
-            Can optionally include a DLA core assignment.
+        engines : Sequence[EngineInfo]
+            The information required for creation of the Detector models.
         warmup_iterations : int
             The number of warmup iterations to run.
             Warmup occurs in parallel in each thread.
@@ -88,31 +95,22 @@ class ParallelDetector:
             If a Detector model could not be created.
 
         """
-        self._engine_paths: list[Path] = []
-        self._dla_assignments: list[int | None] = []
-        for engine_info in engines:
-            if isinstance(engine_info, tuple):
-                engine_path, dla_core = engine_info
-            else:
-                engine_path = engine_info
-                dla_core = None
-            self._engine_paths.append(Path(engine_path))
-            self._dla_assignments.append(dla_core)
+        self._engine_info: list[EngineInfo] = engines
         self._warmup_iterations = warmup_iterations
         self._warmup = warmup
-        self._tag = str(len(self._engine_paths))
+        self._tag = str(len(self._engine_info))
         self._no_warn = no_warn
         self._verbose = verbose
 
         self._stopflag = Event()
-        self._iqueues: list[Queue[_InputPacket]] = [Queue() for _ in self._engine_paths]
-        self._oqueues: list[Queue[_OutputPacket]] = [Queue() for _ in self._engine_paths]
-        self._profilers: list[tuple[float, float]] = [(0.0, 0.0) for _ in self._engine_paths]
-        self._flags: list[Event] = [Event() for _ in self._engine_paths]
-        self._models: list[Detector | None] = [None for _ in self._engine_paths]
+        self._iqueues: list[Queue[_InputPacket]] = [Queue() for _ in self._engine_info]
+        self._oqueues: list[Queue[_OutputPacket]] = [Queue() for _ in self._engine_info]
+        self._profilers: list[tuple[float, float]] = [(0.0, 0.0) for _ in self._engine_info]
+        self._flags: list[Event] = [Event() for _ in self._engine_info]
+        self._models: list[Detector | None] = [None for _ in self._engine_info]
         self._threads: list[Thread] = [
             Thread(target=self._run, args=(idx,), daemon=True)
-            for idx in range(len(self._engine_paths))
+            for idx in range(len(self._engine_info))
         ]
         for thread in self._threads:
             thread.start()
@@ -121,7 +119,7 @@ class ParallelDetector:
         for idx, model in enumerate(self._models):
             if model is None:
                 self.stop()
-                err_msg = f"Error creating Detector model: {self._engine_paths[idx]}"
+                err_msg = f"Error creating Detector model: {self._engine_info[idx].engine_path}"
                 raise RuntimeError(err_msg)
 
         if self._verbose:
@@ -268,7 +266,7 @@ class ParallelDetector:
             If inputs do not match the number of models
 
         """
-        if len(inputs) != len(self._engine_paths):
+        if len(inputs) != len(self._engine_info):
             err_msg = "Inputs do not match models"
             raise ValueError(err_msg)
 
@@ -377,7 +375,7 @@ class ParallelDetector:
             If outputs do not match the number of models
 
         """
-        if len(outputs) != len(self._engine_paths):
+        if len(outputs) != len(self._engine_info):
             err_msg = "Outputs do not match models"
             raise ValueError(err_msg)
         return [
@@ -534,7 +532,7 @@ class ParallelDetector:
             If preprocessed is True, but ratios/paddings not provided
 
         """
-        if len(inputs) != len(self._engine_paths):
+        if len(inputs) != len(self._engine_info):
             err_msg = "Inputs do not match models."
             raise ValueError(err_msg)
         if (preprocessed and postprocess) and (ratios is None or paddings is None):
@@ -706,7 +704,7 @@ class ParallelDetector:
         outputs: list[list[np.ndarray]] = []
         ratios: list[tuple[float, float] | None] = []
         paddings: list[tuple[float, float] | None] = []
-        for modelid in range(len(self._engine_paths)):
+        for modelid in range(len(self._engine_info)):
             output, ratio, padding = self.retrieve_model(modelid, verbose=verbose)
             outputs.append(output)
             ratios.append(ratio)
@@ -797,15 +795,14 @@ class ParallelDetector:
 
     def _run(self: Self, threadid: int) -> None:
         # perform warmup
-        engine = self._engine_paths[threadid]
-        dla_core = self._dla_assignments[threadid]
+        det_class = self._engine_info[threadid].detector_class
         flag = self._flags[threadid]
         try:
-            detector = Detector(
-                engine,
+            detector = det_class(
+                engine_path=self._engine_info[threadid].engine_path,
                 warmup_iterations=self._warmup_iterations,
                 warmup=self._warmup,
-                dla_core=dla_core,
+                dla_core=self._engine_info[threadid].dla_core,
                 no_warn=self._no_warn,
                 verbose=self._verbose,
             )
@@ -905,4 +902,4 @@ class ParallelDetector:
 
             self._oqueues[threadid].put(packet)
 
-        del engine
+        del detector

@@ -347,23 +347,43 @@ def _postprocess_rfdetr_core(
 
     # bboxes are (1, 300, 4)
     # labels are (1, 300, num_classes) - contains raw logits
-    bboxes: np.ndarray = dets[0, :, :]
-    logits: np.ndarray = labels[0, :, :]
+    bboxes: np.ndarray = dets[0, :, :]  # (num_queries, 4)
+    logits: np.ndarray = labels[0, :, :]  # (num_queries, num_classes)
 
     # Convert logits to probabilities using sigmoid
-    probs = 1.0 / (1.0 + np.exp(-logits))
+    probs = 1.0 / (1.0 + np.exp(-logits))  # (num_queries, num_classes)
 
-    # Get the max probability as the confidence score and argmax as class ID
-    scores: np.ndarray = np.max(probs, axis=1)
-    class_ids: np.ndarray = np.argmax(probs, axis=1).astype(int)
+    # Flatten probabilities to (num_queries * num_classes,) for global top-K selection
+    num_queries = probs.shape[0]
+    num_classes = probs.shape[1]
+    probs_flat = probs.reshape(-1)
 
-    # pre-filter by the confidence threshold
+    # Get top-K indices (default to num_queries as num_select)
+    num_select = num_queries
+    if len(probs_flat) < num_select:
+        num_select = len(probs_flat)
+
+    # Get top-K values and their flat indices
+    topk_indices = np.argsort(probs_flat)[-num_select:][::-1]  # descending order
+    topk_scores = probs_flat[topk_indices]
+
+    # Convert flat indices back to (query_idx, class_idx)
+    topk_box_indices = topk_indices // num_classes  # which query
+    topk_class_ids = topk_indices % num_classes  # which class
+
+    # Gather the corresponding boxes using topk_box_indices
+    selected_bboxes = bboxes[topk_box_indices]  # (num_select, 4)
+
+    # Apply confidence threshold filter if provided
     if conf_thres is not None:
-        mask = scores >= conf_thres
-        bboxes = bboxes[mask]
-        scores = scores[mask]
-        class_ids = class_ids[mask]
+        mask = topk_scores >= conf_thres
+        selected_bboxes = selected_bboxes[mask]
+        topk_scores = topk_scores[mask]
+        topk_class_ids = topk_class_ids[mask]
 
+    # class IDS are 1 indexed, so we need to subtract 1
+    topk_class_ids = topk_class_ids - 1
+    
     # Bboxes are in normalized coordinates (0-1), scale to model input size first
     if input_size is not None:
         input_w, input_h = input_size
@@ -371,11 +391,11 @@ def _postprocess_rfdetr_core(
         # Fallback: assume square input (e.g., 640x640)
         input_w = input_h = 640
 
-    # Convert from normalized center format to pixel corner format
-    cx = bboxes[:, 0] * input_w
-    cy = bboxes[:, 1] * input_h
-    w = bboxes[:, 2] * input_w
-    h = bboxes[:, 3] * input_h
+    # Convert from normalized center format (cxcywh) to corner format (xyxy)
+    cx = selected_bboxes[:, 0] * input_w
+    cy = selected_bboxes[:, 1] * input_h
+    w = selected_bboxes[:, 2] * input_w
+    h = selected_bboxes[:, 3] * input_h
 
     x1 = cx - w / 2
     y1 = cy - h / 2
@@ -395,8 +415,8 @@ def _postprocess_rfdetr_core(
     adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
 
     if no_copy:
-        return [adjusted_bboxes, scores, class_ids]
-    return [adjusted_bboxes.copy(), scores.copy(), class_ids.copy()]
+        return [adjusted_bboxes, topk_scores, topk_class_ids.astype(int)]
+    return [adjusted_bboxes.copy(), topk_scores.copy(), topk_class_ids.astype(int).copy()]
 
 
 def postprocess_detr(
