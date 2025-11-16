@@ -80,5 +80,6 @@ def download_model_internal(
         imgsz=imgsz,
         opset=opset,
         no_cache=no_cache,
+        accept=True,
         verbose=verbose,
     )
