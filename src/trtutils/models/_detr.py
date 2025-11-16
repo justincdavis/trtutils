@@ -1,14 +1,20 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+with contextlib.suppress(ImportError):
+    import tensorrt as trt
+
 from trtutils.image._detector import Detector
+from trtutils.inspect import inspect_onnx_layers
 from ._utils import download_model_internal, build_internal
 
 if TYPE_CHECKING:
@@ -836,4 +842,15 @@ class RFDETR(DETR):
         shapes = [
             ("input", (batch_size, 3, imgsz, imgsz)),
         ]
-        build_internal(onnx=onnx, output=output, shapes=shapes)
+        layer_info = inspect_onnx_layers(onnx, verbose=True)
+        layer_precision: list[tuple[int, trt.DataType]] = []
+        for idx, name, _, _ in layer_info:
+            lower_name = name.lower()
+            if (
+                "reducemean" in lower_name or
+                "downsample" in lower_name
+            ):
+                layer_precision.append((idx, trt.DataType.FLOAT))
+            else:
+                layer_precision.append((idx, trt.DataType.HALF))
+        build_internal(onnx=onnx, output=output, shapes=shapes, layer_precision=layer_precision)

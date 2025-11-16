@@ -814,6 +814,12 @@ class ParallelDetector:
         dla_core = self._dla_assignments[threadid]
         flag = self._flags[threadid]
         try:
+            conf_thres = 0.1
+            mean, scale = None, None
+            if "rfdetr" in engine.stem:
+                mean = np.array([0.485, 0.456, 0.406])
+                scale = np.array([0.229, 0.224, 0.225])
+                conf_thres = 0.1
             detector = Detector(
                 engine,
                 warmup_iterations=self._warmup_iterations,
@@ -821,6 +827,9 @@ class ParallelDetector:
                 dla_core=dla_core,
                 no_warn=self._no_warn,
                 verbose=self._verbose,
+                imagenet_mean=mean,
+                imagenet_std=scale,
+                conf_thres=conf_thres,
             )
         except Exception:
             flag.set()

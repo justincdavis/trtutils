@@ -1,0 +1,86 @@
+[
+  {
+    "blocks": [
+      {
+        "x1": 0,
+        "y1": 0,
+        "x2": 1920,
+        "y2": 1080,
+        "detector_name": "yolov10m_640",
+        "skip_window": 0
+      }
+    ],
+    "est_ap": 0.7829969578295497,
+    "est_lat": 0.008127189031802118,
+    "plan_id": 0
+  },
+  {
+    "blocks": [
+      {
+        "x1": 0,
+        "y1": 0,
+        "x2": 960,
+        "y2": 540,
+        "detector_name": "yolov10n_640",
+        "skip_window": 0
+      },
+      {
+        "x1": 960,
+        "y1": 0,
+        "x2": 1920,
+        "y2": 540,
+        "detector_name": "yolov10n_640",
+        "skip_window": 0
+      },
+      {
+        "x1": 0,
+        "y1": 540,
+        "x2": 960,
+        "y2": 1080,
+        "detector_name": "yolov10n_640",
+        "skip_window": 0
+      },
+      {
+        "x1": 960,
+        "y1": 540,
+        "x2": 1920,
+        "y2": 1080,
+        "detector_name": "yolov10m_640",
+        "skip_window": 0
+      }
+    ],
+    "est_ap": 0.7785560375931331,
+    "est_lat": 0.012041075091110543,
+    "plan_id": 1
+  },
+  {
+    "blocks": [
+      {
+        "x1": 0,
+        "y1": 0,
+        "x2": 1920,
+        "y2": 1080,
+        "detector_name": "yolov10n_640",
+        "skip_window": 0
+      }
+    ],
+    "est_ap": 0.7770757308476609,
+    "est_lat": 0.003913886059308425,
+    "plan_id": 2
+  },
+  {
+    "blocks": [
+      {
+        "x1": 0,
+        "y1": 0,
+        "x2": 1920,
+        "y2": 1080,
+        "detector_name": "yolov10s_640",
+        "skip_window": 0
+      }
+    ],
+    "est_ap": 0.7601791476513552,
+    "est_lat": 0.005019646510481835,
+    "plan_id": 3
+  }
+]

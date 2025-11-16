@@ -91,6 +91,7 @@ def build_internal(
     output: Path | str,
     shapes: list[tuple[str, tuple[int, ...]]] | None = None,
     hooks: list[Callable[[object], object]] | None = None,
+    layer_precision: list[tuple[int, trt.DataType]] | None = None,
     *,
     verbose: bool | None = None,
 ) -> None:
@@ -107,6 +108,8 @@ def build_internal(
         A list of (input_name, shape) pairs to specify the shapes of the input layers.
     hooks : list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
         A list of hooks to apply to the network definition.
+    layer_precision : list[tuple[int, trt.DataType]] | None = None,
+        A list of (layer_index, precision) pairs to specify the precision of specific layers.
     verbose : bool, optional
         If True, print verbose output during build.
 
@@ -118,7 +121,9 @@ def build_internal(
         onnx=onnx_path,
         output=output_path,
         shapes=shapes,
+        layer_precision=layer_precision,
         hooks=hooks,
+        prefer_precision_constraints=True,
         fp16=True,
         verbose=verbose,
     )
