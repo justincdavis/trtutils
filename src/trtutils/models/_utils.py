@@ -47,6 +47,7 @@ def download_model_internal(
     opset: int = 17,
     *,
     no_cache: bool | None = None,
+    accept: bool | None = None,
     verbose: bool | None = None,
 ) -> None:
     """
@@ -68,6 +69,8 @@ def download_model_internal(
         ONNX opset to use during export.
     no_cache : bool, optional
         Disable caching of downloaded weights and repos.
+    accept : bool, optional
+        Whether to accept the license terms for the model.
     verbose : bool, optional
         Print verbose output.
     """
@@ -80,6 +83,6 @@ def download_model_internal(
         imgsz=imgsz,
         opset=opset,
         no_cache=no_cache,
-        accept=True,
+        accept=accept,
         verbose=verbose,
     )

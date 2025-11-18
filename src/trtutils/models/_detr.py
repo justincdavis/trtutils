@@ -118,6 +118,7 @@ class RTDETRv1(DETR):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -135,6 +136,8 @@ class RTDETRv1(DETR):
             ONNX opset to export with.
         no_cache: bool | None = None
             Disable caching of downloads.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -155,6 +158,7 @@ class RTDETRv1(DETR):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -258,6 +262,7 @@ class RTDETRv2(DETR):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -275,6 +280,8 @@ class RTDETRv2(DETR):
             ONNX opset to export with.
         no_cache: bool | None = None
             Disable caching of downloads.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -295,6 +302,7 @@ class RTDETRv2(DETR):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -398,6 +406,7 @@ class RTDETRv3(DETR):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -415,6 +424,8 @@ class RTDETRv3(DETR):
             ONNX opset to export with.
         no_cache: bool | None = None
             Disable caching of downloads.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -435,6 +446,7 @@ class RTDETRv3(DETR):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -539,6 +551,7 @@ class DFINE(DETR):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -556,6 +569,8 @@ class DFINE(DETR):
             ONNX opset to export with.
         no_cache: bool | None = None
             Disable caching of downloads.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -576,6 +591,7 @@ class DFINE(DETR):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -679,6 +695,7 @@ class DEIM(DETR):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -696,6 +713,8 @@ class DEIM(DETR):
             ONNX opset to export with.
         no_cache: bool | None = None
             Disable caching of downloads.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -716,6 +735,7 @@ class DEIM(DETR):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -819,6 +839,7 @@ class DEIMv2(DETR):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -839,6 +860,8 @@ class DEIMv2(DETR):
             ONNX opset to export with.
         no_cache: bool | None = None
             Disable caching of downloads.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -865,6 +888,7 @@ class DEIMv2(DETR):
             imgsz=expected_imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -969,6 +993,7 @@ class RFDETR(DETR):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -986,6 +1011,8 @@ class RFDETR(DETR):
             ONNX opset to export with.
         no_cache: bool | None = None
             Disable caching of downloads.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -1006,6 +1033,7 @@ class RFDETR(DETR):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 

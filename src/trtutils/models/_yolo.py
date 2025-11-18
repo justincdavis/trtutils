@@ -104,6 +104,7 @@ class YOLOX(YOLO):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -122,6 +123,8 @@ class YOLOX(YOLO):
         *,
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -139,6 +142,7 @@ class YOLOX(YOLO):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -226,6 +230,7 @@ class YOLO7(YOLO):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -244,6 +249,8 @@ class YOLO7(YOLO):
         *,
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -261,6 +268,7 @@ class YOLO7(YOLO):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -348,6 +356,7 @@ class YOLO8(YOLO):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -366,6 +375,8 @@ class YOLO8(YOLO):
         *,
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -383,6 +394,7 @@ class YOLO8(YOLO):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -470,6 +482,7 @@ class YOLO9(YOLO):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -488,6 +501,8 @@ class YOLO9(YOLO):
         *,
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -505,6 +520,7 @@ class YOLO9(YOLO):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -592,6 +608,7 @@ class YOLO10(YOLO):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -610,6 +627,8 @@ class YOLO10(YOLO):
         *,
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -627,6 +646,7 @@ class YOLO10(YOLO):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -714,6 +734,7 @@ class YOLO11(YOLO):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -732,6 +753,8 @@ class YOLO11(YOLO):
         *,
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -749,6 +772,7 @@ class YOLO11(YOLO):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -836,6 +860,7 @@ class YOLO12(YOLO):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -854,6 +879,8 @@ class YOLO12(YOLO):
         *,
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -871,6 +898,7 @@ class YOLO12(YOLO):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
@@ -958,6 +986,7 @@ class YOLO13(YOLO):
         opset: int = 17,
         *,
         no_cache: bool | None = None,
+        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -976,6 +1005,8 @@ class YOLO13(YOLO):
         *,
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
+        accept: bool | None = None
+            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -993,6 +1024,7 @@ class YOLO13(YOLO):
             imgsz=imgsz,
             opset=opset,
             no_cache=no_cache,
+            accept=accept,
             verbose=verbose,
         )
 
