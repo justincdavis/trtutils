@@ -8,6 +8,8 @@ Submodules
 ----------
 :mod:`hooks`
     Submodule containing hooks for building TensorRT engines.
+:mod:`onnx`
+    Submodule containing tools for working with ONNX models.
 
 Classes
 -------
@@ -51,6 +53,11 @@ __all__ = [
 ]
 
 import contextlib
+
+with contextlib.suppress(ImportError):
+    from . import onnx
+
+    __all__ += ["onnx"]
 
 with contextlib.suppress(AttributeError):
     from ._progress import ProgressBar
