@@ -383,7 +383,7 @@ def _postprocess_rfdetr_core(
 
     # class IDS are 1 indexed, so we need to subtract 1
     topk_class_ids = topk_class_ids - 1
-    
+
     # Bboxes are in normalized coordinates (0-1), scale to model input size first
     if input_size is not None:
         input_w, input_h = input_size

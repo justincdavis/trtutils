@@ -16,9 +16,15 @@ Functions
     Split an ONNX model file into sequential pipeline subgraphs.
 
 """
+
 from __future__ import annotations
 
-from ._subgraph import extract_subgraph, extract_subgraph_from_file, split_model, split_model_from_file
+from ._subgraph import (
+    extract_subgraph,
+    extract_subgraph_from_file,
+    split_model,
+    split_model_from_file,
+)
 
 __all__ = [
     "extract_subgraph",

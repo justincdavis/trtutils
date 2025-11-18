@@ -66,7 +66,7 @@ def extract_subgraph(
     inputs = [t for t in consumed if t not in produced]
     outputs = []
     for t in produced:
-        for n in nodes[end_idx+1:]:
+        for n in nodes[end_idx + 1 :]:
             if t in n.inputs:
                 outputs.append(t)
                 break
@@ -74,11 +74,7 @@ def extract_subgraph(
         outputs = list(produced)
 
     # create the new subgraph
-    sub_g = gs.Graph(
-        nodes=slice_nodes,
-        inputs=inputs,
-        outputs=outputs
-    )
+    sub_g = gs.Graph(nodes=slice_nodes, inputs=inputs, outputs=outputs)
     subgraph = sub_g.cleanup().toposort()
 
     # export and return

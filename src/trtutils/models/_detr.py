@@ -1077,10 +1077,7 @@ class RFDETR(DETR):
         layer_precision: list[tuple[int, trt.DataType]] = []
         for idx, name, _, _ in layer_info:
             lower_name = name.lower()
-            if (
-                "reducemean" in lower_name or
-                "downsample" in lower_name
-            ):
+            if "reducemean" in lower_name or "downsample" in lower_name:
                 layer_precision.append((idx, trt.DataType.FLOAT))
             else:
                 layer_precision.append((idx, trt.DataType.HALF))
