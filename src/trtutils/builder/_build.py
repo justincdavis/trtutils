@@ -46,6 +46,7 @@ def build_engine(
     output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
     hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
     optimization_level: int = 3,
+    profiling_verbosity: trt.ProfilingVerbosity | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -135,6 +136,12 @@ def build_engine(
     optimization_level : int, optional
         Optimization level to apply to the TensorRT builder config (0-5).
         By default, 3.
+    profiling_verbosity : trt.ProfilingVerbosity | None, optional
+        Level of detail for profiling information in the built engine.
+        Options are: trt.ProfilingVerbosity.NONE, trt.ProfilingVerbosity.LAYER_NAMES_ONLY,
+        trt.ProfilingVerbosity.DETAILED
+        DETAILED is recommended for best layer names when using profile_engine.
+        By default, None (uses TensorRT's default).
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
         when building the engine for DLA.
@@ -243,6 +250,10 @@ def build_engine(
         err_msg = "Builder optimization level must be between 0 and 5."
         raise ValueError(err_msg)
     config.builder_optimization_level = int(optimization_level)
+
+    # handle profiling verbosity
+    if profiling_verbosity is not None:
+        config.profiling_verbosity = profiling_verbosity
 
     # handle some flags
     if prefer_precision_constraints:
