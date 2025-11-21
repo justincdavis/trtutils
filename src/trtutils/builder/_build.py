@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 
     from ._batcher import AbstractBatcher
 
+_MIN_OPTIM_LEVEL = 0
+_MAX_OPTIM_LEVEL = 5
+
 
 def build_engine(
     onnx: Path | str,
@@ -246,7 +249,7 @@ def build_engine(
 
     config.add_optimization_profile(profile)
 
-    if not (0 <= optimization_level <= 5):
+    if not (_MIN_OPTIM_LEVEL <= optimization_level <= _MAX_OPTIM_LEVEL):
         err_msg = "Builder optimization level must be between 0 and 5."
         raise ValueError(err_msg)
     config.builder_optimization_level = int(optimization_level)

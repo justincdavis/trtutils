@@ -35,9 +35,7 @@ def main() -> None:
         classifications = classifier.get_classifications(output, top_k=5)
         t1 = time.perf_counter()
 
-        print(
-            f"RUN, classifications: {classifications}, in {round((t1 - t0) * 1000.0, 2)}"
-        )
+        print(f"RUN, classifications: {classifications}, in {round((t1 - t0) * 1000.0, 2)}")
 
         # OR
 
@@ -47,9 +45,7 @@ def main() -> None:
         classifications = classifier.end2end(img, top_k=5)
         t1 = time.perf_counter()
 
-        print(
-            f"END2END: classifications: {classifications}, in {round((t1 - t0) * 1000.0, 2)}"
-        )
+        print(f"END2END: classifications: {classifications}, in {round((t1 - t0) * 1000.0, 2)}")
 
         del classifier
 

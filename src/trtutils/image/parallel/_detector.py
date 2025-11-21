@@ -7,7 +7,6 @@ from __future__ import annotations
 import contextlib
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from queue import Empty, Queue
 from threading import Event, Thread
 from typing import TYPE_CHECKING
@@ -16,12 +15,14 @@ import numpy as np
 
 from trtutils._log import LOG
 from trtutils.image._detector import Detector
-from trtutils.image.interfaces import DetectorInterface
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from typing_extensions import Self
+
+    from trtutils.image.interfaces import DetectorInterface
 
 
 @dataclass

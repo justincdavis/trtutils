@@ -11,8 +11,8 @@ from trtutils.download import download
 
 def download_with_args(
     model: str,
-    *args,
-    **kwargs,
+    *args: tuple,
+    **kwargs: dict,
 ) -> None:
     """Download a model with the given arguments."""
     with tempfile.TemporaryDirectory() as temp_dir:

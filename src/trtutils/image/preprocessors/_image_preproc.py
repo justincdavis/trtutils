@@ -19,7 +19,6 @@ from trtutils.core._stream import create_stream
 from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
 
 if TYPE_CHECKING:
-    import contextlib
     from typing import ClassVar
 
     from typing_extensions import Self
@@ -29,6 +28,8 @@ if TYPE_CHECKING:
             import cuda.bindings.runtime as cudart
         except (ImportError, ModuleNotFoundError):
             from cuda import cudart
+
+    from trtutils.core._bindings import Binding
 
 _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
@@ -148,10 +149,10 @@ class ImagePreprocessor(ABC):
             If the mean or std is not a tuple of 3 floats
 
         """
-        if len(mean) != 3:
+        if len(mean) != _COLOR_CHANNELS:
             err_msg = f"{self._tag}: Mean must be a tuple of 3 floats"
             raise ValueError(err_msg)
-        if len(std) != 3:
+        if len(std) != _COLOR_CHANNELS:
             err_msg = f"{self._tag}: Std must be a tuple of 3 floats"
             raise ValueError(err_msg)
         self._mean = np.array(mean, dtype=np.float32).reshape(1, 3, 1, 1)

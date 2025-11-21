@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: E402
 # mypy: disable-error-code="import-untyped"
 """
 A package for enabling high-level usage of TensorRT in Python.
@@ -90,17 +91,17 @@ from __future__ import annotations
 # before handling anything check if tensorrt and cuda-python are available
 not_found_modules = []
 try:
-    import tensorrt
+    import tensorrt  # noqa: F401
 except ModuleNotFoundError:
     not_found_modules.append("tensorrt")
 
 try:
-    import cuda
+    import cuda  # noqa: F401
 except ModuleNotFoundError:
     not_found_modules.append("cuda-python")
 
 try:
-    from nvidia import nvimgcodec
+    from nvidia import nvimgcodec  # noqa: F401
 except ModuleNotFoundError:
     not_found_modules.append("nvimgcodec")
 
@@ -125,8 +126,7 @@ __version__ = "0.6.1"
 
 import contextlib
 
-from . import core
-from . import builder, compat, download, image, inspect, models, trtexec
+from . import builder, compat, core, download, image, inspect, models, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel

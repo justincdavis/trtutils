@@ -582,7 +582,6 @@ def _detect(args: SimpleNamespace) -> None:
     def run(
         img: np.ndarray,
     ) -> tuple[list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float]:
-        """Run detection on an image and return detections with timing info."""
         t0 = time.perf_counter()
         tensor, ratios, pads = detector.preprocess(img, no_copy=True, verbose=args.verbose)
         t1 = time.perf_counter()
@@ -609,7 +608,6 @@ def _detect(args: SimpleNamespace) -> None:
         post_t: float,
         det_t: float,
     ) -> None:
-        """Log detection results and timing information."""
         LOG.info(f"Found {len(dets)} detections")
         LOG.info(f"Preprocessing time: {pre_t} ms")
         LOG.info(f"Run time: {run_t} ms")
@@ -627,7 +625,6 @@ def _detect(args: SimpleNamespace) -> None:
         float,
         float,
     ]:
-        """Process an image and return separated detection components and timing."""
         dets, pre_t, run_t, post_t, det_t = run(img)
         log(dets, pre_t, run_t, post_t, det_t)
         bboxes = [d[0] for d in dets]
@@ -649,7 +646,6 @@ def _detect(args: SimpleNamespace) -> None:
         post_t: float,
         det_t: float,
     ) -> np.ndarray:
-        """Draw bounding boxes and timing information on the image."""
         canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
         canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
         canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t} ms", (10, 60))
@@ -772,7 +768,6 @@ def _classify(args: SimpleNamespace) -> None:
     def run(
         img: np.ndarray,
     ) -> tuple[tuple[int, float], float, float, float, float]:
-        """Run classification on an image and return results with timing info."""
         t0 = time.perf_counter()
         tensor, _, _ = classifier.preprocess(img, no_copy=True)
         t1 = time.perf_counter()
@@ -797,7 +792,6 @@ def _classify(args: SimpleNamespace) -> None:
         post_t: float,
         det_t: float,
     ) -> None:
-        """Log classification results and timing information."""
         LOG.info(f"Found {cls_results[0]} with confidence {cls_results[1]}")
         LOG.info(f"Preprocessing time: {pre_t} ms")
         LOG.info(f"Run time: {run_t} ms")
@@ -813,7 +807,6 @@ def _classify(args: SimpleNamespace) -> None:
         float,
         float,
     ]:
-        """Process an image and return classification results and timing."""
         cls_results, pre_t, run_t, post_t, det_t = run(img)
         log(cls_results, pre_t, run_t, post_t, det_t)
         times["pre"].append(pre_t)
@@ -830,7 +823,6 @@ def _classify(args: SimpleNamespace) -> None:
         post_t: float,
         det_t: float,
     ) -> np.ndarray:
-        """Draw classification results and timing information on the image."""
         canvas = cv2ext.image.draw.text(img, f"CLASS: {cls_results[0]}", (50, 30))
         canvas = cv2ext.image.draw.text(canvas, f"CONF: {cls_results[1]:.2f}", (50, 60))
         canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
@@ -973,13 +965,13 @@ def _profile(args: SimpleNamespace) -> None:
     }
 
     # Write JSON output
-    with output_path.open("w") as f:
+    with output_path.open("w", encoding="utf-8") as f:
         json.dump(json_data, f, indent=4)
 
     # Log summary
     LOG.info(f"Profiling result for: {engine_path.stem}")
     LOG.info("=" * 40)
-    LOG.info(f"Total Time (ms):")
+    LOG.info("Total Time (ms):")
     LOG.info(f"  Mean   : {result.total_time.mean:.3f}")
     LOG.info(f"  Median : {result.total_time.median:.3f}")
     LOG.info(f"  Min    : {result.total_time.min:.3f}")
@@ -1051,7 +1043,7 @@ def _download(args: SimpleNamespace) -> None:
 
 def _main() -> None:
     """
-    Main entry point for the trtutils command-line interface.
+    Set up the main entry point for the trtutils command-line interface.
 
     Sets up argument parsing for all CLI commands, processes arguments,
     configures logging, and dispatches to the appropriate command handler.

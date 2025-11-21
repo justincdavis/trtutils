@@ -27,21 +27,19 @@ from __future__ import annotations
 
 from ._classifier import get_classifications, postprocess_classifications
 from ._detection import (
-    postprocess_yolov10,
-    postprocess_rfdetr,
+    get_detections,
     postprocess_detr,
     postprocess_efficient_nms,
-    get_detections,
+    postprocess_rfdetr,
+    postprocess_yolov10,
 )
 
 __all__ = [
-    # classification
     "get_classifications",
+    "get_detections",
     "postprocess_classifications",
-    # detection
-    "postprocess_yolov10",
-    "postprocess_rfdetr",
     "postprocess_detr",
     "postprocess_efficient_nms",
-    "get_detections",
+    "postprocess_rfdetr",
+    "postprocess_yolov10",
 ]

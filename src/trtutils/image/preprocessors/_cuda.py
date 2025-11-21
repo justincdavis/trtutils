@@ -17,7 +17,7 @@ from trtutils.core._memory import (
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import destroy_stream, stream_synchronize
-from trtutils.image.kernels import SST_FAST, IMAGENET_SST
+from trtutils.image.kernels import IMAGENET_SST, SST_FAST
 
 from ._image_preproc import GPUImagePreprocessor
 

@@ -14,6 +14,8 @@ from ._process import preprocess
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+_COLOR_CHANNELS = 3
+
 
 class CPUPreprocessor(ImagePreprocessor):
     """CPU-based preprocessor for image processing models."""
@@ -148,11 +150,13 @@ class CPUPreprocessor(ImagePreprocessor):
         std = self._std
         if mean is not None:
             mean: tuple[float, float, float] = tuple(
-                mean.reshape(-1) if mean.size == 3 else mean.flatten()[:3]
+                mean.reshape(-1)
+                if mean.size == _COLOR_CHANNELS
+                else mean.flatten()[:_COLOR_CHANNELS]
             )
         if std is not None:
             std: tuple[float, float, float] = tuple(
-                std.reshape(-1) if std.size == 3 else std.flatten()[:3]
+                std.reshape(-1) if std.size == _COLOR_CHANNELS else std.flatten()[:_COLOR_CHANNELS]
             )
         return preprocess(
             image,

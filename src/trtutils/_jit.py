@@ -106,13 +106,10 @@ def register_jit(
     inline: str = "never",
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     """
-    Register a function to be re-imported whenever JIT status changes.
+    Decorate a function to register to be re-imported whenever JIT status changes.
 
     Parameters
     ----------
-    func : Callable[_P, _R], optional
-        The function to optionally JIT compile. If None, the decorator
-        returns a partially applied function.
     fastmath : bool, optional
         If True, enable fastmath during jit.
         Default is False.

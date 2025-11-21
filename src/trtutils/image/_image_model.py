@@ -17,6 +17,8 @@ from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+_COLOR_CHANNELS = 3
+
 
 class ImageModel:
     """Abstract base class for image models."""
@@ -258,11 +260,12 @@ class ImageModel:
         ------
         ValueError
             If the mean or std is not a tuple of 3 floats
+
         """
-        if len(mean) != 3:
+        if len(mean) != _COLOR_CHANNELS:
             err_msg = f"{self._tag}: Mean must be a tuple of 3 floats"
             raise ValueError(err_msg)
-        if len(std) != 3:
+        if len(std) != _COLOR_CHANNELS:
             err_msg = f"{self._tag}: Std must be a tuple of 3 floats"
             raise ValueError(err_msg)
         self._mean = mean

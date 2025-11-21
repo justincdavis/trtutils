@@ -58,10 +58,7 @@ def _slice_dynamic(
     shape_layer = network.add_shape(tensor)
     shape_tensor = shape_layer.get_output(0)
     st_dtype = shape_tensor.dtype
-    if FLAGS.TRT_HAS_INT64 and st_dtype == trt.DataType.INT64:
-        np_int_dtype = np.int64
-    else:
-        np_int_dtype = np.int32
+    np_int_dtype = np.int64 if FLAGS.TRT_HAS_INT64 and st_dtype == trt.DataType.INT64 else np.int32
 
     def gather_dim(dim_index: int) -> trt.ITensor:
         idx_const = network.add_constant((1,), np.array([dim_index], dtype=np_int_dtype)).get_output(

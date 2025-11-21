@@ -3,18 +3,10 @@
 # MIT License
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-with contextlib.suppress(Exception):
-    import tensorrt as trt
-
-from trtutils.download._download import load_model_configs
 from trtutils.download._download import download as _download
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
+from trtutils.download._download import load_model_configs
 
 
 def get_valid_models(model_type: str) -> list[str]:
@@ -73,6 +65,12 @@ def download_model_internal(
         Whether to accept the license terms for the model.
     verbose : bool, optional
         Print verbose output.
+
+    Raises
+    ------
+    ValueError
+        If the model is not a valid model for the given model type.
+
     """
     if model not in get_valid_models(model_type):
         err_msg = f"Model {model} is not a valid {friendly_name} model."

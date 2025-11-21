@@ -5,13 +5,16 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt
 
 from trtutils._log import LOG
 from trtutils.builder._onnx import read_onnx
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def inspect_onnx_layers(

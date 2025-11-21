@@ -36,6 +36,8 @@ def postprocess_yolov10(
         Detections are already filtered by YOLO-v10 parameters
         ahead of time. Should be used if YOLO-v10 was given low-confidence
         and want to filter higher variably.
+    input_size : tuple[int, int] | None
+        The input size used during preprocessing to resize the input.
     no_copy : bool, optional
         If True, the outputs will not be copied out
         from the cuda allocated host memory. Instead,
@@ -201,6 +203,8 @@ def postprocess_efficient_nms(
         The ratios used during preprocessing to resize the input.
     padding : tuple[float, float]
         The padding used during preprocessing to position the input.
+    input_size : tuple[int, int] | None
+        The input size used during preprocessing to resize the input.
     conf_thres : float, optional
         Optional confidence threshold to further filter detections by.
         Detections are already filtered by EfficientNMS parameters
@@ -298,6 +302,8 @@ def postprocess_rfdetr(
         The padding used during preprocessing to position the input.
     conf_thres : float, optional
         Optional confidence threshold to further filter detections by.
+    input_size : tuple[int, int] | None
+        The input size used during preprocessing to resize the input.
     no_copy : bool, optional
         If True, the outputs will not be copied out
         from the cuda allocated host memory. Instead,
@@ -442,6 +448,8 @@ def postprocess_detr(
         The padding used during preprocessing to position the input.
     conf_thres : float, optional
         Optional confidence threshold to further filter detections by.
+    input_size : tuple[int, int] | None
+        The input size used during preprocessing to resize the input.
     no_copy : bool, optional
         If True, the outputs will not be copied out
         from the cuda allocated host memory. Instead,

@@ -15,7 +15,7 @@ from trtutils._config import CONFIG
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
-from ._stream import create_stream, destroy_stream
+from ._stream import create_stream
 
 if TYPE_CHECKING:
     try:

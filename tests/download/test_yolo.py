@@ -6,19 +6,19 @@ from __future__ import annotations
 from .common import download_with_args
 
 
-def test_yolov7_download_no_args():
+def test_yolov7_download_no_args() -> None:
     """Test downloading YOLOv7 model with no arguments."""
     download_with_args("yolov7t")
 
 
-def test_yolov7_download_image_sizes():
+def test_yolov7_download_image_sizes() -> None:
     """Test downloading YOLOv7 model with different image sizes."""
     download_with_args("yolov7t", imgsz=320)
     download_with_args("yolov7t", imgsz=640)
     download_with_args("yolov7t", imgsz=960)
 
 
-def test_yolov7_download_opsets():
+def test_yolov7_download_opsets() -> None:
     """Test downloading YOLOv7 model with different opsets."""
     download_with_args("yolov7t", opset=13)
     download_with_args("yolov7t", opset=14)

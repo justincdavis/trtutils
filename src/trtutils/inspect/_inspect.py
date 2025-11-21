@@ -47,11 +47,9 @@ def inspect_engine(
         engine, context, logger, stream = create_engine(engine)
         loaded = True
 
-    engine_mem_size: int = 0
-    if FLAGS.MEMSIZE_V2:
-        engine_mem_size = engine.device_memory_size_v2
-    else:
-        engine_mem_size = engine.device_memory_size
+    engine_mem_size: int = (
+        engine.device_memory_size_v2 if FLAGS.MEMSIZE_V2 else engine.device_memory_size
+    )
 
     # Get all input and output tensors first
     input_tensors = []

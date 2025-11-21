@@ -39,9 +39,7 @@ def main() -> None:
         err_msg = f"Failed to load image from {img_path}"
         raise FileNotFoundError(err_msg)
 
-    detector = Detector(
-        engine_path, warmup=True, preprocessor="trt", verbose=args.verbose
-    )
+    detector = Detector(engine_path, warmup=True, preprocessor="trt", verbose=args.verbose)
 
     t0 = time.perf_counter()
     bboxes = detector.end2end(img)
@@ -54,12 +52,8 @@ def main() -> None:
     t1 = time.perf_counter()
     sahi_time = t1 - t0
 
-    print(
-        f"Detector: bboxes: {len(bboxes)}, in {round((standalone_time) * 1000.0, 2)} ms"
-    )
-    print(
-        f"SAHI:     bboxes: {len(sahi_bboxes)}, in {round((sahi_time) * 1000.0, 2)} ms"
-    )
+    print(f"Detector: bboxes: {len(bboxes)}, in {round((standalone_time) * 1000.0, 2)} ms")
+    print(f"SAHI:     bboxes: {len(sahi_bboxes)}, in {round((sahi_time) * 1000.0, 2)} ms")
 
     if args.display:
         canvas = cv2ext.bboxes.draw_bboxes(

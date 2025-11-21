@@ -20,15 +20,9 @@ def cli_trtexec(args: list[str] | None = None) -> None:
 
     Parameters
     ----------
-    args : list[str] or None, optional
+    args : list[str] | None, optional
         Command-line arguments to pass to trtexec. If None, uses arguments
         from sys.argv. Default is None.
-
-    Raises
-    ------
-    SystemExit
-        If trtexec execution fails or encounters an error. The exit code
-        from trtexec is preserved.
 
     Examples
     --------

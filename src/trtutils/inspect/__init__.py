@@ -27,14 +27,14 @@ Functions
 """
 
 from ._inspect import inspect_engine
-from ._onnx import inspect_onnx_layers
-from ._profiler import LayerTiming, ProfilerResult, LayerProfiler, profile_engine
 from ._names import get_engine_names
+from ._onnx import inspect_onnx_layers
+from ._profiler import LayerProfiler, LayerTiming, ProfilerResult, profile_engine
 
 __all__ = [
+    "LayerProfiler",
     "LayerTiming",
     "ProfilerResult",
-    "LayerProfiler",
     "get_engine_names",
     "inspect_engine",
     "inspect_onnx_layers",

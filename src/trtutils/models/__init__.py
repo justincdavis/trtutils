@@ -45,11 +45,12 @@ Classes
 
 from __future__ import annotations
 
-from ._detr import DETR, DEIM, DFINE, RFDETR, DEIMv2, RTDETRv1, RTDETRv2, RTDETRv3
+from ._detr import DEIM, DETR, DFINE, RFDETR, DEIMv2, RTDETRv1, RTDETRv2, RTDETRv3
 from ._yolo import YOLO, YOLO7, YOLO8, YOLO9, YOLO10, YOLO11, YOLO12, YOLO13, YOLOX
 
 __all__ = [
     "DEIM",
+    "DETR",
     "DFINE",
     "RFDETR",
     "YOLO",
@@ -62,7 +63,6 @@ __all__ = [
     "YOLO13",
     "YOLOX",
     "DEIMv2",
-    "DETR",
     "RTDETRv1",
     "RTDETRv2",
     "RTDETRv3",

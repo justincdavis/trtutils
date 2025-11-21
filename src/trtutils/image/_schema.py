@@ -4,32 +4,37 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import TYPE_CHECKING
 
-from trtutils._engine import TRTEngine
 from trtutils._log import LOG
+
+if TYPE_CHECKING:
+    from typing import ClassVar
+
+    from trtutils._engine import TRTEngine
 
 
 class InputSchema(Enum):
     # YOLO-X, v7, v8, v9, v10, v11, v12, v13
-    YOLO = ["images"]
+    YOLO: ClassVar[list[str]] = ["images"]
     # RF-DETR
-    RF_DETR = ["input"]
+    RF_DETR: ClassVar[list[str]] = ["input"]
     # DEIM v1/v2, RT-DETR v1/v2, D-FINE
-    RT_DETR = ["images", "orig_target_sizes"]
+    RT_DETR: ClassVar[list[str]] = ["images", "orig_target_sizes"]
     # RT-DETR v3
-    RT_DETR_V3 = ["image", "im_shape", "scale_factor"]
+    RT_DETR_V3: ClassVar[list[str]] = ["image", "im_shape", "scale_factor"]
 
 
 class OutputSchema(Enum):
     # YOLO-X, v7, v8, v9, v11, v12, v13
-    EFFICIENT_NMS = ["num_dets", "det_boxes", "det_scores", "det_classes"]
-    EFFICIENT_NMS_2 = ["num", "boxes", "scores", "classes"]
+    EFFICIENT_NMS: ClassVar[list[str]] = ["num_dets", "det_boxes", "det_scores", "det_classes"]
+    EFFICIENT_NMS_2: ClassVar[list[str]] = ["num", "boxes", "scores", "classes"]
     # YOLO-v10
-    YOLO_V10 = ["output0"]
+    YOLO_V10: ClassVar[list[str]] = ["output0"]
     # RF-DETR
-    RF_DETR = ["dets", "labels"]
+    RF_DETR: ClassVar[list[str]] = ["dets", "labels"]
     # DEIM v1/v2, RT-DETR v1/v2/v3, D-FINE
-    DETR = ["scores", "labels", "boxes"]
+    DETR: ClassVar[list[str]] = ["scores", "labels", "boxes"]
 
 
 def get_detector_io_schema(

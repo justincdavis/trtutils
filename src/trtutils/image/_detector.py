@@ -578,6 +578,13 @@ class Detector(ImageModel, DetectorInterface):
         list[tuple[tuple[int, int, int, int], float, int]]
             The detections where each entry is bbox, conf, class_id
 
+        Raises
+        ------
+        RuntimeError
+            If the orig_image_size buffer is not valid
+        RuntimeError
+            If the scale_factor buffer is not valid
+
         """
         if verbose:
             LOG.debug(f"{self._tag}: end2end")

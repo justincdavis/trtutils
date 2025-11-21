@@ -5,8 +5,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from trtutils.image._detector import Detector
 from trtutils.builder._build import build_engine
+from trtutils.image._detector import Detector
+
 from ._utils import download_model_internal
 
 if TYPE_CHECKING:
@@ -128,11 +129,6 @@ class YOLOX(YOLO):
         verbose: bool | None = None,
             Print verbose output.
 
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOX model.
-
         """
         download_model_internal(
             model_type="yolox",
@@ -171,6 +167,7 @@ class YOLOX(YOLO):
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
+
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
@@ -254,11 +251,6 @@ class YOLO7(YOLO):
         verbose: bool | None = None,
             Print verbose output.
 
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv7 model.
-
         """
         download_model_internal(
             model_type="yolov7",
@@ -297,6 +289,7 @@ class YOLO7(YOLO):
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
+
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
@@ -380,11 +373,6 @@ class YOLO8(YOLO):
         verbose: bool | None = None,
             Print verbose output.
 
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv8 model.
-
         """
         download_model_internal(
             model_type="yolov8",
@@ -423,6 +411,7 @@ class YOLO8(YOLO):
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
+
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
@@ -506,11 +495,6 @@ class YOLO9(YOLO):
         verbose: bool | None = None,
             Print verbose output.
 
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv9 model.
-
         """
         download_model_internal(
             model_type="yolov9",
@@ -549,6 +533,7 @@ class YOLO9(YOLO):
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
+
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
@@ -632,11 +617,6 @@ class YOLO10(YOLO):
         verbose: bool | None = None,
             Print verbose output.
 
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv10 model.
-
         """
         download_model_internal(
             model_type="yolov10",
@@ -675,6 +655,7 @@ class YOLO10(YOLO):
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
+
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
@@ -758,11 +739,6 @@ class YOLO11(YOLO):
         verbose: bool | None = None,
             Print verbose output.
 
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv11 model.
-
         """
         download_model_internal(
             model_type="yolov11",
@@ -801,6 +777,7 @@ class YOLO11(YOLO):
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
+
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
@@ -884,11 +861,6 @@ class YOLO12(YOLO):
         verbose: bool | None = None,
             Print verbose output.
 
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv12 model.
-
         """
         download_model_internal(
             model_type="yolov12",
@@ -927,6 +899,7 @@ class YOLO12(YOLO):
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
+
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
@@ -1010,11 +983,6 @@ class YOLO13(YOLO):
         verbose: bool | None = None,
             Print verbose output.
 
-        Raises
-        ------
-        ValueError
-            If the model is not a valid YOLOv13 model.
-
         """
         download_model_internal(
             model_type="yolov13",
@@ -1053,6 +1021,7 @@ class YOLO13(YOLO):
             Batch size for the engine.
         verbose: bool | None = None
             Enable verbose builder output.
+
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(

@@ -3,10 +3,13 @@
 # MIT License
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import onnx
 import onnx_graphsurgeon as gs
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def extract_subgraph(
@@ -61,8 +64,8 @@ def extract_subgraph(
 
     # extract the subgraph with inputs/outputs
     slice_nodes = nodes[start_idx : end_idx + 1]
-    produced = set(t for n in slice_nodes for t in n.outputs)
-    consumed = set(t for n in slice_nodes for t in n.inputs if t is not None)
+    produced = {t for n in slice_nodes for t in n.outputs}
+    consumed = {t for n in slice_nodes for t in n.inputs if t is not None}
     inputs = [t for t in consumed if t not in produced]
     outputs = []
     for t in produced:

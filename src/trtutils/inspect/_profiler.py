@@ -14,9 +14,8 @@ from typing import TYPE_CHECKING
 with contextlib.suppress(ImportError):
     import tensorrt as trt
 
-from trtutils._flags import FLAGS
-from trtutils._log import LOG
 from trtutils._engine import TRTEngine
+from trtutils._log import LOG
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -215,7 +214,7 @@ def profile_engine(
     >>> for layer in result.layers:
     ...     print(f"{layer.name}: {layer.mean:.3f}ms")
 
-    """     
+    """
     if verbose:
         LOG.info("Starting engine profiling")
 
@@ -223,20 +222,17 @@ def profile_engine(
         warmup = True
 
     engine_loaded = False
-    trt_engine: TRTEngine
     if isinstance(engine, (Path, str)):
-        trt_engine = TRTEngine(
+        engine = TRTEngine(
             engine,
             dla_core=dla_core,
             warmup=False,
             verbose=verbose,
         )
         engine_loaded = True
-    else:
-        trt_engine = engine
 
     # issue warning if not build with detailed
-    engine_verbosity = trt_engine._engine.profiling_verbosity
+    engine_verbosity = engine.engine.profiling_verbosity
     if engine_verbosity != trt.ProfilingVerbosity.DETAILED and verbose:
         LOG.warning(
             "Engine profiling verbosity is not DETAILED. Layer names may be numeric indices. "
@@ -245,26 +241,26 @@ def profile_engine(
 
     # attach profiler
     profiler = LayerProfiler()
-    trt_engine.context.profiler = profiler
+    engine.context.profiler = profiler
 
     # do warmup iterations
     # always do a single pass regardless of warmup_iterations
-    trt_engine.mock_execute(verbose=False)
+    engine.mock_execute(verbose=False)
     if warmup:
         for _ in range(warmup_iterations):
-            trt_engine.mock_execute(verbose=False)
+            engine.mock_execute(verbose=False)
     # report_layer_time is called by the context, so reset after warmup
     profiler.reset()
 
     if verbose:
         LOG.info(f"Running {iterations} profiling iterations")
 
-    for iteration_idx in range(iterations):
-        trt_engine.mock_execute(verbose=False)
+    for idx in range(iterations):
+        engine.mock_execute(verbose=False)
         profiler.finalize_iteration()
 
-        if verbose and (iteration_idx + 1) % 10 == 0:
-            LOG.info(f"Completed {iteration_idx + 1}/{iterations} iterations")
+        if verbose and (idx + 1) % 10 == 0:
+            LOG.info(f"Completed {idx + 1}/{iterations} iterations")
 
     layer_stats = profiler.get_statistics()
 
@@ -272,10 +268,8 @@ def profile_engine(
         LOG.info(f"Profiling complete: {len(layer_stats)} layers profiled")
 
     total_times: list[float] = []
-    for iteration_idx in range(iterations):
-        iteration_total = sum(
-            layer.raw[iteration_idx] for layer in layer_stats if iteration_idx < len(layer.raw)
-        )
+    for idx in range(iterations):
+        iteration_total = sum(layer.raw[idx] for layer in layer_stats if idx < len(layer.raw))
         total_times.append(iteration_total)
 
     total_timing = LayerTiming(
@@ -289,7 +283,7 @@ def profile_engine(
 
     # if loaded here, delete engine
     if engine_loaded:
-        del trt_engine
+        del engine
 
     return ProfilerResult(
         layers=layer_stats,

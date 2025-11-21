@@ -5,20 +5,23 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt
 
+from trtutils.builder._build import build_engine
 from trtutils.image._detector import Detector
 from trtutils.inspect._onnx import inspect_onnx_layers
-from trtutils.builder._build import build_engine
-from trtutils._log import LOG
+
 from ._utils import download_model_internal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from typing_extensions import Self
+
+DEFAULT_DETR_IMGSZ = 640
 
 
 class DETR(Detector):
@@ -147,7 +150,7 @@ class RTDETRv1(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != 640:
+        if imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv1 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -194,7 +197,7 @@ class RTDETRv1(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != 640:
+        if imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv1 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
@@ -291,7 +294,7 @@ class RTDETRv2(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != 640:
+        if imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv2 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -338,7 +341,7 @@ class RTDETRv2(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != 640:
+        if imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv2 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
@@ -435,7 +438,7 @@ class RTDETRv3(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != 640:
+        if imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv3 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -482,7 +485,7 @@ class RTDETRv3(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != 640:
+        if imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv3 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
@@ -580,7 +583,7 @@ class DFINE(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != 640:
+        if imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"D-FINE supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -627,7 +630,7 @@ class DFINE(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != 640:
+        if imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"D-FINE supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
@@ -724,7 +727,7 @@ class DEIM(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != 640:
+        if imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"DEIM supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -771,7 +774,7 @@ class DEIM(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != 640:
+        if imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"DEIM supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [

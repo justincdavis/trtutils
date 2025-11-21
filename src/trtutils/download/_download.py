@@ -15,10 +15,11 @@ from pathlib import Path
 
 from trtutils._log import LOG
 
+_NORMAL_IMGSZ = 640
+
 
 @lru_cache(maxsize=1)
 def _get_cache_dir() -> Path:
-    """Get or create the cache directory for trtutils downloads."""
     cache_dir = Path.home() / ".cache" / "trtutils"
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
@@ -26,7 +27,6 @@ def _get_cache_dir() -> Path:
 
 @lru_cache(maxsize=1)
 def _get_repo_cache_dir() -> Path:
-    """Get or create the repository cache directory."""
     repo_cache = _get_cache_dir() / "repos"
     repo_cache.mkdir(parents=True, exist_ok=True)
     return repo_cache
@@ -34,7 +34,6 @@ def _get_repo_cache_dir() -> Path:
 
 @lru_cache(maxsize=1)
 def _get_weights_cache_dir() -> Path:
-    """Get or create the weights cache directory."""
     weights_cache = _get_cache_dir() / "weights"
     weights_cache.mkdir(parents=True, exist_ok=True)
     return weights_cache
@@ -42,7 +41,6 @@ def _get_weights_cache_dir() -> Path:
 
 @lru_cache(maxsize=0)
 def _get_model_requirements(model: str) -> str:
-    """Get the requirements file for the model."""
     file_path = Path(__file__).parent / "requirements" / f"{model}.txt"
     return str(file_path.resolve())
 
@@ -57,7 +55,7 @@ def load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
         try:
             with config_path.open() as f:
                 model_configs[model_type] = json.load(f)
-        except Exception as e:
+        except (FileNotFoundError, KeyError) as e:
             LOG.warning(f"Failed to load configuration file {config_path.name}: {e}")
 
     return model_configs
@@ -633,8 +631,8 @@ def _export_rtdetrv1(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz != 640:
-        err_msg = f"RT-DETRv1 supports only an imgsz of 640, got {imgsz}"
+    if imgsz != _NORMAL_IMGSZ:
+        err_msg = f"RT-DETRv1 supports only an imgsz of {_NORMAL_IMGSZ}, got {imgsz}"
         raise ValueError(err_msg)
     _git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
@@ -698,8 +696,8 @@ def _export_rtdetrv2(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz != 640:
-        err_msg = f"RT-DETRv2 supports only an imgsz of 640, got {imgsz}"
+    if imgsz != _NORMAL_IMGSZ:
+        err_msg = f"RT-DETRv2 supports only an imgsz of {_NORMAL_IMGSZ}, got {imgsz}"
         raise ValueError(err_msg)
     _git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
@@ -764,8 +762,8 @@ def _export_rtdetrv3(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv3 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz != 640:
-        err_msg = f"RT-DETRv3 supports only an imgsz of 640, got {imgsz}"
+    if imgsz != _NORMAL_IMGSZ:
+        err_msg = f"RT-DETRv3 supports only an imgsz of {_NORMAL_IMGSZ}, got {imgsz}"
         raise ValueError(err_msg)
     paddle2onnx_max_opset = 16
     if opset > paddle2onnx_max_opset:
@@ -848,8 +846,8 @@ def _export_dfine(
 ) -> Path:
     if not no_warn:
         LOG.warning("D-FINE is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz != 640:
-        err_msg = f"D-FINE supports only an imgsz of 640, got {imgsz}"
+    if imgsz != _NORMAL_IMGSZ:
+        err_msg = f"D-FINE supports only an imgsz of {_NORMAL_IMGSZ}, got {imgsz}"
         raise ValueError(err_msg)
     _git_clone(
         "https://github.com/Peterande/D-FINE",
@@ -913,8 +911,8 @@ def _export_deim(
 ) -> Path:
     if not no_warn:
         LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz != 640:
-        err_msg = f"DEIM supports only an imgsz of 640, got {imgsz}"
+    if imgsz != _NORMAL_IMGSZ:
+        err_msg = f"DEIM supports only an imgsz of {_NORMAL_IMGSZ}, got {imgsz}"
         raise ValueError(err_msg)
     _git_clone(
         "https://github.com/Intellindust-AI-Lab/DEIM",
@@ -1055,17 +1053,19 @@ def _export_deimv2(
     if not no_warn:
         LOG.warning("DEIMv2 is a Apache-2.0 licensed model, be aware of license restrictions")
     # atto is 320, femto is 416, all others 640
+    atto_imgsz = 320
+    femto_imgsz = 416
     if imgsz is not None:
         if "atto" in model:
-            if imgsz != 320:
+            if imgsz != atto_imgsz:
                 err_msg = f"DEIMv2 atto model requires an imgsz of 320, got {imgsz}"
                 raise ValueError(err_msg)
         elif "femto" in model:
-            if imgsz != 416:
+            if imgsz != femto_imgsz:
                 err_msg = f"DEIMv2 femto model requires an imgsz of 416, got {imgsz}"
                 raise ValueError(err_msg)
         else:
-            if imgsz != 640:
+            if imgsz != _NORMAL_IMGSZ:
                 err_msg = (
                     f"DEIMv2 models (excluding atto/femto) require an imgsz of 640, got {imgsz}"
                 )
@@ -1117,7 +1117,7 @@ def _export_yolox(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int,  # noqa: ARG001
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -1222,6 +1222,8 @@ def download_model(
         Whether to disable caching of downloaded weights and repos.
     no_uv_cache : bool, optional
         Whether to disable caching of uv packages.
+    no_warn : bool, optional
+        Whether to disable warnings for the model.
     accept : bool, optional
         Whether to accept the license terms for the model. If None or False, will raise an error.
         Must be True to proceed with the download.
@@ -1366,6 +1368,8 @@ def download(
         Whether to disable caching of downloaded weights and repos.
     no_uv_cache : bool, optional
         Whether to disable caching of uv packages.
+    no_warn : bool, optional
+        Whether to disable warnings for the model.
     accept : bool, optional
         Whether to accept the license terms for the model. If None, will prompt the user.
         If False, will raise an error. If True, will proceed without prompting.
