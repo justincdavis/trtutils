@@ -917,6 +917,8 @@ def _profile(args: SimpleNamespace) -> None:
             Whether to perform warmup iterations.
         - verbose : bool
             Enable verbose output.
+        - save_raw : bool
+            Whether to include raw timing values in the JSON output.
 
     Raises
     ------
@@ -941,28 +943,33 @@ def _profile(args: SimpleNamespace) -> None:
         verbose=args.verbose,
     )
 
-    # Serialize to JSON-friendly dict
+    total_time_dict = {
+        "name": result.total_time.name,
+        "mean": result.total_time.mean,
+        "median": result.total_time.median,
+        "min": result.total_time.min,
+        "max": result.total_time.max,
+    }
+    if args.save_raw:
+        total_time_dict["raw"] = result.total_time.raw
+
+    layer_dicts = []
+    for layer in result.layers:
+        layer_dict = {
+            "name": layer.name,
+            "mean": layer.mean,
+            "median": layer.median,
+            "min": layer.min,
+            "max": layer.max,
+        }
+        if args.save_raw:
+            layer_dict["raw"] = layer.raw
+        layer_dicts.append(layer_dict)
+
     json_data = {
         "iterations": result.iterations,
-        "total_time": {
-            "name": result.total_time.name,
-            "mean": result.total_time.mean,
-            "median": result.total_time.median,
-            "min": result.total_time.min,
-            "max": result.total_time.max,
-            "raw": result.total_time.raw,
-        },
-        "layers": [
-            {
-                "name": layer.name,
-                "mean": layer.mean,
-                "median": layer.median,
-                "min": layer.min,
-                "max": layer.max,
-                "raw": layer.raw,
-            }
-            for layer in result.layers
-        ],
+        "total_time": total_time_dict,
+        "layers": layer_dicts,
     }
 
     # Write JSON output
@@ -1608,6 +1615,11 @@ def _main() -> None:
         type=int,
         default=100,
         help="Number of profiling iterations to run. Default is 100.",
+    )
+    profile_parser.add_argument(
+        "--save_raw",
+        action="store_true",
+        help="Include raw timing values in the JSON output. Default is False.",
     )
     profile_parser.set_defaults(func=_profile)
 

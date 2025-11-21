@@ -14,10 +14,11 @@ from typing import TYPE_CHECKING
 with contextlib.suppress(ImportError):
     import tensorrt as trt
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils._engine import TRTEngine
 
 if TYPE_CHECKING:
-    from trtutils._engine import TRTEngine
     from typing_extensions import Self
 
 
@@ -90,15 +91,6 @@ class LayerProfiler(trt.IProfiler):  # type: ignore[misc]
 
     This class collects per-layer execution times across multiple inference iterations
     and can aggregate statistics for each layer.
-
-    Examples
-    --------
-    >>> profiler = LayerProfiler()
-    >>> context.profiler = profiler
-    >>> context.execute_v2(bindings)
-    >>> context.report_to_profiler()
-    >>> stats = profiler.get_statistics()
-
     """
 
     def __init__(self: Self) -> None:
@@ -114,7 +106,8 @@ class LayerProfiler(trt.IProfiler):  # type: ignore[misc]
         """
         Record the execution time for a layer.
 
-        This method is called by TensorRT once per layer after inference.
+        This method is called by TensorRT once per layer after inference, only
+        if the profiler is not added to the context.
 
         Parameters
         ----------
@@ -162,9 +155,6 @@ class LayerProfiler(trt.IProfiler):  # type: ignore[misc]
                 raw=times.copy(),
             )
             layer_stats.append(layer_timing)
-
-        # Sort by mean time (descending)
-        layer_stats.sort(key=lambda x: x.mean, reverse=True)
 
         return layer_stats
 
@@ -225,15 +215,12 @@ def profile_engine(
     >>> for layer in result.layers:
     ...     print(f"{layer.name}: {layer.mean:.3f}ms")
 
-    """
+    """     
     if verbose:
         LOG.info("Starting engine profiling")
 
     if warmup is None:
         warmup = True
-
-    # Lazy import to avoid circular dependency
-    from trtutils._engine import TRTEngine
 
     engine_loaded = False
     trt_engine: TRTEngine
@@ -256,19 +243,24 @@ def profile_engine(
             "Rebuild the engine with profiling_verbosity=trt.ProfilingVerbosity.DETAILED for best results.",
         )
 
+    # attach profiler
+    profiler = LayerProfiler()
+    trt_engine.context.profiler = profiler
+
+    # do warmup iterations
+    # always do a single pass regardless of warmup_iterations
+    trt_engine.mock_execute(verbose=False)
     if warmup:
         for _ in range(warmup_iterations):
             trt_engine.mock_execute(verbose=False)
-
-    profiler = LayerProfiler()
-    trt_engine._context.profiler = profiler
+    # report_layer_time is called by the context, so reset after warmup
+    profiler.reset()
 
     if verbose:
         LOG.info(f"Running {iterations} profiling iterations")
 
     for iteration_idx in range(iterations):
         trt_engine.mock_execute(verbose=False)
-        trt_engine._context.report_to_profiler()
         profiler.finalize_iteration()
 
         if verbose and (iteration_idx + 1) % 10 == 0:
