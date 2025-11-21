@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -891,6 +892,108 @@ def _inspect(args: SimpleNamespace) -> None:
         LOG.info(f"\t{name}: shape={shape}, dtype={dtype}, format={fmt}")
 
 
+def _profile(args: SimpleNamespace) -> None:
+    """
+    Profile a TensorRT engine layer-by-layer.
+
+    Runs inference multiple times and collects per-layer execution times,
+    then writes the results to a JSON file and optionally displays verbose output.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - engine : str
+            Path to the TensorRT engine file.
+        - output : str
+            Path to save the JSON profiling results.
+        - iterations : int
+            Number of profiling iterations to run.
+        - warmup_iterations : int
+            Number of warmup iterations before profiling.
+        - dla_core : int or None
+            DLA core to use, if any.
+        - warmup : bool
+            Whether to perform warmup iterations.
+        - verbose : bool
+            Enable verbose output.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the engine file does not exist.
+
+    """
+    engine_path = Path(args.engine)
+    if not engine_path.exists():
+        err_msg = f"Cannot find provided engine: {engine_path}"
+        raise FileNotFoundError(err_msg)
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    result = trtutils.inspect.profile_engine(
+        engine=engine_path,
+        iterations=args.iterations,
+        warmup_iterations=args.warmup_iterations,
+        dla_core=args.dla_core,
+        warmup=args.warmup,
+        verbose=args.verbose,
+    )
+
+    # Serialize to JSON-friendly dict
+    json_data = {
+        "iterations": result.iterations,
+        "total_time": {
+            "name": result.total_time.name,
+            "mean": result.total_time.mean,
+            "median": result.total_time.median,
+            "min": result.total_time.min,
+            "max": result.total_time.max,
+            "raw": result.total_time.raw,
+        },
+        "layers": [
+            {
+                "name": layer.name,
+                "mean": layer.mean,
+                "median": layer.median,
+                "min": layer.min,
+                "max": layer.max,
+                "raw": layer.raw,
+            }
+            for layer in result.layers
+        ],
+    }
+
+    # Write JSON output
+    with output_path.open("w") as f:
+        json.dump(json_data, f, indent=4)
+
+    # Log summary
+    LOG.info(f"Profiling result for: {engine_path.stem}")
+    LOG.info("=" * 40)
+    LOG.info(f"Total Time (ms):")
+    LOG.info(f"  Mean   : {result.total_time.mean:.3f}")
+    LOG.info(f"  Median : {result.total_time.median:.3f}")
+    LOG.info(f"  Min    : {result.total_time.min:.3f}")
+    LOG.info(f"  Max    : {result.total_time.max:.3f}")
+    LOG.info(f"Layers profiled: {len(result.layers)}")
+    LOG.info(f"Results written to: {output_path}")
+
+    # Verbose output: show per-layer timings
+    if args.verbose:
+        LOG.info("=" * 40)
+        LOG.info("Layer timings (sorted by mean time, descending):")
+        for layer in result.layers:
+            LOG.info(f"  {layer.name}:")
+            LOG.info(f"    Mean   : {layer.mean:.3f} ms")
+            LOG.info(f"    Median : {layer.median:.3f} ms")
+            LOG.info(f"    Min    : {layer.min:.3f} ms")
+            LOG.info(f"    Max    : {layer.max:.3f} ms")
+
+    LOG.info("=" * 40)
+
+
 def _download(args: SimpleNamespace) -> None:
     """
     Download a model from a remote source and convert it to ONNX format.
@@ -966,6 +1069,8 @@ def _main() -> None:
         Run image classification on images.
     inspect
         Inspect a TensorRT engine's properties.
+    profile
+        Profile a TensorRT engine layer-by-layer.
     download
         Download and convert models to ONNX.
     """
@@ -1478,6 +1583,33 @@ def _main() -> None:
         help="Path to the TensorRT engine file.",
     )
     inspect_parser.set_defaults(func=_inspect)
+
+    # profile parser
+    profile_parser = subparsers.add_parser(
+        "profile",
+        help="Profile a TensorRT engine layer-by-layer.",
+        parents=[general_parser, dla_parser, warmup_parser],
+    )
+    profile_parser.add_argument(
+        "--engine",
+        "-e",
+        required=True,
+        help="Path to the TensorRT engine file.",
+    )
+    profile_parser.add_argument(
+        "--output",
+        "-o",
+        required=True,
+        help="Path to save the JSON profiling results.",
+    )
+    profile_parser.add_argument(
+        "--iterations",
+        "-i",
+        type=int,
+        default=100,
+        help="Number of profiling iterations to run. Default is 100.",
+    )
+    profile_parser.set_defaults(func=_profile)
 
     # download parser
     download_parser = subparsers.add_parser(

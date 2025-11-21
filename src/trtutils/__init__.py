@@ -125,7 +125,8 @@ __version__ = "0.6.1"
 
 import contextlib
 
-from . import builder, compat, core, download, image, inspect, models, trtexec
+from . import core
+from . import builder, compat, download, image, inspect, models, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel

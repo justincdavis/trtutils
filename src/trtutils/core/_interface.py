@@ -14,10 +14,9 @@ import numpy as np
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
-from trtutils.inspect._names import get_engine_names
 
 from ._bindings import Binding, allocate_bindings
-from ._engine import create_engine
+from ._engine import create_engine, get_engine_names
 
 if TYPE_CHECKING:
     from typing_extensions import Self

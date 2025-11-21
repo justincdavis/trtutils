@@ -12,9 +12,10 @@ with contextlib.suppress(Exception):
     import tensorrt as trt
 
 from trtutils._config import CONFIG
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
-from ._stream import create_stream
+from ._stream import create_stream, destroy_stream
 
 if TYPE_CHECKING:
     try:
@@ -107,3 +108,42 @@ def create_engine(
         stream = create_stream()
 
     return engine, context, LOG, stream
+
+
+def get_engine_names(
+    engine: trt.ICudaEngine,
+) -> tuple[list[str], list[str]]:
+    """
+    Get the input/output names of a TensorRT engine in order.
+
+    Parameters
+    ----------
+    engine : trt.ICudaEngine
+        The TensorRT engine to get the input and output names from.
+
+    Returns
+    -------
+    tuple[list[str], list[str]]
+        The input and output tensors in order of enumeration.
+
+    """
+    input_names: list[str] = []
+    output_names: list[str] = []
+    num_tensors = range(engine.num_io_tensors) if FLAGS.TRT_10 else range(engine.num_bindings)
+
+    for i in num_tensors:
+        # get the tensor name in-order
+        if FLAGS.TRT_10:
+            tensor_name = engine.get_tensor_name(i)
+            is_input = engine.get_tensor_mode(tensor_name) == trt.TensorIOMode.INPUT
+        else:
+            tensor_name = engine.get_binding_name(i)
+            is_input = engine.binding_is_input(i)
+
+        # store
+        if is_input:
+            input_names.append(tensor_name)
+        else:
+            output_names.append(tensor_name)
+
+    return input_names, output_names

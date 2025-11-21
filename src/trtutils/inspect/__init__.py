@@ -27,9 +27,9 @@ Functions
 """
 
 from ._inspect import inspect_engine
-from ._names import get_engine_names
 from ._onnx import inspect_onnx_layers
 from ._profiler import LayerTiming, ProfilerResult, LayerProfiler, profile_engine
+from ._names import get_engine_names
 
 __all__ = [
     "LayerTiming",

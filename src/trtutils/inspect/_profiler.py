@@ -14,10 +14,10 @@ from typing import TYPE_CHECKING
 with contextlib.suppress(ImportError):
     import tensorrt as trt
 
-from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
+    from trtutils._engine import TRTEngine
     from typing_extensions import Self
 
 
@@ -231,6 +231,9 @@ def profile_engine(
 
     if warmup is None:
         warmup = True
+
+    # Lazy import to avoid circular dependency
+    from trtutils._engine import TRTEngine
 
     engine_loaded = False
     trt_engine: TRTEngine

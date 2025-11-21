@@ -12,7 +12,7 @@ with contextlib.suppress(ImportError):
     import tensorrt as trt
 
 from trtutils._log import LOG
-from trtutils.core import cuda_malloc, memcpy_host_to_device
+from trtutils.core._memory import cuda_malloc, memcpy_host_to_device
 
 if TYPE_CHECKING:
     from typing_extensions import Self

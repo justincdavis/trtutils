@@ -91,7 +91,7 @@ from ._bindings import (
 )
 from ._context import create_context, destroy_context
 from ._cuda import cuda_call, init_cuda
-from ._engine import create_engine
+from ._engine import create_engine, get_engine_names
 from ._interface import TRTEngineInterface
 from ._kernels import Kernel, create_kernel_args, launch_kernel
 from ._memory import (
@@ -125,6 +125,7 @@ __all__ = [
     "create_context",
     "create_engine",
     "create_kernel_args",
+    "get_engine_names",
     "create_stream",
     "cuda_call",
     "cuda_free",

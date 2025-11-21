@@ -14,14 +14,14 @@ import numpy as np
 
 from ._flags import FLAGS
 from ._log import LOG
-from .core import (
-    TRTEngineInterface,
+from .core._interface import TRTEngineInterface
+from .core._memory import (
     memcpy_device_to_host,
     memcpy_device_to_host_async,
     memcpy_host_to_device,
     memcpy_host_to_device_async,
-    stream_synchronize,
 )
+from .core._stream import stream_synchronize
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
