@@ -890,6 +890,7 @@ def _profile(args: SimpleNamespace) -> None:
 
     Runs inference multiple times and collects per-layer execution times,
     then writes the results to a JSON file and optionally displays verbose output.
+    On Jetson devices with --jetson flag, also measures power and energy.
 
     Parameters
     ----------
@@ -911,6 +912,10 @@ def _profile(args: SimpleNamespace) -> None:
             Enable verbose output.
         - save_raw : bool
             Whether to include raw timing values in the JSON output.
+        - jetson : bool
+            Whether to use Jetson-specific profiling with power/energy metrics.
+        - tegra_interval : int
+            Milliseconds between tegrastats samples (Jetson only).
 
     Raises
     ------
@@ -926,11 +931,13 @@ def _profile(args: SimpleNamespace) -> None:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    result = trtutils.inspect.profile_engine(
+    result = trtutils.profile_engine(
         engine=engine_path,
         iterations=args.iterations,
         warmup_iterations=args.warmup_iterations,
         dla_core=args.dla_core,
+        tegra_interval=args.tegra_interval if hasattr(args, "tegra_interval") else 5,
+        jetson=args.jetson if hasattr(args, "jetson") else False,
         warmup=args.warmup,
         verbose=args.verbose,
     )
@@ -964,6 +971,27 @@ def _profile(args: SimpleNamespace) -> None:
         "layers": layer_dicts,
     }
 
+    # Add power and energy data if this is a Jetson result
+    if hasattr(result, "power_draw") and hasattr(result, "energy"):
+        power_dict = {
+            "mean": result.power_draw.mean,
+            "median": result.power_draw.median,
+            "min": result.power_draw.min,
+            "max": result.power_draw.max,
+        }
+        energy_dict = {
+            "mean": result.energy.mean,
+            "median": result.energy.median,
+            "min": result.energy.min,
+            "max": result.energy.max,
+        }
+        if args.save_raw:
+            power_dict["raw"] = result.power_draw.raw
+            energy_dict["raw"] = result.energy.raw
+
+        json_data["power_draw"] = power_dict
+        json_data["energy"] = energy_dict
+
     # Write JSON output
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(json_data, f, indent=4)
@@ -977,6 +1005,21 @@ def _profile(args: SimpleNamespace) -> None:
     LOG.info(f"  Min    : {result.total_time.min:.3f}")
     LOG.info(f"  Max    : {result.total_time.max:.3f}")
     LOG.info(f"Layers profiled: {len(result.layers)}")
+
+    # Log power and energy if available
+    if hasattr(result, "power_draw") and hasattr(result, "energy"):
+        LOG.info("=" * 40)
+        LOG.info("Power Draw (mW):")
+        LOG.info(f"  Mean   : {result.power_draw.mean:.1f}")
+        LOG.info(f"  Median : {result.power_draw.median:.1f}")
+        LOG.info(f"  Min    : {result.power_draw.min:.1f}")
+        LOG.info(f"  Max    : {result.power_draw.max:.1f}")
+        LOG.info("Energy (mJ):")
+        LOG.info(f"  Mean   : {result.energy.mean:.3f}")
+        LOG.info(f"  Median : {result.energy.median:.3f}")
+        LOG.info(f"  Min    : {result.energy.min:.3f}")
+        LOG.info(f"  Max    : {result.energy.max:.3f}")
+
     LOG.info(f"Results written to: {output_path}")
 
     # Verbose output: show per-layer timings
@@ -1612,6 +1655,17 @@ def _main() -> None:
         "--save_raw",
         action="store_true",
         help="Include raw timing values in the JSON output. Default is False.",
+    )
+    profile_parser.add_argument(
+        "--jetson",
+        action="store_true",
+        help="Use Jetson-specific profiling to measure per-layer power and energy. Note: Jetson profiling defaults to 10000 iterations for better coverage.",
+    )
+    profile_parser.add_argument(
+        "--tegra_interval",
+        type=int,
+        default=5,
+        help="Milliseconds between tegrastats samples (Jetson only). Default is 5.",
     )
     profile_parser.set_defaults(func=_profile)
 

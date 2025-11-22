@@ -179,6 +179,11 @@ def profile_engine(
     times using TensorRT's IProfiler interface. It returns aggregated statistics
     (mean, median, min, max) for each layer across all iterations.
 
+    Notes
+    -----
+    For best results, build the engine with profiling_verbosity set to DETAILED
+    when calling build_engine. Otherwise, layer names may be numeric indices.
+
     Parameters
     ----------
     engine : Path | str | TRTEngine
@@ -202,17 +207,6 @@ def profile_engine(
     -------
     ProfilerResult
         A dataclass containing per-layer timing statistics and total execution time.
-
-    Notes
-    -----
-    For best results, build the engine with profiling_verbosity set to DETAILED
-    when calling build_engine. Otherwise, layer names may be numeric indices.
-
-    Examples
-    --------
-    >>> result = profile_engine("model.engine", iterations=100)
-    >>> for layer in result.layers:
-    ...     print(f"{layer.name}: {layer.mean:.3f}ms")
 
     """
     if verbose:

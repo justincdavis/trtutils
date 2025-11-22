@@ -130,6 +130,7 @@ from . import builder, compat, core, download, image, inspect, models, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
 from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
 from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
+from ._profile import profile_engine
 from .builder import build_engine
 from .inspect import inspect_engine
 from .trtexec import find_trtexec, run_trtexec
@@ -161,6 +162,7 @@ __all__ = [
     "inspect",
     "inspect_engine",
     "models",
+    "profile_engine",
     "register_jit",
     "run_trtexec",
     "set_log_level",
