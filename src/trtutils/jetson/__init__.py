@@ -8,7 +8,7 @@ Classes
 -------
 :class:`JetsonBenchmarkResult`
     The results of benchmarking a TRTEngine on a Jetson device.
-:class:`JetsonLayerTiming`
+:class:`JetsonLayerInfo`
     Per-layer timing with power and energy metrics for Jetson profiling.
 :class:`JetsonProfilerResult`
     The results of profiling a TRTEngine on a Jetson device.
@@ -27,11 +27,11 @@ Functions
 from __future__ import annotations
 
 from ._benchmark import JetsonBenchmarkResult, benchmark_engine, benchmark_engines
-from ._profile import JetsonLayerTiming, JetsonProfilerResult, profile_engine
+from ._profile import JetsonLayerInfo, JetsonProfilerResult, profile_engine
 
 __all__ = [
     "JetsonBenchmarkResult",
-    "JetsonLayerTiming",
+    "JetsonLayerInfo",
     "JetsonProfilerResult",
     "benchmark_engine",
     "benchmark_engines",

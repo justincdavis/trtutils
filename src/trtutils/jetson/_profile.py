@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class JetsonLayerTiming(LayerTiming):
+class JetsonLayerInfo(LayerTiming):
     """
     A dataclass to store per-layer profiling statistics for Jetson devices.
 
@@ -66,7 +66,7 @@ class JetsonLayerTiming(LayerTiming):
 
     def __repr__(self: Self) -> str:
         return (
-            f"JetsonLayerTiming(name={self.name!r}, mean={self.mean}, median={self.median}, "
+            f"JetsonLayerInfo(name={self.name!r}, mean={self.mean}, median={self.median}, "
             f"min={self.min}, max={self.max}, power={self.power}, energy={self.energy})"
         )
 
@@ -80,7 +80,7 @@ class JetsonProfilerResult(ProfilerResult):
 
     Attributes
     ----------
-    layers : list[JetsonLayerTiming]
+    layers : list[JetsonLayerInfo]
         The per-layer timing, power, and energy statistics.
     total_time : LayerTiming
         The total execution time statistics across all layers.
@@ -222,13 +222,13 @@ class JetsonLayerProfiler(trt.IProfiler):  # type: ignore[misc]
 
         return layer_stats
 
-    def correlate_with_tegrastats(
+    def get_statistics_with_tegra(
         self: Self,
         tegradata: TegraData,
         verbose: bool = False,
-    ) -> list[JetsonLayerTiming]:
+    ) -> list[JetsonLayerInfo]:
         """
-        Correlate layer timestamps with tegrastats data to compute power and energy.
+        Get statistics with tegrastats data to compute power and energy.
 
         For each layer, finds tegrastats samples that fall within the layer's
         execution time window and computes mean power and energy. If no samples
@@ -243,115 +243,42 @@ class JetsonLayerProfiler(trt.IProfiler):  # type: ignore[misc]
 
         Returns
         -------
-        list[JetsonLayerTiming]
-            A list of JetsonLayerTiming objects with timing, power, and energy metrics.
+        list[JetsonLayerInfo]
+            A list of JetsonLayerInfo objects with timing, power, and energy metrics.
 
         """
         if verbose:
             LOG.info("Correlating layer timestamps with tegrastats data")
 
-        # Build a sorted list of tegrastats samples with timestamps and power
-        tegra_samples: list[tuple[float, float]] = []
-        for sample in tegradata.data:
-            # Each sample is a dict with string keys
-            timestamp = float(sample["timestamp"])
-            # Power values are stored as strings in the raw data, need to parse
-            # We'll extract VDD_TOTAL from the power string
-            # The power data is typically in the format we need to extract
-            # For now, we'll use get_powerdraw to extract power from samples
-            power_mw = 0.0
-            # Check if we can extract power directly
-            if "VDD_TOTAL" in sample:
-                try:
-                    power_mw = float(sample["VDD_TOTAL"].replace("mW", "").strip())
-                except (ValueError, AttributeError):
-                    power_mw = 0.0
-            tegra_samples.append((timestamp, power_mw))
-        
-        tegra_samples.sort(key=lambda x: x[0])  # Sort by timestamp
+        layer_stats: list[JetsonLayerInfo] = []
+        statistics: list[LayerTiming] = self.get_statistics()
 
-        if not tegra_samples:
-            LOG.warning("No tegrastats samples found")
-            # Return basic LayerTiming wrapped as JetsonLayerTiming with zero power/energy
-            return [
-                JetsonLayerTiming(
-                    name=lt.name,
-                    mean=lt.mean,
-                    median=lt.median,
-                    min=lt.min,
-                    max=lt.max,
-                    raw=lt.raw,
-                    power=0.0,
-                    energy=0.0,
-                )
-                for lt in self.get_statistics()
-            ]
-
-        jetson_layer_stats: list[JetsonLayerTiming] = []
-        last_known_power = tegra_samples[0][1] if tegra_samples else 0.0
-        
-        layers_with_data = 0
-        layers_with_estimated = 0
-
-        for layer_name, times in self._timings.items():
-            if not times:
-                continue
-
+        for layer_timing in statistics:
+            layer_name = layer_timing.name
             timestamps = self._layer_timestamps[layer_name]
-            
-            # Collect power samples for this layer across all iterations
-            layer_power_samples: list[float] = []
-            layer_energy_samples: list[float] = []
 
-            for (start_time, end_time), duration_ms in zip(timestamps, times):
-                # Find tegrastats samples within this layer's time window
-                matching_samples = [
-                    power for ts, power in tegra_samples
-                    if start_time <= ts <= end_time
-                ]
-
-                if matching_samples:
-                    # Compute mean power for this iteration of the layer
-                    mean_power = sum(matching_samples) / len(matching_samples)
-                    layer_power_samples.append(mean_power)
-                    last_known_power = mean_power
-                else:
-                    # No samples found, use last known power
-                    layer_power_samples.append(last_known_power)
-                
-                # Compute energy: power (mW) * time (seconds)
-                duration_seconds = duration_ms / 1000.0
-                energy_mj = layer_power_samples[-1] * duration_seconds
-                layer_energy_samples.append(energy_mj)
-
-            # Track statistics
-            if any(matching_samples for (start_time, end_time), _ in zip(timestamps, times)
-                   for matching_samples in [[power for ts, power in tegra_samples if start_time <= ts <= end_time]]):
-                layers_with_data += 1
+            layer_data, _ = filter_data(tegradata.data, timestamps)
+            if len(layer_data) == 0:
+                # for now, set power and energy to 0
+                power_mw = 0.0
+                energy_mj = 0.0
             else:
-                layers_with_estimated += 1
+                power_data = get_powerdraw(layer_data)
+                power_mw = power_data["VDD_TOTAL"].mean
+                energy_mj = power_mw * layer_timing.mean / 1000.0
 
-            # Compute statistics
-            avg_power = sum(layer_power_samples) / len(layer_power_samples) if layer_power_samples else 0.0
-            avg_energy = sum(layer_energy_samples) / len(layer_energy_samples) if layer_energy_samples else 0.0
-
-            jetson_layer_timing = JetsonLayerTiming(
+            layer_stats.append(JetsonLayerInfo(
                 name=layer_name,
-                mean=mean(times),
-                median=median(times),
-                min=min(times),
-                max=max(times),
-                raw=times.copy(),
-                power=avg_power,
-                energy=avg_energy,
-            )
-            jetson_layer_stats.append(jetson_layer_timing)
-
-        if verbose:
-            LOG.info(f"Layers with direct tegrastats correlation: {layers_with_data}")
-            LOG.info(f"Layers with estimated power (last known): {layers_with_estimated}")
-
-        return jetson_layer_stats
+                mean=layer_timing.mean,
+                median=layer_timing.median,
+                min=layer_timing.min,
+                max=layer_timing.max,
+                raw=layer_timing.raw,
+                power=power_mw,
+                energy=energy_mj,
+            ))
+        
+        return layer_stats
 
     def reset(self: Self) -> None:
         """Reset all stored timings and timestamps."""
@@ -434,7 +361,6 @@ def profile_engine(
         engine_loaded = True
 
     # issue warning if not built with detailed profiling
-    import tensorrt as trt
     engine_verbosity = engine.engine.profiling_verbosity
     if engine_verbosity != trt.ProfilingVerbosity.DETAILED and verbose:
         LOG.warning(
@@ -465,43 +391,26 @@ def profile_engine(
     # pre-generate the false data
     false_data = engine.get_random_input(verbose=verbose)
 
-    # create temp file location for tegrastats data
-    temp_file = Path(Path.cwd()) / "temptegra_profile.txt"
-    
     # store the start/stop times of each inference
-    start_stop_times: list[tuple[float, float]] = []
+    timeslices: list[tuple[float, float]] = []
 
-    with TegraStats(temp_file, interval=tegra_interval):
-        for idx in range(iterations):
-            profiler.start_iteration()
-            t0 = time.time()
-            engine.mock_execute(false_data, verbose=False)
-            t1 = time.time()
-            profiler.finalize_iteration()
-            start_stop_times.append((t0, t1))
+    tegrastats = TegraStats(interval=tegra_interval)
+    tegrastats.start()
+    for idx in range(iterations):
+        profiler.start_iteration()
+        t0 = time.time()
+        engine.mock_execute(false_data, verbose=False)
+        t1 = time.time()
+        profiler.finalize_iteration()
+        timeslices.append((t0, t1))
+    tegrastats.stop()
+    tegradata = tegrastats.data
 
-            if verbose and (idx + 1) % 1000 == 0:
-                LOG.info(f"Completed {idx + 1}/{iterations} iterations")
-
-    # parse the tegrastats data first
-    if verbose:
-        LOG.info("Parsing tegrastats data")
-    
-    # Create TegraData object from the temp file
-    with temp_file.open("r") as f:
-        tegradata = TegraData(f)
-
-    # delete the temp file
-    if temp_file.exists():
-        temp_file.unlink()
-
-    # get layer statistics with power/energy correlation
-    layer_stats = profiler.correlate_with_tegrastats(tegradata, verbose=verbose)
+    layer_stats = profiler.get_statistics_with_tegra(tegradata, verbose=verbose)
 
     if verbose:
         LOG.info(f"Profiling complete: {len(layer_stats)} layers profiled with power/energy metrics")
 
-    # calculate total times per iteration
     total_times: list[float] = []
     for idx in range(iterations):
         iteration_total = sum(layer.raw[idx] for layer in layer_stats if idx < len(layer.raw))
@@ -517,9 +426,7 @@ def profile_engine(
     )
 
     # filter the tegrastats data by actual times during execution
-    tegradata.filter(start_stop_times)
-
-    # get the overall power draw values using TegraData's property
+    tegradata.filter(timeslices)
     powerdraw_data: dict[str, JMetric] = tegradata.powerdraw
     power_raw = powerdraw_data["VDD_TOTAL"].raw
 
