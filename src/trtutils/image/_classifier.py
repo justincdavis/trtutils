@@ -104,22 +104,22 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def preprocess(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         method: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
         """
-        Preprocess the input.
+        Preprocess the input images.
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to preprocess
+        images : list[np.ndarray]
+            The images to preprocess.
         resize : str
-            The method to resize the image with.
+            The method to resize the images with.
             Options are [letterbox, linear].
             By default None, which will use the value passed
             during initialization.
@@ -137,14 +137,14 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        tuple[list[np.ndarray], tuple[float, float], tuple[float, float]]
-            The preprocessed inputs, rescale ratios, and padding values
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios per image, and list of padding per image.
 
         """
         resize = resize if resize is not None else self._resize_method
         if verbose:
             LOG.debug(
-                f"{self._tag}: Running preprocess, shape: {image.shape}, with method: {resize}",
+                f"{self._tag}: Running preprocess, batch_size: {len(images)}, with method: {resize}",
             )
             LOG.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self._preprocessor
@@ -165,11 +165,11 @@ class Classifier(ImageModel, ClassifierInterface):
                 preprocessor = self._preproc_trt
         if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             t0 = time.perf_counter()
-            data = preprocessor(image, resize=resize, no_copy=no_copy, verbose=verbose)
+            data = preprocessor(images, resize=resize, no_copy=no_copy, verbose=verbose)
             t1 = time.perf_counter()
         else:
             t0 = time.perf_counter()
-            data = preprocessor(image, resize=resize, verbose=verbose)
+            data = preprocessor(images, resize=resize, verbose=verbose)
             t1 = time.perf_counter()
         self._pre_profile = (t0, t1)
         return data
@@ -180,14 +180,14 @@ class Classifier(ImageModel, ClassifierInterface):
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[np.ndarray]:
+    ) -> list[list[np.ndarray]]:
         """
         Postprocess the outputs.
 
         Parameters
         ----------
         outputs : list[np.ndarray]
-            The outputs to postprocess
+            The raw outputs from the engine to postprocess.
         no_copy : bool, optional
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
@@ -197,8 +197,8 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[np.ndarray]
-            The postprocessed outputs
+        list[list[np.ndarray]]
+            The postprocessed outputs per image.
 
         """
         if verbose:
@@ -212,20 +212,20 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def __call__(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[np.ndarray]:
+    ) -> list[list[np.ndarray]]:
         """
         Run the model on input.
 
         Parameters
         ----------
-        image : np.ndarray
-            The data to run the model on.
+        images : list[np.ndarray]
+            The images to run the model on.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -243,12 +243,12 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[np.ndarray]
-            The outputs of the model.
+        list[list[np.ndarray]]
+            The postprocessed outputs per image.
 
         """
         return self.run(
-            image,
+            images,
             preprocessed=preprocessed,
             postprocess=postprocess,
             no_copy=no_copy,
@@ -257,20 +257,20 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def run(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[np.ndarray]:
+    ) -> list[list[np.ndarray]]:
         """
         Run the model on input.
 
         Parameters
         ----------
-        image: np.ndarray
-            The data to run the model on.
+        images : list[np.ndarray]
+            The images to run the model on.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -292,8 +292,8 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[np.ndarray]
-            The outputs of the model.
+        list[list[np.ndarray]]
+            The postprocessed outputs per image.
 
         """
         if verbose:
@@ -326,9 +326,10 @@ class Classifier(ImageModel, ClassifierInterface):
         if not preprocessed:
             if verbose:
                 LOG.debug("Preprocessing inputs")
-            tensor, _, _ = self.preprocess(image, no_copy=no_copy_pre)
+            tensor, _, _ = self.preprocess(images, no_copy=no_copy_pre)
         else:
-            tensor = image
+            # images is already preprocessed tensor when preprocessed=True
+            tensor = images[0] if isinstance(images, list) and len(images) == 1 else images
 
         # execute
         t0 = time.perf_counter()
@@ -347,18 +348,18 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def get_classifications(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[list[np.ndarray]],
         top_k: int = 5,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[int, float]]:
+    ) -> list[list[tuple[int, float]]]:
         """
-        Get the classifications of the last output or provided output.
+        Get the classifications from postprocessed outputs.
 
         Parameters
         ----------
-        outputs : list[np.ndarray]
-            The outputs to process.
+        outputs : list[list[np.ndarray]]
+            The postprocessed outputs per image.
         top_k : int, optional
             The number of top predictions to return. Default is 5.
         verbose : bool, optional
@@ -366,8 +367,8 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[tuple[int, float]]
-            The classifications where each entry is (class_id, confidence)
+        list[list[tuple[int, float]]]
+            The classifications per image, where each entry is (class_id, confidence).
 
         """
         if verbose:
@@ -377,13 +378,13 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def end2end(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         top_k: int = 5,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[int, float]]:
+    ) -> list[list[tuple[int, float]]]:
         """
-        Perform end to end inference for a model.
+        Perform end to end inference for a batch of images.
 
         Equivalent to running preprocess, run, postprocess, and
         get_classifications in that order. Makes some memory transfer
@@ -391,8 +392,8 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to perform inference with.
+        images : list[np.ndarray]
+            The images to perform inference with.
         top_k : int, optional
             The number of top predictions to return. Default is 5.
         verbose : bool, optional
@@ -400,21 +401,21 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[tuple[int, float]]
-            The classifications where each entry is (class_id, confidence)
+        list[list[tuple[int, float]]]
+            The classifications per image, where each entry is (class_id, confidence).
 
         """
         if verbose:
             LOG.debug(f"{self._tag}: end2end")
 
-        outputs: list[np.ndarray]
+        outputs: list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             if verbose:
                 LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
 
             outputs = self.run(
-                image,
+                images,
                 preprocessed=False,
                 postprocess=True,
                 no_copy=True,
@@ -426,13 +427,13 @@ class Classifier(ImageModel, ClassifierInterface):
 
             # if using CUDA, can remove much more
             gpu_ptr, _, _ = self._preprocessor.direct_preproc(
-                image,
+                images,
                 resize=self._resize_method,
                 no_warn=True,
                 verbose=verbose,
             )
-            outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
-            outputs = self.postprocess(outputs, no_copy=True, verbose=verbose)
+            raw_outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
+            outputs = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
 
         # generate the classifications
         return self.get_classifications(outputs, top_k=top_k, verbose=verbose)

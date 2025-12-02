@@ -292,37 +292,41 @@ class ImageModel:
 
     def get_random_input(
         self: Self,
-    ) -> np.ndarray:
+    ) -> list[np.ndarray]:
         """
-        Generate a random image for the model.
+        Generate random images for the model.
 
         Returns
         -------
-        np.ndarray
-            The random image.
+        list[np.ndarray]
+            A list containing one random image.
 
         """
-        return self._engine.get_random_input()[0]
+        return [self._engine.get_random_input()[0]]
 
     def mock_run(
         self: Self,
-        image: np.ndarray | None = None,
+        images: list[np.ndarray] | None = None,
     ) -> list[np.ndarray]:
         """
         Mock an execution of the model.
 
         Parameters
         ----------
-        image : np.ndarray, optional
-            Optional inputs to use for execution.
+        images : list[np.ndarray], optional
+            Optional batch of images to use for execution.
             If None, random data will be generated.
 
         Returns
         -------
         list[np.ndarray]
-            The outputs of the model
+            The raw outputs of the model.
 
         """
-        if image is not None:
-            return self._engine.mock_execute(data=[image])
+        if images is not None:
+            # Stack images into batch tensor if provided as list
+            if len(images) == 1:
+                return self._engine.mock_execute(data=[images[0]])
+            batch_tensor = np.stack(images, axis=0)
+            return self._engine.mock_execute(data=[batch_tensor])
         return self._engine.mock_execute()

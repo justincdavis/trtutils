@@ -166,22 +166,22 @@ class Detector(ImageModel, DetectorInterface):
 
     def preprocess(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         method: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
         """
-        Preprocess the input.
+        Preprocess the input images.
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to preprocess
+        images : list[np.ndarray]
+            The images to preprocess.
         resize : str
-            The method to resize the image with.
+            The method to resize the images with.
             Options are [letterbox, linear].
             By default None, which will use the value passed
             during initialization.
@@ -199,14 +199,14 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        tuple[list[np.ndarray], tuple[float, float], tuple[float, float]]
-            The preprocessed inputs, rescale ratios, and padding values
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios per image, and list of padding per image.
 
         """
         resize = resize if resize is not None else self._resize_method
         if verbose:
             LOG.debug(
-                f"{self._tag}: Running preprocess, shape: {image.shape}, with method: {resize}",
+                f"{self._tag}: Running preprocess, batch_size: {len(images)}, with method: {resize}",
             )
             LOG.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self._preprocessor
@@ -227,11 +227,11 @@ class Detector(ImageModel, DetectorInterface):
                 preprocessor = self._preproc_trt
         if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             t0 = time.perf_counter()
-            data = preprocessor(image, resize=resize, no_copy=no_copy, verbose=verbose)
+            data = preprocessor(images, resize=resize, no_copy=no_copy, verbose=verbose)
             t1 = time.perf_counter()
         else:
             t0 = time.perf_counter()
-            data = preprocessor(image, resize=resize, verbose=verbose)
+            data = preprocessor(images, resize=resize, verbose=verbose)
             t1 = time.perf_counter()
         self._pre_profile = (t0, t1)
         return data
@@ -239,24 +239,24 @@ class Detector(ImageModel, DetectorInterface):
     def postprocess(
         self: Self,
         outputs: list[np.ndarray],
-        ratios: tuple[float, float],
-        padding: tuple[float, float],
+        ratios: list[tuple[float, float]],
+        padding: list[tuple[float, float]],
         conf_thres: float | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[np.ndarray]:
+    ) -> list[list[np.ndarray]]:
         """
         Postprocess the outputs.
 
         Parameters
         ----------
         outputs : list[np.ndarray]
-            The outputs to postprocess
-        ratios : tuple[float, float]
-            The rescale ratios used during preprocessing
-        padding : tuple[float, float]
-            The padding values used during preprocessing
+            The raw outputs from the engine to postprocess.
+        ratios : list[tuple[float, float]]
+            The rescale ratios used during preprocessing for each image.
+        padding : list[tuple[float, float]]
+            The padding values used during preprocessing for each image.
         conf_thres : float, optional
             The confidence threshold to filter detections by.
             If not passed, will use value from constructor.
@@ -269,8 +269,9 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[np.ndarray]
-            The postprocessed outputs
+        list[list[np.ndarray]]
+            The postprocessed outputs per image, each containing
+            [bboxes, scores, class_ids].
 
         """
         if verbose:
@@ -293,27 +294,27 @@ class Detector(ImageModel, DetectorInterface):
 
     def __call__(
         self: Self,
-        image: np.ndarray,
-        ratios: tuple[float, float] | None = None,
-        padding: tuple[float, float] | None = None,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = None,
+        padding: list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[np.ndarray]:
+    ) -> list[list[np.ndarray]]:
         """
         Run the model on input.
 
         Parameters
         ----------
-        image : np.ndarray
-            The data to run the model on.
-        ratios : tuple[float, float], optional
-            The ratios generated during preprocessing.
-        padding : tuple[float, float], optional
-            The padding values used during preprocessing.
+        images : list[np.ndarray]
+            The images to run the model on.
+        ratios : list[tuple[float, float]], optional
+            The ratios generated during preprocessing for each image.
+        padding : list[tuple[float, float]], optional
+            The padding values used during preprocessing for each image.
         conf_thres : float, optional
             Optional confidence threshold to filter detections
             via during postprocessing.
@@ -334,12 +335,12 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[np.ndarray]
-            The outputs of the model.
+        list[list[np.ndarray]]
+            The postprocessed outputs per image.
 
         """
         return self.run(
-            image,
+            images,
             ratios,
             padding,
             conf_thres,
@@ -351,27 +352,27 @@ class Detector(ImageModel, DetectorInterface):
 
     def run(
         self: Self,
-        image: np.ndarray,
-        ratios: tuple[float, float] | None = None,
-        padding: tuple[float, float] | None = None,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = None,
+        padding: list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[np.ndarray]:
+    ) -> list[list[np.ndarray]]:
         """
         Run the model on input.
 
         Parameters
         ----------
-        image: np.ndarray
-            The data to run the model on.
-        ratios : tuple[float, float], optional
-            The ratios generated during preprocessing.
-        padding : tuple[float, float], optional
-            The padding values used during preprocessing.
+        images : list[np.ndarray]
+            The images to run the model on.
+        ratios : list[tuple[float, float]], optional
+            The ratios generated during preprocessing for each image.
+        padding : list[tuple[float, float]], optional
+            The padding values used during preprocessing for each image.
         conf_thres : float, optional
             Optional confidence threshold to filter detections
             via during postprocessing.
@@ -399,8 +400,8 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[np.ndarray]
-            The outputs of the model.
+        list[list[np.ndarray]]
+            The postprocessed outputs per image.
 
         Raises
         ------
@@ -438,20 +439,26 @@ class Detector(ImageModel, DetectorInterface):
         if not preprocessed:
             if verbose:
                 LOG.debug("Preprocessing inputs")
-            tensor, ratios, padding = self.preprocess(image, no_copy=no_copy_pre)
+            tensor, ratios, padding = self.preprocess(images, no_copy=no_copy_pre)
         else:
-            tensor = image
+            # images is already preprocessed tensor when preprocessed=True
+            tensor = images[0] if isinstance(images, list) and len(images) == 1 else images
+
+        batch_size = len(images) if not preprocessed else tensor.shape[0]
 
         # build input list based on schema
         engine_inputs = [tensor]
         if self._use_image_size:
-            engine_inputs.append(
-                np.array(image.shape[:2], dtype=np.int32).reshape(1, 2),
+            # Build batched orig_target_sizes: (batch, 2) with (height, width) per image
+            orig_sizes = np.array(
+                [img.shape[:2] for img in images] if not preprocessed else [[self._input_size[1], self._input_size[0]]] * batch_size,
+                dtype=np.int32,
             )
+            engine_inputs.append(orig_sizes)
         if self._use_scale_factor:
-            engine_inputs.append(
-                np.array([ratios], dtype=np.float32).reshape(1, 2),
-            )
+            # Build batched scale_factor: (batch, 2) from ratios list
+            scale_factors = np.array(ratios, dtype=np.float32)
+            engine_inputs.append(scale_factors)
 
         # execute
         t0 = time.perf_counter()
@@ -479,24 +486,25 @@ class Detector(ImageModel, DetectorInterface):
 
     def get_detections(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[list[np.ndarray]],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[tuple[tuple[int, int, int, int], float, int]]:
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
         """
-        Get the bounding boxes of the last output or provided output.
+        Get the bounding boxes from postprocessed outputs.
 
         Parameters
         ----------
-        outputs : list[np.ndarray]
-            The outputs to process.
+        outputs : list[list[np.ndarray]]
+            The postprocessed outputs per image, each containing
+            [bboxes, scores, class_ids].
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
-            By default None, which will use value passed during initialization
+            By default None, which will use value passed during initialization.
         nms_iou_thres : float
             The IOU threshold to use during the optional/additional
             NMS operation. By default, None which will use value
@@ -514,8 +522,9 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[tuple[tuple[int, int, int, int], float, int]]
-            The detections
+        list[list[tuple[tuple[int, int, int, int], float, int]]]
+            The detections per image, where each detection is
+            ((x1, y1, x2, y2), score, class_id).
 
         """
         if verbose:
@@ -536,16 +545,16 @@ class Detector(ImageModel, DetectorInterface):
 
     def end2end(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[tuple[tuple[int, int, int, int], float, int]]:
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
         """
-        Perform end to end inference for a model.
+        Perform end to end inference for a batch of images.
 
         Equivalent to running preprocess, run, postprocess, and
         get_detections in that order. Makes some memory transfer
@@ -553,11 +562,11 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to perform inference with.
+        images : list[np.ndarray]
+            The images to perform inference with.
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
-            By default None
+            By default None.
         nms_iou_thres : float
             The IOU threshold to use during the optional/additional
             NMS operation. By default, None which will use value
@@ -575,8 +584,9 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[tuple[tuple[int, int, int, int], float, int]]
-            The detections where each entry is bbox, conf, class_id
+        list[list[tuple[tuple[int, int, int, int], float, int]]]
+            The detections per image, where each detection is
+            ((x1, y1, x2, y2), score, class_id).
 
         Raises
         ------
@@ -589,14 +599,14 @@ class Detector(ImageModel, DetectorInterface):
         if verbose:
             LOG.debug(f"{self._tag}: end2end")
 
-        outputs: list[np.ndarray]
+        outputs: list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             if verbose:
                 LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
 
             outputs = self.run(
-                image,
+                images,
                 conf_thres=conf_thres,
                 preprocessed=False,
                 postprocess=True,
@@ -609,7 +619,7 @@ class Detector(ImageModel, DetectorInterface):
 
             # if using CUDA, can remove much more
             gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
-                image,
+                images,
                 resize=self._resize_method,
                 no_warn=True,
                 verbose=verbose,
@@ -632,9 +642,9 @@ class Detector(ImageModel, DetectorInterface):
                     err_msg = "scale_factor buffer not valid"
                     raise RuntimeError(err_msg)
 
-            outputs = self._engine.direct_exec(input_ptrs, no_warn=True)
+            raw_outputs = self._engine.direct_exec(input_ptrs, no_warn=True)
             outputs = self.postprocess(
-                outputs,
+                raw_outputs,
                 ratios,
                 padding,
                 conf_thres,
