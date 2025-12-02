@@ -27,9 +27,9 @@ if TYPE_CHECKING:
 
 @dataclass
 class _InputPacket:
-    data: np.ndarray
-    ratio: tuple[float, float] | None = None
-    padding: tuple[float, float] | None = None
+    data: list[np.ndarray]
+    ratios: list[tuple[float, float]] | None = None
+    padding: list[tuple[float, float]] | None = None
     preprocess_method: str | None = "trt"
     preprocessed: bool | None = None
     postprocess: bool | None = None
@@ -38,9 +38,9 @@ class _InputPacket:
 
 @dataclass
 class _OutputPacket:
-    data: list[np.ndarray]
-    ratio: tuple[float, float] | None = None
-    padding: tuple[float, float] | None = None
+    data: list[list[np.ndarray]]
+    ratios: list[tuple[float, float]] | None = None
+    padding: list[tuple[float, float]] | None = None
     postprocessed: bool | None = None
 
 
@@ -223,7 +223,7 @@ class ParallelDetector:
 
     def preprocess(
         self: Self,
-        inputs: list[np.ndarray],
+        inputs: list[list[np.ndarray]],
         resize: str = "letterbox",
         method: str | None = None,
         *,
@@ -231,16 +231,16 @@ class ParallelDetector:
         verbose: bool | None = None,
     ) -> tuple[
         list[np.ndarray],
-        list[tuple[float, float]],
-        list[tuple[float, float]],
+        list[list[tuple[float, float]]],
+        list[list[tuple[float, float]]],
     ]:
         """
         Preprocess inputs for inference.
 
         Parameters
         ----------
-        inputs : list[np.ndarray]
-            The inputs to preprocess.
+        inputs : list[list[np.ndarray]]
+            The inputs to preprocess, one batch per model.
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
@@ -258,8 +258,8 @@ class ParallelDetector:
 
         Returns
         -------
-        tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]]]
-            The preprocessed inputs.
+        tuple[list[np.ndarray], list[list[tuple[float, float]]], list[list[tuple[float, float]]]]
+            The preprocessed tensors, ratios per image per model, and padding per image per model.
 
         Raises
         ------
@@ -272,11 +272,11 @@ class ParallelDetector:
             raise ValueError(err_msg)
 
         tensors: list[np.ndarray] = []
-        ratios: list[tuple[float, float]] = []
-        paddings: list[tuple[float, float]] = []
-        for modelid, data in enumerate(inputs):
-            tensor, ratio, padding = self.preprocess_model(
-                data,
+        ratios: list[list[tuple[float, float]]] = []
+        paddings: list[list[tuple[float, float]]] = []
+        for modelid, batch in enumerate(inputs):
+            tensor, ratio_list, padding_list = self.preprocess_model(
+                batch,
                 modelid,
                 resize=resize,
                 method=method,
@@ -284,27 +284,27 @@ class ParallelDetector:
                 verbose=verbose,
             )
             tensors.append(tensor)
-            ratios.append(ratio)
-            paddings.append(padding)
+            ratios.append(ratio_list)
+            paddings.append(padding_list)
         return tensors, ratios, paddings
 
     def preprocess_model(
         self: Self,
-        data: np.ndarray,
+        images: list[np.ndarray],
         modelid: int,
         resize: str = "letterbox",
         method: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
         """
-        Preprocess data for a specific model.
+        Preprocess a batch of images for a specific model.
 
         Parameters
         ----------
-        data : np.ndarray
-            The data to preprocess.
+        images : list[np.ndarray]
+            The batch of images to preprocess.
         modelid : int
             The model to preprocess the data for.
         resize : str
@@ -324,14 +324,14 @@ class ParallelDetector:
 
         Returns
         -------
-        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-            The preprocessed data
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed tensor, ratios per image, and padding per image.
 
         """
         if verbose:
             LOG.debug(f"{self._tag}: Preprocess model: {modelid}")
         return self.get_model(modelid).preprocess(
-            data,
+            images,
             resize=resize,
             method=method,
             no_copy=no_copy,
@@ -341,23 +341,23 @@ class ParallelDetector:
     def postprocess(
         self: Self,
         outputs: list[list[np.ndarray]],
-        ratios: list[tuple[float, float]],
-        paddings: list[tuple[float, float]],
+        ratios: list[list[tuple[float, float]]],
+        paddings: list[list[tuple[float, float]]],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[list[list[np.ndarray]]]:
         """
-        Preprocess outputs for inference.
+        Postprocess outputs for inference.
 
         Parameters
         ----------
-        outputs : list[np.ndarray]
-            The outputs to preprocess.
-        ratios : list[tuple[float, float]]
-            The ratios generated by the preprocess stage.
-        paddings : list[tuple[float, float]]
-            The paddings generated by the preprocess stage.
+        outputs : list[list[np.ndarray]]
+            The raw outputs per model.
+        ratios : list[list[tuple[float, float]]]
+            The ratios per image per model.
+        paddings : list[list[tuple[float, float]]]
+            The paddings per image per model.
         no_copy : bool, optional
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
@@ -367,8 +367,8 @@ class ParallelDetector:
 
         Returns
         -------
-        list[list[np.ndarray]]
-            The postprocessed outputs.
+        list[list[list[np.ndarray]]]
+            The postprocessed outputs per image per model.
 
         Raises
         ------
@@ -380,8 +380,8 @@ class ParallelDetector:
             err_msg = "Outputs do not match models"
             raise ValueError(err_msg)
         return [
-            self.postprocess_model(output, modelid, ratio, padding, no_copy=no_copy, verbose=verbose)
-            for modelid, (output, ratio, padding) in enumerate(
+            self.postprocess_model(output, modelid, ratio_list, padding_list, no_copy=no_copy, verbose=verbose)
+            for modelid, (output, ratio_list, padding_list) in enumerate(
                 zip(outputs, ratios, paddings),
             )
         ]
@@ -390,25 +390,25 @@ class ParallelDetector:
         self: Self,
         outputs: list[np.ndarray],
         modelid: int,
-        ratios: tuple[float, float],
-        padding: tuple[float, float],
+        ratios: list[tuple[float, float]],
+        padding: list[tuple[float, float]],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[np.ndarray]:
+    ) -> list[list[np.ndarray]]:
         """
         Postprocess outputs for a specific model.
 
         Parameters
         ----------
         outputs : list[np.ndarray]
-            The outputs to postprocess.
+            The raw outputs to postprocess.
         modelid : int
             The model to postprocess the data for.
-        ratios : tuple[float, float]
-            The ratios generated by the preprocess stage
-        padding : tuple[float, float]
-            The padding generated by the preprocess stage
+        ratios : list[tuple[float, float]]
+            The ratios per image from preprocessing.
+        padding : list[tuple[float, float]]
+            The padding per image from preprocessing.
         no_copy : bool, optional
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
@@ -418,8 +418,8 @@ class ParallelDetector:
 
         Returns
         -------
-        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-            The preprocessed data
+        list[list[np.ndarray]]
+            The postprocessed outputs per image.
 
         """
         if verbose:
@@ -434,24 +434,24 @@ class ParallelDetector:
 
     def get_detections(
         self: Self,
-        outputs: list[list[np.ndarray]],
+        outputs: list[list[list[np.ndarray]]],
         *,
         verbose: bool | None = None,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    ) -> list[list[list[tuple[tuple[int, int, int, int], float, int]]]]:
         """
         Get the detections of the YOLO models.
 
         Parameters
         ----------
-        outputs : list[list[np.ndarray]]
-            The outputs of the models after postprocessing.
+        outputs : list[list[list[np.ndarray]]]
+            The postprocessed outputs per image per model.
         verbose : bool, optional
             Whether or not to log additional information.
 
         Returns
         -------
-        list[list[tuple[tuple[int, int, int, int], float, int]]]
-            The detections
+        list[list[list[tuple[tuple[int, int, int, int], float, int]]]]
+            The detections per image per model.
 
         """
         return [
@@ -461,18 +461,18 @@ class ParallelDetector:
 
     def get_detections_model(
         self: Self,
-        output: list[np.ndarray],
+        outputs: list[list[np.ndarray]],
         modelid: int,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[tuple[int, int, int, int], float, int]]:
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
         """
-        Get the detections of a single YOLO model.
+        Get the detections for a batch from a single model.
 
         Parameters
         ----------
-        output : list[np.ndarray]
-            The output of a model after postprocessing.
+        outputs : list[list[np.ndarray]]
+            The postprocessed outputs per image.
         modelid : int
             The model ID of which model is forming detections.
         verbose : bool, optional
@@ -480,19 +480,19 @@ class ParallelDetector:
 
         Returns
         -------
-        list[tuple[tuple[int, int, int, int], float, int]]
-            The detections produced by the model
+        list[list[tuple[tuple[int, int, int, int], float, int]]]
+            The detections per image.
 
         """
         if verbose:
             LOG.debug(f"{self._tag}: GetDetections model: {modelid}")
-        return self.get_model(modelid).get_detections(output, verbose=verbose)
+        return self.get_model(modelid).get_detections(outputs, verbose=verbose)
 
     def submit(
         self: Self,
-        inputs: list[np.ndarray],
-        ratios: list[tuple[float, float]] | None = None,
-        paddings: list[tuple[float, float]] | None = None,
+        inputs: list[list[np.ndarray]],
+        ratios: list[list[tuple[float, float]]] | None = None,
+        paddings: list[list[tuple[float, float]]] | None = None,
         preprocess_method: str | None = None,
         *,
         preprocessed: bool | None = None,
@@ -501,16 +501,16 @@ class ParallelDetector:
         verbose: bool | None = None,
     ) -> None:
         """
-        Submit data to be run for all models or a specific one.
+        Submit batches to all models.
 
         Parameters
         ----------
-        inputs : list[np.ndarray]
-            The inputs to pass to the models
-        ratios : list[tuple[float, float]], optional
-            The optional ratio values for each input
-        paddings : list[tuple[float, float]], optional
-            The optional padding values for each input
+        inputs : list[list[np.ndarray]]
+            The batches to pass to each model.
+        ratios : list[list[tuple[float, float]]], optional
+            The ratios per image per model.
+        paddings : list[list[tuple[float, float]]], optional
+            The padding per image per model.
         preprocess_method : str, optional
             The method to use for preprocessing.
             Options are 'cpu', 'cuda', 'trt'. By default None, which
@@ -539,14 +539,14 @@ class ParallelDetector:
         if (preprocessed and postprocess) and (ratios is None or paddings is None):
             err_msg = "Must provide ratios/paddings if input is marked preprocessed and postprocess is True."
             raise ValueError(err_msg)
-        for modelid, data in enumerate(inputs):
-            ratio = None if ratios is None else ratios[modelid]
-            padding = None if paddings is None else paddings[modelid]
+        for modelid, batch in enumerate(inputs):
+            ratio_list = None if ratios is None else ratios[modelid]
+            padding_list = None if paddings is None else paddings[modelid]
             self.submit_model(
-                data,
+                batch,
                 modelid,
-                ratio,
-                padding,
+                ratio_list,
+                padding_list,
                 preprocess_method=preprocess_method,
                 preprocessed=preprocessed,
                 postprocess=postprocess,
@@ -556,10 +556,10 @@ class ParallelDetector:
 
     def submit_model(
         self: Self,
-        inputs: np.ndarray,
+        images: list[np.ndarray],
         modelid: int,
-        ratio: tuple[float, float] | None = None,
-        padding: tuple[float, float] | None = None,
+        ratios: list[tuple[float, float]] | None = None,
+        padding: list[tuple[float, float]] | None = None,
         preprocess_method: str | None = None,
         *,
         preprocessed: bool | None = None,
@@ -568,18 +568,18 @@ class ParallelDetector:
         verbose: bool | None = None,
     ) -> None:
         """
-        Submit data to a specific model.
+        Submit a batch to a specific model.
 
         Parameters
         ----------
-        inputs: np.ndarray
-            The data to send to the model.
+        images : list[np.ndarray]
+            The batch of images to send to the model.
         modelid : int
-            The specific model indix to send the data to.
-        ratio : tuple[float, float], optional
-            The ratio (if generated) by preprocess.
-        padding : tuple[float, float], optional
-            The padding (if generated) by postprocess
+            The specific model index to send the data to.
+        ratios : list[tuple[float, float]], optional
+            The ratios per image from preprocessing.
+        padding : list[tuple[float, float]], optional
+            The padding per image from preprocessing.
         preprocess_method : str, optional
             The method to use for preprocessing.
             Options are 'cpu', 'cuda', 'trt'. By default None, which
@@ -587,7 +587,7 @@ class ParallelDetector:
         preprocessed : bool, optional
             Whether or not the inputs are preprocessed.
         postprocess : bool, optional
-            Wherher or not to perform postprocessing.
+            Whether or not to perform postprocessing.
         no_copy : bool, optional
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
@@ -599,8 +599,8 @@ class ParallelDetector:
         if verbose:
             LOG.debug(f"{self._tag}: Submit model: {modelid}")
         packet = _InputPacket(
-            data=inputs,
-            ratio=ratio,
+            data=images,
+            ratios=ratios,
             padding=padding,
             preprocess_method=preprocess_method,
             preprocessed=preprocessed,
@@ -613,7 +613,7 @@ class ParallelDetector:
         self: Self,
     ) -> list[np.ndarray]:
         """
-        Get random inputs.
+        Get random inputs (one per model).
 
         Returns
         -------
@@ -625,7 +625,7 @@ class ParallelDetector:
 
     def mock_submit(
         self,
-        data: list[np.ndarray] | np.ndarray | None = None,
+        data: list[list[np.ndarray]] | list[np.ndarray] | None = None,
         modelid: int | None = None,
     ) -> None:
         """
@@ -633,50 +633,53 @@ class ParallelDetector:
 
         Parameters
         ----------
-        data : list[np.ndarray], np.ndarray, optional
-            The inputs to use for the inference.
+        data : list[list[np.ndarray]], list[np.ndarray], optional
+            The inputs to use for the inference. If modelid is specified,
+            should be list[np.ndarray] (single batch). Otherwise should be
+            list[list[np.ndarray]] (batch per model).
         modelid : int, optional
             The specific engine to perform a mock submit for.
 
         Raises
         ------
         ValueError
-            If specified modelid, but gave list of random input
-            If gave single np.ndarray input, but did not specify modelid
+            If specified modelid, but gave list of batches
+            If gave single batch, but did not specify modelid
 
         """
         if modelid is not None:
-            if isinstance(data, np.ndarray):
+            if data is not None and len(data) > 0 and isinstance(data[0], np.ndarray):
+                # Single batch for single model
                 self.submit_model(
-                    data,
+                    data,  # type: ignore[arg-type]
                     modelid,
                     preprocessed=True,
                     postprocess=False,
                     no_copy=True,
                 )
-            elif isinstance(data, list):
-                err_msg = "Submitted list[np.ndarray], but specified model ID."
+            elif data is not None and len(data) > 0 and isinstance(data[0], list):
+                err_msg = "Submitted list[list[np.ndarray]], but specified model ID."
                 raise ValueError(err_msg)
             else:
-                # need to generate the data
-                data = self.get_model(modelid).get_random_input()
+                # Generate random data
+                random_input = self.get_model(modelid).get_random_input()
                 self.submit_model(
-                    data,
+                    [random_input],
                     modelid,
                     preprocessed=True,
                     postprocess=False,
                     no_copy=True,
                 )
         else:
-            # the data is a list and no model specified
-            if isinstance(data, list):
-                self.submit(data, preprocessed=True, postprocess=False, no_copy=True)
-            elif isinstance(data, np.ndarray):
-                err_msg = "Submitted np.ndarray, but no model ID to specify which model."
+            if data is not None and len(data) > 0 and isinstance(data[0], list):
+                # Batches for all models
+                self.submit(data, preprocessed=True, postprocess=False, no_copy=True)  # type: ignore[arg-type]
+            elif data is not None and len(data) > 0 and isinstance(data[0], np.ndarray):
+                err_msg = "Submitted list[np.ndarray], but no model ID to specify which model."
                 raise ValueError(err_msg)
             else:
-                # need to generate the data
-                inputs = [self.get_model(mid).get_random_input() for mid in range(len(self._models))]
+                # Generate random data
+                inputs = [[self.get_model(mid).get_random_input()] for mid in range(len(self._models))]
                 self.submit(inputs, preprocessed=True, postprocess=False, no_copy=True)
 
     def retrieve(
@@ -684,9 +687,9 @@ class ParallelDetector:
         *,
         verbose: bool | None = None,
     ) -> tuple[
-        list[list[np.ndarray]],
-        list[tuple[float, float] | None],
-        list[tuple[float, float] | None],
+        list[list[list[np.ndarray]]],
+        list[list[tuple[float, float]] | None],
+        list[list[tuple[float, float]] | None],
     ]:
         """
         Get outputs back from all the models.
@@ -698,18 +701,18 @@ class ParallelDetector:
 
         Returns
         -------
-        list[tuple[list[np.ndarray], tuple[float, float], tuple[float, float]]]
-            The outputs from all models
+        tuple[list[list[list[np.ndarray]]], list[list[tuple[float, float]] | None], list[list[tuple[float, float]] | None]]
+            The outputs per image per model, ratios per image per model, padding per image per model.
 
         """
-        outputs: list[list[np.ndarray]] = []
-        ratios: list[tuple[float, float] | None] = []
-        paddings: list[tuple[float, float] | None] = []
+        outputs: list[list[list[np.ndarray]]] = []
+        ratios: list[list[tuple[float, float]] | None] = []
+        paddings: list[list[tuple[float, float]] | None] = []
         for modelid in range(len(self._engine_info)):
-            output, ratio, padding = self.retrieve_model(modelid, verbose=verbose)
+            output, ratio_list, padding_list = self.retrieve_model(modelid, verbose=verbose)
             outputs.append(output)
-            ratios.append(ratio)
-            paddings.append(padding)
+            ratios.append(ratio_list)
+            paddings.append(padding_list)
         return outputs, ratios, paddings
 
     def retrieve_model(
@@ -718,9 +721,9 @@ class ParallelDetector:
         *,
         verbose: bool | None = None,
     ) -> tuple[
-        list[np.ndarray],
-        tuple[float, float] | None,
-        tuple[float, float] | None,
+        list[list[np.ndarray]],
+        list[tuple[float, float]] | None,
+        list[tuple[float, float]] | None,
     ]:
         """
         Get the outputs from a specific model.
@@ -734,37 +737,37 @@ class ParallelDetector:
 
         Returns
         -------
-        tuple[list[np.ndarray], tuple[float, float] | None, tuple[float, float] | None]
-            The outputs of the model
+        tuple[list[list[np.ndarray]], list[tuple[float, float]] | None, list[tuple[float, float]] | None]
+            The outputs per image, ratios per image, and padding per image.
 
         """
         if verbose:
             LOG.debug(f"{self._tag}: Retrieve model: {modelid}")
         packet = self._oqueues[modelid].get()
-        return (packet.data, packet.ratio, packet.padding)
+        return (packet.data, packet.ratios, packet.padding)
 
     def end2end(
         self: Self,
-        inputs: list[np.ndarray],
-        ratios: list[tuple[float, float]] | None = None,
-        paddings: list[tuple[float, float]] | None = None,
+        inputs: list[list[np.ndarray]],
+        ratios: list[list[tuple[float, float]]] | None = None,
+        paddings: list[list[tuple[float, float]]] | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    ) -> list[list[list[tuple[tuple[int, int, int, int], float, int]]]]:
         """
         Perform end-to-end inference for all models.
 
         Parameters
         ----------
-        inputs : list[np.ndarray]
-            The inputs to pass to the models
-        ratios : list[tuple[float, float]], optional
-            The optional ratio values for each input
-        paddings : list[tuple[float, float]], optional
-            The optional padding values for each input
+        inputs : list[list[np.ndarray]]
+            The batches to pass to each model.
+        ratios : list[list[tuple[float, float]]], optional
+            The ratios per image per model.
+        paddings : list[list[tuple[float, float]]], optional
+            The padding per image per model.
         preprocessed : bool, optional
             Whether or not the inputs are preprocessed
         postprocess : bool, optional
@@ -778,8 +781,8 @@ class ParallelDetector:
 
         Returns
         -------
-        list[list[tuple[tuple[int, int, int, int], float, int]]]
-            The outputs of the models
+        list[list[list[tuple[tuple[int, int, int, int], float, int]]]]
+            The detections per image per model.
 
         """
         self.submit(
@@ -816,8 +819,8 @@ class ParallelDetector:
         flag.set()
 
         # set types
-        ratio: tuple[float, float] | None
-        padding: tuple[float, float] | None
+        ratios: list[tuple[float, float]] | None
+        padding: list[tuple[float, float]] | None
 
         # handle inference
         while not self._stopflag.is_set():
@@ -827,7 +830,7 @@ class ParallelDetector:
                 continue
             LOG.debug(f"{self._tag}: Received data")
 
-            img = data.data
+            images = data.data
 
             # path 1: GPU preprocess needed, make end2end optimizations
             if not data.preprocessed and (
@@ -840,21 +843,25 @@ class ParallelDetector:
                 )
                 # if the preprocessor is None, need to use preprocess method to create it
                 if preproc is None:
-                    img, ratio, padding = detector.preprocess(
-                        img,
+                    tensor, ratios, padding = detector.preprocess(
+                        images,
                         method=data.preprocess_method,
                         no_copy=data.no_copy,
                     )
                     t0 = time.perf_counter()
+                    # Run inference only (postprocess=False), handle postprocessing separately
                     results = detector.run(
-                        img,
+                        [tensor],
+                        ratios=ratios,
+                        padding=padding,
                         preprocessed=True,
-                        postprocess=data.postprocess,
+                        postprocess=False,
                         no_copy=data.no_copy,
                     )
                     t1 = time.perf_counter()
                 else:
-                    gpu_img, ratio, padding = preproc.direct_preproc(img, no_warn=True)
+                    # direct_preproc handles batch
+                    gpu_img, ratios, padding = preproc.direct_preproc(images, no_warn=True)
                     t0 = time.perf_counter()
                     results = detector.engine.direct_exec([gpu_img], no_warn=True)
                     t1 = time.perf_counter()
@@ -862,40 +869,44 @@ class ParallelDetector:
             # path 2: preprocess not needed, or CPU preprocessing
             else:
                 if not data.preprocessed:
-                    img, ratio, padding = detector.preprocess(
-                        img,
+                    tensor, ratios, padding = detector.preprocess(
+                        images,
                         method=data.preprocess_method,
                         no_copy=data.no_copy,
                     )
                 else:
-                    ratio = data.ratio
+                    tensor = images[0] if len(images) == 1 else images
+                    ratios = data.ratios
                     padding = data.padding
                 t0 = time.perf_counter()
+                # Run inference only (postprocess=False), handle postprocessing separately
                 results = detector.run(
-                    img,
-                    ratios=ratio,
+                    [tensor],
+                    ratios=ratios,
                     padding=padding,
                     preprocessed=True,
-                    postprocess=data.postprocess,
+                    postprocess=False,
                     no_copy=data.no_copy,
                 )
                 t1 = time.perf_counter()
 
-            # run the postprocessing
+            # run the postprocessing (common for all paths)
             if data.postprocess:
-                if ratio is None or padding is None:
-                    err_msg = "Ratio/Padding is None, but postprocess set to True."
+                if ratios is None or padding is None:
+                    err_msg = "Ratios/Padding is None, but postprocess set to True."
                     raise ValueError(err_msg)
-                results = detector.postprocess(
+                postproc_results = detector.postprocess(
                     results,
-                    ratio,
+                    ratios,
                     padding,
                     no_copy=data.no_copy,
                 )
+            else:
+                postproc_results = results  # type: ignore[assignment]
 
             packet = _OutputPacket(
-                data=results,
-                ratio=ratio,
+                data=postproc_results,
+                ratios=ratios,
                 padding=padding,
                 postprocessed=data.postprocess,
             )
