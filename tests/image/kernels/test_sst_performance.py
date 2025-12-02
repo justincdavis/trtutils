@@ -33,26 +33,28 @@ if TYPE_CHECKING:
 
 
 def _get_kernel_timings(kernel_data: tuple[Path, str]) -> list[float]:
-    output_shape = 640
+    output_height = 640
+    output_width = 640
+    batch_size = 1
     scale = 1.0 / 255.0
     offset = 0.0
 
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_shape, output_shape))
+    img = cv2.resize(img, (output_width, output_height))
 
     stream = create_stream()
 
     # block and thread info
     num_threads: tuple[int, int, int] = (32, 32, 1)
     num_blocks: tuple[int, int, int] = (
-        math.ceil(output_shape / num_threads[0]),
-        math.ceil(output_shape / num_threads[1]),
-        1,
+        math.ceil(output_width / num_threads[0]),
+        math.ceil(output_height / num_threads[1]),
+        batch_size,
     )
 
     # allocate input/output binding
     dummy_input: np.ndarray = np.zeros(
-        (output_shape, output_shape, 3),
+        (output_height, output_width, 3),
         dtype=np.uint8,
     )
     # set is_input since we do not use the host_allocation here
@@ -61,7 +63,7 @@ def _get_kernel_timings(kernel_data: tuple[Path, str]) -> list[float]:
         is_input=True,
     )
     dummy_output: np.ndarray = np.zeros(
-        (1, 3, output_shape, output_shape),
+        (1, 3, output_height, output_width),
         dtype=np.float32,
     )
     # set pagelocked memory since we read from the host allocation
@@ -81,7 +83,9 @@ def _get_kernel_timings(kernel_data: tuple[Path, str]) -> list[float]:
         output_binding.allocation,
         scale,
         offset,
-        output_shape,
+        output_height,
+        output_width,
+        batch_size,
     )
 
     memcpy_host_to_device_async(

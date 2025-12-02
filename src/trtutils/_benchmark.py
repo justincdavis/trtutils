@@ -9,8 +9,9 @@ from pathlib import Path
 from statistics import mean, median
 from typing import TYPE_CHECKING
 
-from ._engine import ParallelTRTEngines, TRTEngine
+from ._engine import TRTEngine
 from ._log import LOG
+from .parallel._parallel_engines import ParallelTRTEngines
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

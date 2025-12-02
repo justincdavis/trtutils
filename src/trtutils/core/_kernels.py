@@ -73,13 +73,22 @@ class Kernel:
             verbose=verbose,
         )
         self._inter_args: deque[list[np.ndarray]] = deque(maxlen=max_arg_cache)
+        self._freed = False
 
     def free(self: Self) -> None:
         """Free the memory of the loaded kernel."""
-        cuda_call(cuda.cuModuleUnload(self._module))
+        if self._freed or self._module is None:
+            return
+        try:
+            cuda_call(cuda.cuModuleUnload(self._module))
+        except Exception:
+            # CUDA context may already be destroyed during interpreter shutdown
+            pass
+        self._module = None
+        self._freed = True
 
     def __del__(self: Self) -> None:
-        with contextlib.suppress(AttributeError, RuntimeError):
+        with contextlib.suppress(AttributeError, RuntimeError, SystemError):
             self.free()
 
     def create_args(
