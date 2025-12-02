@@ -8,8 +8,6 @@ Submodules
 ----------
 :mod:`kernels`
     Kernels for image processing with TensorRT.
-:mod:`parallel`
-    Parallel implementations of image models.
 :mod:`preprocessors`
     Preprocessors for images.
 :mod:`postprocessors`
@@ -40,7 +38,6 @@ from . import (
     interfaces,
     kernels,
     onnx_models,
-    parallel,
     postprocessors,
     preprocessors,
     sahi,
@@ -58,7 +55,6 @@ __all__ = [
     "interfaces",
     "kernels",
     "onnx_models",
-    "parallel",
     "postprocessors",
     "preprocessors",
     "sahi",

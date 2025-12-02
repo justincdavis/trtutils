@@ -8,11 +8,13 @@ Classes
 -------
 :class:`ParallelDetector`
     Parallel implementation of Detector.
+:class:`EngineInfo`
+    Dataclass for specifying engine information for ParallelDetector.
 
 """
 
 from __future__ import annotations
 
-from ._detector import ParallelDetector
+from ._detector import EngineInfo, ParallelDetector
 
-__all__ = ["ParallelDetector"]
+__all__ = ["EngineInfo", "ParallelDetector"]

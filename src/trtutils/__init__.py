@@ -39,16 +39,6 @@ Classes
     A dataclass storing specific metric information from benchmarking.
 :class:`TRTEngine`
     A class for creating TensorRT engines from serialized engine files.
-:class:`TRTModel`
-    A class for running inference on TensorRT engines.
-:class:`ParallelTRTEngines`
-    A class for running many TRTEngines in parallel.
-:class:`ParallelTRTModels`
-    A class for running many TRTModels in parallel.
-:class:`QueuedTRTEngine`
-    A class for running a TRTEngine in a seperate thread asynchronously.
-:class:`QueuedTRTModel`
-    A class for running a TRTModel in a seperate thread asynchronously.
 
 Functions
 ---------
@@ -126,11 +116,10 @@ __version__ = "0.6.1"
 
 import contextlib
 
-from . import builder, compat, core, download, image, inspect, models, trtexec
+from . import builder, compat, core, download, image, inspect, models, parallel, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
-from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
-from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
 from ._profile import profile_engine
+from ._engine import TRTEngine
 from .builder import build_engine
 from .inspect import inspect_engine
 from .trtexec import find_trtexec, run_trtexec
@@ -142,12 +131,7 @@ __all__ = [
     "LOG",
     "BenchmarkResult",
     "Metric",
-    "ParallelTRTEngines",
-    "ParallelTRTModels",
-    "QueuedTRTEngine",
-    "QueuedTRTModel",
     "TRTEngine",
-    "TRTModel",
     "benchmark_engine",
     "benchmark_engines",
     "build_engine",
@@ -163,6 +147,7 @@ __all__ = [
     "inspect_engine",
     "models",
     "profile_engine",
+    "parallel",
     "register_jit",
     "run_trtexec",
     "set_log_level",
