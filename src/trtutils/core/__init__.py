@@ -54,6 +54,14 @@ Functions
     Copy data from device to host async.
 :func:`memcpy_host_to_device_async`
     Copy data from host to device async.
+:func:`memcpy_device_to_device`
+    Copy data from device to device.
+:func:`memcpy_device_to_device_async`
+    Copy data from device to device async.
+:func:`memcpy_host_to_device_offset`
+    Copy data from host to device with an offset.
+:func:`memcpy_host_to_device_offset_async`
+    Copy data from host to device with an offset async.
 :func:`stream_synchronize`
     Synchronize the cuda stream.
 :func:`nvrtc_call`
@@ -102,10 +110,14 @@ from ._memory import (
     cuda_host_free,
     cuda_malloc,
     free_device_ptrs,
+    memcpy_device_to_device,
+    memcpy_device_to_device_async,
     memcpy_device_to_host,
     memcpy_device_to_host_async,
     memcpy_host_to_device,
     memcpy_host_to_device_async,
+    memcpy_host_to_device_offset,
+    memcpy_host_to_device_offset_async,
 )
 from ._nvrtc import compile_and_load_kernel, compile_kernel, load_kernel, nvrtc_call
 from ._stream import create_stream, destroy_stream, stream_synchronize
@@ -137,10 +149,14 @@ __all__ = [
     "init_cuda",
     "launch_kernel",
     "load_kernel",
+    "memcpy_device_to_device",
+    "memcpy_device_to_device_async",
     "memcpy_device_to_host",
     "memcpy_device_to_host_async",
     "memcpy_host_to_device",
     "memcpy_host_to_device_async",
+    "memcpy_host_to_device_offset",
+    "memcpy_host_to_device_offset_async",
     "nvrtc_call",
     "stream_synchronize",
 ]
