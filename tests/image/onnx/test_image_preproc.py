@@ -31,10 +31,12 @@ def test_trt_preproc_engine() -> None:
     img = cv2.imread(IMG_PATH)
     img = cv2.resize(img, (output_shape, output_shape))
 
-    # cpu version
+    # cpu version (now expects list of images)
     cpu_result, _, _ = preprocess(
-        img, (output_shape, output_shape), np.dtype(np.float32), input_range=o_range
+        [img], (output_shape, output_shape), np.dtype(np.float32), input_range=o_range
     )
+    # Extract first image from batch result
+    cpu_result = cpu_result[0]
 
     # trt version
     engine_path = build_image_preproc(
@@ -51,6 +53,9 @@ def test_trt_preproc_engine() -> None:
         ]
     )
     trt_result = all_result[0]  # only one output
+    # Extract first image from batch (if batched)
+    if trt_result.ndim == 4:
+        trt_result = trt_result[0]
 
     # compare
     assert trt_result.shape == cpu_result.shape
@@ -85,15 +90,17 @@ def test_trt_preproc_imagenet_engine() -> None:
     img = cv2.imread(IMG_PATH)
     img = cv2.resize(img, (output_shape, output_shape))
 
-    # cpu version with mean/std
+    # cpu version with mean/std (now expects list of images)
     cpu_result, _, _ = preprocess(
-        img,
+        [img],
         (output_shape, output_shape),
         np.dtype(np.float32),
         input_range=(0.0, 1.0),
         mean=mean,
         std=std,
     )
+    # Extract first image from batch result
+    cpu_result = cpu_result[0]
 
     # trt version
     engine_path = build_image_preproc_imagenet(
@@ -108,6 +115,9 @@ def test_trt_preproc_imagenet_engine() -> None:
 
     all_result = engine.execute([img, mean_array, std_array])
     trt_result = all_result[0]  # only one output
+    # Extract first image from batch (if batched)
+    if trt_result.ndim == 4:
+        trt_result = trt_result[0]
 
     # compare
     assert trt_result.shape == cpu_result.shape

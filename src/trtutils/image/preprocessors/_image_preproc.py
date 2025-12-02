@@ -14,7 +14,10 @@ import numpy as np
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
-from trtutils.core._memory import memcpy_host_to_device_async
+from trtutils.core._memory import (
+    memcpy_device_to_device_async,
+    memcpy_host_to_device_async,
+)
 from trtutils.core._stream import create_stream
 from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
 
@@ -164,22 +167,22 @@ class ImagePreprocessor(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]: ...
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
 
     @abstractmethod
     def preprocess(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]: ...
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
 
 
 class GPUImagePreprocessor(ImagePreprocessor):
@@ -311,6 +314,21 @@ class GPUImagePreprocessor(ImagePreprocessor):
         self._buffers_valid = False
         self._last_transferred_shape: tuple[int, int] | None = None
 
+        # Track current batch size for buffer reallocation
+        self._current_batch_size: int = 1
+
+        # Single-image resize output buffer (used before D2D copy to batch buffer)
+        dummy_resize_output: np.ndarray = np.zeros(
+            (self._o_shape[1], self._o_shape[0], 3),
+            dtype=np.uint8,
+        )
+        self._resize_output_binding = create_binding(
+            dummy_resize_output,
+            is_input=True,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+        )
+
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError):
             del self._orig_size_buffer
@@ -322,6 +340,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             del self._std_buffer
         with contextlib.suppress(AttributeError):
             del self._input_binding
+        with contextlib.suppress(AttributeError):
+            del self._resize_output_binding
 
     def warmup(self: Self) -> None:
         """
@@ -340,19 +360,19 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
     def __call__(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
         """
-        Preprocess an image for the model.
+        Preprocess images for the model.
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to preprocess.
+        images : list[np.ndarray]
+            The images to preprocess.
         resize : str, optional
             The method to resize the image with.
             Options are [letterbox, linear], will use method
@@ -370,11 +390,11 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         Returns
         -------
-        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-            The preprocessed image, ratios, and padding used for resizing.
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
-        return self.preprocess(image, resize=resize, no_copy=no_copy, verbose=verbose)
+        return self.preprocess(images, resize=resize, no_copy=no_copy, verbose=verbose)
 
     def _allocate_imagenet_buffers(self: Self) -> None:
         # self._mean and self._std are set during the initialiation of ImagePreprocessor
@@ -456,12 +476,12 @@ class GPUImagePreprocessor(ImagePreprocessor):
     @abstractmethod
     def direct_preproc(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         *,
         no_warn: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[int, tuple[float, float], tuple[float, float]]: ...
+    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]: ...
 
     @property
     def orig_size_allocation(self: Self) -> tuple[int, bool]:
@@ -531,3 +551,170 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         self._last_transferred_shape = current_shape
         self._buffers_valid = True
+
+    def _create_resize_args(
+        self: Self,
+        height: int,
+        width: int,
+        method: str,
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[Kernel, np.ndarray, tuple[float, float], tuple[float, float]]:
+        """
+        Create arguments for resize kernel.
+
+        Parameters
+        ----------
+        height : int
+            Input image height.
+        width : int
+            Input image width.
+        method : str
+            Resize method ('letterbox' or 'linear').
+        verbose : bool, optional
+            Enable verbose logging.
+
+        Returns
+        -------
+        tuple[Kernel, np.ndarray, tuple[float, float], tuple[float, float]]
+            Resize kernel, kernel args, ratios, and padding.
+
+        """
+        if verbose:
+            LOG.debug(f"{self._tag}: create_resize_args")
+
+        o_width, o_height = self._o_shape
+        scale_x = o_width / width
+        scale_y = o_height / height
+
+        if method == "letterbox":
+            if verbose:
+                LOG.debug(f"{self._tag}: Making letterbox args")
+
+            scale = min(scale_x, scale_y)
+            new_width = int(width * scale)
+            new_height = int(height * scale)
+            padding_x = int((o_width - new_width) / 2)
+            padding_y = int((o_height - new_height) / 2)
+            ratios = (scale, scale)
+            padding = (padding_x, padding_y)
+
+            resize_kernel = self._letterbox_kernel
+            resize_args = resize_kernel.create_args(
+                self._input_binding.allocation,
+                self._resize_output_binding.allocation,
+                width,
+                height,
+                o_width,
+                o_height,
+                padding_x,
+                padding_y,
+                new_width,
+                new_height,
+                verbose=verbose,
+            )
+        else:
+            if verbose:
+                LOG.debug(f"{self._tag}: Making linear args")
+
+            ratios = (scale_x, scale_y)
+            padding = (0, 0)
+
+            resize_kernel = self._linear_kernel
+            resize_args = resize_kernel.create_args(
+                self._input_binding.allocation,
+                self._resize_output_binding.allocation,
+                width,
+                height,
+                o_width,
+                o_height,
+                verbose=verbose,
+            )
+
+        return resize_kernel, resize_args, ratios, padding
+
+    def _resize_images_to_batch(
+        self: Self,
+        images: list[np.ndarray],
+        batch_buffer_ptr: int,
+        resize: str | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Resize images and copy to batch buffer.
+
+        Parameters
+        ----------
+        images : list[np.ndarray]
+            Images to resize.
+        batch_buffer_ptr : int
+            GPU pointer to batch buffer to copy resized images to.
+        resize : str, optional
+            Resize method.
+        verbose : bool, optional
+            Enable verbose logging.
+
+        Returns
+        -------
+        tuple[list[tuple[float, float]], list[tuple[float, float]]]
+            Lists of ratios and padding per image.
+
+        """
+        ratios_list: list[tuple[float, float]] = []
+        padding_list: list[tuple[float, float]] = []
+
+        o_width, o_height = self._o_shape
+        single_image_bytes = o_height * o_width * 3  # uint8
+
+        for i, image in enumerate(images):
+            # Validate input and get resize method
+            resize_method = self._validate_input(image, resize, verbose=verbose)
+
+            # Create resize arguments
+            height, width = image.shape[:2]
+            resize_kernel, resize_args, ratios, padding = self._create_resize_args(
+                height,
+                width,
+                resize_method,
+                verbose=verbose,
+            )
+
+            if verbose:
+                LOG.debug(f"Image {i}: Ratios: {ratios}, Padding: {padding}")
+
+            ratios_list.append(ratios)
+            padding_list.append(padding)
+
+            # Update extra GPU buffers for input schemas (use first image's values)
+            if i == 0:
+                self._update_extra_buffers(height, width, ratios)
+
+            # Copy image to input binding
+            if self._pagelocked_mem and self._unified_mem:
+                np.copyto(self._input_binding.host_allocation, image)
+            else:
+                memcpy_host_to_device_async(
+                    self._input_binding.allocation,
+                    image,
+                    self._stream,
+                )
+
+            # Run resize kernel (outputs to single-image resize_output_binding)
+            resize_kernel.call(
+                self._num_blocks,
+                self._num_threads,
+                self._stream,
+                resize_args,
+            )
+
+            # D2D copy resized image to batch buffer at correct offset
+            offset_bytes = i * single_image_bytes
+            memcpy_device_to_device_async(
+                batch_buffer_ptr + offset_bytes,
+                self._resize_output_binding.allocation,
+                single_image_bytes,
+                self._stream,
+            )
+
+        return ratios_list, padding_list

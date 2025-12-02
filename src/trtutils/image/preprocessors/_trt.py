@@ -33,8 +33,6 @@ if TYPE_CHECKING:
         except (ImportError, ModuleNotFoundError):
             from cuda import cudart
 
-    from trtutils.core._kernels import Kernel
-
 
 class TRTPreprocessor(GPUImagePreprocessor):
     """TRT-based preprocessor for image processing models."""
@@ -118,6 +116,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
 
         self._batch_size = batch_size
 
+        # Batch intermediate buffer for TRT engine input
         dummy_intermediate: np.ndarray = np.zeros(
             (self._batch_size, self._o_shape[1], self._o_shape[0], 3),
             dtype=np.uint8,
@@ -131,10 +130,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         # determine preprocessing mode, imagenet or yolo
         self._use_imagenet: bool = self._mean_buffer is not None and self._std_buffer is not None
         # if not imagenet, allocate the scale/offset CUDA locations
-        # this is unique to TRT (relative to CUDA) since CUDA
-        # passes these as arguments to the kernel
         if not self._use_imagenet:
-            # allocate the scale/offset CUDA locations
             scale_arr: np.ndarray = np.array((self._scale,), dtype=np.float32)
             self._scale_binding = create_binding(scale_arr)
             memcpy_host_to_device_async(
@@ -150,8 +146,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
                 self._stream,
             )
             stream_synchronize(self._stream)
-        # else case if imagenet
-        # these bindings are allocated in GPUImagePreprocessor if provided
 
         # assign the built engine path based on preprocessing mode
         if self._use_imagenet:
@@ -162,8 +156,8 @@ class TRTPreprocessor(GPUImagePreprocessor):
             self._engine_path = build_image_preproc(
                 self._o_shape, self._o_dtype, self._batch_size, trt.__version__
             )
-        # create the engine with same settings always
-        # use a single warmup iteration to ensure all memory is allocated
+
+        # create the engine
         self._engine = TRTEngine(
             self._engine_path,
             stream=self._stream,
@@ -173,27 +167,20 @@ class TRTPreprocessor(GPUImagePreprocessor):
             unified_mem=self._unified_mem,
         )
 
-        # each engine will only have a single output binding
         self._engine_output_binding = self._engine.output_bindings[0]
 
         # pre-allocate the input pointer list for the engine
-        self._gpu_pointers = [
-            self._intermediate_binding.allocation,
-        ]
+        self._gpu_pointers = [self._intermediate_binding.allocation]
         if not self._use_imagenet:
-            self._gpu_pointers.extend(
-                [
-                    self._scale_binding.allocation,
-                    self._offset_binding.allocation,
-                ]
-            )
+            self._gpu_pointers.extend([
+                self._scale_binding.allocation,
+                self._offset_binding.allocation,
+            ])
         else:
-            self._gpu_pointers.extend(
-                [
-                    self._mean_buffer.allocation,
-                    self._std_buffer.allocation,
-                ]
-            )
+            self._gpu_pointers.extend([
+                self._mean_buffer.allocation,
+                self._std_buffer.allocation,
+            ])
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -204,92 +191,21 @@ class TRTPreprocessor(GPUImagePreprocessor):
         with contextlib.suppress(AttributeError):
             del self._engine
 
-    def _create_args(
-        self: Self,
-        height: int,
-        width: int,
-        method: str,
-        *,
-        verbose: bool | None = None,
-    ) -> tuple[
-        Kernel,
-        np.ndarray,
-        tuple[float, float],
-        tuple[float, float],
-    ]:
-        if verbose:
-            LOG.debug(f"{self._tag}: create_args")
-
-        # pre-compute the common potions
-        o_width, o_height = self._o_shape
-        scale_x = o_width / width
-        scale_y = o_height / height
-        if method == "letterbox":
-            if verbose:
-                LOG.debug(f"{self._tag}: Making letterbox args")
-
-            scale = min(scale_x, scale_y)
-            new_width = int(width * scale)
-            new_height = int(height * scale)
-            padding_x = int((o_width - new_width) / 2)
-            padding_y = int((o_height - new_height) / 2)
-            ratios = (scale, scale)
-            padding = (padding_x, padding_y)
-
-            # create args and assign kernel
-            resize_kernel = self._letterbox_kernel
-            resize_args = resize_kernel.create_args(
-                self._input_binding.allocation,
-                self._intermediate_binding.allocation,
-                width,
-                height,
-                o_width,
-                o_height,
-                padding_x,
-                padding_y,
-                new_width,
-                new_height,
-                verbose=verbose,
-            )
-        else:
-            if verbose:
-                LOG.debug(f"{self._tag}: Making linear args")
-
-            o_width, o_height = self._o_shape
-            scale_x = o_width / width
-            scale_y = o_height / height
-            ratios = (scale_x, scale_y)
-            padding = (0, 0)
-
-            # create args and assign kernel
-            resize_kernel = self._linear_kernel
-            resize_args = resize_kernel.create_args(
-                self._input_binding.allocation,
-                self._intermediate_binding.allocation,
-                width,
-                height,
-                o_width,
-                o_height,
-                verbose=verbose,
-            )
-
-        return resize_kernel, resize_args, ratios, padding
-
     def preprocess(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
         """
-        Preprocess an image for the model.
+        Preprocess images for the model.
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to preprocess.
+        images : list[np.ndarray]
+            The images to preprocess.
         resize : str, optional
             The method to resize the image with.
             Options are [letterbox, linear], will use method
@@ -307,16 +223,18 @@ class TRTPreprocessor(GPUImagePreprocessor):
 
         Returns
         -------
-        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-            The preprocessed image, ratios, and padding used for resizing.
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
-        _, ratios, padding = self.direct_preproc(
-            image,
+        _, ratios_list, padding_list = self.direct_preproc(
+            images,
             resize=resize,
             no_warn=True,
             verbose=verbose,
         )
+
+        batch_size = len(images)
 
         if not self._unified_mem:
             memcpy_device_to_host_async(
@@ -328,24 +246,24 @@ class TRTPreprocessor(GPUImagePreprocessor):
         stream_synchronize(self._stream)
 
         if no_copy:
-            return self._engine_output_binding.host_allocation, ratios, padding
-        return self._engine_output_binding.host_allocation.copy(), ratios, padding
+            return self._engine_output_binding.host_allocation[:batch_size], ratios_list, padding_list
+        return self._engine_output_binding.host_allocation[:batch_size].copy(), ratios_list, padding_list
 
     def direct_preproc(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         *,
         no_warn: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[int, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]:
         """
-        Preprocess an image for the model.
+        Preprocess images for the model.
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to preprocess.
+        images : list[np.ndarray]
+            The images to preprocess.
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
@@ -358,8 +276,13 @@ class TRTPreprocessor(GPUImagePreprocessor):
 
         Returns
         -------
-        tuple[int, tuple[float, float], tuple[float, float]]
-            The GPU pointer to preprocessed data, ratios, and padding used for resizing.
+        tuple[int, list[tuple[float, float]], list[tuple[float, float]]]
+            The GPU pointer to preprocessed data, list of ratios, and list of padding per image.
+
+        Raises
+        ------
+        ValueError
+            If batch size exceeds the configured batch size for the TRT engine.
 
         """
         if verbose:
@@ -370,41 +293,22 @@ class TRTPreprocessor(GPUImagePreprocessor):
                 "Calling direct_preproc is potentially dangerous. Outputs can be overwritten inplace!",
             )
 
-        # valid the method
-        resize = self._validate_input(image, resize, verbose=verbose)
+        batch_size = len(images)
 
-        # create the arguments
-        height, width = image.shape[:2]
-        resize_kernel, resize_args, ratios, padding = self._create_args(
-            height,
-            width,
-            resize,
+        # Check batch size doesn't exceed configured engine batch size
+        if batch_size > self._batch_size:
+            err_msg = f"{self._tag}: Batch size {batch_size} exceeds configured batch size {self._batch_size}"
+            raise ValueError(err_msg)
+
+        # Resize images and copy to batch buffer
+        ratios_list, padding_list = self._resize_images_to_batch(
+            images,
+            self._intermediate_binding.allocation,
+            resize=resize,
             verbose=verbose,
         )
 
-        if verbose:
-            LOG.debug(f"Ratios: {ratios}")
-            LOG.debug(f"Padding: {padding}")
-
-        # Update extra GPU buffers for input schemas
-        self._update_extra_buffers(height, width, ratios)
-
-        if self._pagelocked_mem and self._unified_mem:
-            np.copyto(self._input_binding.host_allocation, image)
-        else:
-            memcpy_host_to_device_async(
-                self._input_binding.allocation,
-                image,
-                self._stream,
-            )
-
-        resize_kernel.call(
-            self._num_blocks,
-            self._num_threads,
-            self._stream,
-            resize_args,
-        )
-
+        # Run TRT engine on batched intermediate buffer
         output_ptrs = self._engine.raw_exec(self._gpu_pointers, no_warn=True)
 
-        return output_ptrs[0], ratios, padding
+        return output_ptrs[0], ratios_list, padding_list

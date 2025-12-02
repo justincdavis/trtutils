@@ -14,7 +14,6 @@ from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
 from trtutils.core._memory import (
     memcpy_device_to_host_async,
-    memcpy_host_to_device_async,
 )
 from trtutils.core._stream import destroy_stream, stream_synchronize
 from trtutils.image.kernels import IMAGENET_SST, SST_FAST
@@ -107,9 +106,9 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             unified_mem=unified_mem,
         )
 
-        # sst kernel input binding
+        # SST input binding: (N, H', W', 3) uint8 - starts at batch_size=1
         dummy_sstinput: np.ndarray = np.zeros(
-            (self._o_shape[1], self._o_shape[0], 3),
+            (1, self._o_shape[1], self._o_shape[0], 3),
             dtype=np.uint8,
         )
         self._sst_input_binding = create_binding(
@@ -118,7 +117,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
-        # sst kernel output binding
+
+        # SST output binding: (N, 3, H', W') float - starts at batch_size=1
         dummy_output: np.ndarray = np.zeros(
             (1, 3, self._o_shape[1], self._o_shape[0]),
             dtype=self._o_dtype,
@@ -147,116 +147,90 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         with contextlib.suppress(AttributeError):
             del self._sst_input_binding
 
-    def _create_args(
+    def _reallocate_batch_buffers(self: Self, batch_size: int) -> None:
+        """Reallocate SST buffers if batch size changed."""
+        if batch_size == self._current_batch_size:
+            return
+
+        # Reallocate SST input buffer: (N, H', W', 3) uint8
+        dummy_sst_input = np.zeros(
+            (batch_size, self._o_shape[1], self._o_shape[0], 3),
+            dtype=np.uint8,
+        )
+        self._sst_input_binding = create_binding(
+            dummy_sst_input,
+            is_input=True,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+        )
+
+        # Reallocate output buffer: (N, 3, H', W') float
+        dummy_output = np.zeros(
+            (batch_size, 3, self._o_shape[1], self._o_shape[0]),
+            dtype=self._o_dtype,
+        )
+        self._output_binding = create_binding(
+            dummy_output,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+        )
+
+        self._current_batch_size = batch_size
+
+    def _create_sst_args(
         self: Self,
-        height: int,
-        width: int,
-        method: str,
+        batch_size: int,
         *,
         verbose: bool | None = None,
-    ) -> tuple[
-        Kernel,
-        np.ndarray,
-        tuple[float, float],
-        tuple[float, float],
-        np.ndarray,
-    ]:
+    ) -> np.ndarray:
+        """Create arguments for SST kernel with batch support."""
         if verbose:
-            LOG.debug(f"{self._tag}: create_args")
+            LOG.debug(f"{self._tag}: Making sst args (batch_size={batch_size})")
 
-        # pre-compute the common potions
         o_width, o_height = self._o_shape
-        scale_x = o_width / width
-        scale_y = o_height / height
-        if method == "letterbox":
-            if verbose:
-                LOG.debug(f"{self._tag}: Making letterbox args")
-
-            scale = min(scale_x, scale_y)
-            new_width = int(width * scale)
-            new_height = int(height * scale)
-            padding_x = int((o_width - new_width) / 2)
-            padding_y = int((o_height - new_height) / 2)
-            ratios = (scale, scale)
-            padding = (padding_x, padding_y)
-
-            # create args and assign kernel
-            resize_kernel = self._letterbox_kernel
-            resize_args = resize_kernel.create_args(
-                self._input_binding.allocation,
-                self._sst_input_binding.allocation,
-                width,
-                height,
-                o_width,
-                o_height,
-                padding_x,
-                padding_y,
-                new_width,
-                new_height,
-                verbose=verbose,
-            )
-        else:
-            if verbose:
-                LOG.debug(f"{self._tag}: Making linear args")
-
-            o_width, o_height = self._o_shape
-            scale_x = o_width / width
-            scale_y = o_height / height
-            ratios = (scale_x, scale_y)
-            padding = (0, 0)
-
-            # create args and assign kernel
-            resize_kernel = self._linear_kernel
-            resize_args = resize_kernel.create_args(
-                self._input_binding.allocation,
-                self._sst_input_binding.allocation,
-                width,
-                height,
-                o_width,
-                o_height,
-                verbose=verbose,
-            )
-
-        if verbose:
-            LOG.debug(f"{self._tag}: Making sst args")
 
         if self._use_imagenet:
-            # imagenet normalization: (x/255 - mean) / std
+            # Signature: input, output, mean, std, height, width, batch_size
             sst_args = self._sst_kernel.create_args(
                 self._sst_input_binding.allocation,
                 self._output_binding.allocation,
                 self._mean_buffer.allocation,
                 self._std_buffer.allocation,
-                self._o_shape[0],
+                o_height,
+                o_width,
+                batch_size,
                 verbose=verbose,
             )
         else:
+            # Signature: input, output, scale, offset, height, width, batch_size
             sst_args = self._sst_kernel.create_args(
                 self._sst_input_binding.allocation,
                 self._output_binding.allocation,
                 self._scale,
                 self._offset,
-                self._o_shape[0],
+                o_height,
+                o_width,
+                batch_size,
                 verbose=verbose,
             )
 
-        return resize_kernel, resize_args, ratios, padding, sst_args
+        return sst_args
 
     def preprocess(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
         """
-        Preprocess an image for the model.
+        Preprocess images for the model.
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to preprocess.
+        images : list[np.ndarray]
+            The images to preprocess.
         resize : str, optional
             The method to resize the image with.
             Options are [letterbox, linear], will use method
@@ -274,16 +248,18 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         Returns
         -------
-        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-            The preprocessed image, ratios, and padding used for resizing.
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
-        _, ratios, padding = self.direct_preproc(
-            image,
+        _, ratios_list, padding_list = self.direct_preproc(
+            images,
             resize=resize,
             no_warn=True,
             verbose=verbose,
         )
+
+        batch_size = len(images)
 
         if not self._unified_mem:
             memcpy_device_to_host_async(
@@ -295,24 +271,24 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         stream_synchronize(self._stream)
 
         if no_copy:
-            return self._output_binding.host_allocation, ratios, padding
-        return self._output_binding.host_allocation.copy(), ratios, padding
+            return self._output_binding.host_allocation[:batch_size], ratios_list, padding_list
+        return self._output_binding.host_allocation[:batch_size].copy(), ratios_list, padding_list
 
     def direct_preproc(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         *,
         no_warn: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[int, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]:
         """
-        Preprocess an image for the model.
+        Preprocess images for the model.
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to preprocess.
+        images : list[np.ndarray]
+            The images to preprocess.
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
@@ -325,8 +301,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         Returns
         -------
-        tuple[int, tuple[float, float], tuple[float, float]]
-            The GPU pointer to preprocessed data, ratios, and padding used for resizing.
+        tuple[int, list[tuple[float, float]], list[tuple[float, float]]]
+            The GPU pointer to preprocessed data, list of ratios, and list of padding per image.
 
         """
         if verbose:
@@ -337,46 +313,34 @@ class CUDAPreprocessor(GPUImagePreprocessor):
                 "Calling direct_preproc is potentially dangerous. Outputs can be overwritten inplace!",
             )
 
-        # valid the method
-        resize = self._validate_input(image, resize, verbose=verbose)
+        batch_size = len(images)
 
-        # create the arguments
-        height, width = image.shape[:2]
-        resize_kernel, resize_args, ratios, padding, sst_args = self._create_args(
-            height,
-            width,
-            resize,
+        # Reallocate buffers if batch size changed
+        self._reallocate_batch_buffers(batch_size)
+
+        # Resize images and copy to batch buffer
+        ratios_list, padding_list = self._resize_images_to_batch(
+            images,
+            self._sst_input_binding.allocation,
+            resize=resize,
             verbose=verbose,
         )
 
-        if verbose:
-            LOG.debug(f"Ratios: {ratios}")
-            LOG.debug(f"Padding: {padding}")
+        # Create SST args for batched processing
+        sst_args = self._create_sst_args(batch_size, verbose=verbose)
 
-        # Update extra GPU buffers for input schemas
-        self._update_extra_buffers(height, width, ratios)
-
-        if self._pagelocked_mem and self._unified_mem:
-            np.copyto(self._input_binding.host_allocation, image)
-        else:
-            memcpy_host_to_device_async(
-                self._input_binding.allocation,
-                image,
-                self._stream,
-            )
-
-        resize_kernel.call(
-            self._num_blocks,
-            self._num_threads,
-            self._stream,
-            resize_args,
+        # Run batched SST kernel with batch_size in Z dimension
+        batch_num_blocks = (
+            self._num_blocks[0],
+            self._num_blocks[1],
+            batch_size,
         )
 
         self._sst_kernel.call(
-            self._num_blocks,
+            batch_num_blocks,
             self._num_threads,
             self._stream,
             sst_args,
         )
 
-        return self._output_binding.allocation, ratios, padding
+        return self._output_binding.allocation, ratios_list, padding_list

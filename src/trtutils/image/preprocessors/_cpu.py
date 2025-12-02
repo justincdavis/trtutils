@@ -83,19 +83,19 @@ class CPUPreprocessor(ImagePreprocessor):
 
     def __call__(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
         """
-        Preprocess an image for the model.
+        Preprocess images for the model.
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to preprocess.
+        images : list[np.ndarray]
+            The images to preprocess.
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
@@ -108,27 +108,27 @@ class CPUPreprocessor(ImagePreprocessor):
 
         Returns
         -------
-        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-            The preprocessed image, ratios, and padding used for resizing.
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
-        return self.preprocess(image, resize=resize, no_copy=no_copy, verbose=verbose)
+        return self.preprocess(images, resize=resize, no_copy=no_copy, verbose=verbose)
 
     def preprocess(
         self: Self,
-        image: np.ndarray,
+        images: list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,  # noqa: ARG002
         verbose: bool | None = None,
-    ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
         """
-        Preprocess an image for the model.
+        Preprocess images for the model.
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to preprocess.
+        images : list[np.ndarray]
+            The images to preprocess.
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
@@ -141,8 +141,8 @@ class CPUPreprocessor(ImagePreprocessor):
 
         Returns
         -------
-        tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-            The preprocessed image, ratios, and padding used for resizing.
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
         resize = resize if resize is not None else self._resize
@@ -159,7 +159,7 @@ class CPUPreprocessor(ImagePreprocessor):
                 std.reshape(-1) if std.size == _COLOR_CHANNELS else std.flatten()[:_COLOR_CHANNELS]
             )
         return preprocess(
-            image,
+            images,
             self._o_shape,
             self._o_dtype,
             self._o_range,
