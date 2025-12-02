@@ -33,7 +33,10 @@ IMAGE_PREPROC_IMAGENET: Path = Path(__file__).parent / "_onnx" / "image_preproc_
 
 
 def build_image_preproc(
-    input_shape: tuple[int, int], output_dtype: np.dtype, trt_version: str | None = None
+    input_shape: tuple[int, int],
+    output_dtype: np.dtype,
+    batch_size: int = 1,
+    trt_version: str | None = None,
 ) -> Path:
     """
     Build a image preproc TensorRT engine.
@@ -44,6 +47,8 @@ def build_image_preproc(
         The (width, height) of the image network.
     output_dtype : np.dtype
         The datatype to return, which the image network will take as input.
+    batch_size : int
+        The batch size for the engine. Default is 1.
     trt_version : str | None
         The version of TensorRT to use. If none, will not be used in the cache name.
 
@@ -60,8 +65,8 @@ def build_image_preproc(
         output_dtype_str = "float16"
         trt_output_dtype = trt.DataType.HALF
 
-    # resolve the file name - only depends on the input size, scale/offset passed in
-    name = f"image_preproc_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}"
+    # resolve the file name - includes batch size
+    name = f"image_preproc_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}_b{batch_size}"
     if trt_version is not None:
         name += f"_{trt_version}"
 
@@ -81,7 +86,7 @@ def build_image_preproc(
             ],
             output_tensor_formats=[("output", trt_output_dtype, trt.TensorFormat.LINEAR)],
             shapes=[
-                ("input", (input_shape[1], input_shape[0], 3)),
+                ("input", (batch_size, input_shape[1], input_shape[0], 3)),
             ],
             fp16=True,
             cache=True,
@@ -92,7 +97,10 @@ def build_image_preproc(
 
 
 def build_image_preproc_imagenet(
-    input_shape: tuple[int, int], output_dtype: np.dtype, trt_version: str | None = None
+    input_shape: tuple[int, int],
+    output_dtype: np.dtype,
+    batch_size: int = 1,
+    trt_version: str | None = None,
 ) -> Path:
     """
     Build an ImageNet preprocessing TensorRT engine.
@@ -103,6 +111,8 @@ def build_image_preproc_imagenet(
         The (width, height) of the image network.
     output_dtype : np.dtype
         The datatype to return, which the image network will take as input.
+    batch_size : int
+        The batch size for the engine. Default is 1.
     trt_version : str | None
         The version of TensorRT to use. If none, will not be used in the cache name.
 
@@ -119,8 +129,8 @@ def build_image_preproc_imagenet(
         output_dtype_str = "float16"
         trt_output_dtype = trt.DataType.HALF
 
-    # resolve the file name - only depends on the input size
-    name = f"image_preproc_imagenet_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}"
+    # resolve the file name - includes batch size
+    name = f"image_preproc_imagenet_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}_b{batch_size}"
     if trt_version is not None:
         name += f"_{trt_version}"
 
@@ -140,7 +150,7 @@ def build_image_preproc_imagenet(
             ],
             output_tensor_formats=[("output", trt_output_dtype, trt.TensorFormat.LINEAR)],
             shapes=[
-                ("input", (input_shape[1], input_shape[0], 3)),
+                ("input", (batch_size, input_shape[1], input_shape[0], 3)),
                 ("mean", (1, 3, 1, 1)),
                 ("std", (1, 3, 1, 1)),
             ],

@@ -121,6 +121,13 @@ class ImageModel:
         if input_size[1] != rgb_channels:
             err_msg = f"Expected model to take {rgb_channels} channel input, found {input_size[1]}"
             raise ValueError(err_msg)
+
+        # Extract batch size from engine
+        self._batch_size: int = input_size[0]
+        self._is_dynamic_batch: bool = self._batch_size == -1
+        if self._is_dynamic_batch:
+            self._batch_size = 1  # Default to 1 for dynamic
+
         self._input_size: tuple[int, int] = (input_size[3], input_size[2])
         self._dtype = input_spec[1]
         self._input_range = input_range
@@ -190,6 +197,7 @@ class ImageModel:
             self._input_size,
             self._input_range,
             self._dtype,
+            batch_size=self._batch_size,
             resize=self._resize_method,
             stream=self._engine.stream,
             mean=self._mean,
@@ -218,6 +226,16 @@ class ImageModel:
     def dtype(self: Self) -> np.dtype:
         """Get the dtype required by the model."""
         return self._dtype
+
+    @property
+    def batch_size(self: Self) -> int:
+        """Get the batch size of the model."""
+        return self._batch_size
+
+    @property
+    def is_dynamic_batch(self: Self) -> bool:
+        """Check if model has dynamic batch size."""
+        return self._is_dynamic_batch
 
     def _update_preprocessors(self: Self) -> None:
         if self._preproc_cpu is not None:

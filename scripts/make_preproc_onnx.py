@@ -10,29 +10,31 @@ import onnx
 import onnxsim
 
 
+OPSET = 20
+
+
 class PreprocBase(torch.nn.Module):
     def forward(self, image: torch.Tensor, scale: torch.Tensor, offset: torch.Tensor) -> torch.Tensor:
-        # x: (H, W, 3) uint8, dynamic H/W
+        # image: (N, H, W, 3) uint8, dynamic N/H/W
         x = image.to(torch.float16)
-        # x = image * scale  # bug here, the should use the scaled version
-        x = x * scale  # correction here
+        x = x * scale
         x += offset
-        x = x.unsqueeze(0)  # (1, H, W, 3)
+        # x is now (N, H, W, 3)
         x = x[:, :, :, [2, 1, 0]]  # swap BGR to RGB
-        x = x.permute(0, 3, 1, 2)  # (1, 3, H, W)
+        x = x.permute(0, 3, 1, 2)  # (N, 3, H, W)
         return x
 
 
 class PreprocImageNet(torch.nn.Module):
     def forward(self, image: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
-        # image: (H, W, 3) uint8, dynamic H/W
+        # image: (N, H, W, 3) uint8, dynamic N/H/W
         # mean: (1, 3, 1, 1) float16
         # std: (1, 3, 1, 1) float16
         x = image.to(torch.float16)
         x = x / 255.0  # normalize to [0, 1]
-        x = x.unsqueeze(0)  # (1, H, W, 3)
+        # x is now (N, H, W, 3)
         x = x[:, :, :, [2, 1, 0]]  # swap BGR to RGB
-        x = x.permute(0, 3, 1, 2)  # (1, 3, H, W)
+        x = x.permute(0, 3, 1, 2)  # (N, 3, H, W)
         x = (x - mean) / std  # ImageNet normalization
         return x
 
@@ -59,8 +61,8 @@ def export_base_preproc() -> None:
 
     print(f"Exporting base preprocessing model to {output_path_str}")
 
-    # export to ONNX
-    dummy_image = torch.ones((640, 640, 3), dtype=torch.uint8)
+    # export to ONNX with batch dimension
+    dummy_image = torch.ones((1, 640, 640, 3), dtype=torch.uint8)  # (N, H, W, 3)
     dummy_scale = torch.tensor([1.0], dtype=torch.float32)
     dummy_offset = torch.tensor([0.0], dtype=torch.float32)
     torch.onnx.export(
@@ -69,20 +71,21 @@ def export_base_preproc() -> None:
         output_path_str,
         input_names=["input", "scale", "offset"],
         output_names=["output"],
-        opset_version=13,
+        opset_version=OPSET,
         export_params=True,
         do_constant_folding=True,
         dynamic_axes={
-            "input": {0: "height", 1: "width"},
-            "output": {2: "height", 3: "width"}
-        }
+            "input": {0: "batch", 1: "height", 2: "width"},
+            "output": {0: "batch", 2: "height", 3: "width"}
+        },
+        dynamo=False,
     )
 
     # simplify the ONNX model
     simplify_onnx_model(
         output_path_str,
         test_input_shapes={
-            "input": (640, 640, 3),
+            "input": (1, 640, 640, 3),  # (N, H, W, 3)
             "scale": (1,),
             "offset": (1,)
         },
@@ -97,8 +100,8 @@ def export_imagenet_preproc() -> None:
 
     print(f"Exporting ImageNet preprocessing model to {output_path_str}")
 
-    # export to ONNX
-    dummy_image = torch.ones((640, 640, 3), dtype=torch.uint8)
+    # export to ONNX with batch dimension
+    dummy_image = torch.ones((1, 640, 640, 3), dtype=torch.uint8)  # (N, H, W, 3)
     dummy_mean = torch.ones((1, 3, 1, 1), dtype=torch.float32) * 0.5
     dummy_std = torch.ones((1, 3, 1, 1), dtype=torch.float32)
     torch.onnx.export(
@@ -107,20 +110,21 @@ def export_imagenet_preproc() -> None:
         output_path_str,
         input_names=["input", "mean", "std"],
         output_names=["output"],
-        opset_version=13,
+        opset_version=OPSET,
         export_params=True,
         do_constant_folding=True,
         dynamic_axes={
-            "input": {0: "height", 1: "width"},
-            "output": {2: "height", 3: "width"}
-        }
+            "input": {0: "batch", 1: "height", 2: "width"},
+            "output": {0: "batch", 2: "height", 3: "width"}
+        },
+        dynamo=False,
     )
 
     # simplify the ONNX model
     simplify_onnx_model(
         output_path_str,
         test_input_shapes={
-            "input": (640, 640, 3),
+            "input": (1, 640, 640, 3),  # (N, H, W, 3)
             "mean": (1, 3, 1, 1),
             "std": (1, 3, 1, 1)
         },

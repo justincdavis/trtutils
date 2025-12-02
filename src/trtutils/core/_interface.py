@@ -192,6 +192,36 @@ class TRTEngineInterface(ABC):
         return [tuple(i.shape) for i in self._inputs]
 
     @cached_property
+    def batch_size(self: Self) -> int:
+        """
+        Get the batch size of the engine (first dim of first input).
+
+        Returns
+        -------
+        int
+            The batch size. Returns -1 if dynamic, 1 if no inputs.
+
+        """
+        if self._inputs and len(self._inputs[0].shape) > 0:
+            return self._inputs[0].shape[0]
+        return 1
+
+    @cached_property
+    def is_dynamic_batch(self: Self) -> bool:
+        """
+        Check if the engine has dynamic batch size (-1 in first dim).
+
+        Returns
+        -------
+        bool
+            True if the engine has dynamic batch size.
+
+        """
+        if self._inputs and len(self._inputs[0].shape) > 0:
+            return self._inputs[0].shape[0] == -1
+        return False
+
+    @cached_property
     def input_dtypes(self: Self) -> list[np.dtype]:
         """
         Get the datatypes for the input tensors of the network.

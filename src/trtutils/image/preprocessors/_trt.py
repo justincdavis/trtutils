@@ -44,6 +44,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
         dtype: np.dtype,
+        batch_size: int = 1,
         resize: str = "letterbox",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
@@ -68,6 +69,9 @@ class TRTPreprocessor(GPUImagePreprocessor):
         dtype : np.dtype
             The datatype of the image.
             Examples: np.float32, np.float16, np.uint8
+        batch_size : int
+            The batch size for the preprocessing engine.
+            Default is 1.
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
@@ -112,8 +116,10 @@ class TRTPreprocessor(GPUImagePreprocessor):
             unified_mem=unified_mem,
         )
 
+        self._batch_size = batch_size
+
         dummy_intermediate: np.ndarray = np.zeros(
-            (self._o_shape[1], self._o_shape[0], 3),
+            (self._batch_size, self._o_shape[1], self._o_shape[0], 3),
             dtype=np.uint8,
         )
         self._intermediate_binding = create_binding(
@@ -150,10 +156,12 @@ class TRTPreprocessor(GPUImagePreprocessor):
         # assign the built engine path based on preprocessing mode
         if self._use_imagenet:
             self._engine_path = build_image_preproc_imagenet(
-                self._o_shape, self._o_dtype, trt.__version__
+                self._o_shape, self._o_dtype, self._batch_size, trt.__version__
             )
         else:
-            self._engine_path = build_image_preproc(self._o_shape, self._o_dtype, trt.__version__)
+            self._engine_path = build_image_preproc(
+                self._o_shape, self._o_dtype, self._batch_size, trt.__version__
+            )
         # create the engine with same settings always
         # use a single warmup iteration to ensure all memory is allocated
         self._engine = TRTEngine(
