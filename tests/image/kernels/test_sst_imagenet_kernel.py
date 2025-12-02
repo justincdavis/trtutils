@@ -132,7 +132,7 @@ def test_sst_imagenet_results() -> None:
     cuda_result = output_binding.host_allocation
 
     cpu_result, _, _ = preprocess(
-        img,
+        [img],
         (output_width, output_height),
         dummy_output.dtype,
         mean=mean,
@@ -247,7 +247,7 @@ def test_sst_imagenet_batch_results() -> None:
 
     # get CPU result for single image
     cpu_result, _, _ = preprocess(
-        img,
+        [img],
         (output_width, output_height),
         dummy_output.dtype,
         mean=mean,
@@ -355,7 +355,7 @@ def test_sst_imagenet_f16_results() -> None:
     cuda_result = output_binding.host_allocation
 
     cpu_result, _, _ = preprocess(
-        img,
+        [img],
         (output_width, output_height),
         np.float32,
         mean=mean,

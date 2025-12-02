@@ -108,7 +108,7 @@ def test_sst_results() -> None:
 
     cuda_result = output_binding.host_allocation
 
-    cpu_result, _, _ = preprocess(img, (output_width, output_height), dummy_output.dtype)
+    cpu_result, _, _ = preprocess([img], (output_width, output_height), dummy_output.dtype)
 
     assert cuda_result.shape == cpu_result.shape
     assert np.mean(cuda_result) == np.mean(cpu_result)

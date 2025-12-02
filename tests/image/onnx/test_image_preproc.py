@@ -40,7 +40,9 @@ def test_trt_preproc_engine() -> None:
 
     # trt version
     engine_path = build_image_preproc(
-        (output_shape, output_shape), np.dtype(np.float32), trt.__version__
+        (output_shape, output_shape),
+        np.dtype(np.float32),
+        trt_version=trt.__version__,
     )
     engine = TRTEngine(engine_path)
     engine.mock_execute()
@@ -104,7 +106,9 @@ def test_trt_preproc_imagenet_engine() -> None:
 
     # trt version
     engine_path = build_image_preproc_imagenet(
-        (output_shape, output_shape), np.dtype(np.float32), trt.__version__
+        (output_shape, output_shape),
+        np.dtype(np.float32),
+        trt_version=trt.__version__,
     )
     engine = TRTEngine(engine_path)
     engine.mock_execute()

@@ -113,7 +113,7 @@ def test_sst_fast_results() -> None:
 
     cuda_result = output_binding.host_allocation
 
-    cpu_result, _, _ = preprocess(img, (output_width, output_height), dummy_output.dtype)
+    cpu_result, _, _ = preprocess([img], (output_width, output_height), dummy_output.dtype)
 
     assert cuda_result.shape == cpu_result.shape
     assert np.mean(cuda_result) == np.mean(cpu_result)
@@ -200,7 +200,7 @@ def test_sst_fast_batch_results() -> None:
     cuda_result = output_binding.host_allocation
 
     # get CPU result for single image
-    cpu_result, _, _ = preprocess(img, (output_width, output_height), dummy_output.dtype)
+    cpu_result, _, _ = preprocess([img], (output_width, output_height), dummy_output.dtype)
 
     # verify each batch element matches the CPU result
     for i in range(batch_size):
@@ -282,7 +282,7 @@ def test_sst_fast_f16_results() -> None:
 
     cuda_result = output_binding.host_allocation
 
-    cpu_result, _, _ = preprocess(img, (output_width, output_height), np.float32)
+    cpu_result, _, _ = preprocess([img], (output_width, output_height), np.float32)
 
     assert cuda_result.shape == cpu_result.shape
     # use relaxed tolerances for fp16
