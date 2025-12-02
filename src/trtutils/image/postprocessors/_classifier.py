@@ -14,14 +14,14 @@ def postprocess_classifications(
     *,
     no_copy: bool | None = None,
     verbose: bool | None = None,
-) -> list[np.ndarray]:
+) -> list[list[np.ndarray]]:
     """
     Postprocess outputs from a classification network.
 
     Parameters
     ----------
     outputs : list[np.ndarray]
-        The outputs from a classification network.
+        The outputs from a classification network with batch dimension.
     no_copy : bool, optional
         If True, the outputs will not be copied out
         from the cuda allocated host memory. Instead,
@@ -33,14 +33,20 @@ def postprocess_classifications(
 
     Returns
     -------
-    list[np.ndarray]
-        The postprocessed outputs.
+    list[list[np.ndarray]]
+        The postprocessed outputs per image.
 
     """
     if verbose:
         LOG.debug(f"Classification postprocess, output shape: {outputs[0].shape}")
 
-    return _postprocess_classifications_core(outputs, no_copy=no_copy)
+    batch_size = outputs[0].shape[0]
+    results = []
+    for i in range(batch_size):
+        batch_outputs = [out[i : i + 1] for out in outputs]
+        result = _postprocess_classifications_core(batch_outputs, no_copy=no_copy)
+        results.append(result)
+    return results
 
 
 @register_jit(nogil=True)
@@ -61,18 +67,18 @@ def _postprocess_classifications_core(
 
 
 def get_classifications(
-    outputs: list[np.ndarray],
+    outputs: list[list[np.ndarray]],
     top_k: int = 5,
     *,
     verbose: bool | None = None,
-) -> list[tuple[int, float]]:
+) -> list[list[tuple[int, float]]]:
     """
     Get the classifications from the output of a classification network.
 
     Parameters
     ----------
-    outputs : list[np.ndarray]
-        The outputs from a classification network.
+    outputs : list[list[np.ndarray]]
+        The postprocessed outputs per image from a classification network.
     top_k : int, optional
         The number of top predictions to return. Default is 5.
     verbose : bool, optional
@@ -80,14 +86,14 @@ def get_classifications(
 
     Returns
     -------
-    list[tuple[int, float]]
-        The classifications where each entry is (class_id, confidence).
+    list[list[tuple[int, float]]]
+        The classifications per image, where each entry is (class_id, confidence).
 
     """
     if verbose:
         LOG.debug(f"Getting top-{top_k} classifications")
 
-    return _get_classifications_core(outputs, top_k)
+    return [_get_classifications_core(image_outputs, top_k) for image_outputs in outputs]
 
 
 @register_jit(nogil=True)

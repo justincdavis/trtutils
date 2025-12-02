@@ -12,14 +12,14 @@ from trtutils._log import LOG
 
 def postprocess_yolov10(
     outputs: list[np.ndarray],
-    ratios: tuple[float, float],
-    padding: tuple[float, float],
+    ratios: list[tuple[float, float]],
+    padding: list[tuple[float, float]],
     conf_thres: float | None = None,
     input_size: tuple[int, int] | None = None,  # noqa: ARG001
     *,
     no_copy: bool | None = None,
     verbose: bool | None = None,
-) -> list[np.ndarray]:
+) -> list[list[np.ndarray]]:
     """
     Postprocess the output of a YOLO-v10 model.
 
@@ -27,10 +27,10 @@ def postprocess_yolov10(
     ----------
     outputs : list[np.ndarray]
         The outputs from the TRTEngine using YOLO-v10 output.
-    ratios : tuple[float, float]
-        The ratios used during preprocessing to resize the input.
-    padding : tuple[float, float]
-        The padding used during preprocessing to position the input.
+    ratios : list[tuple[float, float]]
+        The ratios used during preprocessing to resize each input image.
+    padding : list[tuple[float, float]]
+        The padding used during preprocessing to position each input image.
     conf_thres : float, optional
         Optional confidence threshold to further filter detections by.
         Detections are already filtered by YOLO-v10 parameters
@@ -49,20 +49,27 @@ def postprocess_yolov10(
 
     Returns
     -------
-    list[np.ndarray]
-        The postprocessed outputs, reshaped and scaled based on ratios/padding.
+    list[list[np.ndarray]]
+        The postprocessed outputs per image, each containing
+        [bboxes, scores, class_ids] reshaped and scaled based on ratios/padding.
 
     """
     if verbose:
         LOG.debug(f"V10 postprocess, output shape: {outputs[0].shape}")
 
-    return _postprocess_yolov10_core(
-        outputs,
-        ratios,
-        padding,
-        conf_thres=conf_thres,
-        no_copy=no_copy,
-    )
+    batch_size = outputs[0].shape[0]
+    results = []
+    for i in range(batch_size):
+        batch_outputs = [out[i : i + 1] for out in outputs]
+        result = _postprocess_yolov10_core(
+            batch_outputs,
+            ratios[i],
+            padding[i],
+            conf_thres=conf_thres,
+            no_copy=no_copy,
+        )
+        results.append(result)
+    return results
 
 
 @register_jit(nogil=True)
@@ -108,22 +115,22 @@ def _postprocess_yolov10_core(
 
 
 def get_detections(
-    outputs: list[np.ndarray],
+    outputs: list[list[np.ndarray]],
     conf_thres: float | None = None,
     nms_iou_thres: float = 0.5,
     *,
     extra_nms: bool | None = None,
     agnostic_nms: bool | None = None,
     verbose: bool | None = None,
-) -> list[tuple[tuple[int, int, int, int], float, int]]:
+) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
     """
     Get detections from postprocessed outputs of any supported detector.
 
     Parameters
     ----------
-    outputs : list[np.ndarray]
-        Postprocessed outputs in the unified format:
-        [bboxes (N,4), scores (N,), class_ids (N,)].
+    outputs : list[list[np.ndarray]]
+        Postprocessed outputs per image in the unified format:
+        each entry is [bboxes (N,4), scores (N,), class_ids (N,)].
     conf_thres : float, optional
         Confidence threshold to filter detections by.
     nms_iou_thres : float
@@ -137,19 +144,23 @@ def get_detections(
 
     Returns
     -------
-    list[tuple[tuple[int, int, int, int], float, int]]
-        Each detection is ((x1, y1, x2, y2), score, class_id).
+    list[list[tuple[tuple[int, int, int, int], float, int]]]
+        Detections per image, where each detection is ((x1, y1, x2, y2), score, class_id).
 
     """
-    if verbose:
-        LOG.debug(f"Decoding detections, num candidates: {len(outputs[0])}")
+    all_results = []
+    for image_outputs in outputs:
+        if verbose:
+            LOG.debug(f"Decoding detections, num candidates: {len(image_outputs[0])}")
 
-    results = _get_detections_core(outputs, conf_thres)
+        results = _get_detections_core(image_outputs, conf_thres)
 
-    if extra_nms:
-        results = nms(results, iou_threshold=nms_iou_thres, agnostic=agnostic_nms)
+        if extra_nms:
+            results = nms(results, iou_threshold=nms_iou_thres, agnostic=agnostic_nms)
 
-    return results
+        all_results.append(results)
+
+    return all_results
 
 
 @register_jit(nogil=True)
@@ -183,14 +194,14 @@ def _get_detections_core(
 
 def postprocess_efficient_nms(
     outputs: list[np.ndarray],
-    ratios: tuple[float, float] = (1.0, 1.0),
-    padding: tuple[float, float] = (0.0, 0.0),
+    ratios: list[tuple[float, float]],
+    padding: list[tuple[float, float]],
     conf_thres: float | None = None,
     input_size: tuple[int, int] | None = None,  # noqa: ARG001
     *,
     no_copy: bool | None = None,
     verbose: bool | None = None,
-) -> list[np.ndarray]:
+) -> list[list[np.ndarray]]:
     """
     Postprocess the output of the EfficientNMS plugin.
 
@@ -199,10 +210,10 @@ def postprocess_efficient_nms(
     outputs : list[np.ndarray]
         The raw outputs from a model with EfficientNMS output
         in the form [num_dets, bboxes, scores, classes].
-    ratios : tuple[float, float]
-        The ratios used during preprocessing to resize the input.
-    padding : tuple[float, float]
-        The padding used during preprocessing to position the input.
+    ratios : list[tuple[float, float]]
+        The ratios used during preprocessing to resize each input image.
+    padding : list[tuple[float, float]]
+        The padding used during preprocessing to position each input image.
     input_size : tuple[int, int] | None
         The input size used during preprocessing to resize the input.
     conf_thres : float, optional
@@ -219,21 +230,34 @@ def postprocess_efficient_nms(
 
     Returns
     -------
-    list[np.ndarray]
-        Unified outputs: [bboxes (N,4), scores (N,), class_ids (N,)],
+    list[list[np.ndarray]]
+        Unified outputs per image, each containing [bboxes (N,4), scores (N,), class_ids (N,)],
         scaled to original image coordinates.
 
     """
     if verbose:
         LOG.debug(f"EfficientNMS postprocess, raw bboxes shape: {outputs[1].shape}")
 
-    return _postprocess_efficient_nms_core(
-        outputs,
-        ratios,
-        padding,
-        conf_thres,
-        no_copy=no_copy,
-    )
+    batch_size = outputs[0].shape[0]
+    results = []
+    for i in range(batch_size):
+        # EfficientNMS outputs: [num_dets, bboxes, scores, class_ids]
+        # Each has batch dim at position 0
+        batch_outputs = [
+            outputs[0][i : i + 1],  # num_dets
+            outputs[1][i : i + 1],  # bboxes
+            outputs[2][i : i + 1],  # scores
+            outputs[3][i : i + 1],  # class_ids
+        ]
+        result = _postprocess_efficient_nms_core(
+            batch_outputs,
+            ratios[i],
+            padding[i],
+            conf_thres,
+            no_copy=no_copy,
+        )
+        results.append(result)
+    return results
 
 
 @register_jit(nogil=True)
@@ -281,14 +305,14 @@ def _postprocess_efficient_nms_core(
 
 def postprocess_rfdetr(
     outputs: list[np.ndarray],
-    ratios: tuple[float, float],
-    padding: tuple[float, float],
+    ratios: list[tuple[float, float]],
+    padding: list[tuple[float, float]],
     conf_thres: float | None = None,
     input_size: tuple[int, int] | None = None,
     *,
     no_copy: bool | None = None,
     verbose: bool | None = None,
-) -> list[np.ndarray]:
+) -> list[list[np.ndarray]]:
     """
     Postprocess the output of an RF-DETR model.
 
@@ -296,10 +320,10 @@ def postprocess_rfdetr(
     ----------
     outputs : list[np.ndarray]
         The outputs from the TRTEngine using RF-DETR output.
-    ratios : tuple[float, float]
-        The ratios used during preprocessing to resize the input.
-    padding : tuple[float, float]
-        The padding used during preprocessing to position the input.
+    ratios : list[tuple[float, float]]
+        The ratios used during preprocessing to resize each input image.
+    padding : list[tuple[float, float]]
+        The padding used during preprocessing to position each input image.
     conf_thres : float, optional
         Optional confidence threshold to further filter detections by.
     input_size : tuple[int, int] | None
@@ -315,21 +339,28 @@ def postprocess_rfdetr(
 
     Returns
     -------
-    list[np.ndarray]
-        The postprocessed outputs, reshaped and scaled based on ratios/padding.
+    list[list[np.ndarray]]
+        The postprocessed outputs per image, each containing
+        [bboxes, scores, class_ids] reshaped and scaled based on ratios/padding.
 
     """
     if verbose:
         LOG.debug(f"RF-DETR postprocess, dets shape: {outputs[0].shape}")
 
-    return _postprocess_rfdetr_core(
-        outputs,
-        ratios,
-        padding,
-        conf_thres=conf_thres,
-        input_size=input_size,
-        no_copy=no_copy,
-    )
+    batch_size = outputs[0].shape[0]
+    results = []
+    for i in range(batch_size):
+        batch_outputs = [out[i : i + 1] for out in outputs]
+        result = _postprocess_rfdetr_core(
+            batch_outputs,
+            ratios[i],
+            padding[i],
+            conf_thres=conf_thres,
+            input_size=input_size,
+            no_copy=no_copy,
+        )
+        results.append(result)
+    return results
 
 
 @register_jit(nogil=True)
@@ -427,14 +458,14 @@ def _postprocess_rfdetr_core(
 
 def postprocess_detr(
     outputs: list[np.ndarray],
-    ratios: tuple[float, float],
-    padding: tuple[float, float],
+    ratios: list[tuple[float, float]],
+    padding: list[tuple[float, float]],
     conf_thres: float | None = None,
     input_size: tuple[int, int] | None = None,
     *,
     no_copy: bool | None = None,
     verbose: bool | None = None,
-) -> list[np.ndarray]:
+) -> list[list[np.ndarray]]:
     """
     Postprocess the output of a DETR-based model (DEIM, RT-DETR, D-FINE).
 
@@ -442,10 +473,10 @@ def postprocess_detr(
     ----------
     outputs : list[np.ndarray]
         The outputs from the TRTEngine using DETR output.
-    ratios : tuple[float, float]
-        The ratios used during preprocessing to resize the input.
-    padding : tuple[float, float]
-        The padding used during preprocessing to position the input.
+    ratios : list[tuple[float, float]]
+        The ratios used during preprocessing to resize each input image.
+    padding : list[tuple[float, float]]
+        The padding used during preprocessing to position each input image.
     conf_thres : float, optional
         Optional confidence threshold to further filter detections by.
     input_size : tuple[int, int] | None
@@ -461,21 +492,28 @@ def postprocess_detr(
 
     Returns
     -------
-    list[np.ndarray]
-        The postprocessed outputs, reshaped and scaled based on ratios/padding.
+    list[list[np.ndarray]]
+        The postprocessed outputs per image, each containing
+        [bboxes, scores, class_ids] reshaped and scaled based on ratios/padding.
 
     """
     if verbose:
         LOG.debug(f"DETR postprocess, labels shape: {outputs[0].shape}")
 
-    return _postprocess_detr_core(
-        outputs,
-        ratios,
-        padding,
-        conf_thres=conf_thres,
-        input_size=input_size,
-        no_copy=no_copy,
-    )
+    batch_size = outputs[0].shape[0]
+    results = []
+    for i in range(batch_size):
+        batch_outputs = [out[i : i + 1] for out in outputs]
+        result = _postprocess_detr_core(
+            batch_outputs,
+            ratios[i],
+            padding[i],
+            conf_thres=conf_thres,
+            input_size=input_size,
+            no_copy=no_copy,
+        )
+        results.append(result)
+    return results
 
 
 @register_jit(nogil=True)
