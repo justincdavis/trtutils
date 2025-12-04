@@ -163,15 +163,15 @@ class JetsonLayerProfiler(trt.IProfiler):  # type: ignore[misc]
         """
         # Record the timing
         self._current_iteration_timings[layer_name] = ms
-        
+
         # Calculate layer end time
         # ms is in milliseconds, so convert to seconds
         layer_end_time = self._current_layer_start_time + (ms / 1000.0)
-        
+
         # Store timestamp range for this layer
         if layer_name not in self._current_iteration_timings:
             self._current_iteration_timings[layer_name] = ms
-        
+
         # Update for next layer
         self._current_layer_start_time = layer_end_time
 
@@ -183,7 +183,7 @@ class JetsonLayerProfiler(trt.IProfiler):  # type: ignore[misc]
         """
         for layer_name, time_ms in self._current_iteration_timings.items():
             self._timings[layer_name].append(time_ms)
-        
+
         # Reconstruct timestamps for all layers based on cumulative timing
         current_time = self._current_iteration_start_time
         for layer_name, time_ms in self._current_iteration_timings.items():
@@ -191,7 +191,7 @@ class JetsonLayerProfiler(trt.IProfiler):  # type: ignore[misc]
             layer_end = current_time + (time_ms / 1000.0)  # Convert ms to seconds
             self._layer_timestamps[layer_name].append((layer_start, layer_end))
             current_time = layer_end
-        
+
         self._current_iteration_timings.clear()
 
     def get_statistics(self: Self) -> list[LayerTiming]:
@@ -267,17 +267,19 @@ class JetsonLayerProfiler(trt.IProfiler):  # type: ignore[misc]
                 power_mw = power_data["VDD_TOTAL"].mean
                 energy_mj = power_mw * layer_timing.mean / 1000.0
 
-            layer_stats.append(JetsonLayerInfo(
-                name=layer_name,
-                mean=layer_timing.mean,
-                median=layer_timing.median,
-                min=layer_timing.min,
-                max=layer_timing.max,
-                raw=layer_timing.raw,
-                power=power_mw,
-                energy=energy_mj,
-            ))
-        
+            layer_stats.append(
+                JetsonLayerInfo(
+                    name=layer_name,
+                    mean=layer_timing.mean,
+                    median=layer_timing.median,
+                    min=layer_timing.min,
+                    max=layer_timing.max,
+                    raw=layer_timing.raw,
+                    power=power_mw,
+                    energy=energy_mj,
+                )
+            )
+
         return layer_stats
 
     def reset(self: Self) -> None:
@@ -311,7 +313,7 @@ def profile_engine(
     -----
     For best results, build the engine with profiling_verbosity set to DETAILED
     when calling build_engine. Otherwise, layer names may be numeric indices.
-    
+
     The default iteration count is 10000 (higher than standard profiling) to ensure
     adequate tegrastats sampling coverage across all layers, especially fast-executing ones.
 

@@ -42,8 +42,6 @@ def batch_size(request) -> int:
 @pytest.fixture
 def random_images():
     def _make(num: int, height: int = 480, width: int = 640) -> list[np.ndarray]:
-        return [
-            np.random.randint(0, 255, (height, width, 3), dtype=np.uint8)
-            for _ in range(num)
-        ]
+        return [np.random.randint(0, 255, (height, width, 3), dtype=np.uint8) for _ in range(num)]
+
     return _make

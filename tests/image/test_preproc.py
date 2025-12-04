@@ -8,19 +8,19 @@ import time
 import numpy as np
 import pytest
 
+from tests.conftest import HORSE_IMAGE_PATH, IMAGE_PATHS, _read_image
 from trtutils.image.preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
     TRTPreprocessor,
 )
 
-from tests.conftest import IMAGE_PATHS, _read_image, HORSE_IMAGE_PATH
 from .conftest import (
-    PREPROC_SIZE,
-    PREPROC_RANGE,
-    PREPROC_DTYPE,
     IMAGENET_MEAN,
     IMAGENET_STD,
+    PREPROC_DTYPE,
+    PREPROC_RANGE,
+    PREPROC_SIZE,
 )
 
 CUDA_MAG_BOUNDS = 0.01
@@ -64,11 +64,17 @@ class TestPreprocessorParity:
             padding1, padding2 = padding1_list[0], padding2_list[0]
             assert ratios1 == ratios2
             assert padding1 == padding2
-            assert result1.shape == result2.shape, f"{tag1}: {result1.shape} != {tag2}: {result2.shape}"
-            assert result1.dtype == result2.dtype, f"{tag1}: {result1.dtype} != {tag2}: {result2.dtype}"
+            assert result1.shape == result2.shape, (
+                f"{tag1}: {result1.shape} != {tag2}: {result2.shape}"
+            )
+            assert result1.dtype == result2.dtype, (
+                f"{tag1}: {result1.dtype} != {tag2}: {result2.dtype}"
+            )
             cpu_mean = np.mean(result1)
             other_mean = np.mean(result2)
-            assert cpu_mean - CUDA_MAG_BOUNDS <= other_mean <= cpu_mean + CUDA_MAG_BOUNDS, f"{tag1}: {cpu_mean} != {tag2}: {other_mean}"
+            assert cpu_mean - CUDA_MAG_BOUNDS <= other_mean <= cpu_mean + CUDA_MAG_BOUNDS, (
+                f"{tag1}: {cpu_mean} != {tag2}: {other_mean}"
+            )
             diff_mask = np.any(result1 != result2, axis=-1)
             avg_diff = np.mean(np.abs(result1[diff_mask] - result2[diff_mask]))
             assert avg_diff < 1.0, f"{tag1} != {tag2}: {avg_diff}"
@@ -152,7 +158,9 @@ class TestPerformance:
     def test_cuda_perf_pagelocked(self):
         cuda = CUDAPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, pagelocked_mem=True)
         cpu_time, cuda_time = self._run_perf_test(cuda)
-        print(f"Pagelocked - CPU: {cpu_time:.3f}s, CUDA: {cuda_time:.3f}s, speedup: {cpu_time / cuda_time:.2f}x")
+        print(
+            f"Pagelocked - CPU: {cpu_time:.3f}s, CUDA: {cuda_time:.3f}s, speedup: {cpu_time / cuda_time:.2f}x"
+        )
 
     def test_trt_perf(self):
         trt = TRTPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, pagelocked_mem=False)
@@ -162,4 +170,6 @@ class TestPerformance:
     def test_trt_perf_pagelocked(self):
         trt = TRTPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, pagelocked_mem=True)
         cpu_time, trt_time = self._run_perf_test(trt)
-        print(f"Pagelocked - CPU: {cpu_time:.3f}s, TRT: {trt_time:.3f}s, speedup: {cpu_time / trt_time:.2f}x")
+        print(
+            f"Pagelocked - CPU: {cpu_time:.3f}s, TRT: {trt_time:.3f}s, speedup: {cpu_time / trt_time:.2f}x"
+        )

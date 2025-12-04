@@ -35,12 +35,14 @@ def make_preprocessor():
     ):
         if ptype == "cpu":
             return CPUPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, mean=mean, std=std)
-        elif ptype == "cuda":
+        if ptype == "cuda":
             return CUDAPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, mean=mean, std=std)
-        elif ptype == "trt":
-            return TRTPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, mean=mean, std=std, batch_size=batch_size)
-        else:
-            raise ValueError(f"Unknown preprocessor type: {ptype}")
+        if ptype == "trt":
+            return TRTPreprocessor(
+                PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, mean=mean, std=std, batch_size=batch_size
+            )
+        raise ValueError(f"Unknown preprocessor type: {ptype}")
+
     return _make
 
 
@@ -55,6 +57,7 @@ def make_ratios_padding():
         ratios = [(1.0, 1.0) for _ in range(batch_size)]
         padding = [(0.0, 0.0) for _ in range(batch_size)]
         return ratios, padding
+
     return _make
 
 
@@ -74,6 +77,7 @@ def make_yolov10_output():
                     i % 10,
                 ]
         return [output]
+
     return _make
 
 
@@ -97,6 +101,7 @@ def make_efficient_nms_output():
                 scores[b, i] = 0.9 - i * 0.05
                 class_ids[b, i] = i % 10
         return [num_dets_arr, bboxes, scores, class_ids]
+
     return _make
 
 
@@ -117,6 +122,7 @@ def make_rfdetr_output():
                 class_idx = i % num_classes
                 labels[b, i, class_idx] = 5.0 - i * 0.3
         return [dets, labels]
+
     return _make
 
 
@@ -138,6 +144,7 @@ def make_detr_output():
                     200 + i * 10 + offset,
                 ]
         return [scores, labels, boxes]
+
     return _make
 
 
@@ -149,4 +156,5 @@ def make_classification_output():
             output[b, b % num_classes] = 10.0
             output[b, (b + 1) % num_classes] = 8.0
         return [output]
+
     return _make

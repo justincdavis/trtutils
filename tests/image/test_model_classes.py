@@ -14,7 +14,7 @@ from trtutils.image.postprocessors import (
 )
 from trtutils.image.preprocessors import CPUPreprocessor
 
-from .conftest import PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE
+from .conftest import PREPROC_DTYPE, PREPROC_RANGE, PREPROC_SIZE
 
 
 class TestPreprocessorAPI:

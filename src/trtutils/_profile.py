@@ -40,7 +40,7 @@ def profile_engine(
     -----
     For best results, build the engine with profiling_verbosity set to DETAILED
     when calling build_engine. Otherwise, layer names may be numeric indices.
-    
+
     When jetson=True, the Jetson profiler function has a default of 10000 iterations
     (instead of 100) to ensure adequate tegrastats sampling coverage across all layers.
     You can override this by explicitly providing the iterations parameter.

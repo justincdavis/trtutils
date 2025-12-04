@@ -451,7 +451,9 @@ class Detector(ImageModel, DetectorInterface):
         if self._use_image_size:
             # Build batched orig_target_sizes: (batch, 2) with (height, width) per image
             orig_sizes = np.array(
-                [img.shape[:2] for img in images] if not preprocessed else [[self._input_size[1], self._input_size[0]]] * batch_size,
+                [img.shape[:2] for img in images]
+                if not preprocessed
+                else [[self._input_size[1], self._input_size[0]]] * batch_size,
                 dtype=np.int32,
             )
             engine_inputs.append(orig_sizes)

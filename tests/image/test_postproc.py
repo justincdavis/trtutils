@@ -46,8 +46,12 @@ class TestYOLOv10:
             single_outputs = [out[i : i + 1] for out in outputs]
             single_results = postprocess_yolov10(single_outputs, [ratios[i]], [padding[i]])
             assert len(single_results) == 1
-            np.testing.assert_array_almost_equal(batch_results[i][0], single_results[0][0], decimal=5)
-            np.testing.assert_array_almost_equal(batch_results[i][1], single_results[0][1], decimal=5)
+            np.testing.assert_array_almost_equal(
+                batch_results[i][0], single_results[0][0], decimal=5
+            )
+            np.testing.assert_array_almost_equal(
+                batch_results[i][1], single_results[0][1], decimal=5
+            )
             np.testing.assert_array_equal(batch_results[i][2], single_results[0][2])
 
     def test_conf_threshold(self, make_yolov10_output, make_ratios_padding):
@@ -98,7 +102,9 @@ class TestEfficientNMS:
             ]
             single_results = postprocess_efficient_nms(single_outputs, [ratios[i]], [padding[i]])
             assert len(single_results) == 1
-            np.testing.assert_array_almost_equal(batch_results[i][0], single_results[0][0], decimal=5)
+            np.testing.assert_array_almost_equal(
+                batch_results[i][0], single_results[0][0], decimal=5
+            )
 
     def test_zero_detections(self, make_ratios_padding):
         batch_size = 2
@@ -138,9 +144,13 @@ class TestRFDETR:
         batch_results = postprocess_rfdetr(outputs, ratios, padding, input_size=(640, 640))
         for i in range(batch_size):
             single_outputs = [out[i : i + 1] for out in outputs]
-            single_results = postprocess_rfdetr(single_outputs, [ratios[i]], [padding[i]], input_size=(640, 640))
+            single_results = postprocess_rfdetr(
+                single_outputs, [ratios[i]], [padding[i]], input_size=(640, 640)
+            )
             assert len(single_results) == 1
-            np.testing.assert_array_almost_equal(batch_results[i][0], single_results[0][0], decimal=5)
+            np.testing.assert_array_almost_equal(
+                batch_results[i][0], single_results[0][0], decimal=5
+            )
 
 
 class TestDETR:
@@ -169,7 +179,9 @@ class TestDETR:
             single_outputs = [out[i : i + 1] for out in outputs]
             single_results = postprocess_detr(single_outputs, [ratios[i]], [padding[i]])
             assert len(single_results) == 1
-            np.testing.assert_array_almost_equal(batch_results[i][0], single_results[0][0], decimal=5)
+            np.testing.assert_array_almost_equal(
+                batch_results[i][0], single_results[0][0], decimal=5
+            )
 
     def test_conf_threshold(self, make_detr_output, make_ratios_padding):
         outputs = make_detr_output(batch_size=2, num_dets=10)
@@ -240,7 +252,9 @@ class TestClassifications:
             single_outputs = [out[i : i + 1].copy() for out in outputs_batch]
             single_results = postprocess_classifications(single_outputs)
             assert len(single_results) == 1
-            np.testing.assert_array_almost_equal(batch_results[i][0], single_results[0][0], decimal=5)
+            np.testing.assert_array_almost_equal(
+                batch_results[i][0], single_results[0][0], decimal=5
+            )
 
 
 class TestGetClassifications:

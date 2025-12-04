@@ -172,15 +172,19 @@ class TRTPreprocessor(GPUImagePreprocessor):
         # pre-allocate the input pointer list for the engine
         self._gpu_pointers = [self._intermediate_binding.allocation]
         if not self._use_imagenet:
-            self._gpu_pointers.extend([
-                self._scale_binding.allocation,
-                self._offset_binding.allocation,
-            ])
+            self._gpu_pointers.extend(
+                [
+                    self._scale_binding.allocation,
+                    self._offset_binding.allocation,
+                ]
+            )
         else:
-            self._gpu_pointers.extend([
-                self._mean_buffer.allocation,
-                self._std_buffer.allocation,
-            ])
+            self._gpu_pointers.extend(
+                [
+                    self._mean_buffer.allocation,
+                    self._std_buffer.allocation,
+                ]
+            )
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -246,8 +250,16 @@ class TRTPreprocessor(GPUImagePreprocessor):
         stream_synchronize(self._stream)
 
         if no_copy:
-            return self._engine_output_binding.host_allocation[:batch_size], ratios_list, padding_list
-        return self._engine_output_binding.host_allocation[:batch_size].copy(), ratios_list, padding_list
+            return (
+                self._engine_output_binding.host_allocation[:batch_size],
+                ratios_list,
+                padding_list,
+            )
+        return (
+            self._engine_output_binding.host_allocation[:batch_size].copy(),
+            ratios_list,
+            padding_list,
+        )
 
     def direct_preproc(
         self: Self,

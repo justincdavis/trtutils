@@ -380,7 +380,9 @@ class ParallelDetector:
             err_msg = "Outputs do not match models"
             raise ValueError(err_msg)
         return [
-            self.postprocess_model(output, modelid, ratio_list, padding_list, no_copy=no_copy, verbose=verbose)
+            self.postprocess_model(
+                output, modelid, ratio_list, padding_list, no_copy=no_copy, verbose=verbose
+            )
             for modelid, (output, ratio_list, padding_list) in enumerate(
                 zip(outputs, ratios, paddings),
             )
@@ -679,7 +681,9 @@ class ParallelDetector:
                 raise ValueError(err_msg)
             else:
                 # Generate random data
-                inputs = [[self.get_model(mid).get_random_input()] for mid in range(len(self._models))]
+                inputs = [
+                    [self.get_model(mid).get_random_input()] for mid in range(len(self._models))
+                ]
                 self.submit(inputs, preprocessed=True, postprocess=False, no_copy=True)
 
     def retrieve(

@@ -130,7 +130,9 @@ def build_image_preproc_imagenet(
         trt_output_dtype = trt.DataType.HALF
 
     # resolve the file name - includes batch size
-    name = f"image_preproc_imagenet_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}_b{batch_size}"
+    name = (
+        f"image_preproc_imagenet_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}_b{batch_size}"
+    )
     if trt_version is not None:
         name += f"_{trt_version}"
 

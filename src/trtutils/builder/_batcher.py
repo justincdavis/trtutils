@@ -388,7 +388,9 @@ class SyntheticBatcher(AbstractBatcher):
         self._current_batch: int = 0
 
         if self._verbose:
-            LOG.debug(f"SyntheticBatcher will generate {num_batches} batches of shape {self._data_shape}")
+            LOG.debug(
+                f"SyntheticBatcher will generate {num_batches} batches of shape {self._data_shape}"
+            )
 
     @property
     def num_batches(self: Self) -> int:
@@ -430,6 +432,8 @@ class SyntheticBatcher(AbstractBatcher):
         self._current_batch += 1
 
         if self._verbose:
-            LOG.debug(f"SyntheticBatcher generated batch: {self._current_batch} / {self._num_batches}")
+            LOG.debug(
+                f"SyntheticBatcher generated batch: {self._current_batch} / {self._num_batches}"
+            )
 
         return data

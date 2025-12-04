@@ -193,7 +193,11 @@ def compile_kernel(
             opts_with_cuda_include_dir.append(opt.encode())
 
     with MEM_ALLOC_LOCK, NVRTC_LOCK:
-        nvrtc_call(nvrtc.nvrtcCompileProgram(prog, len(opts_with_cuda_include_dir), opts_with_cuda_include_dir))
+        nvrtc_call(
+            nvrtc.nvrtcCompileProgram(
+                prog, len(opts_with_cuda_include_dir), opts_with_cuda_include_dir
+            )
+        )
 
     # generate the actual kernel ptx
     ptx_size = nvrtc_call(nvrtc.nvrtcGetPTXSize(prog))

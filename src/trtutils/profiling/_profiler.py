@@ -284,4 +284,3 @@ def profile_engine(
         total_time=total_timing,
         iterations=iterations,
     )
-
