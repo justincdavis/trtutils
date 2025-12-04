@@ -19,7 +19,7 @@ with contextlib.suppress(ImportError):
 from trtutils._benchmark import Metric
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
-from trtutils.inspect._profiler import LayerTiming, ProfilerResult
+from trtutils.profiling._profiler import LayerTiming, ProfilerResult
 
 if TYPE_CHECKING:
     from jetsontools._parsing import Metric as JMetric

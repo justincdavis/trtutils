@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from trtutils._engine import TRTEngine
-from trtutils.inspect._profiler import ProfilerResult, profile_engine as inspect_profile_engine
 from trtutils.jetson._profile import profile_engine as jetson_profile_engine
+from trtutils.profiling._profiler import ProfilerResult, profile_engine as inspect_profile_engine
 
 if TYPE_CHECKING:
     from trtutils.jetson._profile import JetsonProfilerResult

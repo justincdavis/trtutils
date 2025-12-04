@@ -4,15 +4,6 @@
 """
 Submodule containing tools for inspecting TensorRT engines.
 
-Classes
--------
-:class:`LayerTiming`
-    A dataclass to store per-layer profiling statistics.
-:class:`ProfilerResult`
-    A dataclass to store the complete profiling results.
-:class:`LayerProfiler`
-    A class that implements TensorRT's IProfiler interface.
-
 Functions
 ---------
 :func:`get_engine_names`
@@ -21,22 +12,15 @@ Functions
     Inspect a TensorRT engine.
 :func:`inspect_onnx_layers`
     Inspect the layers of an ONNX model.
-:func:`profile_engine`
-    Profile a TensorRT engine layer-by-layer.
 
 """
 
 from ._inspect import inspect_engine
 from ._names import get_engine_names
 from ._onnx import inspect_onnx_layers
-from ._profiler import LayerProfiler, LayerTiming, ProfilerResult, profile_engine
 
 __all__ = [
-    "LayerProfiler",
-    "LayerTiming",
-    "ProfilerResult",
     "get_engine_names",
     "inspect_engine",
     "inspect_onnx_layers",
-    "profile_engine",
 ]
