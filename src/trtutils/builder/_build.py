@@ -50,6 +50,8 @@ def build_engine(
     hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
     optimization_level: int = 3,
     profiling_verbosity: trt.ProfilingVerbosity | None = None,
+    tiling_optimization_level: int = 0,
+    tiling_l2_cache_limit: int | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -145,6 +147,12 @@ def build_engine(
         trt.ProfilingVerbosity.DETAILED
         DETAILED is recommended for best layer names when using profile_engine.
         By default, None (uses TensorRT's default).
+    tiling_optimization_level : int, optional
+        Tiling optimization level to enable cross-kernel tiled inference.
+        By default, 0 (no tiling optimization).
+    tiling_l2_cache_limit : int, None, optional
+        L2 cache limit (in bytes) for tiling optimization.
+        By default, None (TensorRT manages the default value).
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
         when building the engine for DLA.
@@ -257,6 +265,11 @@ def build_engine(
     # handle profiling verbosity
     if profiling_verbosity is not None:
         config.profiling_verbosity = profiling_verbosity
+
+    # handle tiling optimization
+    config.set_tiling_optimization_level(tiling_optimization_level)
+    if tiling_l2_cache_limit is not None:
+        config.set_l2_limit_for_tiling(tiling_l2_cache_limit)
 
     # handle some flags
     if prefer_precision_constraints:
