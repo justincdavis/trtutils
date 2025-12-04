@@ -17,6 +17,8 @@ Classes
     Calibrates an engine during quantization.
 :class:`ImageBatcher`
     Batches images for calibration during engine building.
+:class:`SyntheticBatcher`
+    Generates synthetic data batches for calibration during engine building.
 :class:`ProgressBar`
     Progress bar implementation for TensorRT engine building.
 
@@ -36,7 +38,7 @@ Functions
 from __future__ import annotations
 
 from . import hooks
-from ._batcher import ImageBatcher
+from ._batcher import ImageBatcher, SyntheticBatcher
 from ._build import build_engine
 from ._calibrator import EngineCalibrator
 from ._dla import build_dla_engine, can_run_on_dla
@@ -45,6 +47,7 @@ from ._onnx import read_onnx
 __all__ = [
     "EngineCalibrator",
     "ImageBatcher",
+    "SyntheticBatcher",
     "build_dla_engine",
     "build_engine",
     "can_run_on_dla",
