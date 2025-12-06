@@ -165,6 +165,9 @@ class TRTEngine(TRTEngineInterface):
     def _set_output_bindings(self: Self) -> None:
         for o_binding in self._outputs:
             self._context.set_tensor_address(o_binding.name, o_binding.allocation)
+        # CUDA graph is invalid if using new bindings
+        if self._cuda_graph and self._cuda_graph.is_captured:
+            self._cuda_graph.invalidate()
 
     def _capture_cuda_graph(self: Self) -> None:
         if self._cuda_graph is None:
@@ -302,6 +305,7 @@ class TRTEngine(TRTEngineInterface):
         self: Self,
         pointers: list[int],
         *,
+        set_pointers: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
         debug: bool | None = None,
@@ -318,6 +322,12 @@ class TRTEngine(TRTEngineInterface):
         ----------
         pointers : list[int]
             The inputs to the network.
+            Pointers must be in the order of expected inputs for the engine.
+        set_pointers : bool, optional
+            Whether to set tensor addresses before execution.
+            If True (default), tensor addresses will be set.
+            If False, tensor addresses are assumed to already be configured.
+            By default True.
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional
@@ -341,12 +351,13 @@ class TRTEngine(TRTEngineInterface):
 
         # execute
         if self._async_v3:
-            # need to set the input pointers to match the bindings, assume in same order
-            for i in range(len(pointers)):
-                self._context.set_tensor_address(self._inputs[i].name, pointers[i])
-            self._using_engine_tensors = (
-                False  # set flag to tell future execute calls to reset inputs
-            )
+            if set_pointers:
+                # need to set the input pointers to match the bindings, assume in same order
+                for i in range(len(pointers)):
+                    self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+                self._using_engine_tensors = (
+                    False  # set flag to tell future execute calls to reset inputs
+                )
             self._context.execute_async_v3(self._stream)
         else:
             self._context.execute_async_v2(
@@ -377,13 +388,14 @@ class TRTEngine(TRTEngineInterface):
         # make sure all operations are complete
         stream_synchronize(self._stream)
 
-        # return the results
-        return [o.host_allocation for o in self._outputs]
+        # return the output host allocations
+        return self._output_host_allocations
 
     def raw_exec(
         self: Self,
         pointers: list[int],
         *,
+        set_pointers: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
         debug: bool | None = None,
@@ -398,6 +410,12 @@ class TRTEngine(TRTEngineInterface):
         ----------
         pointers : list[int]
             The inputs to the network.
+            Pointers must be in the order of expected inputs for the engine.
+        set_pointers : bool, optional
+            Whether to set tensor addresses before execution.
+            If True (default), tensor addresses will be set.
+            If False, tensor addresses are assumed to already be configured.
+            By default True.
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional
@@ -421,12 +439,13 @@ class TRTEngine(TRTEngineInterface):
 
         # execute
         if self._async_v3:
-            # need to set the input pointers to match the bindings, assume in same order
-            for i in range(len(pointers)):
-                self._context.set_tensor_address(self._inputs[i].name, pointers[i])
-            self._using_engine_tensors = (
-                False  # set flag to tell future execute calls to reset inputs
-            )
+            if set_pointers:
+                # need to set the input pointers to match the bindings, assume in same order
+                for i in range(len(pointers)):
+                    self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+                self._using_engine_tensors = (
+                    False  # set flag to tell future execute calls to reset inputs
+                )
             self._context.execute_async_v3(self._stream)
         else:
             self._context.execute_async_v2(
@@ -437,5 +456,5 @@ class TRTEngine(TRTEngineInterface):
         if debug:
             stream_synchronize(self._stream)
 
-        # return the results
-        return [o.allocation for o in self._outputs]
+        # return the pointers to the output allocations
+        return self._output_allocations
