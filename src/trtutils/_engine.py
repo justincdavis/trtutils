@@ -124,6 +124,17 @@ class TRTEngine(TRTEngineInterface):
             raise ValueError(err_msg)
 
         self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (backend == "async_v3" or backend == "auto")
+
+        # CUDA graph support
+        # needs to happen before input/output bindings are set since
+        # CUDA graph is used in those calls
+        self._cuda_graph_enabled: bool = (
+            cuda_graph if cuda_graph is not None else True
+        ) and self._async_v3
+        self._cuda_graph: CUDAGraph | None = None
+        if self._cuda_graph_enabled:
+            self._cuda_graph = CUDAGraph(self._stream)
+
         # if using v3
         # 1.) need to do set_input_shape for all input bindings
         # 2.) need to do set_tensor_address for all input/output bindings
@@ -139,14 +150,6 @@ class TRTEngine(TRTEngineInterface):
 
         # store timing variable for sleep call before stream_sync
         self._sync_t: float = 0.0
-
-        # CUDA graph support
-        self._cuda_graph_enabled: bool = (
-            cuda_graph if cuda_graph is not None else True
-        ) and self._async_v3
-        self._cuda_graph: CUDAGraph | None = None
-        if self._cuda_graph_enabled:
-            self._cuda_graph = CUDAGraph(self._stream)
 
         self._warmup = warmup
         if self._warmup:

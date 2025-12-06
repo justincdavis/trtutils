@@ -50,7 +50,7 @@ def build_engine(
     hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
     optimization_level: int = 3,
     profiling_verbosity: trt.ProfilingVerbosity | None = None,
-    tiling_optimization_level: int = 0,
+    tiling_optimization_level: trt.TilingOptimizationLevel | None = None,
     tiling_l2_cache_limit: int | None = None,
     *,
     gpu_fallback: bool = False,
@@ -267,9 +267,10 @@ def build_engine(
         config.profiling_verbosity = profiling_verbosity
 
     # handle tiling optimization
-    config.set_tiling_optimization_level(tiling_optimization_level)
+    if tiling_optimization_level is not None:
+        config.tiling_optimization_level = tiling_optimization_level
     if tiling_l2_cache_limit is not None:
-        config.set_l2_limit_for_tiling(tiling_l2_cache_limit)
+        config.l2_limit_for_tiling = tiling_l2_cache_limit
 
     # handle some flags
     if prefer_precision_constraints:
