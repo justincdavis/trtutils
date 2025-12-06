@@ -12,6 +12,7 @@ import numpy as np
 
 from ._flags import FLAGS
 from ._log import LOG
+from .core._graph import CUDAGraph
 from .core._interface import TRTEngineInterface
 from .core._memory import (
     memcpy_device_to_host,
@@ -58,6 +59,7 @@ class TRTEngine(TRTEngineInterface):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -90,6 +92,9 @@ class TRTEngine(TRTEngineInterface):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which will automatically determine what to use.
+        cuda_graph : bool, optional
+            Whether to enable CUDA graph capture for optimized execution.
+            By default True. Only effective when using async_v3 backend.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -135,7 +140,16 @@ class TRTEngine(TRTEngineInterface):
         # store timing variable for sleep call before stream_sync
         self._sync_t: float = 0.0
 
-        if warmup:
+        # CUDA graph support
+        self._cuda_graph_enabled: bool = (
+            cuda_graph if cuda_graph is not None else True
+        ) and self._async_v3
+        self._cuda_graph: CUDAGraph | None = None
+        if self._cuda_graph_enabled:
+            self._cuda_graph = CUDAGraph(self._stream)
+
+        self._warmup = warmup
+        if self._warmup:
             self.warmup(warmup_iterations, verbose=self._verbose)
 
         LOG.debug(f"Creating TRTEngine: {self.name}")
@@ -144,12 +158,34 @@ class TRTEngine(TRTEngineInterface):
         for i_binding in self._inputs:
             self._context.set_input_shape(i_binding.name, i_binding.shape)
             self._context.set_tensor_address(i_binding.name, i_binding.allocation)
+        # CUDA graph is invalid if using new bindings
+        if self._cuda_graph and self._cuda_graph.is_captured:
+            self._cuda_graph.invalidate()
 
     def _set_output_bindings(self: Self) -> None:
         for o_binding in self._outputs:
             self._context.set_tensor_address(o_binding.name, o_binding.allocation)
 
+    def _capture_cuda_graph(self: Self) -> None:
+        if self._cuda_graph is None:
+            err_msg = f"CUDA graph is not enabled in engine: {self._name}"
+            raise RuntimeError(err_msg)
+
+        # at least one execution required prior to graph capture
+        # simply use one warmup iteration if warmup didnt get run
+        if not self._warmup:
+            self.warmup(1, verbose=self._verbose)
+
+        # CUDAGraph handles capture with a context manager
+        with self._cuda_graph:
+            # manually run execute_async_v3 instead of execute since
+            # we only want the TRT engine
+            self._context.execute_async_v3(self._stream)
+
     def __del__(self: Self) -> None:
+        with contextlib.suppress(AttributeError):
+            if self._cuda_graph is not None:
+                self._cuda_graph.invalidate()
         super().__del__()
 
     def execute(
@@ -217,7 +253,16 @@ class TRTEngine(TRTEngineInterface):
             stream_synchronize(self._stream)
 
         # execute
-        if self._async_v3:
+        if self._cuda_graph:
+            if self._cuda_graph.is_captured:
+                # uses already captured graph to handle execution
+                self._cuda_graph.launch()
+            else:
+                # CUDA graph capture calls execute_async_v3 internally
+                # no need to call again here
+                self._capture_cuda_graph()
+        # base execution cases
+        elif self._async_v3:
             self._context.execute_async_v3(self._stream)
         else:
             self._context.execute_async_v2(self._allocations, self._stream)

@@ -165,7 +165,9 @@ class CUDAGraph:
         This should be called before the operations to capture.
 
         """
-        cuda_stream_begin_capture(self._stream, cudart.cudaStreamCaptureMode.cudaStreamCaptureModeGlobal)
+        cuda_stream_begin_capture(
+            self._stream, cudart.cudaStreamCaptureMode.cudaStreamCaptureModeGlobal
+        )
 
     def stop(self: Self) -> bool:
         """
