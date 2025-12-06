@@ -79,7 +79,7 @@ class CPUPreprocessor(ImagePreprocessor):
             (*self._o_shape, 3),
             dtype=np.uint8,
         )
-        self.preprocess(rand_data)
+        self.preprocess([rand_data])
 
     def __call__(
         self: Self,

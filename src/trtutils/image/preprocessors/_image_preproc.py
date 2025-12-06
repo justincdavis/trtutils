@@ -356,7 +356,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             (*self._o_shape, 3),
             dtype=np.uint8,
         )
-        self.preprocess(rand_data, resize=self._resize, no_copy=True)
+        self.preprocess([rand_data], resize=self._resize, no_copy=True)
 
     def __call__(
         self: Self,
