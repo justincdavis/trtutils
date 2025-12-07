@@ -171,6 +171,7 @@ class RTDETRv1(DETR):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -188,6 +189,9 @@ class RTDETRv1(DETR):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -209,6 +213,7 @@ class RTDETRv1(DETR):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -315,6 +320,7 @@ class RTDETRv2(DETR):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -332,6 +338,9 @@ class RTDETRv2(DETR):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -353,6 +362,7 @@ class RTDETRv2(DETR):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -459,6 +469,7 @@ class RTDETRv3(DETR):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -476,6 +487,9 @@ class RTDETRv3(DETR):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -498,6 +512,7 @@ class RTDETRv3(DETR):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -604,6 +619,7 @@ class DFINE(DETR):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -621,6 +637,9 @@ class DFINE(DETR):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -642,6 +661,7 @@ class DFINE(DETR):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -748,6 +768,7 @@ class DEIM(DETR):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -765,6 +786,9 @@ class DEIM(DETR):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -786,6 +810,7 @@ class DEIM(DETR):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -901,6 +926,7 @@ class DEIMv2(DETR):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -920,6 +946,9 @@ class DEIMv2(DETR):
             All others (pico, n, s, m, l) are 640, 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -940,6 +969,7 @@ class DEIMv2(DETR):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -1046,6 +1076,7 @@ class RFDETR(DETR):
         output: Path | str,
         imgsz: int = 576,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -1062,6 +1093,9 @@ class RFDETR(DETR):
             Input image size used for shapes.
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -1089,5 +1123,6 @@ class RFDETR(DETR):
             output=output,
             shapes=shapes,
             layer_precision=layer_precision,
+            dla_core=dla_core,
             verbose=verbose,
         )

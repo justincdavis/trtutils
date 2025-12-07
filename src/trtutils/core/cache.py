@@ -21,6 +21,18 @@ Functions
     Stores a compiled TensorRT engine in the cache.
 :func:`remove`
     Removes an engine file from the cache.
+:func:`query_file`
+    Queries the cache for a file with a specific extension.
+:func:`store_file`
+    Stores a file in the cache with a specific name.
+:func:`remove_file`
+    Removes a file from the cache.
+:func:`query_timing_cache`
+    Queries the cache for the global timing cache.
+:func:`store_timing_cache`
+    Stores the global timing cache in the cache directory.
+:func:`save_timing_cache_to_global`
+    Saves a TensorRT timing cache object directly to the global timing cache.
 
 """
 # POTENTIAL CHANGE: Update to use platformdirs behind the scenes
@@ -29,6 +41,7 @@ Functions
 from __future__ import annotations
 
 import shutil
+import tempfile
 from pathlib import Path
 
 from trtutils._log import LOG
@@ -75,6 +88,35 @@ def clear(*, no_warn: bool | None = None) -> None:
     cache_dir.mkdir()
 
 
+def query_file(filename: str, extension: str = "engine") -> tuple[bool, Path]:
+    """
+    Check if a file with the given name and extension is present in the cache.
+
+    Parameters
+    ----------
+    filename : str
+        The filename to check for. Can be with or without extension.
+        If extension is provided in filename, it will be used.
+    extension : str, optional
+        The file extension to use (without the dot).
+        By default, "engine".
+
+    Returns
+    -------
+    tuple[bool, Path]
+        Whether or not the file exists and its Path (whether or not it exists)
+
+    """
+    # use extension if exists, otherwise replace
+    if "." in filename and not filename.endswith("."):
+        file_path = get_cache_dir() / filename
+    else:
+        base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
+        file_path = get_cache_dir() / f"{base_name}.{extension}"
+    success = file_path.exists()
+    return success, file_path
+
+
 def query(filename: str) -> tuple[bool, Path]:
     """
     Check if the engine filename is present in the cache.
@@ -90,9 +132,55 @@ def query(filename: str) -> tuple[bool, Path]:
         Whether or not the file exists and its Path (whether or not it exists)
 
     """
-    file_path = get_cache_dir() / f"{filename}.engine"
-    success = file_path.exists()
-    return success, file_path
+    return query_file(filename, extension="engine")
+
+
+def store_file(
+    filepath: Path,
+    cache_filename: str | None = None,
+    *,
+    overwrite: bool = False,
+    clear_old: bool = False,
+) -> Path:
+    """
+    Store a file in the trtutils cache.
+
+    Parameters
+    ----------
+    filepath : Path
+        The path to the file to store in the cache.
+    cache_filename : str, optional
+        The name to use in the cache. If None, uses the original filename.
+        By default, None.
+    overwrite : bool, optional
+        Whether or not to overwrite an existing file with the same name.
+        By default False, will keep the older version.
+    clear_old : bool, optional
+        Whether or not to automatically clear the original file.
+        By default, False, will not remove original (old) file.
+
+    Returns
+    -------
+    Path
+        The new path of the file in the cache.
+
+    """
+    if cache_filename is None:
+        cache_filename = filepath.name
+
+    new_file_path = get_cache_dir() / cache_filename
+    exists = new_file_path.exists()
+
+    if not overwrite and exists:
+        if clear_old:
+            filepath.unlink()
+        return new_file_path
+
+    # otherwise we write the file
+    shutil.copy(filepath, new_file_path)
+    if clear_old:
+        filepath.unlink()
+    return new_file_path
 
 
 def store(filepath: Path, *, overwrite: bool = False, clear_old: bool = False) -> Path:
@@ -116,18 +204,38 @@ def store(filepath: Path, *, overwrite: bool = False, clear_old: bool = False) -
         The new path of the file in the cache.
 
     """
-    exists, existing_path = query(filepath.stem)
-    if not overwrite and exists:
-        if clear_old:
-            filepath.unlink()
-        return existing_path
+    return store_file(filepath, overwrite=overwrite, clear_old=clear_old)
 
-    # otherwise we write the file
-    new_file_path = get_cache_dir() / filepath.name
-    shutil.copy(filepath, new_file_path)
-    if clear_old:
-        filepath.unlink()
-    return new_file_path
+
+def remove_file(filename: str, extension: str = "engine") -> None:
+    """
+    Remove a file from the cache.
+
+    Parameters
+    ----------
+    filename : str
+        The filename to remove from the cache. Can be with or without extension.
+        If extension is provided in filename, it will be used.
+    extension : str, optional
+        The file extension to use (without the dot).
+        By default, "engine".
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist in the cache.
+
+    """
+    # use extension if exists, otherwise replace
+    if "." in filename and not filename.endswith("."):
+        file_path = get_cache_dir() / filename
+    else:
+        base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
+        file_path = get_cache_dir() / f"{base_name}.{extension}"
+    if not file_path.exists():
+        err_msg = f"File {file_path} does not exist in the cache"
+        raise FileNotFoundError(err_msg)
+    file_path.unlink()
 
 
 def remove(filename: str) -> None:
@@ -145,8 +253,70 @@ def remove(filename: str) -> None:
         If the file does not exist in the cache.
 
     """
-    file_path = get_cache_dir() / f"{filename}.engine"
-    if not file_path.exists():
-        err_msg = f"File {file_path} does not exist in the cache"
-        raise FileNotFoundError(err_msg)
-    file_path.unlink()
+    remove_file(filename, extension="engine")
+
+
+def query_timing_cache() -> tuple[bool, Path]:
+    """
+    Query the cache for the global timing cache.
+
+    Returns
+    -------
+    tuple[bool, Path]
+        Whether or not the global timing cache exists and its Path.
+
+    """
+    return query_file("global", extension="cache")
+
+
+def store_timing_cache(
+    filepath: Path, *, overwrite: bool = False, clear_old: bool = False
+) -> Path:
+    """
+    Store the global timing cache in the cache directory.
+
+    Parameters
+    ----------
+    filepath : Path
+        The path to the timing cache file to store.
+    overwrite : bool, optional
+        Whether or not to overwrite an existing global timing cache.
+        By default False, will keep the older version.
+    clear_old : bool, optional
+        Whether or not to automatically clear the original file.
+        By default, False, will not remove original (old) file.
+
+    Returns
+    -------
+    Path
+        The path of the global timing cache in the cache directory.
+
+    """
+    return store_file(filepath, cache_filename="global.cache", overwrite=overwrite, clear_old=clear_old)
+
+
+def save_timing_cache_to_global(timing_cache_obj, *, overwrite: bool = True) -> Path:
+    """
+    Save a TensorRT timing cache object to the global timing cache.
+
+    Parameters
+    ----------
+    timing_cache_obj
+        The TensorRT timing cache object (from config.get_timing_cache()).
+    overwrite : bool, optional
+        Whether or not to overwrite an existing global timing cache.
+        By default True.
+
+    Returns
+    -------
+    Path
+        The path of the global timing cache in the cache directory.
+
+    """
+    serialized_cache = memoryview(timing_cache_obj.serialize())
+
+    # create a temporary file to store the serialized cache
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".cache") as tmp_file:
+        tmp_path = Path(tmp_file.name)
+        tmp_path.write_bytes(serialized_cache)
+        return store_timing_cache(tmp_path, overwrite=overwrite, clear_old=True)

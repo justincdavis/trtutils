@@ -148,6 +148,7 @@ class YOLOX(YOLO):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -165,6 +166,9 @@ class YOLOX(YOLO):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -175,6 +179,7 @@ class YOLOX(YOLO):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -232,6 +237,25 @@ class YOLO3(YOLO):
     ) -> None:
         """
         Download a YOLOv3 model.
+
+        Parameters
+        ----------
+        model: str
+            The model to download.
+        output: Path | str
+            The output path to save the model to.
+        imgsz: int = 640
+            The image size to use for the model.
+        opset: int = 17
+            The ONNX opset to use for the model.
+        *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
+        no_cache: bool | None = None,
+            Disable caching of downloaded weights and repos.
+        verbose: bool | None = None,
+            Print verbose output.
+
         """
         download_model_internal(
             model_type="yolov3",
@@ -251,11 +275,29 @@ class YOLO3(YOLO):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for YOLOv3.
+
+        Parameters
+        ----------
+        onnx: Path | str
+            Path to the ONNX model.
+        output: Path | str
+            Output path for the built engine.
+        imgsz: int = 640
+            Input image size used for shapes.
+        batch_size: int = 1
+            Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
+        verbose: bool | None = None
+            Enable verbose builder output.
+
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
@@ -263,6 +305,7 @@ class YOLO3(YOLO):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -320,6 +363,25 @@ class YOLO5(YOLO):
     ) -> None:
         """
         Download a YOLOv5 model.
+
+        Parameters
+        ----------
+        model: str
+            The model to download.
+        output: Path | str
+            The output path to save the model to.
+        imgsz: int = 640
+            The image size to use for the model.
+        opset: int = 17
+            The ONNX opset to use for the model.
+        *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
+        no_cache: bool | None = None,
+            Disable caching of downloaded weights and repos.
+        verbose: bool | None = None,
+            Print verbose output.
+
         """
         download_model_internal(
             model_type="yolov5",
@@ -339,11 +401,29 @@ class YOLO5(YOLO):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
         """
         Build a TensorRT engine for YOLOv5.
+
+        Parameters
+        ----------
+        onnx: Path | str
+            Path to the ONNX model.
+        output: Path | str
+            Output path for the built engine.
+        imgsz: int = 640
+            Input image size used for shapes.
+        batch_size: int = 1
+            Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
+        verbose: bool | None = None
+            Enable verbose builder output.
+
         """
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
@@ -351,6 +431,7 @@ class YOLO5(YOLO):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -446,6 +527,7 @@ class YOLO7(YOLO):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -463,6 +545,9 @@ class YOLO7(YOLO):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -473,6 +558,7 @@ class YOLO7(YOLO):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -568,6 +654,7 @@ class YOLO8(YOLO):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -585,6 +672,9 @@ class YOLO8(YOLO):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -595,6 +685,7 @@ class YOLO8(YOLO):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -690,6 +781,7 @@ class YOLO9(YOLO):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -707,6 +799,9 @@ class YOLO9(YOLO):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -717,6 +812,7 @@ class YOLO9(YOLO):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -812,6 +908,7 @@ class YOLO10(YOLO):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -829,6 +926,9 @@ class YOLO10(YOLO):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -839,6 +939,7 @@ class YOLO10(YOLO):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -934,6 +1035,7 @@ class YOLO11(YOLO):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -951,6 +1053,9 @@ class YOLO11(YOLO):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -961,6 +1066,7 @@ class YOLO11(YOLO):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -1056,6 +1162,7 @@ class YOLO12(YOLO):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -1073,6 +1180,9 @@ class YOLO12(YOLO):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -1083,6 +1193,7 @@ class YOLO12(YOLO):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )
 
@@ -1178,6 +1289,7 @@ class YOLO13(YOLO):
         output: Path | str,
         imgsz: int = 640,
         batch_size: int = 1,
+        dla_core: int | None = None,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -1195,6 +1307,9 @@ class YOLO13(YOLO):
             Default is 640
         batch_size: int = 1
             Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -1205,5 +1320,6 @@ class YOLO13(YOLO):
             output=output,
             shapes=shapes,
             fp16=True,
+            dla_core=dla_core,
             verbose=verbose,
         )

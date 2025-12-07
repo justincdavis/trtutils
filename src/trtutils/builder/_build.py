@@ -16,6 +16,7 @@ from trtutils._config import CONFIG
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core import cache as caching_tools
+from trtutils.core.cache import query_timing_cache, save_timing_cache_to_global
 
 from ._calibrator import EngineCalibrator
 from ._onnx import read_onnx
@@ -37,7 +38,7 @@ def build_engine(
     onnx: Path | str,
     output: Path | str,
     default_device: trt.DeviceType | str = trt.DeviceType.GPU,
-    timing_cache: Path | str | None = None,
+    timing_cache: Path | str | bool | None = None,
     workspace: float = 4.0,
     dla_core: int | None = None,
     calibration_cache: Path | str | None = None,
@@ -101,8 +102,11 @@ def build_engine(
         By default, trt.DeviceType.GPU.
         Options are trt.DeviceType.GPU, trt.DeviceType.DLA, or a string
         of "gpu" or "dla".
-    timing_cache : Path, str, optional
+    timing_cache : Path, str, bool, optional
         Where to store the timing cache data.
+        Can be a Path or str to a specific file, "global" or True to use
+        the global timing cache stored in the trtutils cache directory,
+        or None to not use a timing cache.
         Default is None.
     workspace : float
         The size of the workspace in gigabytes.
@@ -207,6 +211,22 @@ def build_engine(
         if exists:
             shutil.copy(location, output_path)
             return
+
+    # validate and handle timing_cache parameter
+    use_global_timing_cache = False
+    if timing_cache is True or timing_cache == "global":
+        use_global_timing_cache = True
+        timing_cache_path = None
+    elif timing_cache is None:
+        timing_cache_path = None
+    elif isinstance(timing_cache, (Path, str)):
+        timing_cache_path = Path(timing_cache).resolve()
+    else:
+        err_msg = (
+            f"Invalid timing_cache value: {timing_cache}. "
+            "Must be None, Path, str, True, or 'global'."
+        )
+        raise ValueError(err_msg)
 
     # match the device
     valid_gpu = ["gpu", "GPU"]
@@ -374,8 +394,18 @@ def build_engine(
                 config.set_device_type(layer, device)
 
     # load/setup the timing cache
-    timing_cache_path: Path | None = Path(timing_cache).resolve() if timing_cache else None
-    if timing_cache_path:
+    t_cache: trt.ITimingCache | None = None
+    if use_global_timing_cache:
+        # use global timing cache from cache directory
+        exists, global_cache_path = query_timing_cache()
+        buffer = b""
+        if exists:
+            with global_cache_path.open("rb") as timing_cache_file:
+                buffer = timing_cache_file.read()
+        t_cache = config.create_timing_cache(buffer)
+        config.set_timing_cache(t_cache, ignore_mismatch=ignore_timing_mismatch)
+    elif timing_cache_path:
+        # use specified timing cache path
         buffer = b""
         if timing_cache_path.exists():
             with timing_cache_path.open("rb") as timing_cache_file:
@@ -390,7 +420,12 @@ def build_engine(
         engine_bytes = builder.build_engine(network, config)
 
     # save the timing cache
-    if timing_cache_path:
+    if use_global_timing_cache:
+        # save to global timing cache in cache directory
+        post_t_cache = config.get_timing_cache()
+        save_timing_cache_to_global(post_t_cache, overwrite=True)
+    elif timing_cache_path:
+        # save to specified timing cache path
         post_t_cache = config.get_timing_cache()
         with timing_cache_path.open("wb") as f:
             f.write(memoryview(post_t_cache.serialize()))

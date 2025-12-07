@@ -1168,7 +1168,10 @@ def _main() -> None:
         "--timing_cache",
         "-tc",
         default=None,
-        help="Path to store timing cache data. Default is None.",
+        help=(
+            "Path to store timing cache data, or 'global' to use the global "
+            "timing cache stored in the trtutils cache directory. Default is None."
+        ),
     )
     build_common_parser.add_argument(
         "--calibration_cache",
