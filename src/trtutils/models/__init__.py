@@ -8,6 +8,10 @@ Classes
 -------
 :class:`YOLO`
     Alias for the Detector class with args preset for YOLO.
+:class:`YOLO3`
+    Alias for the YOLO class with args preset for YOLOv3.
+:class:`YOLO5`
+    Alias for the YOLO class with args preset for YOLOv5.
 :class:`YOLO7`
     Alias for the YOLO class with args preset for YOLO7.
 :class:`YOLO8`
@@ -46,7 +50,7 @@ Classes
 from __future__ import annotations
 
 from ._detr import DEIM, DETR, DFINE, RFDETR, DEIMv2, RTDETRv1, RTDETRv2, RTDETRv3
-from ._yolo import YOLO, YOLO7, YOLO8, YOLO9, YOLO10, YOLO11, YOLO12, YOLO13, YOLOX
+from ._yolo import YOLO, YOLO3, YOLO5, YOLO7, YOLO8, YOLO9, YOLO10, YOLO11, YOLO12, YOLO13, YOLOX
 
 __all__ = [
     "DEIM",
@@ -54,6 +58,8 @@ __all__ = [
     "DFINE",
     "RFDETR",
     "YOLO",
+    "YOLO3",
+    "YOLO5",
     "YOLO7",
     "YOLO8",
     "YOLO9",

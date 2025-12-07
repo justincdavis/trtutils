@@ -179,6 +179,182 @@ class YOLOX(YOLO):
         )
 
 
+class YOLO3(YOLO):
+    """Alias of Detector with default args for YOLOv3."""
+
+    def __init__(
+        self: Self,
+        engine_path: Path | str,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0, 1),
+        preprocessor: str = "trt",
+        resize_method: str = "letterbox",
+        conf_thres: float = 0.1,
+        nms_iou_thres: float = 0.5,
+        dla_core: int | None = None,
+        *,
+        warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
+    ) -> None:
+        super().__init__(
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            input_range=input_range,
+            preprocessor=preprocessor,
+            resize_method=resize_method,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou_thres,
+            dla_core=dla_core,
+            warmup=warmup,
+            pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
+            extra_nms=extra_nms,
+            agnostic_nms=agnostic_nms,
+            no_warn=no_warn,
+            verbose=verbose,
+        )
+
+    @staticmethod
+    def download(
+        model: str,
+        output: Path | str,
+        imgsz: int = 640,
+        opset: int = 17,
+        *,
+        accept: bool = False,
+        no_cache: bool | None = None,
+        verbose: bool | None = None,
+    ) -> None:
+        """
+        Download a YOLOv3 model.
+        """
+        download_model_internal(
+            model_type="yolov3",
+            friendly_name="YOLOv3",
+            model=model,
+            output=output,
+            imgsz=imgsz,
+            opset=opset,
+            no_cache=no_cache,
+            accept=accept,
+            verbose=verbose,
+        )
+
+    @staticmethod
+    def build(
+        onnx: Path | str,
+        output: Path | str,
+        imgsz: int = 640,
+        batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
+    ) -> None:
+        """
+        Build a TensorRT engine for YOLOv3.
+        """
+        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
+
+
+class YOLO5(YOLO):
+    """Alias of Detector with default args for YOLOv5."""
+
+    def __init__(
+        self: Self,
+        engine_path: Path | str,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0, 1),
+        preprocessor: str = "trt",
+        resize_method: str = "letterbox",
+        conf_thres: float = 0.1,
+        nms_iou_thres: float = 0.5,
+        dla_core: int | None = None,
+        *,
+        warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
+    ) -> None:
+        super().__init__(
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            input_range=input_range,
+            preprocessor=preprocessor,
+            resize_method=resize_method,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou_thres,
+            dla_core=dla_core,
+            warmup=warmup,
+            pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
+            extra_nms=extra_nms,
+            agnostic_nms=agnostic_nms,
+            no_warn=no_warn,
+            verbose=verbose,
+        )
+
+    @staticmethod
+    def download(
+        model: str,
+        output: Path | str,
+        imgsz: int = 640,
+        opset: int = 17,
+        *,
+        accept: bool = False,
+        no_cache: bool | None = None,
+        verbose: bool | None = None,
+    ) -> None:
+        """
+        Download a YOLOv5 model.
+        """
+        download_model_internal(
+            model_type="yolov5",
+            friendly_name="YOLOv5",
+            model=model,
+            output=output,
+            imgsz=imgsz,
+            opset=opset,
+            no_cache=no_cache,
+            accept=accept,
+            verbose=verbose,
+        )
+
+    @staticmethod
+    def build(
+        onnx: Path | str,
+        output: Path | str,
+        imgsz: int = 640,
+        batch_size: int = 1,
+        *,
+        verbose: bool | None = None,
+    ) -> None:
+        """
+        Build a TensorRT engine for YOLOv5.
+        """
+        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            verbose=verbose,
+        )
+
+
 class YOLO7(YOLO):
     """Alias of Detector with default args for YOLO7."""
 

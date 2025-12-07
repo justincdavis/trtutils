@@ -3,25 +3,29 @@
 # MIT License
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
+from trtutils.download import _download as dl
 
-from trtutils.download import download
-
-
-def download_with_args(
-    model: str,
-    *args: tuple,
-    **kwargs: dict,
-) -> None:
-    """Download a model with the given arguments."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        output = Path(temp_dir) / "model.onnx"
-        download(
-            model,
-            output,
-            *args,
-            **kwargs,
-            accept=True,
-        )
-        assert output.exists()
+MODEL_CONFIGS = dl.load_model_configs()
+TEST_MODELS = [
+    "deim_dfine_n",
+    "deim_rtdetrv2_r18",
+    "deimv2_atto",
+    "dfine_n",
+    "rfdetr_n",
+    "rtdetrv1_r18",
+    "rtdetrv2_r18",
+    "rtdetrv3_r18",
+    "yolov3tu",
+    "yolov5nu",
+    "yolov7t",
+    "yolov8n",
+    "yolov9t",
+    "yolov9tu",
+    "yolov10n",
+    "yolov10nu",
+    "yolov11n",
+    "yolov12n",
+    "yolov12nu",
+    "yolov13n",
+    "yoloxn",
+]

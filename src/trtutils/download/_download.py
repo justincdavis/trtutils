@@ -16,7 +16,7 @@ from pathlib import Path
 
 from trtutils._log import LOG
 
-_NORMAL_IMGSZ = 640
+_640 = 640
 
 
 def _kill_process_group(pid: int | None, cmd: list[str]) -> None:
@@ -325,7 +325,7 @@ def _export_yolov7(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -334,6 +334,8 @@ def _export_yolov7(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv7 is a GPL-3.0 licensed model, be aware of license restrictions")
+    if imgsz is None:
+        imgsz = _640
     _git_clone(
         "https://github.com/WongKinYiu/yolov7",
         directory,
@@ -388,7 +390,7 @@ def _export_ultralytics(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -399,6 +401,8 @@ def _export_ultralytics(
         LOG.warning(
             "Ultralytics is a AGPL-3.0 and commercial licensed model, be aware of license restrictions"
         )
+    if imgsz is None:
+        imgsz = _640
     _run_uv_pip_install(
         directory,
         bin_path.parent,
@@ -420,18 +424,6 @@ def _export_ultralytics(
         LOG.info(f"Using cached ultralytics weights: {pt_filename}")
         shutil.copy(cached_pt_file, target_pt_file)
         modelname = f"model={pt_filename}"
-
-    # yolo-nas requires that super-gradients is installed
-    # we will simply install it on top of the venv
-    if "yolo_nas" in model:
-        _run_uv_pip_install(
-            directory,
-            bin_path.parent,
-            model=None,
-            packages=["super-gradients==3.7.1", "pycocotools==2.*"],
-            no_cache=no_uv_cache,
-            verbose=verbose,
-        )
 
     _run_cmd(
         [
@@ -464,7 +456,7 @@ def _export_yolov9(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -473,6 +465,8 @@ def _export_yolov9(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv9 is a GPL-3.0 licensed model, be aware of license restrictions")
+    if imgsz is None:
+        imgsz = _640
     _git_clone(
         "https://github.com/WongKinYiu/yolov9",
         directory,
@@ -526,7 +520,7 @@ def _export_yolov10(
     bin_path: Path,
     model: str,  # noqa: ARG001
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -535,6 +529,8 @@ def _export_yolov10(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions")
+    if imgsz is None:
+        imgsz = _640
     _git_clone(
         "https://github.com/THU-MIG/yolov10",
         directory,
@@ -574,7 +570,7 @@ def _export_yolov12(
     bin_path: Path,
     model: str,  # noqa: ARG001
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -583,6 +579,8 @@ def _export_yolov12(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions")
+    if imgsz is None:
+        imgsz = _640
     _git_clone(
         "https://github.com/sunsmarterjie/yolov12",
         directory,
@@ -623,7 +621,7 @@ def _export_yolov13(
     bin_path: Path,
     model: str,  # noqa: ARG001
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -632,6 +630,8 @@ def _export_yolov13(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions")
+    if imgsz is None:
+        imgsz = _640
     _git_clone(
         "https://github.com/iMoonLab/yolov13",
         directory,
@@ -671,7 +671,7 @@ def _export_rtdetrv1(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -680,8 +680,10 @@ def _export_rtdetrv1(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz != _NORMAL_IMGSZ:
-        err_msg = f"RT-DETRv1 supports only an imgsz of {_NORMAL_IMGSZ}, got {imgsz}"
+    if imgsz is None:
+        imgsz = _640
+    if imgsz != _640:
+        err_msg = f"RT-DETRv1 supports only an imgsz of {_640}, got {imgsz}"
         raise ValueError(err_msg)
     _git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
@@ -734,7 +736,7 @@ def _export_rtdetrv2(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -743,8 +745,10 @@ def _export_rtdetrv2(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz != _NORMAL_IMGSZ:
-        err_msg = f"RT-DETRv2 supports only an imgsz of {_NORMAL_IMGSZ}, got {imgsz}"
+    if imgsz is None:
+        imgsz = _640
+    if imgsz != _640:
+        err_msg = f"RT-DETRv2 supports only an imgsz of {_640}, got {imgsz}"
         raise ValueError(err_msg)
     _git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
@@ -798,7 +802,7 @@ def _export_rtdetrv3(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -807,8 +811,10 @@ def _export_rtdetrv3(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv3 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz != _NORMAL_IMGSZ:
-        err_msg = f"RT-DETRv3 supports only an imgsz of {_NORMAL_IMGSZ}, got {imgsz}"
+    if imgsz is None:
+        imgsz = _640
+    if imgsz != _640:
+        err_msg = f"RT-DETRv3 supports only an imgsz of {_640}, got {imgsz}"
         raise ValueError(err_msg)
     paddle2onnx_max_opset = 16
     if opset > paddle2onnx_max_opset:
@@ -878,7 +884,7 @@ def _export_dfine(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -887,8 +893,10 @@ def _export_dfine(
 ) -> Path:
     if not no_warn:
         LOG.warning("D-FINE is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz != _NORMAL_IMGSZ:
-        err_msg = f"D-FINE supports only an imgsz of {_NORMAL_IMGSZ}, got {imgsz}"
+    if imgsz is None:
+        imgsz = _640
+    if imgsz != _640:
+        err_msg = f"D-FINE supports only an imgsz of {_640}, got {imgsz}"
         raise ValueError(err_msg)
     _git_clone(
         "https://github.com/Peterande/D-FINE",
@@ -941,7 +949,7 @@ def _export_deim(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -950,8 +958,10 @@ def _export_deim(
 ) -> Path:
     if not no_warn:
         LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz != _NORMAL_IMGSZ:
-        err_msg = f"DEIM supports only an imgsz of {_NORMAL_IMGSZ}, got {imgsz}"
+    if imgsz is None:
+        imgsz = _640
+    if imgsz != _640:
+        err_msg = f"DEIM supports only an imgsz of {_640}, got {imgsz}"
         raise ValueError(err_msg)
     _git_clone(
         "https://github.com/Intellindust-AI-Lab/DEIM",
@@ -1017,12 +1027,19 @@ def _export_rfdetr(
 ) -> Path:
     if not no_warn:
         LOG.warning("RF-DETR is a Apache-2.0 licensed model, be aware of license restrictions")
+    rfdetr_imgszs = {
+        "rfdetr_n": 384,
+        "rfdetr_s": 512,
+        "rfdetr_m": 576,
+    }
+    required_imgsz = rfdetr_imgszs.get(model)
+    if required_imgsz is None:
+        err_msg = f"RF-DETR does not support model {model}"
+        raise ValueError(err_msg)
+    if imgsz is not None and imgsz != required_imgsz:
+        raise ValueError(f"{model} requires an imgsz of {required_imgsz}, got {imgsz}")
     if imgsz is None:
-        imgsz = {
-            "rfdetr_n": 384,
-            "rfdetr_s": 512,
-            "rfdetr_m": 576,
-        }[model]
+        imgsz = required_imgsz
     if imgsz % 32 != 0:
         new_imgsz = max(imgsz // 32, 1) * 32
         wrn_msg = f"RF-DETR does not support input size {imgsz}, "
@@ -1093,24 +1110,24 @@ def _export_deimv2(
 ) -> Path:
     if not no_warn:
         LOG.warning("DEIMv2 is a Apache-2.0 licensed model, be aware of license restrictions")
-    # atto is 320, femto is 416, all others 640
-    atto_imgsz = 320
-    femto_imgsz = 416
-    if imgsz is not None:
-        if "atto" in model:
-            if imgsz != atto_imgsz:
-                err_msg = f"DEIMv2 atto model requires an imgsz of 320, got {imgsz}"
-                raise ValueError(err_msg)
-        elif "femto" in model:
-            if imgsz != femto_imgsz:
-                err_msg = f"DEIMv2 femto model requires an imgsz of 416, got {imgsz}"
-                raise ValueError(err_msg)
-        else:
-            if imgsz != _NORMAL_IMGSZ:
-                err_msg = (
-                    f"DEIMv2 models (excluding atto/femto) require an imgsz of 640, got {imgsz}"
-                )
-                raise ValueError(err_msg)
+    deimv2_imgszs = {
+        "deimv2_atto": 320,
+        "deimv2_femto": 416,
+        "deimv2_pico": 640,
+        "deimv2_n": 640,
+        "deimv2_s": 640,
+        "deimv2_m": 640,
+        "deimv2_l": 640,
+        "deimv2_x": 640,
+    }
+    required_imgsz = deimv2_imgszs.get(model)
+    if required_imgsz is None:
+        err_msg = f"DEIMv2 does not support model {model}"
+        raise ValueError(err_msg)
+    if imgsz is not None and imgsz != required_imgsz:
+        raise ValueError(f"{model} requires an imgsz of {required_imgsz}, got {imgsz}")
+    if imgsz is None:
+        imgsz = required_imgsz
     _git_clone(
         "https://github.com/Intellindust-AI-Lab/DEIMv2",
         directory,
@@ -1156,7 +1173,7 @@ def _export_yolox(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,  # noqa: ARG001
+    imgsz: int | None = None,  # noqa: ARG001
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -1165,6 +1182,8 @@ def _export_yolox(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOX is a Apache-2.0 licensed model, be aware of license restrictions")
+    if imgsz is None:
+        imgsz = _640
     _git_clone(
         "https://github.com/Megvii-BaseDetection/YOLOX",
         directory,
@@ -1231,7 +1250,7 @@ def download_model(
     model: str,
     directory: Path,
     opset: int = 17,
-    imgsz: int = 640,
+    imgsz: int | None = None,
     requirements_export: Path | None = None,
     *,
     no_cache: bool | None = None,
@@ -1253,6 +1272,7 @@ def download_model(
         The ONNX opset version to use.
     imgsz : int, optional
         The image size to use for the model.
+        By default, the model will use the default image size for the model.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
     no_cache : bool, optional
@@ -1377,7 +1397,7 @@ def download(
     model: str,
     output: Path,
     opset: int = 17,
-    imgsz: int = 640,
+    imgsz: int | None = None,
     requirements_export: Path | None = None,
     *,
     no_cache: bool | None = None,
@@ -1399,6 +1419,7 @@ def download(
         The ONNX opset version to use.
     imgsz : int, optional
         The image size to use for the model.
+        By default, the model will use the default image size for the model.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
     no_cache : bool, optional

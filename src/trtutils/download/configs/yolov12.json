@@ -21,22 +21,22 @@
   },
   "yolov12nu": {
     "url": "ultralytics",
-    "name": "yolov12n"
+    "name": "yolo12n"
   },
   "yolov12su": {
     "url": "ultralytics",
-    "name": "yolov12s"
+    "name": "yolo12s"
   },
   "yolov12mu": {
     "url": "ultralytics",
-    "name": "yolov12m"
+    "name": "yolo12m"
   },
   "yolov12lu": {
     "url": "ultralytics",
-    "name": "yolov12l"
+    "name": "yolo12l"
   },
   "yolov12xu": {
     "url": "ultralytics",
-    "name": "yolov12x"
+    "name": "yolo12x"
   }
 }
