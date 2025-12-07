@@ -10,6 +10,8 @@ Functions
     Download a model by name and save to a location.
 :func:`download_model`
     Lower-level function for downloading and converting a model to ONNX.
+:func:`get_supported_models`
+    Return a list of supported model names.
 
 Note:
 ----
@@ -21,9 +23,10 @@ or by responding to the interactive prompt.
 
 from __future__ import annotations
 
-from ._download import download, download_model
+from ._download import download, download_model, get_supported_models
 
 __all__ = [
     "download",
     "download_model",
+    "get_supported_models",
 ]

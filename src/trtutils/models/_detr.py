@@ -120,8 +120,8 @@ class RTDETRv1(DETR):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -137,10 +137,10 @@ class RTDETRv1(DETR):
             Image size used for export.
         opset: int = 17
             ONNX opset to export with.
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None
             Disable caching of downloads.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -264,8 +264,8 @@ class RTDETRv2(DETR):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -281,10 +281,10 @@ class RTDETRv2(DETR):
             Image size used for export.
         opset: int = 17
             ONNX opset to export with.
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None
             Disable caching of downloads.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -408,8 +408,8 @@ class RTDETRv3(DETR):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -425,10 +425,10 @@ class RTDETRv3(DETR):
             Image size used for export.
         opset: int = 17
             ONNX opset to export with.
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None
             Disable caching of downloads.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -553,8 +553,8 @@ class DFINE(DETR):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -570,10 +570,10 @@ class DFINE(DETR):
             Image size used for export.
         opset: int = 17
             ONNX opset to export with.
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None
             Disable caching of downloads.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -697,8 +697,8 @@ class DEIM(DETR):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -714,10 +714,10 @@ class DEIM(DETR):
             Image size used for export.
         opset: int = 17
             ONNX opset to export with.
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None
             Disable caching of downloads.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -841,8 +841,8 @@ class DEIMv2(DETR):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -861,10 +861,10 @@ class DEIMv2(DETR):
             All others (pico, n, s, m, l) require 640
         opset: int = 17
             ONNX opset to export with.
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None
             Disable caching of downloads.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 
@@ -995,8 +995,8 @@ class RFDETR(DETR):
         imgsz: int = 576,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -1012,10 +1012,10 @@ class RFDETR(DETR):
             Image size used for export.
         opset: int = 17
             ONNX opset to export with.
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None
             Disable caching of downloads.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None
             Enable verbose logging.
 

@@ -104,8 +104,8 @@ class YOLOX(YOLO):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -122,10 +122,10 @@ class YOLOX(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -226,8 +226,8 @@ class YOLO7(YOLO):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -244,10 +244,10 @@ class YOLO7(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -348,8 +348,8 @@ class YOLO8(YOLO):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -366,10 +366,10 @@ class YOLO8(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -470,8 +470,8 @@ class YOLO9(YOLO):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -488,10 +488,10 @@ class YOLO9(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -592,8 +592,8 @@ class YOLO10(YOLO):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -610,10 +610,10 @@ class YOLO10(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -714,8 +714,8 @@ class YOLO11(YOLO):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -732,10 +732,10 @@ class YOLO11(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -836,8 +836,8 @@ class YOLO12(YOLO):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -854,10 +854,10 @@ class YOLO12(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 
@@ -958,8 +958,8 @@ class YOLO13(YOLO):
         imgsz: int = 640,
         opset: int = 17,
         *,
+        accept: bool = False,
         no_cache: bool | None = None,
-        accept: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -976,10 +976,10 @@ class YOLO13(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
         no_cache: bool | None = None,
             Disable caching of downloaded weights and repos.
-        accept: bool | None = None
-            Whether to accept the license terms for the model.
         verbose: bool | None = None,
             Print verbose output.
 

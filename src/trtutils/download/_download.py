@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -16,6 +17,51 @@ from pathlib import Path
 from trtutils._log import LOG
 
 _NORMAL_IMGSZ = 640
+
+
+def _kill_process_group(pid: int | None, cmd: list[str]) -> None:
+    if pid is None:
+        return
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except Exception as e:
+        LOG.warning(f"Failed to kill process group for {cmd}: {e}")
+
+
+def _run_cmd(
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    verbose: bool | None = None,
+    timeout: float | None = None,
+    stdout=None,
+    stderr=None,
+    check: bool = True,
+) -> int:
+    final_stdout = stdout if stdout is not None else (None if verbose else subprocess.DEVNULL)
+    final_stderr = stderr if stderr is not None else (None if verbose else subprocess.STDOUT)
+    proc = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        env=env,
+        stdout=final_stdout,
+        stderr=final_stderr,
+        start_new_session=True,
+    )
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        LOG.error(f"Command timed out, killing process group: {' '.join(cmd)}")
+        _kill_process_group(proc.pid, cmd)
+        raise e
+    if check and proc.returncode:
+        LOG.error(f"Command failed with code {proc.returncode}: {' '.join(cmd)}")
+        _kill_process_group(proc.pid, cmd)
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
+    return proc.returncode
 
 
 @lru_cache(maxsize=1)
@@ -61,6 +107,24 @@ def load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
     return model_configs
 
 
+@lru_cache(maxsize=1)
+def get_supported_models() -> list[str]:
+    """
+    Return a list of supported model names.
+    
+    Returns
+    -------
+    list[str]
+        A list of supported model names.
+
+    """
+    model_configs = load_model_configs()
+    names: list[str] = []
+    for model_set in model_configs.values():
+        names.extend(model_set.keys())
+    return names
+
+
 def _git_clone(
     url: str,
     directory: Path,
@@ -82,24 +146,20 @@ def _git_clone(
     else:
         LOG.info(f"Cloning repository: {repo_name}")
         # Clone fresh
-        subprocess.run(
+        _run_cmd(
             ["git", "clone", url],
             cwd=directory,
-            check=True,
-            stdout=subprocess.DEVNULL if not verbose else None,
-            stderr=subprocess.STDOUT if not verbose else None,
+            verbose=verbose,
         )
         # Cache the cloned repo
         shutil.copytree(target_path, cache_repo_path)
         LOG.info(f"Cached repository: {repo_name}")
 
     if commit:
-        subprocess.run(
+        _run_cmd(
             ["git", "checkout", commit],
             cwd=target_path,
-            check=True,
-            stdout=subprocess.DEVNULL if not verbose else None,
-            stderr=subprocess.STDOUT if not verbose else None,
+            verbose=verbose,
         )
 
 
@@ -130,12 +190,10 @@ def _run_uv_pip_install(
     if no_cache:
         cmd.extend(["--no-cache"])
     LOG.info(f"Running command: {' '.join(cmd)}")
-    subprocess.run(
+    _run_cmd(
         cmd,
         cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
 
 
@@ -150,9 +208,8 @@ def _export_requirements(
     if verbose:
         LOG.info(f"Exporting virtual environment requirements to {output_path}")
     with output_path.open("w", encoding="utf-8") as requirements_file:
-        subprocess.run(
+        _run_cmd(
             ["uv", "pip", "freeze", "-p", str(venv_path)],
-            check=True,
             stdout=requirements_file,
             stderr=subprocess.DEVNULL if not verbose else None,
         )
@@ -164,12 +221,10 @@ def _make_venv(
     no_cache: bool | None = None,
     verbose: bool | None = None,
 ) -> tuple[Path, Path]:
-    subprocess.run(
+    _run_cmd(
         ["uv", "venv", ".venv", "--python=3.10", "--clear"],
         cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     # Important: do NOT resolve symlinks here; keep .venv/bin/python so uv targets the venv
     bin_path: Path = directory / ".venv" / "bin"
@@ -223,7 +278,7 @@ def _run_download(
         LOG.info(f"Downloading weights: {filename}")
         # Download fresh
         if "id" in config:
-            subprocess.run(
+            _run_cmd(
                 [
                     python_path,
                     "-m",
@@ -234,17 +289,13 @@ def _run_download(
                     filename,
                 ],
                 cwd=directory,
-                check=True,
-                stdout=subprocess.DEVNULL if not verbose else None,
-                stderr=subprocess.STDOUT if not verbose else None,
+                verbose=verbose,
             )
         else:
-            subprocess.run(
+            _run_cmd(
                 ["wget", "-nc", config["url"]],
                 cwd=directory,
-                check=True,
-                stdout=subprocess.DEVNULL if not verbose else None,
-                stderr=subprocess.STDOUT if not verbose else None,
+                verbose=verbose,
             )
 
         # Cache the downloaded file
@@ -260,12 +311,10 @@ def _run_patch(
     verbose: bool | None = None,
 ) -> None:
     LOG.info(f"Patching {file_to_patch} with {patch_file}")
-    subprocess.run(
+    _run_cmd(
         ["patch", file_to_patch, "-i", patch_file],
         cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
 
 
@@ -307,7 +356,7 @@ def _export_yolov7(
         "export.py",
         verbose=verbose,
     )
-    subprocess.run(
+    _run_cmd(
         [
             python_path,
             "export.py",
@@ -322,9 +371,7 @@ def _export_yolov7(
             str(opset),
         ],
         cwd=yolov7_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     model_path = yolov7_dir / (config["name"] + ".onnx")
 
@@ -374,7 +421,19 @@ def _export_ultralytics(
         shutil.copy(cached_pt_file, target_pt_file)
         modelname = f"model={pt_filename}"
 
-    subprocess.run(
+    # yolo-nas requires that super-gradients is installed
+    # we will simply install it on top of the venv
+    if "yolo_nas" in model:
+        _run_uv_pip_install(
+            directory,
+            bin_path.parent,
+            model=None,
+            packages=["super-gradients==3.7.1", "pycocotools==2.*"],
+            no_cache=no_uv_cache,
+            verbose=verbose,
+        )
+
+    _run_cmd(
         [
             str(bin_path / "yolo"),
             "export",
@@ -384,9 +443,7 @@ def _export_ultralytics(
             f"imgsz={imgsz}",
         ],
         cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
 
     # Cache the .pt file if it was downloaded and not already cached
@@ -438,7 +495,7 @@ def _export_yolov9(
         verbose=verbose,
     )
     _run_download(yolov9_dir, config, python_path, no_cache=no_cache, verbose=verbose)
-    subprocess.run(
+    _run_cmd(
         [
             python_path,
             "export.py",
@@ -454,9 +511,7 @@ def _export_yolov9(
             str(opset),
         ],
         cwd=yolov9_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     model_path = yolov9_dir / (config["name"] + "-end2end.onnx")
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -497,7 +552,7 @@ def _export_yolov10(
         verbose=verbose,
     )
     _run_download(yolov10_dir, config, python_path, no_cache=no_cache, verbose=verbose)
-    subprocess.run(
+    _run_cmd(
         [
             str(bin_path / "yolo"),
             "export",
@@ -507,9 +562,7 @@ def _export_yolov10(
             f"imgsz={imgsz}",
         ],
         cwd=yolov10_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     return yolov10_dir / (config["name"] + ".onnx")
 
@@ -547,7 +600,7 @@ def _export_yolov12(
         verbose=verbose,
     )
     _run_download(yolov12_dir, config, python_path, no_cache=no_cache, verbose=verbose)
-    subprocess.run(
+    _run_cmd(
         [
             str(bin_path / "yolo"),
             "export",
@@ -558,9 +611,7 @@ def _export_yolov12(
             "simplify",
         ],
         cwd=yolov12_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     return yolov12_dir / (config["name"] + ".onnx")
 
@@ -598,7 +649,7 @@ def _export_yolov13(
         verbose=verbose,
     )
     _run_download(yolov13_dir, config, python_path, no_cache=no_cache, verbose=verbose)
-    subprocess.run(
+    _run_cmd(
         [
             str(bin_path / "yolo"),
             "export",
@@ -608,9 +659,7 @@ def _export_yolov13(
             f"imgsz={imgsz}",
         ],
         cwd=yolov13_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     return yolov13_dir / (config["name"] + ".onnx")
 
@@ -656,7 +705,7 @@ def _export_rtdetrv1(
         "tools/export_onnx.py",
         verbose=verbose,
     )
-    subprocess.run(
+    _run_cmd(
         [
             python_path,
             "tools/export_onnx.py",
@@ -670,9 +719,7 @@ def _export_rtdetrv1(
             str(imgsz),
         ],
         cwd=rtdetr_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     model_path = rtdetr_dir / "model.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -721,7 +768,7 @@ def _export_rtdetrv2(
         "tools/export_onnx.py",
         verbose=verbose,
     )
-    subprocess.run(
+    _run_cmd(
         [
             python_path,
             "tools/export_onnx.py",
@@ -736,9 +783,7 @@ def _export_rtdetrv2(
             "--simplify",
         ],
         cwd=rtdetrv2_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     model_path = rtdetrv2_dir / "model.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -787,7 +832,7 @@ def _export_rtdetrv3(
         verbose=verbose,
     )
     _run_download(rtdetrv3_dir, config, python_path, no_cache=no_cache, verbose=verbose)
-    subprocess.run(
+    _run_cmd(
         [
             python_path,
             "tools/export_model.py",
@@ -801,11 +846,9 @@ def _export_rtdetrv3(
             "output_weights",
         ],
         cwd=rtdetrv3_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
-    subprocess.run(
+    _run_cmd(
         [
             bin_path / "paddle2onnx",
             "--model_dir",
@@ -820,9 +863,7 @@ def _export_rtdetrv3(
             f"{config['name']}.onnx",
         ],
         cwd=rtdetrv3_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     model_path = rtdetrv3_dir / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -871,7 +912,7 @@ def _export_dfine(
         "tools/deployment/export_onnx.py",
         verbose=verbose,
     )
-    subprocess.run(
+    _run_cmd(
         [
             python_path,
             "tools/deployment/export_onnx.py",
@@ -885,9 +926,7 @@ def _export_dfine(
             str(imgsz),
         ],
         cwd=dfine_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     model_path = dfine_dir / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -939,7 +978,7 @@ def _export_deim(
     config_folder = "deim_dfine"
     if "rtdetrv2" in config["name"]:
         config_folder = "deim_rtdetrv2"
-    subprocess.run(
+    _run_cmd(
         [
             python_path,
             "tools/deployment/export_onnx.py",
@@ -954,9 +993,7 @@ def _export_deim(
             "--simplify",
         ],
         cwd=deim_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     model_path = deim_dir / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -971,7 +1008,7 @@ def _export_rfdetr(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int,
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
@@ -980,6 +1017,12 @@ def _export_rfdetr(
 ) -> Path:
     if not no_warn:
         LOG.warning("RF-DETR is a Apache-2.0 licensed model, be aware of license restrictions")
+    if imgsz is None:
+        imgsz = {
+            "rfdetr_n": 384,
+            "rfdetr_s": 512,
+            "rfdetr_m": 576,
+        }[model]
     if imgsz % 32 != 0:
         new_imgsz = max(imgsz // 32, 1) * 32
         wrn_msg = f"RF-DETR does not support input size {imgsz}, "
@@ -1013,16 +1056,14 @@ model.export(
     simplify=True,
 )
     """
-    subprocess.run(
+    _run_cmd(
         [
             python_path,
             "-c",
             program,
         ],
         cwd=directory,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
 
     # Cache the .pth file if it was downloaded and not already cached
@@ -1087,7 +1128,7 @@ def _export_deimv2(
     )
     _run_download(deim_dir, config, python_path, no_cache=no_cache, verbose=verbose)
     config_folder = "deimv2"
-    subprocess.run(
+    _run_cmd(
         [
             python_path,
             "tools/deployment/export_onnx.py",
@@ -1100,9 +1141,7 @@ def _export_deimv2(
             "--simplify",
         ],
         cwd=deim_dir,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     model_path = deim_dir / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -1163,7 +1202,7 @@ def _export_yolox(
         env["PYTHONPATH"] = f"{yolox_dir}{os.pathsep}{existing_pythonpath}"
     else:
         env["PYTHONPATH"] = str(yolox_dir)
-    subprocess.run(
+    _run_cmd(
         [
             python_path,
             "tools/export_onnx.py",
@@ -1180,9 +1219,7 @@ def _export_yolox(
         ],
         cwd=yolox_dir,
         env=env,
-        check=True,
-        stdout=subprocess.DEVNULL if not verbose else None,
-        stderr=subprocess.STDOUT if not verbose else None,
+        verbose=verbose,
     )
     model_path = yolox_dir / f"{config['name']}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
@@ -1272,7 +1309,7 @@ def download_model(
         imgsz,
     )
     model_path: Path | None = None
-    if config["url"] == "ultralytics":
+    if config.get("url") == "ultralytics":
         model_path = _export_ultralytics(
             *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
         )
