@@ -43,7 +43,7 @@ def _main(source: str) -> None:
             break
 
         t0 = time.time()
-        dets = yolo.end2end(frame)
+        dets = yolo.end2end([frame])[0]
         t1 = time.time()
         t_ms = (t1 - t0) * 1000.0
         fps = 1000.0 / t_ms

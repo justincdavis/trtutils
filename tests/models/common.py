@@ -333,7 +333,9 @@ def detector_run_multiple_threads(
         assert result
 
 
-def detector_results(model_id: str, preprocessor: str = "cpu", *, use_dla: bool | None = None) -> None:
+def detector_results(
+    model_id: str, preprocessor: str = "cpu", *, use_dla: bool | None = None
+) -> None:
     """
     Check if the results are valid for a detector model.
 

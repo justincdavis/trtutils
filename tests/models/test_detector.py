@@ -6,8 +6,8 @@ from __future__ import annotations
 import pytest
 
 from .common import (
-    DLA_ENGINES,
     DETECTOR_CONFIG,
+    DLA_ENGINES,
     GPU_ENGINES,
     detector_results,
     detector_run,

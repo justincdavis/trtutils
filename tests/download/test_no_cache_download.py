@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from trtutils.download import download
 from trtutils.download import _download as dl
+from trtutils.download import download
 
-from .common import TEST_MODELS, MODEL_CONFIGS
+from .common import MODEL_CONFIGS, TEST_MODELS
 
 
 def _expected_cache_file(model: str) -> Path | None:

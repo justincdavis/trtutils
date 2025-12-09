@@ -111,7 +111,7 @@ def load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
 def get_supported_models() -> list[str]:
     """
     Return a list of supported model names.
-    
+
     Returns
     -------
     list[str]

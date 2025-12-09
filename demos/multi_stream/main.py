@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 
 import cv2
 import cv2ext
-
 from trtutils.impls.yolo import YOLO
 
 if TYPE_CHECKING:

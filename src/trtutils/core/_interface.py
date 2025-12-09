@@ -96,9 +96,13 @@ class TRTEngineInterface(ABC):
             unified_mem=self._unified_mem,
         )
         self._input_allocations: list[int] = [input_b.allocation for input_b in self._inputs]
-        self._input_host_allocations: list[np.ndarray] = [input_b.host_allocation for input_b in self._inputs]
+        self._input_host_allocations: list[np.ndarray] = [
+            input_b.host_allocation for input_b in self._inputs
+        ]
         self._output_allocations: list[int] = [output_b.allocation for output_b in self._outputs]
-        self._output_host_allocations: list[np.ndarray] = [output_b.host_allocation for output_b in self._outputs]
+        self._output_host_allocations: list[np.ndarray] = [
+            output_b.host_allocation for output_b in self._outputs
+        ]
 
         # store useful properties about the engine
         self._memsize: int = 0

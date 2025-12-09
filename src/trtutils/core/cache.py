@@ -269,9 +269,7 @@ def query_timing_cache() -> tuple[bool, Path]:
     return query_file("global", extension="cache")
 
 
-def store_timing_cache(
-    filepath: Path, *, overwrite: bool = False, clear_old: bool = False
-) -> Path:
+def store_timing_cache(filepath: Path, *, overwrite: bool = False, clear_old: bool = False) -> Path:
     """
     Store the global timing cache in the cache directory.
 
@@ -292,7 +290,9 @@ def store_timing_cache(
         The path of the global timing cache in the cache directory.
 
     """
-    return store_file(filepath, cache_filename="global.cache", overwrite=overwrite, clear_old=clear_old)
+    return store_file(
+        filepath, cache_filename="global.cache", overwrite=overwrite, clear_old=clear_old
+    )
 
 
 def save_timing_cache_to_global(timing_cache_obj, *, overwrite: bool = True) -> Path:
