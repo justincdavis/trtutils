@@ -16,6 +16,7 @@ from pathlib import Path
 
 from trtutils._log import LOG
 
+_MIN_UV_VERSION = (0, 9, 0)
 _640 = 640
 
 
@@ -62,6 +63,56 @@ def _run_cmd(
         _kill_process_group(proc.pid, cmd)
         raise subprocess.CalledProcessError(proc.returncode, cmd)
     return proc.returncode
+
+
+def _check_uv_available() -> None:
+    if shutil.which("uv") is None:
+        err_msg = (
+            "uv is not available. Please install uv (version >= 0.9.0) to use the download function. "
+            "See https://docs.astral.sh/uv/getting-started/installation/ for installation instructions."
+        )
+        raise RuntimeError(err_msg)
+
+
+def _check_uv_version() -> None:
+    _check_uv_available()
+
+    def _failed_to_parse_uv_version() -> None:
+        err_msg = (
+            f"Failed to parse uv version. Please ensure uv (version >= {_MIN_UV_VERSION}) is installed correctly."
+        )
+        raise RuntimeError(err_msg)
+
+    try:
+        result = subprocess.run(
+            ["uv", "--version"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        version_output = result.stdout.strip()
+        parts = version_output.split()
+        if len(parts) < 2:
+            _failed_to_parse_uv_version()
+        
+        uv_version_str = parts[1]
+        version_parts = [int(x) for x in uv_version_str.split(".")]
+        if len(version_parts) != 3:
+            _failed_to_parse_uv_version()
+
+        if tuple(version_parts) < _MIN_UV_VERSION:
+            err_msg = (
+                f"uv version {uv_version_str} is too old. "
+                f"Minimum required version is {_MIN_UV_VERSION}. Please upgrade uv."
+            )
+            raise RuntimeError(err_msg)
+    except (subprocess.CalledProcessError, OSError, ValueError) as e:
+        err_msg = (
+            "Failed to determine uv version. Please ensure uv is installed correctly "
+            f"and version >= {_MIN_UV_VERSION}."
+        )
+        raise RuntimeError(err_msg) from e
 
 
 @lru_cache(maxsize=1)
@@ -1435,6 +1486,8 @@ def download(
         Whether to print verbose output.
 
     """
+    _check_uv_version()
+
     with tempfile.TemporaryDirectory() as temp_dir:
         model_path = download_model(
             model,
