@@ -49,6 +49,8 @@ classifiers = [
 ]
 requires-python=">=3.8, <=3.14"
 dependencies = [
+    "cv2ext>=0.1.0",
+    "opencv-python>=4.8.0,<5.0.0",
     "numpy>=1.19.0,<3.0.0",
     "jetsontools>=0.1.0",
     "tqdm>=4.67.1,<5.0.0",
@@ -61,27 +63,17 @@ dependencies = [
 
 [project.optional-dependencies]
 # runtime/library dependencies
-cpu = [
-    "cv2ext>=0.1.0",
-    "opencv-python>=4.8.0,<5.0.0",
-]
 cu11 = [
     "cuda-python==11.*",
     "tensorrt_cu11>=8.0.0",
-    "cvcuda-cu11==0.15.0",
-    "nvidia-nvimgcodec-cu11>=0.6.0.32",
 ]
 cu12 = [
     "cuda-python==12.*",
     "tensorrt_cu12>=10.0.0",
-    "cvcuda-cu12>=0.15.0",
-    "nvidia-nvimgcodec-cu12>=0.6.0.32",
 ]
 cu13 = [
     "cuda-python==13.*",
     "tensorrt_cu13>=10.13.0",
-    "cvcuda-cu13>=0.16.0",
-    "nvidia-nvimgcodec-cu13>=0.6.0.32",
 ]
 onnx = [
     "onnx>=1.17.0,<2.0.0",

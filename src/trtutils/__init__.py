@@ -90,10 +90,6 @@ try:
 except ModuleNotFoundError:
     not_found_modules.append("cuda-python")
 
-try:
-    from nvidia import nvimgcodec  # noqa: F401
-except ModuleNotFoundError:
-    not_found_modules.append("nvimgcodec")
 
 if len(not_found_modules) > 0:
     err_msg = "Could not find the following core modules: "
