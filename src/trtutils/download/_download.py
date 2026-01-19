@@ -78,9 +78,7 @@ def _check_uv_version() -> None:
     _check_uv_available()
 
     def _failed_to_parse_uv_version() -> None:
-        err_msg = (
-            f"Failed to parse uv version. Please ensure uv (version >= {_MIN_UV_VERSION}) is installed correctly."
-        )
+        err_msg = f"Failed to parse uv version. Please ensure uv (version >= {_MIN_UV_VERSION}) is installed correctly."
         raise RuntimeError(err_msg)
 
     try:
@@ -95,7 +93,7 @@ def _check_uv_version() -> None:
         parts = version_output.split()
         if len(parts) < 2:
             _failed_to_parse_uv_version()
-        
+
         uv_version_str = parts[1]
         version_parts = [int(x) for x in uv_version_str.split(".")]
         if len(version_parts) != 3:

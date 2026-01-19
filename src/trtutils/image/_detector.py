@@ -46,10 +46,12 @@ class Detector(ImageModel, DetectorInterface):
         input_schema: InputSchema | str | None = None,
         output_schema: OutputSchema | str | None = None,
         dla_core: int | None = None,
+        backend: str = "auto",
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
@@ -101,6 +103,9 @@ class Detector(ImageModel, DetectorInterface):
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+        backend : str
+            The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
+            Default is 'auto', which selects the best available backend.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
         pagelocked_mem : bool, optional
@@ -110,6 +115,9 @@ class Detector(ImageModel, DetectorInterface):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        cuda_graph : bool, optional
+            Whether or not to enable CUDA graph capture for optimized execution.
+            Only effective with async_v3 backend. Default is None (uses TRTEngine default).
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -133,9 +141,11 @@ class Detector(ImageModel, DetectorInterface):
             mean=mean,
             std=std,
             dla_core=dla_core,
+            backend=backend,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
         )

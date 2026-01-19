@@ -29,7 +29,7 @@ class InputSchema(Enum):
     def names(self: Self) -> list[str]:
         """
         Get the names of the input schema enums.
-        
+
         Returns
         -------
         list[str]
@@ -53,7 +53,7 @@ class OutputSchema(Enum):
     def names(self: Self) -> list[str]:
         """
         Get the names of the input/output schema enums.
-        
+
         Returns
         -------
         list[str]

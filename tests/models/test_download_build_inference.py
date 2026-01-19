@@ -13,10 +13,6 @@ from trtutils.models import (
     DEIM,
     DFINE,
     RFDETR,
-    DEIMv2,
-    RTDETRv1,
-    RTDETRv2,
-    RTDETRv3,
     YOLO3,
     YOLO5,
     YOLO7,
@@ -27,6 +23,10 @@ from trtutils.models import (
     YOLO12,
     YOLO13,
     YOLOX,
+    DEIMv2,
+    RTDETRv1,
+    RTDETRv2,
+    RTDETRv3,
 )
 
 from .paths import HORSE_IMAGE_PATH

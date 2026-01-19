@@ -33,10 +33,12 @@ class ImageModel:
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
         dla_core: int | None = None,
+        backend: str = "auto",
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -68,6 +70,9 @@ class ImageModel:
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+        backend : str
+            The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
+            Default is 'auto', which selects the best available backend.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
         pagelocked_mem : bool, optional
@@ -77,6 +82,9 @@ class ImageModel:
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        cuda_graph : bool, optional
+            Whether or not to enable CUDA graph capture for optimized execution.
+            Only effective with async_v3 backend. Default is None (uses TRTEngine default).
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -100,10 +108,12 @@ class ImageModel:
         self._engine = TRTEngine(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
+            backend=backend,
             warmup=warmup,
             dla_core=dla_core,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=unified_mem,
+            cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
         )

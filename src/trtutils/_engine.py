@@ -132,6 +132,7 @@ class TRTEngine(TRTEngineInterface):
             cuda_graph if cuda_graph is not None else True
         ) and self._async_v3
         self._cuda_graph: CUDAGraph | None = None
+        self._capturing_graph: bool = False  # Guard against capture recursion
         if self._cuda_graph_enabled:
             self._cuda_graph = CUDAGraph(self._stream)
 
@@ -173,20 +174,28 @@ class TRTEngine(TRTEngineInterface):
             self._cuda_graph.invalidate()
 
     def _capture_cuda_graph(self: Self) -> None:
+        # Prevent recursion: warmup() -> mock_execute() -> execute() -> _capture_cuda_graph()
+        if self._capturing_graph:
+            return
+
         if self._cuda_graph is None:
             err_msg = f"CUDA graph is not enabled in engine: {self._name}"
             raise RuntimeError(err_msg)
 
-        # at least one execution required prior to graph capture
-        # simply use one warmup iteration if warmup didnt get run
-        if not self._warmup:
-            self.warmup(1, verbose=self._verbose)
+        self._capturing_graph = True
+        try:
+            # at least one execution required prior to graph capture
+            # simply use one warmup iteration if warmup didnt get run
+            if not self._warmup:
+                self.warmup(1, verbose=self._verbose)
 
-        # CUDAGraph handles capture with a context manager
-        with self._cuda_graph:
-            # manually run execute_async_v3 instead of execute since
-            # we only want the TRT engine
-            self._context.execute_async_v3(self._stream)
+            # CUDAGraph handles capture with a context manager
+            with self._cuda_graph:
+                # manually run execute_async_v3 instead of execute since
+                # we only want the TRT engine
+                self._context.execute_async_v3(self._stream)
+        finally:
+            self._capturing_graph = False
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError):
@@ -263,10 +272,13 @@ class TRTEngine(TRTEngineInterface):
             if self._cuda_graph.is_captured:
                 # uses already captured graph to handle execution
                 self._cuda_graph.launch()
-            else:
+            elif not self._capturing_graph:
                 # CUDA graph capture calls execute_async_v3 internally
                 # no need to call again here
                 self._capture_cuda_graph()
+            else:
+                # Currently capturing graph, use direct execution for warmup
+                self._context.execute_async_v3(self._stream)
         # base execution cases
         elif self._async_v3:
             self._context.execute_async_v3(self._stream)
