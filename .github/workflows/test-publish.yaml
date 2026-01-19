@@ -8,7 +8,6 @@ on:
 jobs:
   build_and_publish:
     name: "Build and Publish PyPI package - TEST"
-    if: ${{ runner.arch == 'X64' }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -22,7 +21,6 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: 3.9
-        architecture: x64
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
