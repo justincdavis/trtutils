@@ -4,3 +4,5 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    exclude-paths:
+      - "src/trtutils/download/requirements/**"

@@ -2,6 +2,7 @@ name: Ruff - Source
 on: [ push ]
 jobs:
   ruff:
+    if: ${{ runner.arch == 'X64' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
