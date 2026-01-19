@@ -43,6 +43,8 @@ class Detector(ImageModel, DetectorInterface):
         nms_iou_thres: float = 0.5,
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
+        input_schema: InputSchema | str | None = None,
+        output_schema: OutputSchema | str | None = None,
         dla_core: int | None = None,
         *,
         warmup: bool | None = None,
@@ -84,6 +86,18 @@ class Detector(ImageModel, DetectorInterface):
         std : tuple[float, float, float] | None, optional
             The standard deviation values to use for the imagenet normalization.
             By default, None, which means no normalization will be applied.
+        input_schema : InputSchema, str, optional
+            Manually specify the input schema instead of auto-detection.
+            Can be an InputSchema enum value or a string matching the enum name
+            (e.g., "YOLO", "RT_DETR", "RT_DETR_V3", "RF_DETR").
+            By default None, which means the schema will be auto-detected from
+            the engine's input names.
+        output_schema : OutputSchema, str, optional
+            Manually specify the output schema instead of auto-detection.
+            Can be an OutputSchema enum value or a string matching the enum name
+            (e.g., "EFFICIENT_NMS", "YOLO_V10", "DETR", "RF_DETR").
+            By default None, which means the schema will be auto-detected from
+            the engine's output names.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -130,10 +144,40 @@ class Detector(ImageModel, DetectorInterface):
         self._nms: bool | None = extra_nms
         self._agnostic_nms: bool | None = agnostic_nms
 
-        # get the input and output schema
+        # resolve input and output schemas
         self._input_schema: InputSchema
         self._output_schema: OutputSchema
-        self._input_schema, self._output_schema = get_detector_io_schema(self._engine)
+
+        # auto-detect schemas if needed (function returns both, but we only use what we need)
+        auto_input_schema: InputSchema | None = None
+        auto_output_schema: OutputSchema | None = None
+        if input_schema is None or output_schema is None:
+            auto_input_schema, auto_output_schema = get_detector_io_schema(self._engine)
+
+        # resolve input schema
+        if input_schema is None:
+            self._input_schema = auto_input_schema
+        elif isinstance(input_schema, str):
+            if input_schema not in InputSchema.names():
+                err_msg = f"Invalid input_schema string: {input_schema}. "
+                err_msg += f"Valid options: {InputSchema.names()}"
+                raise ValueError(err_msg)
+            self._input_schema = InputSchema[input_schema]
+        else:
+            self._input_schema = input_schema
+
+        # resolve output schema
+        if output_schema is None:
+            self._output_schema = auto_output_schema
+        elif isinstance(output_schema, str):
+            if output_schema not in OutputSchema.names():
+                err_msg = f"Invalid output_schema string: {output_schema}. "
+                err_msg += f"Valid options: {OutputSchema.names()}"
+                raise ValueError(err_msg)
+            self._output_schema = OutputSchema[output_schema]
+        else:
+            self._output_schema = output_schema
+
         if self._verbose:
             LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
@@ -163,6 +207,16 @@ class Detector(ImageModel, DetectorInterface):
         if self._verbose:
             LOG.debug(f"{self._tag}: Using image size: {self._use_image_size}")
             LOG.debug(f"{self._tag}: Using scale factor: {self._use_scale_factor}")
+
+    @property
+    def input_schema(self: Self) -> InputSchema:
+        """Get the input schema used by this detector."""
+        return self._input_schema
+
+    @property
+    def output_schema(self: Self) -> OutputSchema:
+        """Get the output schema used by this detector."""
+        return self._output_schema
 
     def preprocess(
         self: Self,

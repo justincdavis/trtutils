@@ -10,6 +10,7 @@ from trtutils._log import LOG
 
 if TYPE_CHECKING:
     from typing import ClassVar
+    from typing_extensions import Self
 
     from trtutils._engine import TRTEngine
 
@@ -24,6 +25,18 @@ class InputSchema(Enum):
     # RT-DETR v3
     RT_DETR_V3: ClassVar[list[str]] = ["image", "im_shape", "scale_factor"]
 
+    @property
+    def names(self: Self) -> list[str]:
+        """
+        Get the names of the input schema enums.
+        
+        Returns
+        -------
+        list[str]
+            The names of the input schemas.
+        """
+        return list(self.__members__.keys())
+
 
 class OutputSchema(Enum):
     # YOLO-X, v7, v8, v9, v11, v12, v13
@@ -35,6 +48,18 @@ class OutputSchema(Enum):
     RF_DETR: ClassVar[list[str]] = ["dets", "labels"]
     # DEIM v1/v2, RT-DETR v1/v2/v3, D-FINE
     DETR: ClassVar[list[str]] = ["scores", "labels", "boxes"]
+
+    @property
+    def names(self: Self) -> list[str]:
+        """
+        Get the names of the input/output schema enums.
+        
+        Returns
+        -------
+        list[str]
+            The names of the input/output schemas.
+        """
+        return list(self.__members__.keys())
 
 
 def get_detector_io_schema(

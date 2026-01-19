@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils._engine import TRTEngine
+    from trtutils.image._schema import InputSchema, OutputSchema
 
 
 class ClassifierInterface(ABC):
@@ -137,6 +138,16 @@ class DetectorInterface(ABC):
     @abstractmethod
     def dtype(self: Self) -> np.dtype:
         """Get the dtype required by the model."""
+
+    @property
+    @abstractmethod
+    def input_schema(self: Self) -> InputSchema:
+        """Get the input schema used by this detector."""
+
+    @property
+    @abstractmethod
+    def output_schema(self: Self) -> OutputSchema:
+        """Get the output schema used by this detector."""
 
     @abstractmethod
     def preprocess(
