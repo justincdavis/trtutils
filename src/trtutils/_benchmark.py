@@ -9,8 +9,9 @@ from pathlib import Path
 from statistics import mean, median
 from typing import TYPE_CHECKING
 
-from ._engine import ParallelTRTEngines, TRTEngine
+from ._engine import TRTEngine
 from ._log import LOG
+from .parallel._parallel_engines import ParallelTRTEngines
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -209,10 +210,7 @@ def benchmark_engines(
 
     # otherwise we need a parallel setup
     trt_engines = ParallelTRTEngines(
-        [
-            (ep, dc) if dc is not None else ep
-            for ep, dc in zip(temp_engines, dla_assignments)
-        ],
+        [(ep, dc) if dc is not None else ep for ep, dc in zip(temp_engines, dla_assignments)],
         warmup_iterations=warmup_iterations,
         warmup=warmup,
     )

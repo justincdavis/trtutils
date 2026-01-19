@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING
 from jetsontools import TegraStats, filter_data, get_powerdraw, parse_tegrastats
 
 from trtutils._benchmark import Metric
-from trtutils._engine import ParallelTRTEngines, TRTEngine
+from trtutils.parallel._parallel_engines import ParallelTRTEngines
+from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
@@ -222,10 +223,7 @@ def benchmark_engines(
 
     # otherwise we need a parallel setup
     trt_engines = ParallelTRTEngines(
-        [
-            (ep, dc) if dc is not None else ep
-            for ep, dc in zip(temp_engines, dla_assignments)
-        ],
+        [(ep, dc) if dc is not None else ep for ep, dc in zip(temp_engines, dla_assignments)],
         warmup_iterations=warmup_iterations,
         warmup=warmup,
     )

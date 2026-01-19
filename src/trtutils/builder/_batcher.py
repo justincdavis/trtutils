@@ -110,9 +110,7 @@ class ImageBatcher(AbstractBatcher):
         # verify resize method and input scale
         valid_resize_methods = ["letterbox", "linear"]
         if resize_method not in valid_resize_methods:
-            err_msg = (
-                f"Invalid resize method found, options are: {valid_resize_methods}"
-            )
+            err_msg = f"Invalid resize method found, options are: {valid_resize_methods}"
             raise ValueError(err_msg)
         self._resize_method = resize_method
         self._input_scale = input_scale
@@ -220,6 +218,9 @@ class ImageBatcher(AbstractBatcher):
     def _get_image(self: Self, image_path: Path) -> np.ndarray:
         # read image
         img = cv2.imread(str(image_path.resolve()))
+        if img is None:
+            err_msg = f"Failed to load image from {image_path}"
+            raise FileNotFoundError(err_msg)
 
         # resize and rescale the image
         if self._resize_method == "letterbox":
@@ -233,7 +234,7 @@ class ImageBatcher(AbstractBatcher):
         rescaled_img = rescale(resized_img, self._input_scale)
 
         # run the transpose operations and make contiguous
-        new_img = rescaled_img[np.newaxis, :]
+        new_img: np.ndarray = rescaled_img[np.newaxis, :]
         if self._order == "NCHW":
             new_img = np.transpose(new_img, (0, 3, 1, 2))
         else:
@@ -270,9 +271,7 @@ class ImageBatcher(AbstractBatcher):
                     self._queue.put(data, timeout=0.1)
 
                     if self._verbose:
-                        LOG.debug(
-                            f"ImageBatcher put batch: {idx} / {len(self._batches)}"
-                        )
+                        LOG.debug(f"ImageBatcher put batch: {idx} / {len(self._batches)}")
 
                     break
                 except Full:
@@ -304,3 +303,137 @@ class ImageBatcher(AbstractBatcher):
                 return batch
 
         return None
+
+
+class SyntheticBatcher(AbstractBatcher):
+    """Creates synthetic data batches for calibrating TensorRT engines."""
+
+    def __init__(
+        self: Self,
+        shape: tuple[int, int, int],
+        dtype: np.dtype,
+        batch_size: int = 8,
+        num_batches: int = 10,
+        data_range: tuple[float, float] = (0.0, 1.0),
+        order: str = "NCHW",
+        *,
+        verbose: bool | None = None,
+    ) -> None:
+        """
+        Create batches of synthetic data for TensorRT calibration.
+
+        Parameters
+        ----------
+        shape : tuple[int, int, int]
+            The expected input shape of the network in format HWC
+            (height, width, channels)
+        dtype : np.dtype
+            The expected datatype input of the network
+        batch_size : int, optional
+            The batch size to group data in.
+            Default is 8
+        num_batches : int, optional
+            The number of batches to generate.
+            Default is 10
+        data_range : tuple[float, float], optional
+            The range for random data generation in float32.
+            Examples are: (0.0, 1.0), (0.0, 255.0), (-1.0, 1.0)
+            The default is (0.0, 1.0)
+        order : str, optional
+            The ordering of data elements expected by the network.
+            Options are: ['NCHW', 'NHWC'], default is 'NCHW'
+        verbose : bool, optional
+            Whether to print verbose output, by default None
+
+        Raises
+        ------
+        ValueError
+            If num_batches is less than one
+        ValueError
+            If order is not one of the valid options
+
+        """
+        self._verbose = verbose
+
+        # handle the shape and dtype
+        self._dtype = dtype
+        self._batch = batch_size
+        self._height = shape[0]
+        self._width = shape[1]
+        self._channel = shape[2]
+        self._data_range = data_range
+
+        # assign order
+        valid_orders: list[str] = ["NCHW", "NHWC"]
+        if order not in valid_orders:
+            err_msg = f"Invalid order found, {order}, options are: {valid_orders}"
+            raise ValueError(err_msg)
+        self._order = order
+        self._data_shape: tuple[int, int, int, int] = (
+            self._batch,
+            self._channel,
+            self._height,
+            self._width,
+        )
+        if order == "NHWC":
+            self._data_shape = (self._batch, self._height, self._width, self._channel)
+
+        # validate num_batches
+        if num_batches < 1:
+            err_msg = f"num_batches must be at least 1, found: {num_batches}"
+            raise ValueError(err_msg)
+        self._num_batches = num_batches
+
+        # tracking indices for iteration
+        self._current_batch: int = 0
+
+        if self._verbose:
+            LOG.debug(
+                f"SyntheticBatcher will generate {num_batches} batches of shape {self._data_shape}"
+            )
+
+    @property
+    def num_batches(self: Self) -> int:
+        """Get the number of batches."""
+        return self._num_batches
+
+    @property
+    def batch_size(self: Self) -> int:
+        """Get the batch size."""
+        return self._batch
+
+    def get_next_batch(self: Self) -> np.ndarray | None:
+        """
+        Get a batch of synthetic data.
+
+        Returns
+        -------
+        np.ndarray | None
+            The batch of synthetic data if one exists, None if all batches have been returned
+
+        """
+        if self._current_batch >= self._num_batches:
+            return None
+
+        # Generate random float32 data in the specified range
+        data = np.random.uniform(
+            low=self._data_range[0],
+            high=self._data_range[1],
+            size=self._data_shape,
+        ).astype(np.float32)
+
+        # Convert to target dtype
+        data = data.astype(self._dtype)
+
+        # Ensure contiguous memory
+        if not data.flags["C_CONTIGUOUS"]:
+            data = np.ascontiguousarray(data)
+
+        self._current_batch += 1
+
+        if self._verbose:
+            LOG.debug(
+                f"SyntheticBatcher generated batch: {self._current_batch} / {self._num_batches}"
+            )
+
+        return data

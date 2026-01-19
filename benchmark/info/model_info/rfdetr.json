@@ -1,0 +1,14 @@
+{
+    "rfdetr_n": {
+        "coco_map_50": 67.6,
+        "imgsz": 384
+    },
+    "rfdetr_s": {
+        "coco_map_50": 72.1,
+        "imgsz": 512
+    },
+    "rfdetr_m": {
+        "coco_map_50": 73.6,
+        "imgsz": 576
+    }
+}

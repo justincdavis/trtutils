@@ -17,6 +17,8 @@ Classes
 -------
 :class:`Binding`
     A class for managing a CUDA allocation.
+:class:`CUDAGraph`
+    Wrapper around CUDA graph capture and execution.
 :class:`TRTEngineInterface`
     An interface for the TRTEngine class.
 :class:`Kernel`
@@ -54,8 +56,28 @@ Functions
     Copy data from device to host async.
 :func:`memcpy_host_to_device_async`
     Copy data from host to device async.
+:func:`memcpy_device_to_device`
+    Copy data from device to device.
+:func:`memcpy_device_to_device_async`
+    Copy data from device to device async.
+:func:`memcpy_host_to_device_offset`
+    Copy data from host to device with an offset.
+:func:`memcpy_host_to_device_offset_async`
+    Copy data from host to device with an offset async.
 :func:`stream_synchronize`
-    Synchronize the cuda stream.
+    Synchronize the CUDA stream.
+:func:`cuda_stream_begin_capture`
+    Begin capturing a CUDA graph on a stream.
+:func:`cuda_stream_end_capture`
+    End capturing a CUDA graph and return the captured graph.
+:func:`cuda_graph_instantiate`
+    Instantiate a CUDA graph executable.
+:func:`cuda_graph_launch`
+    Launch a CUDA graph executable.
+:func:`cuda_graph_destroy`
+    Destroy a CUDA graph.
+:func:`cuda_graph_exec_destroy`
+    Destroy a CUDA graph executable.
 :func:`nvrtc_call`
     A function for checking the return status of a NVRTC call.
 :func:`compile_kernel`
@@ -91,7 +113,16 @@ from ._bindings import (
 )
 from ._context import create_context, destroy_context
 from ._cuda import cuda_call, init_cuda
-from ._engine import create_engine
+from ._engine import create_engine, get_engine_names
+from ._graph import (
+    CUDAGraph,
+    cuda_graph_destroy,
+    cuda_graph_exec_destroy,
+    cuda_graph_instantiate,
+    cuda_graph_launch,
+    cuda_stream_begin_capture,
+    cuda_stream_end_capture,
+)
 from ._interface import TRTEngineInterface
 from ._kernels import Kernel, create_kernel_args, launch_kernel
 from ._memory import (
@@ -102,16 +133,21 @@ from ._memory import (
     cuda_host_free,
     cuda_malloc,
     free_device_ptrs,
+    memcpy_device_to_device,
+    memcpy_device_to_device_async,
     memcpy_device_to_host,
     memcpy_device_to_host_async,
     memcpy_host_to_device,
     memcpy_host_to_device_async,
+    memcpy_host_to_device_offset,
+    memcpy_host_to_device_offset_async,
 )
 from ._nvrtc import compile_and_load_kernel, compile_kernel, load_kernel, nvrtc_call
 from ._stream import create_stream, destroy_stream, stream_synchronize
 
 __all__ = [
     "Binding",
+    "CUDAGraph",
     "Kernel",
     "TRTEngineInterface",
     "allocate_bindings",
@@ -128,18 +164,29 @@ __all__ = [
     "create_stream",
     "cuda_call",
     "cuda_free",
+    "cuda_graph_destroy",
+    "cuda_graph_exec_destroy",
+    "cuda_graph_instantiate",
+    "cuda_graph_launch",
     "cuda_host_free",
     "cuda_malloc",
+    "cuda_stream_begin_capture",
+    "cuda_stream_end_capture",
     "destroy_context",
     "destroy_stream",
     "free_device_ptrs",
+    "get_engine_names",
     "init_cuda",
     "launch_kernel",
     "load_kernel",
+    "memcpy_device_to_device",
+    "memcpy_device_to_device_async",
     "memcpy_device_to_host",
     "memcpy_device_to_host_async",
     "memcpy_host_to_device",
     "memcpy_host_to_device_async",
+    "memcpy_host_to_device_offset",
+    "memcpy_host_to_device_offset_async",
     "nvrtc_call",
     "stream_synchronize",
 ]

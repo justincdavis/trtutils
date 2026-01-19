@@ -1,0 +1,18 @@
+{
+  "yolov13n": {
+    "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13n.pt",
+    "name": "yolov13n"
+  },
+  "yolov13s": {
+    "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13s.pt",
+    "name": "yolov13s"
+  },
+  "yolov13l": {
+    "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13l.pt",
+    "name": "yolov13l"
+  },
+  "yolov13x": {
+    "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13x.pt",
+    "name": "yolov13x"
+  }
+}

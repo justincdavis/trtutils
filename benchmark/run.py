@@ -19,6 +19,43 @@ from pathlib import Path
 import cv2
 from tqdm import tqdm
 
+from model_utils import build_model, ensure_model_available
+
+
+def _load_model_info() -> tuple[list[str], list[str], dict[str, str]]:
+    model_info_dir = Path(__file__).parent / "info" / "model_info"
+    
+    if not model_info_dir.exists():
+        err_msg = f"Model info directory not found: {model_info_dir}"
+        raise FileNotFoundError(err_msg)
+
+    model_dirs: list[str] = []
+    all_model_names: list[str] = []
+    model_to_dir: dict[str, str] = {}
+    
+    for json_file in sorted(model_info_dir.glob("*.json")):
+        model_dir = json_file.stem
+        model_dirs.append(model_dir)
+
+        with json_file.open("r") as f:
+            model_data = json.load(f)
+            for model_name in model_data.keys():
+                all_model_names.append(model_name)
+                model_to_dir[model_name] = model_dir
+    
+    return model_dirs, all_model_names, model_to_dir
+
+
+def _load_model_imgsizes() -> dict[str, list[int]]:
+    imgsz_file = Path(__file__).parent / "info" / "model_imgsz.json"
+    
+    if not imgsz_file.exists():
+        err_msg = f"Model image size config not found: {imgsz_file}"
+        raise FileNotFoundError(err_msg)
+    
+    with imgsz_file.open("r") as f:
+        return json.load(f)
+
 
 # global paths
 REPO_DIR = Path(__file__).parent.parent
@@ -26,24 +63,13 @@ DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_PATH = str((REPO_DIR / "data" / "horse.jpg").resolve())
 MODELNAME = "yolov10n"
-MODELNAMES = [
-    "yolov10n",
-    "yolov10s",
-    "yolov10m",
-    "yolov9t",
-    "yolov9s",
-    "yolov9m",
-    "yolov8n",
-    "yolov8s",
-    "yolov8m",
-    "yolov7t",
-    "yolov7m",
-    "yoloxt",
-    "yoloxn",
-    "yoloxs",
-    "yoloxm",
-]
+MODEL_DIRS, MODELNAMES, MODEL_TO_DIR = _load_model_info()
+MODEL_TO_IMGSIZES = _load_model_imgsizes()
+
 ULTRALYTICS_MODELS = [
+    "yolov11n",
+    "yolov11s",
+    "yolov11m",
     "yolov10n",
     "yolov10s",
     "yolov10m",
@@ -53,18 +79,8 @@ ULTRALYTICS_MODELS = [
     "yolov8n",
     "yolov8s",
     "yolov8m",
-]
-MODEL_DIRS = [
-    "yolov10",
-    "yolov9",
-    "yolov8",
-    "yolov7",
-    "yolox",
 ]
 ONNX_DIR = REPO_DIR / "data" / "yolov10"
-
-# global vars
-IMAGE_SIZES = [160, 320, 480, 640, 800, 960, 1120, 1280]
 FRAMEWORKS = [
     "ultralytics(torch)",
     "ultralytics(trt)",
@@ -73,6 +89,10 @@ FRAMEWORKS = [
     "trtutils(trt)",
     "tensorrt",
 ]
+
+# sahi paths - use ultralytics models for SAHI
+SAHI_MODELS = ULTRALYTICS_MODELS.copy()
+SAHI_IMAGE_PATH = str((REPO_DIR / "data" / "cars.jpeg").resolve())
 
 
 def get_results(data: list[float]) -> dict[str, float]:
@@ -106,11 +126,10 @@ def write_data(
 
 
 def benchmark_trtutils(
-    device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool
+    device: str, warmup_iters: int, bench_iters: int, image_sizes: list[int], *, overwrite: bool
 ) -> None:
     from trtutils import TRTEngine, FLAGS
-    from trtutils.impls.yolo import YOLO
-    from trtutils.builder import build_engine
+    from trtutils.image import Detector
 
     # resolve paths
     image = cv2.imread(IMAGE_PATH)
@@ -123,7 +142,7 @@ def benchmark_trtutils(
             continue
 
         framework = f"trtutils({preprocessor})"
-        for imgsz in IMAGE_SIZES:
+        for imgsz in image_sizes:
             # if we can find the model nested, then we can skip
             with contextlib.suppress(KeyError):
                 if data[framework][MODELNAME][str(imgsz)] is not None and not overwrite:
@@ -131,20 +150,22 @@ def benchmark_trtutils(
 
             print(f"Processing {framework} on {MODELNAME} for imgsz={imgsz}...")
 
-            # resolve paths
-            weight_path = ONNX_DIR / f"{MODELNAME}_{imgsz}.onnx"
+            # resolve paths - ensure model is available
+            try:
+                weight_path = ensure_model_available(MODELNAME, imgsz, MODEL_TO_DIR, auto_download=True)
+            except Exception as e:
+                warnings.warn(f"Could not get model {MODELNAME} @ {imgsz}: {e}")
+                continue
+            
             trt_path = weight_path.with_suffix(".engine")
 
             if not trt_path.exists():
                 print("\tBuilding trtutils engine...")
-                build_engine(
+                build_model(
                     onnx=weight_path,
                     output=trt_path,
-                    fp16=True,
-                    timing_cache=str(Path(__file__).parent / "timing.cache"),
-                    shapes=[("images", (1, 3, imgsz, imgsz))]
-                    if "yolov9" in MODELNAME
-                    else None,
+                    imgsz=imgsz,
+                    opt_level=1,
                 )
 
                 # verify
@@ -153,7 +174,7 @@ def benchmark_trtutils(
                     raise FileNotFoundError(err_msg)
 
             print("\tBenchmarking trtutils engine...")
-            trt_yolo = YOLO(
+            trt_yolo = Detector(
                 engine_path=trt_path,
                 warmup_iterations=warmup_iters,
                 warmup=True,
@@ -164,8 +185,7 @@ def benchmark_trtutils(
             t_timing = []
             for _ in tqdm(range(bench_iters)):
                 t0 = time.perf_counter()
-                # trt_yolo.end2end(image)
-                trt_yolo.end2end(image, verbose=True)  # add verbose for debugging
+                trt_yolo.end2end(image)
                 t_timing.append(time.perf_counter() - t0)
             del trt_yolo
 
@@ -205,7 +225,7 @@ def benchmark_trtutils(
 
 
 def benchmark_ultralytics(
-    device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool
+    device: str, warmup_iters: int, bench_iters: int, image_sizes: list[int], *, overwrite: bool
 ) -> None:
     from ultralytics import YOLO
 
@@ -220,7 +240,7 @@ def benchmark_ultralytics(
     data = get_data(device)
 
     # handle both Torch and TensorRT backed
-    for imgsz in IMAGE_SIZES:
+    for imgsz in image_sizes:
         # resolve paths
         # make a "smarter" path
         utrt_path = (
@@ -285,13 +305,205 @@ def benchmark_ultralytics(
             write_data(device, data)
 
 
+def benchmark_sahi(
+    device: str, warmup_iters: int, bench_iters: int, *, overwrite: bool
+) -> None:
+    """Benchmark trtutils SAHI against official SAHI package."""
+    from trtutils.image import SAHI, Detector
+    from trtutils.compat.sahi import TRTDetectionModel
+    from sahi.predict import get_sliced_prediction
+    from sahi import AutoDetectionModel
+    from utils import UltralyticsTRTModel
+    
+    # assess is model is supported
+    if MODELNAME not in SAHI_MODELS:
+        warnings.warn(f"SAHI benchmarking only supports {SAHI_MODELS}, skipping {MODELNAME}")
+        return
+    
+    # resolve the constants
+    image = cv2.imread(SAHI_IMAGE_PATH)
+    imgsz = 640
+    overlap = 0.2
+    conf_thres = 0.25
+
+    # get data and initialize if needed
+    data = get_data(device)
+    sahi_key = f"sahi_{MODELNAME}"
+    if sahi_key not in data:
+        data[sahi_key] = {}
+
+    # check that trtutils exists - ensure model is available
+    try:
+        trt_weight_path = ensure_model_available(MODELNAME, imgsz, MODEL_TO_DIR, auto_download=True)
+    except Exception as e:
+        err_msg = f"Could not get model {MODELNAME} @ {imgsz}: {e}"
+        raise FileNotFoundError(err_msg) from e
+    
+    trt_path = trt_weight_path.with_suffix(".engine")
+    if not trt_path.exists():
+        err_msg = f"trtutils TensorRT engine not found: {trt_path}, run benchmark of trtutils first."
+        raise FileNotFoundError(err_msg)
+    
+    # check that ultralytics exists
+    ultralytics_weight_path = (
+        REPO_DIR / "data" / "ultralytics" / f"{MODELNAME}.pt"
+    ).resolve()
+    utrt_path = (
+            ultralytics_weight_path.parent / f"{ultralytics_weight_path.stem}_{imgsz}.engine"
+        )
+    if not utrt_path.exists():
+        err_msg = f"Ultralytics TensorRT engine not found: {utrt_path}, run benchmark of ultralytics first."
+        raise FileNotFoundError(err_msg)
+    
+    # trtutils benchmark phase
+    if "trtutils" not in data[sahi_key] or overwrite:
+        detector = Detector(trt_path, warmup=True, warmup_iterations=warmup_iters, preprocessor="trt", verbose=False)
+        sahi = SAHI(detector, slice_size=(imgsz, imgsz), slice_overlap=(overlap, overlap), verbose=False)
+
+        timings = []
+        detection_counts = []
+        
+        for _ in tqdm(range(bench_iters)):
+            t0 = time.perf_counter()
+            detections = sahi.end2end(image, conf_thres=conf_thres, verbose=False)
+            t1 = time.perf_counter()
+            
+            timings.append(t1 - t0)
+            detection_counts.append(len(detections))
+
+        del sahi, detector
+                    
+        results = get_results(timings)
+        avg_detections = int(statistics.mean(detection_counts))
+        
+        data[sahi_key]["trtutils"] = {
+            "timing": results,
+            "detections": avg_detections,
+        }
+        
+        print(f"\t\tTRTUtils SAHI: {results['mean']:.2f}ms, {avg_detections} detections")
+        write_data(device, data)
+
+    # Benchmark official SAHI
+    for sahi_type_key in ["sahi(ultralytics)(torch)", "sahi(ultralytics)(trt)", "sahi(trtutils)"]:
+        if sahi_type_key not in data[sahi_key] or overwrite:
+            print(f"\tBenchmarking {sahi_type_key}...")
+
+            if sahi_type_key == "sahi(ultralytics)(torch)":
+                detection_model = AutoDetectionModel.from_pretrained(
+                    model_type="ultralytics",
+                    model_path=str(ultralytics_weight_path),
+                    confidence_threshold=conf_thres,
+                    device="cuda",
+                )
+            elif sahi_type_key == "sahi(ultralytics)(trt)":
+                detection_model = UltralyticsTRTModel(
+                    model_path=str(utrt_path),
+                    confidence_threshold=conf_thres,
+                    device="cuda",
+                )
+            else:
+                detection_model = TRTDetectionModel(
+                    model_path=str(trt_path),
+                    confidence_threshold=conf_thres,
+                )
+
+            for _ in range(warmup_iters):
+                get_sliced_prediction(
+                    SAHI_IMAGE_PATH,
+                    detection_model,
+                    slice_height=imgsz,
+                    slice_width=imgsz,
+                    overlap_height_ratio=overlap,
+                    overlap_width_ratio=overlap,
+                    verbose=0
+                )
+                
+            # Benchmark
+            timings = []
+            detection_counts = []
+            
+            for _ in tqdm(range(bench_iters)):
+                t0 = time.perf_counter()
+                result = get_sliced_prediction(
+                    SAHI_IMAGE_PATH,
+                    detection_model,
+                    slice_height=imgsz,
+                    slice_width=imgsz,
+                    overlap_height_ratio=overlap,
+                    overlap_width_ratio=overlap,
+                    verbose=0
+                )
+                t1 = time.perf_counter()
+                
+                timings.append(t1 - t0)
+                detection_counts.append(len(result.object_prediction_list))
+                
+            results = get_results(timings)
+            avg_detections = int(statistics.mean(detection_counts))
+            
+            data[sahi_key][sahi_type_key] = {
+                "timing": results,
+                "detections": avg_detections,
+            }
+            
+            print(f"\t\tOfficial SAHI: {results['mean']:.2f}ms, {avg_detections} detections")
+            write_data(device, data)
+    
+    # Print comparison if both exist
+    ours_key = "sahi(trtutils)(trt)"
+    theirs_key = "sahi(ultralytics)(torch)"
+    if ours_key in data[sahi_key] and theirs_key in data[sahi_key]:
+        ours_data = data[sahi_key][ours_key]
+        theirs_data = data[sahi_key][theirs_key]
+        
+        ours_mean = ours_data["timing"]["mean"]
+        theirs_mean = theirs_data["timing"]["mean"]
+        speedup = ours_mean / theirs_mean if ours_mean > 0 else 0
+        
+        print(f"\tComparison Summary:")
+        print(f"\t\ttrtutils SAHI: {ours_mean:.2f}ms, {ours_data['detections']} detections")
+        print(f"\t\tOfficial SAHI: {theirs_mean:.2f}ms, {theirs_data['detections']} detections")
+        print(f"\t\tSpeedup: {speedup:.2f}x {'(TRTUtils faster)' if speedup > 1 else '(Official faster)'}")
+
+
+def bootstrap_models(models: list[str]) -> None:
+    """Download all models for their configured image sizes."""
+    total_downloads = sum(len(MODEL_TO_IMGSIZES.get(model, [])) for model in models)
+    
+    print(f"\nBootstrapping models: {', '.join(models)}")
+    print(f"Total downloads: {total_downloads}\n")
+    
+    failed = []
+    for model in models:
+        model_sizes = MODEL_TO_IMGSIZES.get(model, [])
+        
+        if not model_sizes:
+            warnings.warn(f"No image sizes configured for {model}, skipping")
+            continue
+        
+        for imgsz in model_sizes:
+            try:
+                ensure_model_available(model, imgsz, MODEL_TO_DIR, auto_download=True)
+                print(f"SUCCESS - {model} @ {imgsz}")
+            except Exception as e:
+                print(f"FAILED - {model} @ {imgsz}: {e}")
+                failed.append((model, imgsz))
+    
+    if failed:
+        print(f"\nFAILED - Failed to download {len(failed)} model(s)")
+        for model, imgsz in failed:
+            print(f"\t{model} @ {imgsz}")
+    else:
+        print("\nSUCCESS - All models downloaded successfully")
+
+
 def main() -> None:
     """Run the benchmarking."""
     parser = argparse.ArgumentParser("Run benchmarking against popular frameworks.")
     parser.add_argument(
         "--device",
         type=str,
-        required=True,
         help="The name of the device you are generating a benchmark on.",
     )
     parser.add_argument(
@@ -323,11 +535,46 @@ def main() -> None:
         help="Run the benchmarks on the ultralytics framework.",
     )
     parser.add_argument(
+        "--sahi",
+        action="store_true",
+        help="Run SAHI comparison benchmarks (trtutils vs official SAHI).",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Overwrite existing data by rerunning benchmarks.",
     )
+    parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Download all models for all sizes upfront, then exit.",
+    )
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        nargs="?",
+        const=None,
+        default=None,
+        help="Specific input image size to benchmark (e.g., 640). If not specified, all sizes will be tested.",
+    )
     args = parser.parse_args()
+    
+    # Filter MODEL_TO_IMGSIZES globally based on --imgsz argument
+    global MODEL_TO_IMGSIZES
+    if args.imgsz is not None:
+        MODEL_TO_IMGSIZES = {
+            model: [args.imgsz] if args.imgsz in sizes else []
+            for model, sizes in MODEL_TO_IMGSIZES.items()
+        }
+    
+    # Handle bootstrap mode
+    if args.bootstrap:
+        models = MODELNAMES if args.model == "all" else [args.model]
+        bootstrap_models(models)
+    
+    # Validate required arguments
+    if not args.device:
+        parser.error("--device is required (unless using --bootstrap)")
 
     # check if iterating over all possible models
     models: list[str] = []
@@ -339,22 +586,26 @@ def main() -> None:
     # process each model
     for modelname in models:
         # solve for MODELNAME and ONNX_DIR
-        global MODELNAME
+        global MODELNAME, ONNX_DIR
         if modelname not in MODELNAMES:
             err_msg = f"Could not find: {modelname}"
             raise ValueError(err_msg)
         MODELNAME = modelname
 
-        # now solve for new onnx_dir
-        yolo_version = (
-            copy.copy(MODELNAME)
-            .replace("t", "")
-            .replace("n", "")
-            .replace("s", "")
-            .replace("m", "")
-        )
-        global ONNX_DIR
-        ONNX_DIR = REPO_DIR / "data" / yolo_version
+        # Get the model directory from the mapping
+        if modelname not in MODEL_TO_DIR:
+            err_msg = f"Could not find directory mapping for: {modelname}"
+            raise ValueError(err_msg)
+        
+        model_dir = MODEL_TO_DIR[modelname]
+        ONNX_DIR = REPO_DIR / "data" / model_dir
+
+        # Get model-specific image sizes
+        model_imgsizes = MODEL_TO_IMGSIZES.get(modelname, [])
+        
+        if not model_imgsizes:
+            warnings.warn(f"No image sizes configured for {modelname}, skipping")
+            continue
 
         # trtutils benchmark
         if args.trtutils:
@@ -363,6 +614,7 @@ def main() -> None:
                     args.device,
                     args.warmup,
                     args.iterations,
+                    model_imgsizes,
                     overwrite=args.overwrite,
                 )
             except Exception as e:
@@ -377,6 +629,7 @@ def main() -> None:
                         args.device,
                         args.warmup,
                         args.iterations,
+                        model_imgsizes,
                         overwrite=args.overwrite,
                     )
                 else:
@@ -385,6 +638,19 @@ def main() -> None:
                     )
             except Exception as e:
                 warnings.warn(f"Failed to process {MODELNAME} with ultralytics: {e}")
+                continue
+
+        # SAHI benchmark
+        if args.sahi:
+            try:
+                benchmark_sahi(
+                    args.device,
+                    args.warmup,
+                    args.iterations,
+                    overwrite=args.overwrite,
+                )
+            except Exception as e:
+                warnings.warn(f"Failed to process {MODELNAME} with SAHI: {e}")
                 continue
 
 

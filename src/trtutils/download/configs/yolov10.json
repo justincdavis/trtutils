@@ -1,0 +1,46 @@
+{
+  "yolov10n": {
+    "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10n.pt",
+    "name": "yolov10n"
+  },
+  "yolov10s": {
+    "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10s.pt",
+    "name": "yolov10s"
+  },
+  "yolov10m": {
+    "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10m.pt",
+    "name": "yolov10m"
+  },
+  "yolov10b": {
+    "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10b.pt",
+    "name": "yolov10b"
+  },
+  "yolov10l": {
+    "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10l.pt",
+    "name": "yolov10l"
+  },
+  "yolov10x": {
+    "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10x.pt",
+    "name": "yolov10x"
+  },
+  "yolov10nu": {
+    "url": "ultralytics",
+    "name": "yolov10n"
+  },
+  "yolov10su": {
+    "url": "ultralytics",
+    "name": "yolov10s"
+  },
+  "yolov10mu": {
+    "url": "ultralytics",
+    "name": "yolov10m"
+  },
+  "yolov10lu": {
+    "url": "ultralytics",
+    "name": "yolov10l"
+  },
+  "yolov10xu": {
+    "url": "ultralytics",
+    "name": "yolov10x"
+  }
+}

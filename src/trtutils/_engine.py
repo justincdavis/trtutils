@@ -6,25 +6,23 @@ from __future__ import annotations
 
 import contextlib
 import time
-from queue import Empty, Queue
-from threading import Thread
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ._flags import FLAGS
 from ._log import LOG
-from .core import (
-    TRTEngineInterface,
+from .core._graph import CUDAGraph
+from .core._interface import TRTEngineInterface
+from .core._memory import (
     memcpy_device_to_host,
     memcpy_device_to_host_async,
     memcpy_host_to_device,
     memcpy_host_to_device_async,
-    stream_synchronize,
 )
+from .core._stream import stream_synchronize
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
     from pathlib import Path
     from typing import ClassVar
 
@@ -61,6 +59,7 @@ class TRTEngine(TRTEngineInterface):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -93,6 +92,9 @@ class TRTEngine(TRTEngineInterface):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which will automatically determine what to use.
+        cuda_graph : bool, optional
+            Whether to enable CUDA graph capture for optimized execution.
+            By default True. Only effective when using async_v3 backend.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -121,9 +123,19 @@ class TRTEngine(TRTEngineInterface):
             err_msg = f"Invalid backend {backend}, options are: {TRTEngine._backends}"
             raise ValueError(err_msg)
 
-        self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (
-            backend == "async_v3" or backend == "auto"
-        )
+        self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (backend == "async_v3" or backend == "auto")
+
+        # CUDA graph support
+        # needs to happen before input/output bindings are set since
+        # CUDA graph is used in those calls
+        self._cuda_graph_enabled: bool = (
+            cuda_graph if cuda_graph is not None else True
+        ) and self._async_v3
+        self._cuda_graph: CUDAGraph | None = None
+        self._capturing_graph: bool = False  # Guard against capture recursion
+        if self._cuda_graph_enabled:
+            self._cuda_graph = CUDAGraph(self._stream)
+
         # if using v3
         # 1.) need to do set_input_shape for all input bindings
         # 2.) need to do set_tensor_address for all input/output bindings
@@ -140,7 +152,8 @@ class TRTEngine(TRTEngineInterface):
         # store timing variable for sleep call before stream_sync
         self._sync_t: float = 0.0
 
-        if warmup:
+        self._warmup = warmup
+        if self._warmup:
             self.warmup(warmup_iterations, verbose=self._verbose)
 
         LOG.debug(f"Creating TRTEngine: {self.name}")
@@ -149,12 +162,45 @@ class TRTEngine(TRTEngineInterface):
         for i_binding in self._inputs:
             self._context.set_input_shape(i_binding.name, i_binding.shape)
             self._context.set_tensor_address(i_binding.name, i_binding.allocation)
+        # CUDA graph is invalid if using new bindings
+        if self._cuda_graph and self._cuda_graph.is_captured:
+            self._cuda_graph.invalidate()
 
     def _set_output_bindings(self: Self) -> None:
         for o_binding in self._outputs:
             self._context.set_tensor_address(o_binding.name, o_binding.allocation)
+        # CUDA graph is invalid if using new bindings
+        if self._cuda_graph and self._cuda_graph.is_captured:
+            self._cuda_graph.invalidate()
+
+    def _capture_cuda_graph(self: Self) -> None:
+        # Prevent recursion: warmup() -> mock_execute() -> execute() -> _capture_cuda_graph()
+        if self._capturing_graph:
+            return
+
+        if self._cuda_graph is None:
+            err_msg = f"CUDA graph is not enabled in engine: {self._name}"
+            raise RuntimeError(err_msg)
+
+        self._capturing_graph = True
+        try:
+            # at least one execution required prior to graph capture
+            # simply use one warmup iteration if warmup didnt get run
+            if not self._warmup:
+                self.warmup(1, verbose=self._verbose)
+
+            # CUDAGraph handles capture with a context manager
+            with self._cuda_graph:
+                # manually run execute_async_v3 instead of execute since
+                # we only want the TRT engine
+                self._context.execute_async_v3(self._stream)
+        finally:
+            self._capturing_graph = False
 
     def __del__(self: Self) -> None:
+        with contextlib.suppress(AttributeError):
+            if self._cuda_graph is not None:
+                self._cuda_graph.invalidate()
         super().__del__()
 
     def execute(
@@ -222,7 +268,19 @@ class TRTEngine(TRTEngineInterface):
             stream_synchronize(self._stream)
 
         # execute
-        if self._async_v3:
+        if self._cuda_graph:
+            if self._cuda_graph.is_captured:
+                # uses already captured graph to handle execution
+                self._cuda_graph.launch()
+            elif not self._capturing_graph:
+                # CUDA graph capture calls execute_async_v3 internally
+                # no need to call again here
+                self._capture_cuda_graph()
+            else:
+                # Currently capturing graph, use direct execution for warmup
+                self._context.execute_async_v3(self._stream)
+        # base execution cases
+        elif self._async_v3:
             self._context.execute_async_v3(self._stream)
         else:
             self._context.execute_async_v2(self._allocations, self._stream)
@@ -262,6 +320,7 @@ class TRTEngine(TRTEngineInterface):
         self: Self,
         pointers: list[int],
         *,
+        set_pointers: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
         debug: bool | None = None,
@@ -278,6 +337,12 @@ class TRTEngine(TRTEngineInterface):
         ----------
         pointers : list[int]
             The inputs to the network.
+            Pointers must be in the order of expected inputs for the engine.
+        set_pointers : bool, optional
+            Whether to set tensor addresses before execution.
+            If True (default), tensor addresses will be set.
+            If False, tensor addresses are assumed to already be configured.
+            By default True.
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional
@@ -301,12 +366,13 @@ class TRTEngine(TRTEngineInterface):
 
         # execute
         if self._async_v3:
-            # need to set the input pointers to match the bindings, assume in same order
-            for i in range(len(pointers)):
-                self._context.set_tensor_address(self._inputs[i].name, pointers[i])
-            self._using_engine_tensors = (
-                False  # set flag to tell future execute calls to reset inputs
-            )
+            if set_pointers:
+                # need to set the input pointers to match the bindings, assume in same order
+                for i in range(len(pointers)):
+                    self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+                self._using_engine_tensors = (
+                    False  # set flag to tell future execute calls to reset inputs
+                )
             self._context.execute_async_v3(self._stream)
         else:
             self._context.execute_async_v2(
@@ -337,13 +403,14 @@ class TRTEngine(TRTEngineInterface):
         # make sure all operations are complete
         stream_synchronize(self._stream)
 
-        # return the results
-        return [o.host_allocation for o in self._outputs]
+        # return the output host allocations
+        return self._output_host_allocations
 
     def raw_exec(
         self: Self,
         pointers: list[int],
         *,
+        set_pointers: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
         debug: bool | None = None,
@@ -358,6 +425,12 @@ class TRTEngine(TRTEngineInterface):
         ----------
         pointers : list[int]
             The inputs to the network.
+            Pointers must be in the order of expected inputs for the engine.
+        set_pointers : bool, optional
+            Whether to set tensor addresses before execution.
+            If True (default), tensor addresses will be set.
+            If False, tensor addresses are assumed to already be configured.
+            By default True.
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional
@@ -381,12 +454,13 @@ class TRTEngine(TRTEngineInterface):
 
         # execute
         if self._async_v3:
-            # need to set the input pointers to match the bindings, assume in same order
-            for i in range(len(pointers)):
-                self._context.set_tensor_address(self._inputs[i].name, pointers[i])
-            self._using_engine_tensors = (
-                False  # set flag to tell future execute calls to reset inputs
-            )
+            if set_pointers:
+                # need to set the input pointers to match the bindings, assume in same order
+                for i in range(len(pointers)):
+                    self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+                self._using_engine_tensors = (
+                    False  # set flag to tell future execute calls to reset inputs
+                )
             self._context.execute_async_v3(self._stream)
         else:
             self._context.execute_async_v2(
@@ -397,340 +471,5 @@ class TRTEngine(TRTEngineInterface):
         if debug:
             stream_synchronize(self._stream)
 
-        # return the results
-        return [o.allocation for o in self._outputs]
-
-
-class QueuedTRTEngine:
-    """Interact with TRTEngine over Thread and Queue."""
-
-    def __init__(
-        self: Self,
-        engine: TRTEngine | Path | str,
-        warmup_iterations: int = 5,
-        dla_core: int | None = None,
-        *,
-        warmup: bool | None = None,
-    ) -> None:
-        """
-        Create a QueuedTRTEngine.
-
-        Parameters
-        ----------
-        engine : Path, str
-            The Path to the compiled TensorRT engine.
-        warmup_iterations : int
-            The number of iterations to warmup the engine.
-            By default 5
-        dla_core : int, optional
-            The DLA core to assign DLA layers of the engine to. Default is None.
-            If None, any DLA layers will be assigned to DLA core 0.
-        warmup : bool, optional
-            Whether or not to perform warmup iterations.
-
-        """
-        self._stopped = False  # flag for if user stopped thread
-        self._engine: TRTEngine
-        if isinstance(engine, TRTEngine):
-            self._engine = engine
-        else:
-            self._engine = TRTEngine(
-                engine_path=engine,
-                warmup_iterations=warmup_iterations,
-                warmup=warmup,
-                dla_core=dla_core,
-            )
-        self._input_queue: Queue[list[np.ndarray]] = Queue()
-        self._output_queue: Queue[list[np.ndarray]] = Queue()
-        self._thread = Thread(
-            target=self._run,
-            args=(),
-            daemon=True,
-        )
-        self._thread.start()
-
-    def __del__(self: Self) -> None:
-        self.stop()
-
-    @property
-    def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
-        """
-        Get the specs for the input tensor of the network. Useful to prepare memory allocations.
-
-        Returns
-        -------
-        list[tuple[list[int], np.dtype]]
-            A list with two items per element, the shape and (numpy) datatype of each input tensor.
-
-        """
-        return self._engine.input_spec
-
-    @property
-    def input_shapes(self: Self) -> list[tuple[int, ...]]:
-        """
-        Get the shapes for the input tensors of the network.
-
-        Returns
-        -------
-        list[tuple[int, ...]]
-            A list with the shape of each input tensor.
-
-        """
-        return self._engine.input_shapes
-
-    @property
-    def input_dtypes(self: Self) -> list[np.dtype]:
-        """
-        Get the datatypes for the input tensors of the network.
-
-        Returns
-        -------
-        list[np.dtype]
-            A list with the datatype of each input tensor.
-
-        """
-        return self._engine.input_dtypes
-
-    @property
-    def output_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
-        """
-        Get the specs for the output tensor of the network. Useful to prepare memory allocations.
-
-        Returns
-        -------
-        list[tuple[list[int], np.dtype]]
-            A list with two items per element, the shape and (numpy) datatype of each output tensor.
-
-        """
-        return self._engine.output_spec
-
-    @property
-    def output_shapes(self: Self) -> list[tuple[int, ...]]:
-        """
-        Get the shapes for the output tensors of the network.
-
-        Returns
-        -------
-        list[tuple[int, ...]]
-            A list with the shape of each output tensor.
-
-        """
-        return self._engine.output_shapes
-
-    @property
-    def output_dtypes(self: Self) -> list[np.dtype]:
-        """
-        Get the datatypes for the output tensors of the network.
-
-        Returns
-        -------
-        list[np.dtype]
-            A list with the datatype of each output tensor.
-
-        """
-        return self._engine.output_dtypes
-
-    def get_random_input(self: Self, *, new: bool | None = None) -> list[np.ndarray]:
-        """
-        Get a random input to the underlying TRTEngine.
-
-        Parameters
-        ----------
-        new : bool, optional
-            Whether or not to get a new input or the cached already generated one.
-            By default, None/False
-
-        Returns
-        -------
-        list[np.ndarray]
-            The random input.
-
-        """
-        return self._engine.get_random_input(new=new)
-
-    def stop(
-        self: Self,
-    ) -> None:
-        """Stop the thread containing the TRTEngine."""
-        self._stopped = True
-        self._thread.join()
-
-    def submit(
-        self: Self,
-        data: list[np.ndarray],
-    ) -> None:
-        """
-        Put data in the input queue.
-
-        Parameters
-        ----------
-        data : list[np.ndarray]
-            The data to have the engine run.
-
-        """
-        self._input_queue.put(data)
-
-    def mock_submit(
-        self: Self,
-    ) -> None:
-        """Send a random input to the engine."""
-        data = self._engine.get_random_input()
-        self._input_queue.put(data)
-
-    def retrieve(
-        self: Self,
-        timeout: float | None = None,
-    ) -> list[np.ndarray] | None:
-        """
-        Get an output from the engine thread.
-
-        Parameters
-        ----------
-        timeout : float, optional
-            Timeout for waiting for data.
-
-        Returns
-        -------
-        list[np.ndarray]
-            The output from the engine.
-
-        """
-        with contextlib.suppress(Empty):
-            return self._output_queue.get(timeout=timeout)
-        return None
-
-    def _run(
-        self: Self,
-    ) -> None:
-        while not self._stopped:
-            try:
-                inputs = self._input_queue.get(timeout=0.1)
-            except Empty:
-                continue
-
-            result = self._engine(inputs)
-
-            self._output_queue.put(result)
-
-
-class ParallelTRTEngines:
-    """Handle many TRTEngines in parallel."""
-
-    def __init__(
-        self: Self,
-        engines: Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]],
-        warmup_iterations: int = 5,
-        *,
-        warmup: bool | None = None,
-    ) -> None:
-        """
-        Create a ParallelTRTEngines instance.
-
-        Parameters
-        ----------
-        engines : Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]]
-            The Paths to the compiled engines to use.
-        warmup_iterations : int
-            The number of iterations to perform warmup for.
-            By default 5
-        warmup : bool, optional
-            Whether or not to run warmup iterations on the engines.
-
-        """
-        self._engines: list[QueuedTRTEngine] = []
-        for engine_info in engines:
-            engine: TRTEngine | Path | str
-            dla_core: int | None = None
-            if isinstance(engine_info, tuple):
-                engine = engine_info[0]
-                dla_core = engine_info[1]
-            else:
-                engine = engine_info
-            q_engine = QueuedTRTEngine(
-                engine=engine,
-                warmup_iterations=warmup_iterations,
-                warmup=warmup,
-                dla_core=dla_core,
-            )
-            self._engines.append(q_engine)
-
-    def get_random_input(
-        self: Self,
-        *,
-        new: bool | None = None,
-    ) -> list[list[np.ndarray]]:
-        """
-        Get a random input to the underlying TRTEngines.
-
-        Parameters
-        ----------
-        new : bool, optional
-            Whether or not to get a new input or the cached already generated one.
-            By default, None/False
-
-        Returns
-        -------
-        list[list[np.ndarray]]
-            The random inputs.
-
-        """
-        return [e.get_random_input(new=new) for e in self._engines]
-
-    def stop(self: Self) -> None:
-        """Stop the underlying engine threads."""
-        for engine in self._engines:
-            engine.stop()
-
-    def submit(
-        self: Self,
-        inputs: list[list[np.ndarray]],
-    ) -> None:
-        """
-        Submit data to be processed by the engines.
-
-        Parameters
-        ----------
-        inputs : list[list[np.ndarray]]
-            The inputs to pass to the engines.
-            Should be a list of the same lenght of engines created.
-
-        Raises
-        ------
-        ValueError
-            If the inputs are not the same size as the engines.
-
-        """
-        if len(inputs) != len(self._engines):
-            err_msg = (
-                f"Cannot match {len(inputs)} inputs to {len(self._engines)} engines."
-            )
-            raise ValueError(err_msg)
-        for data, engine in zip(inputs, self._engines):
-            engine.submit(data)
-
-    def mock_submit(
-        self: Self,
-    ) -> None:
-        """Send random data to the engines."""
-        for engine in self._engines:
-            engine.mock_submit()
-
-    def retrieve(
-        self: Self,
-        timeout: float | None = None,
-    ) -> list[list[np.ndarray] | None]:
-        """
-        Get the outputs from the engines.
-
-        Parameters
-        ----------
-        timeout : float, optional
-            Timeout for waiting for data.
-
-        Returns
-        -------
-        list[np.ndarray]
-            The output from the engines.
-
-        """
-        return [engine.retrieve(timeout=timeout) for engine in self._engines]
+        # return the pointers to the output allocations
+        return self._output_allocations

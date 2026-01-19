@@ -1,0 +1,26 @@
+{
+    "deimv2_atto": {
+        "coco_map_50": 23.8,
+        "imgsz": 320
+    },
+    "deimv2_femto": {
+        "coco_map_50": 31.0,
+        "imgsz": 416
+    },
+    "deimv2_pico": {
+        "coco_map_50": 38.5,
+        "imgsz": 640
+    },
+    "deimv2_n": {
+        "coco_map_50": 43.0,
+        "imgsz": 640
+    },
+    "deimv2_s": {
+        "coco_map_50": 50.9,
+        "imgsz": 640
+    },
+    "deimv2_m": {
+        "coco_map_50": 53.0,
+        "imgsz": 640
+    }
+}

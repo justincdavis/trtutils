@@ -17,6 +17,7 @@ jobs:
         run: |
           pip install .[all]
           pip install .[ci]
+          pip install .[test]
 
       - name: MyPy - Source
         run: 

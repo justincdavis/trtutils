@@ -1,0 +1,18 @@
+{
+    "rtdetrv2_r18": {
+        "coco_map_50": 48.1,
+        "imgsz": 640
+    },
+    "rtdetrv2_r34": {
+        "coco_map_50": 49.9,
+        "imgsz": 640
+    },
+    "rtdetrv2_r50m": {
+        "coco_map_50": 51.9,
+        "imgsz": 640
+    },
+    "rtdetrv2_r50": {
+        "coco_map_50": 53.4,
+        "imgsz": 640
+    }
+}

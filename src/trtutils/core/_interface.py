@@ -16,7 +16,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._bindings import Binding, allocate_bindings
-from ._engine import create_engine
+from ._engine import create_engine, get_engine_names
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -85,6 +85,9 @@ class TRTEngineInterface(ABC):
             no_warn=no_warn,
         )
 
+        # get the input and output names
+        self._input_names, self._output_names = get_engine_names(self._engine)
+
         # allocate memory for inputs and outputs
         self._inputs, self._outputs, self._allocations = allocate_bindings(
             self._engine,
@@ -92,11 +95,13 @@ class TRTEngineInterface(ABC):
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
-        self._input_allocations: list[int] = [
-            input_b.allocation for input_b in self._inputs
+        self._input_allocations: list[int] = [input_b.allocation for input_b in self._inputs]
+        self._input_host_allocations: list[np.ndarray] = [
+            input_b.host_allocation for input_b in self._inputs
         ]
-        self._output_allocations: list[int] = [
-            output_b.allocation for output_b in self._outputs
+        self._output_allocations: list[int] = [output_b.allocation for output_b in self._outputs]
+        self._output_host_allocations: list[np.ndarray] = [
+            output_b.host_allocation for output_b in self._outputs
         ]
 
         # store useful properties about the engine
@@ -105,6 +110,18 @@ class TRTEngineInterface(ABC):
             self._memsize = self._engine.device_memory_size_v2
         else:
             self._memsize = self._engine.device_memory_size
+
+        # additional verbose output about loaded engine information
+        if self._verbose:
+            LOG.info(f"Loaded engine: {self._name}")
+            LOG.info(f"\tDLA Core: {self._dla_core}")
+            LOG.info(f"\tPagelocked Mem: {self._pagelocked_mem}")
+            LOG.info(f"\tUnified Mem: {self._unified_mem}")
+            LOG.info(f"\tMemsize: {self._memsize}")
+            for i_binding in self._inputs:
+                LOG.info(f"\tInput: {i_binding.name} {i_binding.shape} {i_binding.dtype}")
+            for o_binding in self._outputs:
+                LOG.info(f"\tOutput: {o_binding.name} {o_binding.shape} {o_binding.dtype}")
 
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None
@@ -181,6 +198,36 @@ class TRTEngineInterface(ABC):
         return [tuple(i.shape) for i in self._inputs]
 
     @cached_property
+    def batch_size(self: Self) -> int:
+        """
+        Get the batch size of the engine (first dim of first input).
+
+        Returns
+        -------
+        int
+            The batch size. Returns -1 if dynamic, 1 if no inputs.
+
+        """
+        if self._inputs and len(self._inputs[0].shape) > 0:
+            return self._inputs[0].shape[0]
+        return 1
+
+    @cached_property
+    def is_dynamic_batch(self: Self) -> bool:
+        """
+        Check if the engine has dynamic batch size (-1 in first dim).
+
+        Returns
+        -------
+        bool
+            True if the engine has dynamic batch size.
+
+        """
+        if self._inputs and len(self._inputs[0].shape) > 0:
+            return self._inputs[0].shape[0] == -1
+        return False
+
+    @cached_property
     def input_dtypes(self: Self) -> list[np.dtype]:
         """
         Get the datatypes for the input tensors of the network.
@@ -192,6 +239,19 @@ class TRTEngineInterface(ABC):
 
         """
         return [i.dtype for i in self._inputs]
+
+    @property
+    def input_names(self: Self) -> list[str]:
+        """
+        Get the names of the input tensors of the network.
+
+        Returns
+        -------
+        list[str]
+            A list with the name of each input tensor.
+
+        """
+        return self._input_names
 
     @cached_property
     def output_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
@@ -231,6 +291,19 @@ class TRTEngineInterface(ABC):
 
         """
         return [o.dtype for o in self._outputs]
+
+    @property
+    def output_names(self: Self) -> list[str]:
+        """
+        Get the names of the output tensors of the network.
+
+        Returns
+        -------
+        list[str]
+            A list with the name of each output tensor.
+
+        """
+        return self._output_names
 
     @property
     def input_bindings(self: Self) -> list[Binding]:
@@ -389,9 +462,7 @@ class TRTEngineInterface(ABC):
                     rand_arr = self._rng.random(size=shape, dtype=dtype)
                 else:
                     # fallback to cast if not supported
-                    rand_arr = self._rng.random(size=shape, dtype=np.float32).astype(
-                        dtype
-                    )
+                    rand_arr = self._rng.random(size=shape, dtype=np.float32).astype(dtype)
                 rand_input.append(rand_arr)
             self._rand_input = rand_input
             if verbose:
@@ -400,9 +471,7 @@ class TRTEngineInterface(ABC):
                 )
             return self._rand_input
         if verbose:
-            LOG.debug(
-                f"Using random input: {[(a.shape, a.dtype) for a in self._rand_input]}"
-            )
+            LOG.debug(f"Using random input: {[(a.shape, a.dtype) for a in self._rand_input]}")
         return self._rand_input
 
     def __call__(

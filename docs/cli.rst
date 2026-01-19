@@ -10,11 +10,23 @@ TRTUtils provides a command-line interface with several subcommands for working 
 
 * ``benchmark``: Benchmark a TensorRT engine
 * ``build``: Build a TensorRT engine from an ONNX model
+* ``build_yolo``: Build a TensorRT engine from an ONNX model with YOLO NMS injection
 * ``build_dla``: Build a TensorRT engine with mixed GPU/DLA layers and precision automatically
 * ``can_run_on_dla``: Evaluate if a model can run on a DLA and specific layer/chunk compatibility.
+* ``classify``: Run image classification on an image
+* ``detect``: Run object detection on an image or video
+* ``download``: Download a model from remote source and convert to ONNX
 * ``inspect``: Inspect a TensorRT engine
 * ``trtexec``: Run trtexec with the provided options
-* ``yolo``: Run YOLO inference with TensorRT
+
+Global Options
+--------------
+
+These options are available for most commands:
+
+* ``--dla_core``: DLA core to assign DLA layers of the engine to (default: None)
+* ``--log_level``: Set the log level (choices: DEBUG, INFO, WARNING, ERROR, CRITICAL; default: INFO)
+* ``--verbose``: Enable verbose output
 
 Commands
 --------
@@ -26,15 +38,24 @@ Benchmark a TensorRT engine to measure its performance metrics.
 
 .. code-block:: console
 
-    python3 -m trtutils benchmark --engine model.engine --iterations 2000 --warmup_iterations 200
+    # Basic benchmarking
+    python3 -m trtutils benchmark --engine model.engine --iterations 2000
+
+    # Jetson benchmarking with energy/power metrics
+    python3 -m trtutils benchmark --engine model.engine --jetson --tegra_interval 1
+
+    # With warmup
+    python3 -m trtutils benchmark --engine model.engine --warmup --warmup_iterations 200
 
 Options
 ^^^^^^^
 
 * ``--engine, -e``: Path to the engine file (required)
 * ``--iterations, -i``: Number of iterations to measure over (default: 1000)
-* ``--warmup_iterations, -wi``: Number of iterations to warmup the model before measuring (default: 100)
 * ``--jetson, -j``: Use the Jetson-specific benchmarker to record energy and power draw metrics
+* ``--tegra_interval``: Milliseconds between each tegrastats sampling for Jetson benchmarking (default: 5)
+* ``--warmup``: Perform warmup iterations
+* ``--warmup_iterations, -wi``: Number of warmup iterations (default: 10)
 
 Output
 ^^^^^^
@@ -51,54 +72,124 @@ Build a TensorRT engine from an ONNX model.
 
 .. code-block:: console
 
-    # Basic build with FP16 precision
-    python3 -m trtutils build --onnx model.onnx --output model.engine --fp16 --workspace 8.0
+    # Basic FP32 build
+    python3 -m trtutils build --onnx model.onnx --output model.engine
 
-    # Build with INT8 quantization using calibration
+    # FP16 build
+    python3 -m trtutils build --onnx model.onnx --output model.engine --fp16
+
+    # INT8 build with calibration
     python3 -m trtutils build \
         --onnx model.onnx \
         --output model.engine \
         --int8 \
         --calibration_dir ./calibration_images \
         --input_shape 640 640 3 \
-        --input_dtype float32 \
-        --batch_size 8 \
-        --data_order NCHW \
-        --resize_method letterbox \
-        --input_scale 0.0 1.0
+        --input_dtype float32
+
+    # Build with fixed input shapes
+    python3 -m trtutils build \
+        --onnx model.onnx \
+        --output model.engine \
+        --shape input:1,3,640,640 \
+        --fp16
 
 Options
 ^^^^^^^
 
-* ``--onnx, -o``: Path to the ONNX model file (required)
-* ``--output, -out``: Path to save the TensorRT engine file (required)
-* ``--device, -d``: Device to use for the engine (choices: gpu, dla, GPU, DLA; default: gpu)
-* ``--timing_cache, -tc``: Path to store timing cache data (default: 'timing.cache')
+**Required:**
+
+* ``--onnx, -o``: Path to the ONNX model file
+* ``--output, -out``: Path to save the TensorRT engine file
+
+**Build Configuration:**
+
+* ``--device, -d``: Device to use for the engine (choices: gpu, dla; default: gpu)
 * ``--workspace, -w``: Workspace size in GB (default: 4.0)
-* ``--dla_core``: Specify the DLA core (default: engine built for GPU)
-* ``--calibration_cache, -cc``: Path to store calibration cache data (default: 'calibration.cache')
-* ``--calibration_dir, -cd``: Directory containing images for INT8 calibration
-* ``--input_shape, -is``: Input shape in HWC format (height, width, channels)
-* ``--input_dtype, -id``: Input data type (choices: float32, float16, int8)
-* ``--batch_size, -bs``: Batch size for calibration (default: 8)
-* ``--data_order, -do``: Data ordering expected by the network (choices: NCHW, NHWC, default: NCHW)
-* ``--max_images, -mi``: Maximum number of images to use for calibration
-* ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear, default: letterbox)
-* ``--input_scale, -sc``: Input value range (default: [0.0, 1.0])
+* ``--optimization_level``: TensorRT builder optimization level (0-5). Default is 3.
+* ``--shape, -s``: Fix input binding shapes. Format: NAME:dim1,dim2[,dim3...]. Can be specified multiple times for multiple inputs
+* ``--fp16``: Quantize the engine to FP16 precision
+* ``--int8``: Quantize the engine to INT8 precision
 * ``--gpu_fallback``: Allow GPU fallback for unsupported layers when building for DLA
+
+**Caching and Optimization:**
+
+* ``--timing_cache, -tc``: Path to store timing cache data
+* ``--calibration_cache, -cc``: Path to store calibration cache data
+* ``--cache``: Cache the engine in the trtutils engine cache
 * ``--direct_io``: Use direct IO for the engine
 * ``--prefer_precision_constraints``: Prefer precision constraints
 * ``--reject_empty_algorithms``: Reject empty algorithms
 * ``--ignore_timing_mismatch``: Allow different CUDA device timing caches to be used
-* ``--fp16``: Quantize the engine to FP16 precision
-* ``--int8``: Quantize the engine to INT8 precision
-* ``--verbose``: Verbose output from can_run_on_dla
+
+**Calibration (for INT8):**
+
+* ``--calibration_dir, -cd``: Directory containing images for INT8 calibration
+* ``--input_shape, -is``: Input shape in HWC format (height, width, channels)
+* ``--input_dtype, -id``: Input data type (choices: float32, float16, int8)
+* ``--batch_size, -bs``: Batch size for calibration (default: 8)
+* ``--data_order, -do``: Data ordering expected by the network (choices: NCHW, NHWC; default: NCHW)
+* ``--max_images, -mi``: Maximum number of images to use for calibration
+* ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear; default: letterbox)
+* ``--input_scale, -sc``: Input value range (default: [0.0, 1.0])
 
 .. note::
    When using INT8 quantization with calibration, you must provide:
    * ``--calibration_dir``: Directory containing calibration images
    * ``--input_shape``: Expected input shape in HWC format
    * ``--input_dtype``: Expected input data type
+
+Build YOLO
+~~~~~~~~~~~
+
+Build a TensorRT engine from an ONNX model with YOLO NMS injection. This command automatically injects efficient Non-Maximum Suppression (NMS) operations optimized for YOLO object detection models.
+
+.. code-block:: console
+
+    # Basic YOLO build with NMS
+    python3 -m trtutils build_yolo --onnx yolo.onnx --output yolo.engine
+
+    # FP16 YOLO build with custom NMS parameters
+    python3 -m trtutils build_yolo \
+        --onnx yolo.onnx \
+        --output yolo.engine \
+        --fp16 \
+        --num_classes 80 \
+        --conf_threshold 0.25 \
+        --iou_threshold 0.45 \
+        --top_k 100
+
+    # INT8 YOLO build with calibration and custom NMS
+    python3 -m trtutils build_yolo \
+        --onnx yolo.onnx \
+        --output yolo.engine \
+        --int8 \
+        --calibration_dir ./calibration_images \
+        --input_shape 640 640 3 \
+        --input_dtype float32 \
+        --num_classes 80 \
+        --conf_threshold 0.25 \
+        --iou_threshold 0.5 \
+        --box_coding center_size
+
+Options
+^^^^^^^
+
+This command supports all options from the ``build`` command, plus the following YOLO-specific options:
+
+**YOLO NMS Configuration:**
+
+* ``--num_classes``: Number of classes for NMS (default: 80)
+* ``--conf_threshold``: Score threshold for NMS (default: 0.25)
+* ``--iou_threshold``: IOU threshold for NMS (default: 0.5)
+* ``--top_k``: Top-k boxes for NMS (default: 100)
+* ``--box_coding``: Box coding for TRT EfficientNMS (choices: corner, center_size; default: center_size)
+* ``--class_agnostic``: Use class-agnostic NMS
+
+.. note::
+   The YOLO NMS injection uses TensorRT's EfficientNMS plugin for optimal performance.
+   This is particularly useful when converting YOLO models from frameworks that don't
+   include optimized NMS operations in the exported ONNX model.
 
 Build DLA
 ~~~~~~~~~
@@ -113,32 +204,31 @@ Build a TensorRT engine for DLA, supporting mixed GPU/DLA layers and precision.
         --dla_core 0 \
         --max_chunks 1 \
         --min_layers 20 \
-        --image_dir ./calibration_images \
-        --shape 640 640 3 \
-        --dtype float32 \
+        --calibration_dir ./calibration_images \
+        --input_shape 640 640 3 \
+        --input_dtype float32 \
         --batch_size 8 \
-        --order NCHW \
+        --data_order NCHW \
         --resize_method letterbox \
         --input_scale 0.0 1.0
 
 Options
 ^^^^^^^
 
-* ``--onnx, -o``: Path to the ONNX model file (required)
-* ``--output, -out``: Path to save the TensorRT engine file (required)
-* ``--image_dir``: Path to the directory containing images for calibration (required)
-* ``--dla_core``: Specify the DLA core (default: 0)
-* ``--max_chunks``: The number of DLA compatible chunks to use in the compiled model (default: 1)
-* ``--min_layers``: The minimum number of layers for a chunk to be scheduled on DLA (default: 20)
-* ``--shape``: Input shape in HWC format (height, width, channels; default: 640 640 3)
-* ``--dtype``: Input data type (choices: float32, float16, int8; default: float32)
-* ``--batch_size``: Batch size for calibration (default: 8)
-* ``--order``: Data ordering expected by the network (choices: NCHW, NHWC, default: NCHW)
-* ``--max_images``: Maximum number of images to use for calibration
-* ``--resize_method``: Method to resize images (choices: letterbox, linear, default: letterbox)
-* ``--input_scale``: Input value range (default: [0.0, 1.0])
-* ``--timing_cache, -tc``: Path to store timing cache data (default: 'timing.cache')
-* ``--verbose``: Verbose output from can_run_on_dla
+**Required:**
+
+* ``--onnx, -o``: Path to the ONNX model file
+* ``--output, -out``: Path to save the TensorRT engine file
+* ``--calibration_dir, -cd``: Directory containing images for calibration (required for DLA)
+* ``--input_shape, -is``: Input shape in HWC format (required for DLA)
+* ``--input_dtype, -id``: Input data type (required for DLA)
+
+**DLA Configuration:**
+
+* ``--max_chunks``: Maximum number of DLA chunks to assign (default: 1)
+* ``--min_layers``: Minimum number of layers in a chunk to be assigned to DLA (default: 20)
+
+**Other options:** Same as the ``build`` command for calibration, caching, and optimization settings.
 
 Can Run on DLA
 ~~~~~~~~~~~~~~
@@ -187,174 +277,253 @@ The command will output:
     * Number of layers in the chunk
     * Device assignment (DLA or GPU)
 
+Classify
+~~~~~~~~
+
+Run image classification on an image with comprehensive configuration options.
+
+.. code-block:: console
+
+    # Basic image classification
+    python3 -m trtutils classify --engine model.engine --input image.jpg --show
+
+    # With warmup and custom configuration
+    python3 -m trtutils classify \
+        --engine model.engine \
+        --input image.jpg \
+        --warmup \
+        --warmup_iterations 20 \
+        --preprocessor cuda \
+        --input_range 0.0 1.0 \
+        --pagelocked_mem \
+        --verbose
+
+Options
+^^^^^^^
+
+**Required:**
+
+* ``--engine, -e``: Path to the TensorRT engine file
+* ``--input, -i``: Path to the input image file
+
+**Preprocessing:**
+
+* ``--input_range, -r``: Input value range (default: [0.0, 1.0])
+* ``--preprocessor, -p``: Preprocessor to use (choices: cpu, cuda, trt; default: trt)
+* ``--resize_method``: Method to resize images (choices: letterbox, linear; default: letterbox)
+
+**Memory and Performance:**
+
+* ``--warmup``: Perform warmup iterations
+* ``--warmup_iterations, -wi``: Number of warmup iterations (default: 10)
+* ``--pagelocked_mem``: Use pagelocked memory for CUDA operations
+* ``--unified_mem``: Use unified memory for CUDA operations
+* ``--no_warn``: Suppress warnings from TensorRT
+
+**Display:**
+
+* ``--show``: Show the classification results (opens display window)
+
+Output
+^^^^^^
+
+The command will output:
+* Classification result (class index and confidence score)
+* Timing information for each stage:
+
+  * Preprocessing time in milliseconds
+  * Inference time in milliseconds
+  * Postprocessing time in milliseconds
+  * Classification parsing time in milliseconds
+
+Detect
+~~~~~~
+
+Run object detection on an image or video with comprehensive configuration options.
+
+.. code-block:: console
+
+    # Basic image inference
+    python3 -m trtutils detect --engine model.engine --input image.jpg --show
+
+    # Video inference with custom thresholds
+    python3 -m trtutils detect \
+        --engine model.engine \
+        --input video.mp4 \
+        --conf_thres 0.25 \
+        --nms_iou_thres 0.45 \
+        --preprocessor cuda \
+        --show
+
+    # Advanced configuration
+    python3 -m trtutils detect \
+        --engine model.engine \
+        --input image.jpg \
+        --warmup \
+        --warmup_iterations 20 \
+        --pagelocked_mem \
+        --extra_nms \
+        --agnostic_nms \
+        --verbose
+
+Options
+^^^^^^^
+
+**Required:**
+
+* ``--engine, -e``: Path to the TensorRT engine file
+* ``--input, -i``: Path to the input image or video file
+
+**Detection Configuration:**
+
+* ``--conf_thres, -c``: Confidence threshold for detections (default: 0.1)
+* ``--nms_iou_thres``: NMS IOU threshold for detections (default: 0.5)
+* ``--extra_nms``: Perform additional CPU-side NMS
+* ``--agnostic_nms``: Perform class-agnostic NMS
+
+**Preprocessing:**
+
+* ``--input_range, -r``: Input value range (default: [0.0, 1.0])
+* ``--preprocessor, -p``: Preprocessor to use (choices: cpu, cuda, trt; default: trt)
+* ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear; default: letterbox)
+
+**Memory and Performance:**
+
+* ``--warmup``: Perform warmup iterations
+* ``--warmup_iterations, -wi``: Number of warmup iterations (default: 10)
+* ``--pagelocked_mem``: Use pagelocked memory for CUDA operations
+* ``--unified_mem``: Use unified memory for CUDA operations
+* ``--no_warn``: Suppress warnings from TensorRT
+
+**Display:**
+
+* ``--show``: Show the detections (opens display window)
+
+Output
+^^^^^^
+
+The command will output timing information for each stage:
+* Preprocessing time in milliseconds
+* Inference time in milliseconds
+* Postprocessing time in milliseconds
+* Detection parsing time in milliseconds
+
+Download
+~~~~~~~~
+
+Download a model from remote source and convert to ONNX format. This command supports automatic downloading and conversion of various YOLO and DETR models.
+
+.. code-block:: console
+
+    # Download YOLOv8n
+    python3 -m trtutils download --model yolov8n --output yolov8n.onnx --accept
+
+    # Download YOLOv11m with custom settings
+    python3 -m trtutils download --model yolov11m --output yolov11m.onnx --imgsz 640 --opset 17 --accept
+
+    # Download YOLOX small model
+    python3 -m trtutils download --model yoloxs --output yoloxs.onnx --imgsz 640 --opset 17 --accept
+
+    # Download RT-DETRv1 model
+    python3 -m trtutils download --model rtdetrv1_r18vd --output rtdetrv1.onnx --accept
+
+Options
+^^^^^^^
+
+**Required:**
+
+* ``--model``: Name of the model to download. See :ref:`Supported Models <models>` for available models
+* ``--output``: Path to save the ONNX model file
+
+**Optional:**
+
+* ``--opset``: ONNX opset version to use (default: 17)
+* ``--imgsz``: Image size to use for the model (default: 640)
+* ``--accept``: Accept the license terms for the model. If not provided, you will be prompted.
+
+Supported Models
+^^^^^^^^^^^^^^^^
+
+**YOLO Models:**
+
+* YOLOv7: All variants with pretrained weights
+* YOLOv8: yolov8n, yolov8s, yolov8m, yolov8l, yolov8x (via Ultralytics)
+* YOLOv9: All variants with pretrained weights
+* YOLOv10: All variants with pretrained weights
+* YOLOv11: yolov11n, yolov11s, yolov11m, yolov11l, yolov11x (via Ultralytics)
+* YOLOv12: All variants with pretrained weights
+* YOLOv13: yolov13n, yolov13s, yolov13l, yolov13x
+* YOLOX: yoloxn, yoloxt, yoloxs, yoloxm, yoloxl, yoloxx, yolox_darknet
+
+**DETR Models:**
+
+* RT-DETRv1, RT-DETRv2, RT-DETRv3: Multiple configurations
+* D-FINE: Multiple configurations
+* DEIM: Multiple configurations
+* DEIMv2: deimv2_atto, deimv2_femto, deimv2_pico, deimv2_n, deimv2_s, deimv2_m, deimv2_l, deimv2_x
+* RF-DETR: Multiple configurations
+
+Notes
+^^^^^
+
+* The download process will create a temporary virtual environment to handle dependencies
+* Some models may have license restrictions (GPL-3.0, AGPL-3.0, Apache-2.0)
+* RT-DETRv3 and RF-DETR do not support custom input sizes
+* DEIMv2 does not support custom input sizes
+
 Inspect
 ~~~~~~~
+
 Inspect a TensorRT engine for metadata and IO information.
 
 .. code-block:: console
 
+    # Basic inspection
     python3 -m trtutils inspect --engine model.engine
+
+    # Verbose inspection
+    python3 -m trtutils inspect --engine model.engine --verbose
 
 Options
 ^^^^^^^
+
 * ``--engine, -e``: Path to the engine file (required)
 
 Output
 ^^^^^^
+
 The inspect command will output:
 * Engine size in MB
 * Max batch size
-* Input and output tensor names, shapes, and dtypes
+* Input and output tensor names, shapes, data types, and formats
 
 TRTExec
 ~~~~~~~
 
-Run trtexec with the provided options.
+Run trtexec with the provided options. This command passes all arguments directly to the native trtexec binary.
 
 .. code-block:: console
 
-    python3 -m trtutils trtexec [options]
+    # Build engine with trtexec
+    python3 -m trtutils trtexec --onnx=model.onnx --saveEngine=model.engine --fp16
 
-For detailed information about trtexec options, please refer to the NVIDIA TensorRT documentation.
-
-YOLO
-~~~~
-
-Run YOLO inference with TensorRT.
-
-.. code-block:: console
-
-    # Run inference on a single image
-    python3 -m trtutils yolo --engine model.engine --input image.jpg --conf_thres 0.25 --preprocessor cuda
-
-    # Run inference on a video with custom settings
-    python3 -m trtutils yolo \
-        --engine model.engine \
-        --input video.mp4 \
-        --conf_thres 0.3 \
-        --input_range 0.0 255.0 \
-        --preprocessor cpu \
-        --resize_method letterbox \
-        --warmup \
-        --warmup_iterations 20
+    # Benchmark with trtexec
+    python3 -m trtutils trtexec --loadEngine=model.engine --iterations=1000
 
 Options
 ^^^^^^^
 
-* ``--engine, -e``: Path to the TensorRT engine file (required)
-* ``--input, -i``: Path to the input image or video file (required)
-* ``--conf_thres, -c``: Confidence threshold for detections (default: 0.1)
-* ``--input_range, -r``: Input value range (default: [0.0, 1.0])
-* ``--preprocessor, -p``: Preprocessor to use (choices: cpu, cuda, default: cuda)
-* ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear, default: letterbox)
-* ``--warmup, -w``: Perform warmup iterations
-* ``--warmup_iterations, -wi``: Number of warmup iterations (default: 10)
-* ``--show``: Show the detections
-* ``--verbose, -v``: Output additional debugging information
+All standard trtexec options are supported. Refer to the TensorRT documentation for complete trtexec usage.
 
-Output
-^^^^^^
+Parent Parser Organization
+--------------------------
 
-The YOLO command will output:
-* Number of detections found in image or per frame.
+The CLI is organized using parent parsers to avoid duplication:
 
-Examples
---------
+* **global_parser**: Common options like ``--dla_core``, ``--log_level``, ``--verbose``
+* **build_common_parser**: Build-related options like ``--timing_cache``, ``--workspace``, optimization flags
+* **calibration_parser**: Calibration options for INT8 quantization
+* **warmup_parser**: Warmup-related options like ``--warmup``, ``--warmup_iterations``
+* **memory_parser**: Memory management options like ``--pagelocked_mem``, ``--unified_mem``, ``--no_warn``
 
-Benchmarking an Engine
-~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: console
-
-    python3 -m trtutils benchmark --engine model.engine --iterations 2000 --warmup_iterations 200
-
-Building an Engine from ONNX
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: console
-
-    # Basic build with FP16 precision
-    python3 -m trtutils build --onnx model.onnx --output model.engine --fp16 --workspace 8.0
-
-    # Build with INT8 quantization using calibration
-    python3 -m trtutils build \
-        --onnx model.onnx \
-        --output model.engine \
-        --int8 \
-        --calibration_dir ./calibration_images \
-        --input_shape 640 640 3 \
-        --input_dtype float32 \
-        --batch_size 8 \
-        --data_order NCHW \
-        --resize_method letterbox \
-        --input_scale 0.0 1.0
-
-Building a DLA Engine
-~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: console
-
-    python3 -m trtutils build_dla \
-        --onnx model.onnx \
-        --output model.engine \
-        --dla_core 0 \
-        --max_chunks 1 \
-        --min_layers 20 \
-        --image_dir ./calibration_images \
-        --shape 640 640 3 \
-        --dtype float32 \
-        --batch_size 8 \
-        --order NCHW \
-        --resize_method letterbox \
-        --input_scale 0.0 1.0
-
-Checking DLA Compatibility
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: console
-
-    # Basic compatibility check
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16
-
-    # Detailed layer information
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose_layers
-
-    # Detailed chunk information
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose_chunks
-
-    # Full detailed output
-    python3 -m trtutils can_run_on_dla --onnx model.onnx --fp16 --verbose_layers --verbose_chunks
-
-Inspecting an Engine
-~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: console
-
-    python3 -m trtutils inspect --engine model.engine
-
-Running YOLO Inference
-~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: console
-
-    # Run inference on a single image
-    python3 -m trtutils yolo --engine model.engine --input image.jpg --conf_thres 0.25 --preprocessor cuda
-
-    # Run inference on a video with custom settings
-    python3 -m trtutils yolo \
-        --engine model.engine \
-        --input video.mp4 \
-        --conf_thres 0.3 \
-        --input_range 0.0 255.0 \
-        --preprocessor cpu \
-        --resize_method letterbox \
-        --warmup \
-        --warmup_iterations 20
-
-Notes
------
-
-* All paths can be specified as relative or absolute paths
-* The CLI automatically sets the log level to INFO when running
-* For Jetson-specific features, make sure you're running on a Jetson device
-* When using INT8 quantization, ensure you have the appropriate calibration data
+This organization ensures consistency across commands and reduces code duplication while maintaining comprehensive parameter coverage.

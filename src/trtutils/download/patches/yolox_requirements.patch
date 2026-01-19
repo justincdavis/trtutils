@@ -1,0 +1,21 @@
+--- requirements.txt	2025-10-18 23:14:40.551970235 -0500
++++ requirements_fix.txt	2025-10-19 00:05:32.943831234 -0500
+@@ -1,6 +1,5 @@
+-# TODO: Update with exact module version
+ numpy
+-torch>=1.7
++torch==2.5.*
+ opencv_python
+ loguru
+ tqdm
+@@ -10,9 +9,6 @@
+ tabulate
+ psutil
+ tensorboard
+-
+-# verified versions
+-# pycocotools corresponds to https://github.com/ppwwyyxx/cocoapi
+ pycocotools>=2.0.2
+ onnx>=1.13.0
+-onnx-simplifier==0.4.10
++onnxslim

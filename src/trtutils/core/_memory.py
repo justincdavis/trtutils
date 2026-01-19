@@ -131,6 +131,128 @@ def memcpy_device_to_host_async(
     )
 
 
+def memcpy_device_to_device(
+    dst_ptr: int,
+    src_ptr: int,
+    nbytes: int,
+) -> None:
+    """
+    Copy from one device pointer to another with error checking.
+
+    Parameters
+    ----------
+    dst_ptr : int
+        The destination device pointer.
+    src_ptr : int
+        The source device pointer.
+    nbytes : int
+        The number of bytes to copy.
+
+    """
+    cuda_call(
+        cudart.cudaMemcpy(
+            dst_ptr,
+            src_ptr,
+            nbytes,
+            cudart.cudaMemcpyKind.cudaMemcpyDeviceToDevice,
+        ),
+    )
+
+
+def memcpy_device_to_device_async(
+    dst_ptr: int,
+    src_ptr: int,
+    nbytes: int,
+    stream: cudart.cudaStream_t,
+) -> None:
+    """
+    Copy from one device pointer to another asynchronously.
+
+    Parameters
+    ----------
+    dst_ptr : int
+        The destination device pointer.
+    src_ptr : int
+        The source device pointer.
+    nbytes : int
+        The number of bytes to copy.
+    stream : cudart.cudaStream_t
+        The stream to utilize.
+
+    """
+    cuda_call(
+        cudart.cudaMemcpyAsync(
+            dst_ptr,
+            src_ptr,
+            nbytes,
+            cudart.cudaMemcpyKind.cudaMemcpyDeviceToDevice,
+            stream,
+        ),
+    )
+
+
+def memcpy_host_to_device_offset(
+    device_ptr: int,
+    host_arr: np.ndarray,
+    offset_bytes: int,
+) -> None:
+    """
+    Copy a numpy array to a device pointer at a specific offset.
+
+    Parameters
+    ----------
+    device_ptr : int
+        The base device pointer.
+    host_arr : np.ndarray
+        The numpy array to copy.
+    offset_bytes : int
+        The byte offset into the device buffer.
+
+    """
+    nbytes = host_arr.size * host_arr.itemsize
+    cuda_call(
+        cudart.cudaMemcpy(
+            device_ptr + offset_bytes,
+            host_arr,
+            nbytes,
+            cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
+        ),
+    )
+
+
+def memcpy_host_to_device_offset_async(
+    device_ptr: int,
+    host_arr: np.ndarray,
+    offset_bytes: int,
+    stream: cudart.cudaStream_t,
+) -> None:
+    """
+    Copy a numpy array to a device pointer at a specific offset asynchronously.
+
+    Parameters
+    ----------
+    device_ptr : int
+        The base device pointer.
+    host_arr : np.ndarray
+        The numpy array to copy.
+    offset_bytes : int
+        The byte offset into the device buffer.
+    stream : cudart.cudaStream_t
+        The stream to utilize.
+
+    """
+    nbytes = host_arr.size * host_arr.itemsize
+    cuda_call(
+        cudart.cudaMemcpyAsync(
+            device_ptr + offset_bytes,
+            host_arr,
+            nbytes,
+            cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
+            stream,
+        ),
+    )
+
+
 def cuda_malloc(
     nbytes: int,
 ) -> int:
@@ -225,9 +347,7 @@ def get_ptr_pair(host_array: np.ndarray) -> tuple[int, int]:
     with MEM_ALLOC_LOCK:
         device_ptr = cuda_call(cudart.cudaHostGetDevicePointer(host_ptr, 0))
 
-    LOG.debug(
-        f"Acquired pointers: (host: {host_ptr}, device: {device_ptr}) from ndarray"
-    )
+    LOG.debug(f"Acquired pointers: (host: {host_ptr}, device: {device_ptr}) from ndarray")
 
     return host_ptr, device_ptr
 

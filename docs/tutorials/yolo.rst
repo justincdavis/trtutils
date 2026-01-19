@@ -34,7 +34,7 @@ Example:
 Running YOLO Inference
 ----------------------
 
-The :py:class:`~trtutils.impls.yolo.YOLO` class provides a high-level interface
+The :py:class:`~trtutils.models.YOLO` class provides a high-level interface
 for running YOLO inference. It handles all the preprocessing and postprocessing
 steps automatically.
 
@@ -43,7 +43,7 @@ Example:
 .. code-block:: python
 
     import cv2
-    from trtutils.impls.yolo import YOLO
+    from trtutils.models import YOLO
 
     # Load the YOLO model
     yolo = YOLO("yolo.engine")
@@ -67,7 +67,7 @@ You can run multiple YOLO models in parallel using the :py:class:`~trtutils.impl
 
 .. code-block:: python
 
-    from trtutils.impls.yolo import ParallelYOLO
+    from trtutils.models import ParallelYOLO
 
     # Create a parallel YOLO instance with multiple engines
     yolo = ParallelYOLO(["yolo1.engine", "yolo2.engine"])
@@ -94,7 +94,11 @@ You can run multiple YOLO models in parallel using the :py:class:`~trtutils.impl
 Benchmarking
 ^^^^^^^^^^^^
 
-You can benchmark YOLO models using the built-in benchmarking utilities:
+You can benchmark YOLO models using the built-in benchmarking utilities.
+It is recommended to enable the MAXN power mode and enable jetson_clocks when 
+using Jetson devices to get both the fastest and most stable results.
+
+If using Python API:
 
 .. code-block:: python
 
@@ -115,3 +119,43 @@ You can benchmark YOLO models using the built-in benchmarking utilities:
     )
     print(f"Average power draw: {results.power_draw.mean:.2f}W")
     print(f"Total energy used: {results.energy.mean:.2f}J")
+
+If using CLI:
+
+.. code-block:: bash
+
+    python3 -m trtutils benchmark yolo.engine --iterations 1000 --tegra_interval 1
+
+    # On Jetson devices, you can also measure power consumption by adding the --jetson flag
+    # This requires that jetsontools be installed via pip
+    # pip install jetsontools
+    # This is installed by default as a dependency from 0.6.0 onwards
+    python3 -m trtutils benchmark yolo.engine --iterations 1000 --tegra_interval 1 --jetson
+
+Troubleshooting
+---------------
+
+Common issues and solutions:
+
+1. **ONNX Export Fails**
+   - Ensure you're using the correct virtual environment
+   - Ensure you have the latest version of ultralytics or other package for YOLO
+   - Check if your PyTorch weights are valid
+
+2. **Engine Creation Fails**
+   - Ensure you have enough GPU memory (workspace_size parameter)
+   - Check if the ONNX weights are valid
+   - Try different ONNX opset versions
+
+3. **Incorrect Detections**
+   - Verify the input image preprocessing matches the training
+   - Check if the confidence and IoU thresholds are appropriate
+
+4. **Performance Issues**
+   - Try enabling FP16 precision
+   - On Jetson devices, ensure MAXN power mode and enable jetson_clocks
+
+5. **Dynamic Shape Issues**
+   - Always specify the input shape when building the engine (for dynamic input shape models)
+   - The shape must match the img-size used during export
+   - If you need multiple input sizes, build separate engines 

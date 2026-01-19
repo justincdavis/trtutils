@@ -16,6 +16,7 @@ from trtutils._config import CONFIG
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core import cache as caching_tools
+from trtutils.core.cache import query_timing_cache, save_timing_cache_to_global
 
 from ._calibrator import EngineCalibrator
 from ._onnx import read_onnx
@@ -29,12 +30,15 @@ if TYPE_CHECKING:
 
     from ._batcher import AbstractBatcher
 
+_MIN_OPTIM_LEVEL = 0
+_MAX_OPTIM_LEVEL = 5
+
 
 def build_engine(
     onnx: Path | str,
     output: Path | str,
     default_device: trt.DeviceType | str = trt.DeviceType.GPU,
-    timing_cache: Path | str | None = None,
+    timing_cache: Path | str | bool | None = None,
     workspace: float = 4.0,
     dla_core: int | None = None,
     calibration_cache: Path | str | None = None,
@@ -42,12 +46,13 @@ def build_engine(
     layer_precision: list[tuple[int, trt.DataType | None]] | None = None,
     layer_device: list[tuple[int, trt.DeviceType | None]] | None = None,
     shapes: list[tuple[str, tuple[int, ...]]] | None = None,
-    input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]]
-    | None = None,
-    output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]]
-    | None = None,
-    hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]]
-    | None = None,
+    input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
+    output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
+    hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
+    optimization_level: int = 3,
+    profiling_verbosity: trt.ProfilingVerbosity | None = None,
+    tiling_optimization_level: trt.TilingOptimizationLevel | None = None,
+    tiling_l2_cache_limit: int | None = None,
     *,
     gpu_fallback: bool = False,
     direct_io: bool = False,
@@ -97,8 +102,11 @@ def build_engine(
         By default, trt.DeviceType.GPU.
         Options are trt.DeviceType.GPU, trt.DeviceType.DLA, or a string
         of "gpu" or "dla".
-    timing_cache : Path, str, optional
+    timing_cache : Path, str, bool, optional
         Where to store the timing cache data.
+        Can be a Path or str to a specific file, "global" or True to use
+        the global timing cache stored in the trtutils cache directory,
+        or None to not use a timing cache.
         Default is None.
     workspace : float
         The size of the workspace in gigabytes.
@@ -134,6 +142,21 @@ def build_engine(
         An optional list of 'hook' functions to modify the TensorRT network before
         the remainder of the build phase occurs.
         By default, None
+    optimization_level : int, optional
+        Optimization level to apply to the TensorRT builder config (0-5).
+        By default, 3.
+    profiling_verbosity : trt.ProfilingVerbosity | None, optional
+        Level of detail for profiling information in the built engine.
+        Options are: trt.ProfilingVerbosity.NONE, trt.ProfilingVerbosity.LAYER_NAMES_ONLY,
+        trt.ProfilingVerbosity.DETAILED
+        DETAILED is recommended for best layer names when using profile_engine.
+        By default, None (uses TensorRT's default).
+    tiling_optimization_level : int, optional
+        Tiling optimization level to enable cross-kernel tiled inference.
+        By default, 0 (no tiling optimization).
+    tiling_l2_cache_limit : int, None, optional
+        L2 cache limit (in bytes) for tiling optimization.
+        By default, None (TensorRT manages the default value).
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
         when building the engine for DLA.
@@ -184,29 +207,45 @@ def build_engine(
 
     # first thing is to check cache
     if cache:
-        exists, location = caching_tools.query_cache(output_path.stem)
+        exists, location = caching_tools.query(output_path.stem)
         if exists:
             shutil.copy(location, output_path)
             return
+
+    # validate and handle timing_cache parameter
+    use_global_timing_cache = False
+    if timing_cache is True or timing_cache == "global":
+        use_global_timing_cache = True
+        timing_cache_path = None
+    elif timing_cache is None:
+        timing_cache_path = None
+    elif isinstance(timing_cache, (Path, str)):
+        timing_cache_path = Path(timing_cache).resolve()
+    else:
+        err_msg = (
+            f"Invalid timing_cache value: {timing_cache}. "
+            "Must be None, Path, str, True, or 'global'."
+        )
+        raise ValueError(err_msg)
 
     # match the device
     valid_gpu = ["gpu", "GPU"]
     valid_dla = ["dla", "DLA"]
     if isinstance(default_device, str):
         if default_device not in valid_gpu + valid_dla:
-            err_msg = f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            err_msg = (
+                f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            )
             raise ValueError(err_msg)
-        default_device = (
-            trt.DeviceType.GPU if default_device in valid_gpu else trt.DeviceType.DLA
-        )
+        default_device = trt.DeviceType.GPU if default_device in valid_gpu else trt.DeviceType.DLA
     else:
         if default_device not in [trt.DeviceType.GPU, trt.DeviceType.DLA]:
-            err_msg = f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            err_msg = (
+                f"Invalid default device: {default_device}. Must be one of: {valid_gpu + valid_dla}"
+            )
             raise ValueError(err_msg)
         default_device = (
-            trt.DeviceType.GPU
-            if default_device == trt.DeviceType.GPU
-            else trt.DeviceType.DLA
+            trt.DeviceType.GPU if default_device == trt.DeviceType.GPU else trt.DeviceType.DLA
         )
 
     # read the onnx model
@@ -238,18 +277,29 @@ def build_engine(
 
     config.add_optimization_profile(profile)
 
+    if not (_MIN_OPTIM_LEVEL <= optimization_level <= _MAX_OPTIM_LEVEL):
+        err_msg = "Builder optimization level must be between 0 and 5."
+        raise ValueError(err_msg)
+    config.builder_optimization_level = int(optimization_level)
+
+    # handle profiling verbosity
+    if profiling_verbosity is not None:
+        config.profiling_verbosity = profiling_verbosity
+
+    # handle tiling optimization
+    if tiling_optimization_level is not None:
+        config.tiling_optimization_level = tiling_optimization_level
+    if tiling_l2_cache_limit is not None:
+        config.l2_limit_for_tiling = tiling_l2_cache_limit
+
     # handle some flags
     if prefer_precision_constraints:
         config.set_flag(trt.BuilderFlag.PREFER_PRECISION_CONSTRAINTS)
     if reject_empty_algorithms:
         config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
     # handle custom datatype/format for input/output tensors
-    if (
-        input_tensor_formats is not None or output_tensor_formats is not None
-    ) and not direct_io:
-        LOG.warning(
-            "Direct IO not enabled, but some tensor formats specified. Enabling direct IO."
-        )
+    if (input_tensor_formats is not None or output_tensor_formats is not None) and not direct_io:
+        LOG.warning("Direct IO not enabled, but some tensor formats specified. Enabling direct IO.")
         direct_io = True
     if direct_io:
         config.set_flag(trt.BuilderFlag.DIRECT_IO)
@@ -306,10 +356,11 @@ def build_engine(
 
     # handle individual layer precision
     if layer_precision is not None:
-        # validate length
-        if len(layer_precision) != network.num_layers:
-            err_msg = "Layer precision list must be the same length as the number of layers in the network."
-            raise ValueError(err_msg)
+        # remove the validation since we bundle the layer idx with the precision
+        # # validate length
+        # if len(layer_precision) != network.num_layers:
+        #     err_msg = "Layer precision list must be the same length as the number of layers in the network."
+        #     raise ValueError(err_msg)
         # handle precision assignment
         for layer_idx, precision in layer_precision:
             if precision is None:
@@ -319,10 +370,13 @@ def build_engine(
 
     # handle individual layer device
     if layer_device is not None:
-        # validate length
-        if len(layer_device) != network.num_layers:
-            err_msg = "Layer device list must be the same length as the number of layers in the network."
-            raise ValueError(err_msg)
+        # remove the validation since we bundle the layer idx with the device
+        # # validate length
+        # if len(layer_device) != network.num_layers:
+        #     err_msg = (
+        #         "Layer device list must be the same length as the number of layers in the network."
+        #     )
+        #     raise ValueError(err_msg)
         # handle device assignment
         for layer_idx, device in layer_device:
             if device is None:
@@ -340,10 +394,18 @@ def build_engine(
                 config.set_device_type(layer, device)
 
     # load/setup the timing cache
-    timing_cache_path: Path | None = (
-        Path(timing_cache).resolve() if timing_cache else None
-    )
-    if timing_cache_path:
+    t_cache: trt.ITimingCache | None = None
+    if use_global_timing_cache:
+        # use global timing cache from cache directory
+        exists, global_cache_path = query_timing_cache()
+        buffer = b""
+        if exists:
+            with global_cache_path.open("rb") as timing_cache_file:
+                buffer = timing_cache_file.read()
+        t_cache = config.create_timing_cache(buffer)
+        config.set_timing_cache(t_cache, ignore_mismatch=ignore_timing_mismatch)
+    elif timing_cache_path:
+        # use specified timing cache path
         buffer = b""
         if timing_cache_path.exists():
             with timing_cache_path.open("rb") as timing_cache_file:
@@ -358,7 +420,12 @@ def build_engine(
         engine_bytes = builder.build_engine(network, config)
 
     # save the timing cache
-    if timing_cache_path:
+    if use_global_timing_cache:
+        # save to global timing cache in cache directory
+        post_t_cache = config.get_timing_cache()
+        save_timing_cache_to_global(post_t_cache, overwrite=True)
+    elif timing_cache_path:
+        # save to specified timing cache path
         post_t_cache = config.get_timing_cache()
         with timing_cache_path.open("wb") as f:
             f.write(memoryview(post_t_cache.serialize()))
@@ -371,4 +438,4 @@ def build_engine(
         f.write(engine_bytes)
 
     if cache:
-        caching_tools.store_in_cache(output_path, overwrite=False, clear_old=False)
+        caching_tools.store(output_path, overwrite=False, clear_old=False)

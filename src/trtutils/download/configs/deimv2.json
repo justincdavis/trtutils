@@ -1,0 +1,50 @@
+{
+    "deimv2_atto": {
+        "id": "18sRJXX3FBUigmGJ1y5Oo_DPC5C3JCgYc",
+        "config": "deimv2_hgnetv2_atto_coco.yml",
+        "name": "deimv2_hgnetv2_atto_coco",
+        "extension": "pth"
+    },
+    "deimv2_femto": {
+        "id": "16hh6l9Oln9TJng4V0_HNf_Z7uYb7feds",
+        "config": "deimv2_hgnetv2_femto_coco.yml",
+        "name": "deimv2_hgnetv2_femto_coco",
+        "extension": "pth"
+    },
+    "deimv2_pico": {
+        "id": "1PXpUxYSnQO-zJHtzrCPqQZ3KKatZwzFT",
+        "config": "deimv2_hgnetv2_pico_coco.yml",
+        "name": "deimv2_hgnetv2_pico_coco",
+        "extension": "pth"
+    },
+    "deimv2_n": {
+        "id": "1G_Q80EVO4T7LZVPfHwZ3sT65FX5egp9K",
+        "config": "deimv2_hgnetv2_n_coco.yml",
+        "name": "deimv2_hgnetv2_n_coco",
+        "extension": "pth"
+    },
+    "deimv2_s": {
+        "id": "1MDOh8UXD39DNSew6rDzGFp1tAVpSGJdL",
+        "config": "deimv2_dinov3_s_coco.yml",
+        "name": "deimv2_dinov3_s_coco",
+        "extension": "pth"
+    },
+    "deimv2_m": {
+        "id": "1nPKDHrotusQ748O1cQXJfi5wdShq6bKp",
+        "config": "deimv2_dinov3_m_coco.yml",
+        "name": "deimv2_dinov3_m_coco",
+        "extension": "pth"
+    },
+    "deimv2_l": {
+        "id": "1dRJfVHr9HtpdvaHlnQP460yPVHynMray",
+        "config": "deimv2_dinov3_l_coco.yml",
+        "name": "deimv2_dinov3_l_coco",
+        "extension": "pth"
+    },
+    "deimv2_x": {
+        "id": "1pTiQaBGt8hwtO0mbYlJ8nE-HGztGafS7",
+        "config": "deimv2_dinov3_x_coco.yml",
+        "name": "deimv2_dinov3_x_coco",
+        "extension": "pth"
+    }
+}

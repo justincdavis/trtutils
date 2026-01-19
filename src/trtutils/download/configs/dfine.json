@@ -1,0 +1,27 @@
+{
+  "dfine_n": {
+    "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_n_coco.pth",
+    "config": "dfine_hgnetv2_n_coco.yml",
+    "name": "dfine_n_coco"
+  },
+  "dfine_s": {
+    "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_s_obj2coco.pth",
+    "config": "dfine_hgnetv2_s_obj2coco.yml",
+    "name": "dfine_s_obj2coco"
+  },
+  "dfine_m": {
+    "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_m_obj2coco.pth",
+    "config": "dfine_hgnetv2_m_obj2coco.yml",
+    "name": "dfine_m_obj2coco"
+  },
+  "dfine_l": {
+    "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_l_obj2coco_e25.pth",
+    "config": "dfine_hgnetv2_l_obj2coco.yml",
+    "name": "dfine_l_obj2coco"
+  },
+  "dfine_x": {
+    "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_x_obj2coco.pth",
+    "config": "dfine_hgnetv2_x_obj2coco.yml",
+    "name": "dfine_x_obj2coco"
+  }
+}

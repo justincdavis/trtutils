@@ -30,6 +30,9 @@ Optional but recommended:
    YOLOv8 Tutorial <yolov8>
    YOLOv9 Tutorial <yolov9>
    YOLOv10 Tutorial <yolov10>
+   YOLOv11 Tutorial <yolov11>
+   YOLOv12 Tutorial <yolov12>
+   YOLOv13 Tutorial <yolov13>
    YOLOX Tutorial <yolox>
 
 Overview

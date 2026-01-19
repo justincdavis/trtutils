@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: E402
 # mypy: disable-error-code="import-untyped"
 """
 A package for enabling high-level usage of TensorRT in Python.
@@ -13,12 +14,18 @@ Submodules
 ----------
 :mod:`builder`
     A module for building TensorRT engines.
+:mod:`compat`
+    A module for compatibility with other libraries.
 :mod:`core`
     A module for the core functionality of the package.
+:mod:`download`
+    A module for downloading and converting models to ONNX.
 :mod:`jetson`
     A module implementating additional functionality for Jetson devices.
-:mod:`impls`
-    A module containing implementations for different neural networks.
+:mod:`image`
+    A module for image processing with TensorRT.
+:mod:`models`
+    A module containing implementations of DNN models.
 :mod:`inspect`
     A module for inspecting TensorRT engines.
 :mod:`trtexec`
@@ -32,16 +39,6 @@ Classes
     A dataclass storing specific metric information from benchmarking.
 :class:`TRTEngine`
     A class for creating TensorRT engines from serialized engine files.
-:class:`TRTModel`
-    A class for running inference on TensorRT engines.
-:class:`ParallelTRTEngines`
-    A class for running many TRTEngines in parallel.
-:class:`ParallelTRTModels`
-    A class for running many TRTModels in parallel.
-:class:`QueuedTRTEngine`
-    A class for running a TRTEngine in a seperate thread asynchronously.
-:class:`QueuedTRTModel`
-    A class for running a TRTModel in a seperate thread asynchronously.
 
 Functions
 ---------
@@ -68,6 +65,8 @@ Functions
 
 Objects
 -------
+:obj:`CONFIG`
+    The config storage object for trtutils.
 :obj:`FLAGS`
     The flag storage object for trtutils.
 :obj:`LOG`
@@ -79,20 +78,48 @@ Objects
 
 from __future__ import annotations
 
+# before handling anything check if tensorrt and cuda-python are available
+not_found_modules = []
+try:
+    import tensorrt  # noqa: F401
+except ModuleNotFoundError:
+    not_found_modules.append("tensorrt")
+
+try:
+    import cuda  # noqa: F401
+except ModuleNotFoundError:
+    not_found_modules.append("cuda-python")
+
+try:
+    from nvidia import nvimgcodec  # noqa: F401
+except ModuleNotFoundError:
+    not_found_modules.append("nvimgcodec")
+
+if len(not_found_modules) > 0:
+    err_msg = "Could not find the following core modules: "
+    err_msg += ", ".join(not_found_modules)
+    err_msg += ", ensure you installed trtutils with CUDA."
+    err_msg += " Available CUDA variants: cu11, cu12, cu13\n"
+    err_msg += " Example: pip install trtutils[cu11]\n"
+    err_msg += " Example: pip install trtutils[cu12]\n"
+    err_msg += " Example: pip install trtutils[cu13]\n"
+    raise ImportError(err_msg)
+
+
 from ._config import CONFIG
 from ._flags import FLAGS
 from ._jit import JIT, disable_jit, enable_jit, register_jit
 from ._log import LOG, set_log_level
 
 __author__ = "Justin Davis"
-__version__ = "0.6.1"
+__version__ = "0.7.0"
 
 import contextlib
 
-from . import builder, core, impls, inspect, trtexec
+from . import builder, compat, core, download, image, inspect, models, parallel, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
-from ._engine import ParallelTRTEngines, QueuedTRTEngine, TRTEngine
-from ._model import ParallelTRTModels, QueuedTRTModel, TRTModel
+from ._profile import profile_engine
+from ._engine import TRTEngine
 from .builder import build_engine
 from .inspect import inspect_engine
 from .trtexec import find_trtexec, run_trtexec
@@ -104,23 +131,23 @@ __all__ = [
     "LOG",
     "BenchmarkResult",
     "Metric",
-    "ParallelTRTEngines",
-    "ParallelTRTModels",
-    "QueuedTRTEngine",
-    "QueuedTRTModel",
     "TRTEngine",
-    "TRTModel",
     "benchmark_engine",
     "benchmark_engines",
     "build_engine",
     "builder",
+    "compat",
     "core",
     "disable_jit",
+    "download",
     "enable_jit",
     "find_trtexec",
-    "impls",
+    "image",
     "inspect",
     "inspect_engine",
+    "models",
+    "profile_engine",
+    "parallel",
     "register_jit",
     "run_trtexec",
     "set_log_level",

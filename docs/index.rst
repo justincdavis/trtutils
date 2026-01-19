@@ -41,6 +41,7 @@ Documentation
    :caption: Contents:
 
    Installation <installation>
+   Supported Models <models>
    Tutorials <tutorials/overview>
    Usage Guide <usage/index>
    API Reference <api>

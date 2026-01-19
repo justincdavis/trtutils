@@ -1,0 +1,30 @@
+{
+  "yolov7t": {
+    "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-tiny.pt",
+    "name": "yolov7-tiny"
+  },
+  "yolov7m": {
+    "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7.pt",
+    "name": "yolov7"
+  },
+  "yolov7x": {
+    "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7x.pt",
+    "name": "yolov7x"
+  },
+  "yolov7w6": {
+    "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-w6.pt",
+    "name": "yolov7-w6"
+  },
+  "yolov7e6": {
+    "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-e6.pt",
+    "name": "yolov7-e6"
+  },
+  "yolov7d6": {
+    "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-d6.pt",
+    "name": "yolov7-d6"
+  },
+  "yolov7e6e": {
+    "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-e6e.pt",
+    "name": "yolov7-e6e"
+  }
+}

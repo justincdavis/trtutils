@@ -121,8 +121,20 @@ def build_dla_engine(
     dla_core: int,
     max_chunks: int = 1,
     min_layers: int = 20,
+    workspace: float = 4.0,
+    calibration_cache: Path | str | None = None,
     timing_cache: Path | str | None = None,
+    shapes: list[tuple[str, tuple[int, ...]]] | None = None,
+    input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
+    output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
+    hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
+    optimization_level: int = 3,
     *,
+    direct_io: bool = False,
+    prefer_precision_constraints: bool = False,
+    reject_empty_algorithms: bool = False,
+    ignore_timing_mismatch: bool = False,
+    cache: bool | None = None,
     verbose: bool | None = None,
 ) -> None:
     """
@@ -152,8 +164,55 @@ def build_dla_engine(
         The minimum number of layers in a chunk to be assigned to DLA.
         By default 20, which will assign chunks with at least 20 layers.
         Can set to 0 to assign all chunks.
+    workspace : float
+        The size of the workspace in gigabytes.
+        Default is 4.0 GiB.
+    calibration_cache : Path, str, optional
+        The path to the calibration cache.
     timing_cache : Path, str, optional
-        The path to the timing cache file
+        Where to store the timing cache data.
+        Default is None.
+    shapes : list[tuple[str, tuple[int, ...]]], optional
+        A list of (input_name, shape) pairs to specify the shapes of the input layers.
+        For example, shapes=[("images", (1, 3, imgsz, imgsz))] will set the input
+        "images" to a fixed shape. This shape will be used as the min, optimal,
+        and max shape for the binding.
+        By default, None.
+    input_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
+        A list of (name, dtype format) to allow deep specification of input layers.
+        For example, input_tensor_formats=[("input", trt.DataType.UINT8, trt.TensorFormat.HWC)]
+        By default, None
+    output_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
+        A list of (name, dtype format) to allow deep specification of output layers.
+        For example, output_tensor_formats=[("output", trt.DataType.HALF, trt.TensorFormat.LINEAR)]
+        By default, None
+    hooks : list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]], optional
+        An optional list of 'hook' functions to modify the TensorRT network before
+        the remainder of the build phase occurs.
+        By default, None
+    optimization_level : int, optional
+        Optimization level to apply to the TensorRT builder config (0-5).
+        By default, 3.
+    direct_io : bool
+        Use direct IO for the engine.
+        By default, False
+    prefer_precision_constraints : bool
+        Whether or not to prefer precision constraints.
+        By default, False
+    reject_empty_algorithms : bool
+        Whether or not to reject empty algorithms.
+        By default, False
+    ignore_timing_mismatch : bool
+        Whether or not to allow different CUDA device generated timing
+        caches to be used in the building of engines.
+        By default, False
+    cache : bool, optional
+        Whether or not to cache the engine in the trtutils engine cache.
+        If an existing version is found will use that.
+        Uses the name of the output file to assess if the engine has been compiled before.
+        As such, naming the output 'engine', 'model' or similiar will result in
+        unintended caching behavior.
+        By default None, will not cache the engine.
     verbose : bool, optional
         Whether to print verbose output, by default False
 
@@ -180,7 +239,19 @@ def build_dla_engine(
             output_path,
             default_device=trt.DeviceType.DLA,
             data_batcher=data_batcher,
+            workspace=workspace,
+            timing_cache=timing_cache,
+            calibration_cache=calibration_cache,
             dla_core=dla_core,
+            shapes=shapes,
+            input_tensor_formats=input_tensor_formats,
+            output_tensor_formats=output_tensor_formats,
+            hooks=hooks,
+            direct_io=direct_io,
+            prefer_precision_constraints=prefer_precision_constraints,
+            reject_empty_algorithms=reject_empty_algorithms,
+            ignore_timing_mismatch=ignore_timing_mismatch,
+            cache=cache,
             fp16=True,
             int8=True,
             verbose=verbose,
@@ -196,7 +267,21 @@ def build_dla_engine(
         build_engine(
             onnx,
             output_path,
+            workspace=workspace,
+            timing_cache=timing_cache,
+            calibration_cache=calibration_cache,
+            data_batcher=data_batcher,
+            shapes=shapes,
+            input_tensor_formats=input_tensor_formats,
+            output_tensor_formats=output_tensor_formats,
+            hooks=hooks,
+            direct_io=direct_io,
+            prefer_precision_constraints=prefer_precision_constraints,
+            reject_empty_algorithms=reject_empty_algorithms,
+            ignore_timing_mismatch=ignore_timing_mismatch,
             fp16=True,
+            int8=True,
+            cache=cache,
             verbose=verbose,
         )
         return
@@ -256,14 +341,26 @@ def build_dla_engine(
     build_engine(
         onnx,
         output_path,
-        default_device=trt.DeviceType.GPU,  # default device GPU
+        default_device=trt.DeviceType.DLA,  # default device DLA
         timing_cache=timing_cache,
+        workspace=workspace,
+        calibration_cache=calibration_cache,
         data_batcher=data_batcher,
         layer_precision=layer_precision,
         layer_device=layer_device,
         dla_core=dla_core,  # ensure DLA core is maintained
+        shapes=shapes,
+        input_tensor_formats=input_tensor_formats,
+        output_tensor_formats=output_tensor_formats,
+        hooks=hooks,
+        optimization_level=optimization_level,
         gpu_fallback=True,  # enable GPU fallback to account for input/copy
+        direct_io=direct_io,
+        prefer_precision_constraints=prefer_precision_constraints,
+        reject_empty_algorithms=reject_empty_algorithms,
+        ignore_timing_mismatch=ignore_timing_mismatch,
         fp16=True,
         int8=True,
+        cache=cache,
         verbose=verbose,
     )

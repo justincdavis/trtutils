@@ -58,7 +58,7 @@ def _setup_logger(level: str | None = None) -> None:
     else:
         logger.handlers[0].setLevel(log_level)
 
-    logger.propagate = True
+    logger.propagate = False
 
 
 def set_log_level(level: str) -> None:

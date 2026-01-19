@@ -5,6 +5,10 @@
 from __future__ import annotations
 
 import contextlib
+import os
+import shutil
+from functools import lru_cache
+from pathlib import Path
 from typing import TypeVar
 
 import numpy as np
@@ -20,6 +24,65 @@ from trtutils._log import LOG
 
 from ._cuda import cuda_call
 from ._lock import MEM_ALLOC_LOCK, NVRTC_LOCK
+
+
+@lru_cache(maxsize=1)
+def find_cuda_include_dir() -> Path | None:
+    """
+    Find the CUDA include directory for NVRTC compilation.
+
+    Searches in the following order:
+    1. CUDA_HOME environment variable
+    2. CUDA_PATH environment variable
+    3. Path derived from nvcc location
+    4. Common default paths (/usr/local/cuda, etc.)
+
+    Returns
+    -------
+    Path | None
+        The path to the CUDA include directory, or None if not found.
+
+    """
+    for env_var in ("CUDA_HOME", "CUDA_PATH"):
+        cuda_path = os.environ.get(env_var)
+        if cuda_path:
+            include_path = Path(cuda_path) / "include"
+            if include_path.exists():
+                LOG.debug(f"Found CUDA include path from {env_var}: {include_path}")
+                return include_path
+
+    nvcc_path = shutil.which("nvcc")
+    if nvcc_path:
+        cuda_root = Path(nvcc_path).parent.parent
+        include_path = cuda_root / "include"
+        if include_path.exists():
+            LOG.debug(f"Found CUDA include path from nvcc: {include_path}")
+            return include_path
+
+    common_paths = [
+        Path("/usr/local/cuda/include"),
+        Path("/usr/local/cuda-13/include"),
+        Path("/usr/local/cuda-12/include"),
+        Path("/usr/local/cuda-11/include"),
+        Path("/opt/cuda/include"),
+    ]
+    for include_path in common_paths:
+        if include_path.exists():
+            LOG.debug(f"Found CUDA include path at default location: {include_path}")
+            return include_path
+
+    LOG.warning("Could not find CUDA include path for NVRTC compilation")
+    return None
+
+
+def _get_default_nvrtc_opts() -> list[bytes]:
+    opts: list[bytes] = []
+
+    include_path = find_cuda_include_dir()
+    if include_path:
+        opts.append(f"-I{include_path}".encode())
+
+    return opts
 
 
 def check_nvrtc_err(err: nvrtc.nvrtcResult) -> None:
@@ -118,12 +181,23 @@ def compile_kernel(
     except RuntimeError as err:
         if "Failed to dlopen libnvrtc" in str(err):
             err_msg = str(err)
-            err_msg += " Ensure the version of cuda-python installed matches the version of CUDA installed."
+            err_msg += (
+                " Ensure the version of cuda-python installed matches the version of CUDA installed."
+            )
             raise RuntimeError(err_msg) from err
         raise
-    opts = [] if opts is None else opts
+
+    opts_with_cuda_include_dir = _get_default_nvrtc_opts()
+    if opts is not None:
+        for opt in opts:
+            opts_with_cuda_include_dir.append(opt.encode())
+
     with MEM_ALLOC_LOCK, NVRTC_LOCK:
-        nvrtc_call(nvrtc.nvrtcCompileProgram(prog, len(opts), opts))
+        nvrtc_call(
+            nvrtc.nvrtcCompileProgram(
+                prog, len(opts_with_cuda_include_dir), opts_with_cuda_include_dir
+            )
+        )
 
     # generate the actual kernel ptx
     ptx_size = nvrtc_call(nvrtc.nvrtcGetPTXSize(prog))

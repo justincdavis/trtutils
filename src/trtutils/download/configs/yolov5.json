@@ -1,0 +1,42 @@
+{
+    "yolov5nu": {
+        "url": "ultralytics",
+        "name": "yolov5nu"
+    },
+    "yolov5su": {
+        "url": "ultralytics",
+        "name": "yolov5su"
+    },
+    "yolov5mu": {
+        "url": "ultralytics",
+        "name": "yolov5mu"
+    },
+    "yolov5lu": {
+        "url": "ultralytics",
+        "name": "yolov5lu"
+    },
+    "yolov5xu": {
+        "url": "ultralytics",
+        "name": "yolov5xu"
+    },
+    "yolov5n6u": {
+        "url": "ultralytics",
+        "name": "yolov5n6u"
+    },
+    "yolov5s6u": {
+        "url": "ultralytics",
+        "name": "yolov5s6u"
+    },
+    "yolov5m6u": {
+        "url": "ultralytics",
+        "name": "yolov5m6u"
+    },
+    "yolov5l6u": {
+        "url": "ultralytics",
+        "name": "yolov5l6u"
+    },
+    "yolov5x6u": {
+        "url": "ultralytics",
+        "name": "yolov5x6u"
+    }
+}

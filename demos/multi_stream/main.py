@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 
 import cv2
 import cv2ext
-
 from trtutils.impls.yolo import YOLO
 
 if TYPE_CHECKING:
@@ -130,8 +129,7 @@ def _main() -> None:
         for i, video in enumerate(videos)
     ]
     yolo_threads = [
-        threading.Thread(target=_process_frames, args=(yolo, in_queue, out_queue))
-        for yolo in yolos
+        threading.Thread(target=_process_frames, args=(yolo, in_queue, out_queue)) for yolo in yolos
     ]
 
     window_names = [f"Stream {i}" for i in range(len(videos))] if args.display else None
@@ -146,9 +144,7 @@ def _main() -> None:
             stream_id, frame_id, frame, dets = out_queue.get(timeout=0.25)
             # print(f"Frame {frame_id} from stream {stream_id} fetched")
             canvas = cv2ext.detection.draw_detections(frame, dets)
-            canvas = cv2ext.image.draw.text(
-                canvas, str(frame_id), (10, 30), color=(0, 255, 0)
-            )
+            canvas = cv2ext.image.draw.text(canvas, str(frame_id), (10, 30), color=(0, 255, 0))
             cv2.imshow(window_names[stream_id], canvas)
             if counter % 10 == 0:
                 cv2.waitKey(1)

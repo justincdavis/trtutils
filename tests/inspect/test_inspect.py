@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import trtutils
 from tests.common import build_engine
-from tests.impls.yolo.common import build_yolo
+from tests.models.common import build_detector
 
 
 def test_inspect_simple() -> None:
@@ -19,13 +19,13 @@ def test_inspect_simple() -> None:
     assert batch_size == 1
     assert len(inputs) > 0
     for itensor in inputs:
-        assert itensor[1] == (160, 160)
+        assert itensor[1] == (1, 3, 160, 160)
     assert len(outputs) > 0
 
 
 def inspect_yolo(version: int) -> None:
     """Test the inspect engine function on YOLO."""
-    engine_path = build_yolo(version)
+    engine_path = build_detector(version)
 
     size, batch_size, inputs, outputs = trtutils.inspect_engine(engine_path)
 

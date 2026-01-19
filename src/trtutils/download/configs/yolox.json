@@ -1,0 +1,37 @@
+{
+    "yoloxn": {
+        "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.pth",
+        "name": "yolox_nano",
+        "version": "yolox-n"
+    },
+    "yoloxt": {
+        "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_tiny.pth",
+        "name": "yolox_tiny",
+        "version": "yolox-t"
+    },
+    "yoloxs": {
+        "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.pth",
+        "name": "yolox_s",
+        "version": "yolox-s"
+    },
+    "yoloxm": {
+        "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_m.pth",
+        "name": "yolox_m",
+        "version": "yolox-m"
+    },
+    "yoloxl": {
+        "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_l.pth",
+        "name": "yolox_l",
+        "version": "yolox-l"
+    },
+    "yoloxx": {
+        "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_x.pth",
+        "name": "yolox_x",
+        "version": "yolox-x"
+    },
+    "yolox_darknet": {
+        "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_darknet.pth",
+        "name": "yolox_darknet",
+        "version": "yolox-darknet"
+    }
+}
