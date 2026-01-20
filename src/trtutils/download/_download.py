@@ -17,6 +17,8 @@ from pathlib import Path
 from trtutils._log import LOG
 
 _MIN_UV_VERSION = (0, 9, 0)
+_MIN_UV_VERSION_PARTS = 2
+_EXPECTED_UV_PARTS = 3
 _640 = 640
 
 
@@ -27,7 +29,7 @@ def _kill_process_group(pid: int | None, cmd: list[str]) -> None:
         os.killpg(pid, signal.SIGKILL)
     except ProcessLookupError:
         return
-    except Exception as e:
+    except OSError as e:
         LOG.warning(f"Failed to kill process group for {cmd}: {e}")
 
 
@@ -38,8 +40,8 @@ def _run_cmd(
     env: dict[str, str] | None = None,
     verbose: bool | None = None,
     timeout: float | None = None,
-    stdout=None,
-    stderr=None,
+    stdout: object | None = None,
+    stderr: object | None = None,
     check: bool = True,
 ) -> int:
     final_stdout = stdout if stdout is not None else (None if verbose else subprocess.DEVNULL)
@@ -54,10 +56,10 @@ def _run_cmd(
     )
     try:
         proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired as e:
+    except subprocess.TimeoutExpired:
         LOG.error(f"Command timed out, killing process group: {' '.join(cmd)}")
         _kill_process_group(proc.pid, cmd)
-        raise e
+        raise
     if check and proc.returncode:
         LOG.error(f"Command failed with code {proc.returncode}: {' '.join(cmd)}")
         _kill_process_group(proc.pid, cmd)
@@ -91,12 +93,12 @@ def _check_uv_version() -> None:
 
         version_output = result.stdout.strip()
         parts = version_output.split()
-        if len(parts) < 2:
+        if len(parts) < _MIN_UV_VERSION_PARTS:
             _failed_to_parse_uv_version()
 
         uv_version_str = parts[1]
         version_parts = [int(x) for x in uv_version_str.split(".")]
-        if len(version_parts) != 3:
+        if len(version_parts) != _EXPECTED_UV_PARTS:
             _failed_to_parse_uv_version()
 
         if tuple(version_parts) < _MIN_UV_VERSION:
@@ -1086,7 +1088,8 @@ def _export_rfdetr(
         err_msg = f"RF-DETR does not support model {model}"
         raise ValueError(err_msg)
     if imgsz is not None and imgsz != required_imgsz:
-        raise ValueError(f"{model} requires an imgsz of {required_imgsz}, got {imgsz}")
+        err_msg = f"{model} requires an imgsz of {required_imgsz}, got {imgsz}"
+        raise ValueError(err_msg)
     if imgsz is None:
         imgsz = required_imgsz
     if imgsz % 32 != 0:
@@ -1174,7 +1177,8 @@ def _export_deimv2(
         err_msg = f"DEIMv2 does not support model {model}"
         raise ValueError(err_msg)
     if imgsz is not None and imgsz != required_imgsz:
-        raise ValueError(f"{model} requires an imgsz of {required_imgsz}, got {imgsz}")
+        err_msg = f"{model} requires an imgsz of {required_imgsz}, got {imgsz}"
+        raise ValueError(err_msg)
     if imgsz is None:
         imgsz = required_imgsz
     _git_clone(
@@ -1222,7 +1226,7 @@ def _export_yolox(
     bin_path: Path,
     model: str,
     opset: int,
-    imgsz: int | None = None,  # noqa: ARG001
+    imgsz: int | None = None,
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,

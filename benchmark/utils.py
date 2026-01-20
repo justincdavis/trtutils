@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class UltralyticsTRTModel(DetectionModel):
+class UltralyticsTRTDetector(DetectionModel):
     def check_dependencies(self: Self) -> None:
         pass
 

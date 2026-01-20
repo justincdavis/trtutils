@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import trtutils
 from tests.common import build_engine
-from tests.models.common import build_detector
+from tests.models.common import build_yolo
 
 
 def test_inspect_simple() -> None:
@@ -25,7 +25,7 @@ def test_inspect_simple() -> None:
 
 def inspect_yolo(version: int) -> None:
     """Test the inspect engine function on YOLO."""
-    engine_path = build_detector(version)
+    engine_path = build_yolo(version)
 
     size, batch_size, inputs, outputs = trtutils.inspect_engine(engine_path)
 

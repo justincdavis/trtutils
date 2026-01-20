@@ -19,7 +19,6 @@ from trtutils.builder._build import build_engine
 
 from ._profiler import ProfilerResult, profile_engine
 
-
 P = ParamSpec("P")
 
 BuildFunc = Callable[Concatenate[Path | str, Path | str, P], None]
@@ -85,10 +84,8 @@ def identify_quantize_speedups_by_layer(
 
     Raises
     ------
-    RuntimeError
-        If the ONNX model cannot be parsed or engines fail to build
     ValueError
-        If engine building or profiling logic encounters invalid configuration
+        If layer names mismatch and mismatches are not ignored.
 
     """
     if build_func is None:
@@ -167,9 +164,8 @@ def identify_quantize_speedups_by_layer(
             if fp16_layer_name not in int8_layer_map:
                 if ignore_mismatch_layers:
                     continue
-                else:
-                    err_msg = f"Layer {fp16_layer_name} found in FP16 but not in INT8 results"
-                    raise ValueError(err_msg)
+                err_msg = f"Layer {fp16_layer_name} found in FP16 but not in INT8 results"
+                raise ValueError(err_msg)
 
             int8_layer = int8_layer_map[fp16_layer_name]
             fp16_time = fp16_layer.mean
@@ -177,10 +173,7 @@ def identify_quantize_speedups_by_layer(
 
             # Compute speedup percentage: (fp16_time - int8_time) / fp16_time * 100
             # Positive = INT8 is faster, negative = INT8 is slower
-            if fp16_time > 0:
-                speedup_percent = ((fp16_time - int8_time) / fp16_time) * 100.0
-            else:
-                speedup_percent = 0.0
+            speedup_percent = ((fp16_time - int8_time) / fp16_time) * 100.0 if fp16_time > 0 else 0.0
 
             layer_deltas.append((fp16_layer_name, speedup_percent))
 

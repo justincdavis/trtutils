@@ -4,14 +4,14 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
+from pathlib import Path  # noqa: TC003
 from threading import Thread
 
 import cv2
 from typing_extensions import TypedDict
 
 import trtutils.models as models
-from trtutils.image._detector import Detector
+from trtutils.image._detector import Detector  # noqa: TC001
 
 from .paths import (
     DETR_ENGINE_PATHS,
@@ -127,7 +127,15 @@ DETECTOR_CONFIG: dict[str, DetectorConfig] = {
 
 
 def _get_model_name_from_path(path: Path) -> str:
-    """Extract model name from path filename (without extension)."""
+    """
+    Extract model name from path filename (without extension).
+
+    Returns
+    -------
+    str
+        The filename stem.
+
+    """
     return path.stem
 
 
@@ -162,7 +170,7 @@ def build_detector(model_id: str, *, use_dla: bool | None = None) -> Path:
     # Download ONNX if it doesn't exist - class handles all parameters
     if not onnx_path.exists():
         onnx_path.parent.mkdir(parents=True, exist_ok=True)
-        model_class.download(
+        model_class.download(  # type: ignore[attr-defined]
             model=download_model_name,
             output=onnx_path,
             accept=True,
@@ -172,7 +180,7 @@ def build_detector(model_id: str, *, use_dla: bool | None = None) -> Path:
     # Build engine - class handles all parameters (imgsz, shapes, etc.)
     engine_path.parent.mkdir(parents=True, exist_ok=True)
     # Use model class's build method - it handles all parameters including dla_core
-    model_class.build(
+    model_class.build(  # type: ignore[attr-defined]
         onnx=onnx_path,
         output=engine_path,
         dla_core=0 if use_dla else None,
@@ -366,8 +374,8 @@ def detector_results(
             err_msg = f"Failed to read image: {ipath}"
             raise FileNotFoundError(err_msg)
 
-        outputs = detector.run(image)
-        bboxes = [bbox for (bbox, _, _) in detector.get_detections(outputs)]
+        outputs = detector.run([image])
+        bboxes = [bbox for (bbox, _, _) in detector.get_detections(outputs)]  # type: ignore[arg-type]
 
         # check within +-2 bounding boxes from ground truth
         assert max(1, gt - 1) <= len(bboxes) <= gt + 1
@@ -409,7 +417,7 @@ def detector_swapping_preproc_results(model_id: str, *, use_dla: bool | None = N
             raise FileNotFoundError(err_msg)
 
         for preproc in ["cpu", "cuda", "trt"]:
-            tensor, ratios, padding = detector.preprocess(image, method=preproc, no_copy=True)
+            tensor, ratios, padding = detector.preprocess([image], method=preproc, no_copy=True)
             outputs = detector.run(
                 tensor,
                 ratios,
@@ -418,7 +426,10 @@ def detector_swapping_preproc_results(model_id: str, *, use_dla: bool | None = N
                 postprocess=True,
                 no_copy=True,
             )
-            bboxes = [bbox for (bbox, _, _) in detector.get_detections(outputs)]
+            bboxes = [
+                bbox
+                for (bbox, _, _) in detector.get_detections(outputs)  # type: ignore[arg-type]
+            ]
 
             # check within +-2 bounding boxes from ground truth
             assert max(1, gt - 1) <= len(bboxes) <= gt + 1
@@ -487,7 +498,15 @@ _VERSION_TO_ID: dict[int, str] = {
 
 
 def build_yolo(version: int, *, use_dla: bool | None = None) -> Path:
-    """Build a YOLO engine (backward compatibility)."""
+    """
+    Build a YOLO engine (backward compatibility).
+
+    Returns
+    -------
+    Path
+        The compiled engine path.
+
+    """
     model_id = _VERSION_TO_ID[version]
     return build_detector(model_id, use_dla=use_dla)
 
@@ -550,7 +569,15 @@ def yolo_pagelocked_perf(version: int, *, use_dla: bool | None = None) -> None:
 
 # Backward compatibility aliases for DETR
 def build_detr(model_name: str, *, use_dla: bool | None = None) -> Path:
-    """Build a DETR engine (backward compatibility)."""
+    """
+    Build a DETR engine (backward compatibility).
+
+    Returns
+    -------
+    Path
+        The compiled engine path.
+
+    """
     return build_detector(model_name, use_dla=use_dla)
 
 

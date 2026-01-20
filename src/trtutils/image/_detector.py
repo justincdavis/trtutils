@@ -131,6 +131,11 @@ class Detector(ImageModel, DetectorInterface):
             Whether or not to log additional information.
             Only covers the initialization phase.
 
+        Raises
+        ------
+        ValueError
+            If an input or output schema string is invalid.
+
         """
         super().__init__(
             engine_path=engine_path,
@@ -358,7 +363,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: list[np.ndarray] | np.ndarray,
         ratios: list[tuple[float, float]] | None = None,
         padding: list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -367,7 +372,7 @@ class Detector(ImageModel, DetectorInterface):
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """
         Run the model on input.
 
@@ -416,7 +421,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[np.ndarray] | np.ndarray,
         ratios: list[tuple[float, float]] | None = None,
         padding: list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -425,7 +430,7 @@ class Detector(ImageModel, DetectorInterface):
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """
         Run the model on input.
 

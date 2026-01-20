@@ -416,7 +416,8 @@ class SyntheticBatcher(AbstractBatcher):
             return None
 
         # Generate random float32 data in the specified range
-        data = np.random.uniform(
+        rng = np.random.default_rng()
+        data = rng.uniform(
             low=self._data_range[0],
             high=self._data_range[1],
             size=self._data_shape,

@@ -31,8 +31,8 @@ def main() -> None:
         print(classifier.name)
 
         t0 = time.perf_counter()
-        output = classifier.run(img)
-        classifications = classifier.get_classifications(output, top_k=5)
+        output = classifier.run([img])
+        classifications = classifier.get_classifications(output, top_k=5)  # type: ignore[arg-type]
         t1 = time.perf_counter()
 
         print(f"RUN, classifications: {classifications}, in {round((t1 - t0) * 1000.0, 2)}")
@@ -42,7 +42,7 @@ def main() -> None:
         # end2end makes a few memory optimzations by avoiding extra GPU
         # memory transfers
         t0 = time.perf_counter()
-        classifications = classifier.end2end(img, top_k=5)
+        classifications = classifier.end2end([img], top_k=5)
         t1 = time.perf_counter()
 
         print(f"END2END: classifications: {classifications}, in {round((t1 - t0) * 1000.0, 2)}")

@@ -57,11 +57,11 @@ MODEL_CONFIGS = [
 
 
 @pytest.mark.parametrize(
-    "model_class,model_name,imgsz",
+    ("model_class", "model_name", "imgsz"),
     MODEL_CONFIGS,
     ids=[cfg[1] for cfg in MODEL_CONFIGS],
 )
-def test_download_build_inference(model_class, model_name, imgsz):
+def test_download_build_inference(model_class: type, model_name: str, imgsz: int | None) -> None:
     """
     Test the complete workflow: download model, build engine, run inference.
 
@@ -76,7 +76,7 @@ def test_download_build_inference(model_class, model_name, imgsz):
         engine_path = Path(temp_dir) / f"{model_name}.engine"
 
         # Download the model to ONNX
-        model_class.download(
+        model_class.download(  # type: ignore[attr-defined]
             model=model_name,
             output=onnx_path,
             imgsz=imgsz,
@@ -85,7 +85,7 @@ def test_download_build_inference(model_class, model_name, imgsz):
         assert onnx_path.exists(), f"ONNX file was not created: {onnx_path}"
 
         # Build the TensorRT engine
-        model_class.build(
+        model_class.build(  # type: ignore[attr-defined]
             onnx=onnx_path,
             output=engine_path,
             imgsz=imgsz,

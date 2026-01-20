@@ -222,13 +222,13 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: list[np.ndarray] | np.ndarray,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """
         Run the model on input.
 
@@ -267,13 +267,13 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[np.ndarray] | np.ndarray,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """
         Run the model on input.
 

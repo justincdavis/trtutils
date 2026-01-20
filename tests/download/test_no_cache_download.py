@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from trtutils.download import _download as dl
+from trtutils.download import _download as dl  # noqa: PLC2701
 from trtutils.download import download
 
 from .common import MODEL_CONFIGS, TEST_MODELS
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 def _expected_cache_file(model: str) -> Path | None:
@@ -22,7 +26,7 @@ def _expected_cache_file(model: str) -> Path | None:
     if config is None:
         return None
 
-    weights_cache = dl._get_weights_cache_dir()
+    weights_cache = dl._get_weights_cache_dir()  # noqa: SLF001
     if "weights" in config:
         return weights_cache / config["weights"]
     if config.get("url") == "ultralytics":
@@ -40,23 +44,42 @@ def _expected_cache_file(model: str) -> Path | None:
 
 @pytest.fixture(scope="session")
 def cache_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """
+    Provide an isolated cache home directory for downloads.
+
+    Returns
+    -------
+    Path
+        The temporary cache home directory.
+
+    """
     return tmp_path_factory.mktemp("trtutils_cache_home")
 
 
 @pytest.fixture(autouse=True)
-def patch_home(monkeypatch: pytest.MonkeyPatch, cache_home: Path) -> None:
-    dl._get_cache_dir.cache_clear()
-    dl._get_repo_cache_dir.cache_clear()
-    dl._get_weights_cache_dir.cache_clear()
+def patch_home(monkeypatch: pytest.MonkeyPatch, cache_home: Path) -> Generator[None, None, None]:
+    """
+    Patch Path.home to use the temporary cache directory.
+
+    Yields
+    ------
+    None
+        Control back to the test.
+
+    """
+    dl._get_cache_dir.cache_clear()  # noqa: SLF001
+    dl._get_repo_cache_dir.cache_clear()  # noqa: SLF001
+    dl._get_weights_cache_dir.cache_clear()  # noqa: SLF001
     monkeypatch.setattr(Path, "home", lambda: cache_home)
     yield
-    dl._get_cache_dir.cache_clear()
-    dl._get_repo_cache_dir.cache_clear()
-    dl._get_weights_cache_dir.cache_clear()
+    dl._get_cache_dir.cache_clear()  # noqa: SLF001
+    dl._get_repo_cache_dir.cache_clear()  # noqa: SLF001
+    dl._get_weights_cache_dir.cache_clear()  # noqa: SLF001
 
 
 @pytest.mark.parametrize("model", TEST_MODELS)
 def test_download_all_models_real_downloads(model: str, tmp_path: Path) -> None:
+    """Download models without cache and verify outputs."""
     output = tmp_path / f"{model}.onnx"
 
     download(model, output, accept=True)

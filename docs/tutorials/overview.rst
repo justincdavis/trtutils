@@ -21,7 +21,7 @@ Basic Tutorials
 
 The basic tutorials cover essential functionality:
 
-- Basic Usage: Learn how to use the core TRTEngine and TRTModel classes
+- Basic Usage: Learn how to use the core TRTEngine class
 - Advanced Usage: Explore lower-level interfaces and CUDA operations
 - YOLO Basic Usage: Learn how to use the YOLO class
 

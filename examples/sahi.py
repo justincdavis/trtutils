@@ -42,13 +42,13 @@ def main() -> None:
     detector = Detector(engine_path, warmup=True, preprocessor="trt", verbose=args.verbose)
 
     t0 = time.perf_counter()
-    bboxes = detector.end2end(img)
+    bboxes: list[tuple[tuple[int, int, int, int], float, int]] = detector.end2end([img])[0]
     t1 = time.perf_counter()
     standalone_time = t1 - t0
 
     sahi = SAHI(detector)
     t0 = time.perf_counter()
-    sahi_bboxes = sahi.end2end(img)
+    sahi_bboxes: list[tuple[tuple[int, int, int, int], float, int]] = sahi.end2end(img)
     t1 = time.perf_counter()
     sahi_time = t1 - t0
 

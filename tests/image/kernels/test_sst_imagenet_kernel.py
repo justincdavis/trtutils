@@ -357,7 +357,7 @@ def test_sst_imagenet_f16_results() -> None:
     cpu_result, _, _ = preprocess(
         [img],
         (output_width, output_height),
-        np.float32,
+        np.dtype(np.float32),
         mean=mean,
         std=std,
     )

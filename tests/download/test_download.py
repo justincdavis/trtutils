@@ -13,24 +13,15 @@ from trtutils.download import download
 from .common import TEST_MODELS
 
 
-def download_with_args(
-    model: str,
-    *args: tuple,
-    **kwargs: dict,
-) -> None:
+def download_with_args(model: str) -> None:
     """Download a model with the given arguments."""
     with tempfile.TemporaryDirectory() as temp_dir:
         output = Path(temp_dir) / "model.onnx"
-        download(
-            model,
-            output,
-            *args,
-            **kwargs,
-            accept=True,
-        )
+        download(model, output, accept=True)
         assert output.exists()
 
 
 @pytest.mark.parametrize("model", TEST_MODELS)
 def test_download(model: str) -> None:
+    """Download a model and verify the ONNX file is created."""
     download_with_args(model)

@@ -282,7 +282,7 @@ def test_sst_fast_f16_results() -> None:
 
     cuda_result = output_binding.host_allocation
 
-    cpu_result, _, _ = preprocess([img], (output_width, output_height), np.float32)
+    cpu_result, _, _ = preprocess([img], (output_width, output_height), np.dtype(np.float32))
 
     assert cuda_result.shape == cpu_result.shape
     # use relaxed tolerances for fp16

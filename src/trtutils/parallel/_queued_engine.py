@@ -8,13 +8,12 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from trtutils._engine import TRTEngine
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import numpy as np
     from typing_extensions import Self
 
 

@@ -10,6 +10,7 @@ from trtutils._log import LOG
 
 if TYPE_CHECKING:
     from typing import ClassVar
+
     from typing_extensions import Self
 
     from trtutils._engine import TRTEngine
@@ -34,6 +35,7 @@ class InputSchema(Enum):
         -------
         list[str]
             The names of the input schemas.
+
         """
         return list(self.__members__.keys())
 
@@ -58,6 +60,7 @@ class OutputSchema(Enum):
         -------
         list[str]
             The names of the input/output schemas.
+
         """
         return list(self.__members__.keys())
 

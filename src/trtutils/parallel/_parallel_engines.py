@@ -5,17 +5,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import numpy as np
-
-from trtutils._engine import TRTEngine
-
 from ._queued_engine import QueuedTRTEngine
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
+    import numpy as np
     from typing_extensions import Self
+
+    from trtutils._engine import TRTEngine
 
 
 class ParallelTRTEngines:

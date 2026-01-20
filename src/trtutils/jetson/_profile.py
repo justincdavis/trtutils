@@ -398,7 +398,7 @@ def profile_engine(
 
     tegrastats = TegraStats(interval=tegra_interval)
     tegrastats.start()
-    for idx in range(iterations):
+    for _ in range(iterations):
         profiler.start_iteration()
         t0 = time.time()
         engine.mock_execute(false_data, verbose=False)
