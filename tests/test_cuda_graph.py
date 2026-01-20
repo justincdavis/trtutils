@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: SLF001
 from __future__ import annotations
 
 import time
@@ -90,9 +91,11 @@ def test_cuda_graph_replay_verification() -> None:
         cuda_graph=True,
     )
 
+    cuda_graph = engine._cuda_graph
+    assert cuda_graph is not None
     # Store the graph executable ID
-    assert engine._cuda_graph.is_captured is True
-    graph_exec_id = id(engine._cuda_graph._graph_exec)
+    assert cuda_graph.is_captured is True
+    graph_exec_id = id(cuda_graph._graph_exec)
 
     # Run 100 iterations
     for _ in range(100):
@@ -100,7 +103,7 @@ def test_cuda_graph_replay_verification() -> None:
         assert outputs is not None
 
         # Graph executable should not change (no recapture)
-        assert id(engine._cuda_graph._graph_exec) == graph_exec_id
+        assert id(cuda_graph._graph_exec) == graph_exec_id
 
 
 # ============================================================================
@@ -222,21 +225,23 @@ def test_cuda_graph_invalidation_on_input_binding_change() -> None:
         cuda_graph=True,
     )
 
+    cuda_graph = engine._cuda_graph
+    assert cuda_graph is not None
     # Graph should be captured
-    assert engine._cuda_graph.is_captured is True
+    assert cuda_graph.is_captured is True
 
     # Trigger invalidation by changing input bindings
     engine._set_input_bindings()
 
     # Graph should now be invalidated
-    assert engine._cuda_graph.is_captured is False
+    assert cuda_graph.is_captured is False
 
     # Execute again to recapture
     outputs = engine.mock_execute()
     assert outputs is not None
 
     # Graph should be recaptured
-    assert engine._cuda_graph.is_captured is True
+    assert cuda_graph.is_captured is True
 
 
 def test_cuda_graph_invalidation_on_output_binding_change() -> None:
@@ -250,21 +255,23 @@ def test_cuda_graph_invalidation_on_output_binding_change() -> None:
         cuda_graph=True,
     )
 
+    cuda_graph = engine._cuda_graph
+    assert cuda_graph is not None
     # Graph should be captured
-    assert engine._cuda_graph.is_captured is True
+    assert cuda_graph.is_captured is True
 
     # Trigger invalidation by changing output bindings
     engine._set_output_bindings()
 
     # Graph should now be invalidated
-    assert engine._cuda_graph.is_captured is False
+    assert cuda_graph.is_captured is False
 
     # Execute again to recapture
     outputs = engine.mock_execute()
     assert outputs is not None
 
     # Graph should be recaptured
-    assert engine._cuda_graph.is_captured is True
+    assert cuda_graph.is_captured is True
 
 
 def test_cuda_graph_recapture_after_invalidation() -> None:
@@ -278,19 +285,21 @@ def test_cuda_graph_recapture_after_invalidation() -> None:
         cuda_graph=True,
     )
 
+    cuda_graph = engine._cuda_graph
+    assert cuda_graph is not None
     # Get random input and execute
     rand_input = engine.get_random_input()
     output_before = engine.execute(rand_input)
 
     # Manually invalidate graph
-    engine._cuda_graph.invalidate()
-    assert engine._cuda_graph.is_captured is False
+    cuda_graph.invalidate()
+    assert cuda_graph.is_captured is False
 
     # Execute with same input (will recapture)
     output_after = engine.execute(rand_input)
 
     # Verify graph is recaptured
-    assert engine._cuda_graph.is_captured is True
+    assert cuda_graph.is_captured is True
 
     # Outputs should be identical
     for o1, o2 in zip(output_before, output_after):
@@ -413,8 +422,10 @@ def test_cuda_graph_graceful_failure_handling() -> None:
         outputs = engine.mock_execute()
         assert outputs is not None
 
+        cuda_graph = engine._cuda_graph
+        assert cuda_graph is not None
         # Graph should not be captured
-        assert engine._cuda_graph.is_captured is False
+        assert cuda_graph.is_captured is False
 
 
 # ============================================================================
@@ -435,15 +446,17 @@ def test_cuda_graph_thread_safety() -> None:
             cuda_graph=True,
         )
 
+        cuda_graph = engine._cuda_graph
+        assert cuda_graph is not None
         # Store initial graph exec id
-        graph_exec_id = id(engine._cuda_graph._graph_exec)
+        graph_exec_id = id(cuda_graph._graph_exec)
 
         # Run iterations
         for _ in range(iters):
             engine.mock_execute()
 
             # Verify graph exec id never changes
-            assert id(engine._cuda_graph._graph_exec) == graph_exec_id
+            assert id(cuda_graph._graph_exec) == graph_exec_id
 
         result[threadid] = {"graph_exec_id": graph_exec_id, "success": True}
 
@@ -484,8 +497,10 @@ def test_cuda_graph_bypass_with_direct_exec() -> None:
         cuda_graph=True,
     )
 
+    cuda_graph = engine._cuda_graph
+    assert cuda_graph is not None
     # Graph not captured yet
-    assert engine._cuda_graph.is_captured is False
+    assert cuda_graph.is_captured is False
 
     # Allocate random input to device
     rand_input = engine.get_random_input()
@@ -495,7 +510,7 @@ def test_cuda_graph_bypass_with_direct_exec() -> None:
     engine.direct_exec(device_ptrs, no_warn=True)
 
     # Graph should still not be captured (direct_exec doesn't capture)
-    assert engine._cuda_graph.is_captured is False
+    assert cuda_graph.is_captured is False
 
     # Free device memory
     free_device_ptrs(device_ptrs)
@@ -505,7 +520,7 @@ def test_cuda_graph_bypass_with_direct_exec() -> None:
     assert outputs is not None
 
     # Now graph should be captured
-    assert engine._cuda_graph.is_captured is True
+    assert cuda_graph.is_captured is True
 
 
 def test_cuda_graph_bypass_with_raw_exec() -> None:
@@ -519,8 +534,10 @@ def test_cuda_graph_bypass_with_raw_exec() -> None:
         cuda_graph=True,
     )
 
+    cuda_graph = engine._cuda_graph
+    assert cuda_graph is not None
     # Graph not captured yet
-    assert engine._cuda_graph.is_captured is False
+    assert cuda_graph.is_captured is False
 
     # Allocate random input to device
     rand_input = engine.get_random_input()
@@ -531,7 +548,7 @@ def test_cuda_graph_bypass_with_raw_exec() -> None:
     assert output_ptrs is not None
 
     # Graph should still not be captured (raw_exec doesn't capture)
-    assert engine._cuda_graph.is_captured is False
+    assert cuda_graph.is_captured is False
 
     # Free device memory
     free_device_ptrs(device_ptrs)
@@ -542,4 +559,4 @@ def test_cuda_graph_bypass_with_raw_exec() -> None:
     assert outputs is not None
 
     # Now graph should be captured
-    assert engine._cuda_graph.is_captured is True
+    assert cuda_graph.is_captured is True

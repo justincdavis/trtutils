@@ -15,6 +15,9 @@ with contextlib.suppress(Exception):
 
 from trtutils._log import LOG
 
+if TYPE_CHECKING:
+    from types import TracebackType
+
 from ._cuda import cuda_call
 
 if TYPE_CHECKING:
@@ -149,7 +152,7 @@ class CUDAGraph:
         self: Self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
-        exc_tb: object | None,
+        exc_tb: TracebackType | None,
     ) -> bool:
         success = self.stop()
         # __exit__ returns False on success, kind of funky
@@ -182,7 +185,6 @@ class CUDAGraph:
         try:
             self._graph = cuda_stream_end_capture(self._stream)
             self._graph_exec = cuda_graph_instantiate(self._graph, 0)
-            return True
         except RuntimeError as e:
             err_str = str(e)
             if "cudaErrorStreamCapture" in err_str or "StreamCapture" in err_str:
@@ -195,6 +197,8 @@ class CUDAGraph:
             self.invalidate()
 
             return False
+        else:
+            return True
 
     def launch(self: Self) -> None:
         """

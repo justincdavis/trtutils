@@ -26,7 +26,7 @@ if FLAGS.BUILD_PROGRESS:
     from ._progress import ProgressBar
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from ._batcher import AbstractBatcher
 
@@ -38,14 +38,14 @@ def build_engine(
     onnx: Path | str,
     output: Path | str,
     default_device: trt.DeviceType | str = trt.DeviceType.GPU,
-    timing_cache: Path | str | bool | None = None,
+    timing_cache: Path | str | bool | None = None,  # noqa: FBT001
     workspace: float = 4.0,
     dla_core: int | None = None,
     calibration_cache: Path | str | None = None,
     data_batcher: AbstractBatcher | None = None,
     layer_precision: list[tuple[int, trt.DataType | None]] | None = None,
     layer_device: list[tuple[int, trt.DeviceType | None]] | None = None,
-    shapes: list[tuple[str, tuple[int, ...]]] | None = None,
+    shapes: Sequence[tuple[str, tuple[int, ...]]] | None = None,
     input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
     output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
     hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,

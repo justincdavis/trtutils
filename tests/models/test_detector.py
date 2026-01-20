@@ -1,6 +1,7 @@
 # Copyright (c) 2024-2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# ruff: noqa: FBT001
 from __future__ import annotations
 
 import pytest

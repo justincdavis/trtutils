@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from jetsontools import TegraData, TegraStats, filter_data, get_powerdraw
 
 with contextlib.suppress(ImportError):
-    import tensorrt as trt
+    import tensorrt as trt  # type: ignore[import-untyped]
 
 from trtutils._benchmark import Metric
 from trtutils._engine import TRTEngine
@@ -225,7 +225,7 @@ class JetsonLayerProfiler(trt.IProfiler):  # type: ignore[misc]
     def get_statistics_with_tegra(
         self: Self,
         tegradata: TegraData,
-        verbose: bool = False,
+        verbose: bool = False,  # noqa: FBT001, FBT002
     ) -> list[JetsonLayerInfo]:
         """
         Get statistics with tegrastats data to compute power and energy.
@@ -398,7 +398,7 @@ def profile_engine(
 
     tegrastats = TegraStats(interval=tegra_interval)
     tegrastats.start()
-    for idx in range(iterations):
+    for _ in range(iterations):
         profiler.start_iteration()
         t0 = time.time()
         engine.mock_execute(false_data, verbose=False)
@@ -408,7 +408,7 @@ def profile_engine(
     tegrastats.stop()
     tegradata = tegrastats.data
 
-    layer_stats = profiler.get_statistics_with_tegra(tegradata, verbose=verbose)
+    layer_stats = profiler.get_statistics_with_tegra(tegradata, verbose=bool(verbose))
 
     if verbose:
         LOG.info(f"Profiling complete: {len(layer_stats)} layers profiled with power/energy metrics")
@@ -433,9 +433,10 @@ def profile_engine(
     power_raw = powerdraw_data["VDD_TOTAL"].raw
 
     # compute overall energy values per inference
+    filtered_entries = tegradata.filtered_entries or []
     energy_data = [
         get_powerdraw(inf_data)["VDD_TOTAL"].mean * (inf_stop - inf_start)
-        for (inf_start, inf_stop), inf_data in tegradata.filtered_entries
+        for (inf_start, inf_stop), inf_data in filtered_entries
         if len(inf_data) > 0
     ]
 

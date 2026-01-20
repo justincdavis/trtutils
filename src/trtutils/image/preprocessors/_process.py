@@ -48,6 +48,11 @@ def _preprocess_single(
     tuple[np.ndarray, tuple[float, float], tuple[float, float]]
         The preprocessed tensor, ratios, and padding.
 
+    Raises
+    ------
+    ValueError
+        If the resize method is unsupported.
+
     """
     if verbose:
         LOG.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")

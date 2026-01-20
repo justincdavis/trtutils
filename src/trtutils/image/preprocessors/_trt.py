@@ -98,6 +98,11 @@ class TRTPreprocessor(GPUImagePreprocessor):
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
 
+        Raises
+        ------
+        RuntimeError
+            If imagenet buffers are required but not allocated.
+
         """
         tag = "TRTPreprocessor" if tag is None else f"{tag}.TRTPreprocessor"
         super().__init__(
@@ -179,6 +184,9 @@ class TRTPreprocessor(GPUImagePreprocessor):
                 ]
             )
         else:
+            if self._mean_buffer is None or self._std_buffer is None:
+                err_msg = "Imagenet buffers not allocated for TRT preprocessor."
+                raise RuntimeError(err_msg)
             self._gpu_pointers.extend(
                 [
                     self._mean_buffer.allocation,

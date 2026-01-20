@@ -52,7 +52,7 @@ def test_linear_results() -> None:
         err_msg = f"Failed to read image: {IMG_PATH}"
         raise FileNotFoundError(err_msg)
 
-    resized_img = cv2.resize(img, output_shape, interpolation=cv2.INTER_LINEAR)
+    resized_img = np.asarray(cv2.resize(img, output_shape, interpolation=cv2.INTER_LINEAR))
 
     height, width = img.shape[:2]
     o_width, o_height = output_shape
@@ -115,7 +115,7 @@ def test_linear_results() -> None:
     cuda_result = output_binding.host_allocation
 
     assert cuda_result.shape == resized_img.shape
-    cpu_mean = np.mean(resized_img)
+    cpu_mean = float(resized_img.mean())
     # allow up to an overall 0.5 out of 255.0 drift (1.0 abs)
     assert cpu_mean - 0.5 <= np.mean(cuda_result) <= cpu_mean + 0.5
     # Check pixels that are different

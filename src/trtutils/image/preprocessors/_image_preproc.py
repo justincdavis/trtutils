@@ -398,6 +398,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
     def _allocate_imagenet_buffers(self: Self) -> None:
         # self._mean and self._std are set during the initialiation of ImagePreprocessor
+        if self._mean is None or self._std is None:
+            err_msg = "Imagenet buffers require mean/std to be set."
+            raise ValueError(err_msg)
         self._mean_buffer = create_binding(self._mean)
         memcpy_host_to_device_async(
             self._mean_buffer.allocation,

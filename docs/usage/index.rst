@@ -12,7 +12,6 @@ Core Components
 The main components of trtutils are:
 
 - :py:class:`~trtutils.TRTEngine`: Core class for running TensorRT engines
-- :py:class:`~trtutils.TRTModel`: High-level interface with preprocessing/postprocessing
 - :py:class:`~trtutils.impls.yolo.YOLO`: Specialized interface for YOLO models
 
 For detailed tutorials on using these components, see:

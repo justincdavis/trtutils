@@ -4,14 +4,10 @@ Basic Usage Tutorial
 ====================
 
 This tutorial covers the basic usage of trtutils, focusing on the core
-:py:class:`~trtutils.TRTEngine` and :py:class:`~trtutils.TRTModel` classes.
+:py:class:`~trtutils.TRTEngine` class.
 
 The core functionality of trtutils is implemented inside of the 
 :py:class:`~trtutils.TRTEngine` class. 
-
-Additional functionality is provided by the :py:class:`~trtutils.TRTModel` class.
-This class provides a small wrapper around :py:class:`~trtutils.TRTEngine` allowing
-preprocess and postprocess functions to be defined explicity.
 
 TRTEngine
 ^^^^^^^^^
@@ -64,28 +60,6 @@ for itself to perform inference on. This can be accessed via:
     # random data is cached to speedup warmup/benchmarking
     # if you need fresh data
     rand_data = engine.get_random_input(new=True)
-
-TRTModel
-^^^^^^^^
-
-An example for using :py:class:`~trtutils.TRTModel` is given below:
-
-.. code-block:: python
-
-    import cv2
-    from trtutils import TRTModel
-
-    def preproc(imgs: list[np.ndarray]) -> list[np.ndarray]:
-        # example may be that image should be resized
-        return [
-            cv2.resize(img, (640, 640), interpolation=cv2.INTER_LINEAR) for img in imgs
-        ]        
-
-    model = TRTModel("object_detector.engine", preprocess=preproc)
-
-    # now we can perform some inference
-    img = cv2.imread("example.jpg")
-    output = model.run([img])  # preprocessing will happen automatically
 
 Benchmarking
 ^^^^^^^^^^^^

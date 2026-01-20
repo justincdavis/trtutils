@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
-    from typing import ClassVar
     from typing_extensions import Self
 
     from trtutils._engine import TRTEngine
@@ -17,16 +16,16 @@ if TYPE_CHECKING:
 
 class InputSchema(Enum):
     # YOLO-X, v7, v8, v9, v10, v11, v12, v13
-    YOLO: ClassVar[list[str]] = ["images"]
+    YOLO = ("images",)
     # RF-DETR
-    RF_DETR: ClassVar[list[str]] = ["input"]
+    RF_DETR = ("input",)
     # DEIM v1/v2, RT-DETR v1/v2, D-FINE
-    RT_DETR: ClassVar[list[str]] = ["images", "orig_target_sizes"]
+    RT_DETR = ("images", "orig_target_sizes")
     # RT-DETR v3
-    RT_DETR_V3: ClassVar[list[str]] = ["image", "im_shape", "scale_factor"]
+    RT_DETR_V3 = ("image", "im_shape", "scale_factor")
 
-    @property
-    def names(self: Self) -> list[str]:
+    @classmethod
+    def names(cls: type[Self]) -> list[str]:
         """
         Get the names of the input schema enums.
 
@@ -34,23 +33,24 @@ class InputSchema(Enum):
         -------
         list[str]
             The names of the input schemas.
+
         """
-        return list(self.__members__.keys())
+        return list(cls.__members__.keys())
 
 
 class OutputSchema(Enum):
     # YOLO-X, v7, v8, v9, v11, v12, v13
-    EFFICIENT_NMS: ClassVar[list[str]] = ["num_dets", "det_boxes", "det_scores", "det_classes"]
-    EFFICIENT_NMS_2: ClassVar[list[str]] = ["num", "boxes", "scores", "classes"]
+    EFFICIENT_NMS = ("num_dets", "det_boxes", "det_scores", "det_classes")
+    EFFICIENT_NMS_2 = ("num", "boxes", "scores", "classes")
     # YOLO-v10
-    YOLO_V10: ClassVar[list[str]] = ["output0"]
+    YOLO_V10 = ("output0",)
     # RF-DETR
-    RF_DETR: ClassVar[list[str]] = ["dets", "labels"]
+    RF_DETR = ("dets", "labels")
     # DEIM v1/v2, RT-DETR v1/v2/v3, D-FINE
-    DETR: ClassVar[list[str]] = ["scores", "labels", "boxes"]
+    DETR = ("scores", "labels", "boxes")
 
-    @property
-    def names(self: Self) -> list[str]:
+    @classmethod
+    def names(cls: type[Self]) -> list[str]:
         """
         Get the names of the input/output schema enums.
 
@@ -58,22 +58,25 @@ class OutputSchema(Enum):
         -------
         list[str]
             The names of the input/output schemas.
+
         """
-        return list(self.__members__.keys())
+        return list(cls.__members__.keys())
 
 
 def get_detector_io_schema(
     engine: TRTEngine,
 ) -> tuple[InputSchema, OutputSchema]:
+    input_names = tuple(engine.input_names)
+    output_names = tuple(engine.output_names)
     # solve for the input scheme
     input_schema: InputSchema
-    if engine.input_names == InputSchema.YOLO.value:
+    if input_names == InputSchema.YOLO.value:
         input_schema = InputSchema.YOLO
-    elif engine.input_names == InputSchema.RF_DETR.value:
+    elif input_names == InputSchema.RF_DETR.value:
         input_schema = InputSchema.RF_DETR
-    elif engine.input_names == InputSchema.RT_DETR.value:
+    elif input_names == InputSchema.RT_DETR.value:
         input_schema = InputSchema.RT_DETR
-    elif engine.input_names == InputSchema.RT_DETR_V3.value:
+    elif input_names == InputSchema.RT_DETR_V3.value:
         input_schema = InputSchema.RT_DETR_V3
     else:
         warn_msg = "Could not determine input schema directly from input names. "
@@ -94,15 +97,15 @@ def get_detector_io_schema(
     # solve for the output schema
     output_schema: OutputSchema
     if (
-        engine.output_names == OutputSchema.EFFICIENT_NMS.value
-        or engine.output_names == OutputSchema.EFFICIENT_NMS_2.value
+        output_names == OutputSchema.EFFICIENT_NMS.value
+        or output_names == OutputSchema.EFFICIENT_NMS_2.value
     ):
         output_schema = OutputSchema.EFFICIENT_NMS
-    elif engine.output_names == OutputSchema.YOLO_V10.value:
+    elif output_names == OutputSchema.YOLO_V10.value:
         output_schema = OutputSchema.YOLO_V10
-    elif engine.output_names == OutputSchema.RF_DETR.value:
+    elif output_names == OutputSchema.RF_DETR.value:
         output_schema = OutputSchema.RF_DETR
-    elif engine.output_names == OutputSchema.DETR.value:
+    elif output_names == OutputSchema.DETR.value:
         output_schema = OutputSchema.DETR
     else:
         err_msg = "Could not determine output schema directly from output names. "

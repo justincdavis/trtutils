@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import cv2
 import numpy as np
@@ -39,7 +40,20 @@ CLASSIFIER_ENGINE_PATH = DATA_DIR / "engines" / "classifier" / "resnet18.engine"
 
 
 def _read_image(path: Path) -> np.ndarray:
-    """Read an image from disk."""
+    """
+    Read an image from disk.
+
+    Returns
+    -------
+    np.ndarray
+        The loaded image.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the image could not be read.
+
+    """
     img = cv2.imread(str(path))
     if img is None:
         err_msg = f"Failed to read image: {path}"
@@ -48,23 +62,32 @@ def _read_image(path: Path) -> np.ndarray:
 
 
 def _get_test_images(count: int = 2) -> list[np.ndarray]:
-    """Get test images, duplicating if needed for larger batch sizes."""
+    """
+    Get test images, duplicating if needed for larger batch sizes.
+
+    Returns
+    -------
+    list[np.ndarray]
+        The list of test images.
+
+    """
     images = [_read_image(p) for p in IMAGE_PATHS[:count]]
     while len(images) < count:
         images.append(images[0].copy())
     return images[:count]
 
 
-def _validate_detection_result(result: list[np.ndarray]) -> None:
+Detection = tuple[tuple[int, int, int, int], float, int]
+
+
+def _validate_detection_result(result: list[Detection]) -> None:
     """Validate detection result structure."""
     assert isinstance(result, list)
-    # Each image returns a list of detections (can be empty)
     for det in result:
-        assert isinstance(det, np.ndarray)
-        if det.size > 0:
-            # Expect [x1, y1, x2, y2, conf, class_id] format
-            assert det.ndim == 1
-            assert det.shape[0] >= 6
+        bbox, score, class_id = det
+        assert len(bbox) == 4
+        assert isinstance(score, float)
+        assert isinstance(class_id, int)
 
 
 def _validate_classification_result(result: list) -> None:
@@ -77,8 +100,8 @@ def _validate_classification_result(result: list) -> None:
 
 
 def _assert_detection_parity(
-    results1: list[list[np.ndarray]],
-    results2: list[list[np.ndarray]],
+    results1: list[list[Detection]],
+    results2: list[list[Detection]],
     atol: float = 5.0,
 ) -> None:
     """Assert two detection results are approximately equal."""
@@ -91,10 +114,10 @@ def _assert_detection_parity(
         # If same count and non-empty, compare top detections
         if len(r1) == len(r2) and len(r1) > 0:
             # Sort by confidence and compare top detections
-            r1_sorted = sorted(r1, key=lambda x: -x[4])
-            r2_sorted = sorted(r2, key=lambda x: -x[4])
+            r1_sorted = sorted(r1, key=lambda x: -x[1])
+            r2_sorted = sorted(r2, key=lambda x: -x[1])
             for d1, d2 in zip(r1_sorted[:3], r2_sorted[:3]):
-                np.testing.assert_allclose(d1[:4], d2[:4], atol=atol)
+                np.testing.assert_allclose(d1[0], d2[0], atol=atol)
 
 
 # =============================================================================
@@ -156,19 +179,23 @@ class TestDetectorSingleImage:
         assert len(ratios) == 1
         assert len(padding) == 1
 
-        outputs = detector.run(
-            tensor,
-            ratios=ratios,
-            padding=padding,
-            preprocessed=True,
-            postprocess=False,
+        outputs = cast(
+            "list[np.ndarray]",
+            detector.run(
+                tensor,
+                ratios=ratios,
+                padding=padding,
+                preprocessed=True,
+                postprocess=False,
+            ),
         )
         assert outputs is not None
 
-        result = detector.postprocess(outputs, ratios, padding)
-        assert result is not None
-        assert len(result) == 1
-        _validate_detection_result(result[0])
+        postprocessed = detector.postprocess(outputs, ratios, padding)
+        assert postprocessed is not None
+        assert len(postprocessed) == 1
+        detections = detector.get_detections(postprocessed)
+        _validate_detection_result(detections[0])
 
         del detector
 
@@ -190,11 +217,12 @@ class TestDetectorSingleImage:
         images = _get_test_images(1)
 
         # Run with postprocess=True (default)
-        result = detector.run(images)
+        postprocessed = detector.run(images)
 
-        assert result is not None
-        assert len(result) == 1
-        _validate_detection_result(result[0])
+        assert postprocessed is not None
+        assert len(postprocessed) == 1
+        detections = detector.get_detections(cast("list[list[np.ndarray]]", postprocessed))
+        _validate_detection_result(detections[0])
 
         del detector
 
@@ -258,19 +286,23 @@ class TestDetectorBatched:
         assert len(padding) == batch_size
 
         # Run inference
-        outputs = detector.run(
-            tensor,
-            ratios=ratios,
-            padding=padding,
-            preprocessed=True,
-            postprocess=False,
+        outputs = cast(
+            "list[np.ndarray]",
+            detector.run(
+                tensor,
+                ratios=ratios,
+                padding=padding,
+                preprocessed=True,
+                postprocess=False,
+            ),
         )
         assert outputs is not None
 
         # Postprocess
-        result = detector.postprocess(outputs, ratios, padding)
-        assert len(result) == batch_size
-        for r in result:
+        postprocessed = detector.postprocess(outputs, ratios, padding)
+        assert len(postprocessed) == batch_size
+        detections = detector.get_detections(postprocessed)
+        for r in detections:
             _validate_detection_result(r)
 
         del detector
@@ -291,11 +323,12 @@ class TestDetectorBatched:
         )
 
         images = _get_test_images(batch_size)
-        result = detector.run(images)
+        postprocessed = detector.run(images)
 
-        assert result is not None
-        assert len(result) == batch_size
-        for r in result:
+        assert postprocessed is not None
+        assert len(postprocessed) == batch_size
+        detections = detector.get_detections(cast("list[list[np.ndarray]]", postprocessed))
+        for r in detections:
             _validate_detection_result(r)
 
         del detector
@@ -354,14 +387,18 @@ class TestDetectorParity:
 
         # manual pipeline
         tensor, ratios, padding = detector.preprocess(images)
-        outputs = detector.run(
-            tensor,
-            ratios=ratios,
-            padding=padding,
-            preprocessed=True,
-            postprocess=False,
+        outputs = cast(
+            "list[np.ndarray]",
+            detector.run(
+                tensor,
+                ratios=ratios,
+                padding=padding,
+                preprocessed=True,
+                postprocess=False,
+            ),
         )
-        result_manual = detector.postprocess(outputs, ratios, padding)
+        postprocessed = detector.postprocess(outputs, ratios, padding)
+        result_manual = detector.get_detections(postprocessed)
 
         _assert_detection_parity(result_e2e, result_manual)
 
@@ -397,7 +434,15 @@ class TestDetectorParity:
 
 
 def _build_classifier_engine() -> Path | None:
-    """Build classifier engine if ONNX available, otherwise return None."""
+    """
+    Build classifier engine if ONNX available, otherwise return None.
+
+    Returns
+    -------
+    Path | None
+        The engine path if available.
+
+    """
     if not CLASSIFIER_ONNX_PATH.exists():
         return None
 
@@ -406,7 +451,7 @@ def _build_classifier_engine() -> Path | None:
 
     CLASSIFIER_ENGINE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    import trtutils.builder
+    import trtutils.builder  # noqa: PLC0415
 
     trtutils.builder.build_engine(
         CLASSIFIER_ONNX_PATH,
@@ -418,7 +463,15 @@ def _build_classifier_engine() -> Path | None:
 
 @pytest.fixture(scope="module")
 def classifier_engine_path() -> Path | None:
-    """Get classifier engine path, building if needed."""
+    """
+    Get classifier engine path, building if needed.
+
+    Returns
+    -------
+    Path | None
+        The engine path if available.
+
+    """
     return _build_classifier_engine()
 
 
@@ -475,10 +528,13 @@ class TestClassifierSingleImage:
         assert len(ratios) == 1
         assert len(padding) == 1
 
-        outputs = classifier.run(
-            tensor,
-            preprocessed=True,
-            postprocess=False,
+        outputs = cast(
+            "list[np.ndarray]",
+            classifier.run(
+                tensor,
+                preprocessed=True,
+                postprocess=False,
+            ),
         )
         assert outputs is not None
 
@@ -542,10 +598,13 @@ class TestClassifierBatched:
         assert len(padding) == batch_size
 
         # Run inference
-        outputs = classifier.run(
-            tensor,
-            preprocessed=True,
-            postprocess=False,
+        outputs = cast(
+            "list[np.ndarray]",
+            classifier.run(
+                tensor,
+                preprocessed=True,
+                postprocess=False,
+            ),
         )
         assert outputs is not None
 
@@ -604,11 +663,14 @@ class TestClassifierParity:
         result_e2e = classifier.end2end(images)
 
         # manual pipeline
-        tensor, ratios, padding = classifier.preprocess(images)
-        outputs = classifier.run(
-            tensor,
-            preprocessed=True,
-            postprocess=False,
+        tensor, _ratios, _padding = classifier.preprocess(images)
+        outputs = cast(
+            "list[np.ndarray]",
+            classifier.run(
+                tensor,
+                preprocessed=True,
+                postprocess=False,
+            ),
         )
         result_manual = classifier.postprocess(outputs)
 

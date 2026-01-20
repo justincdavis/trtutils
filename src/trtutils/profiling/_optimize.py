@@ -6,10 +6,8 @@ from __future__ import annotations
 
 import contextlib
 import tempfile
-from collections.abc import Callable
 from pathlib import Path
-
-from typing_extensions import Concatenate, ParamSpec
+from typing import Protocol
 
 with contextlib.suppress(ImportError):
     import tensorrt as trt
@@ -20,9 +18,15 @@ from trtutils.builder._build import build_engine
 from ._profiler import ProfilerResult, profile_engine
 
 
-P = ParamSpec("P")
-
-BuildFunc = Callable[Concatenate[Path | str, Path | str, P], None]
+class BuildFunc(Protocol):
+    def __call__(
+        self,
+        onnx_path: Path | str,
+        output_path: Path | str,
+        *,
+        fp16: bool | None = None,
+        int8: bool | None = None,
+    ) -> None: ...
 
 
 def identify_quantize_speedups_by_layer(
@@ -85,10 +89,8 @@ def identify_quantize_speedups_by_layer(
 
     Raises
     ------
-    RuntimeError
-        If the ONNX model cannot be parsed or engines fail to build
     ValueError
-        If engine building or profiling logic encounters invalid configuration
+        If layer names mismatch and mismatches are not ignored.
 
     """
     if build_func is None:
@@ -110,6 +112,8 @@ def identify_quantize_speedups_by_layer(
                 verbose=verbose,
             )
 
+    onnx_path = Path(onnx)
+
     # Create temporary files for engines
     with tempfile.NamedTemporaryFile(
         suffix=".engine", delete=False
@@ -118,25 +122,25 @@ def identify_quantize_speedups_by_layer(
         int8_path = Path(int8_file.name)
 
         if verbose:
-            LOG.info(f"Building FP16 engine for ONNX model {onnx.stem}")
+            LOG.info(f"Building FP16 engine for ONNX model {onnx_path.stem}")
         build_func(
-            onnx_path=onnx,
+            onnx_path=onnx_path,
             output_path=fp16_path,
             fp16=True,
             int8=False,
         )
 
         if verbose:
-            LOG.info(f"Building INT8 engine for ONNX model {onnx.stem}")
+            LOG.info(f"Building INT8 engine for ONNX model {onnx_path.stem}")
         build_func(
-            onnx_path=onnx,
+            onnx_path=onnx_path,
             output_path=int8_path,
             fp16=False,
             int8=True,
         )
 
         if verbose:
-            LOG.info(f"Profiling FP16 engine for ONNX model {onnx.stem}")
+            LOG.info(f"Profiling FP16 engine for ONNX model {onnx_path.stem}")
         fp16_results = profile_engine(
             fp16_path,
             iterations=iterations,
@@ -145,7 +149,7 @@ def identify_quantize_speedups_by_layer(
         )
 
         if verbose:
-            LOG.info(f"Profiling INT8 engine for ONNX model {onnx.stem}")
+            LOG.info(f"Profiling INT8 engine for ONNX model {onnx_path.stem}")
         int8_results = profile_engine(
             int8_path,
             iterations=iterations,
@@ -167,9 +171,8 @@ def identify_quantize_speedups_by_layer(
             if fp16_layer_name not in int8_layer_map:
                 if ignore_mismatch_layers:
                     continue
-                else:
-                    err_msg = f"Layer {fp16_layer_name} found in FP16 but not in INT8 results"
-                    raise ValueError(err_msg)
+                err_msg = f"Layer {fp16_layer_name} found in FP16 but not in INT8 results"
+                raise ValueError(err_msg)
 
             int8_layer = int8_layer_map[fp16_layer_name]
             fp16_time = fp16_layer.mean
@@ -177,10 +180,7 @@ def identify_quantize_speedups_by_layer(
 
             # Compute speedup percentage: (fp16_time - int8_time) / fp16_time * 100
             # Positive = INT8 is faster, negative = INT8 is slower
-            if fp16_time > 0:
-                speedup_percent = ((fp16_time - int8_time) / fp16_time) * 100.0
-            else:
-                speedup_percent = 0.0
+            speedup_percent = ((fp16_time - int8_time) / fp16_time) * 100.0 if fp16_time > 0 else 0.0
 
             layer_deltas.append((fp16_layer_name, speedup_percent))
 

@@ -3,6 +3,7 @@
 #
 # MIT License
 """Export a ResNet18 classifier model to ONNX for testing."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,8 +19,8 @@ def export_resnet18_onnx(output_path: Path | str) -> None:
         The path where the ONNX model will be saved.
 
     """
-    import torch
-    import torchvision.models as models
+    import torch  # noqa: PLC0415
+    import torchvision.models as models  # type: ignore[import-untyped] # noqa: PLC0415
 
     # Create model
     model = models.resnet18(pretrained=True)
@@ -34,7 +35,7 @@ def export_resnet18_onnx(output_path: Path | str) -> None:
 
     torch.onnx.export(
         model,
-        dummy_input,
+        (dummy_input,),
         str(output_path),
         input_names=["input"],
         output_names=["output"],

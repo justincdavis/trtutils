@@ -3,14 +3,16 @@
 # MIT License
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from trtutils._engine import TRTEngine
 from trtutils.jetson._profile import profile_engine as jetson_profile_engine
-from trtutils.profiling._profiler import ProfilerResult, profile_engine as inspect_profile_engine
+from trtutils.profiling._profiler import ProfilerResult
+from trtutils.profiling._profiler import profile_engine as inspect_profile_engine
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from trtutils._engine import TRTEngine
     from trtutils.jetson._profile import JetsonProfilerResult
 
 
@@ -80,11 +82,6 @@ def profile_engine(
         with power/energy data, total execution time, overall power draw, and overall
         energy consumption.
 
-    Raises
-    ------
-    ImportError
-        If jetson=True but the jetson module is not available.
-
     """
     if jetson:
         return jetson_profile_engine(
@@ -96,12 +93,11 @@ def profile_engine(
             warmup=warmup,
             verbose=verbose,
         )
-    else:
-        return inspect_profile_engine(
-            engine=engine,
-            iterations=iterations,
-            warmup_iterations=warmup_iterations,
-            dla_core=dla_core,
-            warmup=warmup,
-            verbose=verbose,
-        )
+    return inspect_profile_engine(
+        engine=engine,
+        iterations=iterations,
+        warmup_iterations=warmup_iterations,
+        dla_core=dla_core,
+        warmup=warmup,
+        verbose=verbose,
+    )

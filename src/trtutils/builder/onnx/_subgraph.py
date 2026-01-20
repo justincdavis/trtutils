@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import onnx
-import onnx_graphsurgeon as gs
+import onnx_graphsurgeon as gs  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
     from pathlib import Path

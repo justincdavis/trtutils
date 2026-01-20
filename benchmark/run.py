@@ -313,7 +313,7 @@ def benchmark_sahi(
     from trtutils.compat.sahi import TRTDetectionModel
     from sahi.predict import get_sliced_prediction
     from sahi import AutoDetectionModel
-    from utils import UltralyticsTRTModel
+    from utils import UltralyticsTRTDetector
     
     # assess is model is supported
     if MODELNAME not in SAHI_MODELS:
@@ -397,7 +397,7 @@ def benchmark_sahi(
                     device="cuda",
                 )
             elif sahi_type_key == "sahi(ultralytics)(trt)":
-                detection_model = UltralyticsTRTModel(
+                detection_model = UltralyticsTRTDetector(
                     model_path=str(utrt_path),
                     confidence_threshold=conf_thres,
                     device="cuda",

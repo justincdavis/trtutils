@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeGuard
 
 import numpy as np
 
@@ -27,6 +27,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
+
+
+def _is_postprocessed_outputs(
+    outputs: list[np.ndarray] | list[list[np.ndarray]],
+) -> TypeGuard[list[list[np.ndarray]]]:
+    return not outputs or isinstance(outputs[0], list)
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -131,6 +137,11 @@ class Detector(ImageModel, DetectorInterface):
             Whether or not to log additional information.
             Only covers the initialization phase.
 
+        Raises
+        ------
+        ValueError
+            If an input or output schema string is invalid.
+
         """
         super().__init__(
             engine_path=engine_path,
@@ -166,6 +177,9 @@ class Detector(ImageModel, DetectorInterface):
 
         # resolve input schema
         if input_schema is None:
+            if auto_input_schema is None:
+                err_msg = "Input schema could not be determined from the engine."
+                raise ValueError(err_msg)
             self._input_schema = auto_input_schema
         elif isinstance(input_schema, str):
             if input_schema not in InputSchema.names():
@@ -178,6 +192,9 @@ class Detector(ImageModel, DetectorInterface):
 
         # resolve output schema
         if output_schema is None:
+            if auto_output_schema is None:
+                err_msg = "Output schema could not be determined from the engine."
+                raise ValueError(err_msg)
             self._output_schema = auto_output_schema
         elif isinstance(output_schema, str):
             if output_schema not in OutputSchema.names():
@@ -367,7 +384,7 @@ class Detector(ImageModel, DetectorInterface):
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """
         Run the model on input.
 
@@ -425,7 +442,7 @@ class Detector(ImageModel, DetectorInterface):
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """
         Run the model on input.
 
@@ -471,6 +488,8 @@ class Detector(ImageModel, DetectorInterface):
         ------
         RuntimeError
             If postprocessing is running, but ratios/padding not found
+        ValueError
+            If preprocessed inputs are not a single batch tensor.
 
         """
         if verbose:
@@ -506,7 +525,10 @@ class Detector(ImageModel, DetectorInterface):
             tensor, ratios, padding = self.preprocess(images, no_copy=no_copy_pre)
         else:
             # images is already preprocessed tensor when preprocessed=True
-            tensor = images[0] if isinstance(images, list) and len(images) == 1 else images
+            if len(images) != 1:
+                err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
+                raise ValueError(err_msg)
+            tensor = images[0]
 
         batch_size = len(images) if not preprocessed else tensor.shape[0]
 
@@ -528,7 +550,7 @@ class Detector(ImageModel, DetectorInterface):
 
         # execute
         t0 = time.perf_counter()
-        outputs = self._engine(engine_inputs, no_copy=no_copy_run)
+        outputs: list[np.ndarray] = self._engine(engine_inputs, no_copy=no_copy_run)
         t1 = time.perf_counter()
 
         # handle postprocessing
@@ -538,13 +560,15 @@ class Detector(ImageModel, DetectorInterface):
             if ratios is None or padding is None:
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
                 raise RuntimeError(err_msg)
-            outputs = self.postprocess(
+            postprocessed = self.postprocess(
                 outputs,
                 ratios,
                 padding,
                 conf_thres,
                 no_copy=no_copy_post,
             )
+            self._infer_profile = (t0, t1)
+            return postprocessed
 
         self._infer_profile = (t0, t1)
 
@@ -665,7 +689,7 @@ class Detector(ImageModel, DetectorInterface):
         if verbose:
             LOG.debug(f"{self._tag}: end2end")
 
-        outputs: list[list[np.ndarray]]
+        outputs: list[np.ndarray] | list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             if verbose:
@@ -679,6 +703,10 @@ class Detector(ImageModel, DetectorInterface):
                 no_copy=True,
                 verbose=verbose,
             )
+            if not _is_postprocessed_outputs(outputs):
+                err_msg = "Expected postprocessed detector outputs in end2end."
+                raise RuntimeError(err_msg)
+            postprocessed = outputs
         else:
             if verbose:
                 LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
@@ -709,7 +737,7 @@ class Detector(ImageModel, DetectorInterface):
                     raise RuntimeError(err_msg)
 
             raw_outputs = self._engine.direct_exec(input_ptrs, no_warn=True)
-            outputs = self.postprocess(
+            postprocessed = self.postprocess(
                 raw_outputs,
                 ratios,
                 padding,
@@ -720,7 +748,7 @@ class Detector(ImageModel, DetectorInterface):
 
         # generate the detections
         return self.get_detections(
-            outputs,
+            postprocessed,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
             extra_nms=extra_nms,

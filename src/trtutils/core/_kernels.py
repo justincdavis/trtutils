@@ -79,11 +79,9 @@ class Kernel:
         """Free the memory of the loaded kernel."""
         if self._freed or self._module is None:
             return
-        try:
+        # CUDA context may already be destroyed during interpreter shutdown
+        with contextlib.suppress(Exception):
             cuda_call(cuda.cuModuleUnload(self._module))
-        except Exception:
-            # CUDA context may already be destroyed during interpreter shutdown
-            pass
         self._module = None
         self._freed = True
 

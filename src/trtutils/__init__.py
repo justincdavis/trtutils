@@ -114,8 +114,8 @@ import contextlib
 
 from . import builder, compat, core, download, image, inspect, models, parallel, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
-from ._profile import profile_engine
 from ._engine import TRTEngine
+from ._profile import profile_engine
 from .builder import build_engine
 from .inspect import inspect_engine
 from .trtexec import find_trtexec, run_trtexec
@@ -142,8 +142,8 @@ __all__ = [
     "inspect",
     "inspect_engine",
     "models",
-    "profile_engine",
     "parallel",
+    "profile_engine",
     "register_jit",
     "run_trtexec",
     "set_log_level",
