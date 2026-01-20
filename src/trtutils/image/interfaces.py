@@ -68,7 +68,7 @@ class ClassifierInterface(ABC):
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Postprocess the outputs."""
 
     @abstractmethod
@@ -80,7 +80,7 @@ class ClassifierInterface(ABC):
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
     @abstractmethod
@@ -92,7 +92,7 @@ class ClassifierInterface(ABC):
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
     @abstractmethod
@@ -171,7 +171,7 @@ class DetectorInterface(ABC):
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Postprocess the outputs."""
 
     @abstractmethod
@@ -186,7 +186,7 @@ class DetectorInterface(ABC):
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
     @abstractmethod
@@ -201,7 +201,7 @@ class DetectorInterface(ABC):
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
     @abstractmethod

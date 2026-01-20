@@ -91,12 +91,12 @@ class SAHI:
             patch = np.ascontiguousarray(patch)
         with self._lock:
             dets = self._detector.end2end(
-                patch,
+                [patch],
                 conf_thres=conf_thres,
                 nms_iou_thres=nms_iou_thres,
                 extra_nms=extra_nms,
                 agnostic_nms=agnostic_nms,
-            )
+            )[0]
         x, y = offset
         sx, sy = scale
         corrected_dets = []

@@ -148,14 +148,16 @@ class CPUPreprocessor(ImagePreprocessor):
         resize = resize if resize is not None else self._resize
         mean = self._mean
         std = self._std
+        mean_tuple: tuple[float, float, float] | None = None
+        std_tuple: tuple[float, float, float] | None = None
         if mean is not None:
-            mean: tuple[float, float, float] = tuple(
+            mean_tuple = tuple(
                 mean.reshape(-1)
                 if mean.size == _COLOR_CHANNELS
                 else mean.flatten()[:_COLOR_CHANNELS]
             )
         if std is not None:
-            std: tuple[float, float, float] = tuple(
+            std_tuple = tuple(
                 std.reshape(-1) if std.size == _COLOR_CHANNELS else std.flatten()[:_COLOR_CHANNELS]
             )
         return preprocess(
@@ -164,7 +166,7 @@ class CPUPreprocessor(ImagePreprocessor):
             self._o_dtype,
             self._o_range,
             resize,
-            mean,
-            std,
+            mean_tuple,
+            std_tuple,
             verbose=verbose,
         )

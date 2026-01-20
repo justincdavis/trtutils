@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Thread
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeGuard
 
 import numpy as np
 
@@ -22,7 +22,20 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
-    from trtutils.image.interfaces import DetectorInterface
+
+def _is_raw_outputs(
+    outputs: list[np.ndarray] | list[list[np.ndarray]],
+) -> TypeGuard[list[np.ndarray]]:
+    return not outputs or isinstance(outputs[0], np.ndarray)
+
+
+def _is_postprocessed_batches(
+    outputs: list[list[list[np.ndarray]] | list[np.ndarray]],
+) -> TypeGuard[list[list[list[np.ndarray]]]]:
+    return all(
+        isinstance(model_outputs, list) and (not model_outputs or isinstance(model_outputs[0], list))
+        for model_outputs in outputs
+    )
 
 
 @dataclass
@@ -38,7 +51,7 @@ class _InputPacket:
 
 @dataclass
 class _OutputPacket:
-    data: list[list[np.ndarray]]
+    data: list[np.ndarray] | list[list[np.ndarray]]
     ratios: list[tuple[float, float]] | None = None
     padding: list[tuple[float, float]] | None = None
     postprocessed: bool | None = None
@@ -48,7 +61,7 @@ class _OutputPacket:
 class EngineInfo:
     engine_path: Path | str
     dla_core: int | None = None
-    detector_class: type[DetectorInterface] = Detector
+    detector_class: type[Detector] = Detector
 
 
 class ParallelDetector:
@@ -96,7 +109,7 @@ class ParallelDetector:
             If a Detector model could not be created.
 
         """
-        self._engine_info: list[EngineInfo] = engines
+        self._engine_info: list[EngineInfo] = list(engines)
         self._warmup_iterations = warmup_iterations
         self._warmup = warmup
         self._tag = str(len(self._engine_info))
@@ -613,14 +626,14 @@ class ParallelDetector:
 
     def get_random_input(
         self: Self,
-    ) -> list[np.ndarray]:
+    ) -> list[list[np.ndarray]]:
         """
         Get random inputs (one per model).
 
         Returns
         -------
-        list[np.ndarray]
-            The random inputs
+        list[list[np.ndarray]]
+            The random inputs per model.
 
         """
         return [self.get_model(mid).get_random_input() for mid in range(len(self._models))]
@@ -666,7 +679,7 @@ class ParallelDetector:
                 # Generate random data
                 random_input = self.get_model(modelid).get_random_input()
                 self.submit_model(
-                    [random_input],
+                    random_input,
                     modelid,
                     preprocessed=True,
                     postprocess=False,
@@ -681,9 +694,7 @@ class ParallelDetector:
                 raise ValueError(err_msg)
             else:
                 # Generate random data
-                inputs = [
-                    [self.get_model(mid).get_random_input()] for mid in range(len(self._models))
-                ]
+                inputs = [self.get_model(mid).get_random_input() for mid in range(len(self._models))]
                 self.submit(inputs, preprocessed=True, postprocess=False, no_copy=True)
 
     def retrieve(
@@ -691,7 +702,7 @@ class ParallelDetector:
         *,
         verbose: bool | None = None,
     ) -> tuple[
-        list[list[list[np.ndarray]]],
+        list[list[list[np.ndarray]] | list[np.ndarray]],
         list[list[tuple[float, float]] | None],
         list[list[tuple[float, float]] | None],
     ]:
@@ -705,11 +716,15 @@ class ParallelDetector:
 
         Returns
         -------
-        tuple[list[list[list[np.ndarray]]], list[list[tuple[float, float]] | None], list[list[tuple[float, float]] | None]]
+        tuple[
+            list[list[list[np.ndarray]] | list[np.ndarray]],
+            list[list[tuple[float, float]] | None],
+            list[list[tuple[float, float]] | None],
+        ]
             The outputs per image per model, ratios per image per model, padding per image per model.
 
         """
-        outputs: list[list[list[np.ndarray]]] = []
+        outputs: list[list[list[np.ndarray]] | list[np.ndarray]] = []
         ratios: list[list[tuple[float, float]] | None] = []
         paddings: list[list[tuple[float, float]] | None] = []
         for modelid in range(len(self._engine_info)):
@@ -725,7 +740,7 @@ class ParallelDetector:
         *,
         verbose: bool | None = None,
     ) -> tuple[
-        list[list[np.ndarray]],
+        list[list[np.ndarray]] | list[np.ndarray],
         list[tuple[float, float]] | None,
         list[tuple[float, float]] | None,
     ]:
@@ -741,7 +756,7 @@ class ParallelDetector:
 
         Returns
         -------
-        tuple[list[list[np.ndarray]], list[tuple[float, float]] | None, list[tuple[float, float]] | None]
+        tuple[list[list[np.ndarray]] | list[np.ndarray], list[tuple[float, float]] | None, list[tuple[float, float]] | None]
             The outputs per image, ratios per image, and padding per image.
 
         """
@@ -788,7 +803,19 @@ class ParallelDetector:
         list[list[list[tuple[tuple[int, int, int, int], float, int]]]]
             The detections per image per model.
 
+        Raises
+        ------
+        ValueError
+            If postprocess is False when calling end2end.
+        RuntimeError
+            If postprocessed outputs are not available for end2end.
+
         """
+        if postprocess is None:
+            postprocess = True
+        if not postprocess:
+            err_msg = "end2end requires postprocess to be True."
+            raise ValueError(err_msg)
         self.submit(
             inputs,
             ratios,
@@ -799,6 +826,9 @@ class ParallelDetector:
             verbose=verbose,
         )
         outputs, _, _ = self.retrieve(verbose=verbose)
+        if not _is_postprocessed_batches(outputs):
+            err_msg = "Expected postprocessed outputs for end2end."
+            raise RuntimeError(err_msg)
         return self.get_detections(outputs, verbose=verbose)
 
     def _run(self: Self, threadid: int) -> None:
@@ -879,7 +909,12 @@ class ParallelDetector:
                         no_copy=data.no_copy,
                     )
                 else:
-                    tensor = images[0] if len(images) == 1 else images
+                    if len(images) != 1:
+                        err_msg = (
+                            "Preprocessed inputs must be a list containing a single batch tensor."
+                        )
+                        raise ValueError(err_msg)
+                    tensor = images[0]
                     ratios = data.ratios
                     padding = data.padding
                 t0 = time.perf_counter()
@@ -899,6 +934,9 @@ class ParallelDetector:
                 if ratios is None or padding is None:
                     err_msg = "Ratios/Padding is None, but postprocess set to True."
                     raise ValueError(err_msg)
+                if not _is_raw_outputs(results):
+                    err_msg = "Expected raw detector outputs before postprocess."
+                    raise RuntimeError(err_msg)
                 postproc_results = detector.postprocess(
                     results,
                     ratios,

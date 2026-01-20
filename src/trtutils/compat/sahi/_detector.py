@@ -29,7 +29,7 @@ class TRTDetectionModel(DetectionModel):  # type: ignore[misc]
         return False
 
     def perform_inference(self: Self, image: np.ndarray, image_size: int | None = None) -> None:
-        self._original_predictions = self.model.end2end(image)
+        self._original_predictions = self.model.end2end([image])[0]
 
     def _create_object_prediction_list_from_original_predictions(
         self,

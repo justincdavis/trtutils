@@ -183,13 +183,29 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         *,
         verbose: bool | None = None,
     ) -> np.ndarray:
-        """Create arguments for SST kernel with batch support."""
+        """
+        Create arguments for SST kernel with batch support.
+
+        Returns
+        -------
+        np.ndarray
+            Packed kernel argument array.
+
+        Raises
+        ------
+        RuntimeError
+            If the imagenet buffers are not allocated.
+
+        """
         if verbose:
             LOG.debug(f"{self._tag}: Making sst args (batch_size={batch_size})")
 
         o_width, o_height = self._o_shape
 
         if self._use_imagenet:
+            if self._mean_buffer is None or self._std_buffer is None:
+                err_msg = "Imagenet buffers not allocated for SST kernel."
+                raise RuntimeError(err_msg)
             # Signature: input, output, mean, std, height, width, batch_size
             sst_args = self._sst_kernel.create_args(
                 self._sst_input_binding.allocation,

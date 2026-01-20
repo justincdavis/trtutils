@@ -18,6 +18,8 @@ from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from typing_extensions import Self
 
 
@@ -73,7 +75,7 @@ class ProfilerResult:
 
     """
 
-    layers: list[LayerTiming]
+    layers: Sequence[LayerTiming]
     total_time: LayerTiming
     iterations: int
 

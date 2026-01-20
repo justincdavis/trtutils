@@ -13,8 +13,12 @@ import tempfile
 import time
 from functools import lru_cache
 from pathlib import Path
+from typing import IO, TYPE_CHECKING
 
 from trtutils._log import LOG
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 _MIN_UV_VERSION = (0, 9, 0)
 _MIN_UV_VERSION_PARTS = 2
@@ -22,7 +26,7 @@ _EXPECTED_UV_PARTS = 3
 _640 = 640
 
 
-def _kill_process_group(pid: int | None, cmd: list[str]) -> None:
+def _kill_process_group(pid: int | None, cmd: Sequence[str]) -> None:
     if pid is None:
         return
     try:
@@ -34,21 +38,22 @@ def _kill_process_group(pid: int | None, cmd: list[str]) -> None:
 
 
 def _run_cmd(
-    cmd: list[str],
+    cmd: Sequence[str | Path],
     *,
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
     verbose: bool | None = None,
     timeout: float | None = None,
-    stdout: object | None = None,
-    stderr: object | None = None,
+    stdout: IO[str] | IO[bytes] | int | None = None,
+    stderr: IO[str] | IO[bytes] | int | None = None,
     check: bool = True,
 ) -> int:
     final_stdout = stdout if stdout is not None else (None if verbose else subprocess.DEVNULL)
     final_stderr = stderr if stderr is not None else (None if verbose else subprocess.STDOUT)
+    cmd_list = [str(part) for part in cmd]
     proc = subprocess.Popen(
-        cmd,
-        cwd=cwd,
+        cmd_list,
+        cwd=str(cwd) if cwd is not None else None,
         env=env,
         stdout=final_stdout,
         stderr=final_stderr,
@@ -57,13 +62,13 @@ def _run_cmd(
     try:
         proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        LOG.error(f"Command timed out, killing process group: {' '.join(cmd)}")
-        _kill_process_group(proc.pid, cmd)
+        LOG.error(f"Command timed out, killing process group: {' '.join(cmd_list)}")
+        _kill_process_group(proc.pid, cmd_list)
         raise
     if check and proc.returncode:
-        LOG.error(f"Command failed with code {proc.returncode}: {' '.join(cmd)}")
-        _kill_process_group(proc.pid, cmd)
-        raise subprocess.CalledProcessError(proc.returncode, cmd)
+        LOG.error(f"Command failed with code {proc.returncode}: {' '.join(cmd_list)}")
+        _kill_process_group(proc.pid, cmd_list)
+        raise subprocess.CalledProcessError(proc.returncode, cmd_list)
     return proc.returncode
 
 

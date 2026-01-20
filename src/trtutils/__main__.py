@@ -9,7 +9,7 @@ import argparse
 import json
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeGuard
 
 import cv2
 import cv2ext
@@ -23,6 +23,12 @@ if TYPE_CHECKING:
     from types import SimpleNamespace
 
     from ._benchmark import Metric
+
+
+def _is_raw_outputs(
+    outputs: list[np.ndarray] | list[list[np.ndarray]],
+) -> TypeGuard[list[np.ndarray]]:
+    return not outputs or isinstance(outputs[0], np.ndarray)
 
 
 def _benchmark(args: SimpleNamespace) -> None:
@@ -583,15 +589,22 @@ def _detect(args: SimpleNamespace) -> None:
         img: np.ndarray,
     ) -> tuple[list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float]:
         t0 = time.perf_counter()
-        tensor, ratios, pads = detector.preprocess(img, no_copy=True, verbose=args.verbose)
+        tensor, ratios, pads = detector.preprocess([img], no_copy=True, verbose=args.verbose)
         t1 = time.perf_counter()
         results = detector.run(
-            tensor, preprocessed=True, postprocess=False, no_copy=True, verbose=args.verbose
+            [tensor],
+            preprocessed=True,
+            postprocess=False,
+            no_copy=True,
+            verbose=args.verbose,
         )
         t2 = time.perf_counter()
+        if not _is_raw_outputs(results):
+            err_msg = "Expected raw detector outputs before postprocess."
+            raise RuntimeError(err_msg)
         p_results = detector.postprocess(results, ratios, pads, no_copy=True, verbose=args.verbose)
         t3 = time.perf_counter()
-        dets = detector.get_detections(p_results, verbose=args.verbose)
+        dets = detector.get_detections(p_results, verbose=args.verbose)[0]
         t4 = time.perf_counter()
         return (
             dets,
@@ -769,16 +782,19 @@ def _classify(args: SimpleNamespace) -> None:
         img: np.ndarray,
     ) -> tuple[tuple[int, float], float, float, float, float]:
         t0 = time.perf_counter()
-        tensor, _, _ = classifier.preprocess(img, no_copy=True)
+        tensor, _, _ = classifier.preprocess([img], no_copy=True)
         t1 = time.perf_counter()
-        results = classifier.run(tensor, preprocessed=True, postprocess=False, no_copy=True)
+        results = classifier.run([tensor], preprocessed=True, postprocess=False, no_copy=True)
         t2 = time.perf_counter()
+        if not _is_raw_outputs(results):
+            err_msg = "Expected raw classifier outputs before postprocess."
+            raise RuntimeError(err_msg)
         p_results = classifier.postprocess(results, no_copy=True)
         t3 = time.perf_counter()
         cls_results = classifier.get_classifications(p_results, top_k=1)[0]
         t4 = time.perf_counter()
         return (
-            cls_results,
+            cls_results[0],
             round(1000 * (t1 - t0), 2),
             round(1000 * (t2 - t1), 2),
             round(1000 * (t3 - t2), 2),

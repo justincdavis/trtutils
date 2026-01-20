@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeGuard
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
@@ -19,6 +19,12 @@ if TYPE_CHECKING:
 
     import numpy as np
     from typing_extensions import Self
+
+
+def _is_postprocessed_outputs(
+    outputs: list[np.ndarray] | list[list[np.ndarray]],
+) -> TypeGuard[list[list[np.ndarray]]]:
+    return not outputs or isinstance(outputs[0], list)
 
 
 class Classifier(ImageModel, ClassifierInterface):
@@ -222,7 +228,7 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def __call__(
         self: Self,
-        images: list[np.ndarray] | np.ndarray,
+        images: list[np.ndarray],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -267,7 +273,7 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def run(
         self: Self,
-        images: list[np.ndarray] | np.ndarray,
+        images: list[np.ndarray],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -305,6 +311,11 @@ class Classifier(ImageModel, ClassifierInterface):
         list[list[np.ndarray]]
             The postprocessed outputs per image.
 
+        Raises
+        ------
+        ValueError
+            If preprocessed inputs are not a single batch tensor.
+
         """
         if verbose:
             LOG.debug(f"{self._tag}: run")
@@ -339,18 +350,23 @@ class Classifier(ImageModel, ClassifierInterface):
             tensor, _, _ = self.preprocess(images, no_copy=no_copy_pre)
         else:
             # images is already preprocessed tensor when preprocessed=True
-            tensor = images[0] if isinstance(images, list) and len(images) == 1 else images
+            if len(images) != 1:
+                err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
+                raise ValueError(err_msg)
+            tensor = images[0]
 
         # execute
         t0 = time.perf_counter()
-        outputs = self._engine([tensor], no_copy=no_copy_run)
+        outputs: list[np.ndarray] = self._engine([tensor], no_copy=no_copy_run)
         t1 = time.perf_counter()
 
         # handle postprocessing
         if postprocess:
             if verbose:
                 LOG.debug("Postprocessing outputs")
-            outputs = self.postprocess(outputs, no_copy=no_copy_post, verbose=verbose)
+            postprocessed = self.postprocess(outputs, no_copy=no_copy_post, verbose=verbose)
+            self._infer_profile = (t0, t1)
+            return postprocessed
 
         self._infer_profile = (t0, t1)
 
@@ -414,11 +430,16 @@ class Classifier(ImageModel, ClassifierInterface):
         list[list[tuple[int, float]]]
             The classifications per image, where each entry is (class_id, confidence).
 
+        Raises
+        ------
+        RuntimeError
+            If postprocessed outputs are not available in end2end.
+
         """
         if verbose:
             LOG.debug(f"{self._tag}: end2end")
 
-        outputs: list[list[np.ndarray]]
+        outputs: list[np.ndarray] | list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             if verbose:
@@ -431,6 +452,10 @@ class Classifier(ImageModel, ClassifierInterface):
                 no_copy=True,
                 verbose=verbose,
             )
+            if not _is_postprocessed_outputs(outputs):
+                err_msg = "Expected postprocessed classifier outputs in end2end."
+                raise RuntimeError(err_msg)
+            postprocessed = outputs
         else:
             if verbose:
                 LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
@@ -443,7 +468,7 @@ class Classifier(ImageModel, ClassifierInterface):
                 verbose=verbose,
             )
             raw_outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
-            outputs = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
+            postprocessed = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
 
         # generate the classifications
-        return self.get_classifications(outputs, top_k=top_k, verbose=verbose)
+        return self.get_classifications(postprocessed, top_k=top_k, verbose=verbose)

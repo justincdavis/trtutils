@@ -43,8 +43,13 @@ from __future__ import annotations
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Protocol
 
 from trtutils._log import LOG
+
+
+class _TimingCache(Protocol):
+    def serialize(self) -> bytes: ...
 
 
 def _delete_folder(directory: Path) -> None:
@@ -290,7 +295,7 @@ def store_timing_cache(filepath: Path, *, overwrite: bool = False, clear_old: bo
     )
 
 
-def save_timing_cache_to_global(timing_cache_obj: object, *, overwrite: bool = True) -> Path:
+def save_timing_cache_to_global(timing_cache_obj: _TimingCache, *, overwrite: bool = True) -> Path:
     """
     Save a TensorRT timing cache object to the global timing cache.
 
