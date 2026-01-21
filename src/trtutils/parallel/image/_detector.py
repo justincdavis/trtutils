@@ -9,9 +9,10 @@ import time
 from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Thread
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING
 
 import numpy as np
+from typing_extensions import TypeGuard
 
 from trtutils._log import LOG
 from trtutils.image._detector import Detector

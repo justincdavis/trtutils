@@ -1,0 +1,8 @@
+[src]
+include = ["src", "tests", "examples"]
+
+[environment]
+python-version = "3.8"
+
+[rules]
+possibly-missing-import = "ignore"

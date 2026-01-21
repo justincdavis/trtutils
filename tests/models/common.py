@@ -1,6 +1,7 @@
 # Copyright (c) 2024-2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="unused-ignore"
 from __future__ import annotations
 
 import time
@@ -184,6 +185,7 @@ def build_detector(model_id: str, *, use_dla: bool | None = None) -> Path:
         onnx=onnx_path,
         output=engine_path,
         dla_core=0 if use_dla else None,
+        opt_level=1,
         verbose=False,
     )
 

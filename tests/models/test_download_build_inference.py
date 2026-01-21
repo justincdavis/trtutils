@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="misc"
 from __future__ import annotations
 
 import tempfile
@@ -89,6 +90,7 @@ def test_download_build_inference(model_class: type, model_name: str, imgsz: int
             onnx=onnx_path,
             output=engine_path,
             imgsz=imgsz,
+            opt_level=1,
         )
         assert engine_path.exists(), f"Engine file was not created: {engine_path}"
 

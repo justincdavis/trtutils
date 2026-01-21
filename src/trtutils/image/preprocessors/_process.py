@@ -70,7 +70,7 @@ def _preprocess_single(
     tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
 
     if mean is not None and std is not None:
-        tensor = tensor / 255.0
+        tensor = tensor / 255.0  # type: ignore[assignment]
         tensor = (tensor - mean) / std
     else:
         tensor = rescale(tensor, input_range)

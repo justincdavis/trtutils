@@ -9,11 +9,12 @@ import argparse
 import json
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING
 
 import cv2
 import cv2ext
 import numpy as np
+from typing_extensions import TypeGuard
 
 import trtutils
 from trtutils._log import LOG

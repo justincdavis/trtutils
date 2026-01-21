@@ -97,7 +97,7 @@ compat = [
 ]
 ci = [
     "ruff>=0.11.13",
-    "mypy==1.16.*",
+    "ty>=0.0.12",
     "types-tqdm>=4.67",
 ]
 docs = [

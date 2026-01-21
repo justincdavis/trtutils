@@ -31,6 +31,7 @@ def build_engine() -> Path:
     trtutils.builder.build_engine(
         ONNX_PATH,
         ENGINE_PATH,
+        optimization_level=1,
     )
 
     return ENGINE_PATH

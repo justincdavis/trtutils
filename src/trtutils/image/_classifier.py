@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING
+
+from typing_extensions import TypeGuard
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG

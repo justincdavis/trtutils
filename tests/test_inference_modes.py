@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="misc,no-any-return"
 """Comprehensive inference mode tests for Classifier and Detector."""
 
 from __future__ import annotations
@@ -456,6 +457,7 @@ def _build_classifier_engine() -> Path | None:
     trtutils.builder.build_engine(
         CLASSIFIER_ONNX_PATH,
         CLASSIFIER_ENGINE_PATH,
+        optimization_level=1,
     )
 
     return CLASSIFIER_ENGINE_PATH

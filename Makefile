@@ -1,4 +1,4 @@
-.PHONY: help install clean download benchmark-bootstrap docs test ci mypy pyright ruff format check release ci_env mypy_venv venv_format venv_check civ ruff_venv act
+.PHONY: help install clean download benchmark-bootstrap docs test ci ty pyright ruff format check release ci_env ty_venv venv_format venv_check civ ruff_venv act
 
 help: 
 	@echo "Please use \`make <target>' where <target> is one of"
@@ -7,13 +7,13 @@ help:
 	@echo "  download           to download and export models"
 	@echo "  benchmark-bootstrap to download all benchmark models upfront"
 	@echo "  docs               to generate the documentation"
-	@echo "  ci 	              to run the CI workflows - mypy & ruff"
-	@echo "  mypy               to run the mypy static type checker"
+	@echo "  ci 	              to run the CI workflows - ty & ruff"
+	@echo "  ty                 to run the ty static type checker"
 	@echo "  pyright            to run the pyright static type checker"
 	@echo "  format             to run the ruff formatter"
 	@echo "  check              to run the ruff linter"
 	@echo "  ruff 	              to run both the formatter and linter from ruff"
-	@echo "  mypy_venv          to run the mypy static type checker in the CI environment"
+	@echo "  ty_venv            to run the ty static type checker in the CI environment"
 	@echo "  civ                to run the CI workflows in the CI environment"
 	@echo "  ruff_venv          to run both the formatter and linter from ruff in the CI environment"
 	@echo "  stubs              to generate the stubs"
@@ -31,7 +31,6 @@ clean:
 	rm -rf trtutils/*.egg-info
 	rm -rf src/trtutils/*.egg-info
 	pyclean .
-	rm -rf .mypy_cache
 	rm -rf .ruff_cache
 
 download:
@@ -56,14 +55,14 @@ stubs:
 test:
 	./ci/run_tests.sh
 
-ci: ruff mypy
+ci: ruff ty
 
 ruff: format check
 
-mypy:
-	python3 -m mypy examples --config-file=pyproject.toml
-	python3 -m mypy tests --config-file=pyproject.toml
-	python3 -m mypy src/trtutils --config-file=pyproject.toml
+ty:
+	ty check examples
+	ty check tests
+	ty check src
 
 format:
 	python3 -m ruff format ./demos
@@ -84,9 +83,9 @@ ci_env:
 	. .venv-ci/bin/activate && \
 	uv pip install ".[all]" ".[ci]" ".[test]"
 
-mypy_venv: ci_env
+ty_venv: ci_env
 	. .venv-ci/bin/activate && \
-	$(MAKE) mypy
+	$(MAKE) ty
 
 venv_format: ci_env
 	. .venv-ci/bin/activate && \
@@ -96,7 +95,7 @@ venv_check: ci_env
 	. .venv-ci/bin/activate && \
 	$(MAKE) check
 
-civ: ruff_venv mypy_venv
+civ: ruff_venv ty_venv
 
 ruff_venv: venv_format venv_check
 

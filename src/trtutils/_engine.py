@@ -183,19 +183,47 @@ class TRTEngine(TRTEngineInterface):
             raise RuntimeError(err_msg)
 
         self._capturing_graph = True
+        capture_error: RuntimeError | None = None
         try:
             # at least one execution required prior to graph capture
             # simply use one warmup iteration if warmup didnt get run
             if not self._warmup:
-                self.warmup(1, verbose=self._verbose)
+                try:
+                    self.warmup(1, verbose=self._verbose)
+                except RuntimeError as e:
+                    # Warmup can fail due to multi-threaded capture conflicts
+                    if self._cuda_graph is not None:
+                        self._cuda_graph.invalidate()
+                    self._cuda_graph = None
+                    err_msg = (
+                        f"CUDA graph capture failed for engine '{self._name}' during warmup: {e}\n"
+                        "This can happen when multiple engines attempt graph capture simultaneously.\n"
+                        "To resolve: use cuda_graph=False, or ensure engines are created sequentially, "
+                        "or use warmup=True to capture graphs at initialization time."
+                    )
+                    capture_error = RuntimeError(err_msg)
+                    capture_error.__cause__ = e
+                    return
 
             # CUDAGraph handles capture with a context manager
             with self._cuda_graph:
                 # manually run execute_async_v3 instead of execute since
                 # we only want the TRT engine
                 self._context.execute_async_v3(self._stream)
+
+            # Check if capture succeeded
+            if not self._cuda_graph.is_captured:
+                self._cuda_graph = None
+                err_msg = (
+                    f"CUDA graph capture failed for engine '{self._name}'.\n"
+                    "The engine may not support CUDA graph capture.\n"
+                    "To resolve: use cuda_graph=False to disable CUDA graphs for this engine."
+                )
+                capture_error = RuntimeError(err_msg)
         finally:
             self._capturing_graph = False
+            if capture_error is not None:
+                raise capture_error
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError):
@@ -273,9 +301,27 @@ class TRTEngine(TRTEngineInterface):
                 # uses already captured graph to handle execution
                 self._cuda_graph.launch()
             elif not self._capturing_graph:
-                # CUDA graph capture calls execute_async_v3 internally
-                # no need to call again here
+                # Capture the graph (warmup inside will use random data)
                 self._capture_cuda_graph()
+                # After capture, re-copy user's input (warmup overwrote it) and launch
+                if self._cuda_graph is not None and self._cuda_graph.is_captured:
+                    if self._pagelocked_mem and self._unified_mem:
+                        for i_idx in range(len(self._inputs)):
+                            np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
+                    elif self._pagelocked_mem:
+                        for i_idx in range(len(self._inputs)):
+                            memcpy_host_to_device_async(
+                                self._inputs[i_idx].allocation,
+                                data[i_idx],
+                                self._stream,
+                            )
+                    else:
+                        for i_idx in range(len(self._inputs)):
+                            memcpy_host_to_device(
+                                self._inputs[i_idx].allocation,
+                                data[i_idx],
+                            )
+                    self._cuda_graph.launch()
             else:
                 # Currently capturing graph, use direct execution for warmup
                 self._context.execute_async_v3(self._stream)
@@ -306,7 +352,10 @@ class TRTEngine(TRTEngineInterface):
                 )
 
         # make sure all operations are complete
-        stream_synchronize(self._stream)
+        # Skip sync when warming up for graph capture to avoid conflicts
+        # with cudaStreamCaptureModeGlobal in multi-threaded scenarios
+        if not self._capturing_graph:
+            stream_synchronize(self._stream)
 
         if verbose:
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")

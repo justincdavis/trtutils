@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING
 
 import numpy as np
+from typing_extensions import TypeGuard
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
@@ -539,7 +540,7 @@ class Detector(ImageModel, DetectorInterface):
             orig_sizes = np.array(
                 [img.shape[:2] for img in images]
                 if not preprocessed
-                else [[self._input_size[1], self._input_size[0]]] * batch_size,
+                else [(self._input_size[1], self._input_size[0])] * batch_size,
                 dtype=np.int32,
             )
             engine_inputs.append(orig_sizes)

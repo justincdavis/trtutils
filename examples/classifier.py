@@ -32,7 +32,7 @@ def main() -> None:
 
         t0 = time.perf_counter()
         output = classifier.run([img])
-        classifications = classifier.get_classifications(output, top_k=5)  # type: ignore[arg-type]
+        classifications = classifier.get_classifications(output, top_k=5)
         t1 = time.perf_counter()
 
         print(f"RUN, classifications: {classifications}, in {round((t1 - t0) * 1000.0, 2)}")

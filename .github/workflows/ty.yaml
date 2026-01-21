@@ -1,4 +1,4 @@
-name: MyPy
+name: Ty
 on: [ push ]
 jobs:
   build:
@@ -19,14 +19,14 @@ jobs:
           pip install .[ci]
           pip install .[test]
 
-      - name: MyPy - Source
+      - name: Ty - Source
         run: 
-          python3 -m mypy src/trtutils --config-file=pyproject.toml
+          ty check src
 
-      - name: MyPy - Examples
+      - name: Ty - Examples
         run: 
-          python3 -m mypy examples --config-file=pyproject.toml
+          ty check examples
 
-      - name: MyPy - Tests
+      - name: Ty - Tests
         run: 
-          python3 -m mypy tests --config-file=pyproject.toml
+          ty check tests

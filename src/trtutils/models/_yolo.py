@@ -157,6 +157,7 @@ class YOLOX(YOLO):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -177,6 +178,9 @@ class YOLOX(YOLO):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -188,6 +192,7 @@ class YOLOX(YOLO):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -288,6 +293,7 @@ class YOLO3(YOLO):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -307,6 +313,9 @@ class YOLO3(YOLO):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -318,6 +327,7 @@ class YOLO3(YOLO):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -418,6 +428,7 @@ class YOLO5(YOLO):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -437,6 +448,9 @@ class YOLO5(YOLO):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -448,6 +462,7 @@ class YOLO5(YOLO):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -548,6 +563,7 @@ class YOLO7(YOLO):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -568,6 +584,9 @@ class YOLO7(YOLO):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -579,6 +598,7 @@ class YOLO7(YOLO):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -679,6 +699,7 @@ class YOLO8(YOLO):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -699,6 +720,9 @@ class YOLO8(YOLO):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -710,6 +734,7 @@ class YOLO8(YOLO):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -810,6 +835,7 @@ class YOLO9(YOLO):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -830,6 +856,9 @@ class YOLO9(YOLO):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -841,6 +870,7 @@ class YOLO9(YOLO):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -941,6 +971,7 @@ class YOLO10(YOLO):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -961,6 +992,9 @@ class YOLO10(YOLO):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -972,6 +1006,7 @@ class YOLO10(YOLO):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -1072,6 +1107,7 @@ class YOLO11(YOLO):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -1092,6 +1128,9 @@ class YOLO11(YOLO):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -1103,6 +1142,7 @@ class YOLO11(YOLO):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -1203,6 +1243,7 @@ class YOLO12(YOLO):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -1223,6 +1264,9 @@ class YOLO12(YOLO):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -1234,6 +1278,7 @@ class YOLO12(YOLO):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -1334,6 +1379,7 @@ class YOLO13(YOLO):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -1354,6 +1400,9 @@ class YOLO13(YOLO):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -1365,5 +1414,6 @@ class YOLO13(YOLO):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )

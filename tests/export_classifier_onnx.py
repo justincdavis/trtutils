@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="unused-ignore"
 """Export a ResNet18 classifier model to ONNX for testing."""
 
 from __future__ import annotations

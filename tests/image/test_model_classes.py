@@ -1,19 +1,20 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="misc"
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
-
 from trtutils.image.postprocessors import (
     get_classifications,
     get_detections,
     postprocess_classifications,
     postprocess_yolov10,
 )
+
 from trtutils.image.preprocessors import CPUPreprocessor
 
 from .conftest import PREPROC_DTYPE, PREPROC_RANGE, PREPROC_SIZE

@@ -1,13 +1,13 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="misc"
 from __future__ import annotations
 
 from collections.abc import Callable
 
 import numpy as np
 import pytest
-
 from trtutils.image.postprocessors import (
     get_classifications,
     get_detections,

@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 def cuda_stream_begin_capture(
     stream: cudart.cudaStream_t,
-    mode: cudart.cudaStreamCaptureMode = cudart.cudaStreamCaptureMode.cudaStreamCaptureModeGlobal,
+    mode: cudart.cudaStreamCaptureMode = cudart.cudaStreamCaptureMode.cudaStreamCaptureModeThreadLocal,
 ) -> None:
     """
     Begin capturing a CUDA graph on the given stream.
@@ -36,7 +36,9 @@ def cuda_stream_begin_capture(
     stream : cudart.cudaStream_t
         The CUDA stream to begin capture on.
     mode : cudart.cudaStreamCaptureMode, optional
-        The capture mode to use. Default is cudaStreamCaptureModeGlobal.
+        The capture mode to use. Default is ThreadLocal, which only checks
+        CUDA calls from the capturing thread. Global mode would cause any
+        uncapturable call in any thread to fail during capture.
 
     """
     cuda_call(cudart.cudaStreamBeginCapture(stream, mode))
@@ -168,9 +170,7 @@ class CUDAGraph:
         This should be called before the operations to capture.
 
         """
-        cuda_stream_begin_capture(
-            self._stream, cudart.cudaStreamCaptureMode.cudaStreamCaptureModeGlobal
-        )
+        cuda_stream_begin_capture(self._stream)
 
     def stop(self: Self) -> bool:
         """

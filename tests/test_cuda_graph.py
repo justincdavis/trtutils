@@ -2,6 +2,7 @@
 #
 # MIT License
 # ruff: noqa: SLF001
+# mypy: disable-error-code="misc,var-annotated"
 from __future__ import annotations
 
 import time
@@ -406,11 +407,11 @@ def test_cuda_graph_explicit_enable() -> None:
 
 
 def test_cuda_graph_graceful_failure_handling() -> None:
-    """Test that CUDA graph capture failures are handled gracefully."""
+    """Test that CUDA graph capture failures raise a clear error."""
     engine_path = build_engine()
 
-    # Mock stop() to return False (simulating capture failure)
-    with patch("trtutils.core._graph.CUDAGraph.stop", return_value=False):
+    # Mock is_captured to return False (simulating capture failure)
+    with patch("trtutils.core._graph.CUDAGraph.is_captured", property(lambda _self: False)):
         engine = trtutils.TRTEngine(
             engine_path,
             warmup=False,
@@ -418,14 +419,13 @@ def test_cuda_graph_graceful_failure_handling() -> None:
             cuda_graph=True,
         )
 
-        # Should not raise exception despite capture "failure"
-        outputs = engine.mock_execute()
-        assert outputs is not None
+        # Should raise RuntimeError when capture fails
+        with pytest.raises(RuntimeError) as exc_info:
+            engine.mock_execute()
 
-        cuda_graph = engine._cuda_graph
-        assert cuda_graph is not None
-        # Graph should not be captured
-        assert cuda_graph.is_captured is False
+        # Error message should be helpful
+        assert "CUDA graph capture failed" in str(exc_info.value)
+        assert "cuda_graph=False" in str(exc_info.value)
 
 
 # ============================================================================

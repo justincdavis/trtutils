@@ -39,7 +39,7 @@ def main() -> None:
 
         t0 = time.perf_counter()
         output = detector.run([img])
-        bboxes = detector.get_detections(output)  # type: ignore[arg-type]
+        bboxes = detector.get_detections(output)
         t1 = time.perf_counter()
 
         print(f"RUN, bboxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
