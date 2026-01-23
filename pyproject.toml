@@ -86,6 +86,9 @@ onnx = [
 jit = [
     "numba>=0.58.0,<1.0.0",
 ]
+axonn = [
+    "z3-solver>=4.12.0,<5.0.0",
+]
 # buildtime/offline dependencies
 benchmark = [
     "trtutils[torch]",
@@ -121,6 +124,7 @@ sahi = [
 dev = [
     "trtutils[cpu]",
     "trtutils[jit]",
+    "trtutils[axonn]",
     "trtutils[benchmark]",
     "trtutils[compat]",
     "trtutils[ci]",

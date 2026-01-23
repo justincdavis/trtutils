@@ -112,7 +112,7 @@ __version__ = "0.7.0"
 
 import contextlib
 
-from . import builder, compat, core, download, image, inspect, models, parallel, trtexec
+from . import builder, compat, core, download, image, inspect, models, parallel, research, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
 from ._engine import TRTEngine
 from ._profile import profile_engine
@@ -145,6 +145,7 @@ __all__ = [
     "parallel",
     "profile_engine",
     "register_jit",
+    "research",
     "run_trtexec",
     "set_log_level",
     "trtexec",
