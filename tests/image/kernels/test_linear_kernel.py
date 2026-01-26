@@ -85,7 +85,8 @@ def test_linear_results() -> None:
 
     # load the kernel
     kernel = Kernel(
-        *kernels.LINEAR_RESIZE,
+        kernels.LINEAR_RESIZE[0],
+        kernels.LINEAR_RESIZE[1],
     )
 
     args = kernel.create_args(

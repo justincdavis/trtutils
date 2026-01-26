@@ -75,7 +75,8 @@ def _get_kernel_timings(kernel_data: tuple[Path, str]) -> list[float]:
 
     # load the kernel
     kernel = Kernel(
-        *kernel_data,
+        kernel_data[0],
+        kernel_data[1],
     )
 
     # do entire normal setup for the kernel

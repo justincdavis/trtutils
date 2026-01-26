@@ -95,7 +95,8 @@ def test_letterbox_results() -> None:
 
     # load the kernel
     kernel = Kernel(
-        *kernels.LETTERBOX_RESIZE,
+        kernels.LETTERBOX_RESIZE[0],
+        kernels.LETTERBOX_RESIZE[1],
     )
 
     args = kernel.create_args(

@@ -183,7 +183,7 @@ class TestDetectorSingleImage:
         outputs = cast(
             "list[np.ndarray]",
             detector.run(
-                tensor,
+                [tensor],
                 ratios=ratios,
                 padding=padding,
                 preprocessed=True,
@@ -290,7 +290,7 @@ class TestDetectorBatched:
         outputs = cast(
             "list[np.ndarray]",
             detector.run(
-                tensor,
+                [tensor],
                 ratios=ratios,
                 padding=padding,
                 preprocessed=True,
@@ -391,7 +391,7 @@ class TestDetectorParity:
         outputs = cast(
             "list[np.ndarray]",
             detector.run(
-                tensor,
+                [tensor],
                 ratios=ratios,
                 padding=padding,
                 preprocessed=True,
@@ -477,6 +477,13 @@ def classifier_engine_path() -> Path | None:
     return _build_classifier_engine()
 
 
+def _require_classifier_engine(engine_path: Path | None) -> Path:
+    if engine_path is None:
+        pytest.skip("Classifier ONNX not available")
+    assert engine_path is not None
+    return engine_path
+
+
 class TestClassifierSingleImage:
     """Test Classifier with single images."""
 
@@ -486,11 +493,9 @@ class TestClassifierSingleImage:
         self, classifier_engine_path: Path | None, preprocessor: str, mem_config: dict
     ) -> None:
         """Test Classifier.end2end() with single image."""
-        if classifier_engine_path is None:
-            pytest.skip("Classifier ONNX not available")
-
+        engine_path = _require_classifier_engine(classifier_engine_path)
         classifier = Classifier(
-            classifier_engine_path,
+            engine_path,
             preprocessor=preprocessor,
             warmup=False,
             no_warn=True,
@@ -511,11 +516,9 @@ class TestClassifierSingleImage:
         self, classifier_engine_path: Path | None, preprocessor: str, mem_config: dict
     ) -> None:
         """Test preprocess -> run -> postprocess pipeline with single image."""
-        if classifier_engine_path is None:
-            pytest.skip("Classifier ONNX not available")
-
+        engine_path = _require_classifier_engine(classifier_engine_path)
         classifier = Classifier(
-            classifier_engine_path,
+            engine_path,
             preprocessor=preprocessor,
             warmup=False,
             no_warn=True,
@@ -533,7 +536,7 @@ class TestClassifierSingleImage:
         outputs = cast(
             "list[np.ndarray]",
             classifier.run(
-                tensor,
+                [tensor],
                 preprocessed=True,
                 postprocess=False,
             ),
@@ -556,11 +559,9 @@ class TestClassifierBatched:
         self, classifier_engine_path: Path | None, preprocessor: str, batch_size: int
     ) -> None:
         """Test Classifier.end2end() with batched images."""
-        if classifier_engine_path is None:
-            pytest.skip("Classifier ONNX not available")
-
+        engine_path = _require_classifier_engine(classifier_engine_path)
         classifier = Classifier(
-            classifier_engine_path,
+            engine_path,
             preprocessor=preprocessor,
             warmup=False,
             no_warn=True,
@@ -581,11 +582,9 @@ class TestClassifierBatched:
         self, classifier_engine_path: Path | None, preprocessor: str, batch_size: int
     ) -> None:
         """Test manual pipeline with batched images."""
-        if classifier_engine_path is None:
-            pytest.skip("Classifier ONNX not available")
-
+        engine_path = _require_classifier_engine(classifier_engine_path)
         classifier = Classifier(
-            classifier_engine_path,
+            engine_path,
             preprocessor=preprocessor,
             warmup=False,
             no_warn=True,
@@ -603,7 +602,7 @@ class TestClassifierBatched:
         outputs = cast(
             "list[np.ndarray]",
             classifier.run(
-                tensor,
+                [tensor],
                 preprocessed=True,
                 postprocess=False,
             ),
@@ -623,15 +622,13 @@ class TestClassifierParity:
 
     def test_preprocessor_parity(self, classifier_engine_path: Path | None) -> None:
         """Verify all preprocessors produce equivalent classification results."""
-        if classifier_engine_path is None:
-            pytest.skip("Classifier ONNX not available")
-
+        engine_path = _require_classifier_engine(classifier_engine_path)
         images = _get_test_images(1)
         results = {}
 
         for preproc in PREPROCESSORS:
             classifier = Classifier(
-                classifier_engine_path,
+                engine_path,
                 preprocessor=preproc,
                 warmup=False,
                 no_warn=True,
@@ -649,11 +646,9 @@ class TestClassifierParity:
 
     def test_pipeline_vs_end2end_parity(self, classifier_engine_path: Path | None) -> None:
         """Verify manual pipeline matches end2end results."""
-        if classifier_engine_path is None:
-            pytest.skip("Classifier ONNX not available")
-
+        engine_path = _require_classifier_engine(classifier_engine_path)
         classifier = Classifier(
-            classifier_engine_path,
+            engine_path,
             preprocessor="cpu",
             warmup=False,
             no_warn=True,
@@ -669,7 +664,7 @@ class TestClassifierParity:
         outputs = cast(
             "list[np.ndarray]",
             classifier.run(
-                tensor,
+                [tensor],
                 preprocessed=True,
                 postprocess=False,
             ),
@@ -688,15 +683,13 @@ class TestClassifierParity:
 
     def test_memory_mode_parity(self, classifier_engine_path: Path | None) -> None:
         """Verify memory modes don't affect results."""
-        if classifier_engine_path is None:
-            pytest.skip("Classifier ONNX not available")
-
+        engine_path = _require_classifier_engine(classifier_engine_path)
         images = _get_test_images(1)
         results = []
 
         for pagelocked in [True, False]:
             classifier = Classifier(
-                classifier_engine_path,
+                engine_path,
                 preprocessor="cpu",
                 warmup=False,
                 no_warn=True,

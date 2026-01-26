@@ -9,11 +9,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
-
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
+from trtutils.compat._libs import trt
 from trtutils.core._bindings import create_binding
 from trtutils.core._memory import (
     memcpy_device_to_host_async,
@@ -27,11 +25,7 @@ from ._image_preproc import GPUImagePreprocessor
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-    with contextlib.suppress(ImportError):
-        try:
-            import cuda.bindings.runtime as cudart
-        except (ImportError, ModuleNotFoundError):
-            from cuda import cudart
+    from trtutils.compat._libs import cudart
 
 
 class TRTPreprocessor(GPUImagePreprocessor):

@@ -21,7 +21,7 @@ def export_resnet18_onnx(output_path: Path | str) -> None:
 
     """
     import torch  # noqa: PLC0415
-    import torchvision.models as models  # type: ignore[import-untyped] # noqa: PLC0415
+    import torchvision.models as models  # noqa: PLC0415
 
     # Create model
     model = models.resnet18(pretrained=True)

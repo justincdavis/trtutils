@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -9,11 +9,9 @@ from typing import TYPE_CHECKING
 from trtutils._flags import FLAGS
 
 if TYPE_CHECKING:
-    import contextlib
     from collections.abc import Callable
 
-    with contextlib.suppress(ImportError):
-        import tensorrt as trt
+    from trtutils.compat._libs import trt
 
 
 def get_check_dla(config: trt.IBuilderConfig) -> Callable[[trt.ILayer], bool]:

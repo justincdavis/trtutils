@@ -20,7 +20,7 @@ IMG_PATH = str(Path(__file__).parent.parent.parent.parent / "data" / "horse.jpg"
 def kernel_compile(kernel: tuple[Path, str]) -> None:
     """Compile a kernel to validate NVRTC toolchain."""
     stream = create_stream()
-    compiled = Kernel(*kernel)
+    compiled = Kernel(kernel[0], kernel[1])
     assert compiled is not None
     destroy_stream(stream)
 

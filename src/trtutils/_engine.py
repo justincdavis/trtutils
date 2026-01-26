@@ -28,11 +28,7 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
-    with contextlib.suppress(Exception):
-        try:
-            import cuda.bindings.driver as cuda
-        except (ImportError, ModuleNotFoundError):
-            from cuda import cuda
+    from trtutils.compat._libs import cuda
 
 
 class TRTEngine(TRTEngineInterface):

@@ -83,7 +83,8 @@ def test_sst_fast_results() -> None:
 
     # load the kernel
     kernel = Kernel(
-        *kernels.SST_FAST,
+        kernels.SST_FAST[0],
+        kernels.SST_FAST[1],
     )
 
     args = kernel.create_args(
@@ -118,8 +119,8 @@ def test_sst_fast_results() -> None:
 
     assert cuda_result.shape == cpu_result.shape
     assert np.mean(cuda_result) == np.mean(cpu_result)
-    assert np.min(cuda_result) == np.min(cpu_result)  # type: ignore[operator]
-    assert np.max(cuda_result) == np.max(cpu_result)  # type: ignore[operator]
+    assert np.min(cuda_result) == np.min(cpu_result)
+    assert np.max(cuda_result) == np.max(cpu_result)
     assert np.allclose(cuda_result, cpu_result)
 
     destroy_stream(stream)
@@ -170,7 +171,7 @@ def test_sst_fast_batch_results() -> None:
         pagelocked_mem=True,
     )
 
-    kernel = Kernel(*kernels.SST_FAST)
+    kernel = Kernel(kernels.SST_FAST[0], kernels.SST_FAST[1])
 
     args = kernel.create_args(
         input_binding.allocation,
@@ -253,7 +254,7 @@ def test_sst_fast_f16_results() -> None:
         pagelocked_mem=True,
     )
 
-    kernel = Kernel(*kernels.SST_FAST_F16)
+    kernel = Kernel(kernels.SST_FAST_F16[0], kernels.SST_FAST_F16[1])
 
     args = kernel.create_args(
         input_binding.allocation,

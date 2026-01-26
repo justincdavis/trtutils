@@ -1,27 +1,21 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING
-
-with contextlib.suppress(Exception):
-    import tensorrt as trt
 
 from trtutils._config import CONFIG
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.compat._libs import trt
 
 from ._stream import create_stream
 
 if TYPE_CHECKING:
-    try:
-        import cuda.bindings.cudart as cudart
-    except (ImportError, ModuleNotFoundError):
-        from cuda import cudart
+    from trtutils.compat._libs import cudart_bindings as cudart
 
 
 def create_engine(

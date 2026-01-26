@@ -1,17 +1,15 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 import logging
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
+from trtutils.compat._libs import trt
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -51,7 +49,8 @@ def _setup_logger(level: str | None = None) -> None:
         formatter = logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         )
-        stdout_handler = logging.StreamHandler(sys.stdout)
+        stream: TextIO = sys.stdout if sys.stdout is not None else sys.stderr
+        stdout_handler = logging.StreamHandler(stream=stream)
         stdout_handler.setLevel(log_level)
         stdout_handler.setFormatter(formatter)
         logger.addHandler(stdout_handler)
@@ -96,7 +95,7 @@ if level is not None and level.upper() not in [
 
 
 # create a TensorRT compatible logger
-class TRTLogger(trt.ILogger):  # type: ignore[misc]
+class TRTLogger(trt.ILogger):
     """
     Logger that implements TensorRT's ILogger interface while using Python's logging system.
 

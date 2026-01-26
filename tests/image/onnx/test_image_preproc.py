@@ -67,8 +67,8 @@ def test_trt_preproc_engine() -> None:
     cpu_mean = np.mean(cpu_result)
     trt_mean = np.mean(trt_result)
     assert cpu_mean * 0.99 <= trt_mean <= cpu_mean * 1.01, f"CPU: {cpu_mean}, TRT: {trt_mean}"
-    assert np.min(trt_result) == np.min(cpu_result)  # type: ignore[operator]
-    assert np.max(trt_result) == np.max(cpu_result)  # type: ignore[operator]
+    assert np.min(trt_result) == np.min(cpu_result)
+    assert np.max(trt_result) == np.max(cpu_result)
 
     diff_mask = np.any(cpu_result != trt_result, axis=-1)
     avg_diff = np.mean(np.abs(cpu_result[diff_mask] - trt_result[diff_mask]))

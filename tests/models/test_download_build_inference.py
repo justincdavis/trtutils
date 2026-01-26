@@ -4,8 +4,11 @@
 # mypy: disable-error-code="misc"
 from __future__ import annotations
 
+import shutil
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import pytest
@@ -31,6 +34,19 @@ from trtutils.models import (
 )
 
 from .paths import HORSE_IMAGE_PATH
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+@contextmanager
+def _temporary_dir() -> Iterator[Path]:
+    temp_path = Path(tempfile.mkdtemp())
+    try:
+        yield temp_path
+    finally:
+        shutil.rmtree(temp_path)
+
 
 # Each model config: (ModelClass, model_name, imgsz) - imgsz is None to use default
 MODEL_CONFIGS = [
@@ -72,9 +88,9 @@ def test_download_build_inference(model_class: type, model_name: str, imgsz: int
     3. Runs inference on the horse test image
     4. Asserts that at least one object was detected
     """
-    with tempfile.TemporaryDirectory() as temp_dir:
-        onnx_path = Path(temp_dir) / f"{model_name}.onnx"
-        engine_path = Path(temp_dir) / f"{model_name}.engine"
+    with _temporary_dir() as temp_dir:
+        onnx_path = temp_dir / f"{model_name}.onnx"
+        engine_path = temp_dir / f"{model_name}.engine"
 
         # Download the model to ONNX
         model_class.download(  # type: ignore[attr-defined]

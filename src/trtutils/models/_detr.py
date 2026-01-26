@@ -4,13 +4,10 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
-
 from trtutils.builder._build import build_engine
+from trtutils.compat._libs import trt
 from trtutils.image._detector import Detector
 from trtutils.inspect._onnx import inspect_onnx_layers
 

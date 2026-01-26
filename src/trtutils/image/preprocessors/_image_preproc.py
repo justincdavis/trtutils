@@ -26,12 +26,7 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
-    with contextlib.suppress(Exception):
-        try:
-            import cuda.bindings.runtime as cudart
-        except (ImportError, ModuleNotFoundError):
-            from cuda import cudart
-
+    from trtutils.compat._libs import cudart
     from trtutils.core._bindings import Binding
 
 _COLOR_CHANNELS = 3
@@ -293,8 +288,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
         )
 
         # either letterbox or linear is used
-        self._linear_kernel = Kernel(*LINEAR_RESIZE)
-        self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
+        self._linear_kernel = Kernel(LINEAR_RESIZE[0], LINEAR_RESIZE[1])
+        self._letterbox_kernel = Kernel(LETTERBOX_RESIZE[0], LETTERBOX_RESIZE[1])
 
         # if the imagenet mean/std are supplied, allocate the cuda buffers
         self._mean_buffer: Binding | None = None
@@ -458,7 +453,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             raise ValueError(err_msg)
 
         # verified ndim is 3 above, so we can ignore the type checker
-        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
+        img_shape: tuple[int, int, int] = image.shape
 
         if verbose:
             LOG.debug(

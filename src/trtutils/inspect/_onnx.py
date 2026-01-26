@@ -4,14 +4,11 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING
-
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
 
 from trtutils._log import LOG
 from trtutils.builder._onnx import read_onnx
+from trtutils.compat._libs import trt
 
 if TYPE_CHECKING:
     from pathlib import Path

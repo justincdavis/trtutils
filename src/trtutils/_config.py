@@ -4,12 +4,10 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
+from trtutils.compat._libs import trt
 
 from ._log import LOG
 

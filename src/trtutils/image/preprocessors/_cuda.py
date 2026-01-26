@@ -23,11 +23,7 @@ from ._image_preproc import GPUImagePreprocessor
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-    with contextlib.suppress(ImportError):
-        try:
-            import cuda.bindings.runtime as cudart
-        except (ImportError, ModuleNotFoundError):
-            from cuda import cudart
+    from trtutils.compat._libs import cudart
 
 
 class CUDAPreprocessor(GPUImagePreprocessor):
@@ -132,9 +128,9 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         # choose sst kernel based on whether imagenet mean/std are provided
         self._use_imagenet: bool = self._mean is not None and self._std is not None
         if self._use_imagenet:
-            self._sst_kernel = Kernel(*IMAGENET_SST)
+            self._sst_kernel = Kernel(IMAGENET_SST[0], IMAGENET_SST[1])
         else:
-            self._sst_kernel = Kernel(*SST_FAST)
+            self._sst_kernel = Kernel(SST_FAST[0], SST_FAST[1])
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):

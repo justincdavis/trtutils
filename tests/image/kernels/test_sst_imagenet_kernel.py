@@ -89,7 +89,8 @@ def test_sst_imagenet_results() -> None:
 
     # load the kernel
     kernel = Kernel(
-        *kernels.IMAGENET_SST,
+        kernels.IMAGENET_SST[0],
+        kernels.IMAGENET_SST[1],
     )
 
     # copy mean and std to device
@@ -144,8 +145,8 @@ def test_sst_imagenet_results() -> None:
     # use approximate equality for floating point comparisons
     # small differences can occur due to GPU vs CPU floating point operations
     assert np.isclose(np.mean(cuda_result), np.mean(cpu_result), rtol=1e-6, atol=1e-6)
-    assert np.isclose(np.min(cuda_result), np.min(cpu_result), rtol=1e-6, atol=1e-6)  # type: ignore[operator]
-    assert np.isclose(np.max(cuda_result), np.max(cpu_result), rtol=1e-6, atol=1e-6)  # type: ignore[operator]
+    assert np.isclose(np.min(cuda_result), np.min(cpu_result), rtol=1e-6, atol=1e-6)
+    assert np.isclose(np.max(cuda_result), np.max(cpu_result), rtol=1e-6, atol=1e-6)
     assert np.allclose(cuda_result, cpu_result, rtol=1e-6, atol=1e-6)
 
     destroy_stream(stream)
@@ -204,7 +205,7 @@ def test_sst_imagenet_batch_results() -> None:
     mean_binding = create_binding(mean_array)
     std_binding = create_binding(std_array)
 
-    kernel = Kernel(*kernels.IMAGENET_SST)
+    kernel = Kernel(kernels.IMAGENET_SST[0], kernels.IMAGENET_SST[1])
 
     # copy mean and std to device
     memcpy_host_to_device_async(
@@ -313,7 +314,7 @@ def test_sst_imagenet_f16_results() -> None:
     mean_binding = create_binding(mean_array)
     std_binding = create_binding(std_array)
 
-    kernel = Kernel(*kernels.IMAGENET_SST_F16)
+    kernel = Kernel(kernels.IMAGENET_SST_F16[0], kernels.IMAGENET_SST_F16[1])
 
     # copy mean and std to device
     memcpy_host_to_device_async(

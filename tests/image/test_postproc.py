@@ -8,6 +8,7 @@ from collections.abc import Callable
 
 import numpy as np
 import pytest
+
 from trtutils.image.postprocessors import (
     get_classifications,
     get_detections,

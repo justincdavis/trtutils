@@ -4,9 +4,10 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 from dataclasses import dataclass
 from pathlib import Path
+
+from trtutils.compat._libs import trt
 
 
 @dataclass
@@ -72,21 +73,16 @@ class Flags:
 
 
 FLAGS = Flags()
-
-
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
-
-    FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
-    FLAGS.TRT_HAS_UINT8 = hasattr(trt.DataType, "UINT8")
-    FLAGS.TRT_HAS_INT64 = hasattr(trt.DataType, "INT64")
-    FLAGS.NEW_CAN_RUN_ON_DLA = hasattr(trt.IBuilderConfig, "can_run_on_DLA")
-    FLAGS.MEMSIZE_V2 = hasattr(trt.ICudaEngine, "device_memory_size_v2")
-    FLAGS.BUILD_PROGRESS = hasattr(trt, "IProgressMonitor")
-    FLAGS.BUILD_SERIALIZED = hasattr(trt.Builder, "build_serialized_network")
-    FLAGS.EXEC_ASYNC_V3 = hasattr(trt.IExecutionContext, "execute_async_v3")
-    FLAGS.EXEC_ASYNC_V2 = hasattr(trt.IExecutionContext, "execute_async_v2")
-    FLAGS.EXEC_ASYNC_V1 = hasattr(trt.IExecutionContext, "execute_async")
-    FLAGS.EXEC_V2 = hasattr(trt.IExecutionContext, "execute_v2")
-    FLAGS.EXEC_V1 = hasattr(trt.IExecutionContext, "execute")
-    FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()
+FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
+FLAGS.TRT_HAS_UINT8 = hasattr(trt.DataType, "UINT8")
+FLAGS.TRT_HAS_INT64 = hasattr(trt.DataType, "INT64")
+FLAGS.NEW_CAN_RUN_ON_DLA = hasattr(trt.IBuilderConfig, "can_run_on_DLA")
+FLAGS.MEMSIZE_V2 = hasattr(trt.ICudaEngine, "device_memory_size_v2")
+FLAGS.BUILD_PROGRESS = hasattr(trt, "IProgressMonitor")
+FLAGS.BUILD_SERIALIZED = hasattr(trt.Builder, "build_serialized_network")
+FLAGS.EXEC_ASYNC_V3 = hasattr(trt.IExecutionContext, "execute_async_v3")
+FLAGS.EXEC_ASYNC_V2 = hasattr(trt.IExecutionContext, "execute_async_v2")
+FLAGS.EXEC_ASYNC_V1 = hasattr(trt.IExecutionContext, "execute_async")
+FLAGS.EXEC_V2 = hasattr(trt.IExecutionContext, "execute_v2")
+FLAGS.EXEC_V1 = hasattr(trt.IExecutionContext, "execute")
+FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()

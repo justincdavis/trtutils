@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -7,13 +7,8 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
-with contextlib.suppress(Exception):
-    try:
-        import cuda.bindings.runtime as cudart
-    except (ImportError, ModuleNotFoundError):
-        from cuda import cudart
-
 from trtutils._log import LOG
+from trtutils.compat._libs import cudart
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -26,7 +21,7 @@ if TYPE_CHECKING:
 
 def cuda_stream_begin_capture(
     stream: cudart.cudaStream_t,
-    mode: cudart.cudaStreamCaptureMode = cudart.cudaStreamCaptureMode.cudaStreamCaptureModeThreadLocal,
+    mode: cudart.cudaStreamCaptureMode | None = None,
 ) -> None:
     """
     Begin capturing a CUDA graph on the given stream.
@@ -41,6 +36,8 @@ def cuda_stream_begin_capture(
         uncapturable call in any thread to fail during capture.
 
     """
+    if mode is None:
+        mode = cudart.cudaStreamCaptureMode.cudaStreamCaptureModeThreadLocal
     cuda_call(cudart.cudaStreamBeginCapture(stream, mode))
 
 

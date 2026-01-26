@@ -4,16 +4,13 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 import tempfile
 from pathlib import Path
 from typing import Protocol
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
-
 from trtutils._log import LOG
 from trtutils.builder._build import build_engine
+from trtutils.compat._libs import trt
 
 from ._profiler import ProfilerResult, profile_engine
 

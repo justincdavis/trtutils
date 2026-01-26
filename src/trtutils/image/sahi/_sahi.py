@@ -171,19 +171,22 @@ class SAHI:
         futures = []
         for patch, offset in zip(patches, offsets):
             futures.append(
-                self._executor.submit(
-                    self._execute,
-                    patch,
+                (
+                    self._executor.submit(
+                        self._execute,
+                        patch,
+                        offset,
+                        (sx, sy),
+                        conf_thres,
+                        nms_iou_thres,
+                        extra_nms=extra_nms,
+                        agnostic_nms=agnostic_nms,
+                    ),
                     offset,
-                    (sx, sy),
-                    conf_thres,
-                    nms_iou_thres,
-                    extra_nms=extra_nms,
-                    agnostic_nms=agnostic_nms,
                 )
             )
         detections = []
-        for future in futures:
+        for future, offset in futures:
             sub_dets = future.result()
             if verbose:
                 LOG.info(f"SAHI: {len(sub_dets)} detections in slice {offset}")
