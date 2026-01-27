@@ -3,4 +3,4 @@ root = ["."]
 python-version = "3.8"
 
 [rules]
-ignore = ["unresolved-import"]
+unresolved-import = "ignore"
