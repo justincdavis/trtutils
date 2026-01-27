@@ -105,8 +105,8 @@ class TRTDetectionModel(DetectionModel):
                     score=float(score),
                     category_id=int(class_id),
                     category_name=str(int(class_id)),
-                    shift_amount=shift_amount,  # type: ignore[arg-type]
-                    full_shape=full_shape,  # type: ignore[arg-type]
+                    shift_amount=shift_amount,
+                    full_shape=full_shape,
                 )
             )
         self._object_prediction_list_per_image = [predictions]

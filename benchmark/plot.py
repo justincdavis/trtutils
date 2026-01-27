@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """Generate plots of benchmarking results."""
@@ -47,11 +47,17 @@ def get_data() -> list[tuple[str, dict[str, dict[str, dict[str, dict[str, float]
     ] = []
 
     for file in data_dir.iterdir():
+        if file.is_dir() or file.suffix != ".json":
+            continue
+            
         device_name = file.stem
-        with file.open("r") as f:
-            data = json.load(f)
-
-        device_data.append((device_name, data))
+        try:
+            with file.open("r") as f:
+                data = json.load(f)
+            device_data.append((device_name, data))
+        except Exception as e:
+            print(f"Warning: Failed to load data for {device_name}: {e}, skipping...")
+            continue
 
     return device_data
 
@@ -471,7 +477,17 @@ if __name__ == "__main__":
         default="trtutils(trt)",
         help="Framework to use for pareto optimal plot (default: trtutils(trt)).",
     )
+    parser.add_argument(
+        "--skip-devices",
+        type=str,
+        default="",
+        help="Comma-separated list of device names to skip.",
+    )
     args = parser.parse_args()
+
+    skip_devices = set()
+    if args.skip_devices:
+        skip_devices = {d.strip() for d in args.skip_devices.split(",") if d.strip()}
 
     # parse all the data
     all_data = get_data()
@@ -480,10 +496,18 @@ if __name__ == "__main__":
     model_info = get_model_info()
 
     for name, data in all_data:
+        if name in skip_devices:
+            print(f"Skipping device: {name}")
+            continue
+            
         if args.device is None or name == args.device:
-            if args.latency:
-                plot_device(name, data, overwrite=args.overwrite)
-            if args.pareto:
-                plot_pareto(
-                    name, data, model_info, args.framework, overwrite=args.overwrite
-                )
+            try:
+                if args.latency:
+                    plot_device(name, data, overwrite=args.overwrite)
+                if args.pareto:
+                    plot_pareto(
+                        name, data, model_info, args.framework, overwrite=args.overwrite
+                    )
+            except Exception as e:
+                print(f"Warning: Failed to generate plots for {name}: {e}, skipping...")
+                continue

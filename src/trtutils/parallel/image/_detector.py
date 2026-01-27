@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Thread
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from typing_extensions import TypeGuard
@@ -667,7 +667,7 @@ class ParallelDetector:
             if data is not None and len(data) > 0 and isinstance(data[0], np.ndarray):
                 # Single batch for single model
                 # Type narrowing: data is list[np.ndarray] here
-                data_single: list[np.ndarray] = data  # type: ignore[assignment]
+                data_single: list[np.ndarray] = cast("list[np.ndarray]", data)
                 self.submit_model(
                     data_single,
                     modelid,
@@ -692,7 +692,7 @@ class ParallelDetector:
             if data is not None and len(data) > 0 and isinstance(data[0], list):
                 # Batches for all models
                 # Type narrowing: data is list[list[np.ndarray]] here
-                data_batches: list[list[np.ndarray]] = data  # type: ignore[assignment]
+                data_batches: list[list[np.ndarray]] = cast("list[list[np.ndarray]]", data)
                 self.submit(data_batches, preprocessed=True, postprocess=False, no_copy=True)
             elif data is not None and len(data) > 0 and isinstance(data[0], np.ndarray):
                 err_msg = "Submitted list[np.ndarray], but no model ID to specify which model."

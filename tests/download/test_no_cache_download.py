@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from trtutils.download import _download as dl  # noqa: PLC2701
+from trtutils.download import _download as dl
 from trtutils.download import download
 
 from .common import MODEL_CONFIGS, TEST_MODELS

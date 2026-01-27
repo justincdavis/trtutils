@@ -257,7 +257,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
-            images = [images]  # type: ignore[list-item]
+            images = [images]  # type: ignore[assignment]
 
         _, ratios_list, padding_list = self.direct_preproc(
             images,  # type: ignore[arg-type]

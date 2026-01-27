@@ -36,7 +36,6 @@ def build_engine(
     onnx: Path | str,
     output: Path | str,
     default_device: trt.DeviceType | str = trt.DeviceType.GPU,
-    timing_cache: Path | str | bool | None = None,  # noqa: FBT001
     workspace: float = 4.0,
     dla_core: int | None = None,
     calibration_cache: Path | str | None = None,
@@ -52,6 +51,7 @@ def build_engine(
     tiling_optimization_level: trt.TilingOptimizationLevel | None = None,
     tiling_l2_cache_limit: int | None = None,
     *,
+    timing_cache: Path | str | bool | None = None,
     gpu_fallback: bool = False,
     direct_io: bool = False,
     prefer_precision_constraints: bool = False,

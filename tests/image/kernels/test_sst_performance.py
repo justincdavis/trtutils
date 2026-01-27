@@ -25,7 +25,7 @@ from trtutils.image import kernels
 try:
     from .common import IMG_PATH
 except ImportError:
-    from common import (  # type: ignore[no-redef, import-not-found]
+    from common import (
         IMG_PATH,
     )
 
@@ -41,7 +41,7 @@ def _get_kernel_timings(kernel_data: tuple[Path, str]) -> list[float]:
     offset = 0.0
 
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_width, output_height))
+    img = cv2.resize(img, (output_width, output_height))  # type: ignore[arg-type]
 
     stream = create_stream()
 

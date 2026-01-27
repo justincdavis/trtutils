@@ -23,7 +23,7 @@ from trtutils.image import kernels
 try:
     from .common import IMG_PATH, kernel_compile
 except ImportError:
-    from common import (  # type: ignore[no-redef, import-not-found]
+    from common import (
         IMG_PATH,
         kernel_compile,
     )

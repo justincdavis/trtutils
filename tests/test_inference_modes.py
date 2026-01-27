@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 import pytest
 
+import trtutils.builder
 from trtutils.image import Classifier
 
 from .models.common import DETECTOR_CONFIG, build_detector
@@ -451,8 +452,6 @@ def _build_classifier_engine() -> Path | None:
         return CLASSIFIER_ENGINE_PATH
 
     CLASSIFIER_ENGINE_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    import trtutils.builder  # noqa: PLC0415
 
     trtutils.builder.build_engine(
         CLASSIFIER_ONNX_PATH,

@@ -29,7 +29,7 @@ def test_trt_preproc_engine() -> None:
 
     # resize for both methods
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_shape, output_shape))
+    img = cv2.resize(img, (output_shape, output_shape))  # type: ignore[arg-type]
 
     # cpu version (now expects list of images)
     cpu_result, _, _ = preprocess(
@@ -90,7 +90,7 @@ def test_trt_preproc_imagenet_engine() -> None:
 
     # resize for both methods
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_shape, output_shape))
+    img = cv2.resize(img, (output_shape, output_shape))  # type: ignore[arg-type]
 
     # cpu version with mean/std (now expects list of images)
     cpu_result, _, _ = preprocess(

@@ -84,9 +84,9 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup=True,
             verbose=args.verbose,
         )
-        latency = jresult.latency
-        energy = jresult.energy
-        power = jresult.power_draw
+        latency = jresult.latency  # type: ignore[assignment]
+        energy = jresult.energy  # type: ignore[assignment]
+        power = jresult.power_draw  # type: ignore[assignment]
     else:
         result = trtutils.benchmark_engine(
             engine=mpath,
@@ -96,7 +96,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup=True,
             verbose=args.verbose,
         )
-        latency = result.latency
+        latency = result.latency  # type: ignore[assignment]
 
     latency_in_ms = {
         "mean": latency.mean * 1000.0,
@@ -611,14 +611,16 @@ def _detect(args: SimpleNamespace) -> None:
             raise RuntimeError(err_msg)
         p_results = detector.postprocess(results, ratios, pads, no_copy=True, verbose=args.verbose)
         t3 = time.perf_counter()
-        dets = detector.get_detections(p_results, verbose=args.verbose)[0]
+        dets: list[tuple[tuple[int, int, int, int], float, int]] = detector.get_detections(
+            p_results, verbose=args.verbose
+        )[0]
         t4 = time.perf_counter()
         return (
             dets,
-            round(1000 * (t1 - t0), 2),
-            round(1000 * (t2 - t1), 2),
-            round(1000 * (t3 - t2), 2),
-            round(1000 * (t4 - t3), 2),
+            float(round(1000 * (t1 - t0), 2)),
+            float(round(1000 * (t2 - t1), 2)),
+            float(round(1000 * (t3 - t2), 2)),
+            float(round(1000 * (t4 - t3), 2)),
         )
 
     def log(
@@ -798,14 +800,14 @@ def _classify(args: SimpleNamespace) -> None:
             raise RuntimeError(err_msg)
         p_results = classifier.postprocess(results, no_copy=True)
         t3 = time.perf_counter()
-        cls_results = classifier.get_classifications(p_results, top_k=1)[0]
+        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]
         t4 = time.perf_counter()
         return (
             cls_results[0],
-            round(1000 * (t1 - t0), 2),
-            round(1000 * (t2 - t1), 2),
-            round(1000 * (t3 - t2), 2),
-            round(1000 * (t4 - t3), 2),
+            float(round(1000 * (t1 - t0), 2)),
+            float(round(1000 * (t2 - t1), 2)),
+            float(round(1000 * (t3 - t2), 2)),
+            float(round(1000 * (t4 - t3), 2)),
         )
 
     def log(

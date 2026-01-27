@@ -529,7 +529,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             raise ValueError(err_msg)
 
         # verified ndim is 3 above, so we can ignore the type checker
-        img_shape: tuple[int, int, int] = image.shape
+        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
 
         if verbose:
             LOG.debug(

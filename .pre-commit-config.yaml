@@ -1,23 +1,26 @@
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.13
+  - repo: local
     hooks:
-      # Formatter
-      - id: ruff
-        args:
-          - format
-          - demos
-          - examples
-          - tests
-          - src/trtutils
+      # Ruff formatter
+      - id: ruff-format
+        name: Ruff format (using .venv-ci)
+        entry: bash -c './ci/run_ci.sh --format'
+        language: system
+        pass_filenames: false
+        always_run: false
 
-      # Linter
-      - id: ruff
-        args:
-          - check
-          - --fix
-          - --preview
-          - demos
-          - examples
-          - tests
-          - src/trtutils
+      # Ruff linter
+      - id: ruff-lint
+        name: Ruff lint (using .venv-ci)
+        entry: bash -c './ci/run_ci.sh --lint'
+        language: system
+        pass_filenames: false
+        always_run: false
+
+      # Ty typecheck
+      - id: ty-typecheck
+        name: Ty typecheck (using .venv-ci)
+        entry: bash -c './ci/run_ci.sh --typecheck'
+        language: system
+        pass_filenames: false
+        always_run: false

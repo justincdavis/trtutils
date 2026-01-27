@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: S607, S603, S404
+# ruff: noqa: S607, S603
 from __future__ import annotations
 
 import json

@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: S404, S603
+# ruff: noqa: S603
 from __future__ import annotations
 
 import subprocess
