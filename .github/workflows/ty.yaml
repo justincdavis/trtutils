@@ -1,7 +1,7 @@
 name: Ty
 on: [ push ]
 jobs:
-  ty:
+  Typecheck:
     runs-on: ubuntu-latest
 
     steps:
