@@ -1,10 +1,16 @@
-name: Ruff - Source
+name: Ruff
 on: [ push ]
 jobs:
-  ruff:
+  ruff_format:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: astral-sh/ruff-action@v3
         with:
-          src: src/trtutils
+          args: "format --check --diff"
+
+  ruff_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: astral-sh/ruff-action@v3
