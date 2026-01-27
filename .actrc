@@ -1,0 +1,4 @@
+--pull=false
+-P ubuntu-latest=trtutils-act:latest
+-W .github/workflows/ruff.yaml
+-W .github/workflows/ty.yaml

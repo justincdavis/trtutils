@@ -1,4 +1,4 @@
-.PHONY: help install clean download benchmark-bootstrap docs test ci ty pyright ruff format check release ci_env ty_venv venv_format venv_check civ ruff_venv act
+.PHONY: help install clean download benchmark-bootstrap docs test ci ty pyright ruff format check release ci_env ty_venv venv_format venv_check civ ruff_venv act docker
 
 help: 
 	@echo "Please use \`make <target>' where <target> is one of"
@@ -20,6 +20,7 @@ help:
 	@echo "  test               to run the tests"
 	@echo "  release            to perform all actions required for a release"
 	@echo "  act                to run all GitHub Actions workflows locally with act (push event)"
+	@echo "  docker             to build the local act Docker image"
 
 install:
 	pip3 install .
@@ -98,6 +99,9 @@ venv_check: ci_env
 civ: ruff_venv ty_venv
 
 ruff_venv: venv_format venv_check
+
+docker:
+	docker build -f docker/Dockerfile.act -t trtutils-act:latest .
 
 act:
 	act $(ACT_ARGS)

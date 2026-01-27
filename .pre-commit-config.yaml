@@ -1,0 +1,22 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Keep in sync with the minimum version in `pyproject.toml` (tool.poetry.group.ci / [project.optional-dependencies].ci)
+    rev: v0.11.13
+    hooks:
+      # Formatter: mirrors `make format`
+      - id: ruff-format
+        args:
+          - demos
+          - examples
+          - tests
+          - src/trtutils
+
+      # Linter: mirrors `make check`
+      - id: ruff
+        args:
+          - --fix
+          - --preview
+          - demos
+          - examples
+          - tests
+          - src/trtutils
