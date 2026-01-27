@@ -15,9 +15,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install .[all]
-          pip install .[ci]
-          pip install .[test]
+          pip install --upgrade pip
+          pip install ".[ci,test]"
 
       - name: Ty - Source
         run: 
