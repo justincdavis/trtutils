@@ -5,40 +5,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: astral-sh/ruff-action@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          version: 0.14.14
-          args: "format --check --diff ./demos"
-      - uses: astral-sh/ruff-action@v3
-        with:
-          version: 0.14.14
-          args: "format --check --diff ./examples"
-      - uses: astral-sh/ruff-action@v3
-        with:
-          version: 0.14.14
-          args: "format --check --diff ./tests"
-      - uses: astral-sh/ruff-action@v3
-        with:
-          version: 0.14.14
-          args: "format --check --diff ./src/trtutils"
+          python-version: 3.8
+      - name: Install ruff
+        run: pip install ruff==0.14.14
+      - name: Ruff Format Check
+        run: ./ci/run_format.sh --check --diff
 
   Check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: astral-sh/ruff-action@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          version: 0.14.14
-          args: "check --fix ./demos --ignore=INP001,T201"
-      - uses: astral-sh/ruff-action@v3
-        with:
-          version: 0.14.14
-          args: "check --fix ./examples --ignore=INP001,T201,D103"
-      - uses: astral-sh/ruff-action@v3
-        with:
-          version: 0.14.14
-          args: "check --fix ./tests --ignore=S101,D100,D104,PLR2004,T201"
-      - uses: astral-sh/ruff-action@v3
-        with:
-          version: 0.14.14
-          args: "check --fix ./src/trtutils"
+          python-version: 3.8
+      - name: Install ruff
+        run: pip install ruff==0.14.14
+      - name: Ruff Check
+        run: ./ci/run_lint.sh --no-fix

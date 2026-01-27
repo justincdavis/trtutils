@@ -47,10 +47,7 @@ EXIT_CODE=0
 # Run format check
 if [ "$DO_FORMAT" = true ]; then
     echo "Running ruff format..."
-    if .venv-ci/bin/python3 -m ruff format ./demos && \
-       .venv-ci/bin/python3 -m ruff format ./examples && \
-       .venv-ci/bin/python3 -m ruff format ./tests && \
-       .venv-ci/bin/python3 -m ruff format ./src/trtutils; then
+    if ./ci/run_format.sh --check --diff; then
         echo "✓ Format check passed"
     else
         echo "✗ Format check failed"
@@ -61,10 +58,7 @@ fi
 # Run lint check
 if [ "$DO_LINT" = true ]; then
     echo "Running ruff lint..."
-    if .venv-ci/bin/python3 -m ruff check ./demos --fix --ignore=INP001,T201 && \
-       .venv-ci/bin/python3 -m ruff check ./examples --fix --ignore=INP001,T201,D103 && \
-       .venv-ci/bin/python3 -m ruff check ./tests --fix --ignore=S101,D100,D104,PLR2004,T201 && \
-       .venv-ci/bin/python3 -m ruff check ./src/trtutils --fix; then
+    if ./ci/run_lint.sh --no-fix; then
         echo "✓ Lint check passed"
     else
         echo "✗ Lint check failed"
@@ -75,9 +69,7 @@ fi
 # Run typecheck
 if [ "$DO_TYPECHECK" = true ]; then
     echo "Running ty typecheck..."
-    if .venv-ci/bin/ty check examples && \
-       .venv-ci/bin/ty check tests && \
-       .venv-ci/bin/ty check src; then
+    if ./ci/run_type_check.sh; then
         echo "✓ Typecheck passed"
     else
         echo "✗ Typecheck failed"

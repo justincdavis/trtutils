@@ -18,14 +18,5 @@ jobs:
           pip install --upgrade pip
           pip install ".[all]" ".[ci]" ".[test]"
 
-      - name: Ty - Source
-        run: 
-          ty check src
-
-      - name: Ty - Examples
-        run: 
-          ty check examples
-
-      - name: Ty - Tests
-        run: 
-          ty check tests
+      - name: Type Check
+        run: ./ci/run_type_check.sh
