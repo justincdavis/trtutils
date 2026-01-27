@@ -6,6 +6,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, overload
 
+import numpy as np
 from typing_extensions import Literal, TypeGuard
 
 from trtutils._flags import FLAGS
@@ -15,11 +16,11 @@ from ._image_model import ImageModel
 from .interfaces import ClassifierInterface
 from .postprocessors import get_classifications, postprocess_classifications
 from .preprocessors import CUDAPreprocessor, TRTPreprocessor
+from .preprocessors._image_preproc import _is_single_image
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import numpy as np
     from typing_extensions import Self
 
 
@@ -120,9 +121,32 @@ class Classifier(ImageModel, ClassifierInterface):
             verbose=verbose,
         )
 
+    # preprocess overloads
+    @overload
+    def preprocess(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     def preprocess(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    def preprocess(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         method: str | None = None,
         *,
@@ -134,8 +158,8 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to preprocess.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the images with.
             Options are [letterbox, linear].
@@ -159,6 +183,11 @@ class Classifier(ImageModel, ClassifierInterface):
             The preprocessed batch tensor, list of ratios per image, and list of padding per image.
 
         """
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
+
         resize = resize if resize is not None else self._resize_method
         if verbose:
             LOG.debug(
@@ -228,9 +257,32 @@ class Classifier(ImageModel, ClassifierInterface):
         self._post_profile = (t0, t1)
         return data
 
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
     def __call__(
         self: Self,
         images: list[np.ndarray],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -242,8 +294,8 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to run the model on.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to run the model on.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -261,8 +313,9 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[list[np.ndarray]]
-            The postprocessed outputs per image.
+        list[np.ndarray] | list[list[np.ndarray]]
+            The outputs. For single image input with postprocess=True,
+            returns list[np.ndarray]. For batch input, returns batch results.
 
         """
         return self.run(
@@ -273,6 +326,7 @@ class Classifier(ImageModel, ClassifierInterface):
             verbose=verbose,
         )
 
+    # run overloads - batch input (3 overloads)
     @overload
     def run(
         self: Self,
@@ -306,9 +360,43 @@ class Classifier(ImageModel, ClassifierInterface):
         verbose: bool | None = ...,
     ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
 
+    # run overloads - single image input (3 overloads)
+    @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    def run(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -320,8 +408,8 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to run the model on.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to run the model on.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -343,8 +431,10 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[list[np.ndarray]]
-            The postprocessed outputs per image.
+        list[np.ndarray] | list[list[np.ndarray]]
+            For single image with postprocess=True: list[np.ndarray] (single image outputs).
+            For batch with postprocess=True: list[list[np.ndarray]] (per-image outputs).
+            For postprocess=False: list[np.ndarray] (raw outputs).
 
         Raises
         ------
@@ -354,6 +444,11 @@ class Classifier(ImageModel, ClassifierInterface):
         """
         if verbose:
             LOG.debug(f"{self._tag}: run")
+
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
 
         # assign flags
         if preprocessed is None:
@@ -399,28 +494,52 @@ class Classifier(ImageModel, ClassifierInterface):
         if postprocess:
             if verbose:
                 LOG.debug("Postprocessing outputs")
-            postprocessed = self.postprocess(outputs, no_copy=no_copy_post, verbose=verbose)
+            postprocessed_outputs = self.postprocess(outputs, no_copy=no_copy_post, verbose=verbose)
             self._infer_profile = (t0, t1)
-            return postprocessed
+
+            # Unwrap for single-image input
+            if is_single:
+                return postprocessed_outputs[0]
+            return postprocessed_outputs
 
         self._infer_profile = (t0, t1)
 
         return outputs
 
+    # get_classifications overloads
+    @overload
+    def get_classifications(
+        self: Self,
+        outputs: list[np.ndarray],
+        top_k: int = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[tuple[int, float]]: ...
+
+    @overload
     def get_classifications(
         self: Self,
         outputs: list[list[np.ndarray]],
+        top_k: int = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[int, float]]]: ...
+
+    def get_classifications(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
         top_k: int = 5,
         *,
         verbose: bool | None = None,
-    ) -> list[list[tuple[int, float]]]:
+    ) -> list[tuple[int, float]] | list[list[tuple[int, float]]]:
         """
         Get the classifications from postprocessed outputs.
 
         Parameters
         ----------
-        outputs : list[list[np.ndarray]]
-            The postprocessed outputs per image.
+        outputs : list[np.ndarray] | list[list[np.ndarray]]
+            For single image: list[np.ndarray] (single image's postprocessed outputs).
+            For batch: list[list[np.ndarray]] (postprocessed outputs per image).
         top_k : int, optional
             The number of top predictions to return. Default is 5.
         verbose : bool, optional
@@ -428,22 +547,51 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[list[tuple[int, float]]]
-            The classifications per image, where each entry is (class_id, confidence).
+        list[tuple[int, float]] | list[list[tuple[int, float]]]
+            For single image: list[tuple[int, float]] (classifications for single image).
+            For batch: list[list[tuple[int, float]]] (classifications per image).
 
         """
         if verbose:
             LOG.debug(f"{self._tag}: get_classifications")
 
-        return get_classifications(outputs, top_k=top_k, verbose=verbose)
+        # Detect if this is single-image output (list[np.ndarray]) vs batch (list[list[np.ndarray]])
+        is_single = outputs and isinstance(outputs[0], np.ndarray)
 
+        if is_single:
+            # Wrap single image outputs for batch processing
+            batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[list-item]
+            result = get_classifications(batch_outputs, top_k=top_k, verbose=verbose)
+            return result[0]  # Unwrap
+
+        return get_classifications(outputs, top_k=top_k, verbose=verbose)  # type: ignore[arg-type]
+
+    # end2end overloads
+    @overload
+    def end2end(
+        self: Self,
+        images: np.ndarray,
+        top_k: int = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[tuple[int, float]]: ...
+
+    @overload
     def end2end(
         self: Self,
         images: list[np.ndarray],
+        top_k: int = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[int, float]]]: ...
+
+    def end2end(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         top_k: int = 5,
         *,
         verbose: bool | None = None,
-    ) -> list[list[tuple[int, float]]]:
+    ) -> list[tuple[int, float]] | list[list[tuple[int, float]]]:
         """
         Perform end to end inference for a batch of images.
 
@@ -453,8 +601,8 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to perform inference with.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to perform inference with.
         top_k : int, optional
             The number of top predictions to return. Default is 5.
         verbose : bool, optional
@@ -462,8 +610,9 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[list[tuple[int, float]]]
-            The classifications per image, where each entry is (class_id, confidence).
+        list[tuple[int, float]] | list[list[tuple[int, float]]]
+            For single image: list[tuple[int, float]] (classifications).
+            For batch: list[list[tuple[int, float]]] (classifications per image).
 
         Raises
         ------
@@ -473,6 +622,11 @@ class Classifier(ImageModel, ClassifierInterface):
         """
         if verbose:
             LOG.debug(f"{self._tag}: end2end")
+
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
 
         outputs: list[np.ndarray] | list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
@@ -497,7 +651,7 @@ class Classifier(ImageModel, ClassifierInterface):
 
             # if using CUDA, can remove much more
             gpu_ptr, _, _ = self._preprocessor.direct_preproc(
-                images,
+                images,  # type: ignore[arg-type]
                 resize=self._resize_method,
                 no_warn=True,
                 verbose=verbose,
@@ -506,4 +660,9 @@ class Classifier(ImageModel, ClassifierInterface):
             postprocessed = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
 
         # generate the classifications
-        return self.get_classifications(postprocessed, top_k=top_k, verbose=verbose)
+        result = get_classifications(postprocessed, top_k=top_k, verbose=verbose)
+
+        # Unwrap for single-image input
+        if is_single:
+            return result[0]
+        return result

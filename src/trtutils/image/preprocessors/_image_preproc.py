@@ -7,7 +7,7 @@ from __future__ import annotations
 import contextlib
 import math
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, overload
 
 import numpy as np
 
@@ -33,6 +33,19 @@ _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
 
 
+def _is_single_image(images: np.ndarray | list[np.ndarray]) -> bool:
+    """
+    Check if input is a single HWC image vs a batch.
+
+    Returns
+    -------
+    bool
+        True if images is a single HWC ndarray (ndim == 3), False otherwise.
+
+    """
+    return isinstance(images, np.ndarray) and images.ndim == _IMAGE_DIMENSIONS
+
+
 class ImagePreprocessor(ABC):
     """Abstract base class for image preprocessors."""
 
@@ -42,7 +55,7 @@ class ImagePreprocessor(ABC):
         self: Self,
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
-        dtype: np.dtype,
+        dtype: np.dtype[Any],
         resize: str = "letterbox",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
@@ -159,20 +172,62 @@ class ImagePreprocessor(ABC):
     @abstractmethod
     def warmup(self: Self) -> None: ...
 
-    @abstractmethod
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     def __call__(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
 
-    @abstractmethod
+    # preprocess overloads
+    @overload
+    def preprocess(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     def preprocess(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -187,7 +242,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         self: Self,
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
-        dtype: np.dtype,
+        dtype: np.dtype[Any],
         resize: str = "letterbox",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
@@ -353,9 +408,30 @@ class GPUImagePreprocessor(ImagePreprocessor):
         )
         self.preprocess([rand_data], resize=self._resize, no_copy=True)
 
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     def __call__(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -366,8 +442,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to preprocess.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to preprocess.
         resize : str, optional
             The method to resize the image with.
             Options are [letterbox, linear], will use method

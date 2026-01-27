@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, overload
 
 import numpy as np
 
@@ -20,7 +20,7 @@ from trtutils.core._memory import (
 from trtutils.core._stream import destroy_stream, stream_synchronize
 from trtutils.image.onnx_models import build_image_preproc, build_image_preproc_imagenet
 
-from ._image_preproc import GPUImagePreprocessor
+from ._image_preproc import GPUImagePreprocessor, _is_single_image
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -35,7 +35,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         self: Self,
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
-        dtype: np.dtype,
+        dtype: np.dtype[Any],
         batch_size: int = 1,
         resize: str = "letterbox",
         mean: tuple[float, float, float] | None = None,
@@ -197,9 +197,30 @@ class TRTPreprocessor(GPUImagePreprocessor):
         with contextlib.suppress(AttributeError):
             del self._engine
 
+    # preprocess overloads
+    @overload
+    def preprocess(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     def preprocess(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    def preprocess(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -210,8 +231,8 @@ class TRTPreprocessor(GPUImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to preprocess.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to preprocess.
         resize : str, optional
             The method to resize the image with.
             Options are [letterbox, linear], will use method
@@ -233,8 +254,13 @@ class TRTPreprocessor(GPUImagePreprocessor):
             The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
+
         _, ratios_list, padding_list = self.direct_preproc(
-            images,
+            images,  # type: ignore[arg-type]
             resize=resize,
             no_warn=True,
             verbose=verbose,
