@@ -502,7 +502,7 @@ class ParallelDetector:
         """
         if verbose:
             LOG.debug(f"{self._tag}: GetDetections model: {modelid}")
-        return self.get_model(modelid).get_detections(outputs, verbose=verbose)
+        return self.get_model(modelid).get_detections(outputs, verbose=verbose)  # type: ignore[return-value]
 
     def submit(
         self: Self,

@@ -613,7 +613,7 @@ def _detect(args: SimpleNamespace) -> None:
         t3 = time.perf_counter()
         dets: list[tuple[tuple[int, int, int, int], float, int]] = detector.get_detections(
             p_results, verbose=args.verbose
-        )[0]
+        )[0]  # type: ignore[assignment]
         t4 = time.perf_counter()
         return (
             dets,
@@ -800,7 +800,7 @@ def _classify(args: SimpleNamespace) -> None:
             raise RuntimeError(err_msg)
         p_results = classifier.postprocess(results, no_copy=True)
         t3 = time.perf_counter()
-        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]
+        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]  # type: ignore[assignment]
         t4 = time.perf_counter()
         return (
             cls_results[0],
