@@ -4,17 +4,14 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
-
 from trtutils._config import CONFIG
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
 from trtutils.core.cache import query_timing_cache, save_timing_cache_to_global
 
@@ -22,6 +19,7 @@ from ._calibrator import EngineCalibrator
 from ._onnx import read_onnx
 from ._utils import get_check_dla
 
+ProgressBar = None
 if FLAGS.BUILD_PROGRESS:
     from ._progress import ProgressBar
 
@@ -38,7 +36,6 @@ def build_engine(
     onnx: Path | str,
     output: Path | str,
     default_device: trt.DeviceType | str = trt.DeviceType.GPU,
-    timing_cache: Path | str | bool | None = None,  # noqa: FBT001
     workspace: float = 4.0,
     dla_core: int | None = None,
     calibration_cache: Path | str | None = None,
@@ -54,6 +51,7 @@ def build_engine(
     tiling_optimization_level: trt.TilingOptimizationLevel | None = None,
     tiling_l2_cache_limit: int | None = None,
     *,
+    timing_cache: Path | str | bool | None = None,
     gpu_fallback: bool = False,
     direct_io: bool = False,
     prefer_precision_constraints: bool = False,
@@ -262,7 +260,7 @@ def build_engine(
     # helper function for checking if layer can run on DLA
     check_dla: Callable[[trt.ILayer], bool] = get_check_dla(config)
 
-    if verbose and FLAGS.BUILD_PROGRESS:
+    if verbose and FLAGS.BUILD_PROGRESS and ProgressBar is not None:
         LOG.debug("Applying ProgressBar to config")
         config.progress_monitor = ProgressBar()
 

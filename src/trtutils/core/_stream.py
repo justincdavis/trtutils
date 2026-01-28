@@ -7,10 +7,7 @@ from __future__ import annotations
 import contextlib
 
 with contextlib.suppress(Exception):
-    try:
-        import cuda.bindings.runtime as cudart
-    except (ImportError, ModuleNotFoundError):
-        from cuda import cudart
+    from trtutils.compat._libs import cudart
 
 from ._cuda import cuda_call
 

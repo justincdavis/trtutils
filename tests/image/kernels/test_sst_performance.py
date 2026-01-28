@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="unused-ignore"
 from __future__ import annotations
 
 import math
@@ -24,7 +25,7 @@ from trtutils.image import kernels
 try:
     from .common import IMG_PATH
 except ImportError:
-    from common import (  # type: ignore[no-redef, import-not-found]
+    from common import (
         IMG_PATH,
     )
 
@@ -40,7 +41,7 @@ def _get_kernel_timings(kernel_data: tuple[Path, str]) -> list[float]:
     offset = 0.0
 
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_width, output_height))
+    img = cv2.resize(img, (output_width, output_height))  # type: ignore[arg-type]
 
     stream = create_stream()
 
@@ -74,7 +75,8 @@ def _get_kernel_timings(kernel_data: tuple[Path, str]) -> list[float]:
 
     # load the kernel
     kernel = Kernel(
-        *kernel_data,
+        kernel_data[0],
+        kernel_data[1],
     )
 
     # do entire normal setup for the kernel

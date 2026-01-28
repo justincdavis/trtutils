@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 import subprocess
@@ -19,14 +19,21 @@ SKIP_DEVICES = ["3090"]
 def run_benchmark_scripts():
     """Run the benchmark scripts to generate tables and plots."""
     print("Generating benchmark tables...")
-    subprocess.run(
-        ["python3", str(BENCHMARK_DIR / "table.py"), "--overwrite"], check=True
-    )
+    skip_devices_arg = ",".join(SKIP_DEVICES) if SKIP_DEVICES else ""
+    table_cmd = ["python3", str(BENCHMARK_DIR / "table.py"), "--overwrite"]
+    if skip_devices_arg:
+        table_cmd.extend(["--skip-devices", skip_devices_arg])
+    result = subprocess.run(table_cmd, check=False)
+    if result.returncode != 0:
+        print(f"Warning: table.py exited with code {result.returncode}, continuing...")
 
     print("Generating benchmark plots...")
-    subprocess.run(
-        ["python3", str(BENCHMARK_DIR / "plot.py")], check=True
-    )
+    plot_cmd = ["python3", str(BENCHMARK_DIR / "plot.py")]
+    if skip_devices_arg:
+        plot_cmd.extend(["--skip-devices", skip_devices_arg])
+    result = subprocess.run(plot_cmd, check=False)
+    if result.returncode != 0:
+        print(f"Warning: plot.py exited with code {result.returncode}, continuing...")
 
 
 def generate_rst_docs():

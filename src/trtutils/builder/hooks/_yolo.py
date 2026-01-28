@@ -4,15 +4,12 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
-
 from trtutils._flags import FLAGS
+from trtutils.compat._libs import trt
 
 if TYPE_CHECKING:
     from collections.abc import Callable

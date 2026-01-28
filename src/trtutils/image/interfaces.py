@@ -16,7 +16,9 @@ DetectorInterface
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
+
+from typing_extensions import Literal
 
 if TYPE_CHECKING:
     import numpy as np
@@ -49,10 +51,35 @@ class ClassifierInterface(ABC):
     def dtype(self: Self) -> np.dtype:
         """Get the dtype required by the model."""
 
+    # preprocess overloads
+    @overload
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     @abstractmethod
     def preprocess(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         method: str | None = None,
         *,
@@ -71,11 +98,36 @@ class ClassifierInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Postprocess the outputs."""
 
+    # __call__ overloads
+    @overload
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
     @abstractmethod
     def __call__(
         self: Self,
         images: list[np.ndarray],
         *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
@@ -83,11 +135,85 @@ class ClassifierInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
+    # run overloads - batch input (3 overloads)
+    @overload
     @abstractmethod
     def run(
         self: Self,
         images: list[np.ndarray],
         *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
         no_copy: bool | None = None,
@@ -95,24 +221,66 @@ class ClassifierInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
+    # get_classifications overloads
+    @overload
+    @abstractmethod
+    def get_classifications(
+        self: Self,
+        outputs: list[np.ndarray],
+        top_k: int = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[tuple[int, float]]: ...
+
+    @overload
     @abstractmethod
     def get_classifications(
         self: Self,
         outputs: list[list[np.ndarray]],
+        top_k: int = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[int, float]]]: ...
+
+    @abstractmethod
+    def get_classifications(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
         top_k: int = 5,
         *,
         verbose: bool | None = None,
-    ) -> list[list[tuple[int, float]]]:
+    ) -> list[tuple[int, float]] | list[list[tuple[int, float]]]:
         """Get the classifications for each image."""
 
+    # end2end overloads
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray,
+        top_k: int = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[tuple[int, float]]: ...
+
+    @overload
     @abstractmethod
     def end2end(
         self: Self,
         images: list[np.ndarray],
+        top_k: int = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[int, float]]]: ...
+
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         top_k: int = 5,
         *,
         verbose: bool | None = None,
-    ) -> list[list[tuple[int, float]]]:
+    ) -> list[tuple[int, float]] | list[list[tuple[int, float]]]:
         """Perform end to end inference for a batch of images."""
 
 
@@ -149,10 +317,35 @@ class DetectorInterface(ABC):
     def output_schema(self: Self) -> OutputSchema:
         """Get the output schema used by this detector."""
 
+    # preprocess overloads
+    @overload
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     @abstractmethod
     def preprocess(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         method: str | None = None,
         *,
@@ -174,12 +367,104 @@ class DetectorInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Postprocess the outputs."""
 
+    # run overloads - batch input (3 overloads)
+    @overload
     @abstractmethod
     def run(
         self: Self,
         images: list[np.ndarray],
-        ratios: list[tuple[float, float]] | None = None,
-        padding: list[tuple[float, float]] | None = None,
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
@@ -189,12 +474,43 @@ class DetectorInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
+    # __call__ overloads
+    @overload
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
     @abstractmethod
     def __call__(
         self: Self,
         images: list[np.ndarray],
-        ratios: list[tuple[float, float]] | None = None,
-        padding: list[tuple[float, float]] | None = None,
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
@@ -204,28 +520,88 @@ class DetectorInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
+    # get_detections overloads
+    @overload
+    @abstractmethod
+    def get_detections(
+        self: Self,
+        outputs: list[np.ndarray],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[tuple[tuple[int, int, int, int], float, int]]: ...
+
+    @overload
     @abstractmethod
     def get_detections(
         self: Self,
         outputs: list[list[np.ndarray]],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]: ...
+
+    @abstractmethod
+    def get_detections(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    ) -> (
+        list[tuple[tuple[int, int, int, int], float, int]]
+        | list[list[tuple[tuple[int, int, int, int], float, int]]]
+    ):
         """Get the detections for each image."""
 
+    # end2end overloads
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[tuple[tuple[int, int, int, int], float, int]]: ...
+
+    @overload
     @abstractmethod
     def end2end(
         self: Self,
         images: list[np.ndarray],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]: ...
+
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    ) -> (
+        list[tuple[tuple[int, int, int, int], float, int]]
+        | list[list[tuple[tuple[int, int, int, int], float, int]]]
+    ):
         """Perform end to end inference for a batch of images."""

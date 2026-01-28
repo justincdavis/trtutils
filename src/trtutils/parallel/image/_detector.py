@@ -9,9 +9,10 @@ import time
 from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Thread
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
+from typing_extensions import TypeGuard
 
 from trtutils._log import LOG
 from trtutils.image._detector import Detector
@@ -165,11 +166,11 @@ class ParallelDetector:
             If any values are None, not initialized yet.
 
         """
-        models = self._models.copy()
-        if not all(models):
+        models = [m for m in self._models.copy() if m is not None]
+        if len(models) != len(self._models):
             err_msg = "Some or all models are None, models are initalized yet."
             raise RuntimeError(err_msg)
-        return models  # type: ignore[return-value]
+        return models
 
     def get_model(self: Self, modelid: int) -> Detector:
         """
@@ -501,7 +502,7 @@ class ParallelDetector:
         """
         if verbose:
             LOG.debug(f"{self._tag}: GetDetections model: {modelid}")
-        return self.get_model(modelid).get_detections(outputs, verbose=verbose)
+        return self.get_model(modelid).get_detections(outputs, verbose=verbose)  # type: ignore[return-value]
 
     def submit(
         self: Self,
@@ -665,8 +666,10 @@ class ParallelDetector:
         if modelid is not None:
             if data is not None and len(data) > 0 and isinstance(data[0], np.ndarray):
                 # Single batch for single model
+                # Type narrowing: data is list[np.ndarray] here
+                data_single: list[np.ndarray] = cast("list[np.ndarray]", data)
                 self.submit_model(
-                    data,  # type: ignore[arg-type]
+                    data_single,
                     modelid,
                     preprocessed=True,
                     postprocess=False,
@@ -688,7 +691,9 @@ class ParallelDetector:
         else:
             if data is not None and len(data) > 0 and isinstance(data[0], list):
                 # Batches for all models
-                self.submit(data, preprocessed=True, postprocess=False, no_copy=True)  # type: ignore[arg-type]
+                # Type narrowing: data is list[list[np.ndarray]] here
+                data_batches: list[list[np.ndarray]] = cast("list[list[np.ndarray]]", data)
+                self.submit(data_batches, preprocessed=True, postprocess=False, no_copy=True)
             elif data is not None and len(data) > 0 and isinstance(data[0], np.ndarray):
                 err_msg = "Submitted list[np.ndarray], but no model ID to specify which model."
                 raise ValueError(err_msg)
@@ -944,7 +949,7 @@ class ParallelDetector:
                     no_copy=data.no_copy,
                 )
             else:
-                postproc_results = results  # type: ignore[assignment]
+                postproc_results = results
 
             packet = _OutputPacket(
                 data=postproc_results,

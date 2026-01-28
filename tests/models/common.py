@@ -1,6 +1,7 @@
 # Copyright (c) 2024-2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="unused-ignore"
 from __future__ import annotations
 
 import time
@@ -184,6 +185,7 @@ def build_detector(model_id: str, *, use_dla: bool | None = None) -> Path:
         onnx=onnx_path,
         output=engine_path,
         dla_core=0 if use_dla else None,
+        opt_level=1,
         verbose=False,
     )
 
@@ -351,6 +353,8 @@ def detector_results(
     ------
     FileNotFoundError
         If the image file does not exist.
+    TypeError
+        If the output format is unexpected.
 
     """
     engine_path = build_detector(model_id, use_dla=use_dla)
@@ -375,7 +379,10 @@ def detector_results(
             raise FileNotFoundError(err_msg)
 
         outputs = detector.run([image])
-        bboxes = [bbox for (bbox, _, _) in detector.get_detections(outputs)]  # type: ignore[arg-type]
+        if not isinstance(outputs[0], list):
+            err_msg = "Expected postprocessed output"
+            raise TypeError(err_msg)
+        bboxes = [bbox for (bbox, _, _) in detector.get_detections(outputs)]
 
         # check within +-2 bounding boxes from ground truth
         assert max(1, gt - 1) <= len(bboxes) <= gt + 1
@@ -393,6 +400,8 @@ def detector_swapping_preproc_results(model_id: str, *, use_dla: bool | None = N
     ------
     FileNotFoundError
         If the image file does not exist.
+    TypeError
+        If the output format is unexpected.
 
     """
     engine_path = build_detector(model_id, use_dla=use_dla)
@@ -419,17 +428,17 @@ def detector_swapping_preproc_results(model_id: str, *, use_dla: bool | None = N
         for preproc in ["cpu", "cuda", "trt"]:
             tensor, ratios, padding = detector.preprocess([image], method=preproc, no_copy=True)
             outputs = detector.run(
-                tensor,
+                [tensor],
                 ratios,
                 padding,
                 preprocessed=True,
                 postprocess=True,
                 no_copy=True,
             )
-            bboxes = [
-                bbox
-                for (bbox, _, _) in detector.get_detections(outputs)  # type: ignore[arg-type]
-            ]
+            if not isinstance(outputs[0], list):
+                err_msg = "Expected postprocessed output"
+                raise TypeError(err_msg)
+            bboxes = [bbox for (bbox, _, _) in detector.get_detections(outputs)]
 
             # check within +-2 bounding boxes from ground truth
             assert max(1, gt - 1) <= len(bboxes) <= gt + 1

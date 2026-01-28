@@ -2,6 +2,7 @@
 #
 # MIT License
 # ruff: noqa: FBT001
+# mypy: disable-error-code="misc"
 from __future__ import annotations
 
 import pytest

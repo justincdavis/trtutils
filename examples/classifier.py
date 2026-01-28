@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """File showcasing the Classifier class."""
@@ -32,7 +32,10 @@ def main() -> None:
 
         t0 = time.perf_counter()
         output = classifier.run([img])
-        classifications = classifier.get_classifications(output, top_k=5)  # type: ignore[arg-type]
+        if not isinstance(output[0], list):
+            err_msg = "Expected postprocessed output"
+            raise TypeError(err_msg)
+        classifications = classifier.get_classifications(output, top_k=5)
         t1 = time.perf_counter()
 
         print(f"RUN, classifications: {classifications}, in {round((t1 - t0) * 1000.0, 2)}")

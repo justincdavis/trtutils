@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: S607, S603, S404
+# ruff: noqa: S607, S603
 from __future__ import annotations
 
 import json
@@ -1377,7 +1377,44 @@ def download_model(
 
     python_path, bin_path = _make_venv(directory, no_cache=no_uv_cache, verbose=verbose)
     requirements_export_path = Path(requirements_export) if requirements_export is not None else None
-    packet = (
+
+    # Determine which export function to use
+    export_func = None
+    if config.get("url") == "ultralytics":
+        export_func = _export_ultralytics
+    elif "deim" in model and "deimv2" not in model:
+        export_func = _export_deim
+    elif "deimv2" in model:
+        export_func = _export_deimv2
+    elif "yolox" in model:
+        export_func = _export_yolox
+    elif "yolov7" in model:
+        export_func = _export_yolov7
+    elif "yolov9" in model:
+        export_func = _export_yolov9
+    elif "yolov10" in model:
+        export_func = _export_yolov10
+    elif "yolov12" in model:
+        export_func = _export_yolov12
+    elif "yolov13" in model:
+        export_func = _export_yolov13
+    elif "rtdetrv1" in model:
+        export_func = _export_rtdetrv1
+    elif "rtdetrv2" in model:
+        export_func = _export_rtdetrv2
+    elif "rtdetrv3" in model:
+        export_func = _export_rtdetrv3
+    elif "dfine" in model:
+        export_func = _export_dfine
+    elif "rfdetr" in model:
+        export_func = _export_rfdetr
+
+    # Single call site
+    if export_func is None:
+        err_msg = f"Model {model} is not supported"
+        raise ValueError(err_msg)
+
+    model_path = export_func(
         directory,
         config,
         python_path,
@@ -1385,67 +1422,11 @@ def download_model(
         model,
         opset,
         imgsz,
+        no_cache=no_cache,
+        no_uv_cache=no_uv_cache,
+        no_warn=no_warn,
+        verbose=verbose,
     )
-    model_path: Path | None = None
-    if config.get("url") == "ultralytics":
-        model_path = _export_ultralytics(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "deim" in model and "deimv2" not in model:
-        model_path = _export_deim(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "deimv2" in model:
-        model_path = _export_deimv2(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolox" in model:
-        model_path = _export_yolox(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov7" in model:
-        model_path = _export_yolov7(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov9" in model:
-        model_path = _export_yolov9(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov10" in model:
-        model_path = _export_yolov10(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov12" in model:
-        model_path = _export_yolov12(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov13" in model:
-        model_path = _export_yolov13(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "rtdetrv1" in model:
-        model_path = _export_rtdetrv1(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "rtdetrv2" in model:
-        model_path = _export_rtdetrv2(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "rtdetrv3" in model:
-        model_path = _export_rtdetrv3(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "dfine" in model:
-        model_path = _export_dfine(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "rfdetr" in model:
-        model_path = _export_rfdetr(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    if model_path is None:
-        err_msg = f"Model {model} is not supported"
-        raise ValueError(err_msg)
     if requirements_export_path is not None:
         _export_requirements(bin_path.parent, requirements_export_path, verbose=verbose)
     return model_path.with_name(model + model_path.suffix)

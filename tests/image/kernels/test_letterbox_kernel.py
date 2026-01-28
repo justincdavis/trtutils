@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="unused-ignore"
 from __future__ import annotations
 
 import math
@@ -23,7 +24,7 @@ from trtutils.image import kernels
 try:
     from .common import IMG_PATH, kernel_compile
 except ImportError:
-    from common import (  # type: ignore[no-redef, import-not-found]
+    from common import (
         IMG_PATH,
         kernel_compile,
     )
@@ -94,7 +95,8 @@ def test_letterbox_results() -> None:
 
     # load the kernel
     kernel = Kernel(
-        *kernels.LETTERBOX_RESIZE,
+        kernels.LETTERBOX_RESIZE[0],
+        kernels.LETTERBOX_RESIZE[1],
     )
 
     args = kernel.create_args(

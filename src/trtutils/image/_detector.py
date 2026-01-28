@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
+from typing_extensions import Literal, TypeGuard
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
@@ -22,6 +23,7 @@ from .postprocessors import (
     postprocess_yolov10,
 )
 from .preprocessors import CUDAPreprocessor, TRTPreprocessor
+from .preprocessors._image_preproc import _is_single_image
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,6 +35,9 @@ def _is_postprocessed_outputs(
     outputs: list[np.ndarray] | list[list[np.ndarray]],
 ) -> TypeGuard[list[list[np.ndarray]]]:
     return not outputs or isinstance(outputs[0], list)
+
+
+_TUPLE_PAIR_LEN = 2  # Length of (ratio_x, ratio_y) or (pad_x, pad_y) tuples
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -245,9 +250,32 @@ class Detector(ImageModel, DetectorInterface):
         """Get the output schema used by this detector."""
         return self._output_schema
 
+    # preprocess overloads
+    @overload
+    def preprocess(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     def preprocess(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    def preprocess(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         method: str | None = None,
         *,
@@ -259,8 +287,8 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to preprocess.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the images with.
             Options are [letterbox, linear].
@@ -284,6 +312,11 @@ class Detector(ImageModel, DetectorInterface):
             The preprocessed batch tensor, list of ratios per image, and list of padding per image.
 
         """
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
+
         resize = resize if resize is not None else self._resize_method
         if verbose:
             LOG.debug(
@@ -373,11 +406,40 @@ class Detector(ImageModel, DetectorInterface):
         self._post_profile = (t0, t1)
         return data
 
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
     def __call__(
         self: Self,
         images: list[np.ndarray],
-        ratios: list[tuple[float, float]] | None = None,
-        padding: list[tuple[float, float]] | None = None,
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
@@ -390,12 +452,14 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to run the model on.
-        ratios : list[tuple[float, float]], optional
-            The ratios generated during preprocessing for each image.
-        padding : list[tuple[float, float]], optional
-            The padding values used during preprocessing for each image.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to run the model on.
+        ratios : tuple[float, float] | list[tuple[float, float]], optional
+            The ratios generated during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        padding : tuple[float, float] | list[tuple[float, float]], optional
+            The padding values used during preprocessing. For single image, pass tuple.
+            For batch, pass list.
         conf_thres : float, optional
             Optional confidence threshold to filter detections
             via during postprocessing.
@@ -416,11 +480,12 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[list[np.ndarray]]
-            The postprocessed outputs per image.
+        list[np.ndarray] | list[list[np.ndarray]]
+            The outputs. For single image with postprocess=True,
+            returns list[np.ndarray]. For batch, returns batch results.
 
         """
-        return self.run(
+        return self.run(  # type: ignore[call-overload]
             images,
             ratios,
             padding,
@@ -431,11 +496,97 @@ class Detector(ImageModel, DetectorInterface):
             verbose=verbose,
         )
 
+    # run overloads - batch input (3 overloads)
+    @overload
     def run(
         self: Self,
         images: list[np.ndarray],
-        ratios: list[tuple[float, float]] | None = None,
-        padding: list[tuple[float, float]] | None = None,
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    def run(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
@@ -448,12 +599,14 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to run the model on.
-        ratios : list[tuple[float, float]], optional
-            The ratios generated during preprocessing for each image.
-        padding : list[tuple[float, float]], optional
-            The padding values used during preprocessing for each image.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to run the model on.
+        ratios : tuple[float, float] | list[tuple[float, float]], optional
+            The ratios generated during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        padding : tuple[float, float] | list[tuple[float, float]], optional
+            The padding values used during preprocessing. For single image, pass tuple.
+            For batch, pass list.
         conf_thres : float, optional
             Optional confidence threshold to filter detections
             via during postprocessing.
@@ -481,8 +634,10 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[list[np.ndarray]]
-            The postprocessed outputs per image.
+        list[np.ndarray] | list[list[np.ndarray]]
+            For single image with postprocess=True: list[np.ndarray] (single image outputs).
+            For batch with postprocess=True: list[list[np.ndarray]] (per-image outputs).
+            For postprocess=False: list[np.ndarray] (raw outputs).
 
         Raises
         ------
@@ -494,6 +649,26 @@ class Detector(ImageModel, DetectorInterface):
         """
         if verbose:
             LOG.debug(f"{self._tag}: run")
+
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
+            # Wrap single ratios/padding to lists
+            if (
+                ratios is not None
+                and isinstance(ratios, tuple)
+                and len(ratios) == _TUPLE_PAIR_LEN
+                and isinstance(ratios[0], float)
+            ):
+                ratios = [ratios]
+            if (
+                padding is not None
+                and isinstance(padding, tuple)
+                and len(padding) == _TUPLE_PAIR_LEN
+                and isinstance(padding[0], (int, float))
+            ):
+                padding = [padding]
 
         # assign flags
         if preprocessed is None:
@@ -539,7 +714,7 @@ class Detector(ImageModel, DetectorInterface):
             orig_sizes = np.array(
                 [img.shape[:2] for img in images]
                 if not preprocessed
-                else [[self._input_size[1], self._input_size[0]]] * batch_size,
+                else [(self._input_size[1], self._input_size[0])] * batch_size,
                 dtype=np.int32,
             )
             engine_inputs.append(orig_sizes)
@@ -560,38 +735,70 @@ class Detector(ImageModel, DetectorInterface):
             if ratios is None or padding is None:
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
                 raise RuntimeError(err_msg)
-            postprocessed = self.postprocess(
+            postprocessed_outputs = self.postprocess(
                 outputs,
-                ratios,
-                padding,
+                ratios,  # type: ignore[arg-type]
+                padding,  # type: ignore[arg-type]
                 conf_thres,
                 no_copy=no_copy_post,
             )
             self._infer_profile = (t0, t1)
-            return postprocessed
+
+            # Unwrap for single-image input
+            if is_single:
+                return postprocessed_outputs[0]
+            return postprocessed_outputs
 
         self._infer_profile = (t0, t1)
 
         return outputs
 
+    # get_detections overloads
+    @overload
+    def get_detections(
+        self: Self,
+        outputs: list[np.ndarray],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[tuple[tuple[int, int, int, int], float, int]]: ...
+
+    @overload
     def get_detections(
         self: Self,
         outputs: list[list[np.ndarray]],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]: ...
+
+    def get_detections(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    ) -> (
+        list[tuple[tuple[int, int, int, int], float, int]]
+        | list[list[tuple[tuple[int, int, int, int], float, int]]]
+    ):
         """
         Get the bounding boxes from postprocessed outputs.
 
         Parameters
         ----------
-        outputs : list[list[np.ndarray]]
-            The postprocessed outputs per image, each containing
-            [bboxes, scores, class_ids].
+        outputs : list[np.ndarray] | list[list[np.ndarray]]
+            For single image: list[np.ndarray] (single image's postprocessed outputs).
+            For batch: list[list[np.ndarray]] (postprocessed outputs per image).
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
             By default None, which will use value passed during initialization.
@@ -612,20 +819,37 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[list[tuple[tuple[int, int, int, int], float, int]]]
-            The detections per image, where each detection is
-            ((x1, y1, x2, y2), score, class_id).
+        list[tuple[...]] | list[list[tuple[...]]]
+            For single image: list[tuple[...]] (detections for single image).
+            For batch: list[list[tuple[...]]] (detections per image).
 
         """
         if verbose:
             LOG.debug(f"{self._tag}: get_detections")
 
+        # Detect if this is single-image output (list[np.ndarray]) vs batch (list[list[np.ndarray]])
+        is_single = outputs and isinstance(outputs[0], np.ndarray)
+
         conf_thres = conf_thres or self._conf_thres
         nms_iou = nms_iou_thres or self._nms_iou
         use_nms = extra_nms if extra_nms is not None else self._nms
         agnostic = agnostic_nms if agnostic_nms is not None else self._agnostic_nms
+
+        if is_single:
+            # Wrap single image outputs for batch processing
+            batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[list-item]
+            result = self._get_detections_fn(
+                batch_outputs,
+                conf_thres=conf_thres,
+                nms_iou_thres=nms_iou,
+                extra_nms=use_nms,
+                agnostic_nms=agnostic,
+                verbose=verbose,
+            )
+            return result[0]  # Unwrap
+
         return self._get_detections_fn(
-            outputs,
+            outputs,  # type: ignore[arg-type]
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou,
             extra_nms=use_nms,
@@ -633,16 +857,44 @@ class Detector(ImageModel, DetectorInterface):
             verbose=verbose,
         )
 
+    # end2end overloads
+    @overload
+    def end2end(
+        self: Self,
+        images: np.ndarray,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[tuple[tuple[int, int, int, int], float, int]]: ...
+
+    @overload
     def end2end(
         self: Self,
         images: list[np.ndarray],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]: ...
+
+    def end2end(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    ) -> (
+        list[tuple[tuple[int, int, int, int], float, int]]
+        | list[list[tuple[tuple[int, int, int, int], float, int]]]
+    ):
         """
         Perform end to end inference for a batch of images.
 
@@ -652,8 +904,8 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to perform inference with.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to perform inference with.
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
             By default None.
@@ -674,9 +926,9 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[list[tuple[tuple[int, int, int, int], float, int]]]
-            The detections per image, where each detection is
-            ((x1, y1, x2, y2), score, class_id).
+        list[tuple[...]] | list[list[tuple[...]]]
+            For single image: list[tuple[...]] (detections).
+            For batch: list[list[tuple[...]]] (detections per image).
 
         Raises
         ------
@@ -688,6 +940,11 @@ class Detector(ImageModel, DetectorInterface):
         """
         if verbose:
             LOG.debug(f"{self._tag}: end2end")
+
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
 
         outputs: list[np.ndarray] | list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
@@ -713,7 +970,7 @@ class Detector(ImageModel, DetectorInterface):
 
             # if using CUDA, can remove much more
             gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
-                images,
+                images,  # type: ignore[arg-type]
                 resize=self._resize_method,
                 no_warn=True,
                 verbose=verbose,
@@ -747,7 +1004,7 @@ class Detector(ImageModel, DetectorInterface):
             )
 
         # generate the detections
-        return self.get_detections(
+        result = self.get_detections(
             postprocessed,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
@@ -755,3 +1012,12 @@ class Detector(ImageModel, DetectorInterface):
             agnostic_nms=agnostic_nms,
             verbose=verbose,
         )
+
+        # Unwrap for single-image input
+        if is_single:
+            # result is already unwrapped from get_detections for single image
+            # but we need to check if it was processed as batch
+            if isinstance(result, list) and result and isinstance(result[0], list):
+                return result[0]
+            return result
+        return result

@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="unused-ignore"
 from __future__ import annotations
 
 import math
@@ -23,7 +24,7 @@ from trtutils.image.preprocessors import preprocess
 try:
     from .common import IMG_PATH, kernel_compile
 except ImportError:
-    from common import (  # type: ignore[no-redef, import-not-found]
+    from common import (
         IMG_PATH,
         kernel_compile,
     )
@@ -48,7 +49,7 @@ def test_sst_imagenet_results() -> None:
     std = (0.229, 0.224, 0.225)
 
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_width, output_height))
+    img = cv2.resize(img, (output_width, output_height))  # type: ignore[arg-type]
 
     stream = create_stream()
 
@@ -88,7 +89,8 @@ def test_sst_imagenet_results() -> None:
 
     # load the kernel
     kernel = Kernel(
-        *kernels.IMAGENET_SST,
+        kernels.IMAGENET_SST[0],
+        kernels.IMAGENET_SST[1],
     )
 
     # copy mean and std to device
@@ -143,8 +145,8 @@ def test_sst_imagenet_results() -> None:
     # use approximate equality for floating point comparisons
     # small differences can occur due to GPU vs CPU floating point operations
     assert np.isclose(np.mean(cuda_result), np.mean(cpu_result), rtol=1e-6, atol=1e-6)
-    assert np.isclose(np.min(cuda_result), np.min(cpu_result), rtol=1e-6, atol=1e-6)  # type: ignore[operator]
-    assert np.isclose(np.max(cuda_result), np.max(cpu_result), rtol=1e-6, atol=1e-6)  # type: ignore[operator]
+    assert np.isclose(np.min(cuda_result), np.min(cpu_result), rtol=1e-6, atol=1e-6)
+    assert np.isclose(np.max(cuda_result), np.max(cpu_result), rtol=1e-6, atol=1e-6)
     assert np.allclose(cuda_result, cpu_result, rtol=1e-6, atol=1e-6)
 
     destroy_stream(stream)
@@ -164,7 +166,7 @@ def test_sst_imagenet_batch_results() -> None:
     std = (0.229, 0.224, 0.225)
 
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_width, output_height))
+    img = cv2.resize(img, (output_width, output_height))  # type: ignore[arg-type]
 
     # create batch input by stacking the same image
     batch_input = np.stack([img] * batch_size, axis=0)  # (N, H, W, 3)
@@ -203,7 +205,7 @@ def test_sst_imagenet_batch_results() -> None:
     mean_binding = create_binding(mean_array)
     std_binding = create_binding(std_array)
 
-    kernel = Kernel(*kernels.IMAGENET_SST)
+    kernel = Kernel(kernels.IMAGENET_SST[0], kernels.IMAGENET_SST[1])
 
     # copy mean and std to device
     memcpy_host_to_device_async(
@@ -276,7 +278,7 @@ def test_sst_imagenet_f16_results() -> None:
     std = (0.229, 0.224, 0.225)
 
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_width, output_height))
+    img = cv2.resize(img, (output_width, output_height))  # type: ignore[arg-type]
 
     stream = create_stream()
 
@@ -312,7 +314,7 @@ def test_sst_imagenet_f16_results() -> None:
     mean_binding = create_binding(mean_array)
     std_binding = create_binding(std_array)
 
-    kernel = Kernel(*kernels.IMAGENET_SST_F16)
+    kernel = Kernel(kernels.IMAGENET_SST_F16[0], kernels.IMAGENET_SST_F16[1])
 
     # copy mean and std to device
     memcpy_host_to_device_async(

@@ -16,16 +16,13 @@ Attributes
 
 from __future__ import annotations
 
-import contextlib
 import tempfile
 from pathlib import Path
 
 import numpy as np
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
-
 from trtutils.builder._build import build_engine
+from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
 
 IMAGE_PREPROC_BASE: Path = Path(__file__).parent / "_onnx" / "image_preproc_base.onnx"

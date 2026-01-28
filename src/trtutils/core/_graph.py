@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -7,13 +7,8 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
-with contextlib.suppress(Exception):
-    try:
-        import cuda.bindings.runtime as cudart
-    except (ImportError, ModuleNotFoundError):
-        from cuda import cudart
-
 from trtutils._log import LOG
+from trtutils.compat._libs import cudart
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -26,7 +21,7 @@ if TYPE_CHECKING:
 
 def cuda_stream_begin_capture(
     stream: cudart.cudaStream_t,
-    mode: cudart.cudaStreamCaptureMode = cudart.cudaStreamCaptureMode.cudaStreamCaptureModeGlobal,
+    mode: cudart.cudaStreamCaptureMode | None = None,
 ) -> None:
     """
     Begin capturing a CUDA graph on the given stream.
@@ -36,9 +31,13 @@ def cuda_stream_begin_capture(
     stream : cudart.cudaStream_t
         The CUDA stream to begin capture on.
     mode : cudart.cudaStreamCaptureMode, optional
-        The capture mode to use. Default is cudaStreamCaptureModeGlobal.
+        The capture mode to use. Default is ThreadLocal, which only checks
+        CUDA calls from the capturing thread. Global mode would cause any
+        uncapturable call in any thread to fail during capture.
 
     """
+    if mode is None:
+        mode = cudart.cudaStreamCaptureMode.cudaStreamCaptureModeThreadLocal
     cuda_call(cudart.cudaStreamBeginCapture(stream, mode))
 
 
@@ -168,9 +167,7 @@ class CUDAGraph:
         This should be called before the operations to capture.
 
         """
-        cuda_stream_begin_capture(
-            self._stream, cudart.cudaStreamCaptureMode.cudaStreamCaptureModeGlobal
-        )
+        cuda_stream_begin_capture(self._stream)
 
     def stop(self: Self) -> bool:
         """

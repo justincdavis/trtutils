@@ -4,14 +4,11 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
-
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.compat._libs import trt
 from trtutils.core._engine import create_engine
 from trtutils.core._stream import destroy_stream
 
@@ -43,6 +40,7 @@ def inspect_engine(
 
     """
     loaded = False
+    stream = None
     if isinstance(engine, (Path, str)):
         engine, context, logger, stream = create_engine(engine)
         loaded = True
@@ -103,6 +101,7 @@ def inspect_engine(
         del engine
         del context
         del logger
-        destroy_stream(stream)
+        if stream is not None:
+            destroy_stream(stream)
 
     return engine_mem_size, batch_size, input_tensors, output_tensors

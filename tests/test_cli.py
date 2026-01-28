@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: PLC2701
 from __future__ import annotations
 
 from io import StringIO

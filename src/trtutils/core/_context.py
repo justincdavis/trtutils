@@ -4,13 +4,7 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
-
-with contextlib.suppress(Exception):
-    try:
-        import cuda.bindings.driver as cuda
-    except (ImportError, ModuleNotFoundError):
-        from cuda import cuda
+from trtutils.compat._libs import cuda
 
 from ._cuda import cuda_call
 

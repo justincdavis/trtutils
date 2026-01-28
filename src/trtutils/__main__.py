@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """Main entry point for trtutils CLI."""
@@ -9,11 +9,12 @@ import argparse
 import json
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING
 
 import cv2
 import cv2ext
 import numpy as np
+from typing_extensions import TypeGuard
 
 import trtutils
 from trtutils._log import LOG
@@ -83,9 +84,9 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup=True,
             verbose=args.verbose,
         )
-        latency = jresult.latency
-        energy = jresult.energy
-        power = jresult.power_draw
+        latency = jresult.latency  # type: ignore[assignment]
+        energy = jresult.energy  # type: ignore[assignment]
+        power = jresult.power_draw  # type: ignore[assignment]
     else:
         result = trtutils.benchmark_engine(
             engine=mpath,
@@ -95,7 +96,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup=True,
             verbose=args.verbose,
         )
-        latency = result.latency
+        latency = result.latency  # type: ignore[assignment]
 
     latency_in_ms = {
         "mean": latency.mean * 1000.0,
@@ -267,15 +268,18 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
             err_msg = "Input dtype must be provided when using calibration directory"
             raise ValueError(err_msg)
 
+        input_shape = args.input_shape
+        input_dtype = args.input_dtype
+
         batcher = trtutils.builder.ImageBatcher(
             image_dir=args.calibration_dir,
-            shape=args.input_shape,
-            dtype=getattr(np, args.input_dtype),
+            shape=input_shape,
+            dtype=np.dtype(input_dtype).type,
             batch_size=args.batch_size,
             order=args.data_order,
             max_images=args.max_images,
             resize_method=args.resize_method,
-            input_scale=args.input_scale,
+            input_scale=tuple(args.input_scale) if args.input_scale is not None else None,  # type: ignore[arg-type]
             verbose=args.verbose,
         )
 
@@ -379,7 +383,7 @@ def _can_run_on_dla(args: SimpleNamespace) -> None:
         if chunk[-1]:
             compat_layers += chunk_size
         all_layers += chunk_size
-    portion_compat = round((compat_layers / all_layers) * 100.0, 2)
+    portion_compat = round((compat_layers / all_layers) * 100.0, 2) if all_layers else 0.0
     LOG.info(
         f"ONNX: {args.onnx}, Fully DLA Compatible: {full_dla}, Layers: {compat_layers} / {all_layers} ({portion_compat} % Compatible)"
     )
@@ -460,19 +464,22 @@ def _build_dla(args: SimpleNamespace) -> None:
         err_msg = "Input dtype is required for DLA builds"
         raise ValueError(err_msg)
 
+    input_shape = args.input_shape
+    input_dtype = args.input_dtype
+
     # Set default dla_core to 0 if not provided
     if args.dla_core is None:
         args.dla_core = 0
 
     batcher = trtutils.builder.ImageBatcher(
         image_dir=args.calibration_dir,
-        shape=args.input_shape,
-        dtype=getattr(np, args.input_dtype),
+        shape=input_shape,
+        dtype=np.dtype(input_dtype).type,
         batch_size=args.batch_size,
         order=args.data_order,
         max_images=args.max_images,
         resize_method=args.resize_method,
-        input_scale=args.input_scale,
+        input_scale=tuple(args.input_scale) if args.input_scale is not None else None,  # type: ignore[arg-type]
         verbose=args.verbose,
     )
 
@@ -564,7 +571,7 @@ def _detect(args: SimpleNamespace) -> None:
     detector = trtutils.image.Detector(
         engine_path=args.engine,
         warmup_iterations=args.warmup_iterations,
-        input_range=args.input_range,
+        input_range=tuple(args.input_range) if args.input_range is not None else None,  # type: ignore[arg-type]
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
         conf_thres=args.conf_thres,
@@ -604,14 +611,16 @@ def _detect(args: SimpleNamespace) -> None:
             raise RuntimeError(err_msg)
         p_results = detector.postprocess(results, ratios, pads, no_copy=True, verbose=args.verbose)
         t3 = time.perf_counter()
-        dets = detector.get_detections(p_results, verbose=args.verbose)[0]
+        dets: list[tuple[tuple[int, int, int, int], float, int]] = detector.get_detections(
+            p_results, verbose=args.verbose
+        )[0]  # type: ignore[assignment]
         t4 = time.perf_counter()
         return (
             dets,
-            round(1000 * (t1 - t0), 2),
-            round(1000 * (t2 - t1), 2),
-            round(1000 * (t3 - t2), 2),
-            round(1000 * (t4 - t3), 2),
+            float(round(1000 * (t1 - t0), 2)),
+            float(round(1000 * (t2 - t1), 2)),
+            float(round(1000 * (t3 - t2), 2)),
+            float(round(1000 * (t4 - t3), 2)),
         )
 
     def log(
@@ -761,7 +770,7 @@ def _classify(args: SimpleNamespace) -> None:
     classifier = trtutils.image.Classifier(
         engine_path=args.engine,
         warmup_iterations=args.warmup_iterations,
-        input_range=args.input_range,
+        input_range=tuple(args.input_range) if args.input_range is not None else None,  # type: ignore[arg-type]
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
         dla_core=args.dla_core,
@@ -791,14 +800,14 @@ def _classify(args: SimpleNamespace) -> None:
             raise RuntimeError(err_msg)
         p_results = classifier.postprocess(results, no_copy=True)
         t3 = time.perf_counter()
-        cls_results = classifier.get_classifications(p_results, top_k=1)[0]
+        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]  # type: ignore[assignment]
         t4 = time.perf_counter()
         return (
             cls_results[0],
-            round(1000 * (t1 - t0), 2),
-            round(1000 * (t2 - t1), 2),
-            round(1000 * (t3 - t2), 2),
-            round(1000 * (t4 - t3), 2),
+            float(round(1000 * (t1 - t0), 2)),
+            float(round(1000 * (t2 - t1), 2)),
+            float(round(1000 * (t3 - t2), 2)),
+            float(round(1000 * (t4 - t3), 2)),
         )
 
     def log(
@@ -988,22 +997,24 @@ def _profile(args: SimpleNamespace) -> None:
     }
 
     # Add power and energy data if this is a Jetson result
-    if hasattr(result, "power_draw") and hasattr(result, "energy"):
+    power_draw = getattr(result, "power_draw", None)
+    energy = getattr(result, "energy", None)
+    if power_draw is not None and energy is not None:
         power_dict = {
-            "mean": result.power_draw.mean,
-            "median": result.power_draw.median,
-            "min": result.power_draw.min,
-            "max": result.power_draw.max,
+            "mean": power_draw.mean,
+            "median": power_draw.median,
+            "min": power_draw.min,
+            "max": power_draw.max,
         }
         energy_dict = {
-            "mean": result.energy.mean,
-            "median": result.energy.median,
-            "min": result.energy.min,
-            "max": result.energy.max,
+            "mean": energy.mean,
+            "median": energy.median,
+            "min": energy.min,
+            "max": energy.max,
         }
         if args.save_raw:
-            power_dict["raw"] = result.power_draw.raw
-            energy_dict["raw"] = result.energy.raw
+            power_dict["raw"] = power_draw.raw
+            energy_dict["raw"] = energy.raw
 
         json_data["power_draw"] = power_dict
         json_data["energy"] = energy_dict
@@ -1023,18 +1034,18 @@ def _profile(args: SimpleNamespace) -> None:
     LOG.info(f"Layers profiled: {len(result.layers)}")
 
     # Log power and energy if available
-    if hasattr(result, "power_draw") and hasattr(result, "energy"):
+    if power_draw is not None and energy is not None:
         LOG.info("=" * 40)
         LOG.info("Power Draw (mW):")
-        LOG.info(f"  Mean   : {result.power_draw.mean:.1f}")
-        LOG.info(f"  Median : {result.power_draw.median:.1f}")
-        LOG.info(f"  Min    : {result.power_draw.min:.1f}")
-        LOG.info(f"  Max    : {result.power_draw.max:.1f}")
+        LOG.info(f"  Mean   : {power_draw.mean:.1f}")
+        LOG.info(f"  Median : {power_draw.median:.1f}")
+        LOG.info(f"  Min    : {power_draw.min:.1f}")
+        LOG.info(f"  Max    : {power_draw.max:.1f}")
         LOG.info("Energy (mJ):")
-        LOG.info(f"  Mean   : {result.energy.mean:.3f}")
-        LOG.info(f"  Median : {result.energy.median:.3f}")
-        LOG.info(f"  Min    : {result.energy.min:.3f}")
-        LOG.info(f"  Max    : {result.energy.max:.3f}")
+        LOG.info(f"  Mean   : {energy.mean:.3f}")
+        LOG.info(f"  Median : {energy.median:.3f}")
+        LOG.info(f"  Min    : {energy.min:.3f}")
+        LOG.info(f"  Max    : {energy.max:.3f}")
 
     LOG.info(f"Results written to: {output_path}")
 

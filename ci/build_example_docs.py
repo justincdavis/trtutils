@@ -1,4 +1,5 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+#!/usr/bin/env python3
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 import os

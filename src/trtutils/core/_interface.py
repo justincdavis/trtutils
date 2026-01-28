@@ -19,16 +19,10 @@ from ._bindings import Binding, allocate_bindings
 from ._engine import create_engine, get_engine_names
 
 if TYPE_CHECKING:
+    from numpy.random import Generator
     from typing_extensions import Self
 
-    with contextlib.suppress(ImportError):
-        import tensorrt as trt
-
-        try:
-            import cuda.bindings.driver as cuda
-            import cuda.bindings.runtime as cudart
-        except (ImportError, ModuleNotFoundError):
-            from cuda import cuda, cudart
+    from trtutils.compat._libs import cuda, cudart, trt
 
 
 class TRTEngineInterface(ABC):
@@ -429,7 +423,7 @@ class TRTEngineInterface(ABC):
         """
 
     @cached_property
-    def _rng(self: Self) -> np.random.Generator:
+    def _rng(self: Self) -> Generator:
         return np.random.default_rng()
 
     def get_random_input(

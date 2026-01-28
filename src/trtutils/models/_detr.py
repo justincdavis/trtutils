@@ -4,13 +4,10 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
-
 from trtutils.builder._build import build_engine
+from trtutils.compat._libs import trt
 from trtutils.image._detector import Detector
 from trtutils.inspect._onnx import inspect_onnx_layers
 
@@ -180,6 +177,7 @@ class RTDETRv1(DETR):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -200,6 +198,9 @@ class RTDETRv1(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -222,6 +223,7 @@ class RTDETRv1(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -333,6 +335,7 @@ class RTDETRv2(DETR):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -353,6 +356,9 @@ class RTDETRv2(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -375,6 +381,7 @@ class RTDETRv2(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -486,6 +493,7 @@ class RTDETRv3(DETR):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -506,6 +514,9 @@ class RTDETRv3(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -529,6 +540,7 @@ class RTDETRv3(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -640,6 +652,7 @@ class DFINE(DETR):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -660,6 +673,9 @@ class DFINE(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -682,6 +698,7 @@ class DFINE(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -793,6 +810,7 @@ class DEIM(DETR):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -813,6 +831,9 @@ class DEIM(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -835,6 +856,7 @@ class DEIM(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -955,6 +977,7 @@ class DEIMv2(DETR):
         imgsz: int = 640,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -977,6 +1000,9 @@ class DEIMv2(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -998,6 +1024,7 @@ class DEIMv2(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
@@ -1109,6 +1136,7 @@ class RFDETR(DETR):
         imgsz: int = 576,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -1128,6 +1156,9 @@ class RFDETR(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -1156,5 +1187,6 @@ class RFDETR(DETR):
             shapes=shapes,
             layer_precision=layer_precision,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )

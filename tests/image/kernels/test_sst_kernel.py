@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="unused-ignore"
 from __future__ import annotations
 
 import math
@@ -23,7 +24,7 @@ from trtutils.image.preprocessors import preprocess
 try:
     from .common import IMG_PATH, kernel_compile
 except ImportError:
-    from common import (  # type: ignore[no-redef, import-not-found]
+    from common import (
         IMG_PATH,
         kernel_compile,
     )
@@ -43,7 +44,7 @@ def test_sst_results() -> None:
     offset = 0.0
 
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_width, output_height))
+    img = cv2.resize(img, (output_width, output_height))  # type: ignore[arg-type]
 
     stream = create_stream()
 
@@ -77,7 +78,8 @@ def test_sst_results() -> None:
 
     # load the kernel
     kernel = Kernel(
-        *kernels.SCALE_SWAP_TRANSPOSE,
+        kernels.SCALE_SWAP_TRANSPOSE[0],
+        kernels.SCALE_SWAP_TRANSPOSE[1],
     )
 
     args = kernel.create_args(
@@ -112,8 +114,8 @@ def test_sst_results() -> None:
 
     assert cuda_result.shape == cpu_result.shape
     assert np.mean(cuda_result) == np.mean(cpu_result)
-    assert np.min(cuda_result) == np.min(cpu_result)  # type: ignore[operator]
-    assert np.max(cuda_result) == np.max(cpu_result)  # type: ignore[operator]
+    assert np.min(cuda_result) == np.min(cpu_result)
+    assert np.max(cuda_result) == np.max(cpu_result)
     assert np.allclose(cuda_result, cpu_result)
 
     destroy_stream(stream)
