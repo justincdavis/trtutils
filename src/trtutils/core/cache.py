@@ -52,6 +52,22 @@ class _TimingCache(Protocol):
     def serialize(self) -> bytes: ...
 
 
+# Known valid cache file extensions
+_VALID_EXTENSIONS = {"engine", "onnx", "cache"}
+
+
+def _get_cache_file_path(filename: str, extension: str) -> Path:
+    """Get the full path for a cache file, handling extension logic."""
+    has_valid_extension = False
+    if "." in filename:
+        ext = filename.rsplit(".", 1)[-1]
+        has_valid_extension = ext in _VALID_EXTENSIONS
+
+    if has_valid_extension:
+        return get_cache_dir() / filename
+    return get_cache_dir() / f"{filename}.{extension}"
+
+
 def _delete_folder(directory: Path) -> None:
     for item in directory.iterdir():
         if item.is_dir():
@@ -112,21 +128,8 @@ def query_file(filename: str, extension: str = "engine") -> tuple[bool, Path]:
         Whether or not the file exists and its Path (whether or not it exists)
 
     """
-    # Known valid cache file extensions
-    valid_extensions = {"engine", "onnx", "cache"}
-
-    # Check if filename ends with a known extension
-    has_valid_extension = False
-    if "." in filename:
-        ext = filename.rsplit(".", 1)[-1]
-        has_valid_extension = ext in valid_extensions
-
-    if has_valid_extension:
-        file_path = get_cache_dir() / filename
-    else:
-        file_path = get_cache_dir() / f"{filename}.{extension}"
-    success = file_path.exists()
-    return success, file_path
+    file_path = _get_cache_file_path(filename, extension)
+    return file_path.exists(), file_path
 
 
 def query(filename: str) -> tuple[bool, Path]:
@@ -238,19 +241,7 @@ def remove_file(filename: str, extension: str = "engine") -> None:
         If the file does not exist in the cache.
 
     """
-    # Known valid cache file extensions
-    valid_extensions = {"engine", "onnx", "cache"}
-
-    # Check if filename ends with a known extension
-    has_valid_extension = False
-    if "." in filename:
-        ext = filename.rsplit(".", 1)[-1]
-        has_valid_extension = ext in valid_extensions
-
-    if has_valid_extension:
-        file_path = get_cache_dir() / filename
-    else:
-        file_path = get_cache_dir() / f"{filename}.{extension}"
+    file_path = _get_cache_file_path(filename, extension)
     if not file_path.exists():
         err_msg = f"File {file_path} does not exist in the cache"
         raise FileNotFoundError(err_msg)
