@@ -112,12 +112,19 @@ def query_file(filename: str, extension: str = "engine") -> tuple[bool, Path]:
         Whether or not the file exists and its Path (whether or not it exists)
 
     """
-    # use extension if exists, otherwise replace
-    if "." in filename and not filename.endswith("."):
+    # Known valid cache file extensions
+    valid_extensions = {"engine", "onnx", "cache"}
+
+    # Check if filename ends with a known extension
+    has_valid_extension = False
+    if "." in filename:
+        ext = filename.rsplit(".", 1)[-1]
+        has_valid_extension = ext in valid_extensions
+
+    if has_valid_extension:
         file_path = get_cache_dir() / filename
     else:
-        base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
-        file_path = get_cache_dir() / f"{base_name}.{extension}"
+        file_path = get_cache_dir() / f"{filename}.{extension}"
     success = file_path.exists()
     return success, file_path
 
@@ -231,12 +238,19 @@ def remove_file(filename: str, extension: str = "engine") -> None:
         If the file does not exist in the cache.
 
     """
-    # use extension if exists, otherwise replace
-    if "." in filename and not filename.endswith("."):
+    # Known valid cache file extensions
+    valid_extensions = {"engine", "onnx", "cache"}
+
+    # Check if filename ends with a known extension
+    has_valid_extension = False
+    if "." in filename:
+        ext = filename.rsplit(".", 1)[-1]
+        has_valid_extension = ext in valid_extensions
+
+    if has_valid_extension:
         file_path = get_cache_dir() / filename
     else:
-        base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
-        file_path = get_cache_dir() / f"{base_name}.{extension}"
+        file_path = get_cache_dir() / f"{filename}.{extension}"
     if not file_path.exists():
         err_msg = f"File {file_path} does not exist in the cache"
         raise FileNotFoundError(err_msg)

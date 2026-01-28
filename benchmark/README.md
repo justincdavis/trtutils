@@ -69,9 +69,10 @@ The benchmark system uses `trtutils.download` to automatically download and expo
 
 ### Files
 
-- **`run.py`**: Main benchmark script with `--bootstrap` flag
-- **`model_utils.py`**: Helper functions for model management
-- **`data/`**: Directory where ONNX models are stored
+- **`run.py`**: Main benchmark script comparing trtutils against ultralytics and SAHI frameworks. Supports automatic model downloading with `--bootstrap` and benchmarks across multiple image sizes.
+- **`model_utils.py`**: Helper functions for model management including downloading ONNX models and building TensorRT engines.
+- **`optimizations.py`**: Benchmarks different Detector optimization combinations (preprocessor type, cuda_graph, pagelocked_mem). Useful for finding the fastest configuration for your hardware.
+- **`data/`**: Directory where ONNX models and benchmark results are stored.
 
 ### How It Works
 

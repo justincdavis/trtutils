@@ -17,6 +17,8 @@ from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+    from trtutils.core._graph import CUDAGraph
+
 _COLOR_CHANNELS = 3
 
 
@@ -38,7 +40,7 @@ class ImageModel:
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -84,7 +86,12 @@ class ImageModel:
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            Only effective with async_v3 backend. Default is None (uses TRTEngine default).
+            When enabled, CUDA graphs are used both at the engine level and for
+            end-to-end execution in the end2end() method. The first call to
+            end2end() will capture a CUDA graph of the full preprocessing +
+            inference pipeline, and subsequent calls will replay it. Input
+            dimensions are locked after the first end2end() call.
+            Only effective with async_v3 backend. Default is None (disabled).
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -173,6 +180,14 @@ class ImageModel:
         self._pre_profile: tuple[float, float] = (0.0, 0.0)
         self._infer_profile: tuple[float, float] = (0.0, 0.0)
         self._post_profile: tuple[float, float] = (0.0, 0.0)
+
+        # E2E graph state (enabled when cuda_graph=True)
+        # Note: Preprocessing runs outside the graph since H2D copies cannot be captured.
+        # Only TRTEngine inference is captured in the graph.
+        self._e2e_graph_enabled: bool = cuda_graph if cuda_graph is not None else False
+        self._e2e_graph: CUDAGraph | None = None
+        self._e2e_input_dims: tuple[int, int] | None = None
+        self._e2e_batch_size: int | None = None
 
         # if warmup, warmup the preprocessors
         if warmup:

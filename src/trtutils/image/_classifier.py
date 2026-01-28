@@ -11,6 +11,9 @@ from typing_extensions import Literal, TypeGuard
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._graph import CUDAGraph
+from trtutils.core._memory import memcpy_device_to_host_async
+from trtutils.core._stream import stream_synchronize
 
 from ._image_model import ImageModel
 from .interfaces import ClassifierInterface
@@ -48,7 +51,7 @@ class Classifier(ImageModel, ClassifierInterface):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -94,7 +97,12 @@ class Classifier(ImageModel, ClassifierInterface):
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            Only effective with async_v3 backend. Default is None (uses TRTEngine default).
+            When enabled, CUDA graphs are used both at the engine level and for
+            end-to-end execution in the end2end() method. The first call to
+            end2end() will capture a CUDA graph of the full preprocessing +
+            inference pipeline, and subsequent calls will replay it. Input
+            dimensions are locked after the first end2end() call.
+            Only effective with async_v3 backend. Default is True.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -618,6 +626,10 @@ class Classifier(ImageModel, ClassifierInterface):
         ------
         RuntimeError
             If postprocessed outputs are not available in end2end.
+        RuntimeError
+            If end2end_graph is enabled and image dimensions change after first call.
+        RuntimeError
+            If end2end_graph is enabled and CUDA graph capture fails.
 
         """
         if verbose:
@@ -628,6 +640,33 @@ class Classifier(ImageModel, ClassifierInterface):
         if is_single:
             images = [images]  # type: ignore[list-item]
 
+        # Dispatch based on graph flag
+        if self._e2e_graph_enabled:
+            result = self._end2end_graph(
+                images,  # type: ignore[arg-type]
+                top_k=top_k,
+                verbose=verbose,
+            )
+        else:
+            result = self._end2end(
+                images,  # type: ignore[arg-type]
+                top_k=top_k,
+                verbose=verbose,
+            )
+
+        # Unwrap for single-image input
+        if is_single:
+            return result[0]
+        return result
+
+    def _end2end(
+        self: Self,
+        images: list[np.ndarray],
+        top_k: int = 5,
+        *,
+        verbose: bool | None = None,
+    ) -> list[list[tuple[int, float]]]:
+        """Execute the standard end2end path without graph capture."""
         outputs: list[np.ndarray] | list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
@@ -651,7 +690,7 @@ class Classifier(ImageModel, ClassifierInterface):
 
             # if using CUDA, can remove much more
             gpu_ptr, _, _ = self._preprocessor.direct_preproc(
-                images,  # type: ignore[arg-type]
+                images,
                 resize=self._resize_method,
                 no_warn=True,
                 verbose=verbose,
@@ -660,9 +699,83 @@ class Classifier(ImageModel, ClassifierInterface):
             postprocessed = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
 
         # generate the classifications
-        result = get_classifications(postprocessed, top_k=top_k, verbose=verbose)
+        return get_classifications(postprocessed, top_k=top_k, verbose=verbose)
 
-        # Unwrap for single-image input
-        if is_single:
-            return result[0]
-        return result
+    def _end2end_graph(
+        self: Self,
+        images: list[np.ndarray],
+        top_k: int = 5,
+        *,
+        verbose: bool | None = None,
+    ) -> list[list[tuple[int, float]]]:
+        """
+        Execute graph-accelerated end2end path.
+
+        This implementation captures only TRTEngine inference in the CUDA graph.
+        Preprocessing runs outside the graph since H2D copies cannot be captured.
+        """
+        if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+            err_msg = "end2end_graph requires a CUDA or TRT preprocessor, not CPU."
+            raise TypeError(err_msg)
+
+        batch_size = len(images)
+
+        # Auto-capture on first call: lock dimensions
+        if self._e2e_graph is None:
+            self._e2e_input_dims = (images[0].shape[0], images[0].shape[1])
+            self._e2e_batch_size = batch_size
+
+        # Validate dimensions match locked values
+        img_dims = (images[0].shape[0], images[0].shape[1])
+        if img_dims != self._e2e_input_dims:
+            err_msg = f"Image dims {img_dims} != graph dims {self._e2e_input_dims}"
+            raise RuntimeError(err_msg)
+        if batch_size != self._e2e_batch_size:
+            err_msg = f"Batch size {batch_size} != graph batch size {self._e2e_batch_size}"
+            raise RuntimeError(err_msg)
+
+        # Always run preprocessing outside the graph (H2D copies break capture)
+        gpu_ptr, _, _ = self._preprocessor.direct_preproc(
+            images,
+            resize=self._resize_method,
+            no_warn=True,
+            verbose=verbose,
+        )
+
+        # Capture or replay the graph (inference only)
+        if self._e2e_graph is None:
+            # First call: capture the graph
+            self._e2e_graph = CUDAGraph(self._engine.stream)
+            with self._e2e_graph:
+                self._engine.raw_exec([gpu_ptr], no_warn=True)
+
+            # Verify capture succeeded
+            if not self._e2e_graph.is_captured:
+                err_msg = (
+                    "CUDA graph capture failed for end2end. Engine may not support graph capture."
+                )
+                raise RuntimeError(err_msg)
+        else:
+            # Replay the captured graph
+            self._e2e_graph.launch()
+
+        # D2H copy of outputs + sync (outside the graph)
+        raw_outputs = self._copy_engine_outputs()
+        stream_synchronize(self._engine.stream)
+
+        # CPU postprocessing
+        postprocessed = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
+        return get_classifications(postprocessed, top_k=top_k, verbose=verbose)
+
+    def _copy_engine_outputs(self: Self) -> list[np.ndarray]:
+        """Copy engine outputs from device to host."""
+        outputs: list[np.ndarray] = []
+        for binding in self._engine._outputs:  # noqa: SLF001
+            if not (self._engine._unified_mem and self._engine._pagelocked_mem):  # noqa: SLF001
+                memcpy_device_to_host_async(
+                    binding.host_allocation,
+                    binding.allocation,
+                    self._engine.stream,
+                )
+            outputs.append(binding.host_allocation)
+        return outputs

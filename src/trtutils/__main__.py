@@ -18,6 +18,7 @@ from typing_extensions import TypeGuard
 
 import trtutils
 from trtutils._log import LOG
+from trtutils.core import cache as caching_tools
 from trtutils.trtexec._cli import cli_trtexec
 
 if TYPE_CHECKING:
@@ -1111,6 +1112,24 @@ def _download(args: SimpleNamespace) -> None:
     )
 
 
+def _clear_cache(args: SimpleNamespace) -> None:
+    """
+    Clear the trtutils engine cache.
+
+    Removes all cached TensorRT engines from the trtutils cache directory.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - no_warn : bool
+            Whether to suppress the warning about clearing the cache.
+
+    """
+    caching_tools.clear(no_warn=args.no_warn)
+    LOG.info("Engine cache cleared.")
+
+
 def _main() -> None:
     """
     Set up the main entry point for the trtutils command-line interface.
@@ -1741,6 +1760,19 @@ def _main() -> None:
         help="Accept the license terms for the model. If not provided, you will be prompted.",
     )
     download_parser.set_defaults(func=_download)
+
+    # clear_cache parser
+    clear_cache_parser = subparsers.add_parser(
+        "clear_cache",
+        help="Clear the trtutils engine cache.",
+        parents=[general_parser],
+    )
+    clear_cache_parser.add_argument(
+        "--no_warn",
+        action="store_true",
+        help="Suppress the warning about clearing the cache.",
+    )
+    clear_cache_parser.set_defaults(func=_clear_cache)
 
     # parse args and call the function
     args, unknown = parser.parse_known_args()

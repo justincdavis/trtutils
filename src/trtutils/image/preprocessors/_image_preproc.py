@@ -555,7 +555,35 @@ class GPUImagePreprocessor(ImagePreprocessor):
         *,
         no_warn: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]: ...
+    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Preprocess images for the model with H2D copies and GPU kernels.
+
+        This method performs the complete preprocessing pipeline:
+        1. Host-to-device copy of input images
+        2. Resize kernels (letterbox or linear)
+        3. Normalization (SST) kernel
+
+        Parameters
+        ----------
+        images : list[np.ndarray]
+            The images to preprocess (HWC format, uint8).
+        resize : str, optional
+            The resize method. Options are ['letterbox', 'linear'].
+            If None, uses the configured default.
+        no_warn : bool, optional
+            If True, suppress warnings about usage.
+        verbose : bool, optional
+            Enable verbose logging.
+
+        Returns
+        -------
+        tuple[int, list[tuple[float, float]], list[tuple[float, float]]]
+            GPU pointer to preprocessed output, list of ratios (scale_x, scale_y),
+            and list of padding (pad_x, pad_y) per image.
+
+        """
+        ...
 
     @property
     def orig_size_allocation(self: Self) -> tuple[int, bool]:
