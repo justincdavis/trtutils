@@ -362,13 +362,19 @@ def test_e2e_graph_capture_failure_raises() -> None:
         detector.end2end(image)
 
 
-def test_e2e_graph_cpu_preprocessor_raises() -> None:
-    """Test that cuda_graph with CPU preprocessor raises RuntimeError."""
+def test_e2e_graph_cpu_preprocessor_works() -> None:
+    """Test that cuda_graph works with CPU preprocessor."""
     detector = _get_detector(cuda_graph=True, preprocessor="cpu")
     image = _read_image(HORSE_IMAGE_PATH)
 
-    with pytest.raises(TypeError, match="CUDA or TRT preprocessor"):
-        detector.end2end(image)
+    # Should work - CPU preprocessing + graph-captured inference
+    result = detector.end2end(image)
+    assert result is not None
+    assert isinstance(result, list)
+
+    # Graph should be captured
+    assert detector._e2e_graph is not None
+    assert detector._e2e_graph.is_captured is True
 
 
 # ============================================================================

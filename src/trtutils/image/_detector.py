@@ -12,7 +12,7 @@ from typing_extensions import Literal, TypeGuard
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._graph import CUDAGraph
-from trtutils.core._memory import memcpy_device_to_host_async
+from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
 from trtutils.core._stream import stream_synchronize
 
 from ._image_model import ImageModel
@@ -1080,11 +1080,8 @@ class Detector(ImageModel, DetectorInterface):
 
         This implementation captures only TRTEngine inference in the CUDA graph.
         Preprocessing runs outside the graph since H2D copies cannot be captured.
+        Supports CPU, CUDA, and TRT preprocessors.
         """
-        if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            err_msg = "end2end_graph requires a CUDA or TRT preprocessor, not CPU."
-            raise TypeError(err_msg)
-
         batch_size = len(images)
 
         # Auto-capture on first call: lock dimensions
@@ -1101,30 +1098,66 @@ class Detector(ImageModel, DetectorInterface):
             err_msg = f"Batch size {batch_size} != graph batch size {self._e2e_batch_size}"
             raise RuntimeError(err_msg)
 
-        # Always run preprocessing outside the graph (H2D copies break capture)
-        gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
-            images,
-            resize=self._resize_method,
-            no_warn=True,
-            verbose=verbose,
-        )
+        # Preprocess and build input pointers based on preprocessor type
+        if isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+            # GPU preprocessor: use direct_preproc for GPU pointers
+            gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
+                images,
+                resize=self._resize_method,
+                no_warn=True,
+                verbose=verbose,
+            )
+            input_ptrs = [gpu_ptr]
 
-        # Build input pointers based on InputSchema
-        input_ptrs = [gpu_ptr]
-        if self._use_image_size:
-            orig_size_ptr, valid = self._preprocessor.orig_size_allocation
-            if valid:
+            # Add additional inputs from preprocessor's allocations
+            if self._use_image_size:
+                orig_size_ptr, valid = self._preprocessor.orig_size_allocation
+                if not valid:
+                    err_msg = "orig_image_size buffer not valid"
+                    raise RuntimeError(err_msg)
                 input_ptrs.append(orig_size_ptr)
-            else:
-                err_msg = "orig_image_size buffer not valid"
-                raise RuntimeError(err_msg)
-        if self._use_scale_factor:
-            scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation
-            if scale_valid:
+            if self._use_scale_factor:
+                scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation
+                if not scale_valid:
+                    err_msg = "scale_factor buffer not valid"
+                    raise RuntimeError(err_msg)
                 input_ptrs.append(scale_ptr)
-            else:
-                err_msg = "scale_factor buffer not valid"
-                raise RuntimeError(err_msg)
+        else:
+            # CPU preprocessor: preprocess to numpy, copy to engine bindings
+            tensor, ratios, padding = self.preprocess(images, no_copy=True, verbose=verbose)
+
+            # Copy preprocessed tensor to engine's first input binding (H2D)
+            memcpy_host_to_device_async(
+                self._engine._inputs[0].allocation,  # noqa: SLF001
+                tensor,
+                self._engine.stream,
+            )
+            input_ptrs = [self._engine._inputs[0].allocation]  # noqa: SLF001
+
+            # Handle additional inputs for DETR-style models
+            input_idx = 1
+            if self._use_image_size:
+                # Build orig_target_sizes: (batch, 2) with (height, width) per image
+                orig_sizes = np.array(
+                    [img.shape[:2] for img in images],
+                    dtype=np.int32,
+                )
+                memcpy_host_to_device_async(
+                    self._engine._inputs[input_idx].allocation,  # noqa: SLF001
+                    orig_sizes,
+                    self._engine.stream,
+                )
+                input_ptrs.append(self._engine._inputs[input_idx].allocation)  # noqa: SLF001
+                input_idx += 1
+            if self._use_scale_factor:
+                # Build scale_factor from ratios
+                scale_factors = np.array(ratios, dtype=np.float32)
+                memcpy_host_to_device_async(
+                    self._engine._inputs[input_idx].allocation,  # noqa: SLF001
+                    scale_factors,
+                    self._engine.stream,
+                )
+                input_ptrs.append(self._engine._inputs[input_idx].allocation)  # noqa: SLF001
 
         # Capture or replay the graph (inference only)
         if self._e2e_graph is None:
@@ -1139,6 +1172,10 @@ class Detector(ImageModel, DetectorInterface):
                     "CUDA graph capture failed for end2end. Engine may not support graph capture."
                 )
                 raise RuntimeError(err_msg)
+
+            # Launch graph after capture to actually run inference
+            # (capture only records operations, doesn't execute them)
+            self._e2e_graph.launch()
         else:
             # Replay the captured graph
             self._e2e_graph.launch()

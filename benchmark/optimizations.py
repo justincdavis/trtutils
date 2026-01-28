@@ -148,7 +148,7 @@ def main() -> None:
         for cuda_graph in [False, True]:
             for pagelocked in [False, True]:
                 for unified in [False, True]:
-                    if prep == "cpu" and cuda_graph:
+                    if pagelocked and unified:
                         continue
                     configs.append({
                         "preprocessor": prep,

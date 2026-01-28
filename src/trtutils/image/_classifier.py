@@ -12,7 +12,7 @@ from typing_extensions import Literal, TypeGuard
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._graph import CUDAGraph
-from trtutils.core._memory import memcpy_device_to_host_async
+from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
 from trtutils.core._stream import stream_synchronize
 
 from ._image_model import ImageModel
@@ -713,11 +713,8 @@ class Classifier(ImageModel, ClassifierInterface):
 
         This implementation captures only TRTEngine inference in the CUDA graph.
         Preprocessing runs outside the graph since H2D copies cannot be captured.
+        Supports CPU, CUDA, and TRT preprocessors.
         """
-        if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            err_msg = "end2end_graph requires a CUDA or TRT preprocessor, not CPU."
-            raise TypeError(err_msg)
-
         batch_size = len(images)
 
         # Auto-capture on first call: lock dimensions
@@ -734,20 +731,34 @@ class Classifier(ImageModel, ClassifierInterface):
             err_msg = f"Batch size {batch_size} != graph batch size {self._e2e_batch_size}"
             raise RuntimeError(err_msg)
 
-        # Always run preprocessing outside the graph (H2D copies break capture)
-        gpu_ptr, _, _ = self._preprocessor.direct_preproc(
-            images,
-            resize=self._resize_method,
-            no_warn=True,
-            verbose=verbose,
-        )
+        # Preprocess and get GPU pointer based on preprocessor type
+        if isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+            # GPU preprocessor: use direct_preproc for GPU pointer
+            gpu_ptr, _, _ = self._preprocessor.direct_preproc(
+                images,
+                resize=self._resize_method,
+                no_warn=True,
+                verbose=verbose,
+            )
+            input_ptrs = [gpu_ptr]
+        else:
+            # CPU preprocessor: preprocess to numpy, copy to engine binding
+            tensor, _, _ = self.preprocess(images, no_copy=True, verbose=verbose)
+
+            # Copy preprocessed tensor to engine's input binding (H2D)
+            memcpy_host_to_device_async(
+                self._engine._inputs[0].allocation,  # noqa: SLF001
+                tensor,
+                self._engine.stream,
+            )
+            input_ptrs = [self._engine._inputs[0].allocation]  # noqa: SLF001
 
         # Capture or replay the graph (inference only)
         if self._e2e_graph is None:
             # First call: capture the graph
             self._e2e_graph = CUDAGraph(self._engine.stream)
             with self._e2e_graph:
-                self._engine.raw_exec([gpu_ptr], no_warn=True)
+                self._engine.raw_exec(input_ptrs, no_warn=True)
 
             # Verify capture succeeded
             if not self._e2e_graph.is_captured:
@@ -755,6 +766,10 @@ class Classifier(ImageModel, ClassifierInterface):
                     "CUDA graph capture failed for end2end. Engine may not support graph capture."
                 )
                 raise RuntimeError(err_msg)
+
+            # Launch graph after capture to actually run inference
+            # (capture only records operations, doesn't execute them)
+            self._e2e_graph.launch()
         else:
             # Replay the captured graph
             self._e2e_graph.launch()
