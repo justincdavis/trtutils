@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # DEBIAN/UBUNTU INSTALLATION SCRIPT
 
+# install UV
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # ensure APT is updated
 sudo apt update
 
@@ -34,6 +37,13 @@ sudo apt install gh -y
 
 # install Docker
 sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
+
+# setup the Python virtual environment for development
+uv venv .venv --clear --python 3.13 --seed
+source .venv/bin/activate && uv pip install -e .[ci,docs,test]
+
+# setup pre-commit using the virtual environment
+source .venv/bin/activate && uv pip install pre-commit && pre-commit install
 
 # install Nektos ACT
 if ! gh auth status >/dev/null 2>&1; then
