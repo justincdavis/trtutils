@@ -6,7 +6,7 @@ help:
 	@echo "  benchmark-bootstrap to download all benchmark models upfront"
 	@echo "  docs                to generate the documentation"
 	@echo "  fix                 to auto-fix formatting and lint issues"
-	@echo "  ci                  to run GitHub Actions workflows locally with act"
+	@echo "  ci                  to run GitHub Actions workflows locally (act or gh act)"
 	@echo "  ci_env              to create the CI environment"
 	@echo "  typecheck           to run the ty static type checker"
 	@echo "  test                to run the tests"
@@ -36,7 +36,7 @@ fix:
 	./ci/run_lint.sh
 
 ci:
-	act $(ACT_ARGS)
+	./ci/act.sh $(ACT_ARGS)
 
 typecheck:
 	./ci/run_ci.sh --typecheck
