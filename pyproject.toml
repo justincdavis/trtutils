@@ -68,7 +68,7 @@ cu11 = [
     "tensorrt_cu11>=8.0.0",
 ]
 cu12 = [
-    "cuda-python==12.*",
+    "cuda-python>=12,<14",
     "tensorrt_cu12>=10.0.0",
 ]
 cu13 = [
