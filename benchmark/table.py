@@ -118,7 +118,7 @@ def main() -> None:
     if args.skip_devices:
         skip_devices = {d.strip() for d in args.skip_devices.split(",") if d.strip()}
     
-    data_dir = Path(__file__).parent / "data"
+    data_dir = Path(__file__).parent / "data" / "models"
     data: dict[str, dict[str, dict[str, dict[str, dict[str, float]]]]] = {}
     for file in data_dir.iterdir():
         if file.is_dir():

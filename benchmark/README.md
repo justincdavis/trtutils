@@ -69,9 +69,13 @@ The benchmark system uses `trtutils.download` to automatically download and expo
 
 ### Files
 
-- **`run.py`**: Main benchmark script with `--bootstrap` flag
-- **`model_utils.py`**: Helper functions for model management
-- **`data/`**: Directory where ONNX models are stored
+- **`run.py`**: Main benchmark script comparing trtutils against ultralytics and SAHI frameworks. Supports automatic model downloading with `--bootstrap` and benchmarks across multiple image sizes.
+- **`model_utils.py`**: Helper functions for model management including downloading ONNX models and building TensorRT engines.
+- **`optimizations.py`**: Benchmarks different Detector optimization combinations (preprocessor type, cuda_graph, pagelocked_mem, unified_mem). Requires `--device`; results are written to `data/optimizations/{device}.json`. Useful for finding the fastest configuration for your hardware.
+- **`plot.py`**: Generates latency and Pareto plots from `data/models/`; use `--optimizations` to generate per-device optimization speedup bar charts from `data/optimizations/`.
+- **`data/`**: Benchmark data directory:
+  - **`data/models/`**: Device benchmark results (one JSON per device, e.g. `3080Ti.json`). Written by `run.py`.
+  - **`data/optimizations/`**: Optimization benchmark results (one JSON per device). Written by `optimizations.py`.
 
 ### How It Works
 
@@ -92,6 +96,26 @@ python benchmark/run.py --device MyDevice --model all --trtutils --ultralytics
 # Quick test with auto-download
 python benchmark/run.py --device MyDevice --model yolov8n --trtutils
 ```
+
+### Optimization benchmarks and plots
+
+Run optimization benchmarks (requires `--device`); results are saved to `data/optimizations/{device}.json`:
+
+```bash
+python benchmark/optimizations.py --device MyDevice --model yolov10n
+```
+
+Generate per-device optimization speedup bar charts (CPU baseline = 1.0x, then GPU preproc, pagelocked, unified, CUDA graph, etc.):
+
+```bash
+# All devices that have data in data/optimizations/
+python benchmark/plot.py --optimizations
+
+# Single device
+python benchmark/plot.py --optimizations --device MyDevice
+```
+
+Plots are written to `plots/{device}/optimizations.png`.
 
 ## Notes
 

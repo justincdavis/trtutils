@@ -61,6 +61,8 @@ def _load_model_imgsizes() -> dict[str, list[int]]:
 REPO_DIR = Path(__file__).parent.parent
 DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DATA_DIR = DATA_DIR / "models"
+MODELS_DATA_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_PATH = str((REPO_DIR / "data" / "horse.jpg").resolve())
 MODELNAME = "yolov10n"
 MODEL_DIRS, MODELNAMES, MODEL_TO_DIR = _load_model_info()
@@ -87,6 +89,7 @@ FRAMEWORKS = [
     "trtutils(cpu)",
     "trtutils(cuda)",
     "trtutils(trt)",
+    "trtutils(graph)",
     "tensorrt",
 ]
 
@@ -105,7 +108,7 @@ def get_results(data: list[float]) -> dict[str, float]:
 
 
 def get_data(device: str) -> dict[str, dict[str, dict[str, dict[str, float]]]]:
-    file_path = DATA_DIR / f"{device}.json"
+    file_path = MODELS_DATA_DIR / f"{device}.json"
     if file_path.exists():
         with file_path.open("r") as f:
             data = json.load(f)
@@ -120,7 +123,7 @@ def get_data(device: str) -> dict[str, dict[str, dict[str, dict[str, float]]]]:
 def write_data(
     device: str, data: dict[str, dict[str, dict[str, dict[str, float]]]]
 ) -> None:
-    file_path = DATA_DIR / f"{device}.json"
+    file_path = MODELS_DATA_DIR / f"{device}.json"
     with file_path.open("w") as f:
         json.dump(data, f, indent=4)
 
@@ -137,11 +140,17 @@ def benchmark_trtutils(
     # get initial data
     data = get_data(device)
 
-    for preprocessor in ["cpu", "cuda", "trt"]:
+    # Define modes: (framework_name, preprocessor, cuda_graph)
+    modes = [
+        ("trtutils(cpu)", "cpu", False),
+        ("trtutils(cuda)", "cuda", False),
+        ("trtutils(trt)", "trt", False),
+        ("trtutils(graph)", "cuda", True),
+    ]
+
+    for framework, preprocessor, cuda_graph in modes:
         if preprocessor == "trt" and not FLAGS.TRT_HAS_UINT8:
             continue
-
-        framework = f"trtutils({preprocessor})"
         for imgsz in image_sizes:
             # if we can find the model nested, then we can skip
             with contextlib.suppress(KeyError):
@@ -180,6 +189,7 @@ def benchmark_trtutils(
                 warmup=True,
                 preprocessor=preprocessor,
                 pagelocked_mem=True,
+                cuda_graph=cuda_graph,
                 verbose=True,
             )
             t_timing = []
