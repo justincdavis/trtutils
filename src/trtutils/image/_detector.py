@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
 
 import numpy as np
 from typing_extensions import Literal, TypeGuard
@@ -999,6 +999,7 @@ class Detector(ImageModel, DetectorInterface):
     ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
         """Execute the standard end2end path without graph capture."""
         outputs: list[np.ndarray] | list[list[np.ndarray]]
+        postprocessed: list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             if verbose:
@@ -1056,13 +1057,17 @@ class Detector(ImageModel, DetectorInterface):
             )
 
         # generate the detections
-        return self.get_detections(
-            postprocessed,
-            conf_thres=conf_thres,
-            nms_iou_thres=nms_iou_thres,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
-            verbose=verbose,
+        # cast needed: ty can't resolve overload with numpy 1.x type stubs
+        return cast(
+            "list[list[tuple[tuple[int, int, int, int], float, int]]]",
+            self.get_detections(
+                postprocessed,
+                conf_thres=conf_thres,
+                nms_iou_thres=nms_iou_thres,
+                extra_nms=extra_nms,
+                agnostic_nms=agnostic_nms,
+                verbose=verbose,
+            ),
         )
 
     def _end2end_graph(
@@ -1185,7 +1190,7 @@ class Detector(ImageModel, DetectorInterface):
         stream_synchronize(self._engine.stream)
 
         # CPU postprocessing
-        postprocessed = self.postprocess(
+        postprocessed: list[list[np.ndarray]] = self.postprocess(
             raw_outputs,
             ratios,
             padding,
@@ -1193,13 +1198,17 @@ class Detector(ImageModel, DetectorInterface):
             no_copy=True,
             verbose=verbose,
         )
-        return self.get_detections(
-            postprocessed,
-            conf_thres=conf_thres,
-            nms_iou_thres=nms_iou_thres,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
-            verbose=verbose,
+        # cast needed: ty can't resolve overload with numpy 1.x type stubs
+        return cast(
+            "list[list[tuple[tuple[int, int, int, int], float, int]]]",
+            self.get_detections(
+                postprocessed,
+                conf_thres=conf_thres,
+                nms_iou_thres=nms_iou_thres,
+                extra_nms=extra_nms,
+                agnostic_nms=agnostic_nms,
+                verbose=verbose,
+            ),
         )
 
     def _copy_engine_outputs(self: Self) -> list[np.ndarray]:
