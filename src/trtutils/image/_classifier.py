@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, overload
 import numpy as np
 from typing_extensions import Literal, TypeGuard
 
-from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
@@ -48,7 +47,7 @@ class Classifier(ImageModel, ClassifierInterface):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -94,7 +93,12 @@ class Classifier(ImageModel, ClassifierInterface):
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            Only effective with async_v3 backend. Default is None (uses TRTEngine default).
+            When enabled, CUDA graphs are used both at the engine level and for
+            end-to-end execution in the end2end() method. The first call to
+            end2end() will capture a CUDA graph of the full preprocessing +
+            inference pipeline, and subsequent calls will replay it. Input
+            dimensions are locked after the first end2end() call.
+            Only effective with async_v3 backend. Default is True.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -120,106 +124,6 @@ class Classifier(ImageModel, ClassifierInterface):
             no_warn=no_warn,
             verbose=verbose,
         )
-
-    # preprocess overloads
-    @overload
-    def preprocess(
-        self: Self,
-        images: np.ndarray,
-        resize: str | None = ...,
-        method: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    @overload
-    def preprocess(
-        self: Self,
-        images: list[np.ndarray],
-        resize: str | None = ...,
-        method: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    def preprocess(
-        self: Self,
-        images: np.ndarray | list[np.ndarray],
-        resize: str | None = None,
-        method: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        """
-        Preprocess the input images.
-
-        Parameters
-        ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to preprocess.
-        resize : str
-            The method to resize the images with.
-            Options are [letterbox, linear].
-            By default None, which will use the value passed
-            during initialization.
-        method : str, optional
-            The underlying preprocessor to use.
-            Options are 'cpu', 'cuda', or 'trt'. By default None, which
-            will use the preprocessor stated in the constructor.
-        no_copy : bool, optional
-            If True and using CUDA, do not copy the
-            data from the allocated memory. If the data
-            is not copied, it WILL BE OVERWRITTEN INPLACE
-            once new data is generated.
-        verbose : bool, optional
-            Whether or not to log additional information.
-
-        Returns
-        -------
-        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
-            The preprocessed batch tensor, list of ratios per image, and list of padding per image.
-
-        """
-        # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[list-item]
-
-        resize = resize if resize is not None else self._resize_method
-        if verbose:
-            LOG.debug(
-                f"{self._tag}: Running preprocess, batch_size: {len(images)}, with method: {resize}",
-            )
-            LOG.debug(f"{self._tag}: Using device: {method}")
-        preprocessor = self._preprocessor
-        if method is not None:
-            if method == "trt" and not FLAGS.TRT_HAS_UINT8:
-                method = "cuda"
-                LOG.warning(
-                    "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
-                )
-            preprocessor = self._preproc_cpu
-            if method == "cuda":
-                if self._preproc_cuda is None:
-                    self._preproc_cuda = self._setup_cuda_preproc()
-                preprocessor = self._preproc_cuda
-            elif method == "trt":
-                if self._preproc_trt is None:
-                    self._preproc_trt = self._setup_trt_preproc()
-                preprocessor = self._preproc_trt
-        if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            t0 = time.perf_counter()
-            data = preprocessor(images, resize=resize, no_copy=no_copy, verbose=verbose)
-            t1 = time.perf_counter()
-        else:
-            t0 = time.perf_counter()
-            data = preprocessor(images, resize=resize, verbose=verbose)
-            t1 = time.perf_counter()
-        self._pre_profile = (t0, t1)
-        return data
 
     def postprocess(
         self: Self,
@@ -618,6 +522,10 @@ class Classifier(ImageModel, ClassifierInterface):
         ------
         RuntimeError
             If postprocessed outputs are not available in end2end.
+        RuntimeError
+            If end2end_graph is enabled and image dimensions change after first call.
+        RuntimeError
+            If end2end_graph is enabled and CUDA graph capture fails.
 
         """
         if verbose:
@@ -628,6 +536,33 @@ class Classifier(ImageModel, ClassifierInterface):
         if is_single:
             images = [images]  # type: ignore[list-item]
 
+        # Dispatch based on graph flag
+        if self._e2e_graph_enabled:
+            result = self._end2end_graph(
+                images,  # type: ignore[arg-type]
+                top_k=top_k,
+                verbose=verbose,
+            )
+        else:
+            result = self._end2end(
+                images,  # type: ignore[arg-type]
+                top_k=top_k,
+                verbose=verbose,
+            )
+
+        # Unwrap for single-image input
+        if is_single:
+            return result[0]
+        return result
+
+    def _end2end(
+        self: Self,
+        images: list[np.ndarray],
+        top_k: int = 5,
+        *,
+        verbose: bool | None = None,
+    ) -> list[list[tuple[int, float]]]:
+        """Execute the standard end2end path without graph capture."""
         outputs: list[np.ndarray] | list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
@@ -651,7 +586,7 @@ class Classifier(ImageModel, ClassifierInterface):
 
             # if using CUDA, can remove much more
             gpu_ptr, _, _ = self._preprocessor.direct_preproc(
-                images,  # type: ignore[arg-type]
+                images,
                 resize=self._resize_method,
                 no_warn=True,
                 verbose=verbose,
@@ -660,9 +595,25 @@ class Classifier(ImageModel, ClassifierInterface):
             postprocessed = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
 
         # generate the classifications
-        result = get_classifications(postprocessed, top_k=top_k, verbose=verbose)
+        return get_classifications(postprocessed, top_k=top_k, verbose=verbose)
 
-        # Unwrap for single-image input
-        if is_single:
-            return result[0]
-        return result
+    def _end2end_graph(
+        self: Self,
+        images: list[np.ndarray],
+        top_k: int = 5,
+        *,
+        verbose: bool | None = None,
+    ) -> list[list[tuple[int, float]]]:
+        """
+        Execute graph-accelerated end2end path.
+
+        This implementation captures only TRTEngine inference in the CUDA graph.
+        Preprocessing runs outside the graph since H2D copies cannot be captured.
+        Supports CPU, CUDA, and TRT preprocessors.
+        """
+        # Use shared core graph execution
+        raw_outputs, _, _ = self._end2end_graph_core(images, verbose=verbose)
+
+        # CPU postprocessing (Classifier-specific)
+        postprocessed = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
+        return get_classifications(postprocessed, top_k=top_k, verbose=verbose)

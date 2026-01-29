@@ -5,25 +5,23 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
-from trtutils.core._memory import (
-    memcpy_device_to_host_async,
-)
-from trtutils.core._stream import destroy_stream, stream_synchronize
+from trtutils.core._stream import destroy_stream
 from trtutils.image.kernels import IMAGENET_SST, SST_FAST
 
-from ._image_preproc import GPUImagePreprocessor, _is_single_image
+from ._image_preproc import GPUImagePreprocessor
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
+    from trtutils.core._bindings import Binding
 
 
 class CUDAPreprocessor(GPUImagePreprocessor):
@@ -143,6 +141,11 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         with contextlib.suppress(AttributeError):
             del self._sst_input_binding
 
+    @property
+    def output_binding(self: Self) -> Binding:
+        """Get the output binding for the CUDA preprocessor."""
+        return self._output_binding
+
     def _reallocate_batch_buffers(self: Self, batch_size: int) -> None:
         """Reallocate SST buffers if batch size changed."""
         if batch_size == self._current_batch_size:
@@ -227,90 +230,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             )
 
         return sst_args
-
-    # preprocess overloads
-    @overload
-    def preprocess(
-        self: Self,
-        images: np.ndarray,
-        resize: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    @overload
-    def preprocess(
-        self: Self,
-        images: list[np.ndarray],
-        resize: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    def preprocess(
-        self: Self,
-        images: np.ndarray | list[np.ndarray],
-        resize: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        """
-        Preprocess images for the model.
-
-        Parameters
-        ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to preprocess.
-        resize : str, optional
-            The method to resize the image with.
-            Options are [letterbox, linear], will use method
-            provided in constructor by default.
-        no_copy : bool, optional
-            If True, the outputs will not be copied out
-            from the cuda allocated host memory. Instead,
-            the host memory will be returned directly.
-            This memory WILL BE OVERWRITTEN INPLACE
-            by future preprocessing calls.
-        verbose : bool, optional
-            Whether or not to output additional information
-            to stdout. If not provided, will default to overall
-            engines verbose setting.
-
-        Returns
-        -------
-        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
-            The preprocessed batch tensor, list of ratios, and list of padding per image.
-
-        """
-        # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[list-item]
-
-        _, ratios_list, padding_list = self.direct_preproc(
-            images,  # type: ignore[arg-type]
-            resize=resize,
-            no_warn=True,
-            verbose=verbose,
-        )
-
-        batch_size = len(images)
-
-        if not self._unified_mem:
-            memcpy_device_to_host_async(
-                self._output_binding.host_allocation,
-                self._output_binding.allocation,
-                self._stream,
-            )
-
-        stream_synchronize(self._stream)
-
-        if no_copy:
-            return self._output_binding.host_allocation[:batch_size], ratios_list, padding_list
-        return self._output_binding.host_allocation[:batch_size].copy(), ratios_list, padding_list
 
     def direct_preproc(
         self: Self,
