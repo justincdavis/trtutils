@@ -3,21 +3,24 @@
 # MIT License
 from __future__ import annotations
 
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 
 from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._graph import CUDAGraph
+from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
+from trtutils.core._stream import stream_synchronize
 
 from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+from .preprocessors._image_preproc import _is_single_image
 
 if TYPE_CHECKING:
     from typing_extensions import Self
-
-    from trtutils.core._graph import CUDAGraph
 
 _COLOR_CHANNELS = 3
 
@@ -355,3 +358,259 @@ class ImageModel:
             batch_tensor = np.stack(images, axis=0)
             return self._engine.mock_execute(data=[batch_tensor])
         return self._engine.mock_execute()
+
+    # preprocess overloads
+    @overload
+    def preprocess(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
+    def preprocess(
+        self: Self,
+        images: list[np.ndarray],
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    def preprocess(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        resize: str | None = None,
+        method: str | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Preprocess the input images.
+
+        Parameters
+        ----------
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to preprocess.
+        resize : str
+            The method to resize the images with.
+            Options are [letterbox, linear].
+            By default None, which will use the value passed
+            during initialization.
+        method : str, optional
+            The underlying preprocessor to use.
+            Options are 'cpu', 'cuda', or 'trt'. By default None, which
+            will use the preprocessor stated in the constructor.
+        no_copy : bool, optional
+            If True and using CUDA, do not copy the
+            data from the allocated memory. If the data
+            is not copied, it WILL BE OVERWRITTEN INPLACE
+            once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios per image, and list of padding per image.
+
+        """
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
+
+        resize = resize if resize is not None else self._resize_method
+        if verbose:
+            LOG.debug(
+                f"{self._tag}: Running preprocess, batch_size: {len(images)}, with method: {resize}",
+            )
+            LOG.debug(f"{self._tag}: Using device: {method}")
+        preprocessor = self._preprocessor
+        if method is not None:
+            if method == "trt" and not FLAGS.TRT_HAS_UINT8:
+                method = "cuda"
+                LOG.warning(
+                    "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
+                )
+            preprocessor = self._preproc_cpu
+            if method == "cuda":
+                if self._preproc_cuda is None:
+                    self._preproc_cuda = self._setup_cuda_preproc()
+                preprocessor = self._preproc_cuda
+            elif method == "trt":
+                if self._preproc_trt is None:
+                    self._preproc_trt = self._setup_trt_preproc()
+                preprocessor = self._preproc_trt
+        if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+            t0 = time.perf_counter()
+            data = preprocessor(images, resize=resize, no_copy=no_copy, verbose=verbose)
+            t1 = time.perf_counter()
+        else:
+            t0 = time.perf_counter()
+            data = preprocessor(images, resize=resize, verbose=verbose)
+            t1 = time.perf_counter()
+        self._pre_profile = (t0, t1)
+        return data
+
+    def _copy_engine_outputs(self: Self) -> list[np.ndarray]:
+        """Copy engine outputs from device to host."""
+        outputs: list[np.ndarray] = []
+        for binding in self._engine._outputs:  # noqa: SLF001
+            if not (self._engine._unified_mem and self._engine._pagelocked_mem):  # noqa: SLF001
+                memcpy_device_to_host_async(
+                    binding.host_allocation,
+                    binding.allocation,
+                    self._engine.stream,
+                )
+            outputs.append(binding.host_allocation)
+        return outputs
+
+    def _prepare_extra_engine_inputs_gpu(self: Self) -> list[int]:
+        """
+        Return additional GPU input pointers for GPU preprocessor path.
+
+        Override in subclasses that need extra inputs (e.g., DETR models).
+
+        Returns
+        -------
+        list[int]
+            List of GPU device pointers for additional inputs.
+
+        """
+        return []
+
+    def _prepare_extra_engine_inputs_cpu(
+        self: Self,
+        images: list[np.ndarray],  # noqa: ARG002
+        ratios: list[tuple[float, float]],  # noqa: ARG002
+    ) -> list[int]:
+        """
+        Return additional GPU input pointers for CPU preprocessor path.
+
+        Override in subclasses that need extra inputs (e.g., DETR models).
+        Subclasses should copy data to engine input bindings and return pointers.
+
+        Parameters
+        ----------
+        images : list[np.ndarray]
+            The original input images (before preprocessing).
+        ratios : list[tuple[float, float]]
+            The scaling ratios from preprocessing.
+
+        Returns
+        -------
+        list[int]
+            List of GPU device pointers for additional inputs.
+
+        """
+        return []
+
+    def _end2end_graph_core(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Core graph-accelerated execution shared by subclasses.
+
+        Handles dimension locking, preprocessing dispatch, graph capture/replay,
+        and D2H output copy. Subclasses call this and then perform their own
+        postprocessing.
+
+        Parameters
+        ----------
+        images : list[np.ndarray]
+            List of images to process.
+        verbose : bool, optional
+            Whether to log additional information.
+
+        Returns
+        -------
+        tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]]]
+            Raw outputs, ratios, and padding for subclass postprocessing.
+
+        Raises
+        ------
+        RuntimeError
+            If image dimensions or batch size change after first call.
+        RuntimeError
+            If CUDA graph capture fails.
+
+        """
+        batch_size = len(images)
+
+        # Auto-capture on first call: lock dimensions
+        if self._e2e_graph is None:
+            self._e2e_input_dims = (images[0].shape[0], images[0].shape[1])
+            self._e2e_batch_size = batch_size
+
+        # Validate dimensions match locked values
+        img_dims = (images[0].shape[0], images[0].shape[1])
+        if img_dims != self._e2e_input_dims:
+            err_msg = f"Image dims {img_dims} != graph dims {self._e2e_input_dims}"
+            raise RuntimeError(err_msg)
+        if batch_size != self._e2e_batch_size:
+            err_msg = f"Batch size {batch_size} != graph batch size {self._e2e_batch_size}"
+            raise RuntimeError(err_msg)
+
+        # Preprocess and get GPU pointer based on preprocessor type
+        if isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+            # GPU preprocessor: use direct_preproc for GPU pointer
+            gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
+                images,
+                resize=self._resize_method,
+                no_warn=True,
+                verbose=verbose,
+            )
+            input_ptrs = [gpu_ptr, *self._prepare_extra_engine_inputs_gpu()]
+        else:
+            # CPU preprocessor: preprocess to numpy, copy to engine binding
+            # Both Classifier and Detector have compatible preprocess signatures for basic call
+            tensor, ratios, padding = self.preprocess(images, no_copy=True, verbose=verbose)  # type: ignore[attr-defined]
+
+            # Copy preprocessed tensor to engine's input binding (H2D)
+            memcpy_host_to_device_async(
+                self._engine._inputs[0].allocation,  # noqa: SLF001
+                tensor,
+                self._engine.stream,
+            )
+            input_ptrs = [self._engine._inputs[0].allocation]  # noqa: SLF001
+
+            # Add extra inputs from subclass
+            extra_ptrs = self._prepare_extra_engine_inputs_cpu(images, ratios)
+            input_ptrs.extend(extra_ptrs)
+
+        # Capture or replay the graph (inference only)
+        if self._e2e_graph is None:
+            # First call: capture the graph
+            self._e2e_graph = CUDAGraph(self._engine.stream)
+            with self._e2e_graph:
+                self._engine.raw_exec(input_ptrs, no_warn=True)
+
+            # Verify capture succeeded
+            if not self._e2e_graph.is_captured:
+                err_msg = (
+                    "CUDA graph capture failed for end2end. Engine may not support graph capture."
+                )
+                raise RuntimeError(err_msg)
+
+            # Launch graph after capture to actually run inference
+            # (capture only records operations, doesn't execute them)
+            self._e2e_graph.launch()
+        else:
+            # Replay the captured graph
+            self._e2e_graph.launch()
+
+        # D2H copy of outputs + sync (outside the graph)
+        raw_outputs = self._copy_engine_outputs()
+        stream_synchronize(self._engine.stream)
+
+        return raw_outputs, ratios, padding
