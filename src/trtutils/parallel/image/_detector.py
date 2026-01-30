@@ -119,6 +119,7 @@ class ParallelDetector:
         cuda_graph: bool | None = True,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        sequential_load: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -177,6 +178,11 @@ class ParallelDetector:
         agnostic_nms : bool, optional
             Whether or not the optional/additional NMS operation
             should perform class agnostic NMS.
+        sequential_load : bool, optional
+            If True, load models one at a time instead of in parallel.
+            This is useful when memory is constrained or when hardware
+            resources (e.g., DLA cores) cannot be initialized concurrently.
+            Default is None (parallel loading).
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -206,6 +212,7 @@ class ParallelDetector:
         self._cuda_graph = cuda_graph
         self._extra_nms = extra_nms
         self._agnostic_nms = agnostic_nms
+        self._sequential_load = sequential_load
         self._tag = str(len(self._engine_info))
         self._no_warn = no_warn
         self._verbose = verbose
@@ -220,10 +227,17 @@ class ParallelDetector:
             Thread(target=self._run, args=(idx,), daemon=True)
             for idx in range(len(self._engine_info))
         ]
-        for thread in self._threads:
-            thread.start()
-        for flag in self._flags:
-            flag.wait()
+        if self._sequential_load:
+            # Load models one at a time
+            for idx, thread in enumerate(self._threads):
+                thread.start()
+                self._flags[idx].wait()
+        else:
+            # Load models in parallel (default)
+            for thread in self._threads:
+                thread.start()
+            for flag in self._flags:
+                flag.wait()
         for idx, model in enumerate(self._models):
             if model is None:
                 self.stop()
