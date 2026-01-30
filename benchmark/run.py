@@ -174,7 +174,6 @@ def benchmark_trtutils(
                     onnx=weight_path,
                     output=trt_path,
                     imgsz=imgsz,
-                    opt_level=1,
                 )
 
                 # verify
