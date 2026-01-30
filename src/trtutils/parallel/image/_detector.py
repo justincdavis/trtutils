@@ -116,7 +116,7 @@ class ParallelDetector:
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = True,
+        cuda_graph: bool | None = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         sequential_load: bool | None = None,

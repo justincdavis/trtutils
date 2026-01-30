@@ -47,7 +47,7 @@ class Classifier(ImageModel, ClassifierInterface):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = True,
+        cuda_graph: bool | None = False,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
