@@ -260,6 +260,11 @@ class TRTEngine(TRTEngineInterface):
         list[np.ndarray]
             The outputs of the network.
 
+        Notes
+        -----
+        This method always synchronizes the stream before returning,
+        ensuring outputs are ready to read on the host.
+
         """
         verbose = verbose if verbose is not None else self._verbose
         if verbose:
@@ -361,6 +366,42 @@ class TRTEngine(TRTEngineInterface):
             return [o.host_allocation for o in self._outputs]
         return [o.host_allocation.copy() for o in self._outputs]
 
+    def graph_exec(
+        self: Self,
+        *,
+        debug: bool | None = None,
+    ) -> None:
+        """
+        Launch the captured CUDA graph.
+
+        This method only launches the graph - it does not handle
+        input/output memory transfers or graph capture. The graph must
+        already be captured (via warmup or prior execute() calls).
+
+        This method does NOT synchronize the stream by default, allowing
+        the graph to be embedded in a larger pipeline. Use debug=True
+        to force synchronization.
+
+        Parameters
+        ----------
+        debug : bool, optional
+            If True, synchronize the stream after graph launch.
+            By default False (no synchronization).
+
+        Raises
+        ------
+        RuntimeError
+            If no CUDA graph has been captured or CUDA graphs are disabled.
+
+        """
+        if self._cuda_graph is None or not self._cuda_graph.is_captured:
+            err_msg = f"No CUDA graph captured for engine '{self._name}'. "
+            err_msg += "Ensure cuda_graph=True and warmup=True, or call execute() first."
+            raise RuntimeError(err_msg)
+        self._cuda_graph.launch()
+        if debug:
+            stream_synchronize(self._stream)
+
     def direct_exec(
         self: Self,
         pointers: list[int],
@@ -401,6 +442,11 @@ class TRTEngine(TRTEngineInterface):
         -------
         list[np.ndarray]
             The outputs of the network.
+
+        Notes
+        -----
+        This method always synchronizes the stream before returning,
+        ensuring outputs are ready to read on the host.
 
         """
         verbose = verbose if verbose is not None else self._verbose
@@ -489,6 +535,12 @@ class TRTEngine(TRTEngineInterface):
         -------
         list[int]
             The pointers to the network outputs.
+
+        Notes
+        -----
+        This method does NOT synchronize the stream by default. The caller
+        is responsible for synchronization if needed. Use debug=True to
+        force synchronization after execution.
 
         """
         verbose = verbose if verbose is not None else self._verbose

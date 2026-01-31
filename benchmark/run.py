@@ -91,6 +91,7 @@ FRAMEWORKS = [
     "trtutils(trt)",
     "trtutils(graph)",
     "tensorrt",
+    "tensorrt(graph)",
 ]
 
 # sahi paths - use ultralytics models for SAHI
@@ -207,30 +208,39 @@ def benchmark_trtutils(
 
             # add the 'raw' engine execution when using cpu preprocessor
             if preprocessor == "cpu":
-                print("\tBenchmarking tensorrt engine...")
-                base_engine = TRTEngine(
-                    engine_path=trt_path,
-                    warmup_iterations=warmup_iters,
-                    warmup=True,
-                    verbose=True,
-                )
-                input_ptrs = [
-                    binding.allocation for binding in base_engine.input_bindings
-                ]
-                r_timing = []
-                for _ in tqdm(range(bench_iters)):
-                    t00 = time.perf_counter()
-                    # use the debug flag so a stream sync is completed
-                    base_engine.raw_exec(input_ptrs, debug=True, no_warn=True)
-                    r_timing.append(time.perf_counter() - t00)
-                del base_engine
+                for use_graph in [False, True]:
+                    framework_key = "tensorrt(graph)" if use_graph else "tensorrt"
+                    print(f"\tBenchmarking {framework_key} engine...")
+                    base_engine = TRTEngine(
+                        engine_path=trt_path,
+                        warmup_iterations=warmup_iters,
+                        warmup=True,
+                        cuda_graph=use_graph,
+                        verbose=True,
+                    )
+                    input_ptrs = [
+                        binding.allocation for binding in base_engine.input_bindings
+                    ]
+                    r_timing = []
+                    if use_graph:
+                        for _ in tqdm(range(bench_iters)):
+                            t00 = time.perf_counter()
+                            base_engine.graph_exec(debug=True)
+                            r_timing.append(time.perf_counter() - t00)
+                    else:
+                        for _ in tqdm(range(bench_iters)):
+                            t00 = time.perf_counter()
+                            # use the debug flag so a stream sync is completed
+                            base_engine.raw_exec(input_ptrs, debug=True, no_warn=True)
+                            r_timing.append(time.perf_counter() - t00)
+                    del base_engine
 
-                raw_results = get_results(r_timing)
+                    raw_results = get_results(r_timing)
 
-                if MODELNAME not in data["tensorrt"]:
-                    data["tensorrt"][MODELNAME] = {}
-                data["tensorrt"][MODELNAME][str(imgsz)] = raw_results
-                write_data(device, data)
+                    if MODELNAME not in data[framework_key]:
+                        data[framework_key][MODELNAME] = {}
+                    data[framework_key][MODELNAME][str(imgsz)] = raw_results
+                    write_data(device, data)
 
 
 def benchmark_ultralytics(
