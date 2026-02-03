@@ -66,6 +66,13 @@ def _run_cmd(
         _kill_process_group(proc.pid, cmd_list)
         raise
     if check and proc.returncode:
+        sigkill_code = -9
+        if proc.returncode == sigkill_code:
+            LOG.error(
+                "Command was killed with SIGKILL (exit code -9). This usually means the system "
+                "ran out of memory (OOM). Try closing other applications, increasing available RAM, "
+                "or on WSL2, increasing memory in .wslconfig."
+            )
         LOG.error(f"Command failed with code {proc.returncode}: {' '.join(cmd_list)}")
         _kill_process_group(proc.pid, cmd_list)
         raise subprocess.CalledProcessError(proc.returncode, cmd_list)

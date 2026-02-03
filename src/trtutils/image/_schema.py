@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -46,8 +46,10 @@ class OutputSchema(Enum):
     YOLO_V10 = ("output0",)
     # RF-DETR
     RF_DETR = ("dets", "labels")
-    # DEIM v1/v2, RT-DETR v1/v2/v3, D-FINE
+    # RT-DETR v1/v2/v3
     DETR = ("scores", "labels", "boxes")
+    # DEIM v1/v2, D-FINE
+    DETR_LBS = ("labels", "boxes", "scores")
 
     @classmethod
     def names(cls: type[Self]) -> list[str]:
@@ -107,6 +109,8 @@ def get_detector_io_schema(
         output_schema = OutputSchema.RF_DETR
     elif output_names == OutputSchema.DETR.value:
         output_schema = OutputSchema.DETR
+    elif output_names == OutputSchema.DETR_LBS.value:
+        output_schema = OutputSchema.DETR_LBS
     else:
         err_msg = "Could not determine output schema directly from output names. "
         err_msg += f"Output names: {engine.output_names}, "

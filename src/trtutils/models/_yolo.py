@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from trtutils.builder._build import build_engine
 from trtutils.image._detector import Detector
+from trtutils.image._schema import InputSchema, OutputSchema
 
 from ._utils import download_model_internal
 
@@ -48,6 +49,7 @@ class YOLO(Detector):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -85,7 +87,8 @@ class YOLOX(YOLO):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -93,6 +96,8 @@ class YOLOX(YOLO):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.EFFICIENT_NMS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -221,7 +226,8 @@ class YOLO3(YOLO):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -229,6 +235,8 @@ class YOLO3(YOLO):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.EFFICIENT_NMS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -356,7 +364,8 @@ class YOLO5(YOLO):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -364,6 +373,8 @@ class YOLO5(YOLO):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.EFFICIENT_NMS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -491,7 +502,8 @@ class YOLO7(YOLO):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -499,6 +511,8 @@ class YOLO7(YOLO):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.EFFICIENT_NMS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -627,7 +641,8 @@ class YOLO8(YOLO):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -635,6 +650,8 @@ class YOLO8(YOLO):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.EFFICIENT_NMS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -763,7 +780,8 @@ class YOLO9(YOLO):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -771,6 +789,8 @@ class YOLO9(YOLO):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.EFFICIENT_NMS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -899,7 +919,8 @@ class YOLO10(YOLO):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -907,6 +928,8 @@ class YOLO10(YOLO):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.YOLO_V10,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -1035,7 +1058,8 @@ class YOLO11(YOLO):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -1043,6 +1067,8 @@ class YOLO11(YOLO):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.EFFICIENT_NMS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -1171,7 +1197,8 @@ class YOLO12(YOLO):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -1179,6 +1206,8 @@ class YOLO12(YOLO):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.EFFICIENT_NMS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -1307,7 +1336,8 @@ class YOLO13(YOLO):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -1315,6 +1345,8 @@ class YOLO13(YOLO):
             resize_method=resize_method,
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.EFFICIENT_NMS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,

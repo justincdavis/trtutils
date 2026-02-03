@@ -18,6 +18,7 @@ from .interfaces import DetectorInterface
 from .postprocessors import (
     get_detections,
     postprocess_detr,
+    postprocess_detr_lbs,
     postprocess_efficient_nms,
     postprocess_rfdetr,
     postprocess_yolov10,
@@ -235,6 +236,8 @@ class Detector(ImageModel, DetectorInterface):
             self._postprocess_fn = postprocess_rfdetr
         elif self._output_schema == OutputSchema.DETR:
             self._postprocess_fn = postprocess_detr
+        elif self._output_schema == OutputSchema.DETR_LBS:
+            self._postprocess_fn = postprocess_detr_lbs
         else:
             self._postprocess_fn = postprocess_efficient_nms
 
