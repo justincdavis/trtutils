@@ -1284,6 +1284,9 @@ def _export_yolox(
             config["name"] + ".pth",
             "--opset",
             str(opset),
+            "--imgsz",
+            str(imgsz),
+            str(imgsz),
             "--decode_in_inference",
             "--no-onnxsim",  # Disable onnxslim due to compatibility issues with newer onnx
         ],

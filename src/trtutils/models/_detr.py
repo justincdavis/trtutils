@@ -109,7 +109,7 @@ class RTDETRv1(DETR):
             mean=mean,
             std=std,
             input_schema=InputSchema.RT_DETR,
-            output_schema=OutputSchema.DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -126,7 +126,7 @@ class RTDETRv1(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -159,7 +159,9 @@ class RTDETRv1(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
+        if imgsz is None:
+            imgsz = DEFAULT_DETR_IMGSZ
+        elif imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv1 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -178,7 +180,7 @@ class RTDETRv1(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -214,7 +216,9 @@ class RTDETRv1(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
+        if imgsz is None:
+            imgsz = DEFAULT_DETR_IMGSZ
+        elif imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv1 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
@@ -270,7 +274,7 @@ class RTDETRv2(DETR):
             mean=mean,
             std=std,
             input_schema=InputSchema.RT_DETR,
-            output_schema=OutputSchema.DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -287,7 +291,7 @@ class RTDETRv2(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -320,7 +324,9 @@ class RTDETRv2(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
+        if imgsz is None:
+            imgsz = DEFAULT_DETR_IMGSZ
+        elif imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv2 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -339,7 +345,7 @@ class RTDETRv2(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -375,7 +381,9 @@ class RTDETRv2(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
+        if imgsz is None:
+            imgsz = DEFAULT_DETR_IMGSZ
+        elif imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv2 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
@@ -431,7 +439,7 @@ class RTDETRv3(DETR):
             mean=mean,
             std=std,
             input_schema=InputSchema.RT_DETR_V3,
-            output_schema=OutputSchema.DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -448,7 +456,7 @@ class RTDETRv3(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -481,7 +489,9 @@ class RTDETRv3(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
+        if imgsz is None:
+            imgsz = DEFAULT_DETR_IMGSZ
+        elif imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv3 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -500,7 +510,7 @@ class RTDETRv3(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -536,7 +546,9 @@ class RTDETRv3(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
+        if imgsz is None:
+            imgsz = DEFAULT_DETR_IMGSZ
+        elif imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"RT-DETRv3 supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
@@ -610,7 +622,7 @@ class DFINE(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -643,7 +655,9 @@ class DFINE(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
+        if imgsz is None:
+            imgsz = DEFAULT_DETR_IMGSZ
+        elif imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"D-FINE supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -662,7 +676,7 @@ class DFINE(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -698,7 +712,9 @@ class DFINE(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
+        if imgsz is None:
+            imgsz = DEFAULT_DETR_IMGSZ
+        elif imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"D-FINE supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
@@ -771,7 +787,7 @@ class DEIM(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -804,7 +820,9 @@ class DEIM(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
+        if imgsz is None:
+            imgsz = DEFAULT_DETR_IMGSZ
+        elif imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"DEIM supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -823,7 +841,7 @@ class DEIM(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -859,7 +877,9 @@ class DEIM(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
+        if imgsz is None:
+            imgsz = DEFAULT_DETR_IMGSZ
+        elif imgsz != DEFAULT_DETR_IMGSZ:
             err_msg = f"DEIM supports only an imgsz of 640, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
@@ -932,7 +952,7 @@ class DEIMv2(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -974,7 +994,9 @@ class DEIMv2(DETR):
         elif "femto" in model:
             expected_imgsz = 416
 
-        if imgsz != expected_imgsz:
+        if imgsz is None:
+            imgsz = expected_imgsz
+        elif imgsz != expected_imgsz:
             err_msg = f"DEIMv2 {model} requires imgsz of {expected_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -993,7 +1015,7 @@ class DEIMv2(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -1030,6 +1052,8 @@ class DEIMv2(DETR):
             ValueError: If imgsz is not 320, 416, or 640.
 
         """
+        if imgsz is None:
+            imgsz = 640
         if imgsz not in (320, 416, 640):
             err_msg = f"DEIMv2 supports only imgsz of 320, 416, or 640, got {imgsz}"
             raise ValueError(err_msg)
@@ -1103,7 +1127,7 @@ class RFDETR(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 576,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -1136,6 +1160,8 @@ class RFDETR(DETR):
             If imgsz is not divisible by 32.
 
         """
+        if imgsz is None:
+            imgsz = 576
         if imgsz % 32 != 0:
             err_msg = f"RF-DETR supports only imgsz divisible by 32, got {imgsz}"
             raise ValueError(err_msg)
@@ -1155,7 +1181,7 @@ class RFDETR(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 576,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -1189,6 +1215,8 @@ class RFDETR(DETR):
             ValueError: If imgsz is not divisible by 32.
 
         """
+        if imgsz is None:
+            imgsz = 576
         if imgsz % 32 != 0:
             err_msg = f"RF-DETR supports only imgsz divisible by 32, got {imgsz}"
             raise ValueError(err_msg)

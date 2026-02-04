@@ -5,19 +5,28 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.paths import TRT_VERSION, version_engine_path
+
 BASE = Path(__file__).parent.parent.parent
+
+
+def _eng(path: Path) -> Path:
+    """Apply TRT version to engine path."""
+    return version_engine_path(path, TRT_VERSION)
+
+
 # YOLO paths (version-based: 0=YOLOX, 3=YOLOv3, 5=YOLOv5, etc.)
 YOLO_ENGINE_PATHS: dict[int, Path] = {
-    0: BASE / "data" / "engines" / "yolox" / "yoloxn.engine",
-    3: BASE / "data" / "engines" / "yolov3" / "yolov3.engine",
-    5: BASE / "data" / "engines" / "yolov5" / "yolov5n.engine",
-    7: BASE / "data" / "engines" / "yolov7" / "yolov7t.engine",
-    8: BASE / "data" / "engines" / "yolov8" / "yolov8n.engine",
-    9: BASE / "data" / "engines" / "yolov9" / "yolov9t.engine",
-    10: BASE / "data" / "engines" / "yolov10" / "yolov10n.engine",
-    11: BASE / "data" / "engines" / "yolov11" / "yolov11n.engine",
-    12: BASE / "data" / "engines" / "yolov12" / "yolov12n.engine",
-    13: BASE / "data" / "engines" / "yolov13" / "yolov13n.engine",
+    0: _eng(BASE / "data" / "engines" / "yolox" / "yoloxn.engine"),
+    3: _eng(BASE / "data" / "engines" / "yolov3" / "yolov3.engine"),
+    5: _eng(BASE / "data" / "engines" / "yolov5" / "yolov5n.engine"),
+    7: _eng(BASE / "data" / "engines" / "yolov7" / "yolov7t.engine"),
+    8: _eng(BASE / "data" / "engines" / "yolov8" / "yolov8n.engine"),
+    9: _eng(BASE / "data" / "engines" / "yolov9" / "yolov9t.engine"),
+    10: _eng(BASE / "data" / "engines" / "yolov10" / "yolov10n.engine"),
+    11: _eng(BASE / "data" / "engines" / "yolov11" / "yolov11n.engine"),
+    12: _eng(BASE / "data" / "engines" / "yolov12" / "yolov12n.engine"),
+    13: _eng(BASE / "data" / "engines" / "yolov13" / "yolov13n.engine"),
 }
 YOLO_ONNX_PATHS: dict[int, Path] = {
     0: BASE / "data" / "yolox" / "yoloxn.onnx",
@@ -34,13 +43,13 @@ YOLO_ONNX_PATHS: dict[int, Path] = {
 
 # DETR paths (name-based)
 DETR_ENGINE_PATHS: dict[str, Path] = {
-    "rtdetrv1": BASE / "data" / "engines" / "rtdetrv1" / "rtdetrv1_r18.engine",
-    "rtdetrv2": BASE / "data" / "engines" / "rtdetrv2" / "rtdetrv2_r18.engine",
-    "rtdetrv3": BASE / "data" / "engines" / "rtdetrv3" / "rtdetrv3_r18.engine",
-    "dfine": BASE / "data" / "engines" / "dfine" / "dfine_n.engine",
-    "deim": BASE / "data" / "engines" / "deim" / "deim_dfine_n.engine",
-    "deimv2": BASE / "data" / "engines" / "deimv2" / "deimv2_atto.engine",
-    "rfdetr": BASE / "data" / "engines" / "rfdetr" / "rfdetr_n.engine",
+    "rtdetrv1": _eng(BASE / "data" / "engines" / "rtdetrv1" / "rtdetrv1_r18.engine"),
+    "rtdetrv2": _eng(BASE / "data" / "engines" / "rtdetrv2" / "rtdetrv2_r18.engine"),
+    "rtdetrv3": _eng(BASE / "data" / "engines" / "rtdetrv3" / "rtdetrv3_r18.engine"),
+    "dfine": _eng(BASE / "data" / "engines" / "dfine" / "dfine_n.engine"),
+    "deim": _eng(BASE / "data" / "engines" / "deim" / "deim_dfine_n.engine"),
+    "deimv2": _eng(BASE / "data" / "engines" / "deimv2" / "deimv2_atto.engine"),
+    "rfdetr": _eng(BASE / "data" / "engines" / "rfdetr" / "rfdetr_n.engine"),
 }
 DETR_ONNX_PATHS: dict[str, Path] = {
     "rtdetrv1": BASE / "data" / "rtdetrv1" / "rtdetrv1_r18.onnx",
