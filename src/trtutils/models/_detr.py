@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from trtutils.builder._build import build_engine
 from trtutils.compat._libs import trt
 from trtutils.image._detector import Detector
+from trtutils.image._schema import InputSchema, OutputSchema
 from trtutils.inspect._onnx import inspect_onnx_layers
 
 from ._utils import download_model_internal
@@ -96,7 +97,8 @@ class RTDETRv1(DETR):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -106,6 +108,8 @@ class RTDETRv1(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -254,7 +258,8 @@ class RTDETRv2(DETR):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -264,6 +269,8 @@ class RTDETRv2(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -412,7 +419,8 @@ class RTDETRv3(DETR):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -422,6 +430,8 @@ class RTDETRv3(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR_V3,
+            output_schema=OutputSchema.DETR,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -571,7 +581,8 @@ class DFINE(DETR):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -581,6 +592,8 @@ class DFINE(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -729,7 +742,8 @@ class DEIM(DETR):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -739,6 +753,8 @@ class DEIM(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -887,7 +903,8 @@ class DEIMv2(DETR):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -897,6 +914,8 @@ class DEIMv2(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -1055,7 +1074,8 @@ class RFDETR(DETR):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -1065,6 +1085,8 @@ class RFDETR(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RF_DETR,
+            output_schema=OutputSchema.RF_DETR,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,

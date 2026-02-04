@@ -1,0 +1,207 @@
+{
+  "device": "5080",
+  "model": "yolov10n",
+  "imgsz": 640,
+  "warmup": 50,
+  "iterations": 200,
+  "results": [
+    {
+      "preprocessor": "cuda",
+      "cuda_graph": true,
+      "pagelocked_mem": true,
+      "unified_mem": false,
+      "mean_ms": 0.5982248299869752,
+      "median_ms": 0.580703999958132,
+      "std_ms": 0.11073744449589401,
+      "min_ms": 0.5518590000974655,
+      "max_ms": 2.024622000135423
+    },
+    {
+      "preprocessor": "cuda",
+      "cuda_graph": true,
+      "pagelocked_mem": false,
+      "unified_mem": true,
+      "mean_ms": 0.6009142650259491,
+      "median_ms": 0.584719500011488,
+      "std_ms": 0.10700907642575425,
+      "min_ms": 0.5572289996962354,
+      "max_ms": 1.9803509999292146
+    },
+    {
+      "preprocessor": "cuda",
+      "cuda_graph": true,
+      "pagelocked_mem": false,
+      "unified_mem": false,
+      "mean_ms": 0.6052285849727923,
+      "median_ms": 0.5851144996995572,
+      "std_ms": 0.10264276994356228,
+      "min_ms": 0.5722099999729835,
+      "max_ms": 1.869438999619888
+    },
+    {
+      "preprocessor": "trt",
+      "cuda_graph": true,
+      "pagelocked_mem": false,
+      "unified_mem": false,
+      "mean_ms": 0.61520484000539,
+      "median_ms": 0.6006495002566226,
+      "std_ms": 0.08735805273885026,
+      "min_ms": 0.5814690002807765,
+      "max_ms": 1.7037669999808713
+    },
+    {
+      "preprocessor": "trt",
+      "cuda_graph": true,
+      "pagelocked_mem": false,
+      "unified_mem": true,
+      "mean_ms": 0.6154071899936753,
+      "median_ms": 0.6012245000874827,
+      "std_ms": 0.08465233047961787,
+      "min_ms": 0.5687989996658871,
+      "max_ms": 1.6855059998306388
+    },
+    {
+      "preprocessor": "trt",
+      "cuda_graph": true,
+      "pagelocked_mem": true,
+      "unified_mem": false,
+      "mean_ms": 0.6156536000071355,
+      "median_ms": 0.5967494998913025,
+      "std_ms": 0.11780233809011025,
+      "min_ms": 0.5764090001321165,
+      "max_ms": 2.150854999854346
+    },
+    {
+      "preprocessor": "cuda",
+      "cuda_graph": false,
+      "pagelocked_mem": false,
+      "unified_mem": true,
+      "mean_ms": 1.3128075500071645,
+      "median_ms": 1.289101000111259,
+      "std_ms": 0.11429673378855044,
+      "min_ms": 1.1720180000338587,
+      "max_ms": 1.9870109999828856
+    },
+    {
+      "preprocessor": "cuda",
+      "cuda_graph": false,
+      "pagelocked_mem": true,
+      "unified_mem": false,
+      "mean_ms": 1.3225332000115486,
+      "median_ms": 1.3009659999170253,
+      "std_ms": 0.1145075519248041,
+      "min_ms": 1.1806289999185537,
+      "max_ms": 1.991122000163159
+    },
+    {
+      "preprocessor": "cuda",
+      "cuda_graph": false,
+      "pagelocked_mem": false,
+      "unified_mem": false,
+      "mean_ms": 1.3234135849916129,
+      "median_ms": 1.302235499906601,
+      "std_ms": 0.09923201240103538,
+      "min_ms": 1.198799000121653,
+      "max_ms": 1.918071000091004
+    },
+    {
+      "preprocessor": "trt",
+      "cuda_graph": false,
+      "pagelocked_mem": false,
+      "unified_mem": true,
+      "mean_ms": 1.3934854850140255,
+      "median_ms": 1.3529215000289696,
+      "std_ms": 0.12902529566062393,
+      "min_ms": 1.2261199999556993,
+      "max_ms": 2.1150729999135365
+    },
+    {
+      "preprocessor": "trt",
+      "cuda_graph": false,
+      "pagelocked_mem": true,
+      "unified_mem": false,
+      "mean_ms": 1.4128396150090339,
+      "median_ms": 1.3645070000620763,
+      "std_ms": 0.14531345176545515,
+      "min_ms": 1.2253400000190595,
+      "max_ms": 1.9741609999073262
+    },
+    {
+      "preprocessor": "trt",
+      "cuda_graph": false,
+      "pagelocked_mem": false,
+      "unified_mem": false,
+      "mean_ms": 1.602344119994541,
+      "median_ms": 1.5083240000421938,
+      "std_ms": 0.2658212600106226,
+      "min_ms": 1.2487290000535722,
+      "max_ms": 2.500259000044025
+    },
+    {
+      "preprocessor": "cpu",
+      "cuda_graph": true,
+      "pagelocked_mem": false,
+      "unified_mem": true,
+      "mean_ms": 3.1392303199936578,
+      "median_ms": 3.0021024999768997,
+      "std_ms": 0.32662133950959865,
+      "min_ms": 2.823813999839331,
+      "max_ms": 4.604008000114845
+    },
+    {
+      "preprocessor": "cpu",
+      "cuda_graph": true,
+      "pagelocked_mem": false,
+      "unified_mem": false,
+      "mean_ms": 3.2600155949921827,
+      "median_ms": 3.133304499897349,
+      "std_ms": 0.44904610818566754,
+      "min_ms": 2.7734939999390917,
+      "max_ms": 5.301120000240189
+    },
+    {
+      "preprocessor": "cpu",
+      "cuda_graph": true,
+      "pagelocked_mem": true,
+      "unified_mem": false,
+      "mean_ms": 3.768820245011284,
+      "median_ms": 3.6359124997034087,
+      "std_ms": 0.32278064120522726,
+      "min_ms": 3.4114840000256663,
+      "max_ms": 4.775005000283272
+    },
+    {
+      "preprocessor": "cpu",
+      "cuda_graph": false,
+      "pagelocked_mem": true,
+      "unified_mem": false,
+      "mean_ms": 4.434766229987872,
+      "median_ms": 4.306248499915455,
+      "std_ms": 0.4357846878756438,
+      "min_ms": 3.901422000126331,
+      "max_ms": 5.974744000013743
+    },
+    {
+      "preprocessor": "cpu",
+      "cuda_graph": false,
+      "pagelocked_mem": false,
+      "unified_mem": false,
+      "mean_ms": 4.548485344987512,
+      "median_ms": 4.390834499872653,
+      "std_ms": 0.4476622479973222,
+      "min_ms": 4.051804000027914,
+      "max_ms": 6.183797999710805
+    },
+    {
+      "preprocessor": "cpu",
+      "cuda_graph": false,
+      "pagelocked_mem": false,
+      "unified_mem": true,
+      "mean_ms": 4.553041904985093,
+      "median_ms": 4.381304000162345,
+      "std_ms": 0.5899792267339615,
+      "min_ms": 4.008473000340018,
+      "max_ms": 10.134813000149734
+    }
+  ]
+}

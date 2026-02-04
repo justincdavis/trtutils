@@ -5,8 +5,65 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 REPO_DIR = Path(__file__).parent.parent
+
+
+def _get_model_class(model_name: str) -> Any:
+    """Get the model class for a given model name."""
+    from trtutils.models import (
+        DEIM,
+        DFINE,
+        RFDETR,
+        YOLO3,
+        YOLO5,
+        YOLO7,
+        YOLO8,
+        YOLO9,
+        YOLO10,
+        YOLO11,
+        YOLO12,
+        YOLO13,
+        YOLOX,
+        DEIMv2,
+        RTDETRv1,
+        RTDETRv2,
+        RTDETRv3,
+    )
+
+    # Map model name prefixes to classes
+    # Order matters - more specific matches first
+    model_mapping: list[tuple[str, Any]] = [
+        ("yolov13", YOLO13),
+        ("yolov12", YOLO12),
+        ("yolov11", YOLO11),
+        ("yolov10", YOLO10),
+        ("yolov9", YOLO9),
+        ("yolov8", YOLO8),
+        ("yolov7", YOLO7),
+        ("yolov5", YOLO5),
+        ("yolov3", YOLO3),
+        ("yolox", YOLOX),
+        ("rtdetrv3", RTDETRv3),
+        ("rtdetrv2", RTDETRv2),
+        ("rtdetrv1", RTDETRv1),
+        ("dfine", DFINE),
+        ("deimv2", DEIMv2),
+        # deim_ prefix models (e.g., deim_dfine_n, deim_rtdetrv2_r18)
+        # are DEIM variants and should use DEIM build settings
+        ("deim_", DEIM),
+        ("deim", DEIM),
+        ("rfdetr", RFDETR),
+    ]
+
+    model_lower = model_name.lower()
+    for prefix, model_class in model_mapping:
+        if model_lower.startswith(prefix):
+            return model_class
+
+    err_msg = f"Unknown model type: {model_name}"
+    raise ValueError(err_msg)
 
 
 def ensure_model_available(
@@ -55,46 +112,15 @@ def build_model(
     imgsz: int,
     opt_level: int = 3,
 ) -> None:
-    """Build a model from an ONNX file."""
-    from trtutils.builder import build_engine
-    from trtutils.builder.hooks import yolo_efficient_nms_hook
+    """Build a model from an ONNX file using the appropriate model class."""
+    # Extract model name from the onnx filename (e.g., "yolov10n_640" -> "yolov10n")
+    model_name = onnx.stem.rsplit("_", 1)[0]
 
-    # define the shapes, all yolo models have the "images" shape
-    shapes = []
-    if "rfdetr" in onnx.stem:
-        shapes.append(
-            ("input", (1, 3, imgsz, imgsz)),
-        )
-    elif "rtdetrv1" in onnx.stem or "rtdetrv2" in onnx.stem or "deim" in onnx.stem:
-        shapes.extend([
-            ("image", (1, 3, imgsz, imgsz)),
-            ("orig_image_size", (1, 2)),
-        ])
-    elif "rtdetrv3" in onnx.stem:
-        shapes.extend([
-            ("image", (1, 3, imgsz, imgsz)),
-            ("im_shape", (1, 2)),
-            ("scale_factor", (1, 2)),
-        ])
-    else:
-        shapes.append(
-            ("images", (1, 3, imgsz, imgsz)),
-        )
-
-    # setup the hooks
-    # setup the shapes based on the modelname
-    yolo_add_nms = ["yolov8", "yolov11", "yolov12", "yolov13", "yolox"]
-
-    # only yolo models may need NMS hook
-    hooks = []
-    if sum(1 for m in yolo_add_nms if m in onnx.stem) > 0:
-        hooks.append(yolo_efficient_nms_hook())
-
-    build_engine(
+    # Get the appropriate model class and call its build method
+    model_class = _get_model_class(model_name)
+    model_class.build(
         onnx=onnx,
         output=output,
-        fp16=True,
-        optimization_level=opt_level,
-        shapes=shapes,
-        hooks=hooks,
+        imgsz=imgsz,
+        opt_level=opt_level,
     )

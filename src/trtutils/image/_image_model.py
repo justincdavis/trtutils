@@ -129,18 +129,33 @@ class ImageModel:
         )
         self._unified_mem = self._engine.unified_mem
         self._resize_method: str = resize_method
+        # Find the image input: 4D tensor with 3 channels (batch, 3, H, W)
+        input_size: tuple[int, ...] | None = None
         input_spec = self._engine.input_spec[0]
-        input_size: tuple[int, ...] = tuple(input_spec[0])
-
         expected_input_size = 4
-        if len(input_size) != expected_input_size:
-            err_msg = "Expected model to have input size of form: (batch, channels, height, width)"
-            err_msg += f", found {input_size}"
-            raise ValueError(err_msg)
-        rgb_channels = 3
-        if input_size[1] != rgb_channels:
-            err_msg = f"Expected model to take {rgb_channels} channel input, found {input_size[1]}"
-            raise ValueError(err_msg)
+        for spec in self._engine.input_spec:
+            shape = tuple(spec[0])
+            if len(shape) == expected_input_size and shape[1] == _COLOR_CHANNELS:
+                input_size = shape
+                input_spec = spec
+                break
+
+        if input_size is None:
+            # Fallback: use first input with original validation
+            input_size = tuple(self._engine.input_spec[0][0])
+            expected_input_size = 4
+            if len(input_size) != expected_input_size:
+                err_msg = (
+                    "Expected model to have input size of form: (batch, channels, height, width)"
+                )
+                err_msg += f", found {input_size}"
+                raise ValueError(err_msg)
+            rgb_channels = 3
+            if input_size[1] != rgb_channels:
+                err_msg = (
+                    f"Expected model to take {rgb_channels} channel input, found {input_size[1]}"
+                )
+                raise ValueError(err_msg)
 
         # Extract batch size from engine
         self._batch_size: int = input_size[0]

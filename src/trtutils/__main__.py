@@ -1746,7 +1746,7 @@ def _main() -> None:
         "--imgsz",
         type=int,
         default=None,
-        help="Image size to use for the model. Default depends on the model.",
+        help="Image size to use for the model. If not specified, uses the model's default.",
     )
     download_parser.add_argument(
         "--requirements_export",

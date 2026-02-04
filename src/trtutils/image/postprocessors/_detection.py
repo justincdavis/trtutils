@@ -551,6 +551,13 @@ def _postprocess_detr_core(
         bboxes = bboxes[mask]
         scores_arr = scores_arr[mask]
 
+    # Filter out non-finite bboxes (e.g. infinity values from invalid detections)
+    finite_mask = np.all(np.isfinite(bboxes), axis=1)
+    if not np.all(finite_mask):
+        bboxes = bboxes[finite_mask]
+        scores_arr = scores_arr[finite_mask]
+        class_ids = class_ids[finite_mask]
+
     # Bboxes are already in original image pixel coordinates (no transformation needed)
     # Just clip to ensure they're within valid ranges
     adjusted_bboxes = np.clip(bboxes, 0, None)
@@ -558,3 +565,61 @@ def _postprocess_detr_core(
     if no_copy:
         return [adjusted_bboxes, scores_arr, class_ids]
     return [adjusted_bboxes.copy(), scores_arr.copy(), class_ids.copy()]
+
+
+def postprocess_detr_lbs(
+    outputs: list[np.ndarray],
+    ratios: list[tuple[float, float]],
+    padding: list[tuple[float, float]],
+    conf_thres: float | None = None,
+    input_size: tuple[int, int] | None = None,
+    *,
+    no_copy: bool | None = None,
+    verbose: bool | None = None,
+) -> list[list[np.ndarray]]:
+    """
+    Postprocess the output of a DETR-based model with LBS output order.
+
+    Models like DEIM and D-FINE output tensors in (labels, boxes, scores) order
+    instead of the standard DETR (scores, labels, boxes) order. This function
+    reorders the outputs and delegates to postprocess_detr.
+
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        The outputs from the TRTEngine in (labels, boxes, scores) order.
+    ratios : list[tuple[float, float]]
+        The ratios used during preprocessing to resize each input image.
+    padding : list[tuple[float, float]]
+        The padding used during preprocessing to position each input image.
+    conf_thres : float, optional
+        Optional confidence threshold to further filter detections by.
+    input_size : tuple[int, int] | None
+        The input size used during preprocessing to resize the input.
+    no_copy : bool, optional
+        If True, the outputs will not be copied out
+        from the cuda allocated host memory. Instead,
+        the host memory will be returned directly.
+        This memory WILL BE OVERWRITTEN INPLACE
+        by future preprocessing calls.
+    verbose : bool, optional
+        Whether or not to log additional information.
+
+    Returns
+    -------
+    list[list[np.ndarray]]
+        The postprocessed outputs per image, each containing
+        [bboxes, scores, class_ids] reshaped and scaled based on ratios/padding.
+
+    """
+    # Reorder from (labels, boxes, scores) to (scores, labels, boxes)
+    reordered = [outputs[2], outputs[0], outputs[1]]
+    return postprocess_detr(
+        reordered,
+        ratios=ratios,
+        padding=padding,
+        conf_thres=conf_thres,
+        input_size=input_size,
+        no_copy=no_copy,
+        verbose=verbose,
+    )
