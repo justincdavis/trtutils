@@ -1,0 +1,69 @@
+services:
+  test-cu11:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cu11
+    image: trtutils-test:cu11
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ../src:/workspace/trtutils/src
+      - ../tests:/workspace/trtutils/tests
+      - ../data:/workspace/trtutils/data
+      - ../ci:/workspace/trtutils/ci
+      - ../demos:/workspace/trtutils/demos
+      - ../examples:/workspace/trtutils/examples
+    working_dir: /workspace/trtutils
+
+  test-cu12:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cu12
+    image: trtutils-test:cu12
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ../src:/workspace/trtutils/src
+      - ../tests:/workspace/trtutils/tests
+      - ../data:/workspace/trtutils/data
+      - ../ci:/workspace/trtutils/ci
+      - ../demos:/workspace/trtutils/demos
+      - ../examples:/workspace/trtutils/examples
+    working_dir: /workspace/trtutils
+
+  test-cu13:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cu13
+    image: trtutils-test:cu13
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ../src:/workspace/trtutils/src
+      - ../tests:/workspace/trtutils/tests
+      - ../data:/workspace/trtutils/data
+      - ../ci:/workspace/trtutils/ci
+      - ../demos:/workspace/trtutils/demos
+      - ../examples:/workspace/trtutils/examples
+    working_dir: /workspace/trtutils

@@ -1,0 +1,26 @@
+# CUDA 12.6, Python 3.10 (Ubuntu 22.04)
+# TensorRT installed via pip (tensorrt_cu12)
+FROM nvidia/cuda:12.6.0-cudnn-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Python 3.10 + system deps for opencv-python
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-dev \
+        libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --upgrade pip setuptools wheel
+
+WORKDIR /workspace/trtutils
+
+COPY pyproject.toml README.md ./
+COPY src/ src/
+
+RUN python3 -m pip install --no-cache-dir ".[cu12,test,ci]"
+
+COPY tests/ tests/
+COPY data/ data/
+COPY ci/ ci/
+COPY demos/ demos/
+COPY examples/ examples/
