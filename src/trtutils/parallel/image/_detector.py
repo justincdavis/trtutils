@@ -60,9 +60,33 @@ class _OutputPacket:
 
 @dataclass
 class EngineInfo:
+    """
+    Configuration for a single engine in ParallelDetector.
+
+    All fields except engine_path are optional. When None, the value from
+    ParallelDetector's constructor will be used as the default.
+    """
+
     engine_path: Path | str
-    dla_core: int | None = None
     detector_class: type[Detector] = Detector
+    # Per-engine overrides (None = use ParallelDetector defaults)
+    dla_core: int | None = None
+    input_range: tuple[float, float] | None = None
+    preprocessor: str | None = None
+    resize_method: str | None = None
+    conf_thres: float | None = None
+    nms_iou_thres: float | None = None
+    mean: tuple[float, float, float] | None = None
+    std: tuple[float, float, float] | None = None
+    input_schema: str | None = None
+    output_schema: str | None = None
+    backend: str | None = None
+    warmup: bool | None = None
+    pagelocked_mem: bool | None = None
+    unified_mem: bool | None = None
+    cuda_graph: bool | None = None
+    extra_nms: bool | None = None
+    agnostic_nms: bool | None = None
 
 
 class ParallelDetector:
@@ -79,9 +103,23 @@ class ParallelDetector:
     def __init__(
         self: Self,
         engines: Sequence[EngineInfo],
-        warmup_iterations: int = 100,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0.0, 1.0),
+        preprocessor: str = "trt",
+        resize_method: str = "letterbox",
+        conf_thres: float = 0.1,
+        nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
+        backend: str = "auto",
         *,
         warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
+        cuda_graph: bool | None = False,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
+        sequential_load: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -92,11 +130,59 @@ class ParallelDetector:
         ----------
         engines : Sequence[EngineInfo]
             The information required for creation of the Detector models.
+            Per-engine options in EngineInfo override the defaults specified here.
         warmup_iterations : int
             The number of warmup iterations to run.
-            Warmup occurs in parallel in each thread.
+            Warmup occurs in parallel in each thread. Default is 10.
+        input_range : tuple[float, float]
+            The range of input values which should be passed to
+            the model. By default [0.0, 1.0].
+        preprocessor : str
+            The type of preprocessor to use.
+            The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
+        resize_method : str
+            The type of resize algorithm to use.
+            The options are ['letterbox', 'linear'], default is 'letterbox'.
+        conf_thres : float
+            The confidence threshold above which to generate detections.
+            By default 0.1.
+        nms_iou_thres : float
+            The IOU threshold to use in the optional and additional
+            NMS operation. By default 0.5.
+        mean : tuple[float, float, float] | None
+            The mean values to use for the imagenet normalization.
+            By default None, which means no normalization will be applied.
+        std : tuple[float, float, float] | None
+            The standard deviation values to use for the imagenet normalization.
+            By default None, which means no normalization will be applied.
+        backend : str
+            The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
+            Default is 'auto', which selects the best available backend.
         warmup : bool, optional
             Whether or not to run the warmup iterations.
+        pagelocked_mem : bool, optional
+            Whether or not to use pagelocked memory for underlying CUDA operations.
+            By default, pagelocked memory will be used.
+        unified_mem : bool, optional
+            Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which means the default host allocation will be used.
+        cuda_graph : bool, optional
+            Whether or not to enable CUDA graph capture for optimized execution.
+            When enabled, CUDA graphs are used both at the engine level and for
+            end-to-end execution in the end2end() method.
+            Only effective with async_v3 backend. Default is True.
+        extra_nms : bool, optional
+            Whether or not an additional CPU-side NMS operation
+            should be conducted on final detections.
+        agnostic_nms : bool, optional
+            Whether or not the optional/additional NMS operation
+            should perform class agnostic NMS.
+        sequential_load : bool, optional
+            If True, load models one at a time instead of in parallel.
+            This is useful when memory is constrained or when hardware
+            resources (e.g., DLA cores) cannot be initialized concurrently.
+            Default is None (parallel loading).
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -112,7 +198,21 @@ class ParallelDetector:
         """
         self._engine_info: list[EngineInfo] = list(engines)
         self._warmup_iterations = warmup_iterations
+        self._input_range = input_range
+        self._preprocessor = preprocessor
+        self._resize_method = resize_method
+        self._conf_thres = conf_thres
+        self._nms_iou_thres = nms_iou_thres
+        self._mean = mean
+        self._std = std
+        self._backend = backend
         self._warmup = warmup
+        self._pagelocked_mem = pagelocked_mem
+        self._unified_mem = unified_mem
+        self._cuda_graph = cuda_graph
+        self._extra_nms = extra_nms
+        self._agnostic_nms = agnostic_nms
+        self._sequential_load = sequential_load
         self._tag = str(len(self._engine_info))
         self._no_warn = no_warn
         self._verbose = verbose
@@ -127,10 +227,17 @@ class ParallelDetector:
             Thread(target=self._run, args=(idx,), daemon=True)
             for idx in range(len(self._engine_info))
         ]
-        for thread in self._threads:
-            thread.start()
-        for flag in self._flags:
-            flag.wait()
+        if self._sequential_load:
+            # Load models one at a time
+            for idx, thread in enumerate(self._threads):
+                thread.start()
+                self._flags[idx].wait()
+        else:
+            # Load models in parallel (default)
+            for thread in self._threads:
+                thread.start()
+            for flag in self._flags:
+                flag.wait()
         for idx, model in enumerate(self._models):
             if model is None:
                 self.stop()
@@ -838,14 +945,49 @@ class ParallelDetector:
 
     def _run(self: Self, threadid: int) -> None:
         # perform warmup
-        det_class = self._engine_info[threadid].detector_class
+        info = self._engine_info[threadid]
+        det_class = info.detector_class
         flag = self._flags[threadid]
+
+        # Resolve per-engine overrides vs global defaults
+        input_range = info.input_range if info.input_range is not None else self._input_range
+        preprocessor = info.preprocessor if info.preprocessor is not None else self._preprocessor
+        resize_method = info.resize_method if info.resize_method is not None else self._resize_method
+        conf_thres = info.conf_thres if info.conf_thres is not None else self._conf_thres
+        nms_iou_thres = info.nms_iou_thres if info.nms_iou_thres is not None else self._nms_iou_thres
+        mean = info.mean if info.mean is not None else self._mean
+        std = info.std if info.std is not None else self._std
+        backend = info.backend if info.backend is not None else self._backend
+        warmup = info.warmup if info.warmup is not None else self._warmup
+        pagelocked_mem = (
+            info.pagelocked_mem if info.pagelocked_mem is not None else self._pagelocked_mem
+        )
+        unified_mem = info.unified_mem if info.unified_mem is not None else self._unified_mem
+        cuda_graph = info.cuda_graph if info.cuda_graph is not None else self._cuda_graph
+        extra_nms = info.extra_nms if info.extra_nms is not None else self._extra_nms
+        agnostic_nms = info.agnostic_nms if info.agnostic_nms is not None else self._agnostic_nms
+
         try:
             detector = det_class(
-                engine_path=self._engine_info[threadid].engine_path,
+                engine_path=info.engine_path,
                 warmup_iterations=self._warmup_iterations,
-                warmup=self._warmup,
-                dla_core=self._engine_info[threadid].dla_core,
+                input_range=input_range,
+                preprocessor=preprocessor,
+                resize_method=resize_method,
+                conf_thres=conf_thres,
+                nms_iou_thres=nms_iou_thres,
+                mean=mean,
+                std=std,
+                input_schema=info.input_schema,
+                output_schema=info.output_schema,
+                dla_core=info.dla_core,
+                backend=backend,
+                warmup=warmup,
+                pagelocked_mem=pagelocked_mem,
+                unified_mem=unified_mem,
+                cuda_graph=cuda_graph,
+                extra_nms=extra_nms,
+                agnostic_nms=agnostic_nms,
                 no_warn=self._no_warn,
                 verbose=self._verbose,
             )

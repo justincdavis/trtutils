@@ -26,6 +26,33 @@ _EXPECTED_UV_PARTS = 3
 _640 = 640
 
 
+def _handle_imgsz(
+    imgsz: int | None,
+    default: int,
+    model_name: str,
+    *,
+    enforce: bool = False,
+    adjust_div: int | None = None,
+) -> int:
+    """Handle image size validation and adjustment."""
+    if imgsz is None:
+        imgsz = default
+    elif enforce and imgsz != default:
+        LOG.warning(
+            f"{model_name} supports only an imgsz of {default}, got {imgsz}. Using {default}."
+        )
+        imgsz = default
+
+    if adjust_div is not None and imgsz % adjust_div != 0:
+        new_imgsz = max(imgsz // adjust_div, 1) * adjust_div
+        LOG.warning(
+            f"{model_name} requires imgsz divisible by {adjust_div}, got {imgsz}. Using {new_imgsz}."
+        )
+        imgsz = new_imgsz
+
+    return imgsz
+
+
 def _kill_process_group(pid: int | None, cmd: Sequence[str]) -> None:
     if pid is None:
         return
@@ -397,8 +424,7 @@ def _export_yolov7(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv7 is a GPL-3.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOv7")
     _git_clone(
         "https://github.com/WongKinYiu/yolov7",
         directory,
@@ -464,8 +490,7 @@ def _export_ultralytics(
         LOG.warning(
             "Ultralytics is a AGPL-3.0 and commercial licensed model, be aware of license restrictions"
         )
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "Ultralytics")
     _run_uv_pip_install(
         directory,
         bin_path.parent,
@@ -528,8 +553,7 @@ def _export_yolov9(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv9 is a GPL-3.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOv9")
     _git_clone(
         "https://github.com/WongKinYiu/yolov9",
         directory,
@@ -592,8 +616,7 @@ def _export_yolov10(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOv10")
     _git_clone(
         "https://github.com/THU-MIG/yolov10",
         directory,
@@ -642,8 +665,7 @@ def _export_yolov12(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOv12")
     _git_clone(
         "https://github.com/sunsmarterjie/yolov12",
         directory,
@@ -693,8 +715,7 @@ def _export_yolov13(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOv13")
     _git_clone(
         "https://github.com/iMoonLab/yolov13",
         directory,
@@ -743,11 +764,7 @@ def _export_rtdetrv1(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
-    if imgsz != _640:
-        err_msg = f"RT-DETRv1 supports only an imgsz of {_640}, got {imgsz}"
-        raise ValueError(err_msg)
+    imgsz = _handle_imgsz(imgsz, _640, "RT-DETRv1", enforce=True)
     _git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
         directory,
@@ -808,11 +825,7 @@ def _export_rtdetrv2(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
-    if imgsz != _640:
-        err_msg = f"RT-DETRv2 supports only an imgsz of {_640}, got {imgsz}"
-        raise ValueError(err_msg)
+    imgsz = _handle_imgsz(imgsz, _640, "RT-DETRv2", enforce=True)
     _git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
         directory,
@@ -874,11 +887,7 @@ def _export_rtdetrv3(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv3 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
-    if imgsz != _640:
-        err_msg = f"RT-DETRv3 supports only an imgsz of {_640}, got {imgsz}"
-        raise ValueError(err_msg)
+    imgsz = _handle_imgsz(imgsz, _640, "RT-DETRv3", enforce=True)
     paddle2onnx_max_opset = 16
     if opset > paddle2onnx_max_opset:
         LOG.warning(
@@ -956,11 +965,7 @@ def _export_dfine(
 ) -> Path:
     if not no_warn:
         LOG.warning("D-FINE is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
-    if imgsz != _640:
-        err_msg = f"D-FINE supports only an imgsz of {_640}, got {imgsz}"
-        raise ValueError(err_msg)
+    imgsz = _handle_imgsz(imgsz, _640, "D-FINE", enforce=True)
     _git_clone(
         "https://github.com/Peterande/D-FINE",
         directory,
@@ -1021,11 +1026,7 @@ def _export_deim(
 ) -> Path:
     if not no_warn:
         LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
-    if imgsz != _640:
-        err_msg = f"DEIM supports only an imgsz of {_640}, got {imgsz}"
-        raise ValueError(err_msg)
+    imgsz = _handle_imgsz(imgsz, _640, "DEIM", enforce=True)
     _git_clone(
         "https://github.com/Intellindust-AI-Lab/DEIM",
         directory,
@@ -1099,17 +1100,7 @@ def _export_rfdetr(
     if required_imgsz is None:
         err_msg = f"RF-DETR does not support model {model}"
         raise ValueError(err_msg)
-    if imgsz is not None and imgsz != required_imgsz:
-        err_msg = f"{model} requires an imgsz of {required_imgsz}, got {imgsz}"
-        raise ValueError(err_msg)
-    if imgsz is None:
-        imgsz = required_imgsz
-    if imgsz % 32 != 0:
-        new_imgsz = max(imgsz // 32, 1) * 32
-        wrn_msg = f"RF-DETR does not support input size {imgsz}, "
-        wrn_msg += f"using {new_imgsz} (closest divisible by 32)"
-        LOG.warning(wrn_msg)
-        imgsz = new_imgsz
+    imgsz = _handle_imgsz(imgsz, required_imgsz, model, enforce=True, adjust_div=32)
 
     _run_uv_pip_install(
         directory,
@@ -1188,11 +1179,7 @@ def _export_deimv2(
     if required_imgsz is None:
         err_msg = f"DEIMv2 does not support model {model}"
         raise ValueError(err_msg)
-    if imgsz is not None and imgsz != required_imgsz:
-        err_msg = f"{model} requires an imgsz of {required_imgsz}, got {imgsz}"
-        raise ValueError(err_msg)
-    if imgsz is None:
-        imgsz = required_imgsz
+    imgsz = _handle_imgsz(imgsz, required_imgsz, model, enforce=True)
     _git_clone(
         "https://github.com/Intellindust-AI-Lab/DEIMv2",
         directory,
@@ -1247,8 +1234,7 @@ def _export_yolox(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOX is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOX")
     _git_clone(
         "https://github.com/Megvii-BaseDetection/YOLOX",
         directory,

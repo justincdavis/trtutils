@@ -125,7 +125,7 @@ class TRTEngine(TRTEngineInterface):
         # needs to happen before input/output bindings are set since
         # CUDA graph is used in those calls
         self._cuda_graph_enabled: bool = (
-            cuda_graph if cuda_graph is not None else True
+            cuda_graph if cuda_graph is not None else False
         ) and self._async_v3
         self._cuda_graph: CUDAGraph | None = None
         self._capturing_graph: bool = False  # Guard against capture recursion
