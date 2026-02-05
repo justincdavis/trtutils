@@ -439,7 +439,7 @@ class RTDETRv3(DETR):
             mean=mean,
             std=std,
             input_schema=InputSchema.RT_DETR_V3,
-            output_schema=OutputSchema.DETR_LBS,
+            output_schema=OutputSchema.RT_DETR_V3,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,

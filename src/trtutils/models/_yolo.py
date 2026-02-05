@@ -960,10 +960,6 @@ class YOLO9(YOLO):
         dla_core: int | None = None,
         opt_level: int = 3,
         *,
-        num_classes: int = 80,
-        conf_threshold: float = 0.25,
-        iou_threshold: float = 0.5,
-        top_k: int = 100,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -986,14 +982,6 @@ class YOLO9(YOLO):
         opt_level: int = 3
             TensorRT builder optimization level (0-5).
             Default is 3.
-        num_classes: int = 80
-            Number of classes for EfficientNMS.
-        conf_threshold: float = 0.25
-            Confidence threshold for EfficientNMS.
-        iou_threshold: float = 0.5
-            IoU threshold for EfficientNMS.
-        top_k: int = 100
-            Maximum number of detections to keep.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -1008,14 +996,6 @@ class YOLO9(YOLO):
             fp16=True,
             dla_core=dla_core,
             optimization_level=opt_level,
-            hooks=[
-                yolo_efficient_nms_hook(
-                    num_classes=num_classes,
-                    conf_threshold=conf_threshold,
-                    iou_threshold=iou_threshold,
-                    top_k=top_k,
-                )
-            ],
             verbose=verbose,
         )
 

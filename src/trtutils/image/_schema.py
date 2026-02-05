@@ -21,8 +21,8 @@ class InputSchema(Enum):
     RF_DETR = ("input",)
     # DEIM v1/v2, RT-DETR v1/v2, D-FINE
     RT_DETR = ("images", "orig_target_sizes")
-    # RT-DETR v3
-    RT_DETR_V3 = ("image", "im_shape", "scale_factor")
+    # RT-DETR v3 (PaddlePaddle export format)
+    RT_DETR_V3 = ("im_shape", "image", "scale_factor")
 
     @classmethod
     def names(cls: type[Self]) -> list[str]:
@@ -46,10 +46,12 @@ class OutputSchema(Enum):
     YOLO_V10 = ("output0",)
     # RF-DETR
     RF_DETR = ("dets", "labels")
-    # RT-DETR v1/v2/v3
+    # RT-DETR v1/v2
     DETR = ("scores", "labels", "boxes")
     # DEIM v1/v2, D-FINE
     DETR_LBS = ("labels", "boxes", "scores")
+    # RT-DETR v3 (PaddlePaddle export format)
+    RT_DETR_V3 = ("save_infer_model/scale_0.tmp_0", "save_infer_model/scale_1.tmp_0")
 
     @classmethod
     def names(cls: type[Self]) -> list[str]:
@@ -111,6 +113,8 @@ def get_detector_io_schema(
         output_schema = OutputSchema.DETR
     elif output_names == OutputSchema.DETR_LBS.value:
         output_schema = OutputSchema.DETR_LBS
+    elif output_names == OutputSchema.RT_DETR_V3.value:
+        output_schema = OutputSchema.RT_DETR_V3
     else:
         err_msg = "Could not determine output schema directly from output names. "
         err_msg += f"Output names: {engine.output_names}, "
@@ -122,7 +126,11 @@ def get_detector_io_schema(
         elif len(engine.output_spec) == len(OutputSchema.YOLO_V10.value):
             output_schema = OutputSchema.YOLO_V10
         elif len(engine.output_spec) == len(OutputSchema.RF_DETR.value):
-            output_schema = OutputSchema.RF_DETR
+            # Distinguish RT_DETR_V3 from RF_DETR by checking for PaddlePaddle naming
+            if any("scale" in name for name in output_names):
+                output_schema = OutputSchema.RT_DETR_V3
+            else:
+                output_schema = OutputSchema.RF_DETR
         elif len(engine.output_spec) == len(OutputSchema.DETR.value):
             output_schema = OutputSchema.DETR
         else:

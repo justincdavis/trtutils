@@ -21,6 +21,7 @@ from .postprocessors import (
     postprocess_detr_lbs,
     postprocess_efficient_nms,
     postprocess_rfdetr,
+    postprocess_rtdetrv3,
     postprocess_yolov10,
 )
 from .preprocessors import CUDAPreprocessor, TRTPreprocessor
@@ -238,6 +239,8 @@ class Detector(ImageModel, DetectorInterface):
             self._postprocess_fn = postprocess_detr
         elif self._output_schema == OutputSchema.DETR_LBS:
             self._postprocess_fn = postprocess_detr_lbs
+        elif self._output_schema == OutputSchema.RT_DETR_V3:
+            self._postprocess_fn = postprocess_rtdetrv3
         else:
             self._postprocess_fn = postprocess_efficient_nms
 
@@ -616,20 +619,34 @@ class Detector(ImageModel, DetectorInterface):
         batch_size = len(images) if not preprocessed else tensor.shape[0]
 
         # build input list based on schema
-        engine_inputs = [tensor]
-        if self._use_image_size:
-            # Build batched orig_target_sizes: (batch, 2) with (height, width) per image
-            orig_sizes = np.array(
+        # RT_DETR_V3 expects (im_shape, image, scale_factor) order
+        # RT_DETR expects (images, orig_target_sizes) order
+        if self._input_schema == InputSchema.RT_DETR_V3:
+            # Build im_shape: (batch, 2) with (height, width) per image
+            im_shape = np.array(
                 [img.shape[:2] for img in images]
                 if not preprocessed
                 else [(self._input_size[1], self._input_size[0])] * batch_size,
-                dtype=np.int32,
+                dtype=np.float32,
             )
-            engine_inputs.append(orig_sizes)
-        if self._use_scale_factor:
-            # Build batched scale_factor: (batch, 2) from ratios list
+            # Build scale_factor: (batch, 2) from ratios list
             scale_factors = np.array(ratios, dtype=np.float32)
-            engine_inputs.append(scale_factors)
+            engine_inputs = [im_shape, tensor, scale_factors]
+        else:
+            engine_inputs = [tensor]
+            if self._use_image_size:
+                # Build batched orig_target_sizes: (batch, 2) with (height, width) per image
+                orig_sizes = np.array(
+                    [img.shape[:2] for img in images]
+                    if not preprocessed
+                    else [(self._input_size[1], self._input_size[0])] * batch_size,
+                    dtype=np.int32,
+                )
+                engine_inputs.append(orig_sizes)
+            if self._use_scale_factor:
+                # Build batched scale_factor: (batch, 2) from ratios list
+                scale_factors = np.array(ratios, dtype=np.float32)
+                engine_inputs.append(scale_factors)
 
         # execute
         t0 = time.perf_counter()
@@ -930,21 +947,33 @@ class Detector(ImageModel, DetectorInterface):
             )
 
             # Build input pointers based on InputSchema
-            input_ptrs = [gpu_ptr]
-            if self._use_image_size:
+            # RT_DETR_V3 expects (im_shape, image, scale_factor) order
+            if self._input_schema == InputSchema.RT_DETR_V3:
                 orig_size_ptr, valid = self._preprocessor.orig_size_allocation
-                if valid:
-                    input_ptrs.append(orig_size_ptr)
-                else:
+                if not valid:
                     err_msg = "orig_image_size buffer not valid"
                     raise RuntimeError(err_msg)
-            if self._use_scale_factor:
                 scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation
-                if scale_valid:
-                    input_ptrs.append(scale_ptr)
-                else:
+                if not scale_valid:
                     err_msg = "scale_factor buffer not valid"
                     raise RuntimeError(err_msg)
+                input_ptrs = [orig_size_ptr, gpu_ptr, scale_ptr]
+            else:
+                input_ptrs = [gpu_ptr]
+                if self._use_image_size:
+                    orig_size_ptr, valid = self._preprocessor.orig_size_allocation
+                    if valid:
+                        input_ptrs.append(orig_size_ptr)
+                    else:
+                        err_msg = "orig_image_size buffer not valid"
+                        raise RuntimeError(err_msg)
+                if self._use_scale_factor:
+                    scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation
+                    if scale_valid:
+                        input_ptrs.append(scale_ptr)
+                    else:
+                        err_msg = "scale_factor buffer not valid"
+                        raise RuntimeError(err_msg)
 
             raw_outputs = self._engine.direct_exec(input_ptrs, no_warn=True)
             postprocessed = self.postprocess(

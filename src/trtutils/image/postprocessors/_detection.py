@@ -623,3 +623,126 @@ def postprocess_detr_lbs(
         no_copy=no_copy,
         verbose=verbose,
     )
+
+
+def postprocess_rtdetrv3(
+    outputs: list[np.ndarray],
+    ratios: list[tuple[float, float]],
+    padding: list[tuple[float, float]],
+    conf_thres: float | None = None,
+    input_size: tuple[int, int] | None = None,  # noqa: ARG001
+    *,
+    no_copy: bool | None = None,
+    verbose: bool | None = None,
+) -> list[list[np.ndarray]]:
+    """
+    Postprocess the output of an RT-DETR v3 model (PaddlePaddle export format).
+
+    RT-DETR v3 outputs two tensors:
+    - Output 0: Combined detections [total_N, 6] where 6 = (x1, y1, x2, y2, score, class_id)
+    - Output 1: Number of detections per image [batch_size]
+
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        The outputs from the TRTEngine using RT-DETR v3 output.
+    ratios : list[tuple[float, float]]
+        The ratios used during preprocessing to resize each input image.
+    padding : list[tuple[float, float]]
+        The padding used during preprocessing to position each input image.
+    conf_thres : float, optional
+        Optional confidence threshold to further filter detections by.
+    input_size : tuple[int, int] | None
+        The input size used during preprocessing to resize the input.
+        Not used for RT-DETR v3 since boxes are in original pixel coordinates.
+    no_copy : bool, optional
+        If True, the outputs will not be copied out
+        from the cuda allocated host memory. Instead,
+        the host memory will be returned directly.
+        This memory WILL BE OVERWRITTEN INPLACE
+        by future preprocessing calls.
+    verbose : bool, optional
+        Whether or not to log additional information.
+
+    Returns
+    -------
+    list[list[np.ndarray]]
+        The postprocessed outputs per image, each containing
+        [bboxes, scores, class_ids].
+
+    """
+    if verbose:
+        LOG.debug(f"RT-DETR v3 postprocess, detections shape: {outputs[0].shape}")
+
+    # outputs[0] = combined detections [total_N, 6] or [batch, max_dets, 6]
+    # outputs[1] = num_dets per image - can be scalar (batch=1) or [batch_size]
+    combined_dets = outputs[0]
+    num_dets_raw = outputs[1]
+
+    # Handle scalar (0-dimensional) num_dets for batch size 1
+    num_dets = np.array([int(num_dets_raw)]) if num_dets_raw.ndim == 0 else num_dets_raw
+
+    batch_size = len(num_dets)
+    results = []
+    start_idx = 0
+
+    for i in range(batch_size):
+        num_det = int(num_dets[i])
+        result = _postprocess_rtdetrv3_core(
+            combined_dets,
+            start_idx,
+            num_det,
+            ratios[i],
+            padding[i],
+            conf_thres=conf_thres,
+            no_copy=no_copy,
+        )
+        results.append(result)
+        start_idx += num_det
+
+    return results
+
+
+@register_jit(nogil=True)
+def _postprocess_rtdetrv3_core(
+    combined_dets: np.ndarray,
+    start_idx: int,
+    num_det: int,
+    ratios: tuple[float, float],  # noqa: ARG001
+    padding: tuple[float, float],  # noqa: ARG001
+    conf_thres: float | None = None,
+    *,
+    no_copy: bool | None = None,
+) -> list[np.ndarray]:
+    # RT-DETR v3 (PaddlePaddle export) outputs combined tensor [N, 6]
+    # Format: (class_id, score, x1, y1, x2, y2)
+    # With im_shape/scale_factor inputs, bboxes are already in original pixel coords
+    # No coordinate transformation needed (similar to RT-DETR v1/v2 with orig_target_sizes)
+
+    # Extract this image's detections
+    dets = combined_dets[start_idx : start_idx + num_det, :]  # [num_det, 6]
+
+    class_ids: np.ndarray = dets[:, 0].astype(int)
+    scores: np.ndarray = dets[:, 1]
+    bboxes: np.ndarray = dets[:, 2:6]  # x1, y1, x2, y2
+
+    # Optional confidence pre-filtering
+    if conf_thres is not None:
+        mask = scores >= conf_thres
+        bboxes = bboxes[mask]
+        scores = scores[mask]
+        class_ids = class_ids[mask]
+
+    # Filter out non-finite bboxes (e.g. infinity values from invalid detections)
+    finite_mask = np.all(np.isfinite(bboxes), axis=1)
+    if not np.all(finite_mask):
+        bboxes = bboxes[finite_mask]
+        scores = scores[finite_mask]
+        class_ids = class_ids[finite_mask]
+
+    # Clip the bounding boxes to ensure they're within valid ranges
+    adjusted_bboxes = np.clip(bboxes, 0, None)
+
+    if no_copy:
+        return [adjusted_bboxes, scores, class_ids]
+    return [adjusted_bboxes.copy(), scores.copy(), class_ids.copy()]
