@@ -155,6 +155,12 @@ class Detector(ImageModel, DetectorInterface):
             If an input or output schema string is invalid.
 
         """
+        # Store user-provided schema overrides for _configure_model to use
+        self._input_schema_override = input_schema
+        self._output_schema_override = output_schema
+
+        # Parent creates engine, calls _configure_model() (which sets schemas),
+        # then creates preprocessors (which need _input_schema for dtype)
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -177,58 +183,9 @@ class Detector(ImageModel, DetectorInterface):
         self._nms: bool | None = extra_nms
         self._agnostic_nms: bool | None = agnostic_nms
 
-        # resolve input and output schemas
-        self._input_schema: InputSchema
-        self._output_schema: OutputSchema
-
-        # auto-detect schemas if needed (function returns both, but we only use what we need)
-        auto_input_schema: InputSchema | None = None
-        auto_output_schema: OutputSchema | None = None
-        if input_schema is None or output_schema is None:
-            auto_input_schema, auto_output_schema = get_detector_io_schema(self._engine)
-
-        # resolve input schema
-        if input_schema is None:
-            if auto_input_schema is None:
-                err_msg = "Input schema could not be determined from the engine."
-                raise ValueError(err_msg)
-            self._input_schema = auto_input_schema
-        elif isinstance(input_schema, str):
-            if input_schema not in InputSchema.names():
-                err_msg = f"Invalid input_schema string: {input_schema}. "
-                err_msg += f"Valid options: {InputSchema.names()}"
-                raise ValueError(err_msg)
-            self._input_schema = InputSchema[input_schema]
-        else:
-            self._input_schema = input_schema
-
-        # resolve output schema
-        if output_schema is None:
-            if auto_output_schema is None:
-                err_msg = "Output schema could not be determined from the engine."
-                raise ValueError(err_msg)
-            self._output_schema = auto_output_schema
-        elif isinstance(output_schema, str):
-            if output_schema not in OutputSchema.names():
-                err_msg = f"Invalid output_schema string: {output_schema}. "
-                err_msg += f"Valid options: {OutputSchema.names()}"
-                raise ValueError(err_msg)
-            self._output_schema = OutputSchema[output_schema]
-        else:
-            self._output_schema = output_schema
-
         if self._verbose:
             LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
-
-        # based on the input scheme, we will need to allocate additional attrs
-        self._use_image_size: bool = False
-        self._use_scale_factor: bool = False
-        if self._input_schema == InputSchema.RT_DETR:
-            self._use_image_size = True
-        elif self._input_schema == InputSchema.RT_DETR_V3:
-            self._use_image_size = True
-            self._use_scale_factor = True
 
         # solve for the postprocessing function
         if self._output_schema == OutputSchema.YOLO_V10:
@@ -260,6 +217,100 @@ class Detector(ImageModel, DetectorInterface):
     def output_schema(self: Self) -> OutputSchema:
         """Get the output schema used by this detector."""
         return self._output_schema
+
+    def _configure_model(self: Self) -> None:
+        """Auto-detect or apply input/output schemas from the loaded engine."""
+        input_schema = self._input_schema_override
+        output_schema = self._output_schema_override
+
+        # Auto-detect schemas from engine if not explicitly provided
+        if input_schema is None or output_schema is None:
+            auto_input_schema, auto_output_schema = get_detector_io_schema(self._engine)
+        else:
+            auto_input_schema = None
+            auto_output_schema = None
+
+        # Resolve input schema
+        if input_schema is None:
+            if auto_input_schema is None:
+                err_msg = "Input schema could not be determined from the engine."
+                raise ValueError(err_msg)
+            self._input_schema = auto_input_schema
+        elif isinstance(input_schema, str):
+            if input_schema not in InputSchema.names():
+                err_msg = f"Invalid input_schema string: {input_schema}. "
+                err_msg += f"Valid options: {InputSchema.names()}"
+                raise ValueError(err_msg)
+            self._input_schema = InputSchema[input_schema]
+        else:
+            self._input_schema = input_schema
+
+        # Resolve output schema
+        if output_schema is None:
+            if auto_output_schema is None:
+                err_msg = "Output schema could not be determined from the engine."
+                raise ValueError(err_msg)
+            self._output_schema = auto_output_schema
+        elif isinstance(output_schema, str):
+            if output_schema not in OutputSchema.names():
+                err_msg = f"Invalid output_schema string: {output_schema}. "
+                err_msg += f"Valid options: {OutputSchema.names()}"
+                raise ValueError(err_msg)
+            self._output_schema = OutputSchema[output_schema]
+        else:
+            self._output_schema = output_schema
+
+        # Set schema-dependent flags used by preprocessor overrides and _end2end
+        self._use_image_size = self._input_schema in (
+            InputSchema.RT_DETR,
+            InputSchema.RT_DETR_V3,
+        )
+        self._use_scale_factor = self._input_schema == InputSchema.RT_DETR_V3
+
+    def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
+        """Override to pass orig_size_dtype based on input schema."""
+        # RTDETRv3 expects float32 for im_shape, other schemas use int32
+        orig_size_dtype = (
+            np.dtype(np.float32)
+            if self._input_schema == InputSchema.RT_DETR_V3
+            else np.dtype(np.int32)
+        )
+        return CUDAPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            resize=self._resize_method,
+            stream=self._engine.stream,
+            mean=self._mean,
+            std=self._std,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+            tag=self._tag,
+            orig_size_dtype=orig_size_dtype,
+        )
+
+    def _setup_trt_preproc(self: Self) -> TRTPreprocessor:
+        """Override to pass orig_size_dtype based on input schema."""
+        # RTDETRv3 expects float32 for im_shape, other schemas use int32
+        orig_size_dtype = (
+            np.dtype(np.float32)
+            if self._input_schema == InputSchema.RT_DETR_V3
+            else np.dtype(np.int32)
+        )
+        return TRTPreprocessor(
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            batch_size=self._batch_size,
+            resize=self._resize_method,
+            stream=self._engine.stream,
+            mean=self._mean,
+            std=self._std,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+            tag=self._tag,
+            orig_size_dtype=orig_size_dtype,
+        )
 
     def postprocess(
         self: Self,
@@ -1027,9 +1078,13 @@ class Detector(ImageModel, DetectorInterface):
 
         if self._use_image_size:
             # Build orig_target_sizes: (batch, 2) with (height, width) per image
+            # RTDETRv3 expects float32 for im_shape, other schemas use int32
+            orig_size_dtype = (
+                np.float32 if self._input_schema == InputSchema.RT_DETR_V3 else np.int32
+            )
             orig_sizes = np.array(
                 [img.shape[:2] for img in images],
-                dtype=np.int32,
+                dtype=orig_size_dtype,
             )
             memcpy_host_to_device_async(
                 self._engine._inputs[input_idx].allocation,  # noqa: SLF001
@@ -1050,6 +1105,19 @@ class Detector(ImageModel, DetectorInterface):
             input_ptrs.append(self._engine._inputs[input_idx].allocation)  # noqa: SLF001
 
         return input_ptrs
+
+    def _build_graph_input_ptrs(
+        self: Self,
+        gpu_ptr: int,
+        extra_ptrs: list[int],
+    ) -> list[int]:
+        """Override to handle RTDETRv3 input ordering (im_shape, image, scale_factor)."""
+        # RTDETRv3 expects: (im_shape, image, scale_factor)
+        # extra_ptrs[0] = orig_size_ptr, extra_ptrs[1] = scale_ptr
+        if self._input_schema == InputSchema.RT_DETR_V3 and len(extra_ptrs) >= 2:  # noqa: PLR2004
+            return [extra_ptrs[0], gpu_ptr, extra_ptrs[1]]
+        # Default: image first, then extra inputs
+        return [gpu_ptr, *extra_ptrs]
 
     def _end2end_graph(
         self: Self,
