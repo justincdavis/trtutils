@@ -26,16 +26,26 @@ def postprocess_yolov10(
     Expects a single output of shape (batch, N, 6) with rows (x1, y1, x2, y2, score,
     class_id); unletterboxes and returns the unified format per image.
 
-    Inputs:
-        outputs: Raw YOLO-v10 engine outputs.
-        ratios: Preprocessing resize ratios per image.
-        padding: Preprocessing padding per image.
-        conf_thres: Optional extra confidence filter (use if model used a low cutoff).
-        input_size: Unused.
-        no_copy: If True, return buffers without copying (overwritten by later preprocessing).
-        verbose: If True, log extra debug information.
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        Raw YOLO-v10 engine outputs.
+    ratios : list[tuple[float, float]]
+        Preprocessing resize ratios per image.
+    padding : list[tuple[float, float]]
+        Preprocessing padding per image.
+    conf_thres : float, optional
+        Optional extra confidence filter (use if model used a low cutoff).
+    input_size : tuple[int, int] | None
+        Unused.
+    no_copy : bool, optional
+        If True, return buffers without copying (overwritten by later preprocessing).
+    verbose : bool, optional
+        If True, log extra debug information.
 
-    Outputs:
+    Returns
+    -------
+    list[list[np.ndarray]]
         One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)] in original coords.
 
     """
@@ -107,15 +117,24 @@ def get_detections(
     Applies an optional confidence filter and optional CPU NMS. Input format is one
     list per image of [bboxes (N,4), scores (N,), class_ids (N,)].
 
-    Inputs:
-        outputs: Postprocessed outputs per image (unified format).
-        conf_thres: Confidence threshold; detections below are dropped.
-        nms_iou_thres: IoU threshold for optional extra NMS.
-        extra_nms: If True, run CPU NMS on the final detections.
-        agnostic_nms: If True, use class-agnostic NMS when extra_nms is True.
-        verbose: If True, log extra debug information.
+    Parameters
+    ----------
+    outputs : list[list[np.ndarray]]
+        Postprocessed outputs per image (unified format).
+    conf_thres : float, optional
+        Confidence threshold; detections below are dropped.
+    nms_iou_thres : float
+        IoU threshold for optional extra NMS.
+    extra_nms : bool, optional
+        If True, run CPU NMS on the final detections.
+    agnostic_nms : bool, optional
+        If True, use class-agnostic NMS when extra_nms is True.
+    verbose : bool, optional
+        If True, log extra debug information.
 
-    Outputs:
+    Returns
+    -------
+    list[list[tuple[tuple[int, int, int, int], float, int]]]
         One list per image; each detection is ((x1, y1, x2, y2), score, class_id).
 
     """
@@ -176,16 +195,26 @@ def postprocess_efficient_nms(
     Raw outputs are [num_dets, bboxes, scores, class_ids], each with batch dim at 0;
     unletterboxes and returns the unified format per image.
 
-    Inputs:
-        outputs: Raw EfficientNMS outputs.
-        ratios: Preprocessing resize ratios per image.
-        padding: Preprocessing padding per image.
-        conf_thres: Optional extra confidence filter (use if plugin used a low cutoff).
-        input_size: Unused.
-        no_copy: If True, return buffers without copying (overwritten by later preprocessing).
-        verbose: If True, log extra debug information.
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        Raw EfficientNMS outputs.
+    ratios : list[tuple[float, float]]
+        Preprocessing resize ratios per image.
+    padding : list[tuple[float, float]]
+        Preprocessing padding per image.
+    conf_thres : float, optional
+        Optional extra confidence filter (use if plugin used a low cutoff).
+    input_size : tuple[int, int] | None
+        Unused.
+    no_copy : bool, optional
+        If True, return buffers without copying (overwritten by later preprocessing).
+    verbose : bool, optional
+        If True, log extra debug information.
 
-    Outputs:
+    Returns
+    -------
+    list[list[np.ndarray]]
         One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)] in original coords.
 
     """
@@ -266,16 +295,26 @@ def postprocess_rfdetr(
     labels (batch, num_queries, num_classes) as logits (class IDs 1-indexed). Converts
     to unified format in original coords.
 
-    Inputs:
-        outputs: Raw RF-DETR outputs [dets, labels].
-        ratios: Preprocessing resize ratios per image.
-        padding: Preprocessing padding per image.
-        conf_thres: Confidence threshold to filter detections.
-        input_size: Model input (width, height) to denormalize bboxes; default 640x640.
-        no_copy: If True, return buffers without copying (overwritten by later preprocessing).
-        verbose: If True, log extra debug information.
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        Raw RF-DETR outputs [dets, labels].
+    ratios : list[tuple[float, float]]
+        Preprocessing resize ratios per image.
+    padding : list[tuple[float, float]]
+        Preprocessing padding per image.
+    conf_thres : float, optional
+        Confidence threshold to filter detections.
+    input_size : tuple[int, int] | None
+        Model input (width, height) to denormalize bboxes; default 640x640.
+    no_copy : bool, optional
+        If True, return buffers without copying (overwritten by later preprocessing).
+    verbose : bool, optional
+        If True, log extra debug information.
 
-    Outputs:
+    Returns
+    -------
+    list[list[np.ndarray]]
         One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)] in original coords.
 
     """
@@ -375,16 +414,26 @@ def postprocess_detr(
     y2]. For models using orig_target_sizes, boxes are already in original image coords;
     no coordinate transform is applied.
 
-    Inputs:
-        outputs: Raw DETR outputs [scores, labels, boxes].
-        ratios: Preprocessing resize ratios per image.
-        padding: Preprocessing padding per image.
-        conf_thres: Confidence threshold to filter detections.
-        input_size: Unused for standard DETR.
-        no_copy: If True, return buffers without copying (overwritten by later preprocessing).
-        verbose: If True, log extra debug information.
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        Raw DETR outputs [scores, labels, boxes].
+    ratios : list[tuple[float, float]]
+        Preprocessing resize ratios per image.
+    padding : list[tuple[float, float]]
+        Preprocessing padding per image.
+    conf_thres : float, optional
+        Confidence threshold to filter detections.
+    input_size : tuple[int, int] | None
+        Unused for standard DETR.
+    no_copy : bool, optional
+        If True, return buffers without copying (overwritten by later preprocessing).
+    verbose : bool, optional
+        If True, log extra debug information.
 
-    Outputs:
+    Returns
+    -------
+    list[list[np.ndarray]]
         One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)].
 
     """
@@ -458,16 +507,26 @@ def postprocess_detr_lbs(
 
     Used for DEIM and D-FINE; reorders and delegates to postprocess_detr.
 
-    Inputs:
-        outputs: Raw outputs in (labels, boxes, scores) order.
-        ratios: Preprocessing resize ratios per image.
-        padding: Preprocessing padding per image.
-        conf_thres: Confidence threshold to filter detections.
-        input_size: Unused.
-        no_copy: If True, return buffers without copying (overwritten by later preprocessing).
-        verbose: If True, log extra debug information.
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        Raw outputs in (labels, boxes, scores) order.
+    ratios : list[tuple[float, float]]
+        Preprocessing resize ratios per image.
+    padding : list[tuple[float, float]]
+        Preprocessing padding per image.
+    conf_thres : float, optional
+        Confidence threshold to filter detections.
+    input_size : tuple[int, int] | None
+        Unused.
+    no_copy : bool, optional
+        If True, return buffers without copying (overwritten by later preprocessing).
+    verbose : bool, optional
+        If True, log extra debug information.
 
-    Outputs:
+    Returns
+    -------
+    list[list[np.ndarray]]
         One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)].
 
     """
@@ -500,16 +559,26 @@ def postprocess_rtdetrv3(
     y2) in original image coords, and num_dets_per_image [batch_size]. No coordinate
     transform is applied.
 
-    Inputs:
-        outputs: [combined_dets, num_dets_per_image].
-        ratios: Unused (boxes already in image coords).
-        padding: Unused.
-        conf_thres: Confidence threshold to filter detections.
-        input_size: Unused.
-        no_copy: If True, return buffers without copying (overwritten by later preprocessing).
-        verbose: If True, log extra debug information.
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        [combined_dets, num_dets_per_image].
+    ratios : list[tuple[float, float]]
+        Unused (boxes already in image coords).
+    padding : list[tuple[float, float]]
+        Unused.
+    conf_thres : float, optional
+        Confidence threshold to filter detections.
+    input_size : tuple[int, int] | None
+        Unused.
+    no_copy : bool, optional
+        If True, return buffers without copying (overwritten by later preprocessing).
+    verbose : bool, optional
+        If True, log extra debug information.
 
-    Outputs:
+    Returns
+    -------
+    list[list[np.ndarray]]
         One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)].
 
     """
