@@ -1223,19 +1223,19 @@ class RFDETR(DETR):
         shapes = [
             ("input", (batch_size, 3, imgsz, imgsz)),
         ]
-        layer_info = inspect_onnx_layers(onnx, verbose=True)
-        layer_precision: list[tuple[int, trt.DataType]] = []
+        # Force specific layers to FLOAT to avoid precision issues
+        layer_info = inspect_onnx_layers(onnx, verbose=False)
+        layer_precision = []
         for idx, name, _, _ in layer_info:
             lower_name = name.lower()
             if "reducemean" in lower_name or "downsample" in lower_name:
                 layer_precision.append((idx, trt.DataType.FLOAT))
-            else:
-                layer_precision.append((idx, trt.DataType.HALF))
         build_engine(
             onnx=onnx,
             output=output,
             shapes=shapes,
-            layer_precision=layer_precision,
+            layer_precision=layer_precision if layer_precision else None,
+            fp16=True,
             dla_core=dla_core,
             optimization_level=opt_level,
             verbose=verbose,

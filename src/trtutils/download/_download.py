@@ -241,7 +241,9 @@ def _git_clone(
             cwd=directory,
             verbose=verbose,
         )
-        # Cache the cloned repo
+        # Cache the cloned repo, removing existing version if it exists
+        if cache_repo_path.exists():
+            shutil.rmtree(cache_repo_path)
         shutil.copytree(target_path, cache_repo_path)
         LOG.info(f"Cached repository: {repo_name}")
 
@@ -388,7 +390,9 @@ def _run_download(
                 verbose=verbose,
             )
 
-        # Cache the downloaded file
+        # Cache the downloaded file, removing existing version if it exists
+        if cached_file.exists():
+            cached_file.unlink()
         shutil.copy(target_file, cached_file)
         LOG.info(f"Cached weights: {filename}")
 

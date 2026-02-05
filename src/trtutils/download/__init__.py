@@ -23,10 +23,11 @@ or by responding to the interactive prompt.
 
 from __future__ import annotations
 
-from ._download import download, download_model, get_supported_models
+from ._download import download, download_model, get_supported_models, load_model_configs
 
 __all__ = [
     "download",
     "download_model",
     "get_supported_models",
+    "load_model_configs",
 ]
