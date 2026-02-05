@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import numpy as np
 
@@ -169,6 +169,13 @@ class ImageModel:
         self._mean = mean
         self._std = std
 
+        # Model-specific attributes — set by subclass _configure_model() overrides.
+        # Declared here with defaults so base methods can reference them.
+        # -- Detector --
+        self._orig_size_dtype: np.dtype[Any] | None = None
+        self._use_image_size: bool = False
+        self._use_scale_factor: bool = False
+
         # Hook for subclasses to configure model-specific state
         # after engine is loaded but before preprocessors are created.
         self._configure_model()
@@ -237,6 +244,7 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
+            orig_size_dtype=self._orig_size_dtype,
         )
 
     def _setup_trt_preproc(self: Self) -> TRTPreprocessor:
@@ -252,6 +260,7 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
+            orig_size_dtype=self._orig_size_dtype,
         )
 
     def _configure_model(self: Self) -> None:

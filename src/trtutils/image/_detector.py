@@ -39,7 +39,7 @@ def _is_postprocessed_outputs(
     return not outputs or isinstance(outputs[0], list)
 
 
-_TUPLE_PAIR_LEN = 2  # Length of (ratio_x, ratio_y) or (pad_x, pad_y) tuples
+_TUPLE_PAIR_LEN = 2  # (ratio_x, ratio_y) or (pad_x, pad_y) tuples
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -155,11 +155,11 @@ class Detector(ImageModel, DetectorInterface):
             If an input or output schema string is invalid.
 
         """
-        # Store user-provided schema overrides for _configure_model to use
+        # store user-provided schema overrides for _configure_model to use
         self._input_schema_override = input_schema
         self._output_schema_override = output_schema
 
-        # Parent creates engine, calls _configure_model() (which sets schemas),
+        # parent creates engine, calls _configure_model() (which sets schemas),
         # then creates preprocessors (which need _input_schema for dtype)
         super().__init__(
             engine_path=engine_path,
@@ -223,14 +223,14 @@ class Detector(ImageModel, DetectorInterface):
         input_schema = self._input_schema_override
         output_schema = self._output_schema_override
 
-        # Auto-detect schemas from engine if not explicitly provided
+        # auto-detect schemas from engine if not provided
         if input_schema is None or output_schema is None:
             auto_input_schema, auto_output_schema = get_detector_io_schema(self._engine)
         else:
             auto_input_schema = None
             auto_output_schema = None
 
-        # Resolve input schema
+        # resolve input schema
         if input_schema is None:
             if auto_input_schema is None:
                 err_msg = "Input schema could not be determined from the engine."
@@ -245,7 +245,7 @@ class Detector(ImageModel, DetectorInterface):
         else:
             self._input_schema = input_schema
 
-        # Resolve output schema
+        # resolve output schema
         if output_schema is None:
             if auto_output_schema is None:
                 err_msg = "Output schema could not be determined from the engine."
@@ -260,56 +260,18 @@ class Detector(ImageModel, DetectorInterface):
         else:
             self._output_schema = output_schema
 
-        # Set schema-dependent flags used by preprocessor overrides and _end2end
+        # set schema-dependent flags used by preprocessor overrides and _end2end
         self._use_image_size = self._input_schema in (
             InputSchema.RT_DETR,
             InputSchema.RT_DETR_V3,
         )
         self._use_scale_factor = self._input_schema == InputSchema.RT_DETR_V3
 
-    def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
-        """Override to pass orig_size_dtype based on input schema."""
         # RTDETRv3 expects float32 for im_shape, other schemas use int32
-        orig_size_dtype = (
+        self._orig_size_dtype = (
             np.dtype(np.float32)
             if self._input_schema == InputSchema.RT_DETR_V3
             else np.dtype(np.int32)
-        )
-        return CUDAPreprocessor(
-            self._input_size,
-            self._input_range,
-            self._dtype,
-            resize=self._resize_method,
-            stream=self._engine.stream,
-            mean=self._mean,
-            std=self._std,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=self._unified_mem,
-            tag=self._tag,
-            orig_size_dtype=orig_size_dtype,
-        )
-
-    def _setup_trt_preproc(self: Self) -> TRTPreprocessor:
-        """Override to pass orig_size_dtype based on input schema."""
-        # RTDETRv3 expects float32 for im_shape, other schemas use int32
-        orig_size_dtype = (
-            np.dtype(np.float32)
-            if self._input_schema == InputSchema.RT_DETR_V3
-            else np.dtype(np.int32)
-        )
-        return TRTPreprocessor(
-            self._input_size,
-            self._input_range,
-            self._dtype,
-            batch_size=self._batch_size,
-            resize=self._resize_method,
-            stream=self._engine.stream,
-            mean=self._mean,
-            std=self._std,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=self._unified_mem,
-            tag=self._tag,
-            orig_size_dtype=orig_size_dtype,
         )
 
     def postprocess(
