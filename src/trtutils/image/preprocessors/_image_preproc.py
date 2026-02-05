@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -298,7 +298,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
             By default None, which means the default host allocation will be used.
         orig_size_dtype : np.dtype, optional
             The dtype to use for the orig_size buffer. Default is np.int32.
-            Use np.float32 for RTDETRv3 which expects float im_shape input.
 
         """
         super().__init__(
@@ -358,7 +357,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
             self._allocate_imagenet_buffers()
 
         # Allocate GPU buffers for alternative input schemas
-        # dtype is int32 for RT_DETR, float32 for RT_DETR_V3
         self._orig_size_dtype: np.dtype[Any] = (
             orig_size_dtype if orig_size_dtype is not None else np.dtype(np.int32)
         )

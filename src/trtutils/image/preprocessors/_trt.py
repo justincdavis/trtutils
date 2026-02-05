@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -92,7 +92,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
             By default None, which means the default host allocation will be used.
         orig_size_dtype : np.dtype, optional
             The dtype to use for the orig_size buffer. Default is np.int32.
-            Use np.float32 for RTDETRv3 which expects float im_shape input.
 
         Raises
         ------

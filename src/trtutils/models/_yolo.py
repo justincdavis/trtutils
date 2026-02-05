@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 class YOLO(Detector):
     """Alias of Detector with default args for YOLO."""
 
+    _default_imgsz = 640
+
     def __init__(
         self: Self,
         engine_path: Path | str,
@@ -66,6 +68,8 @@ class YOLO(Detector):
 
 class YOLOX(YOLO):
     """Alias of Detector with default args for YOLOX."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -145,7 +149,7 @@ class YOLOX(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLOX._default_imgsz
         download_model_internal(
             model_type="yolox",
             friendly_name="YOLOX",
@@ -206,7 +210,7 @@ class YOLOX(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLOX._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -229,6 +233,8 @@ class YOLOX(YOLO):
 
 class YOLO3(YOLO):
     """Alias of Detector with default args for YOLOv3."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -308,7 +314,7 @@ class YOLO3(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO3._default_imgsz
         download_model_internal(
             model_type="yolov3",
             friendly_name="YOLOv3",
@@ -368,7 +374,7 @@ class YOLO3(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO3._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -391,6 +397,8 @@ class YOLO3(YOLO):
 
 class YOLO5(YOLO):
     """Alias of Detector with default args for YOLOv5."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -470,7 +478,7 @@ class YOLO5(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO5._default_imgsz
         download_model_internal(
             model_type="yolov5",
             friendly_name="YOLOv5",
@@ -530,7 +538,7 @@ class YOLO5(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO5._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -553,6 +561,8 @@ class YOLO5(YOLO):
 
 class YOLO7(YOLO):
     """Alias of Detector with default args for YOLO7."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -632,7 +642,7 @@ class YOLO7(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO7._default_imgsz
         download_model_internal(
             model_type="yolov7",
             friendly_name="YOLOv7",
@@ -681,7 +691,7 @@ class YOLO7(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO7._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -696,6 +706,8 @@ class YOLO7(YOLO):
 
 class YOLO8(YOLO):
     """Alias of Detector with default args for YOLO8."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -775,7 +787,7 @@ class YOLO8(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO8._default_imgsz
         download_model_internal(
             model_type="yolov8",
             friendly_name="YOLOv8",
@@ -836,7 +848,7 @@ class YOLO8(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO8._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -859,6 +871,8 @@ class YOLO8(YOLO):
 
 class YOLO9(YOLO):
     """Alias of Detector with default args for YOLO9."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -938,7 +952,7 @@ class YOLO9(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO9._default_imgsz
         download_model_internal(
             model_type="yolov9",
             friendly_name="YOLOv9",
@@ -987,7 +1001,7 @@ class YOLO9(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO9._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -1002,6 +1016,8 @@ class YOLO9(YOLO):
 
 class YOLO10(YOLO):
     """Alias of Detector with default args for YOLO10."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -1081,7 +1097,7 @@ class YOLO10(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO10._default_imgsz
         download_model_internal(
             model_type="yolov10",
             friendly_name="YOLOv10",
@@ -1130,7 +1146,7 @@ class YOLO10(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO10._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -1145,6 +1161,8 @@ class YOLO10(YOLO):
 
 class YOLO11(YOLO):
     """Alias of Detector with default args for YOLO11."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -1224,7 +1242,7 @@ class YOLO11(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO11._default_imgsz
         download_model_internal(
             model_type="yolov11",
             friendly_name="YOLOv11",
@@ -1285,7 +1303,7 @@ class YOLO11(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO11._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -1308,6 +1326,8 @@ class YOLO11(YOLO):
 
 class YOLO12(YOLO):
     """Alias of Detector with default args for YOLO12."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -1387,7 +1407,7 @@ class YOLO12(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO12._default_imgsz
         download_model_internal(
             model_type="yolov12",
             friendly_name="YOLOv12",
@@ -1448,7 +1468,7 @@ class YOLO12(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO12._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -1471,6 +1491,8 @@ class YOLO12(YOLO):
 
 class YOLO13(YOLO):
     """Alias of Detector with default args for YOLO13."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -1550,7 +1572,7 @@ class YOLO13(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO13._default_imgsz
         download_model_internal(
             model_type="yolov13",
             friendly_name="YOLOv13",
@@ -1611,7 +1633,7 @@ class YOLO13(YOLO):
 
         """
         if imgsz is None:
-            imgsz = 640
+            imgsz = YOLO13._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
