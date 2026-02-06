@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -13,7 +13,7 @@ from trtutils._log import LOG
 from trtutils.core._memory import memcpy_host_to_device_async
 
 from ._image_model import ImageModel
-from ._schema import InputSchema, OutputSchema, get_detector_io_schema
+from ._schema import InputSchema, OutputSchema, resolve_detector_schemas
 from .interfaces import DetectorInterface
 from .postprocessors import (
     get_detections,
@@ -220,59 +220,14 @@ class Detector(ImageModel, DetectorInterface):
 
     def _configure_model(self: Self) -> None:
         """Auto-detect or apply input/output schemas from the loaded engine."""
-        input_schema = self._input_schema_override
-        output_schema = self._output_schema_override
-
-        # auto-detect schemas from engine if not provided
-        if input_schema is None or output_schema is None:
-            auto_input_schema, auto_output_schema = get_detector_io_schema(self._engine)
-        else:
-            auto_input_schema = None
-            auto_output_schema = None
-
-        # resolve input schema
-        if input_schema is None:
-            if auto_input_schema is None:
-                err_msg = "Input schema could not be determined from the engine."
-                raise ValueError(err_msg)
-            self._input_schema = auto_input_schema
-        elif isinstance(input_schema, str):
-            if input_schema not in InputSchema.names():
-                err_msg = f"Invalid input_schema string: {input_schema}. "
-                err_msg += f"Valid options: {InputSchema.names()}"
-                raise ValueError(err_msg)
-            self._input_schema = InputSchema[input_schema]
-        else:
-            self._input_schema = input_schema
-
-        # resolve output schema
-        if output_schema is None:
-            if auto_output_schema is None:
-                err_msg = "Output schema could not be determined from the engine."
-                raise ValueError(err_msg)
-            self._output_schema = auto_output_schema
-        elif isinstance(output_schema, str):
-            if output_schema not in OutputSchema.names():
-                err_msg = f"Invalid output_schema string: {output_schema}. "
-                err_msg += f"Valid options: {OutputSchema.names()}"
-                raise ValueError(err_msg)
-            self._output_schema = OutputSchema[output_schema]
-        else:
-            self._output_schema = output_schema
-
-        # set schema-dependent flags used by preprocessor overrides and _end2end
-        self._use_image_size = self._input_schema in (
-            InputSchema.RT_DETR,
-            InputSchema.RT_DETR_V3,
+        self._input_schema, self._output_schema = resolve_detector_schemas(
+            self._engine,
+            self._input_schema_override,
+            self._output_schema_override,
         )
-        self._use_scale_factor = self._input_schema == InputSchema.RT_DETR_V3
-
-        # RTDETRv3 expects float32 for im_shape, other schemas use int32
-        self._orig_size_dtype = (
-            np.dtype(np.float32)
-            if self._input_schema == InputSchema.RT_DETR_V3
-            else np.dtype(np.int32)
-        )
+        self._use_image_size = self._input_schema.uses_image_size
+        self._use_scale_factor = self._input_schema.uses_scale_factor
+        self._orig_size_dtype = self._input_schema.orig_size_dtype
 
     def postprocess(
         self: Self,

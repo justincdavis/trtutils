@@ -6,6 +6,8 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
@@ -36,6 +38,21 @@ class InputSchema(Enum):
 
         """
         return list(cls.__members__.keys())
+
+    @property
+    def uses_image_size(self: Self) -> bool:
+        """Whether this schema requires an original image size input."""
+        return self in (InputSchema.RT_DETR, InputSchema.RT_DETR_V3)
+
+    @property
+    def uses_scale_factor(self: Self) -> bool:
+        """Whether this schema requires a scale factor input."""
+        return self == InputSchema.RT_DETR_V3
+
+    @property
+    def orig_size_dtype(self: Self) -> np.dtype:
+        """The dtype for the original size input tensor."""
+        return np.dtype(np.float32) if self == InputSchema.RT_DETR_V3 else np.dtype(np.int32)
 
 
 class OutputSchema(Enum):
@@ -138,3 +155,75 @@ def get_detector_io_schema(
             raise ValueError(err_msg)
 
     return (input_schema, output_schema)
+
+
+def resolve_detector_schemas(
+    engine: TRTEngine,
+    input_schema: InputSchema | str | None = None,
+    output_schema: OutputSchema | str | None = None,
+) -> tuple[InputSchema, OutputSchema]:
+    """
+    Resolve input/output schemas from overrides or auto-detection.
+
+    Parameters
+    ----------
+    engine : TRTEngine
+        The loaded TensorRT engine to auto-detect schemas from.
+    input_schema : InputSchema, str, optional
+        Override for the input schema. Can be an enum value, a string
+        matching the enum name, or None for auto-detection.
+    output_schema : OutputSchema, str, optional
+        Override for the output schema. Can be an enum value, a string
+        matching the enum name, or None for auto-detection.
+
+    Returns
+    -------
+    tuple[InputSchema, OutputSchema]
+        The resolved input and output schemas.
+
+    Raises
+    ------
+    ValueError
+        If an input or output schema string is invalid.
+
+    """
+    # auto-detect schemas from engine if not provided
+    if input_schema is None or output_schema is None:
+        auto_input, auto_output = get_detector_io_schema(engine)
+    else:
+        auto_input = None
+        auto_output = None
+
+    # resolve input schema
+    resolved_input: InputSchema
+    if input_schema is None:
+        if auto_input is None:
+            err_msg = "Input schema could not be determined from the engine."
+            raise ValueError(err_msg)
+        resolved_input = auto_input
+    elif isinstance(input_schema, str):
+        if input_schema not in InputSchema.names():
+            err_msg = f"Invalid input_schema string: {input_schema}. "
+            err_msg += f"Valid options: {InputSchema.names()}"
+            raise ValueError(err_msg)
+        resolved_input = InputSchema[input_schema]
+    else:
+        resolved_input = input_schema
+
+    # resolve output schema
+    resolved_output: OutputSchema
+    if output_schema is None:
+        if auto_output is None:
+            err_msg = "Output schema could not be determined from the engine."
+            raise ValueError(err_msg)
+        resolved_output = auto_output
+    elif isinstance(output_schema, str):
+        if output_schema not in OutputSchema.names():
+            err_msg = f"Invalid output_schema string: {output_schema}. "
+            err_msg += f"Valid options: {OutputSchema.names()}"
+            raise ValueError(err_msg)
+        resolved_output = OutputSchema[output_schema]
+    else:
+        resolved_output = output_schema
+
+    return (resolved_input, resolved_output)
