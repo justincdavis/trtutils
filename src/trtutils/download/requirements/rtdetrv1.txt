@@ -1,7 +1,7 @@
 certifi==2025.10.5
 charset-normalizer==3.4.4
 coloredlogs==15.0.1
-filelock==3.20.0
+filelock==3.20.3
 flatbuffers==25.9.23
 fsspec==2025.9.0
 hf-xet==1.1.10
@@ -20,8 +20,8 @@ onnxruntime==1.15.1
 onnxsim==0.4.36
 packaging==25.0
 pillow==12.0.0
-pip==25.2
-protobuf==6.33.0
+pip==26.0
+protobuf==5.29.6
 pycocotools==2.0.10
 pygments==2.19.2
 pyyaml==6.0.3
@@ -33,10 +33,10 @@ scipy==1.15.3
 setuptools==80.9.0
 sympy==1.14.0
 tokenizers==0.22.1
-torch==2.0.1
+torch==2.8.0
 torchvision==0.15.2
 tqdm==4.67.1
 transformers==4.57.1
 typing-extensions==4.15.0
-urllib3==2.5.0
-wheel==0.45.1
+urllib3==2.6.3
+wheel==0.46.2
