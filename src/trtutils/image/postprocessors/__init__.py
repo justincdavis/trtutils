@@ -20,6 +20,8 @@ Functions
     Postprocess the output of a DETR-based model.
 :func:`postprocess_detr_lbs`
     Postprocess the output of a DETR-based model with LBS output order.
+:func:`postprocess_rtdetrv3`
+    Postprocess the output of an RT-DETR v3 model.
 :func:`postprocess_efficient_nms`
     Postprocess the output of an EfficientNMS model.
 
@@ -34,6 +36,7 @@ from ._detection import (
     postprocess_detr_lbs,
     postprocess_efficient_nms,
     postprocess_rfdetr,
+    postprocess_rtdetrv3,
     postprocess_yolov10,
 )
 
@@ -45,5 +48,6 @@ __all__ = [
     "postprocess_detr_lbs",
     "postprocess_efficient_nms",
     "postprocess_rfdetr",
+    "postprocess_rtdetrv3",
     "postprocess_yolov10",
 ]

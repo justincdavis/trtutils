@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # ruff: noqa: S607, S603
@@ -241,7 +241,9 @@ def _git_clone(
             cwd=directory,
             verbose=verbose,
         )
-        # Cache the cloned repo
+        # Cache the cloned repo, removing existing version if it exists
+        if cache_repo_path.exists():
+            shutil.rmtree(cache_repo_path)
         shutil.copytree(target_path, cache_repo_path)
         LOG.info(f"Cached repository: {repo_name}")
 
@@ -388,7 +390,9 @@ def _run_download(
                 verbose=verbose,
             )
 
-        # Cache the downloaded file
+        # Cache the downloaded file, removing existing version if it exists
+        if cached_file.exists():
+            cached_file.unlink()
         shutil.copy(target_file, cached_file)
         LOG.info(f"Cached weights: {filename}")
 
@@ -1284,6 +1288,9 @@ def _export_yolox(
             config["name"] + ".pth",
             "--opset",
             str(opset),
+            "--imgsz",
+            str(imgsz),
+            str(imgsz),
             "--decode_in_inference",
             "--no-onnxsim",  # Disable onnxslim due to compatibility issues with newer onnx
         ],

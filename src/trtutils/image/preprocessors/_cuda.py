@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -41,6 +41,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a CUDAPreprocessor for image processing models.
@@ -83,6 +84,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        orig_size_dtype : np.dtype, optional
+            The dtype to use for the orig_size buffer. Default is np.int32.
 
         """
         tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
@@ -98,6 +101,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             tag,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            orig_size_dtype=orig_size_dtype,
         )
 
         # SST input binding: (N, H', W', 3) uint8 - starts at batch_size=1

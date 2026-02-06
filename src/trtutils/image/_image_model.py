@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import numpy as np
 
@@ -169,6 +169,17 @@ class ImageModel:
         self._mean = mean
         self._std = std
 
+        # Model-specific attributes — set by subclass _configure_model() overrides.
+        # Declared here with defaults so base methods can reference them.
+        # -- Detector --
+        self._orig_size_dtype: np.dtype[Any] | None = None
+        self._use_image_size: bool = False
+        self._use_scale_factor: bool = False
+
+        # Hook for subclasses to configure model-specific state
+        # after engine is loaded but before preprocessors are created.
+        self._configure_model()
+
         # set up the preprocessor
         self._preprocessor: CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
         valid_preprocessors = ["cpu", "cuda", "trt"]
@@ -233,6 +244,7 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
+            orig_size_dtype=self._orig_size_dtype,
         )
 
     def _setup_trt_preproc(self: Self) -> TRTPreprocessor:
@@ -248,7 +260,11 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
+            orig_size_dtype=self._orig_size_dtype,
         )
+
+    def _configure_model(self: Self) -> None:
+        """Configure model-specific state after engine load, before preprocessor creation."""
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -527,6 +543,32 @@ class ImageModel:
         """
         return []
 
+    def _build_graph_input_ptrs(
+        self: Self,
+        gpu_ptr: int,
+        extra_ptrs: list[int],
+    ) -> list[int]:
+        """
+        Build input pointer list for CUDA graph execution.
+
+        Override in subclasses that need schema-specific input ordering.
+        The default puts the image first followed by extra inputs.
+
+        Parameters
+        ----------
+        gpu_ptr : int
+            GPU device pointer for the main image input.
+        extra_ptrs : list[int]
+            Additional GPU device pointers for extra inputs.
+
+        Returns
+        -------
+        list[int]
+            Ordered list of GPU device pointers for engine execution.
+
+        """
+        return [gpu_ptr, *extra_ptrs]
+
     def _end2end_graph_core(
         self: Self,
         images: list[np.ndarray],
@@ -585,7 +627,8 @@ class ImageModel:
                 no_warn=True,
                 verbose=verbose,
             )
-            input_ptrs = [gpu_ptr, *self._prepare_extra_engine_inputs_gpu()]
+            extra_ptrs = self._prepare_extra_engine_inputs_gpu()
+            input_ptrs = self._build_graph_input_ptrs(gpu_ptr, extra_ptrs)
         else:
             # CPU preprocessor: preprocess to numpy, copy to engine binding
             # Both Classifier and Detector have compatible preprocess signatures for basic call
@@ -597,11 +640,11 @@ class ImageModel:
                 tensor,
                 self._engine.stream,
             )
-            input_ptrs = [self._engine._inputs[0].allocation]  # noqa: SLF001
+            gpu_ptr = self._engine._inputs[0].allocation  # noqa: SLF001
 
             # Add extra inputs from subclass
             extra_ptrs = self._prepare_extra_engine_inputs_cpu(images, ratios)
-            input_ptrs.extend(extra_ptrs)
+            input_ptrs = self._build_graph_input_ptrs(gpu_ptr, extra_ptrs)
 
         # Capture or replay the graph (inference only)
         if self._e2e_graph is None:

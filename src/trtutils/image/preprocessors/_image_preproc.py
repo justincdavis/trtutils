@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -253,6 +253,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a GPUImagePreprocessor for image processing models.
@@ -295,6 +296,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        orig_size_dtype : np.dtype, optional
+            The dtype to use for the orig_size buffer. Default is np.int32.
 
         """
         super().__init__(
@@ -354,7 +357,10 @@ class GPUImagePreprocessor(ImagePreprocessor):
             self._allocate_imagenet_buffers()
 
         # Allocate GPU buffers for alternative input schemas
-        orig_size_arr: np.ndarray = np.array([1080, 1920], dtype=np.int32)
+        self._orig_size_dtype: np.dtype[Any] = (
+            orig_size_dtype if orig_size_dtype is not None else np.dtype(np.int32)
+        )
+        orig_size_arr: np.ndarray = np.array([1080, 1920], dtype=self._orig_size_dtype)
         self._orig_size_host = orig_size_arr
         self._orig_size_buffer = create_binding(orig_size_arr)
 

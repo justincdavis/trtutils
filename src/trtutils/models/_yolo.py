@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from trtutils.builder._build import build_engine
+from trtutils.builder.hooks import yolo_efficient_nms_hook
 from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
 
@@ -19,6 +20,8 @@ if TYPE_CHECKING:
 
 class YOLO(Detector):
     """Alias of Detector with default args for YOLO."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -65,6 +68,8 @@ class YOLO(Detector):
 
 class YOLOX(YOLO):
     """Alias of Detector with default args for YOLOX."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -114,7 +119,7 @@ class YOLOX(YOLO):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -143,6 +148,8 @@ class YOLOX(YOLO):
             Print verbose output.
 
         """
+        if imgsz is None:
+            imgsz = YOLOX._default_imgsz
         download_model_internal(
             model_type="yolox",
             friendly_name="YOLOX",
@@ -159,11 +166,15 @@ class YOLOX(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
         *,
+        num_classes: int = 80,
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.5,
+        top_k: int = 100,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -186,10 +197,20 @@ class YOLOX(YOLO):
         opt_level: int = 3
             TensorRT builder optimization level (0-5).
             Default is 3.
+        num_classes: int = 80
+            Number of classes for EfficientNMS.
+        conf_threshold: float = 0.25
+            Confidence threshold for EfficientNMS.
+        iou_threshold: float = 0.5
+            IoU threshold for EfficientNMS.
+        top_k: int = 100
+            Maximum number of detections to keep.
         verbose: bool | None = None
             Enable verbose builder output.
 
         """
+        if imgsz is None:
+            imgsz = YOLOX._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -198,12 +219,22 @@ class YOLOX(YOLO):
             fp16=True,
             dla_core=dla_core,
             optimization_level=opt_level,
+            hooks=[
+                yolo_efficient_nms_hook(
+                    num_classes=num_classes,
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                    top_k=top_k,
+                )
+            ],
             verbose=verbose,
         )
 
 
 class YOLO3(YOLO):
     """Alias of Detector with default args for YOLOv3."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -253,7 +284,7 @@ class YOLO3(YOLO):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -282,6 +313,8 @@ class YOLO3(YOLO):
             Print verbose output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO3._default_imgsz
         download_model_internal(
             model_type="yolov3",
             friendly_name="YOLOv3",
@@ -298,11 +331,15 @@ class YOLO3(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
         *,
+        num_classes: int = 80,
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.5,
+        top_k: int = 100,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -324,10 +361,20 @@ class YOLO3(YOLO):
         opt_level: int = 3
             TensorRT builder optimization level (0-5).
             Default is 3.
+        num_classes: int = 80
+            Number of classes for EfficientNMS.
+        conf_threshold: float = 0.25
+            Confidence threshold for EfficientNMS.
+        iou_threshold: float = 0.5
+            IoU threshold for EfficientNMS.
+        top_k: int = 100
+            Maximum number of detections to keep.
         verbose: bool | None = None
             Enable verbose builder output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO3._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -336,12 +383,22 @@ class YOLO3(YOLO):
             fp16=True,
             dla_core=dla_core,
             optimization_level=opt_level,
+            hooks=[
+                yolo_efficient_nms_hook(
+                    num_classes=num_classes,
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                    top_k=top_k,
+                )
+            ],
             verbose=verbose,
         )
 
 
 class YOLO5(YOLO):
     """Alias of Detector with default args for YOLOv5."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -391,7 +448,7 @@ class YOLO5(YOLO):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -420,6 +477,8 @@ class YOLO5(YOLO):
             Print verbose output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO5._default_imgsz
         download_model_internal(
             model_type="yolov5",
             friendly_name="YOLOv5",
@@ -436,11 +495,15 @@ class YOLO5(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
         *,
+        num_classes: int = 80,
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.5,
+        top_k: int = 100,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -462,10 +525,20 @@ class YOLO5(YOLO):
         opt_level: int = 3
             TensorRT builder optimization level (0-5).
             Default is 3.
+        num_classes: int = 80
+            Number of classes for EfficientNMS.
+        conf_threshold: float = 0.25
+            Confidence threshold for EfficientNMS.
+        iou_threshold: float = 0.5
+            IoU threshold for EfficientNMS.
+        top_k: int = 100
+            Maximum number of detections to keep.
         verbose: bool | None = None
             Enable verbose builder output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO5._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -474,12 +547,22 @@ class YOLO5(YOLO):
             fp16=True,
             dla_core=dla_core,
             optimization_level=opt_level,
+            hooks=[
+                yolo_efficient_nms_hook(
+                    num_classes=num_classes,
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                    top_k=top_k,
+                )
+            ],
             verbose=verbose,
         )
 
 
 class YOLO7(YOLO):
     """Alias of Detector with default args for YOLO7."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -529,7 +612,7 @@ class YOLO7(YOLO):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -558,6 +641,8 @@ class YOLO7(YOLO):
             Print verbose output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO7._default_imgsz
         download_model_internal(
             model_type="yolov7",
             friendly_name="YOLOv7",
@@ -574,7 +659,7 @@ class YOLO7(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -605,6 +690,8 @@ class YOLO7(YOLO):
             Enable verbose builder output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO7._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -619,6 +706,8 @@ class YOLO7(YOLO):
 
 class YOLO8(YOLO):
     """Alias of Detector with default args for YOLO8."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -668,7 +757,7 @@ class YOLO8(YOLO):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -697,6 +786,8 @@ class YOLO8(YOLO):
             Print verbose output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO8._default_imgsz
         download_model_internal(
             model_type="yolov8",
             friendly_name="YOLOv8",
@@ -713,11 +804,15 @@ class YOLO8(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
         *,
+        num_classes: int = 80,
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.5,
+        top_k: int = 100,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -740,10 +835,20 @@ class YOLO8(YOLO):
         opt_level: int = 3
             TensorRT builder optimization level (0-5).
             Default is 3.
+        num_classes: int = 80
+            Number of classes for EfficientNMS.
+        conf_threshold: float = 0.25
+            Confidence threshold for EfficientNMS.
+        iou_threshold: float = 0.5
+            IoU threshold for EfficientNMS.
+        top_k: int = 100
+            Maximum number of detections to keep.
         verbose: bool | None = None
             Enable verbose builder output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO8._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -752,12 +857,22 @@ class YOLO8(YOLO):
             fp16=True,
             dla_core=dla_core,
             optimization_level=opt_level,
+            hooks=[
+                yolo_efficient_nms_hook(
+                    num_classes=num_classes,
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                    top_k=top_k,
+                )
+            ],
             verbose=verbose,
         )
 
 
 class YOLO9(YOLO):
     """Alias of Detector with default args for YOLO9."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -807,7 +922,7 @@ class YOLO9(YOLO):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -836,6 +951,8 @@ class YOLO9(YOLO):
             Print verbose output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO9._default_imgsz
         download_model_internal(
             model_type="yolov9",
             friendly_name="YOLOv9",
@@ -852,7 +969,7 @@ class YOLO9(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -883,6 +1000,8 @@ class YOLO9(YOLO):
             Enable verbose builder output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO9._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -897,6 +1016,8 @@ class YOLO9(YOLO):
 
 class YOLO10(YOLO):
     """Alias of Detector with default args for YOLO10."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -946,7 +1067,7 @@ class YOLO10(YOLO):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -975,6 +1096,8 @@ class YOLO10(YOLO):
             Print verbose output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO10._default_imgsz
         download_model_internal(
             model_type="yolov10",
             friendly_name="YOLOv10",
@@ -991,7 +1114,7 @@ class YOLO10(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -1022,6 +1145,8 @@ class YOLO10(YOLO):
             Enable verbose builder output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO10._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -1036,6 +1161,8 @@ class YOLO10(YOLO):
 
 class YOLO11(YOLO):
     """Alias of Detector with default args for YOLO11."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -1085,7 +1212,7 @@ class YOLO11(YOLO):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -1114,6 +1241,8 @@ class YOLO11(YOLO):
             Print verbose output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO11._default_imgsz
         download_model_internal(
             model_type="yolov11",
             friendly_name="YOLOv11",
@@ -1130,11 +1259,15 @@ class YOLO11(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
         *,
+        num_classes: int = 80,
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.5,
+        top_k: int = 100,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -1157,10 +1290,20 @@ class YOLO11(YOLO):
         opt_level: int = 3
             TensorRT builder optimization level (0-5).
             Default is 3.
+        num_classes: int = 80
+            Number of classes for EfficientNMS.
+        conf_threshold: float = 0.25
+            Confidence threshold for EfficientNMS.
+        iou_threshold: float = 0.5
+            IoU threshold for EfficientNMS.
+        top_k: int = 100
+            Maximum number of detections to keep.
         verbose: bool | None = None
             Enable verbose builder output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO11._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -1169,12 +1312,22 @@ class YOLO11(YOLO):
             fp16=True,
             dla_core=dla_core,
             optimization_level=opt_level,
+            hooks=[
+                yolo_efficient_nms_hook(
+                    num_classes=num_classes,
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                    top_k=top_k,
+                )
+            ],
             verbose=verbose,
         )
 
 
 class YOLO12(YOLO):
     """Alias of Detector with default args for YOLO12."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -1224,7 +1377,7 @@ class YOLO12(YOLO):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -1253,6 +1406,8 @@ class YOLO12(YOLO):
             Print verbose output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO12._default_imgsz
         download_model_internal(
             model_type="yolov12",
             friendly_name="YOLOv12",
@@ -1269,11 +1424,15 @@ class YOLO12(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
         *,
+        num_classes: int = 80,
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.5,
+        top_k: int = 100,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -1296,10 +1455,20 @@ class YOLO12(YOLO):
         opt_level: int = 3
             TensorRT builder optimization level (0-5).
             Default is 3.
+        num_classes: int = 80
+            Number of classes for EfficientNMS.
+        conf_threshold: float = 0.25
+            Confidence threshold for EfficientNMS.
+        iou_threshold: float = 0.5
+            IoU threshold for EfficientNMS.
+        top_k: int = 100
+            Maximum number of detections to keep.
         verbose: bool | None = None
             Enable verbose builder output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO12._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -1308,12 +1477,22 @@ class YOLO12(YOLO):
             fp16=True,
             dla_core=dla_core,
             optimization_level=opt_level,
+            hooks=[
+                yolo_efficient_nms_hook(
+                    num_classes=num_classes,
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                    top_k=top_k,
+                )
+            ],
             verbose=verbose,
         )
 
 
 class YOLO13(YOLO):
     """Alias of Detector with default args for YOLO13."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -1363,7 +1542,7 @@ class YOLO13(YOLO):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -1392,6 +1571,8 @@ class YOLO13(YOLO):
             Print verbose output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO13._default_imgsz
         download_model_internal(
             model_type="yolov13",
             friendly_name="YOLOv13",
@@ -1408,11 +1589,15 @@ class YOLO13(YOLO):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
         *,
+        num_classes: int = 80,
+        conf_threshold: float = 0.25,
+        iou_threshold: float = 0.5,
+        top_k: int = 100,
         verbose: bool | None = None,
     ) -> None:
         """
@@ -1435,10 +1620,20 @@ class YOLO13(YOLO):
         opt_level: int = 3
             TensorRT builder optimization level (0-5).
             Default is 3.
+        num_classes: int = 80
+            Number of classes for EfficientNMS.
+        conf_threshold: float = 0.25
+            Confidence threshold for EfficientNMS.
+        iou_threshold: float = 0.5
+            IoU threshold for EfficientNMS.
+        top_k: int = 100
+            Maximum number of detections to keep.
         verbose: bool | None = None
             Enable verbose builder output.
 
         """
+        if imgsz is None:
+            imgsz = YOLO13._default_imgsz
         shapes = [("images", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
@@ -1447,5 +1642,13 @@ class YOLO13(YOLO):
             fp16=True,
             dla_core=dla_core,
             optimization_level=opt_level,
+            hooks=[
+                yolo_efficient_nms_hook(
+                    num_classes=num_classes,
+                    conf_threshold=conf_threshold,
+                    iou_threshold=iou_threshold,
+                    top_k=top_k,
+                )
+            ],
             verbose=verbose,
         )

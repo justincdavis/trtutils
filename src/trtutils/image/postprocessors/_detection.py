@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -21,37 +21,32 @@ def postprocess_yolov10(
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
-    Postprocess the output of a YOLO-v10 model.
+    Postprocess YOLO-v10 engine output.
+
+    Expects a single output of shape (batch, N, 6) with rows (x1, y1, x2, y2, score,
+    class_id); unletterboxes and returns the unified format per image.
 
     Parameters
     ----------
     outputs : list[np.ndarray]
-        The outputs from the TRTEngine using YOLO-v10 output.
+        Raw YOLO-v10 engine outputs.
     ratios : list[tuple[float, float]]
-        The ratios used during preprocessing to resize each input image.
+        Preprocessing resize ratios per image.
     padding : list[tuple[float, float]]
-        The padding used during preprocessing to position each input image.
+        Preprocessing padding per image.
     conf_thres : float, optional
-        Optional confidence threshold to further filter detections by.
-        Detections are already filtered by YOLO-v10 parameters
-        ahead of time. Should be used if YOLO-v10 was given low-confidence
-        and want to filter higher variably.
+        Optional extra confidence filter (use if model used a low cutoff).
     input_size : tuple[int, int] | None
-        The input size used during preprocessing to resize the input.
+        Unused.
     no_copy : bool, optional
-        If True, the outputs will not be copied out
-        from the cuda allocated host memory. Instead,
-        the host memory will be returned directly.
-        This memory WILL BE OVERWRITTEN INPLACE
-        by future preprocessing calls.
+        If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
-        Whether or not to log additional information.
+        If True, log extra debug information.
 
     Returns
     -------
     list[list[np.ndarray]]
-        The postprocessed outputs per image, each containing
-        [bboxes, scores, class_ids] reshaped and scaled based on ratios/padding.
+        One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)] in original coords.
 
     """
     if verbose:
@@ -81,32 +76,25 @@ def _postprocess_yolov10_core(
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
-    # V10 outputs (1, 300, 6)
-    # each final entry is (bbox (4 parts), score, classid)
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
-
     output = outputs[0]
 
-    bboxes: np.ndarray = output[0, :, :4]
-    scores: np.ndarray = output[0, :, 4]
-    class_ids: np.ndarray = output[0, :, 5].astype(int)
+    bboxes = output[0, :, :4]
+    scores = output[0, :, 4]
+    class_ids = output[0, :, 5].astype(int)
 
-    # pre-filter by the confidence threshold
     if conf_thres is not None:
         mask = scores >= conf_thres
         bboxes = bboxes[mask]
         scores = scores[mask]
         class_ids = class_ids[mask]
 
-    # each bounding box is cx, cy, dx, dy
     adjusted_bboxes = bboxes
-    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width  # x1
-    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height  # y1
-    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width  # x2
-    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height  # y2
-
-    # Clip the bounding boxes to ensure they're within valid ranges
+    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width
+    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height
+    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width
+    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height
     adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
 
     if no_copy:
@@ -124,28 +112,30 @@ def get_detections(
     verbose: bool | None = None,
 ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
     """
-    Get detections from postprocessed outputs of any supported detector.
+    Convert postprocessed unified outputs to human-friendly detections.
+
+    Applies an optional confidence filter and optional CPU NMS. Input format is one
+    list per image of [bboxes (N,4), scores (N,), class_ids (N,)].
 
     Parameters
     ----------
     outputs : list[list[np.ndarray]]
-        Postprocessed outputs per image in the unified format:
-        each entry is [bboxes (N,4), scores (N,), class_ids (N,)].
+        Postprocessed outputs per image (unified format).
     conf_thres : float, optional
-        Confidence threshold to filter detections by.
+        Confidence threshold; detections below are dropped.
     nms_iou_thres : float
-        IOU threshold for the optional additional NMS operation.
+        IoU threshold for optional extra NMS.
     extra_nms : bool, optional
-        Whether to perform an additional CPU-side NMS on final detections.
+        If True, run CPU NMS on the final detections.
     agnostic_nms : bool, optional
-        Whether to perform class-agnostic NMS during the optional operation.
+        If True, use class-agnostic NMS when extra_nms is True.
     verbose : bool, optional
-        Whether to log additional information.
+        If True, log extra debug information.
 
     Returns
     -------
     list[list[tuple[tuple[int, int, int, int], float, int]]]
-        Detections per image, where each detection is ((x1, y1, x2, y2), score, class_id).
+        One list per image; each detection is ((x1, y1, x2, y2), score, class_id).
 
     """
     all_results = []
@@ -168,16 +158,13 @@ def _get_detections_core(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,
 ) -> list[tuple[tuple[int, int, int, int], float, int]]:
-    # set conf_thres to zero if not provided (include all bboxes)
     if conf_thres is None:
         conf_thres = 0.0
 
-    # unpack unified outputs
     bboxes = outputs[0]
     scores = outputs[1]
     class_ids = outputs[2]
 
-    # convert to output format
     results: list[tuple[tuple[int, int, int, int], float, int]] = []
     for idx in range(len(bboxes)):
         if scores[idx] >= conf_thres:
@@ -203,36 +190,32 @@ def postprocess_efficient_nms(
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
-    Postprocess the output of the EfficientNMS plugin.
+    Postprocess EfficientNMS plugin output.
+
+    Raw outputs are [num_dets, bboxes, scores, class_ids], each with batch dim at 0;
+    unletterboxes and returns the unified format per image.
 
     Parameters
     ----------
     outputs : list[np.ndarray]
-        The raw outputs from a model with EfficientNMS output
-        in the form [num_dets, bboxes, scores, classes].
+        Raw EfficientNMS outputs.
     ratios : list[tuple[float, float]]
-        The ratios used during preprocessing to resize each input image.
+        Preprocessing resize ratios per image.
     padding : list[tuple[float, float]]
-        The padding used during preprocessing to position each input image.
-    input_size : tuple[int, int] | None
-        The input size used during preprocessing to resize the input.
+        Preprocessing padding per image.
     conf_thres : float, optional
-        Optional confidence threshold to further filter detections by.
-        Detections are already filtered by EfficientNMS parameters
-        ahead of time. Should be used if EfficientNMS was given low-confidence
-        and you want to filter higher variably.
+        Optional extra confidence filter (use if plugin used a low cutoff).
+    input_size : tuple[int, int] | None
+        Unused.
     no_copy : bool, optional
-        If True, the outputs will not be copied out from host memory and
-        will be returned directly. This memory WILL BE OVERWRITTEN INPLACE
-        by future preprocessing calls.
+        If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
-        Whether or not to log additional information.
+        If True, log extra debug information.
 
     Returns
     -------
     list[list[np.ndarray]]
-        Unified outputs per image, each containing [bboxes (N,4), scores (N,), class_ids (N,)],
-        scaled to original image coordinates.
+        One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)] in original coords.
 
     """
     if verbose:
@@ -241,13 +224,11 @@ def postprocess_efficient_nms(
     batch_size = outputs[0].shape[0]
     results = []
     for i in range(batch_size):
-        # EfficientNMS outputs: [num_dets, bboxes, scores, class_ids]
-        # Each has batch dim at position 0
         batch_outputs = [
-            outputs[0][i : i + 1],  # num_dets
-            outputs[1][i : i + 1],  # bboxes
-            outputs[2][i : i + 1],  # scores
-            outputs[3][i : i + 1],  # class_ids
+            outputs[0][i : i + 1],
+            outputs[1][i : i + 1],
+            outputs[2][i : i + 1],
+            outputs[3][i : i + 1],
         ]
         result = _postprocess_efficient_nms_core(
             batch_outputs,
@@ -269,32 +250,26 @@ def _postprocess_efficient_nms_core(
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
-    # EfficientNMS raw outputs are [num_dets, bboxes, scores, class_ids]
     num_dets, bboxes, scores, class_ids = outputs
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
 
-    # Number of valid detections in batch 0
     num_det_id = int(num_dets[0])
-
-    # Slice batch dimension and valid detections only
     bboxes = bboxes[0, :num_det_id]
     scores = scores[0, :num_det_id]
     class_ids = class_ids[0, :num_det_id]
 
-    # Optional confidence pre-filtering
     if conf_thres is not None:
         mask = scores >= conf_thres
         bboxes = bboxes[mask]
         scores = scores[mask]
         class_ids = class_ids[mask]
 
-    # Adjust to original image coordinates
     adjusted_bboxes = bboxes
-    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width  # x1
-    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height  # y1
-    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width  # x2
-    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height  # y2
+    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width
+    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height
+    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width
+    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height
 
     adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
 
@@ -314,34 +289,33 @@ def postprocess_rfdetr(
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
-    Postprocess the output of an RF-DETR model.
+    Postprocess RF-DETR output.
+
+    Expects [dets, labels]: dets (batch, num_queries, 4) in normalized [cx, cy, w, h];
+    labels (batch, num_queries, num_classes) as logits (class IDs 1-indexed). Converts
+    to unified format in original coords.
 
     Parameters
     ----------
     outputs : list[np.ndarray]
-        The outputs from the TRTEngine using RF-DETR output.
+        Raw RF-DETR outputs [dets, labels].
     ratios : list[tuple[float, float]]
-        The ratios used during preprocessing to resize each input image.
+        Preprocessing resize ratios per image.
     padding : list[tuple[float, float]]
-        The padding used during preprocessing to position each input image.
+        Preprocessing padding per image.
     conf_thres : float, optional
-        Optional confidence threshold to further filter detections by.
+        Confidence threshold to filter detections.
     input_size : tuple[int, int] | None
-        The input size used during preprocessing to resize the input.
+        Model input (width, height) to denormalize bboxes; default 640x640.
     no_copy : bool, optional
-        If True, the outputs will not be copied out
-        from the cuda allocated host memory. Instead,
-        the host memory will be returned directly.
-        This memory WILL BE OVERWRITTEN INPLACE
-        by future preprocessing calls.
+        If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
-        Whether or not to log additional information.
+        If True, log extra debug information.
 
     Returns
     -------
     list[list[np.ndarray]]
-        The postprocessed outputs per image, each containing
-        [bboxes, scores, class_ids] reshaped and scaled based on ratios/padding.
+        One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)] in original coords.
 
     """
     if verbose:
@@ -373,82 +347,49 @@ def _postprocess_rfdetr_core(
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
-    # RF-DETR outputs ["dets", "labels"]
-    # dets: (batch, num_queries, 4), each is [cx, cy, w, h] in normalized coords (0-1)
-    # labels: (batch, num_queries, num_classes) - raw logits
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
+    bboxes = outputs[0][0, :, :]
+    logits = outputs[1][0, :, :]
 
-    dets = outputs[0]
-    labels = outputs[1]
-
-    # bboxes are (1, 300, 4)
-    # labels are (1, 300, num_classes) - contains raw logits
-    bboxes: np.ndarray = dets[0, :, :]  # (num_queries, 4)
-    logits: np.ndarray = labels[0, :, :]  # (num_queries, num_classes)
-
-    # Convert logits to probabilities using sigmoid
-    probs = 1.0 / (1.0 + np.exp(-logits))  # (num_queries, num_classes)
-
-    # Flatten probabilities to (num_queries * num_classes,) for global top-K selection
-    num_queries = probs.shape[0]
-    num_classes = probs.shape[1]
+    probs = 1.0 / (1.0 + np.exp(-logits))
+    num_queries, num_classes = probs.shape[0], probs.shape[1]
     probs_flat = probs.reshape(-1)
+    num_select = min(num_queries, len(probs_flat))
 
-    # Get top-K indices (default to num_queries as num_select)
-    num_select = num_queries
-    if len(probs_flat) < num_select:
-        num_select = len(probs_flat)
-
-    # Get top-K values and their flat indices
-    topk_indices = np.argsort(probs_flat)[-num_select:][::-1]  # descending order
+    topk_indices = np.argsort(probs_flat)[-num_select:][::-1]
     topk_scores = probs_flat[topk_indices]
+    topk_box_indices = topk_indices // num_classes
+    topk_class_ids = topk_indices % num_classes
+    selected_bboxes = bboxes[topk_box_indices]
 
-    # Convert flat indices back to (query_idx, class_idx)
-    topk_box_indices = topk_indices // num_classes  # which query
-    topk_class_ids = topk_indices % num_classes  # which class
-
-    # Gather the corresponding boxes using topk_box_indices
-    selected_bboxes = bboxes[topk_box_indices]  # (num_select, 4)
-
-    # Apply confidence threshold filter if provided
     if conf_thres is not None:
         mask = topk_scores >= conf_thres
         selected_bboxes = selected_bboxes[mask]
         topk_scores = topk_scores[mask]
         topk_class_ids = topk_class_ids[mask]
 
-    # class IDS are 1 indexed, so we need to subtract 1
-    topk_class_ids = topk_class_ids - 1
+    topk_class_ids = topk_class_ids - 1  # 1-indexed in model
 
-    # Bboxes are in normalized coordinates (0-1), scale to model input size first
     if input_size is not None:
         input_w, input_h = input_size
     else:
-        # Fallback: assume square input (e.g., 640x640)
         input_w = input_h = 640
 
-    # Convert from normalized center format (cxcywh) to corner format (xyxy)
     cx = selected_bboxes[:, 0] * input_w
     cy = selected_bboxes[:, 1] * input_h
     w = selected_bboxes[:, 2] * input_w
     h = selected_bboxes[:, 3] * input_h
-
     x1 = cx - w / 2
     y1 = cy - h / 2
     x2 = cx + w / 2
     y2 = cy + h / 2
 
-    # Adjust bounding boxes based on padding and ratios to get original image coords
     adjusted_x1 = (x1 - pad_x) / ratio_width
     adjusted_y1 = (y1 - pad_y) / ratio_height
     adjusted_x2 = (x2 - pad_x) / ratio_width
     adjusted_y2 = (y2 - pad_y) / ratio_height
-
-    # Stack back into bbox array
     adjusted_bboxes = np.stack([adjusted_x1, adjusted_y1, adjusted_x2, adjusted_y2], axis=1)
-
-    # Clip the bounding boxes to ensure they're within valid ranges
     adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
 
     if no_copy:
@@ -467,34 +408,33 @@ def postprocess_detr(
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
-    Postprocess the output of a DETR-based model (DEIM, RT-DETR, D-FINE).
+    Postprocess DETR-based output (DEIM, RT-DETR, D-FINE).
+
+    Expects [scores, labels, boxes] with boxes (batch, num_queries, 4) as [x1, y1, x2,
+    y2]. For models using orig_target_sizes, boxes are already in original image coords;
+    no coordinate transform is applied.
 
     Parameters
     ----------
     outputs : list[np.ndarray]
-        The outputs from the TRTEngine using DETR output.
+        Raw DETR outputs [scores, labels, boxes].
     ratios : list[tuple[float, float]]
-        The ratios used during preprocessing to resize each input image.
+        Preprocessing resize ratios per image.
     padding : list[tuple[float, float]]
-        The padding used during preprocessing to position each input image.
+        Preprocessing padding per image.
     conf_thres : float, optional
-        Optional confidence threshold to further filter detections by.
+        Confidence threshold to filter detections.
     input_size : tuple[int, int] | None
-        The input size used during preprocessing to resize the input.
+        Unused for standard DETR.
     no_copy : bool, optional
-        If True, the outputs will not be copied out
-        from the cuda allocated host memory. Instead,
-        the host memory will be returned directly.
-        This memory WILL BE OVERWRITTEN INPLACE
-        by future preprocessing calls.
+        If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
-        Whether or not to log additional information.
+        If True, log extra debug information.
 
     Returns
     -------
     list[list[np.ndarray]]
-        The postprocessed outputs per image, each containing
-        [bboxes, scores, class_ids] reshaped and scaled based on ratios/padding.
+        One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)].
 
     """
     if verbose:
@@ -526,40 +466,25 @@ def _postprocess_detr_core(
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
-    # DETR outputs ["scores", "labels", "boxes"]
-    # scores: (batch, num_queries) containing confidence scores (already probabilities)
-    # labels: (batch, num_queries) containing class IDs
-    # boxes: (batch, num_queries, 4) where 4 is [x1, y1, x2, y2]
-    #
-    # IMPORTANT: For RT-DETR/D-FINE models that take "orig_target_sizes" as input,
-    # the boxes are ALREADY in original image pixel coordinates!
-    # No coordinate transformation is needed!
-
     scores = outputs[0]
     labels = outputs[1]
     boxes = outputs[2]
+    class_ids = labels[0, :].astype(int)
+    bboxes = boxes[0, :, :]
+    scores_arr = scores[0, :]
 
-    # Extract class IDs, bounding boxes, and scores
-    class_ids: np.ndarray = labels[0, :].astype(int)
-    bboxes: np.ndarray = boxes[0, :, :]
-    scores_arr: np.ndarray = scores[0, :]
-
-    # pre-filter by the confidence threshold
     if conf_thres is not None:
         mask = scores_arr >= conf_thres
         class_ids = class_ids[mask]
         bboxes = bboxes[mask]
         scores_arr = scores_arr[mask]
 
-    # Filter out non-finite bboxes (e.g. infinity values from invalid detections)
     finite_mask = np.all(np.isfinite(bboxes), axis=1)
     if not np.all(finite_mask):
         bboxes = bboxes[finite_mask]
         scores_arr = scores_arr[finite_mask]
         class_ids = class_ids[finite_mask]
 
-    # Bboxes are already in original image pixel coordinates (no transformation needed)
-    # Just clip to ensure they're within valid ranges
     adjusted_bboxes = np.clip(bboxes, 0, None)
 
     if no_copy:
@@ -578,41 +503,33 @@ def postprocess_detr_lbs(
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
-    Postprocess the output of a DETR-based model with LBS output order.
+    Postprocess DETR-style output when the engine returns (labels, boxes, scores).
 
-    Models like DEIM and D-FINE output tensors in (labels, boxes, scores) order
-    instead of the standard DETR (scores, labels, boxes) order. This function
-    reorders the outputs and delegates to postprocess_detr.
+    Used for DEIM and D-FINE; reorders and delegates to postprocess_detr.
 
     Parameters
     ----------
     outputs : list[np.ndarray]
-        The outputs from the TRTEngine in (labels, boxes, scores) order.
+        Raw outputs in (labels, boxes, scores) order.
     ratios : list[tuple[float, float]]
-        The ratios used during preprocessing to resize each input image.
+        Preprocessing resize ratios per image.
     padding : list[tuple[float, float]]
-        The padding used during preprocessing to position each input image.
+        Preprocessing padding per image.
     conf_thres : float, optional
-        Optional confidence threshold to further filter detections by.
+        Confidence threshold to filter detections.
     input_size : tuple[int, int] | None
-        The input size used during preprocessing to resize the input.
+        Unused.
     no_copy : bool, optional
-        If True, the outputs will not be copied out
-        from the cuda allocated host memory. Instead,
-        the host memory will be returned directly.
-        This memory WILL BE OVERWRITTEN INPLACE
-        by future preprocessing calls.
+        If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
-        Whether or not to log additional information.
+        If True, log extra debug information.
 
     Returns
     -------
     list[list[np.ndarray]]
-        The postprocessed outputs per image, each containing
-        [bboxes, scores, class_ids] reshaped and scaled based on ratios/padding.
+        One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)].
 
     """
-    # Reorder from (labels, boxes, scores) to (scores, labels, boxes)
     reordered = [outputs[2], outputs[0], outputs[1]]
     return postprocess_detr(
         reordered,
@@ -623,3 +540,106 @@ def postprocess_detr_lbs(
         no_copy=no_copy,
         verbose=verbose,
     )
+
+
+def postprocess_rtdetrv3(
+    outputs: list[np.ndarray],
+    ratios: list[tuple[float, float]],
+    padding: list[tuple[float, float]],
+    conf_thres: float | None = None,
+    input_size: tuple[int, int] | None = None,  # noqa: ARG001
+    *,
+    no_copy: bool | None = None,
+    verbose: bool | None = None,
+) -> list[list[np.ndarray]]:
+    """
+    Postprocess RT-DETR v3 (PaddlePaddle export) output.
+
+    Two tensors: combined_dets (total_N, 6) with rows (class_id, score, x1, y1, x2,
+    y2) in original image coords, and num_dets_per_image [batch_size]. No coordinate
+    transform is applied.
+
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        [combined_dets, num_dets_per_image].
+    ratios : list[tuple[float, float]]
+        Unused (boxes already in image coords).
+    padding : list[tuple[float, float]]
+        Unused.
+    conf_thres : float, optional
+        Confidence threshold to filter detections.
+    input_size : tuple[int, int] | None
+        Unused.
+    no_copy : bool, optional
+        If True, return buffers without copying (overwritten by later preprocessing).
+    verbose : bool, optional
+        If True, log extra debug information.
+
+    Returns
+    -------
+    list[list[np.ndarray]]
+        One list per image, each [bboxes (N,4), scores (N,), class_ids (N,)].
+
+    """
+    if verbose:
+        LOG.debug(f"RT-DETR v3 postprocess, detections shape: {outputs[0].shape}")
+
+    combined_dets = outputs[0]
+    num_dets_raw = outputs[1]
+    num_dets = np.array([int(num_dets_raw)]) if num_dets_raw.ndim == 0 else num_dets_raw
+
+    batch_size = len(num_dets)
+    results = []
+    start_idx = 0
+
+    for i in range(batch_size):
+        num_det = int(num_dets[i])
+        result = _postprocess_rtdetrv3_core(
+            combined_dets,
+            start_idx,
+            num_det,
+            ratios[i],
+            padding[i],
+            conf_thres=conf_thres,
+            no_copy=no_copy,
+        )
+        results.append(result)
+        start_idx += num_det
+
+    return results
+
+
+@register_jit(nogil=True)
+def _postprocess_rtdetrv3_core(
+    combined_dets: np.ndarray,
+    start_idx: int,
+    num_det: int,
+    ratios: tuple[float, float],  # noqa: ARG001
+    padding: tuple[float, float],  # noqa: ARG001
+    conf_thres: float | None = None,
+    *,
+    no_copy: bool | None = None,
+) -> list[np.ndarray]:
+    dets = combined_dets[start_idx : start_idx + num_det, :]
+    class_ids = dets[:, 0].astype(int)
+    scores = dets[:, 1]
+    bboxes = dets[:, 2:6]
+
+    if conf_thres is not None:
+        mask = scores >= conf_thres
+        bboxes = bboxes[mask]
+        scores = scores[mask]
+        class_ids = class_ids[mask]
+
+    finite_mask = np.all(np.isfinite(bboxes), axis=1)
+    if not np.all(finite_mask):
+        bboxes = bboxes[finite_mask]
+        scores = scores[finite_mask]
+        class_ids = class_ids[finite_mask]
+
+    adjusted_bboxes = np.clip(bboxes, 0, None)
+
+    if no_copy:
+        return [adjusted_bboxes, scores, class_ids]
+    return [adjusted_bboxes.copy(), scores.copy(), class_ids.copy()]

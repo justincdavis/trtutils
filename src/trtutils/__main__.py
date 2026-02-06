@@ -1089,8 +1089,24 @@ def _download(args: SimpleNamespace) -> None:
             Whether to accept license terms automatically.
         - verbose : bool
             Enable verbose output.
+        - no_cache : bool
+            Disable caching of downloaded weights, repos, and uv packages.
 
     """
+    if args.list_models:
+        configs = trtutils.download.load_model_configs()
+        LOG.info("Supported models:\n")
+        for family in sorted(configs):
+            model_names = sorted(configs[family].keys())
+            LOG.info(f"  {family}:")
+            LOG.info(f"    {', '.join(model_names)}")
+            LOG.info("")
+        return
+
+    if args.model is None or args.output is None:
+        LOG.error("--model and --output are required for downloading.")
+        return
+
     if not args.accept:
         LOG.info(
             f"You are about to download model '{args.model}' which may have license restrictions."
@@ -1109,6 +1125,8 @@ def _download(args: SimpleNamespace) -> None:
         requirements_export=args.requirements_export,
         accept=True,
         verbose=args.verbose,
+        no_cache=args.no_cache,
+        no_uv_cache=args.no_cache,
     )
 
 
@@ -1727,14 +1745,21 @@ def _main() -> None:
     download_parser.add_argument(
         "--model",
         type=str,
-        required=True,
+        required=False,
+        default=None,
         help="Name of the model to download.",
     )
     download_parser.add_argument(
         "--output",
         type=Path,
-        required=True,
+        required=False,
+        default=None,
         help="Path to save the ONNX model file.",
+    )
+    download_parser.add_argument(
+        "--list_models",
+        action="store_true",
+        help="List all supported models and exit.",
     )
     download_parser.add_argument(
         "--opset",
@@ -1758,6 +1783,11 @@ def _main() -> None:
         "--accept",
         action="store_true",
         help="Accept the license terms for the model. If not provided, you will be prompted.",
+    )
+    download_parser.add_argument(
+        "--no_cache",
+        action="store_true",
+        help="Disable caching of downloaded weights, repos, and uv packages.",
     )
     download_parser.set_defaults(func=_download)
 
