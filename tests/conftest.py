@@ -4,26 +4,25 @@
 # mypy: disable-error-code="misc,no-any-return"
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
-import cv2
 import numpy as np
 import pytest
 
-BASE_DIR = Path(__file__).parent.parent
-DATA_DIR = BASE_DIR / "data"
-HORSE_IMAGE_PATH = str(DATA_DIR / "horse.jpg")
-PEOPLE_IMAGE_PATH = str(DATA_DIR / "people.jpeg")
-IMAGE_PATHS = [HORSE_IMAGE_PATH, PEOPLE_IMAGE_PATH]
+import trtutils.builder
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-def _read_image(path: str) -> np.ndarray:
-    img = cv2.imread(path)
-    if img is None:
-        err_msg = f"Failed to read image: {path}"
-        raise FileNotFoundError(err_msg)
-    return img
+from .helpers import (
+    CLASSIFIER_ENGINE_DIR,
+    CLASSIFIER_ONNX_PATH,
+    HORSE_IMAGE_PATH,
+    IMAGE_PATHS,
+    read_image,
+)
+
+CLASSIFIER_ENGINE_PATH = CLASSIFIER_ENGINE_DIR / "resnet18.engine"
 
 
 @pytest.fixture
@@ -37,7 +36,7 @@ def test_images() -> list[np.ndarray]:
         Loaded test images.
 
     """
-    return [_read_image(p) for p in IMAGE_PATHS]
+    return [read_image(p) for p in IMAGE_PATHS]
 
 
 @pytest.fixture
@@ -51,7 +50,7 @@ def horse_image() -> np.ndarray:
         The horse image.
 
     """
-    return _read_image(HORSE_IMAGE_PATH)
+    return read_image(HORSE_IMAGE_PATH)
 
 
 @pytest.fixture(params=[1, 2, 4])
@@ -85,3 +84,31 @@ def random_images() -> Callable[[int, int, int], list[np.ndarray]]:
         return [rng.integers(0, 255, (height, width, 3), dtype=np.uint8) for _ in range(num)]
 
     return _make
+
+
+@pytest.fixture(scope="session")
+def classifier_engine_path() -> Path | None:
+    """
+    Get classifier engine path, building if needed.
+
+    Returns
+    -------
+    Path | None
+        The engine path if available, None if ONNX not found.
+
+    """
+    if not CLASSIFIER_ONNX_PATH.exists():
+        return None
+
+    if CLASSIFIER_ENGINE_PATH.exists():
+        return CLASSIFIER_ENGINE_PATH
+
+    CLASSIFIER_ENGINE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    trtutils.builder.build_engine(
+        CLASSIFIER_ONNX_PATH,
+        CLASSIFIER_ENGINE_PATH,
+        optimization_level=1,
+    )
+
+    return CLASSIFIER_ENGINE_PATH

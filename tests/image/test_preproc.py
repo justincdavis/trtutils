@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from tests.conftest import HORSE_IMAGE_PATH, IMAGE_PATHS, _read_image
+from tests.helpers import HORSE_IMAGE_PATH, IMAGE_PATHS, read_image
 from trtutils.image.preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
@@ -98,7 +98,7 @@ class TestPreprocessorParity:
     ) -> None:
         """Assert preprocessing outputs match across backends."""
         for img_path in IMAGE_PATHS:
-            img = _read_image(img_path)
+            img = read_image(img_path)
             result1, ratios1_list, padding1_list = preproc1.preprocess([img], resize=method)
             result2, ratios2_list, padding2_list = preproc2.preprocess([img], resize=method)
             ratios1, ratios2 = ratios1_list[0], ratios2_list[0]
@@ -230,7 +230,7 @@ class TestPerformance:
 
         """
         cpu = CPUPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE)
-        img = _read_image(HORSE_IMAGE_PATH)
+        img = read_image(HORSE_IMAGE_PATH)
         images = [img]
         for _ in range(10):
             cpu.preprocess(images)

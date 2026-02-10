@@ -147,6 +147,18 @@ push            = false
 "src/trtutils/__init__.py" = ["{version}"]
 "docs/conf.py" = ["{version}"]
 
+[tool.pytest.ini_options]
+markers = [
+    "gpu: tests that require a CUDA-capable GPU",
+    "dla: tests that run on NVIDIA DLA cores (Jetson only)",
+    "performance: benchmarks and performance regression tests",
+    "slow: tests that take more than 30 seconds",
+    "download: tests that download models from the internet",
+    "cuda_graph: tests that require CUDA graph support (async_v3)",
+    "correctness: tests that validate detection/classification output content",
+    "regression: tests for specific bug regressions",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

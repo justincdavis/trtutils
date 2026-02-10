@@ -598,3 +598,29 @@ def detr_run(model_name: str, preprocessor: str = "cpu", *, use_dla: bool | None
 def detr_results(model_name: str, preprocessor: str = "cpu", *, use_dla: bool | None = None) -> None:
     """Check if the results are valid for a DETR model (backward compatibility)."""
     detector_results(model_name, preprocessor=preprocessor, use_dla=use_dla)
+
+
+# Model download configs for test_download_build_inference.py
+# Each entry: (ModelClass, model_name, imgsz) - imgsz is None to use default
+MODEL_DOWNLOAD_CONFIGS = [
+    # YOLO models (all use default imgsz=640)
+    (models.YOLOX, "yoloxn", None),
+    (models.YOLO3, "yolov3tu", None),
+    (models.YOLO5, "yolov5nu", None),
+    (models.YOLO7, "yolov7t", None),
+    (models.YOLO8, "yolov8n", None),
+    (models.YOLO9, "yolov9t", None),
+    (models.YOLO10, "yolov10n", None),
+    (models.YOLO11, "yolov11n", None),
+    (models.YOLO12, "yolov12n", None),
+    (models.YOLO13, "yolov13n", None),
+    # DETR models (most use default imgsz=640)
+    (models.RTDETRv1, "rtdetrv1_r18", None),
+    (models.RTDETRv2, "rtdetrv2_r18", None),
+    (models.RTDETRv3, "rtdetrv3_r18", None),
+    (models.DFINE, "dfine_n", None),
+    (models.DEIM, "deim_dfine_n", None),
+    # Special cases - these models require specific imgsz values
+    (models.DEIMv2, "deimv2_atto", 320),
+    (models.RFDETR, "rfdetr_n", 384),
+]

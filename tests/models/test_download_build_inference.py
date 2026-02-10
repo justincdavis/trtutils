@@ -13,30 +13,14 @@ from typing import TYPE_CHECKING
 import cv2
 import pytest
 
-from trtutils.models import (
-    DEIM,
-    DFINE,
-    RFDETR,
-    YOLO3,
-    YOLO5,
-    YOLO7,
-    YOLO8,
-    YOLO9,
-    YOLO10,
-    YOLO11,
-    YOLO12,
-    YOLO13,
-    YOLOX,
-    DEIMv2,
-    RTDETRv1,
-    RTDETRv2,
-    RTDETRv3,
-)
+from tests.helpers import HORSE_IMAGE_PATH
 
-from .paths import HORSE_IMAGE_PATH
+from .common import MODEL_DOWNLOAD_CONFIGS
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+pytestmark = [pytest.mark.gpu, pytest.mark.download, pytest.mark.slow]
 
 
 @contextmanager
@@ -48,35 +32,10 @@ def _temporary_dir() -> Iterator[Path]:
         shutil.rmtree(temp_path)
 
 
-# Each model config: (ModelClass, model_name, imgsz) - imgsz is None to use default
-MODEL_CONFIGS = [
-    # YOLO models (all use default imgsz=640)
-    (YOLOX, "yoloxn", None),
-    (YOLO3, "yolov3tu", None),
-    (YOLO5, "yolov5nu", None),
-    (YOLO7, "yolov7t", None),
-    (YOLO8, "yolov8n", None),
-    (YOLO9, "yolov9t", None),
-    (YOLO10, "yolov10n", None),
-    (YOLO11, "yolov11n", None),
-    (YOLO12, "yolov12n", None),
-    (YOLO13, "yolov13n", None),
-    # DETR models (most use default imgsz=640)
-    (RTDETRv1, "rtdetrv1_r18", None),
-    (RTDETRv2, "rtdetrv2_r18", None),
-    (RTDETRv3, "rtdetrv3_r18", None),
-    (DFINE, "dfine_n", None),
-    (DEIM, "deim_dfine_n", None),
-    # Special cases - these models require specific imgsz values
-    (DEIMv2, "deimv2_atto", 320),
-    (RFDETR, "rfdetr_n", 384),
-]
-
-
 @pytest.mark.parametrize(
     ("model_class", "model_name", "imgsz"),
-    MODEL_CONFIGS,
-    ids=[cfg[1] for cfg in MODEL_CONFIGS],
+    MODEL_DOWNLOAD_CONFIGS,
+    ids=[cfg[1] for cfg in MODEL_DOWNLOAD_CONFIGS],
 )
 def test_download_build_inference(model_class: type, model_name: str, imgsz: int | None) -> None:
     """

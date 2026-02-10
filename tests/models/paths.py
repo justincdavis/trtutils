@@ -65,10 +65,9 @@ DETR_ONNX_PATHS: dict[str, Path] = {
 ENGINE_PATHS = YOLO_ENGINE_PATHS
 ONNX_PATHS = YOLO_ONNX_PATHS
 
-# Image paths
-HORSE_IMAGE_PATH: str = str(BASE / "data" / "horse.jpg")
-PEOPLE_IMAGE_PATH: str = str(BASE / "data" / "people.jpeg")
-IMAGE_PATHS: list[str] = [
+# Image paths (imported from helpers for backward compatibility)
+from tests.helpers import (  # noqa: E402, F401
     HORSE_IMAGE_PATH,
+    IMAGE_PATHS,
     PEOPLE_IMAGE_PATH,
-]
+)
