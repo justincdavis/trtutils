@@ -48,6 +48,8 @@ class Flags:
     WARNED_NUMBA_NOT_FOUND : bool
         Whether or not the user has been warned that Numba was
         not found when calling enable_jit.
+    NVTX_ENABLED : bool
+        Whether or not NVTX profiling is enabled.
 
     """
 
@@ -70,6 +72,7 @@ class Flags:
     JIT: bool = False
     FOUND_NUMBA: bool = False
     WARNED_NUMBA_NOT_FOUND: bool = False
+    NVTX_ENABLED: bool = False
 
 
 FLAGS = Flags()
