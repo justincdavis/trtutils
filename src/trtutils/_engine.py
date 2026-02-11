@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -24,7 +25,6 @@ from .core._memory import (
 from .core._stream import stream_synchronize
 
 if TYPE_CHECKING:
-    from pathlib import Path
     from typing import ClassVar
 
     from typing_extensions import Self
@@ -104,6 +104,8 @@ class TRTEngine(TRTEngineInterface):
             If the backend is not valid.
 
         """
+        self._name = Path(engine_path).stem
+
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(f"engine::init [{self.name}]")
 
@@ -117,10 +119,22 @@ class TRTEngine(TRTEngineInterface):
             verbose=verbose,
         )
 
+        self._nvtx_tags.update(
+            {
+                "graph_capture": f"engine::graph_capture [{self.name}]",
+                "execute": f"engine::execute [{self.name}]",
+                "graph_exec": f"engine::graph_exec [{self.name}]",
+                "direct_exec": f"engine::direct_exec [{self.name}]",
+                "raw_exec": f"engine::raw_exec [{self.name}]",
+            }
+        )
+
         # solve for execution method
         # only care about v2 or v3 async
         if backend not in TRTEngine._backends:
             err_msg = f"Invalid backend {backend}, options are: {TRTEngine._backends}"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # init
             raise ValueError(err_msg)
 
         self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (backend == "async_v3" or backend == "auto")
@@ -186,10 +200,14 @@ class TRTEngine(TRTEngineInterface):
 
         # Prevent recursion: warmup() -> mock_execute() -> execute() -> _capture_cuda_graph()
         if self._capturing_graph:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # graph_capture
             return
 
         if self._cuda_graph is None:
             err_msg = f"CUDA graph is not enabled in engine: {self._name}"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # graph_capture
             raise RuntimeError(err_msg)
 
         self._capturing_graph = True
@@ -233,6 +251,8 @@ class TRTEngine(TRTEngineInterface):
         finally:
             self._capturing_graph = False
             if capture_error is not None:
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # graph_capture
                 raise capture_error
 
         if FLAGS.NVTX_ENABLED:
@@ -425,6 +445,8 @@ class TRTEngine(TRTEngineInterface):
         if self._cuda_graph is None or not self._cuda_graph.is_captured:
             err_msg = f"No CUDA graph captured for engine '{self._name}'. "
             err_msg += "Ensure cuda_graph=True and warmup=True, or call execute() first."
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # graph_exec
             raise RuntimeError(err_msg)
         self._cuda_graph.launch()
         if debug:

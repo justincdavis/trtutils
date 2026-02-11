@@ -7,8 +7,10 @@ import time
 from typing import TYPE_CHECKING, overload
 
 import numpy as np
+import nvtx
 from typing_extensions import Literal, TypeGuard
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
@@ -125,6 +127,25 @@ class Classifier(ImageModel, ClassifierInterface):
             verbose=verbose,
         )
 
+        # prepend with 'cls_' to avoid conflicts with ImageModel._nvtx_tags
+        self._nvtx_tags.update(
+            {
+                "cls_init": f"classifier::init [{self._tag}]",
+                "cls_postprocess": f"classifier::postprocess [{self._tag}]",
+                "cls_run": f"classifier::run [{self._tag}]",
+                "cls_get_classifications": f"classifier::get_classifications [{self._tag}]",
+                "cls_end2end": f"classifier::end2end [{self._tag}]",
+                "cls__end2end": f"classifier::_end2end [{self._tag}]",
+                "cls__end2end_graph": f"classifier::_end2end_graph [{self._tag}]",
+            }
+        )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cls_init"])
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
+
     def postprocess(
         self: Self,
         outputs: list[np.ndarray],
@@ -152,6 +173,9 @@ class Classifier(ImageModel, ClassifierInterface):
             The postprocessed outputs per image.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cls_postprocess"])
+
         if verbose:
             LOG.debug(f"{self._tag}: postprocess")
 
@@ -159,6 +183,10 @@ class Classifier(ImageModel, ClassifierInterface):
         data = postprocess_classifications(outputs, no_copy=no_copy, verbose=verbose)
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # postprocess
+
         return data
 
     # __call__ overloads
@@ -346,6 +374,9 @@ class Classifier(ImageModel, ClassifierInterface):
             If preprocessed inputs are not a single batch tensor.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cls_run"])
+
         if verbose:
             LOG.debug(f"{self._tag}: run")
 
@@ -386,6 +417,8 @@ class Classifier(ImageModel, ClassifierInterface):
             # images is already preprocessed tensor when preprocessed=True
             if len(images) != 1:
                 err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
                 raise ValueError(err_msg)
             tensor = images[0]
 
@@ -403,10 +436,17 @@ class Classifier(ImageModel, ClassifierInterface):
 
             # Unwrap for single-image input
             if is_single:
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
                 return postprocessed_outputs[0]
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # run
             return postprocessed_outputs
 
         self._infer_profile = (t0, t1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # run
 
         return outputs
 
@@ -456,6 +496,9 @@ class Classifier(ImageModel, ClassifierInterface):
             For batch: list[list[tuple[int, float]]] (classifications per image).
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cls_get_classifications"])
+
         if verbose:
             LOG.debug(f"{self._tag}: get_classifications")
 
@@ -466,9 +509,16 @@ class Classifier(ImageModel, ClassifierInterface):
             # Wrap single image outputs for batch processing
             batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[list-item]
             result = get_classifications(batch_outputs, top_k=top_k, verbose=verbose)
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # get_classifications
             return result[0]  # Unwrap
 
-        return get_classifications(outputs, top_k=top_k, verbose=verbose)  # type: ignore[arg-type]
+        result_batch = get_classifications(outputs, top_k=top_k, verbose=verbose)  # type: ignore[arg-type]
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # get_classifications
+
+        return result_batch
 
     # end2end overloads
     @overload
@@ -528,6 +578,9 @@ class Classifier(ImageModel, ClassifierInterface):
             If end2end_graph is enabled and CUDA graph capture fails.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cls_end2end"])
+
         if verbose:
             LOG.debug(f"{self._tag}: end2end")
 
@@ -552,7 +605,13 @@ class Classifier(ImageModel, ClassifierInterface):
 
         # Unwrap for single-image input
         if is_single:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # end2end
             return result[0]
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # end2end
+
         return result
 
     def _end2end(
@@ -563,6 +622,9 @@ class Classifier(ImageModel, ClassifierInterface):
         verbose: bool | None = None,
     ) -> list[list[tuple[int, float]]]:
         """Execute the standard end2end path without graph capture."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cls__end2end"])
+
         outputs: list[np.ndarray] | list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
@@ -578,6 +640,8 @@ class Classifier(ImageModel, ClassifierInterface):
             )
             if not _is_postprocessed_outputs(outputs):
                 err_msg = "Expected postprocessed classifier outputs in end2end."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # _end2end
                 raise RuntimeError(err_msg)
             postprocessed = outputs
         else:
@@ -595,7 +659,12 @@ class Classifier(ImageModel, ClassifierInterface):
             postprocessed = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
 
         # generate the classifications
-        return get_classifications(postprocessed, top_k=top_k, verbose=verbose)
+        result = get_classifications(postprocessed, top_k=top_k, verbose=verbose)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # _end2end
+
+        return result
 
     def _end2end_graph(
         self: Self,
@@ -611,9 +680,17 @@ class Classifier(ImageModel, ClassifierInterface):
         Preprocessing runs outside the graph since H2D copies cannot be captured.
         Supports CPU, CUDA, and TRT preprocessors.
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cls__end2end_graph"])
+
         # Use shared core graph execution
         raw_outputs, _, _ = self._end2end_graph_core(images, verbose=verbose)
 
         # CPU postprocessing (Classifier-specific)
         postprocessed = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
-        return get_classifications(postprocessed, top_k=top_k, verbose=verbose)
+        result = get_classifications(postprocessed, top_k=top_k, verbose=verbose)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # _end2end_graph
+
+        return result

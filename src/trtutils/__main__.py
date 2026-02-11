@@ -1204,6 +1204,11 @@ def _main() -> None:
         action="store_true",
         help="Enable verbose output.",
     )
+    general_parser.add_argument(
+        "--nvtx",
+        action="store_true",
+        help="Enable NVTX markers for profiling with Nsight Systems.",
+    )
 
     # dla arguments parser (for commands that support DLA)
     dla_parser = argparse.ArgumentParser(add_help=False)
@@ -1809,6 +1814,10 @@ def _main() -> None:
 
     # set log level
     trtutils.set_log_level(args.log_level)
+
+    # enable NVTX markers if requested
+    if args.nvtx:
+        trtutils.enable_nvtx()
 
     # call function with args
     if hasattr(args, "func"):

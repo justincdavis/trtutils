@@ -65,11 +65,11 @@ class TRTEngineInterface(ABC):
             Whether or not to give additional information over stdout.
 
         """
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(f"engine::interface::init [{self.name}]")
-
         # store path stem as name
         self._name = Path(engine_path).stem
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(f"engine_interface::init [{self.name}]")
         self._dla_core = dla_core
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._unified_mem = unified_mem if unified_mem is not None else FLAGS.IS_JETSON
@@ -126,13 +126,8 @@ class TRTEngineInterface(ABC):
 
         # setup the nvtx tags
         self._nvtx_tags: dict[str, str] = {
-            "warmup": f"engine::warmup [{self.name}]",
-            "mock_execute": f"engine::mock_execute [{self.name}]",
-            "graph_capture": f"engine::graph_capture [{self.name}]",
-            "execute": f"engine::execute [{self.name}]",
-            "graph_exec": f"engine::graph_exec [{self.name}]",
-            "direct_exec": f"engine::direct_exec [{self.name}]",
-            "raw_exec": f"engine::raw_exec [{self.name}]",
+            "warmup": f"engine_interface::warmup [{self.name}]",
+            "mock_execute": f"engine_interface::mock_execute [{self.name}]",
         }
 
         if FLAGS.NVTX_ENABLED:
