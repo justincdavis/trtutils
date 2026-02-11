@@ -1,7 +1,7 @@
 absl-py==2.3.1
 coloredlogs==15.0.1
 faster-coco-eval==1.6.8
-filelock==3.20.0
+filelock==3.20.3
 flatbuffers==25.9.23
 fsspec==2025.9.0
 grpcio==1.75.1
@@ -21,9 +21,9 @@ onnxruntime==1.23.1
 onnxscript==0.5.4
 onnxsim==0.4.36
 packaging==25.0
-pillow==12.0.0
-pip==25.2
-protobuf==6.33.0
+pillow==12.1.1
+pip==26.0
+protobuf==5.29.6
 pycocotools==2.0.10
 pygments==2.19.2
 pyyaml==6.0.3
@@ -33,8 +33,8 @@ setuptools==80.9.0
 sympy==1.14.0
 tensorboard==2.20.0
 tensorboard-data-server==0.7.2
-torch==2.4.0
+torch==2.8.0
 torchvision==0.19.0
 typing-extensions==4.15.0
-werkzeug==3.1.3
-wheel==0.45.1
+werkzeug==3.1.5
+wheel==0.46.2
