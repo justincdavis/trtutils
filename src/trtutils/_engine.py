@@ -9,6 +9,7 @@ import time
 from typing import TYPE_CHECKING
 
 import numpy as np
+import nvtx
 
 from ._flags import FLAGS
 from ._log import LOG
@@ -103,6 +104,9 @@ class TRTEngine(TRTEngineInterface):
             If the backend is not valid.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(f"engine::init [{self.name}]")
+
         super().__init__(
             engine_path,
             stream=stream,
@@ -142,17 +146,24 @@ class TRTEngine(TRTEngineInterface):
         # only applies to the inputs
         self._using_engine_tensors: bool = True
 
+        # store timing variable for sleep call before stream_sync
+        self._sync_t: float = 0.0
+
         # store verbose info
         self._verbose = verbose if verbose is not None else False
 
-        # store timing variable for sleep call before stream_sync
-        self._sync_t: float = 0.0
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["warmup"])
 
         self._warmup = warmup
         if self._warmup:
             self.warmup(warmup_iterations, verbose=self._verbose)
 
-        LOG.debug(f"Creating TRTEngine: {self.name}")
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # warmup
+            nvtx.pop_range()  # init
+
+        LOG.debug(f"Created TRTEngine: {self.name}")
 
     def _set_input_bindings(self: Self) -> None:
         for i_binding in self._inputs:
@@ -170,6 +181,9 @@ class TRTEngine(TRTEngineInterface):
             self._cuda_graph.invalidate()
 
     def _capture_cuda_graph(self: Self) -> None:
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["graph_capture"])
+
         # Prevent recursion: warmup() -> mock_execute() -> execute() -> _capture_cuda_graph()
         if self._capturing_graph:
             return
@@ -221,6 +235,9 @@ class TRTEngine(TRTEngineInterface):
             if capture_error is not None:
                 raise capture_error
 
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # graph_capture
+
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError):
             if self._cuda_graph is not None:
@@ -269,6 +286,9 @@ class TRTEngine(TRTEngineInterface):
         verbose = verbose if verbose is not None else self._verbose
         if verbose:
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: BEGIN")
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["execute"])
 
         # reset the input bindings if direct_exec or raw_exec were used
         if not self._using_engine_tensors:
@@ -363,8 +383,13 @@ class TRTEngine(TRTEngineInterface):
 
         # return the results
         if no_copy:
-            return [o.host_allocation for o in self._outputs]
-        return [o.host_allocation.copy() for o in self._outputs]
+            outputs = [o.host_allocation for o in self._outputs]
+        outputs = [o.host_allocation.copy() for o in self._outputs]
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
+
+        return outputs
 
     def graph_exec(
         self: Self,
@@ -394,6 +419,9 @@ class TRTEngine(TRTEngineInterface):
             If no CUDA graph has been captured or CUDA graphs are disabled.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["graph_exec"])
+
         if self._cuda_graph is None or not self._cuda_graph.is_captured:
             err_msg = f"No CUDA graph captured for engine '{self._name}'. "
             err_msg += "Ensure cuda_graph=True and warmup=True, or call execute() first."
@@ -401,6 +429,9 @@ class TRTEngine(TRTEngineInterface):
         self._cuda_graph.launch()
         if debug:
             stream_synchronize(self._stream)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     def direct_exec(
         self: Self,
@@ -455,6 +486,9 @@ class TRTEngine(TRTEngineInterface):
                 "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
             )
 
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["direct_exec"])
+
         # execute
         if self._async_v3:
             if set_pointers:
@@ -493,6 +527,9 @@ class TRTEngine(TRTEngineInterface):
 
         # make sure all operations are complete
         stream_synchronize(self._stream)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
         # return the output host allocations
         return self._output_host_allocations
@@ -549,6 +586,9 @@ class TRTEngine(TRTEngineInterface):
                 "Calling raw_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
             )
 
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["raw_exec"])
+
         # execute
         if self._async_v3:
             if set_pointers:
@@ -567,6 +607,9 @@ class TRTEngine(TRTEngineInterface):
 
         if debug:
             stream_synchronize(self._stream)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
         # return the pointers to the output allocations
         return self._output_allocations

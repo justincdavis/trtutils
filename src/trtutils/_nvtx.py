@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import nvtx
+
 from ._flags import FLAGS
 
 if TYPE_CHECKING:
@@ -24,10 +26,19 @@ def disable_nvtx() -> None:
 
 
 class NVTX:
-    """Context manager for trtutils NVTX profiling."""
+    """Context manager and static helpers for trtutils NVTX profiling."""
 
-    def __init__(self) -> None:
-        """Initialize trtutils NVTX context manager."""
+    def __init__(self: Self, name: str) -> None:
+        """
+        Initialize trtutils NVTX context manager.
+
+        Parameters
+        ----------
+        name : str
+            The name of the NVTX scope.
+
+        """
+        self._name = name
         self._pre_enabled = False
 
     def __enter__(self: Self) -> None:
@@ -36,6 +47,8 @@ class NVTX:
             self._pre_enabled = True
         else:
             enable_nvtx()
+
+        nvtx.push_range(self._name)
 
     def __exit__(
         self: Self,
@@ -46,3 +59,5 @@ class NVTX:
         """Exit the NVTX context manager."""
         if not self._pre_enabled:
             disable_nvtx()
+
+        nvtx.pop_range()
