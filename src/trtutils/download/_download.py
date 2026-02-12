@@ -1351,6 +1351,15 @@ torch.onnx.export(
     output_names=["output"],
     dynamic_axes={{"input": {{0: "batch_size"}}, "output": {{0: "batch_size"}}}},
 )
+# Fix Einsum equations: TensorRT only supports lowercase letters
+onnx_model = onnx.load(output_path)
+for node in onnx_model.graph.node:
+    if node.op_type == "Einsum":
+        for attr in node.attribute:
+            if attr.name == "equation":
+                attr.s = attr.s.lower()
+onnx.save(onnx_model, output_path)
+
 slim_model = onnxslim.slim(output_path)
 onnx.save(slim_model, output_path)
 """
