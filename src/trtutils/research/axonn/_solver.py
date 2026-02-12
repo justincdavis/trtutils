@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 # Try to import z3, but make it optional
 try:
-    from z3 import And, If, Int, Optimize, Or, Real, sat
+    from z3 import And, If, Int, Optimize, Real, sat
 
     Z3_AVAILABLE = True
 except ImportError:
@@ -89,11 +89,12 @@ def solve_schedule(
         _, gpu_energy = compute_gpu_only_costs(costs)
         energy_target = gpu_energy * config.energy_target_ratio
         if verbose:
-            LOG.info(f"Using energy target: {energy_target:.2f}mJ ({config.energy_target_ratio*100}% of GPU)")
+            LOG.info(
+                f"Using energy target: {energy_target:.2f}mJ ({config.energy_target_ratio * 100}% of GPU)"
+            )
 
     # Build cost lookup
     cost_by_idx = {c.layer_idx: c for c in costs}
-    layer_by_idx = {l.index: l for l in layers}
 
     n_layers = len(layers)
 
@@ -107,7 +108,7 @@ def solve_schedule(
     proc_vars = [Int(f"proc_{i}") for i in range(n_layers)]
 
     # Constrain to valid processor values (0 or 1)
-    for i, var in enumerate(proc_vars):
+    for _i, var in enumerate(proc_vars):
         opt.add(And(var >= 0, var <= 1))
 
     # Layer compatibility constraints: GPU-only layers must use GPU
@@ -158,7 +159,9 @@ def solve_schedule(
         trans_time = If(trans_vars[i] == 1, trans_cost.time_ms, 0.0)
         transition_times.append(trans_time)
 
-    total_time_expr = sum(layer_times) + sum(transition_times) if transition_times else sum(layer_times)
+    total_time_expr = (
+        sum(layer_times) + sum(transition_times) if transition_times else sum(layer_times)
+    )
     opt.add(time_expr == total_time_expr)
 
     # Build energy expression
@@ -326,7 +329,6 @@ def solve_schedule_greedy(
             test_schedule.set_processor(idx, ProcessorType.DLA)
 
         test_energy = compute_total_energy(layers, costs, test_schedule, config)
-        test_time = compute_total_time(layers, costs, test_schedule, config)
 
         if test_energy <= energy_target:
             # Accept this chunk

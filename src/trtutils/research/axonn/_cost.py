@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._types import AxoNNConfig, ProcessorType, TransitionCost
+from ._types import AxoNNConfig, ProcessorType, Schedule, TransitionCost
 
 if TYPE_CHECKING:
-    from ._types import Layer, LayerCost, Schedule
+    from ._types import Layer, LayerCost
 
 
 def estimate_transition_cost(
@@ -167,7 +167,7 @@ def compute_total_time(
     """
     # Build lookup by layer index
     cost_by_idx = {c.layer_idx: c for c in costs}
-    layer_by_idx = {l.index: l for l in layers}
+    layer_by_idx = {layer.index: layer for layer in layers}
 
     total_time = 0.0
     sorted_indices = sorted(schedule.assignments.keys())
@@ -223,7 +223,7 @@ def compute_total_energy(
     """
     # Build lookup by layer index
     cost_by_idx = {c.layer_idx: c for c in costs}
-    layer_by_idx = {l.index: l for l in layers}
+    layer_by_idx = {layer.index: layer for layer in layers}
 
     total_energy = 0.0
     sorted_indices = sorted(schedule.assignments.keys())

@@ -15,7 +15,7 @@ with contextlib.suppress(ImportError):
 from trtutils._log import LOG
 from trtutils.builder._build import build_engine
 
-from ._cost import compute_gpu_only_costs, compute_total_energy, compute_total_time
+from ._cost import compute_gpu_only_costs
 from ._profile import extract_layer_info, profile_for_axonn
 from ._solver import find_optimal_schedule
 from ._types import AxoNNConfig, ProcessorType, Schedule
@@ -47,10 +47,6 @@ def schedule_to_layer_assignments(
     layer_precision: list[tuple[int, trt.DataType | None]] = []
     layer_device: list[tuple[int, trt.DeviceType | None]] = []
 
-    # Layers that should not have explicit precision set
-    # These are handled automatically by TensorRT
-    skip_precision_types = ["CONSTANT", "SHUFFLE"]
-
     for layer_idx in range(num_layers):
         if layer_idx in schedule.assignments:
             processor = schedule.assignments[layer_idx]
@@ -60,12 +56,12 @@ def schedule_to_layer_assignments(
                 layer_precision.append((layer_idx, trt.DataType.INT8))
                 layer_device.append((layer_idx, trt.DeviceType.DLA))
             else:
-                # GPU uses FP16
-                layer_precision.append((layer_idx, trt.DataType.HALF))
+                # GPU - don't lock precision, let TensorRT optimize
+                layer_precision.append((layer_idx, None))
                 layer_device.append((layer_idx, trt.DeviceType.GPU))
         else:
-            # Default to GPU/FP16 if not in schedule
-            layer_precision.append((layer_idx, trt.DataType.HALF))
+            # Default to GPU if not in schedule, no precision lock
+            layer_precision.append((layer_idx, None))
             layer_device.append((layer_idx, trt.DeviceType.GPU))
 
     return layer_precision, layer_device
@@ -220,7 +216,9 @@ def build_axonn_engine(
 
     if verbose:
         LOG.info(f"Engine saved to {output_path}")
-        LOG.info(f"Expected performance: {schedule.total_time_ms:.2f}ms, {schedule.total_energy_mj:.2f}mJ")
+        LOG.info(
+            f"Expected performance: {schedule.total_time_ms:.2f}ms, {schedule.total_energy_mj:.2f}mJ"
+        )
 
     return schedule
 

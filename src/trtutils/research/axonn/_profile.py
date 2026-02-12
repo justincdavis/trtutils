@@ -17,7 +17,6 @@ from trtutils._log import LOG
 from trtutils.builder._build import build_engine
 from trtutils.builder._dla import can_run_on_dla
 from trtutils.builder._onnx import read_onnx
-from trtutils.builder._utils import get_check_dla
 from trtutils.jetson._profile import profile_engine as jetson_profile_engine
 
 from ._types import AxoNNConfig, Layer, LayerCost
@@ -63,7 +62,8 @@ def _get_tensor_size(tensor: trt.ITensor) -> int:
 
 
 def extract_layer_info(
-    onnx: Path | str,
+    onnx: Path | str | trt.INetworkDefinition,
+    config: trt.IBuilderConfig | None = None,
     *,
     verbose: bool | None = None,
 ) -> list[Layer]:
@@ -72,8 +72,10 @@ def extract_layer_info(
 
     Parameters
     ----------
-    onnx : Path | str
-        Path to the ONNX model.
+    onnx : Path | str | trt.INetworkDefinition
+        Path to the ONNX model or a pre-made TensorRT network.
+    config : trt.IBuilderConfig | None, optional
+        The TensorRT builder config. Required if onnx is a network.
     verbose : bool | None, optional
         Whether to print verbose output.
 
@@ -82,13 +84,30 @@ def extract_layer_info(
     list[Layer]
         List of Layer objects with metadata.
 
-    """
-    network, _, config, _ = read_onnx(onnx)
-    check_dla = get_check_dla(config)
+    Raises
+    ------
+    ValueError
+        If config is not provided when onnx is a network.
 
-    # Assign to DLA 0 for compatibility check
-    config.default_device_type = trt.DeviceType.DLA
-    config.DLA_core = 0
+    """
+    # Handle network input
+    if isinstance(onnx, trt.INetworkDefinition):
+        if config is None:
+            err_msg = "Config must be provided when onnx is a network"
+            raise ValueError(err_msg)
+        network = onnx
+    else:
+        network, _, config, _ = read_onnx(onnx)
+
+    # Get DLA compatibility using can_run_on_dla
+    _, chunks = can_run_on_dla(network, config, verbose_layers=False, verbose_chunks=False)
+
+    # Build a set of DLA-compatible layer indices
+    dla_layer_indices: set[int] = set()
+    for _layer_list, start, end, on_dla in chunks:
+        if on_dla:
+            for idx in range(start, end + 1):
+                dla_layer_indices.add(idx)
 
     layers: list[Layer] = []
 
@@ -112,8 +131,8 @@ def extract_layer_info(
             if inp is not None:
                 input_size += _get_tensor_size(inp)
 
-        # Check DLA compatibility
-        dla_valid = check_dla(trt_layer)
+        # Check DLA compatibility from our pre-computed set
+        dla_valid = idx in dla_layer_indices
 
         layer = Layer(
             index=idx,
@@ -185,11 +204,11 @@ def profile_for_axonn(
     layers = extract_layer_info(onnx_path, verbose=verbose)
 
     if verbose:
-        dla_layers = sum(1 for l in layers if l.can_run_on_dla)
+        dla_layers = sum(1 for layer in layers if layer.can_run_on_dla)
         LOG.info(f"Found {len(layers)} layers, {dla_layers} are DLA-compatible")
 
     # Check if any layers can run on DLA
-    has_dla_layers = any(l.can_run_on_dla for l in layers)
+    has_dla_layers = any(layer.can_run_on_dla for layer in layers)
 
     # Create temporary directory for engine files
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -239,15 +258,7 @@ def profile_for_axonn(
             if verbose:
                 LOG.info("Building DLA-enabled INT8 engine for profiling...")
 
-            # Get DLA chunks info
-            full_dla, chunks = can_run_on_dla(onnx_path, verbose_chunks=verbose)
-
-            # Build with DLA using the existing build_dla infrastructure
-            # We need to set up layer assignments for DLA-compatible layers
-            network, _, trt_config, _ = read_onnx(onnx_path)
-            check_dla = get_check_dla(trt_config)
-
-            # Build layer assignments
+            # Build layer assignments from already-computed layer info
             layer_precision: list[tuple[int, trt.DataType | None]] = []
             layer_device: list[tuple[int, trt.DeviceType | None]] = []
 
@@ -256,7 +267,8 @@ def profile_for_axonn(
                     layer_precision.append((layer.index, trt.DataType.INT8))
                     layer_device.append((layer.index, trt.DeviceType.DLA))
                 else:
-                    layer_precision.append((layer.index, trt.DataType.HALF))
+                    # GPU - don't lock precision, let TensorRT optimize
+                    layer_precision.append((layer.index, None))
                     layer_device.append((layer.index, trt.DeviceType.GPU))
 
             try:
@@ -294,7 +306,7 @@ def profile_for_axonn(
                 for layer_info in dla_profile.layers:
                     dla_layer_data[layer_info.name] = (layer_info.mean, layer_info.energy)
 
-            except Exception as e:
+            except (RuntimeError, OSError) as e:
                 if verbose:
                     LOG.warning(f"Failed to build DLA engine: {e}")
                     LOG.warning("Continuing with GPU-only costs for DLA-compatible layers")

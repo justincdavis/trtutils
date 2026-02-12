@@ -16,7 +16,7 @@ AxoNN: Energy-Aware Execution of Neural Network Inference on Multi-Accelerator
 Heterogeneous SoCs (DAC 2022)
 https://doi.org/10.1145/3489517.3530572
 
-Example
+Example:
 -------
 >>> from trtutils.builder import ImageBatcher
 >>> from trtutils.research.axonn import build_axonn_engine, AxoNNConfig
@@ -70,32 +70,26 @@ from ._solver import find_optimal_schedule, solve_schedule, solve_schedule_greed
 from ._types import AxoNNConfig, Layer, LayerCost, ProcessorType, Schedule, TransitionCost
 
 __all__ = [
-    # Main API
-    "build_axonn_engine",
-    "optimize_and_build",
-    # Configuration
     "AxoNNConfig",
-    # Types
     "Layer",
     "LayerCost",
     "ProcessorType",
     "Schedule",
     "TransitionCost",
-    # Profiling
-    "extract_layer_info",
-    "profile_for_axonn",
-    # Cost functions
-    "compute_gpu_only_costs",
+    "build_axonn_engine",
     "compute_dla_only_costs",
-    "compute_layer_time",
+    "compute_gpu_only_costs",
     "compute_layer_energy",
-    "compute_total_time",
+    "compute_layer_time",
     "compute_total_energy",
-    "estimate_transition_cost",
-    "create_gpu_only_schedule",
+    "compute_total_time",
     "create_dla_preferred_schedule",
-    # Solver
+    "create_gpu_only_schedule",
+    "estimate_transition_cost",
+    "extract_layer_info",
     "find_optimal_schedule",
+    "optimize_and_build",
+    "profile_for_axonn",
     "solve_schedule",
     "solve_schedule_greedy",
 ]
