@@ -141,4 +141,12 @@ def test_classifier_download_build_inference(
         assert isinstance(confidence, float), f"Expected float confidence, got {type(confidence)}"
         assert 0.0 <= confidence <= 1.0, f"Confidence {confidence} out of range [0, 1]"
 
+        # Verify inference correctness: horse.jpg should be classified as a horse
+        # ImageNet class 339 = "sorrel" (a reddish-brown horse, matches the test image)
+        horse_class_id = 339
+        top5_ids = [cid for cid, _ in classifications[0][:5]]
+        assert horse_class_id in top5_ids, (
+            f"Expected sorrel (class {horse_class_id}) in top-5 predictions, got {top5_ids}"
+        )
+
         del classifier
