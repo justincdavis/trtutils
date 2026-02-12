@@ -7,6 +7,9 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
+import nvtx
+
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import cudart
 
@@ -167,7 +170,11 @@ class CUDAGraph:
         This should be called before the operations to capture.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("cuda_graph::start")
         cuda_stream_begin_capture(self._stream)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     def stop(self: Self) -> bool:
         """
@@ -179,6 +186,8 @@ class CUDAGraph:
             True if capture and instantiation succeeded, False otherwise.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("cuda_graph::stop")
         try:
             self._graph = cuda_stream_end_capture(self._stream)
             self._graph_exec = cuda_graph_instantiate(self._graph, 0)
@@ -193,8 +202,12 @@ class CUDAGraph:
 
             self.invalidate()
 
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             return False
         else:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             return True
 
     def launch(self: Self) -> None:
@@ -207,10 +220,16 @@ class CUDAGraph:
             If no graph has been captured.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("cuda_graph::launch")
         if self._graph_exec is None:
             err_msg = "Cannot launch graph: no graph has been captured"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise RuntimeError(err_msg)
         cuda_graph_launch(self._graph_exec, self._stream)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     def invalidate(self: Self) -> None:
         """Destroy the graph and graph executable, resetting state."""

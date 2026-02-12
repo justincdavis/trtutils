@@ -12,8 +12,10 @@ from threading import Event, Thread
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
+import nvtx
 from typing_extensions import TypeGuard
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.image._detector import Detector
 
@@ -197,6 +199,23 @@ class ParallelDetector:
 
         """
         self._engine_info: list[EngineInfo] = list(engines)
+        self._tag = str(len(self._engine_info))
+        self._nvtx_tags = {
+            "init": f"parallel_detector::init [{self._tag}]",
+            "preprocess": f"parallel_detector::preprocess [{self._tag}]",
+            "preprocess_model": f"parallel_detector::preprocess_model [{self._tag}]",
+            "postprocess": f"parallel_detector::postprocess [{self._tag}]",
+            "postprocess_model": f"parallel_detector::postprocess_model [{self._tag}]",
+            "get_detections": f"parallel_detector::get_detections [{self._tag}]",
+            "get_detections_model": f"parallel_detector::get_detections_model [{self._tag}]",
+            "submit": f"parallel_detector::submit [{self._tag}]",
+            "submit_model": f"parallel_detector::submit_model [{self._tag}]",
+            "retrieve": f"parallel_detector::retrieve [{self._tag}]",
+            "retrieve_model": f"parallel_detector::retrieve_model [{self._tag}]",
+            "end2end": f"parallel_detector::end2end [{self._tag}]",
+        }
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["init"])
         self._warmup_iterations = warmup_iterations
         self._input_range = input_range
         self._preprocessor = preprocessor
@@ -213,7 +232,6 @@ class ParallelDetector:
         self._extra_nms = extra_nms
         self._agnostic_nms = agnostic_nms
         self._sequential_load = sequential_load
-        self._tag = str(len(self._engine_info))
         self._no_warn = no_warn
         self._verbose = verbose
 
@@ -242,12 +260,16 @@ class ParallelDetector:
             if model is None:
                 self.stop()
                 err_msg = f"Error creating Detector model: {self._engine_info[idx].engine_path}"
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # init
                 raise RuntimeError(err_msg)
 
         if self._verbose:
             LOG.debug(
                 f"{self._tag}: Initialized ParallelDetector with tag: {self._tag}, num engines: {len(self._models)}",
             )
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
 
     def __del__(self: Self) -> None:
         self.stop()
@@ -388,8 +410,12 @@ class ParallelDetector:
             If inputs do not match the number of models
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["preprocess"])
         if len(inputs) != len(self._engine_info):
             err_msg = "Inputs do not match models"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise ValueError(err_msg)
 
         tensors: list[np.ndarray] = []
@@ -407,6 +433,8 @@ class ParallelDetector:
             tensors.append(tensor)
             ratios.append(ratio_list)
             paddings.append(padding_list)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
         return tensors, ratios, paddings
 
     def preprocess_model(
@@ -449,15 +477,20 @@ class ParallelDetector:
             The preprocessed tensor, ratios per image, and padding per image.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["preprocess_model"])
         if verbose:
             LOG.debug(f"{self._tag}: Preprocess model: {modelid}")
-        return self.get_model(modelid).preprocess(
+        result = self.get_model(modelid).preprocess(
             images,
             resize=resize,
             method=method,
             no_copy=no_copy,
             verbose=verbose,
         )
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
+        return result
 
     def postprocess(
         self: Self,
@@ -497,10 +530,14 @@ class ParallelDetector:
             If outputs do not match the number of models
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["postprocess"])
         if len(outputs) != len(self._engine_info):
             err_msg = "Outputs do not match models"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise ValueError(err_msg)
-        return [
+        result = [
             self.postprocess_model(
                 output, modelid, ratio_list, padding_list, no_copy=no_copy, verbose=verbose
             )
@@ -508,6 +545,9 @@ class ParallelDetector:
                 zip(outputs, ratios, paddings),
             )
         ]
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
+        return result
 
     def postprocess_model(
         self: Self,
@@ -545,15 +585,20 @@ class ParallelDetector:
             The postprocessed outputs per image.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["postprocess_model"])
         if verbose:
             LOG.debug(f"{self._tag}: Postprocess model: {modelid}")
-        return self.get_model(modelid).postprocess(
+        result = self.get_model(modelid).postprocess(
             outputs,
             ratios,
             padding,
             no_copy=no_copy,
             verbose=verbose,
         )
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
+        return result
 
     def get_detections(
         self: Self,
@@ -577,10 +622,15 @@ class ParallelDetector:
             The detections per image per model.
 
         """
-        return [
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["get_detections"])
+        result = [
             self.get_detections_model(output, modelid, verbose=verbose)
             for modelid, output in enumerate(outputs)
         ]
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
+        return result
 
     def get_detections_model(
         self: Self,
@@ -607,9 +657,14 @@ class ParallelDetector:
             The detections per image.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["get_detections_model"])
         if verbose:
             LOG.debug(f"{self._tag}: GetDetections model: {modelid}")
-        return self.get_model(modelid).get_detections(outputs, verbose=verbose)  # type: ignore[return-value]
+        result = self.get_model(modelid).get_detections(outputs, verbose=verbose)  # type: ignore[return-value]
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
+        return result
 
     def submit(
         self: Self,
@@ -656,11 +711,17 @@ class ParallelDetector:
             If preprocessed is True, but ratios/paddings not provided
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["submit"])
         if len(inputs) != len(self._engine_info):
             err_msg = "Inputs do not match models."
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise ValueError(err_msg)
         if (preprocessed and postprocess) and (ratios is None or paddings is None):
             err_msg = "Must provide ratios/paddings if input is marked preprocessed and postprocess is True."
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise ValueError(err_msg)
         for modelid, batch in enumerate(inputs):
             ratio_list = None if ratios is None else ratios[modelid]
@@ -676,6 +737,8 @@ class ParallelDetector:
                 no_copy=no_copy,
                 verbose=verbose,
             )
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     def submit_model(
         self: Self,
@@ -719,6 +782,8 @@ class ParallelDetector:
             Whether or not to log additional information.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["submit_model"])
         if verbose:
             LOG.debug(f"{self._tag}: Submit model: {modelid}")
         packet = _InputPacket(
@@ -731,6 +796,8 @@ class ParallelDetector:
             no_copy=no_copy,
         )
         self._iqueues[modelid].put(packet)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     def get_random_input(
         self: Self,
@@ -836,6 +903,8 @@ class ParallelDetector:
             The outputs per image per model, ratios per image per model, padding per image per model.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["retrieve"])
         outputs: list[list[list[np.ndarray]] | list[np.ndarray]] = []
         ratios: list[list[tuple[float, float]] | None] = []
         paddings: list[list[tuple[float, float]] | None] = []
@@ -844,6 +913,8 @@ class ParallelDetector:
             outputs.append(output)
             ratios.append(ratio_list)
             paddings.append(padding_list)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
         return outputs, ratios, paddings
 
     def retrieve_model(
@@ -872,9 +943,13 @@ class ParallelDetector:
             The outputs per image, ratios per image, and padding per image.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["retrieve_model"])
         if verbose:
             LOG.debug(f"{self._tag}: Retrieve model: {modelid}")
         packet = self._oqueues[modelid].get()
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
         return (packet.data, packet.ratios, packet.padding)
 
     def end2end(
@@ -923,10 +998,14 @@ class ParallelDetector:
             If postprocessed outputs are not available for end2end.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["end2end"])
         if postprocess is None:
             postprocess = True
         if not postprocess:
             err_msg = "end2end requires postprocess to be True."
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise ValueError(err_msg)
         self.submit(
             inputs,
@@ -940,8 +1019,13 @@ class ParallelDetector:
         outputs, _, _ = self.retrieve(verbose=verbose)
         if not _is_postprocessed_batches(outputs):
             err_msg = "Expected postprocessed outputs for end2end."
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise RuntimeError(err_msg)
-        return self.get_detections(outputs, verbose=verbose)
+        result = self.get_detections(outputs, verbose=verbose)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
+        return result
 
     def _run(self: Self, threadid: int) -> None:
         # perform warmup
@@ -967,6 +1051,8 @@ class ParallelDetector:
         extra_nms = info.extra_nms if info.extra_nms is not None else self._extra_nms
         agnostic_nms = info.agnostic_nms if info.agnostic_nms is not None else self._agnostic_nms
 
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(f"parallel_detector::_run::model_init [{self._tag}:{threadid}]")
         try:
             detector = det_class(
                 engine_path=info.engine_path,
@@ -992,9 +1078,13 @@ class ParallelDetector:
                 verbose=self._verbose,
             )
         except Exception:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # model_init
             flag.set()
             raise
         self._models[threadid] = detector
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # model_init
 
         # set flag that we are ready
         flag.set()
@@ -1010,6 +1100,8 @@ class ParallelDetector:
             except Empty:
                 continue
             LOG.debug(f"{self._tag}: Received data")
+            if FLAGS.NVTX_ENABLED:
+                nvtx.push_range(f"parallel_detector::_run [{self._tag}:{threadid}]")
 
             images = data.data
 
@@ -1017,6 +1109,10 @@ class ParallelDetector:
             if not data.preprocessed and (
                 data.preprocess_method == "cuda" or data.preprocess_method == "trt"
             ):
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.push_range(
+                        f"parallel_detector::_run::gpu_preprocess [{self._tag}:{threadid}]"
+                    )
                 preproc = (
                     detector._preproc_trt  # noqa: SLF001
                     if data.preprocess_method == "trt"
@@ -1046,9 +1142,15 @@ class ParallelDetector:
                     t0 = time.perf_counter()
                     results = detector.engine.direct_exec([gpu_img], no_warn=True)
                     t1 = time.perf_counter()
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # gpu_preprocess
 
             # path 2: preprocess not needed, or CPU preprocessing
             else:
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.push_range(
+                        f"parallel_detector::_run::cpu_preprocess [{self._tag}:{threadid}]"
+                    )
                 if not data.preprocessed:
                     tensor, ratios, padding = detector.preprocess(
                         images,
@@ -1060,6 +1162,9 @@ class ParallelDetector:
                         err_msg = (
                             "Preprocessed inputs must be a list containing a single batch tensor."
                         )
+                        if FLAGS.NVTX_ENABLED:
+                            nvtx.pop_range()  # cpu_preprocess
+                            nvtx.pop_range()  # _run
                         raise ValueError(err_msg)
                     tensor = images[0]
                     ratios = data.ratios
@@ -1075,14 +1180,24 @@ class ParallelDetector:
                     no_copy=data.no_copy,
                 )
                 t1 = time.perf_counter()
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # cpu_preprocess
 
             # run the postprocessing (common for all paths)
+            if FLAGS.NVTX_ENABLED:
+                nvtx.push_range(f"parallel_detector::_run::postprocess [{self._tag}:{threadid}]")
             if data.postprocess:
                 if ratios is None or padding is None:
                     err_msg = "Ratios/Padding is None, but postprocess set to True."
+                    if FLAGS.NVTX_ENABLED:
+                        nvtx.pop_range()  # postprocess
+                        nvtx.pop_range()  # _run
                     raise ValueError(err_msg)
                 if not _is_raw_outputs(results):
                     err_msg = "Expected raw detector outputs before postprocess."
+                    if FLAGS.NVTX_ENABLED:
+                        nvtx.pop_range()  # postprocess
+                        nvtx.pop_range()  # _run
                     raise RuntimeError(err_msg)
                 postproc_results = detector.postprocess(
                     results,
@@ -1092,6 +1207,8 @@ class ParallelDetector:
                 )
             else:
                 postproc_results = results
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # postprocess
 
             packet = _OutputPacket(
                 data=postproc_results,
@@ -1102,5 +1219,7 @@ class ParallelDetector:
             self._profilers[threadid] = (t0, t1)
 
             self._oqueues[threadid].put(packet)
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # _run
 
         del detector

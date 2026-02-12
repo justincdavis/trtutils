@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+import nvtx
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
@@ -170,6 +171,8 @@ def allocate_bindings(
         If no memory allocations are found
 
     """
+    if FLAGS.NVTX_ENABLED:
+        nvtx.push_range("core::allocate_bindings")
     pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
     unified_mem = unified_mem if unified_mem is not None else False
 
@@ -200,11 +203,15 @@ def allocate_bindings(
             if is_input and shape[0] < 0:
                 if not engine.num_optimization_profiles > 0:
                     err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
+                    if FLAGS.NVTX_ENABLED:
+                        nvtx.pop_range()
                     raise RuntimeError(err_msg)
                 profile_shape = engine.get_tensor_profile_shape(name, 0)
                 # ensure that profile shape is min,opt,max
                 if len(profile_shape) != correct_profile_shape:
                     err_msg = f"Profile shape for tensor '{name}' has {len(profile_shape)} elements, expected {correct_profile_shape}"
+                    if FLAGS.NVTX_ENABLED:
+                        nvtx.pop_range()
                     raise RuntimeError(err_msg)
                 # Set the *max* profile as binding shape
                 context.set_input_shape(name, profile_shape[2])
@@ -220,11 +227,15 @@ def allocate_bindings(
             if is_input and shape[0] < 0:
                 if not engine.num_optimization_profiles > 0:
                     err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
+                    if FLAGS.NVTX_ENABLED:
+                        nvtx.pop_range()
                     raise RuntimeError(err_msg)
                 profile_shape = engine.get_profile_shape(0, name)
                 # ensure that profile shape is min,opt,max
                 if len(profile_shape) != correct_profile_shape:
                     err_msg = f"Profile shape for tensor '{name}' has {len(profile_shape)} elements, expected {correct_profile_shape}"
+                    if FLAGS.NVTX_ENABLED:
+                        nvtx.pop_range()
                     raise RuntimeError(err_msg)
                 # Set the *max* profile as binding shape
                 context.set_binding_shape(i, profile_shape[2])
@@ -256,12 +267,20 @@ def allocate_bindings(
 
     if len(inputs) == 0:
         err_msg = "No input tensors found. Ensure that the engine has at least one input tensor."
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
         raise ValueError(err_msg)
     if len(outputs) == 0:
         err_msg = "No output tensors found. Ensure that the engine has at least one output tensor."
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
         raise ValueError(err_msg)
     if len(allocations) == 0:
         err_msg = "No memory allocations found. Ensure that the engine has at least one input and output tensor."
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
         raise ValueError(err_msg)
 
+    if FLAGS.NVTX_ENABLED:
+        nvtx.pop_range()
     return inputs, outputs, allocations

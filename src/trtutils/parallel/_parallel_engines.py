@@ -5,6 +5,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import nvtx
+
+from trtutils._flags import FLAGS
+
 from ._queued_engine import QueuedTRTEngine
 
 if TYPE_CHECKING:
@@ -41,6 +45,8 @@ class ParallelTRTEngines:
             Whether or not to run warmup iterations on the engines.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("parallel_engines::init")
         self._engines: list[QueuedTRTEngine] = []
         for engine_info in engines:
             engine: TRTEngine | Path | str
@@ -57,6 +63,8 @@ class ParallelTRTEngines:
                 dla_core=dla_core,
             )
             self._engines.append(q_engine)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
 
     def get_random_input(
         self: Self,
@@ -104,11 +112,17 @@ class ParallelTRTEngines:
             If the inputs are not the same size as the engines.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("parallel_engines::submit")
         if len(inputs) != len(self._engines):
             err_msg = f"Cannot match {len(inputs)} inputs to {len(self._engines)} engines."
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise ValueError(err_msg)
         for data, engine in zip(inputs, self._engines):
             engine.submit(data)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     def mock_submit(
         self: Self,
@@ -135,4 +149,9 @@ class ParallelTRTEngines:
             The output from the engines.
 
         """
-        return [engine.retrieve(timeout=timeout) for engine in self._engines]
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("parallel_engines::retrieve")
+        results = [engine.retrieve(timeout=timeout) for engine in self._engines]
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
+        return results
