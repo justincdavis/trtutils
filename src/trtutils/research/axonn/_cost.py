@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._types import AxoNNConfig, ProcessorType, Schedule, TransitionCost
+from ._types import AxoNNConfig, ProcessorType, Schedule
 
 if TYPE_CHECKING:
     from ._types import Layer, LayerCost
@@ -18,7 +18,7 @@ def estimate_transition_cost(
     from_processor: ProcessorType,
     to_processor: ProcessorType,
     config: AxoNNConfig,
-) -> TransitionCost:
+) -> tuple[float, float]:
     """
     Estimate the cost of transitioning between processors.
 
@@ -40,17 +40,12 @@ def estimate_transition_cost(
 
     Returns
     -------
-    TransitionCost
-        The estimated transition cost.
+    tuple[float, float]
+        The estimated transition cost as (time_ms, energy_mj).
 
     """
     if from_processor == to_processor:
-        return TransitionCost(
-            from_processor=from_processor,
-            to_processor=to_processor,
-            time_ms=0.0,
-            energy_mj=0.0,
-        )
+        return (0.0, 0.0)
 
     # Convert bytes to megabytes
     tensor_size_mb = layer.output_tensor_size / (1024 * 1024)
@@ -61,17 +56,13 @@ def estimate_transition_cost(
     # Estimate energy: base overhead + size-dependent overhead
     energy_mj = config.transition_energy_base_mj + (tensor_size_mb * config.transition_energy_per_mb)
 
-    return TransitionCost(
-        from_processor=from_processor,
-        to_processor=to_processor,
-        time_ms=time_ms,
-        energy_mj=energy_mj,
-    )
+    return (time_ms, energy_mj)
 
 
 def compute_layer_time(
     layer_cost: LayerCost,
     processor: ProcessorType,
+    layer_idx: int | None = None,
 ) -> float:
     """
     Get the execution time for a layer on a specific processor.
@@ -82,6 +73,8 @@ def compute_layer_time(
         The cost data for the layer.
     processor : ProcessorType
         The processor to get time for.
+    layer_idx : int | None, optional
+        Layer index for error messages.
 
     Returns
     -------
@@ -97,7 +90,8 @@ def compute_layer_time(
     if processor == ProcessorType.GPU:
         return layer_cost.gpu_time_ms
     if layer_cost.dla_time_ms is None:
-        err_msg = f"Layer {layer_cost.layer_idx} ({layer_cost.layer_name}) is not DLA-compatible"
+        idx_str = f"Layer {layer_idx}" if layer_idx is not None else "Layer"
+        err_msg = f"{idx_str} is not DLA-compatible"
         raise ValueError(err_msg)
     return layer_cost.dla_time_ms
 
@@ -105,6 +99,7 @@ def compute_layer_time(
 def compute_layer_energy(
     layer_cost: LayerCost,
     processor: ProcessorType,
+    layer_idx: int | None = None,
 ) -> float:
     """
     Get the energy consumption for a layer on a specific processor.
@@ -115,6 +110,8 @@ def compute_layer_energy(
         The cost data for the layer.
     processor : ProcessorType
         The processor to get energy for.
+    layer_idx : int | None, optional
+        Layer index for error messages.
 
     Returns
     -------
@@ -130,14 +127,69 @@ def compute_layer_energy(
     if processor == ProcessorType.GPU:
         return layer_cost.gpu_energy_mj
     if layer_cost.dla_energy_mj is None:
-        err_msg = f"Layer {layer_cost.layer_idx} ({layer_cost.layer_name}) is not DLA-compatible"
+        idx_str = f"Layer {layer_idx}" if layer_idx is not None else "Layer"
+        err_msg = f"{idx_str} is not DLA-compatible"
         raise ValueError(err_msg)
     return layer_cost.dla_energy_mj
 
 
+def _compute_schedule_costs(
+    layers: list[Layer],
+    costs: dict[int, LayerCost],
+    schedule: Schedule,
+    config: AxoNNConfig,
+) -> tuple[float, float]:
+    """
+    Compute total (time_ms, energy_mj) for a schedule.
+
+    Parameters
+    ----------
+    layers : list[Layer]
+        The network layers.
+    costs : dict[int, LayerCost]
+        Cost data keyed by layer index.
+    schedule : Schedule
+        The layer-to-processor assignments.
+    config : AxoNNConfig
+        Configuration with transition cost parameters.
+
+    Returns
+    -------
+    tuple[float, float]
+        Total (time_ms, energy_mj).
+
+    """
+    layer_by_idx = {layer.index: layer for layer in layers}
+    total_time = 0.0
+    total_energy = 0.0
+    sorted_indices = sorted(schedule.assignments.keys())
+
+    for i, layer_idx in enumerate(sorted_indices):
+        processor = schedule.assignments[layer_idx]
+        layer_cost = costs[layer_idx]
+
+        # Add layer costs
+        total_time += compute_layer_time(layer_cost, processor, layer_idx)
+        total_energy += compute_layer_energy(layer_cost, processor, layer_idx)
+
+        # Add transition costs
+        if i > 0:
+            prev_idx = sorted_indices[i - 1]
+            prev_processor = schedule.assignments[prev_idx]
+            if prev_processor != processor:
+                layer = layer_by_idx[prev_idx]
+                trans_time, trans_energy = estimate_transition_cost(
+                    layer, prev_processor, processor, config
+                )
+                total_time += trans_time
+                total_energy += trans_energy
+
+    return total_time, total_energy
+
+
 def compute_total_time(
     layers: list[Layer],
-    costs: list[LayerCost],
+    costs: dict[int, LayerCost],
     schedule: Schedule,
     config: AxoNNConfig,
 ) -> float:
@@ -152,8 +204,8 @@ def compute_total_time(
     ----------
     layers : list[Layer]
         The network layers.
-    costs : list[LayerCost]
-        Cost data for each layer.
+    costs : dict[int, LayerCost]
+        Cost data keyed by layer index.
     schedule : Schedule
         The layer-to-processor assignments.
     config : AxoNNConfig
@@ -165,35 +217,13 @@ def compute_total_time(
         Total execution time in milliseconds.
 
     """
-    # Build lookup by layer index
-    cost_by_idx = {c.layer_idx: c for c in costs}
-    layer_by_idx = {layer.index: layer for layer in layers}
-
-    total_time = 0.0
-    sorted_indices = sorted(schedule.assignments.keys())
-
-    for i, layer_idx in enumerate(sorted_indices):
-        processor = schedule.assignments[layer_idx]
-        layer_cost = cost_by_idx[layer_idx]
-
-        # Add layer execution time
-        total_time += compute_layer_time(layer_cost, processor)
-
-        # Add transition cost if processor changes
-        if i > 0:
-            prev_idx = sorted_indices[i - 1]
-            prev_processor = schedule.assignments[prev_idx]
-            if prev_processor != processor:
-                layer = layer_by_idx[prev_idx]
-                transition = estimate_transition_cost(layer, prev_processor, processor, config)
-                total_time += transition.time_ms
-
-    return total_time
+    time, _ = _compute_schedule_costs(layers, costs, schedule, config)
+    return time
 
 
 def compute_total_energy(
     layers: list[Layer],
-    costs: list[LayerCost],
+    costs: dict[int, LayerCost],
     schedule: Schedule,
     config: AxoNNConfig,
 ) -> float:
@@ -208,8 +238,8 @@ def compute_total_energy(
     ----------
     layers : list[Layer]
         The network layers.
-    costs : list[LayerCost]
-        Cost data for each layer.
+    costs : dict[int, LayerCost]
+        Cost data keyed by layer index.
     schedule : Schedule
         The layer-to-processor assignments.
     config : AxoNNConfig
@@ -221,42 +251,20 @@ def compute_total_energy(
         Total energy consumption in millijoules.
 
     """
-    # Build lookup by layer index
-    cost_by_idx = {c.layer_idx: c for c in costs}
-    layer_by_idx = {layer.index: layer for layer in layers}
-
-    total_energy = 0.0
-    sorted_indices = sorted(schedule.assignments.keys())
-
-    for i, layer_idx in enumerate(sorted_indices):
-        processor = schedule.assignments[layer_idx]
-        layer_cost = cost_by_idx[layer_idx]
-
-        # Add layer energy consumption
-        total_energy += compute_layer_energy(layer_cost, processor)
-
-        # Add transition cost if processor changes
-        if i > 0:
-            prev_idx = sorted_indices[i - 1]
-            prev_processor = schedule.assignments[prev_idx]
-            if prev_processor != processor:
-                layer = layer_by_idx[prev_idx]
-                transition = estimate_transition_cost(layer, prev_processor, processor, config)
-                total_energy += transition.energy_mj
-
-    return total_energy
+    _, energy = _compute_schedule_costs(layers, costs, schedule, config)
+    return energy
 
 
 def compute_gpu_only_costs(
-    costs: list[LayerCost],
+    costs: dict[int, LayerCost],
 ) -> tuple[float, float]:
     """
     Compute total time and energy if all layers run on GPU.
 
     Parameters
     ----------
-    costs : list[LayerCost]
-        Cost data for each layer.
+    costs : dict[int, LayerCost]
+        Cost data keyed by layer index.
 
     Returns
     -------
@@ -264,13 +272,13 @@ def compute_gpu_only_costs(
         Total time (ms) and total energy (mJ) for GPU-only execution.
 
     """
-    total_time = sum(c.gpu_time_ms for c in costs)
-    total_energy = sum(c.gpu_energy_mj for c in costs)
+    total_time = sum(c.gpu_time_ms for c in costs.values())
+    total_energy = sum(c.gpu_energy_mj for c in costs.values())
     return total_time, total_energy
 
 
 def compute_dla_only_costs(
-    costs: list[LayerCost],
+    costs: dict[int, LayerCost],
 ) -> tuple[float, float]:
     """
     Compute total time and energy if all DLA-compatible layers run on DLA.
@@ -279,8 +287,8 @@ def compute_dla_only_costs(
 
     Parameters
     ----------
-    costs : list[LayerCost]
-        Cost data for each layer.
+    costs : dict[int, LayerCost]
+        Cost data keyed by layer index.
 
     Returns
     -------
@@ -291,7 +299,7 @@ def compute_dla_only_costs(
     total_time = 0.0
     total_energy = 0.0
 
-    for c in costs:
+    for c in costs.values():
         if c.dla_time_ms is not None:
             total_time += c.dla_time_ms
             total_energy += c.dla_energy_mj if c.dla_energy_mj is not None else c.gpu_energy_mj
@@ -320,7 +328,6 @@ def create_gpu_only_schedule(layers: list[Layer]) -> Schedule:
     schedule = Schedule()
     for layer in layers:
         schedule.set_processor(layer.index, ProcessorType.GPU)
-    schedule.count_transitions()
     return schedule
 
 
@@ -345,5 +352,4 @@ def create_dla_preferred_schedule(layers: list[Layer]) -> Schedule:
             schedule.set_processor(layer.index, ProcessorType.DLA)
         else:
             schedule.set_processor(layer.index, ProcessorType.GPU)
-    schedule.count_transitions()
     return schedule

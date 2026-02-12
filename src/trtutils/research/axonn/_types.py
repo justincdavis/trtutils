@@ -68,10 +68,6 @@ class LayerCost:
 
     Attributes
     ----------
-    layer_idx : int
-        The index of the layer.
-    layer_name : str
-        The name of the layer.
     gpu_time_ms : float
         Execution time on GPU in milliseconds.
     gpu_energy_mj : float
@@ -83,8 +79,6 @@ class LayerCost:
 
     """
 
-    layer_idx: int
-    layer_name: str
     gpu_time_ms: float
     gpu_energy_mj: float
     dla_time_ms: float | None = None
@@ -96,46 +90,12 @@ class LayerCost:
             if self.dla_time_ms is not None
             else "DLA: N/A"
         )
-        return (
-            f"LayerCost({self.layer_idx}: GPU: {self.gpu_time_ms:.3f}ms/"
-            f"{self.gpu_energy_mj:.3f}mJ, {dla_str})"
-        )
+        return f"LayerCost(GPU: {self.gpu_time_ms:.3f}ms/{self.gpu_energy_mj:.3f}mJ, {dla_str})"
 
     def __repr__(self: Self) -> str:
         return (
-            f"LayerCost(layer_idx={self.layer_idx}, layer_name={self.layer_name!r}, "
-            f"gpu_time_ms={self.gpu_time_ms}, gpu_energy_mj={self.gpu_energy_mj}, "
+            f"LayerCost(gpu_time_ms={self.gpu_time_ms}, gpu_energy_mj={self.gpu_energy_mj}, "
             f"dla_time_ms={self.dla_time_ms}, dla_energy_mj={self.dla_energy_mj})"
-        )
-
-
-@dataclass
-class TransitionCost:
-    """
-    Stores the cost of transitioning between processors.
-
-    Attributes
-    ----------
-    from_processor : ProcessorType
-        The source processor.
-    to_processor : ProcessorType
-        The destination processor.
-    time_ms : float
-        Transition time in milliseconds.
-    energy_mj : float
-        Transition energy in millijoules.
-
-    """
-
-    from_processor: ProcessorType
-    to_processor: ProcessorType
-    time_ms: float
-    energy_mj: float
-
-    def __str__(self: Self) -> str:
-        return (
-            f"TransitionCost({self.from_processor.value} -> {self.to_processor.value}: "
-            f"{self.time_ms:.3f}ms, {self.energy_mj:.3f}mJ)"
         )
 
 
@@ -152,15 +112,41 @@ class Schedule:
         Estimated total execution time in milliseconds.
     total_energy_mj : float
         Estimated total energy consumption in millijoules.
+
+    Properties
+    ----------
     num_transitions : int
-        Number of GPU<->DLA transitions.
+        Number of GPU<->DLA transitions (computed from assignments).
 
     """
 
     assignments: dict[int, ProcessorType] = field(default_factory=dict)
     total_time_ms: float = 0.0
     total_energy_mj: float = 0.0
-    num_transitions: int = 0
+
+    @property
+    def num_transitions(self: Self) -> int:
+        """
+        Count the number of processor transitions.
+
+        Returns
+        -------
+        int
+            The number of transitions between GPU and DLA.
+
+        """
+        if len(self.assignments) <= 1:
+            return 0
+
+        sorted_indices = sorted(self.assignments.keys())
+        transitions = 0
+        for i in range(len(sorted_indices) - 1):
+            curr_proc = self.assignments[sorted_indices[i]]
+            next_proc = self.assignments[sorted_indices[i + 1]]
+            if curr_proc != next_proc:
+                transitions += 1
+
+        return transitions
 
     def get_processor(self: Self, layer_idx: int) -> ProcessorType:
         """
@@ -197,30 +183,6 @@ class Schedule:
 
         """
         self.assignments[layer_idx] = processor
-
-    def count_transitions(self: Self) -> int:
-        """
-        Count the number of processor transitions.
-
-        Returns
-        -------
-        int
-            The number of transitions between GPU and DLA.
-
-        """
-        if len(self.assignments) <= 1:
-            return 0
-
-        sorted_indices = sorted(self.assignments.keys())
-        transitions = 0
-        for i in range(len(sorted_indices) - 1):
-            curr_proc = self.assignments[sorted_indices[i]]
-            next_proc = self.assignments[sorted_indices[i + 1]]
-            if curr_proc != next_proc:
-                transitions += 1
-
-        self.num_transitions = transitions
-        return transitions
 
     def get_dla_layers(self: Self) -> list[int]:
         """
@@ -267,7 +229,7 @@ class Schedule:
 @dataclass
 class AxoNNConfig:
     """
-    Configuration for AxoNN optimization.
+    Internal configuration for AxoNN optimization.
 
     Attributes
     ----------

@@ -41,7 +41,7 @@ def _check_z3_available() -> None:
 
 def solve_schedule(
     layers: list[Layer],
-    costs: list[LayerCost],
+    costs: dict[int, LayerCost],
     config: AxoNNConfig | None = None,
     *,
     verbose: bool | None = None,
@@ -60,8 +60,8 @@ def solve_schedule(
     ----------
     layers : list[Layer]
         Network layers with metadata.
-    costs : list[LayerCost]
-        Cost data for each layer.
+    costs : dict[int, LayerCost]
+        Cost data keyed by layer index.
     config : AxoNNConfig | None, optional
         Configuration for optimization. Uses defaults if None.
     verbose : bool | None, optional
@@ -92,9 +92,6 @@ def solve_schedule(
             LOG.info(
                 f"Using energy target: {energy_target:.2f}mJ ({config.energy_target_ratio * 100}% of GPU)"
             )
-
-    # Build cost lookup
-    cost_by_idx = {c.layer_idx: c for c in costs}
 
     n_layers = len(layers)
 
@@ -133,7 +130,7 @@ def solve_schedule(
     time_expr = Real("total_time")
     layer_times = []
     for layer in layers:
-        cost = cost_by_idx[layer.index]
+        cost = costs[layer.index]
         gpu_time = cost.gpu_time_ms
         dla_time = cost.dla_time_ms if cost.dla_time_ms is not None else gpu_time
 
@@ -149,14 +146,14 @@ def solve_schedule(
     for i in range(n_layers - 1):
         layer = layers[i]
         # Estimate transition cost for this layer
-        trans_cost = estimate_transition_cost(
+        trans_time_ms, _ = estimate_transition_cost(
             layer,
             ProcessorType.GPU,  # Doesn't matter for cost estimation
             ProcessorType.DLA,
             config,
         )
         # Transition time added only when trans_var == 1
-        trans_time = If(trans_vars[i] == 1, trans_cost.time_ms, 0.0)
+        trans_time = If(trans_vars[i] == 1, trans_time_ms, 0.0)
         transition_times.append(trans_time)
 
     total_time_expr = (
@@ -168,7 +165,7 @@ def solve_schedule(
     energy_expr = Real("total_energy")
     layer_energies = []
     for layer in layers:
-        cost = cost_by_idx[layer.index]
+        cost = costs[layer.index]
         gpu_energy = cost.gpu_energy_mj
         dla_energy = cost.dla_energy_mj if cost.dla_energy_mj is not None else gpu_energy
 
@@ -183,13 +180,13 @@ def solve_schedule(
     transition_energies = []
     for i in range(n_layers - 1):
         layer = layers[i]
-        trans_cost = estimate_transition_cost(
+        _, trans_energy_mj = estimate_transition_cost(
             layer,
             ProcessorType.GPU,
             ProcessorType.DLA,
             config,
         )
-        trans_energy = If(trans_vars[i] == 1, trans_cost.energy_mj, 0.0)
+        trans_energy = If(trans_vars[i] == 1, trans_energy_mj, 0.0)
         transition_energies.append(trans_energy)
 
     total_energy_expr = (
@@ -222,7 +219,6 @@ def solve_schedule(
         # Compute actual costs
         schedule.total_time_ms = compute_total_time(layers, costs, schedule, config)
         schedule.total_energy_mj = compute_total_energy(layers, costs, schedule, config)
-        schedule.count_transitions()
 
         if verbose:
             LOG.info(f"Found optimal schedule: {schedule}")
@@ -240,7 +236,7 @@ def solve_schedule(
 
 def solve_schedule_greedy(
     layers: list[Layer],
-    costs: list[LayerCost],
+    costs: dict[int, LayerCost],
     config: AxoNNConfig | None = None,
     *,
     verbose: bool | None = None,
@@ -257,8 +253,8 @@ def solve_schedule_greedy(
     ----------
     layers : list[Layer]
         Network layers with metadata.
-    costs : list[LayerCost]
-        Cost data for each layer.
+    costs : dict[int, LayerCost]
+        Cost data keyed by layer index.
     config : AxoNNConfig | None, optional
         Configuration for optimization. Uses defaults if None.
     verbose : bool | None, optional
@@ -278,9 +274,6 @@ def solve_schedule_greedy(
     if energy_target is None:
         _, gpu_energy = compute_gpu_only_costs(costs)
         energy_target = gpu_energy * config.energy_target_ratio
-
-    # Build cost lookup
-    cost_by_idx = {c.layer_idx: c for c in costs}
 
     # Start with all GPU schedule
     schedule = Schedule()
@@ -308,7 +301,7 @@ def solve_schedule_greedy(
     def chunk_energy_savings(chunk: list[int]) -> float:
         savings = 0.0
         for idx in chunk:
-            cost = cost_by_idx[idx]
+            cost = costs[idx]
             if cost.dla_energy_mj is not None:
                 savings += cost.gpu_energy_mj - cost.dla_energy_mj
         return savings
@@ -333,14 +326,13 @@ def solve_schedule_greedy(
         if test_energy <= energy_target:
             # Accept this chunk
             schedule = test_schedule
-            transitions_used = schedule.count_transitions()
+            transitions_used = schedule.num_transitions
             if verbose:
                 LOG.info(f"Assigned chunk {chunk} to DLA, energy: {test_energy:.2f}mJ")
 
     # Compute final costs
     schedule.total_time_ms = compute_total_time(layers, costs, schedule, config)
     schedule.total_energy_mj = compute_total_energy(layers, costs, schedule, config)
-    schedule.count_transitions()
 
     if verbose:
         LOG.info(f"Greedy schedule: {schedule}")
@@ -350,7 +342,7 @@ def solve_schedule_greedy(
 
 def find_optimal_schedule(
     layers: list[Layer],
-    costs: list[LayerCost],
+    costs: dict[int, LayerCost],
     config: AxoNNConfig | None = None,
     *,
     use_z3: bool = True,
@@ -363,8 +355,8 @@ def find_optimal_schedule(
     ----------
     layers : list[Layer]
         Network layers with metadata.
-    costs : list[LayerCost]
-        Cost data for each layer.
+    costs : dict[int, LayerCost]
+        Cost data keyed by layer index.
     config : AxoNNConfig | None, optional
         Configuration for optimization. Uses defaults if None.
     use_z3 : bool, optional

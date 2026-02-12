@@ -159,7 +159,7 @@ def profile_for_axonn(
     calibration_cache: Path | str | None = None,
     *,
     verbose: bool | None = None,
-) -> tuple[list[Layer], list[LayerCost]]:
+) -> tuple[list[Layer], dict[int, LayerCost]]:
     """
     Profile an ONNX model for AxoNN optimization.
 
@@ -188,8 +188,8 @@ def profile_for_axonn(
 
     Returns
     -------
-    tuple[list[Layer], list[LayerCost]]
-        Layer information and cost data for each layer.
+    tuple[list[Layer], dict[int, LayerCost]]
+        Layer information and cost data keyed by layer index.
 
     """
     if config is None:
@@ -312,7 +312,7 @@ def profile_for_axonn(
                     LOG.warning("Continuing with GPU-only costs for DLA-compatible layers")
 
         # Build LayerCost objects
-        costs: list[LayerCost] = []
+        costs: dict[int, LayerCost] = {}
 
         for layer in layers:
             # Get GPU costs
@@ -343,24 +343,22 @@ def profile_for_axonn(
                 dla_energy = gpu_energy * 0.5  # DLA more efficient
 
             cost = LayerCost(
-                layer_idx=layer.index,
-                layer_name=layer.name,
                 gpu_time_ms=gpu_time,
                 gpu_energy_mj=gpu_energy,
                 dla_time_ms=dla_time,
                 dla_energy_mj=dla_energy,
             )
-            costs.append(cost)
+            costs[layer.index] = cost
 
             if verbose:
                 LOG.info(f"Cost for {layer.name}: {cost}")
 
     if verbose:
-        total_gpu_time = sum(c.gpu_time_ms for c in costs)
-        total_gpu_energy = sum(c.gpu_energy_mj for c in costs)
+        total_gpu_time = sum(c.gpu_time_ms for c in costs.values())
+        total_gpu_energy = sum(c.gpu_energy_mj for c in costs.values())
         LOG.info(f"Total GPU time: {total_gpu_time:.2f}ms, energy: {total_gpu_energy:.2f}mJ")
 
-        dla_costs = [c for c in costs if c.dla_time_ms is not None]
+        dla_costs = [c for c in costs.values() if c.dla_time_ms is not None]
         if dla_costs:
             total_dla_time = sum(c.dla_time_ms for c in dla_costs)  # type: ignore[misc]
             total_dla_energy = sum(c.dla_energy_mj for c in dla_costs if c.dla_energy_mj)
