@@ -14,11 +14,7 @@ from typing import TypeVar
 import numpy as np
 
 with contextlib.suppress(Exception):
-    try:
-        import cuda.bindings.driver as cuda
-        import cuda.bindings.nvrtc as nvrtc
-    except (ImportError, ModuleNotFoundError):
-        from cuda import cuda, nvrtc
+    from trtutils.compat._libs import cuda, nvrtc
 
 from trtutils._log import LOG
 

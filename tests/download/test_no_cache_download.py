@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="misc,no-any-return"
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from trtutils.download import _download as dl  # noqa: PLC2701
+from trtutils.download import _download as dl
 from trtutils.download import download
 
 from .common import MODEL_CONFIGS, TEST_MODELS

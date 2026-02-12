@@ -78,15 +78,17 @@ Objects
 
 from __future__ import annotations
 
+import importlib
+
 # before handling anything check if tensorrt and cuda-python are available
 not_found_modules = []
 try:
-    import tensorrt  # noqa: F401
+    importlib.import_module("tensorrt")
 except ModuleNotFoundError:
     not_found_modules.append("tensorrt")
 
 try:
-    import cuda  # noqa: F401
+    importlib.import_module("cuda")
 except ModuleNotFoundError:
     not_found_modules.append("cuda-python")
 

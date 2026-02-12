@@ -1,21 +1,18 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
-from trtutils.core._memory import (
-    memcpy_device_to_host_async,
-)
-from trtutils.core._stream import destroy_stream, stream_synchronize
+from trtutils.core._stream import destroy_stream
 from trtutils.image.kernels import IMAGENET_SST, SST_FAST
 
 from ._image_preproc import GPUImagePreprocessor
@@ -23,11 +20,8 @@ from ._image_preproc import GPUImagePreprocessor
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-    with contextlib.suppress(ImportError):
-        try:
-            import cuda.bindings.runtime as cudart
-        except (ImportError, ModuleNotFoundError):
-            from cuda import cudart
+    from trtutils.compat._libs import cudart
+    from trtutils.core._bindings import Binding
 
 
 class CUDAPreprocessor(GPUImagePreprocessor):
@@ -37,7 +31,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         self: Self,
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
-        dtype: np.dtype,
+        dtype: np.dtype[Any],
         resize: str = "letterbox",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
@@ -47,6 +41,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a CUDAPreprocessor for image processing models.
@@ -89,6 +84,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        orig_size_dtype : np.dtype, optional
+            The dtype to use for the orig_size buffer. Default is np.int32.
 
         """
         tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
@@ -104,6 +101,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             tag,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            orig_size_dtype=orig_size_dtype,
         )
 
         # SST input binding: (N, H', W', 3) uint8 - starts at batch_size=1
@@ -132,9 +130,9 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         # choose sst kernel based on whether imagenet mean/std are provided
         self._use_imagenet: bool = self._mean is not None and self._std is not None
         if self._use_imagenet:
-            self._sst_kernel = Kernel(*IMAGENET_SST)
+            self._sst_kernel = Kernel(IMAGENET_SST[0], IMAGENET_SST[1])
         else:
-            self._sst_kernel = Kernel(*SST_FAST)
+            self._sst_kernel = Kernel(SST_FAST[0], SST_FAST[1])
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -146,6 +144,11 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             del self._output_binding
         with contextlib.suppress(AttributeError):
             del self._sst_input_binding
+
+    @property
+    def output_binding(self: Self) -> Binding:
+        """Get the output binding for the CUDA preprocessor."""
+        return self._output_binding
 
     def _reallocate_batch_buffers(self: Self, batch_size: int) -> None:
         """Reallocate SST buffers if batch size changed."""
@@ -231,64 +234,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             )
 
         return sst_args
-
-    def preprocess(
-        self: Self,
-        images: list[np.ndarray],
-        resize: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        """
-        Preprocess images for the model.
-
-        Parameters
-        ----------
-        images : list[np.ndarray]
-            The images to preprocess.
-        resize : str, optional
-            The method to resize the image with.
-            Options are [letterbox, linear], will use method
-            provided in constructor by default.
-        no_copy : bool, optional
-            If True, the outputs will not be copied out
-            from the cuda allocated host memory. Instead,
-            the host memory will be returned directly.
-            This memory WILL BE OVERWRITTEN INPLACE
-            by future preprocessing calls.
-        verbose : bool, optional
-            Whether or not to output additional information
-            to stdout. If not provided, will default to overall
-            engines verbose setting.
-
-        Returns
-        -------
-        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
-            The preprocessed batch tensor, list of ratios, and list of padding per image.
-
-        """
-        _, ratios_list, padding_list = self.direct_preproc(
-            images,
-            resize=resize,
-            no_warn=True,
-            verbose=verbose,
-        )
-
-        batch_size = len(images)
-
-        if not self._unified_mem:
-            memcpy_device_to_host_async(
-                self._output_binding.host_allocation,
-                self._output_binding.allocation,
-                self._stream,
-            )
-
-        stream_synchronize(self._stream)
-
-        if no_copy:
-            return self._output_binding.host_allocation[:batch_size], ratios_list, padding_list
-        return self._output_binding.host_allocation[:batch_size].copy(), ratios_list, padding_list
 
     def direct_preproc(
         self: Self,

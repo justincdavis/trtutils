@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -10,16 +10,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-with contextlib.suppress(Exception):
-    import tensorrt as trt
-
-    try:
-        import cuda.bindings.runtime as cudart
-    except (ImportError, ModuleNotFoundError):
-        from cuda import cudart
-
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.compat._libs import cudart, trt
 
 from ._cuda import cuda_call
 from ._memory import allocate_pinned_memory, cuda_malloc, get_ptr_pair

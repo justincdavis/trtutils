@@ -61,6 +61,8 @@ def _load_model_imgsizes() -> dict[str, list[int]]:
 REPO_DIR = Path(__file__).parent.parent
 DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DATA_DIR = DATA_DIR / "models"
+MODELS_DATA_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_PATH = str((REPO_DIR / "data" / "horse.jpg").resolve())
 MODELNAME = "yolov10n"
 MODEL_DIRS, MODELNAMES, MODEL_TO_DIR = _load_model_info()
@@ -84,10 +86,10 @@ ONNX_DIR = REPO_DIR / "data" / "yolov10"
 FRAMEWORKS = [
     "ultralytics(torch)",
     "ultralytics(trt)",
-    "trtutils(cpu)",
-    "trtutils(cuda)",
-    "trtutils(trt)",
+    "trtutils",
+    "trtutils(graph)",
     "tensorrt",
+    "tensorrt(graph)",
 ]
 
 # sahi paths - use ultralytics models for SAHI
@@ -105,7 +107,7 @@ def get_results(data: list[float]) -> dict[str, float]:
 
 
 def get_data(device: str) -> dict[str, dict[str, dict[str, dict[str, float]]]]:
-    file_path = DATA_DIR / f"{device}.json"
+    file_path = MODELS_DATA_DIR / f"{device}.json"
     if file_path.exists():
         with file_path.open("r") as f:
             data = json.load(f)
@@ -120,7 +122,7 @@ def get_data(device: str) -> dict[str, dict[str, dict[str, dict[str, float]]]]:
 def write_data(
     device: str, data: dict[str, dict[str, dict[str, dict[str, float]]]]
 ) -> None:
-    file_path = DATA_DIR / f"{device}.json"
+    file_path = MODELS_DATA_DIR / f"{device}.json"
     with file_path.open("w") as f:
         json.dump(data, f, indent=4)
 
@@ -137,11 +139,16 @@ def benchmark_trtutils(
     # get initial data
     data = get_data(device)
 
-    for preprocessor in ["cpu", "cuda", "trt"]:
-        if preprocessor == "trt" and not FLAGS.TRT_HAS_UINT8:
-            continue
+    # Define modes: (framework_name, cuda_graph)
+    # All trtutils modes use CUDA preprocessor
+    modes = [
+        ("trtutils", False),
+        ("trtutils(graph)", True),
+        ("tensorrt", False),
+        ("tensorrt(graph)", True),
+    ]
 
-        framework = f"trtutils({preprocessor})"
+    for framework, cuda_graph in modes:
         for imgsz in image_sizes:
             # if we can find the model nested, then we can skip
             with contextlib.suppress(KeyError):
@@ -156,7 +163,7 @@ def benchmark_trtutils(
             except Exception as e:
                 warnings.warn(f"Could not get model {MODELNAME} @ {imgsz}: {e}")
                 continue
-            
+
             trt_path = weight_path.with_suffix(".engine")
 
             if not trt_path.exists():
@@ -165,7 +172,6 @@ def benchmark_trtutils(
                     onnx=weight_path,
                     output=trt_path,
                     imgsz=imgsz,
-                    opt_level=1,
                 )
 
                 # verify
@@ -173,55 +179,56 @@ def benchmark_trtutils(
                     err_msg = f"trtutils TensorRT engine not found: {trt_path}"
                     raise FileNotFoundError(err_msg)
 
-            print("\tBenchmarking trtutils engine...")
-            trt_yolo = Detector(
-                engine_path=trt_path,
-                warmup_iterations=warmup_iters,
-                warmup=True,
-                preprocessor=preprocessor,
-                pagelocked_mem=True,
-                verbose=True,
-            )
-            t_timing = []
-            for _ in tqdm(range(bench_iters)):
-                t0 = time.perf_counter()
-                trt_yolo.end2end(image)
-                t_timing.append(time.perf_counter() - t0)
-            del trt_yolo
-
-            trt_results = get_results(t_timing)
-
-            if MODELNAME not in data[framework]:
-                data[framework][MODELNAME] = {}
-            data[framework][MODELNAME][str(imgsz)] = trt_results
-            write_data(device, data)
-
-            # add the 'raw' engine execution when using cpu preprocessor
-            if preprocessor == "cpu":
-                print("\tBenchmarking tensorrt engine...")
+            if framework.startswith("trtutils"):
+                # Detector with CUDA preprocessor
+                print(f"\tBenchmarking {framework} engine...")
+                trt_yolo = Detector(
+                    engine_path=trt_path,
+                    warmup_iterations=warmup_iters,
+                    warmup=True,
+                    preprocessor="cuda",
+                    pagelocked_mem=True,
+                    cuda_graph=cuda_graph,
+                    verbose=True,
+                )
+                t_timing = []
+                for _ in tqdm(range(bench_iters)):
+                    t0 = time.perf_counter()
+                    trt_yolo.end2end(image)
+                    t_timing.append(time.perf_counter() - t0)
+                del trt_yolo
+                results = get_results(t_timing)
+            else:
+                # Raw TensorRT execution
+                print(f"\tBenchmarking {framework} engine...")
                 base_engine = TRTEngine(
                     engine_path=trt_path,
                     warmup_iterations=warmup_iters,
                     warmup=True,
+                    cuda_graph=cuda_graph,
                     verbose=True,
                 )
                 input_ptrs = [
                     binding.allocation for binding in base_engine.input_bindings
                 ]
                 r_timing = []
-                for _ in tqdm(range(bench_iters)):
-                    t00 = time.perf_counter()
-                    # use the debug flag so a stream sync is completed
-                    base_engine.raw_exec(input_ptrs, debug=True, no_warn=True)
-                    r_timing.append(time.perf_counter() - t00)
+                if cuda_graph:
+                    for _ in tqdm(range(bench_iters)):
+                        t00 = time.perf_counter()
+                        base_engine.graph_exec(debug=True)
+                        r_timing.append(time.perf_counter() - t00)
+                else:
+                    for _ in tqdm(range(bench_iters)):
+                        t00 = time.perf_counter()
+                        base_engine.raw_exec(input_ptrs, debug=True, no_warn=True)
+                        r_timing.append(time.perf_counter() - t00)
                 del base_engine
+                results = get_results(r_timing)
 
-                raw_results = get_results(r_timing)
-
-                if MODELNAME not in data["tensorrt"]:
-                    data["tensorrt"][MODELNAME] = {}
-                data["tensorrt"][MODELNAME][str(imgsz)] = raw_results
-                write_data(device, data)
+            if MODELNAME not in data[framework]:
+                data[framework][MODELNAME] = {}
+            data[framework][MODELNAME][str(imgsz)] = results
+            write_data(device, data)
 
 
 def benchmark_ultralytics(

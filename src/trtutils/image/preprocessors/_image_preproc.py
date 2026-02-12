@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -7,7 +7,7 @@ from __future__ import annotations
 import contextlib
 import math
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, overload
 
 import numpy as np
 
@@ -16,9 +16,10 @@ from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
 from trtutils.core._memory import (
     memcpy_device_to_device_async,
+    memcpy_device_to_host_async,
     memcpy_host_to_device_async,
 )
-from trtutils.core._stream import create_stream
+from trtutils.core._stream import create_stream, stream_synchronize
 from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
 
 if TYPE_CHECKING:
@@ -26,16 +27,24 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
-    with contextlib.suppress(Exception):
-        try:
-            import cuda.bindings.runtime as cudart
-        except (ImportError, ModuleNotFoundError):
-            from cuda import cudart
-
+    from trtutils.compat._libs import cudart
     from trtutils.core._bindings import Binding
 
 _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
+
+
+def _is_single_image(images: np.ndarray | list[np.ndarray]) -> bool:
+    """
+    Check if input is a single HWC image vs a batch.
+
+    Returns
+    -------
+    bool
+        True if images is a single HWC ndarray (ndim == 3), False otherwise.
+
+    """
+    return isinstance(images, np.ndarray) and images.ndim == _IMAGE_DIMENSIONS
 
 
 class ImagePreprocessor(ABC):
@@ -47,7 +56,7 @@ class ImagePreprocessor(ABC):
         self: Self,
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
-        dtype: np.dtype,
+        dtype: np.dtype[Any],
         resize: str = "letterbox",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
@@ -164,20 +173,62 @@ class ImagePreprocessor(ABC):
     @abstractmethod
     def warmup(self: Self) -> None: ...
 
-    @abstractmethod
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     def __call__(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
 
-    @abstractmethod
+    # preprocess overloads
+    @overload
+    def preprocess(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     def preprocess(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -192,7 +243,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         self: Self,
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
-        dtype: np.dtype,
+        dtype: np.dtype[Any],
         resize: str = "letterbox",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
@@ -202,6 +253,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a GPUImagePreprocessor for image processing models.
@@ -244,6 +296,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        orig_size_dtype : np.dtype, optional
+            The dtype to use for the orig_size buffer. Default is np.int32.
 
         """
         super().__init__(
@@ -293,8 +347,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
         )
 
         # either letterbox or linear is used
-        self._linear_kernel = Kernel(*LINEAR_RESIZE)
-        self._letterbox_kernel = Kernel(*LETTERBOX_RESIZE)
+        self._linear_kernel = Kernel(LINEAR_RESIZE[0], LINEAR_RESIZE[1])
+        self._letterbox_kernel = Kernel(LETTERBOX_RESIZE[0], LETTERBOX_RESIZE[1])
 
         # if the imagenet mean/std are supplied, allocate the cuda buffers
         self._mean_buffer: Binding | None = None
@@ -303,7 +357,10 @@ class GPUImagePreprocessor(ImagePreprocessor):
             self._allocate_imagenet_buffers()
 
         # Allocate GPU buffers for alternative input schemas
-        orig_size_arr: np.ndarray = np.array([1080, 1920], dtype=np.int32)
+        self._orig_size_dtype: np.dtype[Any] = (
+            orig_size_dtype if orig_size_dtype is not None else np.dtype(np.int32)
+        )
+        orig_size_arr: np.ndarray = np.array([1080, 1920], dtype=self._orig_size_dtype)
         self._orig_size_host = orig_size_arr
         self._orig_size_buffer = create_binding(orig_size_arr)
 
@@ -358,9 +415,30 @@ class GPUImagePreprocessor(ImagePreprocessor):
         )
         self.preprocess([rand_data], resize=self._resize, no_copy=True)
 
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
     def __call__(
         self: Self,
         images: list[np.ndarray],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -371,8 +449,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to preprocess.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to preprocess.
         resize : str, optional
             The method to resize the image with.
             Options are [letterbox, linear], will use method
@@ -484,7 +562,136 @@ class GPUImagePreprocessor(ImagePreprocessor):
         *,
         no_warn: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]: ...
+    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Preprocess images for the model with H2D copies and GPU kernels.
+
+        This method performs the complete preprocessing pipeline:
+        1. Host-to-device copy of input images
+        2. Resize kernels (letterbox or linear)
+        3. Normalization (SST) kernel
+
+        Parameters
+        ----------
+        images : list[np.ndarray]
+            The images to preprocess (HWC format, uint8).
+        resize : str, optional
+            The resize method. Options are ['letterbox', 'linear'].
+            If None, uses the configured default.
+        no_warn : bool, optional
+            If True, suppress warnings about usage.
+        verbose : bool, optional
+            Enable verbose logging.
+
+        Returns
+        -------
+        tuple[int, list[tuple[float, float]], list[tuple[float, float]]]
+            GPU pointer to preprocessed output, list of ratios (scale_x, scale_y),
+            and list of padding (pad_x, pad_y) per image.
+
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def output_binding(self: Self) -> Binding:
+        """
+        Get the output binding for the preprocessor.
+
+        Subclasses must implement this to return their specific output binding.
+
+        Returns
+        -------
+        Binding
+            The output binding containing the preprocessed data.
+
+        """
+        ...
+
+    # preprocess overloads
+    @overload
+    def preprocess(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
+    def preprocess(
+        self: Self,
+        images: list[np.ndarray],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    def preprocess(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        resize: str | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Preprocess images for the model.
+
+        Parameters
+        ----------
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to preprocess.
+        resize : str, optional
+            The method to resize the image with.
+            Options are [letterbox, linear], will use method
+            provided in constructor by default.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE
+            by future preprocessing calls.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+
+        Returns
+        -------
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios, and list of padding per image.
+
+        """
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
+
+        _, ratios_list, padding_list = self.direct_preproc(
+            images,  # type: ignore[arg-type]
+            resize=resize,
+            no_warn=True,
+            verbose=verbose,
+        )
+
+        batch_size = len(images)
+        output_binding = self.output_binding
+
+        if not self._unified_mem:
+            memcpy_device_to_host_async(
+                output_binding.host_allocation,
+                output_binding.allocation,
+                self._stream,
+            )
+
+        stream_synchronize(self._stream)
+
+        if no_copy:
+            return output_binding.host_allocation[:batch_size], ratios_list, padding_list
+        return output_binding.host_allocation[:batch_size].copy(), ratios_list, padding_list
 
     @property
     def orig_size_allocation(self: Self) -> tuple[int, bool]:

@@ -10,10 +10,7 @@ import ctypes
 import numpy as np
 
 with contextlib.suppress(Exception):
-    try:
-        import cuda.bindings.runtime as cudart
-    except (ImportError, ModuleNotFoundError):
-        from cuda import cudart
+    from trtutils.compat._libs import cudart
 
 from trtutils._log import LOG
 

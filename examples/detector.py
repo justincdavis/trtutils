@@ -39,20 +39,23 @@ def main() -> None:
 
         t0 = time.perf_counter()
         output = detector.run([img])
-        bboxes = detector.get_detections(output)  # type: ignore[arg-type]
+        if not isinstance(output[0], list):
+            err_msg = "Expected postprocessed output"
+            raise TypeError(err_msg)
+        bboxes = detector.get_detections(output)[0]
         t1 = time.perf_counter()
 
-        print(f"RUN, bboxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
+        print(f"RUN, bboxes: {len(bboxes)}, in {round((t1 - t0) * 1000.0, 2)}")
 
         # OR
 
         # end2end makes a few memory optimzations by avoiding extra GPU
         # memory transfers
         t0 = time.perf_counter()
-        bboxes = detector.end2end([img])
+        bboxes = detector.end2end([img])[0]
         t1 = time.perf_counter()
 
-        print(f"END2END: bboxes: {bboxes}, in {round((t1 - t0) * 1000.0, 2)}")
+        print(f"END2END: bboxes: {len(bboxes)}, in {round((t1 - t0) * 1000.0, 2)}")
 
         del detector
 

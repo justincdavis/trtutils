@@ -1,27 +1,31 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, TypeGuard
+from typing import TYPE_CHECKING, cast, overload
 
 import numpy as np
+from typing_extensions import Literal, TypeGuard
 
-from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._memory import memcpy_host_to_device_async
 
 from ._image_model import ImageModel
-from ._schema import InputSchema, OutputSchema, get_detector_io_schema
+from ._schema import InputSchema, OutputSchema, resolve_detector_schemas
 from .interfaces import DetectorInterface
 from .postprocessors import (
     get_detections,
     postprocess_detr,
+    postprocess_detr_lbs,
     postprocess_efficient_nms,
     postprocess_rfdetr,
+    postprocess_rtdetrv3,
     postprocess_yolov10,
 )
 from .preprocessors import CUDAPreprocessor, TRTPreprocessor
+from .preprocessors._image_preproc import _is_single_image
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -33,6 +37,9 @@ def _is_postprocessed_outputs(
     outputs: list[np.ndarray] | list[list[np.ndarray]],
 ) -> TypeGuard[list[list[np.ndarray]]]:
     return not outputs or isinstance(outputs[0], list)
+
+
+_TUPLE_PAIR_LEN = 2  # (ratio_x, ratio_y) or (pad_x, pad_y) tuples
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -57,7 +64,7 @@ class Detector(ImageModel, DetectorInterface):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
@@ -123,7 +130,12 @@ class Detector(ImageModel, DetectorInterface):
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            Only effective with async_v3 backend. Default is None (uses TRTEngine default).
+            When enabled, CUDA graphs are used both at the engine level and for
+            end-to-end execution in the end2end() method. The first call to
+            end2end() will capture a CUDA graph of the full preprocessing +
+            inference pipeline, and subsequent calls will replay it. Input
+            dimensions are locked after the first end2end() call.
+            Only effective with async_v3 backend. Default is None (disabled).
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -143,6 +155,12 @@ class Detector(ImageModel, DetectorInterface):
             If an input or output schema string is invalid.
 
         """
+        # store user-provided schema overrides for _configure_model to use
+        self._input_schema_override = input_schema
+        self._output_schema_override = output_schema
+
+        # parent creates engine, calls _configure_model() (which sets schemas),
+        # then creates preprocessors (which need _input_schema for dtype)
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -165,58 +183,9 @@ class Detector(ImageModel, DetectorInterface):
         self._nms: bool | None = extra_nms
         self._agnostic_nms: bool | None = agnostic_nms
 
-        # resolve input and output schemas
-        self._input_schema: InputSchema
-        self._output_schema: OutputSchema
-
-        # auto-detect schemas if needed (function returns both, but we only use what we need)
-        auto_input_schema: InputSchema | None = None
-        auto_output_schema: OutputSchema | None = None
-        if input_schema is None or output_schema is None:
-            auto_input_schema, auto_output_schema = get_detector_io_schema(self._engine)
-
-        # resolve input schema
-        if input_schema is None:
-            if auto_input_schema is None:
-                err_msg = "Input schema could not be determined from the engine."
-                raise ValueError(err_msg)
-            self._input_schema = auto_input_schema
-        elif isinstance(input_schema, str):
-            if input_schema not in InputSchema.names():
-                err_msg = f"Invalid input_schema string: {input_schema}. "
-                err_msg += f"Valid options: {InputSchema.names()}"
-                raise ValueError(err_msg)
-            self._input_schema = InputSchema[input_schema]
-        else:
-            self._input_schema = input_schema
-
-        # resolve output schema
-        if output_schema is None:
-            if auto_output_schema is None:
-                err_msg = "Output schema could not be determined from the engine."
-                raise ValueError(err_msg)
-            self._output_schema = auto_output_schema
-        elif isinstance(output_schema, str):
-            if output_schema not in OutputSchema.names():
-                err_msg = f"Invalid output_schema string: {output_schema}. "
-                err_msg += f"Valid options: {OutputSchema.names()}"
-                raise ValueError(err_msg)
-            self._output_schema = OutputSchema[output_schema]
-        else:
-            self._output_schema = output_schema
-
         if self._verbose:
             LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
-
-        # based on the input scheme, we will need to allocate additional attrs
-        self._use_image_size: bool = False
-        self._use_scale_factor: bool = False
-        if self._input_schema == InputSchema.RT_DETR:
-            self._use_image_size = True
-        elif self._input_schema == InputSchema.RT_DETR_V3:
-            self._use_image_size = True
-            self._use_scale_factor = True
 
         # solve for the postprocessing function
         if self._output_schema == OutputSchema.YOLO_V10:
@@ -225,6 +194,10 @@ class Detector(ImageModel, DetectorInterface):
             self._postprocess_fn = postprocess_rfdetr
         elif self._output_schema == OutputSchema.DETR:
             self._postprocess_fn = postprocess_detr
+        elif self._output_schema == OutputSchema.DETR_LBS:
+            self._postprocess_fn = postprocess_detr_lbs
+        elif self._output_schema == OutputSchema.RT_DETR_V3:
+            self._postprocess_fn = postprocess_rtdetrv3
         else:
             self._postprocess_fn = postprocess_efficient_nms
 
@@ -245,77 +218,16 @@ class Detector(ImageModel, DetectorInterface):
         """Get the output schema used by this detector."""
         return self._output_schema
 
-    def preprocess(
-        self: Self,
-        images: list[np.ndarray],
-        resize: str | None = None,
-        method: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        """
-        Preprocess the input images.
-
-        Parameters
-        ----------
-        images : list[np.ndarray]
-            The images to preprocess.
-        resize : str
-            The method to resize the images with.
-            Options are [letterbox, linear].
-            By default None, which will use the value passed
-            during initialization.
-        method : str, optional
-            The underlying preprocessor to use.
-            Options are 'cpu', 'cuda', or 'trt'. By default None, which
-            will use the preprocessor stated in the constructor.
-        no_copy : bool, optional
-            If True and using CUDA, do not copy the
-            data from the allocated memory. If the data
-            is not copied, it WILL BE OVERWRITTEN INPLACE
-            once new data is generated.
-        verbose : bool, optional
-            Whether or not to log additional information.
-
-        Returns
-        -------
-        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
-            The preprocessed batch tensor, list of ratios per image, and list of padding per image.
-
-        """
-        resize = resize if resize is not None else self._resize_method
-        if verbose:
-            LOG.debug(
-                f"{self._tag}: Running preprocess, batch_size: {len(images)}, with method: {resize}",
-            )
-            LOG.debug(f"{self._tag}: Using device: {method}")
-        preprocessor = self._preprocessor
-        if method is not None:
-            if method == "trt" and not FLAGS.TRT_HAS_UINT8:
-                method = "cuda"
-                LOG.warning(
-                    "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
-                )
-            preprocessor = self._preproc_cpu
-            if method == "cuda":
-                if self._preproc_cuda is None:
-                    self._preproc_cuda = self._setup_cuda_preproc()
-                preprocessor = self._preproc_cuda
-            elif method == "trt":
-                if self._preproc_trt is None:
-                    self._preproc_trt = self._setup_trt_preproc()
-                preprocessor = self._preproc_trt
-        if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            t0 = time.perf_counter()
-            data = preprocessor(images, resize=resize, no_copy=no_copy, verbose=verbose)
-            t1 = time.perf_counter()
-        else:
-            t0 = time.perf_counter()
-            data = preprocessor(images, resize=resize, verbose=verbose)
-            t1 = time.perf_counter()
-        self._pre_profile = (t0, t1)
-        return data
+    def _configure_model(self: Self) -> None:
+        """Auto-detect or apply input/output schemas from the loaded engine."""
+        self._input_schema, self._output_schema = resolve_detector_schemas(
+            self._engine,
+            self._input_schema_override,
+            self._output_schema_override,
+        )
+        self._use_image_size = self._input_schema.uses_image_size
+        self._use_scale_factor = self._input_schema.uses_scale_factor
+        self._orig_size_dtype = self._input_schema.orig_size_dtype
 
     def postprocess(
         self: Self,
@@ -373,11 +285,40 @@ class Detector(ImageModel, DetectorInterface):
         self._post_profile = (t0, t1)
         return data
 
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
     def __call__(
         self: Self,
         images: list[np.ndarray],
-        ratios: list[tuple[float, float]] | None = None,
-        padding: list[tuple[float, float]] | None = None,
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
@@ -390,12 +331,14 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to run the model on.
-        ratios : list[tuple[float, float]], optional
-            The ratios generated during preprocessing for each image.
-        padding : list[tuple[float, float]], optional
-            The padding values used during preprocessing for each image.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to run the model on.
+        ratios : tuple[float, float] | list[tuple[float, float]], optional
+            The ratios generated during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        padding : tuple[float, float] | list[tuple[float, float]], optional
+            The padding values used during preprocessing. For single image, pass tuple.
+            For batch, pass list.
         conf_thres : float, optional
             Optional confidence threshold to filter detections
             via during postprocessing.
@@ -416,11 +359,12 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[list[np.ndarray]]
-            The postprocessed outputs per image.
+        list[np.ndarray] | list[list[np.ndarray]]
+            The outputs. For single image with postprocess=True,
+            returns list[np.ndarray]. For batch, returns batch results.
 
         """
-        return self.run(
+        return self.run(  # type: ignore[call-overload]
             images,
             ratios,
             padding,
@@ -431,11 +375,97 @@ class Detector(ImageModel, DetectorInterface):
             verbose=verbose,
         )
 
+    # run overloads - batch input (3 overloads)
+    @overload
     def run(
         self: Self,
         images: list[np.ndarray],
-        ratios: list[tuple[float, float]] | None = None,
-        padding: list[tuple[float, float]] | None = None,
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    def run(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
@@ -448,12 +478,14 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to run the model on.
-        ratios : list[tuple[float, float]], optional
-            The ratios generated during preprocessing for each image.
-        padding : list[tuple[float, float]], optional
-            The padding values used during preprocessing for each image.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to run the model on.
+        ratios : tuple[float, float] | list[tuple[float, float]], optional
+            The ratios generated during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        padding : tuple[float, float] | list[tuple[float, float]], optional
+            The padding values used during preprocessing. For single image, pass tuple.
+            For batch, pass list.
         conf_thres : float, optional
             Optional confidence threshold to filter detections
             via during postprocessing.
@@ -481,8 +513,10 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[list[np.ndarray]]
-            The postprocessed outputs per image.
+        list[np.ndarray] | list[list[np.ndarray]]
+            For single image with postprocess=True: list[np.ndarray] (single image outputs).
+            For batch with postprocess=True: list[list[np.ndarray]] (per-image outputs).
+            For postprocess=False: list[np.ndarray] (raw outputs).
 
         Raises
         ------
@@ -494,6 +528,26 @@ class Detector(ImageModel, DetectorInterface):
         """
         if verbose:
             LOG.debug(f"{self._tag}: run")
+
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
+            # Wrap single ratios/padding to lists
+            if (
+                ratios is not None
+                and isinstance(ratios, tuple)
+                and len(ratios) == _TUPLE_PAIR_LEN
+                and isinstance(ratios[0], float)
+            ):
+                ratios = [ratios]
+            if (
+                padding is not None
+                and isinstance(padding, tuple)
+                and len(padding) == _TUPLE_PAIR_LEN
+                and isinstance(padding[0], (int, float))
+            ):
+                padding = [padding]
 
         # assign flags
         if preprocessed is None:
@@ -533,20 +587,34 @@ class Detector(ImageModel, DetectorInterface):
         batch_size = len(images) if not preprocessed else tensor.shape[0]
 
         # build input list based on schema
-        engine_inputs = [tensor]
-        if self._use_image_size:
-            # Build batched orig_target_sizes: (batch, 2) with (height, width) per image
-            orig_sizes = np.array(
+        # RT_DETR_V3 expects (im_shape, image, scale_factor) order
+        # RT_DETR expects (images, orig_target_sizes) order
+        if self._input_schema == InputSchema.RT_DETR_V3:
+            # Build im_shape: (batch, 2) with (height, width) per image
+            im_shape = np.array(
                 [img.shape[:2] for img in images]
                 if not preprocessed
-                else [[self._input_size[1], self._input_size[0]]] * batch_size,
-                dtype=np.int32,
+                else [(self._input_size[1], self._input_size[0])] * batch_size,
+                dtype=np.float32,
             )
-            engine_inputs.append(orig_sizes)
-        if self._use_scale_factor:
-            # Build batched scale_factor: (batch, 2) from ratios list
+            # Build scale_factor: (batch, 2) from ratios list
             scale_factors = np.array(ratios, dtype=np.float32)
-            engine_inputs.append(scale_factors)
+            engine_inputs = [im_shape, tensor, scale_factors]
+        else:
+            engine_inputs = [tensor]
+            if self._use_image_size:
+                # Build batched orig_target_sizes: (batch, 2) with (height, width) per image
+                orig_sizes = np.array(
+                    [img.shape[:2] for img in images]
+                    if not preprocessed
+                    else [(self._input_size[1], self._input_size[0])] * batch_size,
+                    dtype=np.int32,
+                )
+                engine_inputs.append(orig_sizes)
+            if self._use_scale_factor:
+                # Build batched scale_factor: (batch, 2) from ratios list
+                scale_factors = np.array(ratios, dtype=np.float32)
+                engine_inputs.append(scale_factors)
 
         # execute
         t0 = time.perf_counter()
@@ -560,38 +628,70 @@ class Detector(ImageModel, DetectorInterface):
             if ratios is None or padding is None:
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
                 raise RuntimeError(err_msg)
-            postprocessed = self.postprocess(
+            postprocessed_outputs = self.postprocess(
                 outputs,
-                ratios,
-                padding,
+                ratios,  # type: ignore[arg-type]
+                padding,  # type: ignore[arg-type]
                 conf_thres,
                 no_copy=no_copy_post,
             )
             self._infer_profile = (t0, t1)
-            return postprocessed
+
+            # Unwrap for single-image input
+            if is_single:
+                return postprocessed_outputs[0]
+            return postprocessed_outputs
 
         self._infer_profile = (t0, t1)
 
         return outputs
 
+    # get_detections overloads
+    @overload
+    def get_detections(
+        self: Self,
+        outputs: list[np.ndarray],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[tuple[tuple[int, int, int, int], float, int]]: ...
+
+    @overload
     def get_detections(
         self: Self,
         outputs: list[list[np.ndarray]],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]: ...
+
+    def get_detections(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    ) -> (
+        list[tuple[tuple[int, int, int, int], float, int]]
+        | list[list[tuple[tuple[int, int, int, int], float, int]]]
+    ):
         """
         Get the bounding boxes from postprocessed outputs.
 
         Parameters
         ----------
-        outputs : list[list[np.ndarray]]
-            The postprocessed outputs per image, each containing
-            [bboxes, scores, class_ids].
+        outputs : list[np.ndarray] | list[list[np.ndarray]]
+            For single image: list[np.ndarray] (single image's postprocessed outputs).
+            For batch: list[list[np.ndarray]] (postprocessed outputs per image).
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
             By default None, which will use value passed during initialization.
@@ -612,20 +712,37 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[list[tuple[tuple[int, int, int, int], float, int]]]
-            The detections per image, where each detection is
-            ((x1, y1, x2, y2), score, class_id).
+        list[tuple[...]] | list[list[tuple[...]]]
+            For single image: list[tuple[...]] (detections for single image).
+            For batch: list[list[tuple[...]]] (detections per image).
 
         """
         if verbose:
             LOG.debug(f"{self._tag}: get_detections")
 
+        # Detect if this is single-image output (list[np.ndarray]) vs batch (list[list[np.ndarray]])
+        is_single = outputs and isinstance(outputs[0], np.ndarray)
+
         conf_thres = conf_thres or self._conf_thres
         nms_iou = nms_iou_thres or self._nms_iou
         use_nms = extra_nms if extra_nms is not None else self._nms
         agnostic = agnostic_nms if agnostic_nms is not None else self._agnostic_nms
+
+        if is_single:
+            # Wrap single image outputs for batch processing
+            batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[list-item]
+            result = self._get_detections_fn(
+                batch_outputs,
+                conf_thres=conf_thres,
+                nms_iou_thres=nms_iou,
+                extra_nms=use_nms,
+                agnostic_nms=agnostic,
+                verbose=verbose,
+            )
+            return result[0]  # Unwrap
+
         return self._get_detections_fn(
-            outputs,
+            outputs,  # type: ignore[arg-type]
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou,
             extra_nms=use_nms,
@@ -633,16 +750,44 @@ class Detector(ImageModel, DetectorInterface):
             verbose=verbose,
         )
 
+    # end2end overloads
+    @overload
+    def end2end(
+        self: Self,
+        images: np.ndarray,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[tuple[tuple[int, int, int, int], float, int]]: ...
+
+    @overload
     def end2end(
         self: Self,
         images: list[np.ndarray],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        extra_nms: bool | None = ...,
+        agnostic_nms: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]: ...
+
+    def end2end(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    ) -> (
+        list[tuple[tuple[int, int, int, int], float, int]]
+        | list[list[tuple[tuple[int, int, int, int], float, int]]]
+    ):
         """
         Perform end to end inference for a batch of images.
 
@@ -652,8 +797,8 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to perform inference with.
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to perform inference with.
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
             By default None.
@@ -674,9 +819,9 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[list[tuple[tuple[int, int, int, int], float, int]]]
-            The detections per image, where each detection is
-            ((x1, y1, x2, y2), score, class_id).
+        list[tuple[...]] | list[list[tuple[...]]]
+            For single image: list[tuple[...]] (detections).
+            For batch: list[list[tuple[...]]] (detections per image).
 
         Raises
         ------
@@ -684,12 +829,62 @@ class Detector(ImageModel, DetectorInterface):
             If the orig_image_size buffer is not valid
         RuntimeError
             If the scale_factor buffer is not valid
+        RuntimeError
+            If end2end_graph is enabled and image dimensions change after first call.
+        RuntimeError
+            If end2end_graph is enabled and CUDA graph capture fails.
 
         """
         if verbose:
             LOG.debug(f"{self._tag}: end2end")
 
+        # Handle single-image input
+        is_single = _is_single_image(images)
+        if is_single:
+            images = [images]  # type: ignore[list-item]
+
+        # Dispatch based on graph flag
+        if self._e2e_graph_enabled:
+            result = self._end2end_graph(
+                images,  # type: ignore[arg-type]
+                conf_thres=conf_thres,
+                nms_iou_thres=nms_iou_thres,
+                extra_nms=extra_nms,
+                agnostic_nms=agnostic_nms,
+                verbose=verbose,
+            )
+        else:
+            result = self._end2end(
+                images,  # type: ignore[arg-type]
+                conf_thres=conf_thres,
+                nms_iou_thres=nms_iou_thres,
+                extra_nms=extra_nms,
+                agnostic_nms=agnostic_nms,
+                verbose=verbose,
+            )
+
+        # Unwrap for single-image input
+        if is_single:
+            # result is already unwrapped from get_detections for single image
+            # but we need to check if it was processed as batch
+            if isinstance(result, list) and result and isinstance(result[0], list):
+                return result[0]
+            return result
+        return result
+
+    def _end2end(
+        self: Self,
+        images: list[np.ndarray],
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+        """Execute the standard end2end path without graph capture."""
         outputs: list[np.ndarray] | list[list[np.ndarray]]
+        postprocessed: list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
         if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             if verbose:
@@ -720,21 +915,33 @@ class Detector(ImageModel, DetectorInterface):
             )
 
             # Build input pointers based on InputSchema
-            input_ptrs = [gpu_ptr]
-            if self._use_image_size:
+            # RT_DETR_V3 expects (im_shape, image, scale_factor) order
+            if self._input_schema == InputSchema.RT_DETR_V3:
                 orig_size_ptr, valid = self._preprocessor.orig_size_allocation
-                if valid:
-                    input_ptrs.append(orig_size_ptr)
-                else:
+                if not valid:
                     err_msg = "orig_image_size buffer not valid"
                     raise RuntimeError(err_msg)
-            if self._use_scale_factor:
                 scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation
-                if scale_valid:
-                    input_ptrs.append(scale_ptr)
-                else:
+                if not scale_valid:
                     err_msg = "scale_factor buffer not valid"
                     raise RuntimeError(err_msg)
+                input_ptrs = [orig_size_ptr, gpu_ptr, scale_ptr]
+            else:
+                input_ptrs = [gpu_ptr]
+                if self._use_image_size:
+                    orig_size_ptr, valid = self._preprocessor.orig_size_allocation
+                    if valid:
+                        input_ptrs.append(orig_size_ptr)
+                    else:
+                        err_msg = "orig_image_size buffer not valid"
+                        raise RuntimeError(err_msg)
+                if self._use_scale_factor:
+                    scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation
+                    if scale_valid:
+                        input_ptrs.append(scale_ptr)
+                    else:
+                        err_msg = "scale_factor buffer not valid"
+                        raise RuntimeError(err_msg)
 
             raw_outputs = self._engine.direct_exec(input_ptrs, no_warn=True)
             postprocessed = self.postprocess(
@@ -747,11 +954,126 @@ class Detector(ImageModel, DetectorInterface):
             )
 
         # generate the detections
-        return self.get_detections(
-            postprocessed,
-            conf_thres=conf_thres,
-            nms_iou_thres=nms_iou_thres,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
+        # cast needed: ty can't resolve overload with numpy 1.x type stubs
+        return cast(
+            "list[list[tuple[tuple[int, int, int, int], float, int]]]",
+            self.get_detections(
+                postprocessed,
+                conf_thres=conf_thres,
+                nms_iou_thres=nms_iou_thres,
+                extra_nms=extra_nms,
+                agnostic_nms=agnostic_nms,
+                verbose=verbose,
+            ),
+        )
+
+    def _prepare_extra_engine_inputs_gpu(self: Self) -> list[int]:
+        """Return additional GPU input pointers for DETR-style models (GPU preprocessor path)."""
+        input_ptrs: list[int] = []
+        if self._use_image_size:
+            orig_size_ptr, valid = self._preprocessor.orig_size_allocation  # type: ignore[union-attr]
+            if not valid:
+                err_msg = "orig_image_size buffer not valid"
+                raise RuntimeError(err_msg)
+            input_ptrs.append(orig_size_ptr)
+        if self._use_scale_factor:
+            scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation  # type: ignore[union-attr]
+            if not scale_valid:
+                err_msg = "scale_factor buffer not valid"
+                raise RuntimeError(err_msg)
+            input_ptrs.append(scale_ptr)
+        return input_ptrs
+
+    def _prepare_extra_engine_inputs_cpu(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]],
+    ) -> list[int]:
+        """Return additional GPU input pointers for DETR-style models (CPU preprocessor path)."""
+        input_ptrs: list[int] = []
+        input_idx = 1  # Start after the main image input
+
+        if self._use_image_size:
+            # Build orig_target_sizes: (batch, 2) with (height, width) per image
+            # RTDETRv3 expects float32 for im_shape, other schemas use int32
+            orig_size_dtype = (
+                np.float32 if self._input_schema == InputSchema.RT_DETR_V3 else np.int32
+            )
+            orig_sizes = np.array(
+                [img.shape[:2] for img in images],
+                dtype=orig_size_dtype,
+            )
+            memcpy_host_to_device_async(
+                self._engine._inputs[input_idx].allocation,  # noqa: SLF001
+                orig_sizes,
+                self._engine.stream,
+            )
+            input_ptrs.append(self._engine._inputs[input_idx].allocation)  # noqa: SLF001
+            input_idx += 1
+
+        if self._use_scale_factor:
+            # Build scale_factor from ratios
+            scale_factors = np.array(ratios, dtype=np.float32)
+            memcpy_host_to_device_async(
+                self._engine._inputs[input_idx].allocation,  # noqa: SLF001
+                scale_factors,
+                self._engine.stream,
+            )
+            input_ptrs.append(self._engine._inputs[input_idx].allocation)  # noqa: SLF001
+
+        return input_ptrs
+
+    def _build_graph_input_ptrs(
+        self: Self,
+        gpu_ptr: int,
+        extra_ptrs: list[int],
+    ) -> list[int]:
+        """Override to handle RTDETRv3 input ordering (im_shape, image, scale_factor)."""
+        # RTDETRv3 expects: (im_shape, image, scale_factor)
+        # extra_ptrs[0] = orig_size_ptr, extra_ptrs[1] = scale_ptr
+        if self._input_schema == InputSchema.RT_DETR_V3 and len(extra_ptrs) >= 2:  # noqa: PLR2004
+            return [extra_ptrs[0], gpu_ptr, extra_ptrs[1]]
+        # Default: image first, then extra inputs
+        return [gpu_ptr, *extra_ptrs]
+
+    def _end2end_graph(
+        self: Self,
+        images: list[np.ndarray],
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+        """
+        Execute graph-accelerated end2end path.
+
+        This implementation captures only TRTEngine inference in the CUDA graph.
+        Preprocessing runs outside the graph since H2D copies cannot be captured.
+        Supports CPU, CUDA, and TRT preprocessors.
+        """
+        # Use shared core graph execution
+        raw_outputs, ratios, padding = self._end2end_graph_core(images, verbose=verbose)
+
+        # CPU postprocessing (Detector-specific)
+        postprocessed: list[list[np.ndarray]] = self.postprocess(
+            raw_outputs,
+            ratios,
+            padding,
+            conf_thres,
+            no_copy=True,
             verbose=verbose,
+        )
+        # cast needed: ty can't resolve overload with numpy 1.x type stubs
+        return cast(
+            "list[list[tuple[tuple[int, int, int, int], float, int]]]",
+            self.get_detections(
+                postprocessed,
+                conf_thres=conf_thres,
+                nms_iou_thres=nms_iou_thres,
+                extra_nms=extra_nms,
+                agnostic_nms=agnostic_nms,
+                verbose=verbose,
+            ),
         )

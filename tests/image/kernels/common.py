@@ -21,6 +21,6 @@ def kernel_compile(kernel: tuple[Path, str]) -> None:
 
     """
     stream = create_stream()
-    compiled = Kernel(*kernel)
+    compiled = Kernel(kernel[0], kernel[1])
     assert compiled is not None
     destroy_stream(stream)

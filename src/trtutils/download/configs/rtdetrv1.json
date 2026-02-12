@@ -4,6 +4,16 @@
     "config": "rtdetr_r18vd_6x_coco.yml",
     "name": "rtdetr_r18vd_5x_coco_objects365_from_paddle"
   },
+  "rtdetrv1_r34": {
+    "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r34vd_dec4_6x_coco_from_paddle.pth",
+    "config": "rtdetr_r34vd_6x_coco.yml",
+    "name": "rtdetr_r34vd_dec4_6x_coco_from_paddle"
+  },
+  "rtdetrv1_r50m": {
+    "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r50vd_m_6x_coco_from_paddle.pth",
+    "config": "rtdetr_r50vd_m_6x_coco.yml",
+    "name": "rtdetr_r50vd_m_6x_coco_from_paddle"
+  },
   "rtdetrv1_r50": {
     "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r50vd_2x_coco_objects365_from_paddle.pth",
     "config": "rtdetr_r50vd_6x_coco.yml",

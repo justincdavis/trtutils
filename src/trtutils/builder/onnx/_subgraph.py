@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import onnx
-import onnx_graphsurgeon as gs  # type: ignore[import-untyped]
+import onnx_graphsurgeon as gs
 
 if TYPE_CHECKING:
     from pathlib import Path

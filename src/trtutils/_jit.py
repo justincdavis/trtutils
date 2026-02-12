@@ -5,12 +5,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from typing_extensions import ParamSpec, TypeVar
+from typing_extensions import TypeVar
 
 from ._flags import FLAGS
 from ._log import LOG
 
-_P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 if TYPE_CHECKING:
@@ -20,13 +19,13 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 try:
-    from numba import jit as _jit  # type: ignore[import-untyped]
+    from numba import jit as _jit
 
     FLAGS.FOUND_NUMBA = True
 except ImportError:
 
     def _jit(
-        func: Callable[_P, _R],
+        func: Callable[..., _R],
         *,
         nopython: bool,  # noqa: ARG001
         fastmath: bool,  # noqa: ARG001
@@ -34,23 +33,24 @@ except ImportError:
         nogil: bool,  # noqa: ARG001
         cache: bool,  # noqa: ARG001
         inline: str = "never",  # noqa: ARG001
-    ) -> Callable[_P, _R]:
-        LOG.debug(f"Using mock JIT on {func.__name__}")
+    ) -> Callable[..., _R]:
+        func_name = getattr(func, "__name__", "<unknown>")
+        LOG.debug(f"Using mock JIT on {func_name}")
         return func
 
 
-_JIT_FUNCS: list[Callable] = []
+_JIT_FUNCS: list[Callable[..., object]] = []
 
 
 def jit(
-    func: Callable[_P, _R],
+    func: Callable[..., _R],
     *,
     fastmath: bool = False,
     parallel: bool = False,
     nogil: bool = False,
     cache: bool = False,
     inline: str = "never",
-) -> Callable[_P, _R]:
+) -> Callable[..., _R]:
     """
     Optionally JIT compile a function based on the flags for cv2ext.
 
@@ -81,7 +81,7 @@ def jit(
         The JIT compiled or untouched function.
 
     """
-    funcname = func.__name__
+    funcname = getattr(func, "__name__", "<unknown>")
     if FLAGS.JIT:
         LOG.debug(f"Marking: {funcname} for JIT compilation")
         func = _jit(
@@ -104,7 +104,7 @@ def register_jit(
     nogil: bool = False,
     cache: bool = False,
     inline: str = "never",
-) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
+) -> Callable[[Callable[..., _R]], Callable[..., _R]]:
     """
     Decorate a function to register to be re-imported whenever JIT status changes.
 
@@ -143,8 +143,9 @@ def register_jit(
         f"register_jit: fastmath={fastmath}, parallel={parallel}, nogil={nogil}, cache={cache}, inline={inline}",
     )
 
-    def decorator(func: Callable[_P, _R]) -> Callable[_P, _R]:
-        LOG.debug(f"Registering func: {func.__name__} for potential JIT")
+    def decorator(func: Callable[..., _R]) -> Callable[..., _R]:
+        func_name = getattr(func, "__name__", "<unknown>")
+        LOG.debug(f"Registering func: {func_name} for potential JIT")
         _JIT_FUNCS.append(func)
         return jit(
             func,
@@ -161,7 +162,10 @@ def register_jit(
 def _reset_funcs() -> None:
     # re-compile if needed
     for func in _JIT_FUNCS:
-        globals()[func.__name__] = jit(func)
+        func_name = getattr(func, "__name__", None)
+        if func_name is None:
+            continue
+        globals()[func_name] = jit(func)
 
 
 def enable_jit() -> None:

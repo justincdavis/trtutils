@@ -1,0 +1,35 @@
+FROM ubuntu:22.04
+
+# Basic packages similar to GitHub-hosted ubuntu-latest runners
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      sudo \
+      curl \
+      git \
+      ca-certificates \
+      build-essential \
+      software-properties-common \
+      python3 \
+      python3-pip \
+      python3-venv && \
+    add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      python3.8 \
+      python3.8-venv \
+      python3.8-dev && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set python3 as default `python`
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+
+# Create a non-root user similar to GitHub Actions runner
+RUN useradd -ms /bin/bash runner && echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Prepare hostedtoolcache directory for actions/setup-python (writable by runner)
+RUN mkdir -p /opt/hostedtoolcache/Python && chown -R runner:runner /opt/hostedtoolcache
+
+USER runner
+WORKDIR /home/runner/work

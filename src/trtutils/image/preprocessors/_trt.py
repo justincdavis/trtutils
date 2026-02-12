@@ -1,24 +1,19 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
-
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
+from trtutils.compat._libs import trt
 from trtutils.core._bindings import create_binding
-from trtutils.core._memory import (
-    memcpy_device_to_host_async,
-    memcpy_host_to_device_async,
-)
+from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.core._stream import destroy_stream, stream_synchronize
 from trtutils.image.onnx_models import build_image_preproc, build_image_preproc_imagenet
 
@@ -27,11 +22,8 @@ from ._image_preproc import GPUImagePreprocessor
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-    with contextlib.suppress(ImportError):
-        try:
-            import cuda.bindings.runtime as cudart
-        except (ImportError, ModuleNotFoundError):
-            from cuda import cudart
+    from trtutils.compat._libs import cudart
+    from trtutils.core._bindings import Binding
 
 
 class TRTPreprocessor(GPUImagePreprocessor):
@@ -41,7 +33,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         self: Self,
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
-        dtype: np.dtype,
+        dtype: np.dtype[Any],
         batch_size: int = 1,
         resize: str = "letterbox",
         mean: tuple[float, float, float] | None = None,
@@ -52,6 +44,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a TRTPreprocessor for image processing models.
@@ -97,6 +90,8 @@ class TRTPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        orig_size_dtype : np.dtype, optional
+            The dtype to use for the orig_size buffer. Default is np.int32.
 
         Raises
         ------
@@ -117,6 +112,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
             tag,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            orig_size_dtype=orig_size_dtype,
         )
 
         self._batch_size = batch_size
@@ -203,71 +199,10 @@ class TRTPreprocessor(GPUImagePreprocessor):
         with contextlib.suppress(AttributeError):
             del self._engine
 
-    def preprocess(
-        self: Self,
-        images: list[np.ndarray],
-        resize: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        """
-        Preprocess images for the model.
-
-        Parameters
-        ----------
-        images : list[np.ndarray]
-            The images to preprocess.
-        resize : str, optional
-            The method to resize the image with.
-            Options are [letterbox, linear], will use method
-            provided in constructor by default.
-        no_copy : bool, optional
-            If True, the outputs will not be copied out
-            from the cuda allocated host memory. Instead,
-            the host memory will be returned directly.
-            This memory WILL BE OVERWRITTEN INPLACE
-            by future preprocessing calls.
-        verbose : bool, optional
-            Whether or not to output additional information
-            to stdout. If not provided, will default to overall
-            engines verbose setting.
-
-        Returns
-        -------
-        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
-            The preprocessed batch tensor, list of ratios, and list of padding per image.
-
-        """
-        _, ratios_list, padding_list = self.direct_preproc(
-            images,
-            resize=resize,
-            no_warn=True,
-            verbose=verbose,
-        )
-
-        batch_size = len(images)
-
-        if not self._unified_mem:
-            memcpy_device_to_host_async(
-                self._engine_output_binding.host_allocation,
-                self._engine_output_binding.allocation,
-                self._stream,
-            )
-
-        stream_synchronize(self._stream)
-
-        if no_copy:
-            return (
-                self._engine_output_binding.host_allocation[:batch_size],
-                ratios_list,
-                padding_list,
-            )
-        return (
-            self._engine_output_binding.host_allocation[:batch_size].copy(),
-            ratios_list,
-            padding_list,
-        )
+    @property
+    def output_binding(self: Self) -> Binding:
+        """Get the output binding for the TRT preprocessor."""
+        return self._engine_output_binding
 
     def direct_preproc(
         self: Self,

@@ -1,7 +1,7 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: S607, S603, S404
+# ruff: noqa: S607, S603
 from __future__ import annotations
 
 import json
@@ -24,6 +24,33 @@ _MIN_UV_VERSION = (0, 9, 0)
 _MIN_UV_VERSION_PARTS = 2
 _EXPECTED_UV_PARTS = 3
 _640 = 640
+
+
+def _handle_imgsz(
+    imgsz: int | None,
+    default: int,
+    model_name: str,
+    *,
+    enforce: bool = False,
+    adjust_div: int | None = None,
+) -> int:
+    """Handle image size validation and adjustment."""
+    if imgsz is None:
+        imgsz = default
+    elif enforce and imgsz != default:
+        LOG.warning(
+            f"{model_name} supports only an imgsz of {default}, got {imgsz}. Using {default}."
+        )
+        imgsz = default
+
+    if adjust_div is not None and imgsz % adjust_div != 0:
+        new_imgsz = max(imgsz // adjust_div, 1) * adjust_div
+        LOG.warning(
+            f"{model_name} requires imgsz divisible by {adjust_div}, got {imgsz}. Using {new_imgsz}."
+        )
+        imgsz = new_imgsz
+
+    return imgsz
 
 
 def _kill_process_group(pid: int | None, cmd: Sequence[str]) -> None:
@@ -66,6 +93,13 @@ def _run_cmd(
         _kill_process_group(proc.pid, cmd_list)
         raise
     if check and proc.returncode:
+        sigkill_code = -9
+        if proc.returncode == sigkill_code:
+            LOG.error(
+                "Command was killed with SIGKILL (exit code -9). This usually means the system "
+                "ran out of memory (OOM). Try closing other applications, increasing available RAM, "
+                "or on WSL2, increasing memory in .wslconfig."
+            )
         LOG.error(f"Command failed with code {proc.returncode}: {' '.join(cmd_list)}")
         _kill_process_group(proc.pid, cmd_list)
         raise subprocess.CalledProcessError(proc.returncode, cmd_list)
@@ -207,7 +241,9 @@ def _git_clone(
             cwd=directory,
             verbose=verbose,
         )
-        # Cache the cloned repo
+        # Cache the cloned repo, removing existing version if it exists
+        if cache_repo_path.exists():
+            shutil.rmtree(cache_repo_path)
         shutil.copytree(target_path, cache_repo_path)
         LOG.info(f"Cached repository: {repo_name}")
 
@@ -354,7 +390,9 @@ def _run_download(
                 verbose=verbose,
             )
 
-        # Cache the downloaded file
+        # Cache the downloaded file, removing existing version if it exists
+        if cached_file.exists():
+            cached_file.unlink()
         shutil.copy(target_file, cached_file)
         LOG.info(f"Cached weights: {filename}")
 
@@ -390,8 +428,7 @@ def _export_yolov7(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv7 is a GPL-3.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOv7")
     _git_clone(
         "https://github.com/WongKinYiu/yolov7",
         directory,
@@ -457,8 +494,7 @@ def _export_ultralytics(
         LOG.warning(
             "Ultralytics is a AGPL-3.0 and commercial licensed model, be aware of license restrictions"
         )
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "Ultralytics")
     _run_uv_pip_install(
         directory,
         bin_path.parent,
@@ -521,8 +557,7 @@ def _export_yolov9(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv9 is a GPL-3.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOv9")
     _git_clone(
         "https://github.com/WongKinYiu/yolov9",
         directory,
@@ -585,8 +620,7 @@ def _export_yolov10(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOv10")
     _git_clone(
         "https://github.com/THU-MIG/yolov10",
         directory,
@@ -635,8 +669,7 @@ def _export_yolov12(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOv12")
     _git_clone(
         "https://github.com/sunsmarterjie/yolov12",
         directory,
@@ -686,8 +719,7 @@ def _export_yolov13(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOv13")
     _git_clone(
         "https://github.com/iMoonLab/yolov13",
         directory,
@@ -736,11 +768,7 @@ def _export_rtdetrv1(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
-    if imgsz != _640:
-        err_msg = f"RT-DETRv1 supports only an imgsz of {_640}, got {imgsz}"
-        raise ValueError(err_msg)
+    imgsz = _handle_imgsz(imgsz, _640, "RT-DETRv1", enforce=True)
     _git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
         directory,
@@ -801,11 +829,7 @@ def _export_rtdetrv2(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
-    if imgsz != _640:
-        err_msg = f"RT-DETRv2 supports only an imgsz of {_640}, got {imgsz}"
-        raise ValueError(err_msg)
+    imgsz = _handle_imgsz(imgsz, _640, "RT-DETRv2", enforce=True)
     _git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
         directory,
@@ -867,11 +891,7 @@ def _export_rtdetrv3(
 ) -> Path:
     if not no_warn:
         LOG.warning("RT-DETRv3 is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
-    if imgsz != _640:
-        err_msg = f"RT-DETRv3 supports only an imgsz of {_640}, got {imgsz}"
-        raise ValueError(err_msg)
+    imgsz = _handle_imgsz(imgsz, _640, "RT-DETRv3", enforce=True)
     paddle2onnx_max_opset = 16
     if opset > paddle2onnx_max_opset:
         LOG.warning(
@@ -949,11 +969,7 @@ def _export_dfine(
 ) -> Path:
     if not no_warn:
         LOG.warning("D-FINE is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
-    if imgsz != _640:
-        err_msg = f"D-FINE supports only an imgsz of {_640}, got {imgsz}"
-        raise ValueError(err_msg)
+    imgsz = _handle_imgsz(imgsz, _640, "D-FINE", enforce=True)
     _git_clone(
         "https://github.com/Peterande/D-FINE",
         directory,
@@ -1014,11 +1030,7 @@ def _export_deim(
 ) -> Path:
     if not no_warn:
         LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
-    if imgsz != _640:
-        err_msg = f"DEIM supports only an imgsz of {_640}, got {imgsz}"
-        raise ValueError(err_msg)
+    imgsz = _handle_imgsz(imgsz, _640, "DEIM", enforce=True)
     _git_clone(
         "https://github.com/Intellindust-AI-Lab/DEIM",
         directory,
@@ -1092,17 +1104,7 @@ def _export_rfdetr(
     if required_imgsz is None:
         err_msg = f"RF-DETR does not support model {model}"
         raise ValueError(err_msg)
-    if imgsz is not None and imgsz != required_imgsz:
-        err_msg = f"{model} requires an imgsz of {required_imgsz}, got {imgsz}"
-        raise ValueError(err_msg)
-    if imgsz is None:
-        imgsz = required_imgsz
-    if imgsz % 32 != 0:
-        new_imgsz = max(imgsz // 32, 1) * 32
-        wrn_msg = f"RF-DETR does not support input size {imgsz}, "
-        wrn_msg += f"using {new_imgsz} (closest divisible by 32)"
-        LOG.warning(wrn_msg)
-        imgsz = new_imgsz
+    imgsz = _handle_imgsz(imgsz, required_imgsz, model, enforce=True, adjust_div=32)
 
     _run_uv_pip_install(
         directory,
@@ -1181,11 +1183,7 @@ def _export_deimv2(
     if required_imgsz is None:
         err_msg = f"DEIMv2 does not support model {model}"
         raise ValueError(err_msg)
-    if imgsz is not None and imgsz != required_imgsz:
-        err_msg = f"{model} requires an imgsz of {required_imgsz}, got {imgsz}"
-        raise ValueError(err_msg)
-    if imgsz is None:
-        imgsz = required_imgsz
+    imgsz = _handle_imgsz(imgsz, required_imgsz, model, enforce=True)
     _git_clone(
         "https://github.com/Intellindust-AI-Lab/DEIMv2",
         directory,
@@ -1240,8 +1238,7 @@ def _export_yolox(
 ) -> Path:
     if not no_warn:
         LOG.warning("YOLOX is a Apache-2.0 licensed model, be aware of license restrictions")
-    if imgsz is None:
-        imgsz = _640
+    imgsz = _handle_imgsz(imgsz, _640, "YOLOX")
     _git_clone(
         "https://github.com/Megvii-BaseDetection/YOLOX",
         directory,
@@ -1291,6 +1288,9 @@ def _export_yolox(
             config["name"] + ".pth",
             "--opset",
             str(opset),
+            "--imgsz",
+            str(imgsz),
+            str(imgsz),
             "--decode_in_inference",
             "--no-onnxsim",  # Disable onnxslim due to compatibility issues with newer onnx
         ],
@@ -1377,7 +1377,44 @@ def download_model(
 
     python_path, bin_path = _make_venv(directory, no_cache=no_uv_cache, verbose=verbose)
     requirements_export_path = Path(requirements_export) if requirements_export is not None else None
-    packet = (
+
+    # Determine which export function to use
+    export_func = None
+    if config.get("url") == "ultralytics":
+        export_func = _export_ultralytics
+    elif "deim" in model and "deimv2" not in model:
+        export_func = _export_deim
+    elif "deimv2" in model:
+        export_func = _export_deimv2
+    elif "yolox" in model:
+        export_func = _export_yolox
+    elif "yolov7" in model:
+        export_func = _export_yolov7
+    elif "yolov9" in model:
+        export_func = _export_yolov9
+    elif "yolov10" in model:
+        export_func = _export_yolov10
+    elif "yolov12" in model:
+        export_func = _export_yolov12
+    elif "yolov13" in model:
+        export_func = _export_yolov13
+    elif "rtdetrv1" in model:
+        export_func = _export_rtdetrv1
+    elif "rtdetrv2" in model:
+        export_func = _export_rtdetrv2
+    elif "rtdetrv3" in model:
+        export_func = _export_rtdetrv3
+    elif "dfine" in model:
+        export_func = _export_dfine
+    elif "rfdetr" in model:
+        export_func = _export_rfdetr
+
+    # Single call site
+    if export_func is None:
+        err_msg = f"Model {model} is not supported"
+        raise ValueError(err_msg)
+
+    model_path = export_func(
         directory,
         config,
         python_path,
@@ -1385,67 +1422,11 @@ def download_model(
         model,
         opset,
         imgsz,
+        no_cache=no_cache,
+        no_uv_cache=no_uv_cache,
+        no_warn=no_warn,
+        verbose=verbose,
     )
-    model_path: Path | None = None
-    if config.get("url") == "ultralytics":
-        model_path = _export_ultralytics(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "deim" in model and "deimv2" not in model:
-        model_path = _export_deim(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "deimv2" in model:
-        model_path = _export_deimv2(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolox" in model:
-        model_path = _export_yolox(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov7" in model:
-        model_path = _export_yolov7(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov9" in model:
-        model_path = _export_yolov9(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov10" in model:
-        model_path = _export_yolov10(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov12" in model:
-        model_path = _export_yolov12(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "yolov13" in model:
-        model_path = _export_yolov13(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "rtdetrv1" in model:
-        model_path = _export_rtdetrv1(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "rtdetrv2" in model:
-        model_path = _export_rtdetrv2(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "rtdetrv3" in model:
-        model_path = _export_rtdetrv3(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "dfine" in model:
-        model_path = _export_dfine(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    elif "rfdetr" in model:
-        model_path = _export_rfdetr(
-            *packet, no_cache=no_cache, no_uv_cache=no_uv_cache, no_warn=no_warn, verbose=verbose
-        )
-    if model_path is None:
-        err_msg = f"Model {model} is not supported"
-        raise ValueError(err_msg)
     if requirements_export_path is not None:
         _export_requirements(bin_path.parent, requirements_export_path, verbose=verbose)
     return model_path.with_name(model + model_path.suffix)

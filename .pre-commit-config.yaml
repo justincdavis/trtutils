@@ -1,0 +1,26 @@
+repos:
+  - repo: local
+    hooks:
+      # Ruff formatter
+      - id: ruff-format
+        name: Ruff format (using .venv-ci)
+        entry: bash -c './ci/run_ci.sh --format'
+        language: system
+        pass_filenames: false
+        always_run: false
+
+      # Ruff linter
+      - id: ruff-lint
+        name: Ruff lint (using .venv-ci)
+        entry: bash -c './ci/run_ci.sh --lint'
+        language: system
+        pass_filenames: false
+        always_run: false
+
+      # Ty typecheck
+      - id: ty-typecheck
+        name: Ty typecheck (using .venv-ci)
+        entry: bash -c './ci/run_ci.sh --typecheck'
+        language: system
+        pass_filenames: false
+        always_run: false

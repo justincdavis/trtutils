@@ -1,0 +1,6 @@
+[environment]
+root = ["."]
+python-version = "3.8"
+
+[rules]
+unresolved-import = "ignore"

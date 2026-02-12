@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="unused-ignore"
 """Export a ResNet18 classifier model to ONNX for testing."""
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ def export_resnet18_onnx(output_path: Path | str) -> None:
 
     """
     import torch  # noqa: PLC0415
-    import torchvision.models as models  # type: ignore[import-untyped] # noqa: PLC0415
+    import torchvision.models as models  # noqa: PLC0415
 
     # Create model
     model = models.resnet18(pretrained=True)

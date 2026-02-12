@@ -1,10 +1,28 @@
-name: Ruff - Source
+name: Ruff
 on: [ push ]
 jobs:
-  ruff:
+  Format:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: astral-sh/ruff-action@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          src: src/trtutils
+          python-version: 3.8
+      - name: Install ruff
+        run: pip install ruff==0.14.14
+      - name: Ruff Format Check
+        run: ./ci/run_format.sh --check --diff
+
+  Check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+      - name: Install ruff
+        run: pip install ruff==0.14.14
+      - name: Ruff Check
+        run: ./ci/run_lint.sh --no-fix

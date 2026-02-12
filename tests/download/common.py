@@ -3,7 +3,7 @@
 # MIT License
 from __future__ import annotations
 
-from trtutils.download import _download as dl  # noqa: PLC2701
+from trtutils.download import _download as dl
 
 MODEL_CONFIGS = dl.load_model_configs()
 TEST_MODELS = [

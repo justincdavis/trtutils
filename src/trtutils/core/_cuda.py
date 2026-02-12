@@ -5,17 +5,10 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 from typing import TypeVar
 
-with contextlib.suppress(Exception):
-    try:
-        import cuda.bindings.driver as cuda
-        import cuda.bindings.runtime as cudart
-    except (ImportError, ModuleNotFoundError):
-        from cuda import cuda, cudart
-
 from trtutils._log import LOG
+from trtutils.compat._libs import cuda, cudart
 
 
 def check_cuda_err(err: cuda.CUresult | cudart.cudaError_t) -> None:

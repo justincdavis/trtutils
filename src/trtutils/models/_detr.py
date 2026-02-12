@@ -4,14 +4,12 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
-
 from trtutils.builder._build import build_engine
+from trtutils.compat._libs import trt
 from trtutils.image._detector import Detector
+from trtutils.image._schema import InputSchema, OutputSchema
 from trtutils.inspect._onnx import inspect_onnx_layers
 
 from ._utils import download_model_internal
@@ -20,8 +18,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
-
-DEFAULT_DETR_IMGSZ = 640
 
 
 class DETR(Detector):
@@ -44,7 +40,7 @@ class DETR(Detector):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
@@ -76,6 +72,8 @@ class DETR(Detector):
 class RTDETRv1(DETR):
     """Alias of DETR with default args for RT-DETRv1."""
 
+    _default_imgsz = 640
+
     def __init__(
         self: Self,
         engine_path: Path | str,
@@ -93,13 +91,14 @@ class RTDETRv1(DETR):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -109,6 +108,8 @@ class RTDETRv1(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -125,7 +126,7 @@ class RTDETRv1(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -158,8 +159,10 @@ class RTDETRv1(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
-            err_msg = f"RT-DETRv1 supports only an imgsz of 640, got {imgsz}"
+        if imgsz is None:
+            imgsz = RTDETRv1._default_imgsz
+        elif imgsz != RTDETRv1._default_imgsz:
+            err_msg = f"RT-DETRv1 supports only an imgsz of {RTDETRv1._default_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
             model_type="rtdetrv1",
@@ -177,9 +180,10 @@ class RTDETRv1(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -200,6 +204,9 @@ class RTDETRv1(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -209,8 +216,10 @@ class RTDETRv1(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
-            err_msg = f"RT-DETRv1 supports only an imgsz of 640, got {imgsz}"
+        if imgsz is None:
+            imgsz = RTDETRv1._default_imgsz
+        elif imgsz != RTDETRv1._default_imgsz:
+            err_msg = f"RT-DETRv1 supports only an imgsz of {RTDETRv1._default_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
             ("images", (batch_size, 3, imgsz, imgsz)),
@@ -222,12 +231,15 @@ class RTDETRv1(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
 
 class RTDETRv2(DETR):
     """Alias of DETR with default args for RT-DETRv2."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -246,13 +258,14 @@ class RTDETRv2(DETR):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -262,6 +275,8 @@ class RTDETRv2(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -278,7 +293,7 @@ class RTDETRv2(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -311,8 +326,10 @@ class RTDETRv2(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
-            err_msg = f"RT-DETRv2 supports only an imgsz of 640, got {imgsz}"
+        if imgsz is None:
+            imgsz = RTDETRv2._default_imgsz
+        elif imgsz != RTDETRv2._default_imgsz:
+            err_msg = f"RT-DETRv2 supports only an imgsz of {RTDETRv2._default_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
             model_type="rtdetrv2",
@@ -330,9 +347,10 @@ class RTDETRv2(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -353,6 +371,9 @@ class RTDETRv2(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -362,8 +383,10 @@ class RTDETRv2(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
-            err_msg = f"RT-DETRv2 supports only an imgsz of 640, got {imgsz}"
+        if imgsz is None:
+            imgsz = RTDETRv2._default_imgsz
+        elif imgsz != RTDETRv2._default_imgsz:
+            err_msg = f"RT-DETRv2 supports only an imgsz of {RTDETRv2._default_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
             ("image", (batch_size, 3, imgsz, imgsz)),
@@ -375,12 +398,15 @@ class RTDETRv2(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
 
 class RTDETRv3(DETR):
     """Alias of DETR with default args for RT-DETRv3."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -399,13 +425,14 @@ class RTDETRv3(DETR):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -415,6 +442,8 @@ class RTDETRv3(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR_V3,
+            output_schema=OutputSchema.RT_DETR_V3,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -431,7 +460,7 @@ class RTDETRv3(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -464,8 +493,10 @@ class RTDETRv3(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
-            err_msg = f"RT-DETRv3 supports only an imgsz of 640, got {imgsz}"
+        if imgsz is None:
+            imgsz = RTDETRv3._default_imgsz
+        elif imgsz != RTDETRv3._default_imgsz:
+            err_msg = f"RT-DETRv3 supports only an imgsz of {RTDETRv3._default_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
             model_type="rtdetrv3",
@@ -483,9 +514,10 @@ class RTDETRv3(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -506,6 +538,9 @@ class RTDETRv3(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -515,8 +550,10 @@ class RTDETRv3(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
-            err_msg = f"RT-DETRv3 supports only an imgsz of 640, got {imgsz}"
+        if imgsz is None:
+            imgsz = RTDETRv3._default_imgsz
+        elif imgsz != RTDETRv3._default_imgsz:
+            err_msg = f"RT-DETRv3 supports only an imgsz of {RTDETRv3._default_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
             ("image", (batch_size, 3, imgsz, imgsz)),
@@ -529,12 +566,15 @@ class RTDETRv3(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
 
 class DFINE(DETR):
     """Alias of DETR with default args for D-FINE."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -553,13 +593,14 @@ class DFINE(DETR):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -569,6 +610,8 @@ class DFINE(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -585,7 +628,7 @@ class DFINE(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -618,8 +661,10 @@ class DFINE(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
-            err_msg = f"D-FINE supports only an imgsz of 640, got {imgsz}"
+        if imgsz is None:
+            imgsz = DFINE._default_imgsz
+        elif imgsz != DFINE._default_imgsz:
+            err_msg = f"D-FINE supports only an imgsz of {DFINE._default_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
             model_type="dfine",
@@ -637,9 +682,10 @@ class DFINE(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -660,6 +706,9 @@ class DFINE(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -669,8 +718,10 @@ class DFINE(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
-            err_msg = f"D-FINE supports only an imgsz of 640, got {imgsz}"
+        if imgsz is None:
+            imgsz = DFINE._default_imgsz
+        elif imgsz != DFINE._default_imgsz:
+            err_msg = f"D-FINE supports only an imgsz of {DFINE._default_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
             ("images", (batch_size, 3, imgsz, imgsz)),
@@ -682,12 +733,15 @@ class DFINE(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
 
 class DEIM(DETR):
     """Alias of DETR with default args for DEIM."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -706,13 +760,14 @@ class DEIM(DETR):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -722,6 +777,8 @@ class DEIM(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -738,7 +795,7 @@ class DEIM(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -771,8 +828,10 @@ class DEIM(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
-            err_msg = f"DEIM supports only an imgsz of 640, got {imgsz}"
+        if imgsz is None:
+            imgsz = DEIM._default_imgsz
+        elif imgsz != DEIM._default_imgsz:
+            err_msg = f"DEIM supports only an imgsz of {DEIM._default_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
             model_type="deim",
@@ -790,9 +849,10 @@ class DEIM(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -813,6 +873,9 @@ class DEIM(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -822,8 +885,10 @@ class DEIM(DETR):
             If imgsz is not 640.
 
         """
-        if imgsz != DEFAULT_DETR_IMGSZ:
-            err_msg = f"DEIM supports only an imgsz of 640, got {imgsz}"
+        if imgsz is None:
+            imgsz = DEIM._default_imgsz
+        elif imgsz != DEIM._default_imgsz:
+            err_msg = f"DEIM supports only an imgsz of {DEIM._default_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
             ("images", (batch_size, 3, imgsz, imgsz)),
@@ -835,12 +900,15 @@ class DEIM(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
 
 class DEIMv2(DETR):
     """Alias of DETR with default args for DEIMv2."""
+
+    _default_imgsz = 640
 
     def __init__(
         self: Self,
@@ -859,13 +927,14 @@ class DEIMv2(DETR):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -875,6 +944,8 @@ class DEIMv2(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -891,7 +962,7 @@ class DEIMv2(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -933,7 +1004,9 @@ class DEIMv2(DETR):
         elif "femto" in model:
             expected_imgsz = 416
 
-        if imgsz != expected_imgsz:
+        if imgsz is None:
+            imgsz = expected_imgsz
+        elif imgsz != expected_imgsz:
             err_msg = f"DEIMv2 {model} requires imgsz of {expected_imgsz}, got {imgsz}"
             raise ValueError(err_msg)
         download_model_internal(
@@ -952,9 +1025,10 @@ class DEIMv2(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 640,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -977,6 +1051,9 @@ class DEIMv2(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -985,6 +1062,8 @@ class DEIMv2(DETR):
             ValueError: If imgsz is not 320, 416, or 640.
 
         """
+        if imgsz is None:
+            imgsz = DEIMv2._default_imgsz
         if imgsz not in (320, 416, 640):
             err_msg = f"DEIMv2 supports only imgsz of 320, 416, or 640, got {imgsz}"
             raise ValueError(err_msg)
@@ -998,12 +1077,15 @@ class DEIMv2(DETR):
             shapes=shapes,
             fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )
 
 
 class RFDETR(DETR):
     """Alias of DETR with default args for RF-DETR."""
+
+    _default_imgsz = 576
 
     def __init__(
         self: Self,
@@ -1022,13 +1104,14 @@ class RFDETR(DETR):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        super().__init__(
+        Detector.__init__(
+            self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
@@ -1038,6 +1121,8 @@ class RFDETR(DETR):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            input_schema=InputSchema.RF_DETR,
+            output_schema=OutputSchema.RF_DETR,
             dla_core=dla_core,
             backend=backend,
             warmup=warmup,
@@ -1054,7 +1139,7 @@ class RFDETR(DETR):
     def download(
         model: str,
         output: Path | str,
-        imgsz: int = 576,
+        imgsz: int | None = None,
         opset: int = 17,
         *,
         accept: bool = False,
@@ -1087,6 +1172,8 @@ class RFDETR(DETR):
             If imgsz is not divisible by 32.
 
         """
+        if imgsz is None:
+            imgsz = RFDETR._default_imgsz
         if imgsz % 32 != 0:
             err_msg = f"RF-DETR supports only imgsz divisible by 32, got {imgsz}"
             raise ValueError(err_msg)
@@ -1106,9 +1193,10 @@ class RFDETR(DETR):
     def build(
         onnx: Path | str,
         output: Path | str,
-        imgsz: int = 576,
+        imgsz: int | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
+        opt_level: int = 3,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -1128,6 +1216,9 @@ class RFDETR(DETR):
         dla_core: int | None = None
             The DLA core to build the engine for.
             By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
         verbose: bool | None = None
             Enable verbose builder output.
 
@@ -1136,25 +1227,27 @@ class RFDETR(DETR):
             ValueError: If imgsz is not divisible by 32.
 
         """
+        if imgsz is None:
+            imgsz = RFDETR._default_imgsz
         if imgsz % 32 != 0:
             err_msg = f"RF-DETR supports only imgsz divisible by 32, got {imgsz}"
             raise ValueError(err_msg)
         shapes = [
             ("input", (batch_size, 3, imgsz, imgsz)),
         ]
-        layer_info = inspect_onnx_layers(onnx, verbose=True)
-        layer_precision: list[tuple[int, trt.DataType]] = []
+        layer_info = inspect_onnx_layers(onnx, verbose=False)
+        layer_precision = []
         for idx, name, _, _ in layer_info:
             lower_name = name.lower()
             if "reducemean" in lower_name or "downsample" in lower_name:
                 layer_precision.append((idx, trt.DataType.FLOAT))
-            else:
-                layer_precision.append((idx, trt.DataType.HALF))
         build_engine(
             onnx=onnx,
             output=output,
             shapes=shapes,
-            layer_precision=layer_precision,
+            layer_precision=layer_precision if layer_precision else None,
+            fp16=True,
             dla_core=dla_core,
+            optimization_level=opt_level,
             verbose=verbose,
         )

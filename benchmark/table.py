@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """Generate RST tables of benchmarking results."""
@@ -98,7 +98,27 @@ def _make_device_table(
 
 def main() -> None:
     """Generate RST tables of benchmarking results."""
-    data_dir = Path(__file__).parent / "data"
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Generate RST tables of benchmarking results.")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing tables.",
+    )
+    parser.add_argument(
+        "--skip-devices",
+        type=str,
+        default="",
+        help="Comma-separated list of device names to skip.",
+    )
+    args = parser.parse_args()
+    
+    skip_devices = set()
+    if args.skip_devices:
+        skip_devices = {d.strip() for d in args.skip_devices.split(",") if d.strip()}
+    
+    data_dir = Path(__file__).parent / "data" / "models"
     data: dict[str, dict[str, dict[str, dict[str, dict[str, float]]]]] = {}
     for file in data_dir.iterdir():
         if file.is_dir():
@@ -107,9 +127,17 @@ def main() -> None:
             continue
 
         name = file.stem
-        with file.open("r") as f:
-            file_data: dict[str, dict[str, dict[str, dict[str, float]]]] = json.load(f)
-        data[name] = file_data
+        if name in skip_devices:
+            print(f"Skipping device: {name}")
+            continue
+            
+        try:
+            with file.open("r") as f:
+                file_data: dict[str, dict[str, dict[str, dict[str, float]]]] = json.load(f)
+            data[name] = file_data
+        except Exception as e:
+            print(f"Warning: Failed to load data for {name}: {e}, skipping...")
+            continue
 
     rst_dir = Path(__file__).parent / "rst"
     rst_dir.mkdir(parents=True, exist_ok=True)
@@ -125,7 +153,7 @@ def main() -> None:
     device_dir = rst_dir / "devices"
     device_dir.mkdir(parents=True, exist_ok=True)
     for device, device_data in data.items():
-        print(f"Mkaing {device} table...")
+        print(f"Making {device} table...")
         device_table = _make_device_table(device_data)
         device_table_path = device_dir / f"{device}.rst"
         with device_table_path.open("w+") as f:
@@ -133,4 +161,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    try:
+        main()
+    except Exception as e:
+        print(f"Error in table.py: {e}", file=sys.stderr)
+        sys.exit(1)

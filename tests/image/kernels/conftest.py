@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+# mypy: disable-error-code="misc"
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,7 +20,7 @@ IMG_PATH = str(Path(__file__).parent.parent.parent.parent / "data" / "horse.jpg"
 def kernel_compile(kernel: tuple[Path, str]) -> None:
     """Compile a kernel to validate NVRTC toolchain."""
     stream = create_stream()
-    compiled = Kernel(*kernel)
+    compiled = Kernel(kernel[0], kernel[1])
     assert compiled is not None
     destroy_stream(stream)
 

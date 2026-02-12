@@ -3,7 +3,6 @@
 # MIT License
 from __future__ import annotations
 
-import contextlib
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -13,12 +12,10 @@ from typing import TYPE_CHECKING
 
 from jetsontools import TegraData, TegraStats, filter_data, get_powerdraw
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt  # type: ignore[import-untyped]
-
 from trtutils._benchmark import Metric
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
+from trtutils.compat._libs import trt
 from trtutils.profiling._profiler import LayerTiming, ProfilerResult
 
 if TYPE_CHECKING:
@@ -115,7 +112,7 @@ class JetsonProfilerResult(ProfilerResult):
         )
 
 
-class JetsonLayerProfiler(trt.IProfiler):  # type: ignore[misc]
+class JetsonLayerProfiler(trt.IProfiler):
     """
     A profiler for Jetson devices that tracks per-layer timing and power/energy metrics.
 

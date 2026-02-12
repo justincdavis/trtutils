@@ -29,7 +29,7 @@ def test_trt_preproc_engine() -> None:
 
     # resize for both methods
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_shape, output_shape))
+    img = cv2.resize(img, (output_shape, output_shape))  # type: ignore[arg-type]
 
     # cpu version (now expects list of images)
     cpu_result, _, _ = preprocess(
@@ -67,8 +67,8 @@ def test_trt_preproc_engine() -> None:
     cpu_mean = np.mean(cpu_result)
     trt_mean = np.mean(trt_result)
     assert cpu_mean * 0.99 <= trt_mean <= cpu_mean * 1.01, f"CPU: {cpu_mean}, TRT: {trt_mean}"
-    assert np.min(trt_result) == np.min(cpu_result)  # type: ignore[operator]
-    assert np.max(trt_result) == np.max(cpu_result)  # type: ignore[operator]
+    assert np.min(trt_result) == np.min(cpu_result)
+    assert np.max(trt_result) == np.max(cpu_result)
 
     diff_mask = np.any(cpu_result != trt_result, axis=-1)
     avg_diff = np.mean(np.abs(cpu_result[diff_mask] - trt_result[diff_mask]))
@@ -90,7 +90,7 @@ def test_trt_preproc_imagenet_engine() -> None:
 
     # resize for both methods
     img = cv2.imread(IMG_PATH)
-    img = cv2.resize(img, (output_shape, output_shape))
+    img = cv2.resize(img, (output_shape, output_shape))  # type: ignore[arg-type]
 
     # cpu version with mean/std (now expects list of images)
     cpu_result, _, _ = preprocess(

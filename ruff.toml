@@ -4,14 +4,6 @@ line-length = 101
 target-version = "py38"
 builtins = ["_"]
 
-[lint]
-select = ["ALL", "PLR2004"]
-ignore = ["PLR", "C901", "E501", "D203", "D212", "ERA", "COM812"]
-
-# Allow autofix for all enabled rules (when `--fix`) is provided.
-fixable = ["ALL"]
-unfixable = []
-
 # Exclude a variety of commonly ignored directories.
 exclude = [
     ".bzr",
@@ -28,6 +20,7 @@ exclude = [
     ".svn",
     ".tox",
     ".venv",
+    ".venv-ci",
     "__pypackages__",
     "_build",
     "buck-out",
@@ -36,7 +29,20 @@ exclude = [
     "node_modules",
     "venv",
 ]
-per-file-ignores = {}
+
+[lint]
+select = ["ALL", "PLR2004"]
+ignore = ["PLR", "C901", "E501", "D203", "D212", "ERA", "COM812"]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+per-file-ignores = {
+    "demos/**/*.py" = ["INP001", "T201"],
+    "examples/**/*.py" = ["INP001", "T201", "D103"],
+    "tests/**/*.py" = ["S101", "D100", "D104", "PLR2004", "T201"],
+}
 
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"

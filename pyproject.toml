@@ -99,9 +99,8 @@ compat = [
     "trtutils[sahi]",
 ]
 ci = [
-    "ruff>=0.11.13",
-    "mypy==1.16.*",
-    "types-tqdm>=4.67",
+    "ruff==0.15.0",
+    "ty==0.0.16",
 ]
 docs = [
     "sphinx>=7.0.0",
@@ -111,7 +110,7 @@ docs = [
     "matplotlib>=3.0.0",
 ]
 test = [
-    "pytest>=6.2.0,<8.4",
+    "pytest>=6.2.0,<8.5",
 ]
 torch = [
     "torch>=2.0.0",
@@ -136,6 +135,7 @@ dev = [
     "wheel>=0.37.0",
     "bumpver>=2023.1126",
     "pyclean>=2.7.0",
+    "pre-commit>=4.5.0",
 ]
 
 [tool.bumpver]

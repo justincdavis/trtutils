@@ -101,7 +101,7 @@ class SAHI:
         sx, sy = scale
         corrected_dets = []
         for det in dets:
-            bbox, conf, class_id = det
+            bbox, conf, class_id = det  # type: ignore[misc]
             x1, y1, x2, y2 = bbox
             # offset based on patch
             x1 += x
@@ -171,19 +171,22 @@ class SAHI:
         futures = []
         for patch, offset in zip(patches, offsets):
             futures.append(
-                self._executor.submit(
-                    self._execute,
-                    patch,
+                (
+                    self._executor.submit(
+                        self._execute,
+                        patch,
+                        offset,
+                        (sx, sy),
+                        conf_thres,
+                        nms_iou_thres,
+                        extra_nms=extra_nms,
+                        agnostic_nms=agnostic_nms,
+                    ),
                     offset,
-                    (sx, sy),
-                    conf_thres,
-                    nms_iou_thres,
-                    extra_nms=extra_nms,
-                    agnostic_nms=agnostic_nms,
                 )
             )
         detections = []
-        for future in futures:
+        for future, offset in futures:
             sub_dets = future.result()
             if verbose:
                 LOG.info(f"SAHI: {len(sub_dets)} detections in slice {offset}")
