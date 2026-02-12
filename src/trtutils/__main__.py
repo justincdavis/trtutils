@@ -1103,6 +1103,12 @@ def _download(args: SimpleNamespace) -> None:
             LOG.info("")
         return
 
+    if args.model == "torchvision_classifier":
+        if args.torchvision_model is None:
+            LOG.error("--torchvision_model is required when --model is torchvision_classifier.")
+            return
+        args.model = args.torchvision_model
+
     if args.model is None or args.output is None:
         LOG.error("--model and --output are required for downloading.")
         return
@@ -1793,6 +1799,12 @@ def _main() -> None:
         "--no_cache",
         action="store_true",
         help="Disable caching of downloaded weights, repos, and uv packages.",
+    )
+    download_parser.add_argument(
+        "--torchvision_model",
+        type=str,
+        default=None,
+        help="Specific torchvision model name when --model is torchvision_classifier.",
     )
     download_parser.set_defaults(func=_download)
 

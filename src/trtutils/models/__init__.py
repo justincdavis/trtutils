@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """
@@ -44,19 +44,104 @@ Classes
     Alias for the DETR class with args preset for DEIMv2.
 :class:`RFDETR`
     Alias for the DETR class with args preset for RF-DETR.
+:class:`AlexNet`
+    Alias for the Classifier class with args preset for AlexNet.
+:class:`ConvNeXt`
+    Alias for the Classifier class with args preset for ConvNeXt.
+:class:`DenseNet`
+    Alias for the Classifier class with args preset for DenseNet.
+:class:`EfficientNet`
+    Alias for the Classifier class with args preset for EfficientNet.
+:class:`EfficientNetV2`
+    Alias for the Classifier class with args preset for EfficientNet V2.
+:class:`GoogLeNet`
+    Alias for the Classifier class with args preset for GoogLeNet.
+:class:`Inception`
+    Alias for the Classifier class with args preset for Inception V3.
+:class:`MaxViT`
+    Alias for the Classifier class with args preset for MaxViT.
+:class:`MNASNet`
+    Alias for the Classifier class with args preset for MNASNet.
+:class:`MobileNetV2`
+    Alias for the Classifier class with args preset for MobileNet V2.
+:class:`MobileNetV3`
+    Alias for the Classifier class with args preset for MobileNet V3.
+:class:`RegNet`
+    Alias for the Classifier class with args preset for RegNet.
+:class:`ResNet`
+    Alias for the Classifier class with args preset for ResNet.
+:class:`ResNeXt`
+    Alias for the Classifier class with args preset for ResNeXt.
+:class:`ShuffleNetV2`
+    Alias for the Classifier class with args preset for ShuffleNet V2.
+:class:`SqueezeNet`
+    Alias for the Classifier class with args preset for SqueezeNet.
+:class:`SwinTransformer`
+    Alias for the Classifier class with args preset for Swin Transformer.
+:class:`SwinTransformerV2`
+    Alias for the Classifier class with args preset for Swin Transformer V2.
+:class:`VGG`
+    Alias for the Classifier class with args preset for VGG.
+:class:`ViT`
+    Alias for the Classifier class with args preset for ViT.
+:class:`WideResNet`
+    Alias for the Classifier class with args preset for Wide ResNet.
 
 """
 
 from __future__ import annotations
 
-from ._detr import DEIM, DETR, DFINE, RFDETR, DEIMv2, RTDETRv1, RTDETRv2, RTDETRv3
-from ._yolo import YOLO, YOLO3, YOLO5, YOLO7, YOLO8, YOLO9, YOLO10, YOLO11, YOLO12, YOLO13, YOLOX
+from .classifiers import (
+    VGG,
+    AlexNet,
+    ConvNeXt,
+    DenseNet,
+    EfficientNet,
+    EfficientNetV2,
+    GoogLeNet,
+    Inception,
+    MaxViT,
+    MNASNet,
+    MobileNetV2,
+    MobileNetV3,
+    RegNet,
+    ResNet,
+    ResNeXt,
+    ShuffleNetV2,
+    SqueezeNet,
+    SwinTransformer,
+    SwinTransformerV2,
+    ViT,
+    WideResNet,
+)
+from .detectors import (
+    DEIM,
+    DETR,
+    DFINE,
+    RFDETR,
+    YOLO,
+    YOLO3,
+    YOLO5,
+    YOLO7,
+    YOLO8,
+    YOLO9,
+    YOLO10,
+    YOLO11,
+    YOLO12,
+    YOLO13,
+    YOLOX,
+    DEIMv2,
+    RTDETRv1,
+    RTDETRv2,
+    RTDETRv3,
+)
 
 __all__ = [
     "DEIM",
     "DETR",
     "DFINE",
     "RFDETR",
+    "VGG",
     "YOLO",
     "YOLO3",
     "YOLO5",
@@ -68,8 +153,28 @@ __all__ = [
     "YOLO12",
     "YOLO13",
     "YOLOX",
+    "AlexNet",
+    "ConvNeXt",
     "DEIMv2",
+    "DenseNet",
+    "EfficientNet",
+    "EfficientNetV2",
+    "GoogLeNet",
+    "Inception",
+    "MNASNet",
+    "MaxViT",
+    "MobileNetV2",
+    "MobileNetV3",
     "RTDETRv1",
     "RTDETRv2",
     "RTDETRv3",
+    "RegNet",
+    "ResNeXt",
+    "ResNet",
+    "ShuffleNetV2",
+    "SqueezeNet",
+    "SwinTransformer",
+    "SwinTransformerV2",
+    "ViT",
+    "WideResNet",
 ]
