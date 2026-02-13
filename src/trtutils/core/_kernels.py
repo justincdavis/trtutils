@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import nvtx
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import cuda
 
@@ -54,10 +56,13 @@ class Kernel:
             engines verbose setting.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(f"kernel::init [{name}]")
         kernel_file = kernel_file if isinstance(kernel_file, Path) else Path(kernel_file)
         with kernel_file.open("r") as f:
             kernel_code: str = f.read()
         self._name = name
+        self._nvtx_tag_call = f"kernel::call [{name}]"
         self._module, self._kernel = compile_and_load_kernel(
             kernel_code,
             name,
@@ -65,6 +70,8 @@ class Kernel:
         )
         self._inter_args: deque[list[np.ndarray]] = deque(maxlen=max_arg_cache)
         self._freed = False
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     def free(self: Self) -> None:
         """Free the memory of the loaded kernel."""
@@ -156,6 +163,8 @@ class Kernel:
             engines verbose setting.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tag_call)
         if verbose:
             LOG.debug(
                 f"Calling kernel: {self._name}, blocks: {num_blocks}, threads: {num_threads}, args: {args}",
@@ -168,6 +177,8 @@ class Kernel:
             stream,
             args,
         )
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
 
 def launch_kernel(
@@ -196,6 +207,8 @@ def launch_kernel(
         array containing each individual argument.
 
     """
+    if FLAGS.NVTX_ENABLED:
+        nvtx.push_range("core::launch_kernel")
     cuda_call(
         cuda.cuLaunchKernel(
             kernel,
@@ -207,6 +220,8 @@ def launch_kernel(
             0,
         ),
     )
+    if FLAGS.NVTX_ENABLED:
+        nvtx.pop_range()
 
 
 def create_kernel_args(

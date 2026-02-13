@@ -9,9 +9,11 @@ from threading import Lock
 from typing import TYPE_CHECKING
 
 import numpy as np
+import nvtx
 from cv2ext.bboxes import nms
 from cv2ext.image import patch as patch_image
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
@@ -58,6 +60,13 @@ class SAHI:
             By default, False.
 
         """
+        self._nvtx_tags = {
+            "init": "sahi::init",
+            "execute": "sahi::_execute",
+            "end2end": "sahi::end2end",
+        }
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["init"])
         self._detector = detector
         slice_size = slice_size if slice_size is not None else detector.input_shape
         self._slice_width = slice_size[0]
@@ -75,6 +84,8 @@ class SAHI:
             cpu_cores -= 1
         self._executor = ThreadPoolExecutor(max_workers=cpu_cores)
         self._lock = Lock()
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
 
     def _execute(
         self: Self,
@@ -87,6 +98,8 @@ class SAHI:
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
     ) -> list[tuple[tuple[int, int, int, int], float, int]]:
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["execute"])
         if not patch.flags.c_contiguous:
             patch = np.ascontiguousarray(patch)
         with self._lock:
@@ -115,6 +128,8 @@ class SAHI:
             y2 = int(y2 * sy)
             # write back
             corrected_dets.append(((x1, y1, x2, y2), conf, class_id))
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # execute
         return corrected_dets
 
     def end2end(
@@ -158,6 +173,8 @@ class SAHI:
             The detections where each entry is bbox, conf, class_id
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["end2end"])
         if verbose is None:
             verbose = self._verbose
 
@@ -197,4 +214,6 @@ class SAHI:
         if verbose:
             LOG.info(f"SAHI: {len(dets)} detections overall")
 
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # end2end
         return dets

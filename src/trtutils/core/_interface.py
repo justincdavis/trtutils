@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import nvtx
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
@@ -66,6 +67,9 @@ class TRTEngineInterface(ABC):
         """
         # store path stem as name
         self._name = Path(engine_path).stem
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(f"engine_interface::init [{self.name}]")
         self._dla_core = dla_core
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._unified_mem = unified_mem if unified_mem is not None else FLAGS.IS_JETSON
@@ -119,6 +123,15 @@ class TRTEngineInterface(ABC):
 
         # store cache random data
         self._rand_input: list[np.ndarray] | None = None
+
+        # setup the nvtx tags
+        self._nvtx_tags: dict[str, str] = {
+            "warmup": f"engine_interface::warmup [{self.name}]",
+            "mock_execute": f"engine_interface::mock_execute [{self.name}]",
+        }
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
 
     @property
     def name(self: Self) -> str:
@@ -538,9 +551,18 @@ class TRTEngineInterface(ABC):
         verbose = verbose if verbose is not None else self._verbose
         if verbose:
             LOG.debug(f"Mock-execute: data={bool(data)}")
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["mock_execute"])
+
         if data is None:
             data = self.get_random_input(verbose=verbose)
-        return self.execute(data, no_copy=True, verbose=verbose, debug=debug)
+        output = self.execute(data, no_copy=True, verbose=verbose, debug=debug)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # mock_execute
+
+        return output
 
     def warmup(
         self: Self,
@@ -565,5 +587,12 @@ class TRTEngineInterface(ABC):
 
         """
         verbose = verbose if verbose is not None else self._verbose
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["warmup"])
+
         for _ in range(iterations):
             self.mock_execute(verbose=verbose, debug=debug)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # warmup

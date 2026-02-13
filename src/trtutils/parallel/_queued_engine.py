@@ -8,7 +8,10 @@ from queue import Empty, Queue
 from threading import Thread
 from typing import TYPE_CHECKING
 
+import nvtx
+
 from trtutils._engine import TRTEngine
+from trtutils._flags import FLAGS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -56,6 +59,14 @@ class QueuedTRTEngine:
                 warmup=warmup,
                 dla_core=dla_core,
             )
+        self._nvtx_tags = {
+            "init": f"queued_engine::init [{self._engine.name}]",
+            "_run": f"queued_engine::_run [{self._engine.name}]",
+            "submit": f"queued_engine::submit [{self._engine.name}]",
+            "retrieve": f"queued_engine::retrieve [{self._engine.name}]",
+        }
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["init"])
         self._input_queue: Queue[list[np.ndarray]] = Queue()
         self._output_queue: Queue[list[np.ndarray]] = Queue()
         self._thread = Thread(
@@ -64,6 +75,8 @@ class QueuedTRTEngine:
             daemon=True,
         )
         self._thread.start()
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
 
     def __del__(self: Self) -> None:
         self.stop()
@@ -184,7 +197,11 @@ class QueuedTRTEngine:
             The data to have the engine run.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["submit"])
         self._input_queue.put(data)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     def mock_submit(
         self: Self,
@@ -211,8 +228,15 @@ class QueuedTRTEngine:
             The output from the engine.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["retrieve"])
         with contextlib.suppress(Empty):
-            return self._output_queue.get(timeout=timeout)
+            result = self._output_queue.get(timeout=timeout)
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
+            return result
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
         return None
 
     def _run(
@@ -224,6 +248,10 @@ class QueuedTRTEngine:
             except Empty:
                 continue
 
+            if FLAGS.NVTX_ENABLED:
+                nvtx.push_range(self._nvtx_tags["_run"])
             result = self._engine(inputs)
 
             self._output_queue.put(result)
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()

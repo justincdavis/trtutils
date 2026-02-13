@@ -62,6 +62,10 @@ Functions
     Disable just-in-time compilation using Numba.
 :func:`register_jit`
     Decorator for registering functions for potential JIT compilation.
+:func:`enable_nvtx`
+    Enable trtutils NVTX profiling.
+:func:`disable_nvtx`
+    Disable trtutils NVTX profiling.
 
 Objects
 -------
@@ -73,6 +77,8 @@ Objects
     The TensorRT compatible logger for trtutils.
 :obj:`JIT`
     A context manager for enabling just-in-time compilation using Numba.
+:obj:`NVTX`
+    A context manager for enabling NVTX profiling.
 
 """
 
@@ -108,6 +114,7 @@ from ._config import CONFIG
 from ._flags import FLAGS
 from ._jit import JIT, disable_jit, enable_jit, register_jit
 from ._log import LOG, set_log_level
+from ._nvtx import NVTX, disable_nvtx, enable_nvtx
 
 __author__ = "Justin Davis"
 __version__ = "0.7.0"
@@ -127,6 +134,7 @@ __all__ = [
     "FLAGS",
     "JIT",
     "LOG",
+    "NVTX",
     "BenchmarkResult",
     "Metric",
     "TRTEngine",
@@ -137,8 +145,10 @@ __all__ = [
     "compat",
     "core",
     "disable_jit",
+    "disable_nvtx",
     "download",
     "enable_jit",
+    "enable_nvtx",
     "find_trtexec",
     "image",
     "inspect",
