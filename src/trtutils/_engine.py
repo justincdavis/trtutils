@@ -404,7 +404,8 @@ class TRTEngine(TRTEngineInterface):
         # return the results
         if no_copy:
             outputs = [o.host_allocation for o in self._outputs]
-        outputs = [o.host_allocation.copy() for o in self._outputs]
+        else:
+            outputs = [o.host_allocation.copy() for o in self._outputs]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()
