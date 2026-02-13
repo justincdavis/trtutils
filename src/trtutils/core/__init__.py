@@ -19,6 +19,8 @@ Classes
     A class for managing a CUDA allocation.
 :class:`CUDAGraph`
     Wrapper around CUDA graph capture and execution.
+:class:`DeviceGuard`
+    Context manager for saving and restoring the current CUDA device.
 :class:`TRTEngineInterface`
     An interface for the TRTEngine class.
 :class:`Kernel`
@@ -90,6 +92,12 @@ Functions
     Launch a CUDA kernel.
 :func:`create_kernel_args`
     Create the argument array for a kernel call.
+:func:`get_device`
+    Get the current CUDA device.
+:func:`get_device_count`
+    Get the number of CUDA devices available.
+:func:`set_device`
+    Set the current CUDA device.
 :func:`init_cuda`
     Initialize CUDA.
 :func:`cuda_free`
@@ -113,6 +121,7 @@ from ._bindings import (
 )
 from ._context import create_context, destroy_context
 from ._cuda import cuda_call, init_cuda
+from ._device import DeviceGuard, get_device, get_device_count, set_device
 from ._engine import create_engine, get_engine_names
 from ._graph import (
     CUDAGraph,
@@ -148,6 +157,7 @@ from ._stream import create_stream, destroy_stream, stream_synchronize
 __all__ = [
     "Binding",
     "CUDAGraph",
+    "DeviceGuard",
     "Kernel",
     "TRTEngineInterface",
     "allocate_bindings",
@@ -175,6 +185,8 @@ __all__ = [
     "destroy_context",
     "destroy_stream",
     "free_device_ptrs",
+    "get_device",
+    "get_device_count",
     "get_engine_names",
     "init_cuda",
     "launch_kernel",
@@ -188,5 +200,6 @@ __all__ = [
     "memcpy_host_to_device_offset",
     "memcpy_host_to_device_offset_async",
     "nvrtc_call",
+    "set_device",
     "stream_synchronize",
 ]

@@ -12,6 +12,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
 
+from ._device import DeviceGuard
 from ._stream import create_stream
 
 if TYPE_CHECKING:
@@ -22,6 +23,7 @@ def create_engine(
     engine_path: Path | str,
     stream: cudart.cudaStream_t | None = None,
     dla_core: int | None = None,
+    device: int | None = None,
     *,
     no_warn: bool | None = None,
 ) -> tuple[trt.ICudaEngine, trt.IExecutionContext, trt.ILogger, cudart.cudaStream_t]:
@@ -40,6 +42,9 @@ def create_engine(
     dla_core : int, optional
         The DLA core to assign DLA layers of the engine to. Default is None.
         If None, any DLA layers will be assigned to DLA core 0.
+    device : int, optional
+        The CUDA device index to create the engine on. Default is None,
+        which uses the current device.
     no_warn : bool | None, optional
         If True, suppresses warnings from TensorRT. Default is None.
 
@@ -68,38 +73,39 @@ def create_engine(
         err_msg = f"Engine file not found: {engine_path}"
         raise FileNotFoundError(err_msg)
 
-    # load the engine from file
-    # explicitly a thread-safe operation
-    # https://docs.nvidia.com/deeplearning/tensorrt/latest/architecture/how-trt-works.html
-    runtime = trt.Runtime(LOG)
-    if dla_core is not None:
-        runtime.DLA_core = dla_core
-    with Path.open(engine_path, "rb") as f:
-        if runtime is None:
-            err_msg = "Failed to create TRT runtime"
-            raise RuntimeError(err_msg)
-        if no_warn:
-            with LOG.suppress():
+    with DeviceGuard(device):
+        # load the engine from file
+        # explicitly a thread-safe operation
+        # https://docs.nvidia.com/deeplearning/tensorrt/latest/architecture/how-trt-works.html
+        runtime = trt.Runtime(LOG)
+        if dla_core is not None:
+            runtime.DLA_core = dla_core
+        with Path.open(engine_path, "rb") as f:
+            if runtime is None:
+                err_msg = "Failed to create TRT runtime"
+                raise RuntimeError(err_msg)
+            if no_warn:
+                with LOG.suppress():
+                    engine = runtime.deserialize_cuda_engine(f.read())
+            else:
                 engine = runtime.deserialize_cuda_engine(f.read())
-        else:
-            engine = runtime.deserialize_cuda_engine(f.read())
 
-    # final check on engine
-    if engine is None:
-        err_msg = f"Failed to deserialize engine from {engine_path}"
-        raise RuntimeError(err_msg)
+        # final check on engine
+        if engine is None:
+            err_msg = f"Failed to deserialize engine from {engine_path}"
+            raise RuntimeError(err_msg)
 
-    # create the execution context
-    # explicitly a thread-safe operation
-    # https://docs.nvidia.com/deeplearning/tensorrt/latest/architecture/how-trt-works.html
-    context = engine.create_execution_context()
-    if context is None:
-        err_msg = "Failed to create execution context"
-        raise RuntimeError(err_msg)
+        # create the execution context
+        # explicitly a thread-safe operation
+        # https://docs.nvidia.com/deeplearning/tensorrt/latest/architecture/how-trt-works.html
+        context = engine.create_execution_context()
+        if context is None:
+            err_msg = "Failed to create execution context"
+            raise RuntimeError(err_msg)
 
-    # create a cudart stream
-    if stream is None:
-        stream = create_stream()
+        # create a cudart stream
+        if stream is None:
+            stream = create_stream()
 
     return engine, context, LOG, stream
 

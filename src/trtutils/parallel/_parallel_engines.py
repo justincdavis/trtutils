@@ -26,7 +26,13 @@ class ParallelTRTEngines:
 
     def __init__(
         self: Self,
-        engines: Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]],
+        engines: Sequence[
+            TRTEngine
+            | Path
+            | str
+            | tuple[TRTEngine | Path | str, int]
+            | tuple[TRTEngine | Path | str, int | None, int | None]
+        ],
         warmup_iterations: int = 5,
         *,
         warmup: bool | None = None,
@@ -36,8 +42,11 @@ class ParallelTRTEngines:
 
         Parameters
         ----------
-        engines : Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]]
-            The Paths to the compiled engines to use.
+        engines : Sequence[...]
+            The engines to use. Each element can be:
+            - A TRTEngine, Path, or str
+            - A 2-tuple of (engine, dla_core)
+            - A 3-tuple of (engine, dla_core, device)
         warmup_iterations : int
             The number of iterations to perform warmup for.
             By default 5
@@ -51,9 +60,12 @@ class ParallelTRTEngines:
         for engine_info in engines:
             engine: TRTEngine | Path | str
             dla_core: int | None = None
+            device: int | None = None
             if isinstance(engine_info, tuple):
                 engine = engine_info[0]  # type: ignore[assignment]
                 dla_core = engine_info[1]  # type: ignore[assignment]
+                if len(engine_info) > 2:  # noqa: PLR2004
+                    device = engine_info[2]  # type: ignore[assignment, index]
             else:
                 engine = engine_info
             q_engine = QueuedTRTEngine(
@@ -61,6 +73,7 @@ class ParallelTRTEngines:
                 warmup_iterations=warmup_iterations,
                 warmup=warmup,
                 dla_core=dla_core,
+                device=device,
             )
             self._engines.append(q_engine)
         if FLAGS.NVTX_ENABLED:

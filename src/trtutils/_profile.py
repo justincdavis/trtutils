@@ -21,6 +21,7 @@ def profile_engine(
     iterations: int = 100,
     warmup_iterations: int = 10,
     dla_core: int | None = None,
+    device: int | None = None,
     tegra_interval: int = 5,
     *,
     jetson: bool = False,
@@ -60,6 +61,9 @@ def profile_engine(
     dla_core : int, optional
         The DLA core to assign DLA layers of the engine to. Default is None.
         If None, any DLA layers will be assigned to DLA core 0.
+    device : int, optional
+        The CUDA device index to use for the engine. Default is None,
+        which uses the current device.
     tegra_interval : int, optional
         The interval in milliseconds between tegrastats samples (Jetson only),
         by default 5. Only used when jetson=True.
@@ -90,6 +94,7 @@ def profile_engine(
             warmup_iterations=warmup_iterations,
             tegra_interval=tegra_interval,
             dla_core=dla_core,
+            device=device,
             warmup=warmup,
             verbose=verbose,
         )
@@ -98,6 +103,7 @@ def profile_engine(
         iterations=iterations,
         warmup_iterations=warmup_iterations,
         dla_core=dla_core,
+        device=device,
         warmup=warmup,
         verbose=verbose,
     )
