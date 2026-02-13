@@ -45,7 +45,7 @@ def _read_image(path: Path) -> np.ndarray:
     """Read an image from disk."""
     img = cv2.imread(str(path))
     if img is None:
-        pytest.skip(reason=f"Image not found: {path}")
+        pytest.skip(f"Image not found: {path}")  # type: ignore[invalid-argument-type, too-many-positional-arguments]
     assert img is not None
     return img
 
@@ -55,7 +55,7 @@ def _build_classifier_engine() -> Path:
     if CLASSIFIER_ENGINE_PATH.exists():
         return CLASSIFIER_ENGINE_PATH
     if not CLASSIFIER_ONNX_PATH.exists():
-        pytest.skip(reason="Classifier ONNX not available")
+        pytest.skip("Classifier ONNX not available")  # type: ignore[invalid-argument-type, too-many-positional-arguments]
     CLASSIFIER_ENGINE_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:
         trtutils.builder.build_engine(
@@ -64,7 +64,7 @@ def _build_classifier_engine() -> Path:
             optimization_level=1,
         )
     except RuntimeError as e:
-        pytest.skip(reason=f"Failed to build classifier engine: {e}")
+        pytest.skip(f"Failed to build classifier engine: {e}")  # type: ignore[invalid-argument-type, too-many-positional-arguments]
     return CLASSIFIER_ENGINE_PATH
 
 

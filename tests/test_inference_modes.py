@@ -478,7 +478,7 @@ def classifier_engine_path() -> Path | None:
 
 def _require_classifier_engine(engine_path: Path | None) -> Path:
     if engine_path is None:
-        pytest.skip(reason="Classifier ONNX not available")
+        pytest.skip("Classifier ONNX not available")  # type: ignore[invalid-argument-type, too-many-positional-arguments]
     assert engine_path is not None
     return engine_path
 
