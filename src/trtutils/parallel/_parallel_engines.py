@@ -52,8 +52,7 @@ class ParallelTRTEngines:
             engine: TRTEngine | Path | str
             dla_core: int | None = None
             if isinstance(engine_info, tuple):
-                engine = engine_info[0]  # type: ignore[assignment]
-                dla_core = engine_info[1]  # type: ignore[assignment]
+                engine, dla_core = engine_info  # type: ignore[assignment]
             else:
                 engine = engine_info
             q_engine = QueuedTRTEngine(

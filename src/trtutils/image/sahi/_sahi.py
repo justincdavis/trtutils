@@ -114,7 +114,7 @@ class SAHI:
         sx, sy = scale
         corrected_dets = []
         for det in dets:
-            bbox, conf, class_id = det  # type: ignore[misc]
+            bbox, conf, class_id = det
             x1, y1, x2, y2 = bbox
             # offset based on patch
             x1 += x

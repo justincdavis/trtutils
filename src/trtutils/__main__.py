@@ -85,9 +85,9 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup=True,
             verbose=args.verbose,
         )
-        latency = jresult.latency  # type: ignore[assignment]
-        energy = jresult.energy  # type: ignore[assignment]
-        power = jresult.power_draw  # type: ignore[assignment]
+        latency = jresult.latency
+        energy = jresult.energy
+        power = jresult.power_draw
     else:
         result = trtutils.benchmark_engine(
             engine=mpath,
@@ -97,7 +97,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup=True,
             verbose=args.verbose,
         )
-        latency = result.latency  # type: ignore[assignment]
+        latency = result.latency
 
     latency_in_ms = {
         "mean": latency.mean * 1000.0,
@@ -614,7 +614,7 @@ def _detect(args: SimpleNamespace) -> None:
         t3 = time.perf_counter()
         dets: list[tuple[tuple[int, int, int, int], float, int]] = detector.get_detections(
             p_results, verbose=args.verbose
-        )[0]  # type: ignore[assignment]
+        )[0]
         t4 = time.perf_counter()
         return (
             dets,
@@ -801,7 +801,7 @@ def _classify(args: SimpleNamespace) -> None:
             raise RuntimeError(err_msg)
         p_results = classifier.postprocess(results, no_copy=True)
         t3 = time.perf_counter()
-        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]  # type: ignore[assignment]
+        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]
         t4 = time.perf_counter()
         return (
             cls_results[0],
