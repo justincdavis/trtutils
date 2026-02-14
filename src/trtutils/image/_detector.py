@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, cast, overload
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 import nvtx
@@ -1033,17 +1033,13 @@ class Detector(ImageModel, DetectorInterface):
             )
 
         # generate the detections
-        # cast needed: ty can't resolve overload with numpy 1.x type stubs
-        result = cast(
-            "list[list[tuple[tuple[int, int, int, int], float, int]]]",
-            self.get_detections(
-                postprocessed,
-                conf_thres=conf_thres,
-                nms_iou_thres=nms_iou_thres,
-                extra_nms=extra_nms,
-                agnostic_nms=agnostic_nms,
-                verbose=verbose,
-            ),
+        result = self.get_detections(
+            postprocessed,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou_thres,
+            extra_nms=extra_nms,
+            agnostic_nms=agnostic_nms,
+            verbose=verbose,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -1169,17 +1165,13 @@ class Detector(ImageModel, DetectorInterface):
             no_copy=True,
             verbose=verbose,
         )
-        # cast needed: ty can't resolve overload with numpy 1.x type stubs
-        result = cast(
-            "list[list[tuple[tuple[int, int, int, int], float, int]]]",
-            self.get_detections(
-                postprocessed,
-                conf_thres=conf_thres,
-                nms_iou_thres=nms_iou_thres,
-                extra_nms=extra_nms,
-                agnostic_nms=agnostic_nms,
-                verbose=verbose,
-            ),
+        result = self.get_detections(
+            postprocessed,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou_thres,
+            extra_nms=extra_nms,
+            agnostic_nms=agnostic_nms,
+            verbose=verbose,
         )
 
         if FLAGS.NVTX_ENABLED:

@@ -183,16 +183,14 @@ def benchmark_engines(
     temp_engines: list[Path | TRTEngine] = []
     dla_assignments: list[int | None] = []
     for engine_info in engines:
-        engine: TRTEngine | Path | str
         dla_core: int | None = None
         if isinstance(engine_info, tuple):
-            engine = engine_info[0]  # type: ignore[assignment]
-            dla_core = engine_info[1]  # type: ignore[assignment]
+            engine, dla_core = engine_info  # type: ignore[assignment]
         else:
             engine = engine_info
         if isinstance(engine, str):
             engine = Path(engine)
-        temp_engines.append(engine)
+        temp_engines.append(engine)  # type: ignore[arg-type]
         dla_assignments.append(dla_core)
 
     if not parallel:

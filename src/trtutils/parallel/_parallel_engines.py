@@ -49,15 +49,13 @@ class ParallelTRTEngines:
             nvtx.push_range("parallel_engines::init")
         self._engines: list[QueuedTRTEngine] = []
         for engine_info in engines:
-            engine: TRTEngine | Path | str
             dla_core: int | None = None
             if isinstance(engine_info, tuple):
-                engine = engine_info[0]  # type: ignore[assignment]
-                dla_core = engine_info[1]  # type: ignore[assignment]
+                engine, dla_core = engine_info  # type: ignore[assignment]
             else:
                 engine = engine_info
             q_engine = QueuedTRTEngine(
-                engine=engine,
+                engine=engine,  # type: ignore[arg-type]
                 warmup_iterations=warmup_iterations,
                 warmup=warmup,
                 dla_core=dla_core,

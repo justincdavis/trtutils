@@ -1,5 +1,5 @@
 [environment]
-root = ["."]
+root = [".", "src"]
 python-version = "3.8"
 
 [rules]
