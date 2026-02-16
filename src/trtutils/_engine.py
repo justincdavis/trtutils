@@ -52,6 +52,7 @@ class TRTEngine(TRTEngineInterface):
         backend: str = "auto",
         stream: cuda.cudaStream_t | None = None,
         dla_core: int | None = None,
+        device: int | None = None,
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
@@ -80,6 +81,9 @@ class TRTEngine(TRTEngineInterface):
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+        device : int, optional
+            The CUDA device index to use for this engine. Default is None,
+            which uses the current device.
         warmup_iterations : int, optional
             The number of warmup iterations to do, by default 5
         pagelocked_mem : bool, optional
@@ -113,6 +117,7 @@ class TRTEngine(TRTEngineInterface):
             engine_path,
             stream=stream,
             dla_core=dla_core,
+            device=device,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             no_warn=no_warn,
@@ -310,93 +315,94 @@ class TRTEngine(TRTEngineInterface):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["execute"])
 
-        # reset the input bindings if direct_exec or raw_exec were used
-        if not self._using_engine_tensors:
-            self._set_input_bindings()
-            self._using_engine_tensors = True
+        with self._device_guard:
+            # reset the input bindings if direct_exec or raw_exec were used
+            if not self._using_engine_tensors:
+                self._set_input_bindings()
+                self._using_engine_tensors = True
 
-        # copy inputs
-        if self._pagelocked_mem and self._unified_mem:
-            for i_idx in range(len(self._inputs)):
-                np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
-        elif self._pagelocked_mem:
-            for i_idx in range(len(self._inputs)):
-                memcpy_host_to_device_async(
-                    self._inputs[i_idx].allocation,
-                    data[i_idx],
-                    self._stream,
-                )
-        else:
-            for i_idx in range(len(self._inputs)):
-                memcpy_host_to_device(
-                    self._inputs[i_idx].allocation,
-                    data[i_idx],
-                )
-
-        if debug:
-            stream_synchronize(self._stream)
-
-        # execute
-        if self._cuda_graph:
-            if self._cuda_graph.is_captured:
-                # uses already captured graph to handle execution
-                self._cuda_graph.launch()
-            elif not self._capturing_graph:
-                # Capture the graph (warmup inside will use random data)
-                self._capture_cuda_graph()
-                # After capture, re-copy user's input (warmup overwrote it) and launch
-                if self._cuda_graph is not None and self._cuda_graph.is_captured:
-                    if self._pagelocked_mem and self._unified_mem:
-                        for i_idx in range(len(self._inputs)):
-                            np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
-                    elif self._pagelocked_mem:
-                        for i_idx in range(len(self._inputs)):
-                            memcpy_host_to_device_async(
-                                self._inputs[i_idx].allocation,
-                                data[i_idx],
-                                self._stream,
-                            )
-                    else:
-                        for i_idx in range(len(self._inputs)):
-                            memcpy_host_to_device(
-                                self._inputs[i_idx].allocation,
-                                data[i_idx],
-                            )
-                    self._cuda_graph.launch()
+            # copy inputs
+            if self._pagelocked_mem and self._unified_mem:
+                for i_idx in range(len(self._inputs)):
+                    np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
+            elif self._pagelocked_mem:
+                for i_idx in range(len(self._inputs)):
+                    memcpy_host_to_device_async(
+                        self._inputs[i_idx].allocation,
+                        data[i_idx],
+                        self._stream,
+                    )
             else:
-                # Currently capturing graph, use direct execution for warmup
+                for i_idx in range(len(self._inputs)):
+                    memcpy_host_to_device(
+                        self._inputs[i_idx].allocation,
+                        data[i_idx],
+                    )
+
+            if debug:
+                stream_synchronize(self._stream)
+
+            # execute
+            if self._cuda_graph:
+                if self._cuda_graph.is_captured:
+                    # uses already captured graph to handle execution
+                    self._cuda_graph.launch()
+                elif not self._capturing_graph:
+                    # Capture the graph (warmup inside will use random data)
+                    self._capture_cuda_graph()
+                    # After capture, re-copy user's input (warmup overwrote it) and launch
+                    if self._cuda_graph is not None and self._cuda_graph.is_captured:
+                        if self._pagelocked_mem and self._unified_mem:
+                            for i_idx in range(len(self._inputs)):
+                                np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
+                        elif self._pagelocked_mem:
+                            for i_idx in range(len(self._inputs)):
+                                memcpy_host_to_device_async(
+                                    self._inputs[i_idx].allocation,
+                                    data[i_idx],
+                                    self._stream,
+                                )
+                        else:
+                            for i_idx in range(len(self._inputs)):
+                                memcpy_host_to_device(
+                                    self._inputs[i_idx].allocation,
+                                    data[i_idx],
+                                )
+                        self._cuda_graph.launch()
+                else:
+                    # Currently capturing graph, use direct execution for warmup
+                    self._context.execute_async_v3(self._stream)
+            # base execution cases
+            elif self._async_v3:
                 self._context.execute_async_v3(self._stream)
-        # base execution cases
-        elif self._async_v3:
-            self._context.execute_async_v3(self._stream)
-        else:
-            self._context.execute_async_v2(self._allocations, self._stream)
+            else:
+                self._context.execute_async_v2(self._allocations, self._stream)
 
-        if debug:
-            stream_synchronize(self._stream)
+            if debug:
+                stream_synchronize(self._stream)
 
-        # copy outputs
-        if self._unified_mem and self._pagelocked_mem:
-            pass
-        elif self._pagelocked_mem:
-            for o_idx in range(len(self._outputs)):
-                memcpy_device_to_host_async(
-                    self._outputs[o_idx].host_allocation,
-                    self._outputs[o_idx].allocation,
-                    self._stream,
-                )
-        else:
-            for o_idx in range(len(self._outputs)):
-                memcpy_device_to_host(
-                    self._outputs[o_idx].host_allocation,
-                    self._outputs[o_idx].allocation,
-                )
+            # copy outputs
+            if self._unified_mem and self._pagelocked_mem:
+                pass
+            elif self._pagelocked_mem:
+                for o_idx in range(len(self._outputs)):
+                    memcpy_device_to_host_async(
+                        self._outputs[o_idx].host_allocation,
+                        self._outputs[o_idx].allocation,
+                        self._stream,
+                    )
+            else:
+                for o_idx in range(len(self._outputs)):
+                    memcpy_device_to_host(
+                        self._outputs[o_idx].host_allocation,
+                        self._outputs[o_idx].allocation,
+                    )
 
-        # make sure all operations are complete
-        # Skip sync when warming up for graph capture to avoid conflicts
-        # with cudaStreamCaptureModeGlobal in multi-threaded scenarios
-        if not self._capturing_graph:
-            stream_synchronize(self._stream)
+            # make sure all operations are complete
+            # Skip sync when warming up for graph capture to avoid conflicts
+            # with cudaStreamCaptureModeGlobal in multi-threaded scenarios
+            if not self._capturing_graph:
+                stream_synchronize(self._stream)
 
         if verbose:
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
@@ -443,15 +449,16 @@ class TRTEngine(TRTEngineInterface):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["graph_exec"])
 
-        if self._cuda_graph is None or not self._cuda_graph.is_captured:
-            err_msg = f"No CUDA graph captured for engine '{self._name}'. "
-            err_msg += "Ensure cuda_graph=True and warmup=True, or call execute() first."
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # graph_exec
-            raise RuntimeError(err_msg)
-        self._cuda_graph.launch()
-        if debug:
-            stream_synchronize(self._stream)
+        with self._device_guard:
+            if self._cuda_graph is None or not self._cuda_graph.is_captured:
+                err_msg = f"No CUDA graph captured for engine '{self._name}'. "
+                err_msg += "Ensure cuda_graph=True and warmup=True, or call execute() first."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # graph_exec
+                raise RuntimeError(err_msg)
+            self._cuda_graph.launch()
+            if debug:
+                stream_synchronize(self._stream)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()
@@ -512,44 +519,45 @@ class TRTEngine(TRTEngineInterface):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["direct_exec"])
 
-        # execute
-        if self._async_v3:
-            if set_pointers:
-                # need to set the input pointers to match the bindings, assume in same order
-                for i in range(len(pointers)):
-                    self._context.set_tensor_address(self._inputs[i].name, pointers[i])
-                self._using_engine_tensors = (
-                    False  # set flag to tell future execute calls to reset inputs
-                )
-            self._context.execute_async_v3(self._stream)
-        else:
-            self._context.execute_async_v2(
-                pointers + self._output_allocations,
-                self._stream,
-            )
-
-        if debug:
-            stream_synchronize(self._stream)
-
-        # copy outputs
-        if self._unified_mem and self._pagelocked_mem:
-            pass
-        elif self._pagelocked_mem:
-            for o_idx in range(len(self._outputs)):
-                memcpy_device_to_host_async(
-                    self._outputs[o_idx].host_allocation,
-                    self._outputs[o_idx].allocation,
+        with self._device_guard:
+            # execute
+            if self._async_v3:
+                if set_pointers:
+                    # need to set the input pointers to match the bindings, assume in same order
+                    for i in range(len(pointers)):
+                        self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+                    self._using_engine_tensors = (
+                        False  # set flag to tell future execute calls to reset inputs
+                    )
+                self._context.execute_async_v3(self._stream)
+            else:
+                self._context.execute_async_v2(
+                    pointers + self._output_allocations,
                     self._stream,
                 )
-        else:
-            for o_idx in range(len(self._outputs)):
-                memcpy_device_to_host(
-                    self._outputs[o_idx].host_allocation,
-                    self._outputs[o_idx].allocation,
-                )
 
-        # make sure all operations are complete
-        stream_synchronize(self._stream)
+            if debug:
+                stream_synchronize(self._stream)
+
+            # copy outputs
+            if self._unified_mem and self._pagelocked_mem:
+                pass
+            elif self._pagelocked_mem:
+                for o_idx in range(len(self._outputs)):
+                    memcpy_device_to_host_async(
+                        self._outputs[o_idx].host_allocation,
+                        self._outputs[o_idx].allocation,
+                        self._stream,
+                    )
+            else:
+                for o_idx in range(len(self._outputs)):
+                    memcpy_device_to_host(
+                        self._outputs[o_idx].host_allocation,
+                        self._outputs[o_idx].allocation,
+                    )
+
+            # make sure all operations are complete
+            stream_synchronize(self._stream)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()
@@ -612,24 +620,25 @@ class TRTEngine(TRTEngineInterface):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["raw_exec"])
 
-        # execute
-        if self._async_v3:
-            if set_pointers:
-                # need to set the input pointers to match the bindings, assume in same order
-                for i in range(len(pointers)):
-                    self._context.set_tensor_address(self._inputs[i].name, pointers[i])
-                self._using_engine_tensors = (
-                    False  # set flag to tell future execute calls to reset inputs
+        with self._device_guard:
+            # execute
+            if self._async_v3:
+                if set_pointers:
+                    # need to set the input pointers to match the bindings, assume in same order
+                    for i in range(len(pointers)):
+                        self._context.set_tensor_address(self._inputs[i].name, pointers[i])
+                    self._using_engine_tensors = (
+                        False  # set flag to tell future execute calls to reset inputs
+                    )
+                self._context.execute_async_v3(self._stream)
+            else:
+                self._context.execute_async_v2(
+                    pointers + self._output_allocations,
+                    self._stream,
                 )
-            self._context.execute_async_v3(self._stream)
-        else:
-            self._context.execute_async_v2(
-                pointers + self._output_allocations,
-                self._stream,
-            )
 
-        if debug:
-            stream_synchronize(self._stream)
+            if debug:
+                stream_synchronize(self._stream)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()

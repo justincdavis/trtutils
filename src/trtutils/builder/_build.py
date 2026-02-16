@@ -13,6 +13,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
+from trtutils.core._device import Device
 from trtutils.core.cache import query_timing_cache, save_timing_cache_to_global
 
 from ._calibrator import EngineCalibrator
@@ -50,6 +51,7 @@ def build_engine(
     profiling_verbosity: trt.ProfilingVerbosity | None = None,
     tiling_optimization_level: trt.TilingOptimizationLevel | None = None,
     tiling_l2_cache_limit: int | None = None,
+    device: int | None = None,
     *,
     timing_cache: Path | str | bool | None = None,
     gpu_fallback: bool = False,
@@ -155,6 +157,9 @@ def build_engine(
     tiling_l2_cache_limit : int, None, optional
         L2 cache limit (in bytes) for tiling optimization.
         By default, None (TensorRT manages the default value).
+    device : int, optional
+        The CUDA device index to build the engine on. Default is None,
+        which uses the current device.
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
         when building the engine for DLA.
@@ -376,12 +381,12 @@ def build_engine(
         #     )
         #     raise ValueError(err_msg)
         # handle device assignment
-        for layer_idx, device in layer_device:
-            if device is None:
+        for layer_idx, layer_dev in layer_device:
+            if layer_dev is None:
                 continue
             layer = network.get_layer(layer_idx)
             # assess if can run on DLA
-            if device == trt.DeviceType.DLA and not check_dla(layer):
+            if layer_dev == trt.DeviceType.DLA and not check_dla(layer):
                 err_msg = f"Layer {layer.name} (type: {layer.type}) cannot run on DLA"
                 if gpu_fallback:
                     err_msg += ", using GPU fallback"
@@ -389,7 +394,7 @@ def build_engine(
                 else:
                     raise ValueError(err_msg)
             else:
-                config.set_device_type(layer, device)
+                config.set_device_type(layer, layer_dev)
 
     # load/setup the timing cache
     t_cache: trt.ITimingCache | None = None
@@ -412,10 +417,11 @@ def build_engine(
         config.set_timing_cache(t_cache, ignore_mismatch=ignore_timing_mismatch)
 
     # build the engine
-    if FLAGS.BUILD_SERIALIZED:
-        engine_bytes = builder.build_serialized_network(network, config)
-    else:
-        engine_bytes = builder.build_engine(network, config)
+    with Device(device):
+        if FLAGS.BUILD_SERIALIZED:
+            engine_bytes = builder.build_serialized_network(network, config)
+        else:
+            engine_bytes = builder.build_engine(network, config)
 
     # save the timing cache
     if use_global_timing_cache:
