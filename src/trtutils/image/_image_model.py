@@ -46,7 +46,7 @@ class ImageModel:
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = False,
+        cuda_graph: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -100,7 +100,7 @@ class ImageModel:
             end2end() will capture a CUDA graph of the full preprocessing +
             inference pipeline, and subsequent calls will replay it. Input
             dimensions are locked after the first end2end() call.
-            Only effective with async_v3 backend. Default is None (disabled).
+            Only effective with async_v3 backend. Default is True.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -243,7 +243,7 @@ class ImageModel:
         # E2E graph state (enabled when cuda_graph=True)
         # Note: Preprocessing runs outside the graph since H2D copies cannot be captured.
         # Only TRTEngine inference is captured in the graph.
-        self._e2e_graph_enabled: bool = cuda_graph if cuda_graph is not None else False
+        self._e2e_graph_enabled: bool = cuda_graph if cuda_graph is not None else True
         self._e2e_graph: CUDAGraph | None = None
         self._e2e_input_dims: tuple[int, int] | None = None
         self._e2e_batch_size: int | None = None
