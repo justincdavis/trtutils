@@ -19,7 +19,7 @@ Classes
     A class for managing a CUDA allocation.
 :class:`CUDAGraph`
     Wrapper around CUDA graph capture and execution.
-:class:`DeviceGuard`
+:class:`Device`
     Context manager for saving and restoring the current CUDA device.
 :class:`TRTEngineInterface`
     An interface for the TRTEngine class.
@@ -121,7 +121,7 @@ from ._bindings import (
 )
 from ._context import create_context, destroy_context
 from ._cuda import cuda_call, init_cuda
-from ._device import DeviceGuard, get_device, get_device_count, set_device
+from ._device import Device, get_device, get_device_count, set_device
 from ._engine import create_engine, get_engine_names
 from ._graph import (
     CUDAGraph,
@@ -157,7 +157,7 @@ from ._stream import create_stream, destroy_stream, stream_synchronize
 __all__ = [
     "Binding",
     "CUDAGraph",
-    "DeviceGuard",
+    "Device",
     "Kernel",
     "TRTEngineInterface",
     "allocate_bindings",

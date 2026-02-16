@@ -13,7 +13,7 @@ import nvtx
 from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
-from trtutils.core._device import DeviceGuard
+from trtutils.core._device import Device
 from trtutils.core._graph import CUDAGraph
 from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
 from trtutils.core._stream import stream_synchronize
@@ -225,7 +225,7 @@ class ImageModel:
                 "Preprocessing method set to TensorRT, but platform doesnt have UINT8 support, fallback to CUDA."
             )
         # existing logic — guard CUDA/TRT preprocessor setup on correct device
-        with DeviceGuard(device):
+        with Device(device):
             if preprocessor == "trt":
                 self._preproc_trt = self._setup_trt_preproc()
                 self._preprocessor = self._preproc_trt

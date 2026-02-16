@@ -17,7 +17,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._bindings import Binding, allocate_bindings
-from ._device import DeviceGuard
+from ._device import Device
 from ._engine import create_engine, get_engine_names
 
 if TYPE_CHECKING:
@@ -77,7 +77,7 @@ class TRTEngineInterface(ABC):
             nvtx.push_range(f"engine_interface::init [{self.name}]")
         self._dla_core = dla_core
         self._device = device
-        self._device_guard = DeviceGuard(device)
+        self._device_guard = Device(device)
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._unified_mem = unified_mem if unified_mem is not None else FLAGS.IS_JETSON
         self._verbose = verbose

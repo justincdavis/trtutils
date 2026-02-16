@@ -52,7 +52,7 @@ def get_device_count() -> int:
     return cuda_call(cudart.cudaGetDeviceCount())
 
 
-class DeviceGuard:
+class Device:
     """
     Context manager that saves and restores the current CUDA device.
 

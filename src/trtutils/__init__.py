@@ -126,7 +126,7 @@ from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_eng
 from ._engine import TRTEngine
 from ._profile import profile_engine
 from .builder import build_engine
-from .core._device import DeviceGuard, get_device, get_device_count, set_device
+from .core._device import Device, get_device, set_device
 from .inspect import inspect_engine
 from .trtexec import find_trtexec, run_trtexec
 
@@ -137,7 +137,7 @@ __all__ = [
     "LOG",
     "NVTX",
     "BenchmarkResult",
-    "DeviceGuard",
+    "Device",
     "Metric",
     "TRTEngine",
     "benchmark_engine",
@@ -153,7 +153,6 @@ __all__ = [
     "enable_nvtx",
     "find_trtexec",
     "get_device",
-    "get_device_count",
     "image",
     "inspect",
     "inspect_engine",

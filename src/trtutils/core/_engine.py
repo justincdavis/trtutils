@@ -12,7 +12,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
 
-from ._device import DeviceGuard
+from ._device import Device
 from ._stream import create_stream
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ def create_engine(
         err_msg = f"Engine file not found: {engine_path}"
         raise FileNotFoundError(err_msg)
 
-    with DeviceGuard(device):
+    with Device(device):
         # load the engine from file
         # explicitly a thread-safe operation
         # https://docs.nvidia.com/deeplearning/tensorrt/latest/architecture/how-trt-works.html

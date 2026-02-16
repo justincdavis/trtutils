@@ -13,7 +13,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
-from trtutils.core._device import DeviceGuard
+from trtutils.core._device import Device
 from trtutils.core.cache import query_timing_cache, save_timing_cache_to_global
 
 from ._calibrator import EngineCalibrator
@@ -417,7 +417,7 @@ def build_engine(
         config.set_timing_cache(t_cache, ignore_mismatch=ignore_timing_mismatch)
 
     # build the engine
-    with DeviceGuard(device):
+    with Device(device):
         if FLAGS.BUILD_SERIALIZED:
             engine_bytes = builder.build_serialized_network(network, config)
         else:
