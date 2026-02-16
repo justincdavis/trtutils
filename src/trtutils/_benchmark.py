@@ -196,19 +196,15 @@ def benchmark_engines(
     dla_assignments: list[int | None] = []
     device_assignments: list[int | None] = []
     for engine_info in engines:
-        engine: TRTEngine | Path | str
         dla_core: int | None = None
         device: int | None = None
         if isinstance(engine_info, tuple):
-            engine = engine_info[0]  # type: ignore[assignment]
-            dla_core = engine_info[1]  # type: ignore[assignment]
-            if len(engine_info) > 2:  # noqa: PLR2004
-                device = engine_info[2]  # type: ignore[assignment, index]
+            engine, dla_core = engine_info  # type: ignore[assignment]
         else:
             engine = engine_info
         if isinstance(engine, str):
             engine = Path(engine)
-        temp_engines.append(engine)
+        temp_engines.append(engine)  # type: ignore[arg-type]
         dla_assignments.append(dla_core)
         device_assignments.append(device)
 

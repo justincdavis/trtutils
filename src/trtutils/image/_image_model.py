@@ -720,7 +720,7 @@ class ImageModel:
         else:
             # CPU preprocessor: preprocess to numpy, copy to engine binding
             # Both Classifier and Detector have compatible preprocess signatures for basic call
-            tensor, ratios, padding = self.preprocess(images, no_copy=True, verbose=verbose)  # type: ignore[attr-defined]
+            tensor, ratios, padding = self.preprocess(images, no_copy=True, verbose=verbose)
 
             # Copy preprocessed tensor to engine's input binding (H2D)
             memcpy_host_to_device_async(

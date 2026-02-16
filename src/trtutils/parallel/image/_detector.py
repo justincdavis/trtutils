@@ -661,7 +661,7 @@ class ParallelDetector:
             nvtx.push_range(self._nvtx_tags["get_detections_model"])
         if verbose:
             LOG.debug(f"{self._tag}: GetDetections model: {modelid}")
-        result = self.get_model(modelid).get_detections(outputs, verbose=verbose)  # type: ignore[return-value]
+        result = self.get_model(modelid).get_detections(outputs, verbose=verbose)
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()
         return result
