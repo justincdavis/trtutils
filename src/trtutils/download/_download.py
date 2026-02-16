@@ -525,6 +525,7 @@ def _export_ultralytics(
             "format=onnx",
             f"opset={opset}",
             f"imgsz={imgsz}",
+            "simplify=True",
         ],
         cwd=directory,
         verbose=verbose,

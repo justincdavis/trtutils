@@ -1625,3 +1625,150 @@ class YOLO13(YOLO):
             ],
             verbose=verbose,
         )
+
+
+class YOLO26(YOLO):
+    """Alias of Detector with default args for YOLO26."""
+
+    _default_imgsz = 640
+
+    def __init__(
+        self: Self,
+        engine_path: Path | str,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0, 1),
+        preprocessor: str = "trt",
+        resize_method: str = "letterbox",
+        conf_thres: float = 0.1,
+        nms_iou_thres: float = 0.5,
+        dla_core: int | None = None,
+        device: int | None = None,
+        backend: str = "auto",
+        *,
+        warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
+    ) -> None:
+        Detector.__init__(
+            self,
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            input_range=input_range,
+            preprocessor=preprocessor,
+            resize_method=resize_method,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou_thres,
+            input_schema=InputSchema.YOLO,
+            output_schema=OutputSchema.YOLO_V10,
+            dla_core=dla_core,
+            device=device,
+            backend=backend,
+            warmup=warmup,
+            pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
+            cuda_graph=cuda_graph,
+            extra_nms=extra_nms,
+            agnostic_nms=agnostic_nms,
+            no_warn=no_warn,
+            verbose=verbose,
+        )
+
+    @staticmethod
+    def download(
+        model: str,
+        output: Path | str,
+        imgsz: int | None = None,
+        opset: int = 17,
+        *,
+        accept: bool = False,
+        no_cache: bool | None = None,
+        verbose: bool | None = None,
+    ) -> None:
+        """
+        Download a YOLOv26 model.
+
+        Parameters
+        ----------
+        model: str
+            The model to download.
+        output: Path | str
+            The output path to save the model to.
+        imgsz: int = 640
+            The image size to use for the model.
+        opset: int = 17
+            The ONNX opset to use for the model.
+        *,
+        accept: bool, default False
+            Whether to accept the license terms for the model.
+        no_cache: bool | None = None,
+            Disable caching of downloaded weights and repos.
+        verbose: bool | None = None,
+            Print verbose output.
+
+        """
+        if imgsz is None:
+            imgsz = YOLO26._default_imgsz
+        download_model_internal(
+            model_type="yolov26",
+            friendly_name="YOLOv26",
+            model=model,
+            output=output,
+            imgsz=imgsz,
+            opset=opset,
+            no_cache=no_cache,
+            accept=accept,
+            verbose=verbose,
+        )
+
+    @staticmethod
+    def build(
+        onnx: Path | str,
+        output: Path | str,
+        imgsz: int | None = None,
+        batch_size: int = 1,
+        dla_core: int | None = None,
+        opt_level: int = 3,
+        *,
+        verbose: bool | None = None,
+    ) -> None:
+        """
+        Build a TensorRT engine for YOLOv26.
+
+        Parameters
+        ----------
+        onnx: Path | str
+            Path to the ONNX model.
+        output: Path | str
+            Output path for the built engine.
+        imgsz: int
+            Input image size used for shapes.
+            Default is 640
+        batch_size: int = 1
+            Batch size for the engine.
+        dla_core: int | None = None
+            The DLA core to build the engine for.
+            By default, None or build the engine for GPU.
+        opt_level: int = 3
+            TensorRT builder optimization level (0-5).
+            Default is 3.
+        verbose: bool | None = None
+            Enable verbose builder output.
+
+        """
+        if imgsz is None:
+            imgsz = YOLO26._default_imgsz
+        shapes = [("images", (batch_size, 3, imgsz, imgsz))]
+        build_engine(
+            onnx=onnx,
+            output=output,
+            shapes=shapes,
+            fp16=True,
+            dla_core=dla_core,
+            optimization_level=opt_level,
+            verbose=verbose,
+        )
