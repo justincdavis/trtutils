@@ -13,6 +13,7 @@ import nvtx
 from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._device import Device
 from trtutils.core._graph import CUDAGraph
 from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
 from trtutils.core._stream import stream_synchronize
@@ -39,6 +40,7 @@ class ImageModel:
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
         dla_core: int | None = None,
+        device: int | None = None,
         backend: str = "auto",
         *,
         warmup: bool | None = None,
@@ -76,6 +78,9 @@ class ImageModel:
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+        device : int, optional
+            The CUDA device index to use for this model. Default is None,
+            which uses the current device.
         backend : str
             The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
             Default is 'auto', which selects the best available backend.
@@ -130,6 +135,7 @@ class ImageModel:
         if self._verbose:
             LOG.debug(f"Creating ImageModel: {self._tag}")
 
+        self._device = device
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._engine = TRTEngine(
             engine_path=engine_path,
@@ -137,6 +143,7 @@ class ImageModel:
             backend=backend,
             warmup=warmup,
             dla_core=dla_core,
+            device=device,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
@@ -217,15 +224,16 @@ class ImageModel:
             LOG.warning(
                 "Preprocessing method set to TensorRT, but platform doesnt have UINT8 support, fallback to CUDA."
             )
-        # existing logic
-        if preprocessor == "trt":
-            self._preproc_trt = self._setup_trt_preproc()
-            self._preprocessor = self._preproc_trt
-        elif preprocessor == "cuda" and self._dtype == np.float32:
-            self._preproc_cuda = self._setup_cuda_preproc()
-            self._preprocessor = self._preproc_cuda
-        else:
-            self._preprocessor = self._preproc_cpu
+        # existing logic — guard CUDA/TRT preprocessor setup on correct device
+        with Device(device):
+            if preprocessor == "trt":
+                self._preproc_trt = self._setup_trt_preproc()
+                self._preprocessor = self._preproc_trt
+            elif preprocessor == "cuda" and self._dtype == np.float32:
+                self._preproc_cuda = self._setup_cuda_preproc()
+                self._preprocessor = self._preproc_cuda
+            else:
+                self._preprocessor = self._preproc_cpu
 
         # basic profiler setup
         self._pre_profile: tuple[float, float] = (0.0, 0.0)

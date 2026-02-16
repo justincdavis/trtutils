@@ -61,6 +61,7 @@ class Detector(ImageModel, DetectorInterface):
         input_schema: InputSchema | str | None = None,
         output_schema: OutputSchema | str | None = None,
         dla_core: int | None = None,
+        device: int | None = None,
         backend: str = "auto",
         *,
         warmup: bool | None = None,
@@ -118,6 +119,9 @@ class Detector(ImageModel, DetectorInterface):
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+        device : int, optional
+            The CUDA device index to use for this detector. Default is None,
+            which uses the current device.
         backend : str
             The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
             Default is 'auto', which selects the best available backend.
@@ -172,6 +176,7 @@ class Detector(ImageModel, DetectorInterface):
             mean=mean,
             std=std,
             dla_core=dla_core,
+            device=device,
             backend=backend,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
