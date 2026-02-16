@@ -66,7 +66,7 @@ class Detector(ImageModel, DetectorInterface):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = False,
+        cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
@@ -137,7 +137,7 @@ class Detector(ImageModel, DetectorInterface):
             end2end() will capture a CUDA graph of the full preprocessing +
             inference pipeline, and subsequent calls will replay it. Input
             dimensions are locked after the first end2end() call.
-            Only effective with async_v3 backend. Default is None (disabled).
+            Only effective with async_v3 backend. Default is True.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
