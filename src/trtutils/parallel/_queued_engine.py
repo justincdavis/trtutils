@@ -28,6 +28,7 @@ class QueuedTRTEngine:
         engine: TRTEngine | Path | str,
         warmup_iterations: int = 5,
         dla_core: int | None = None,
+        device: int | None = None,
         *,
         warmup: bool | None = None,
     ) -> None:
@@ -44,6 +45,9 @@ class QueuedTRTEngine:
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+        device : int, optional
+            The CUDA device index to use for this engine. Default is None,
+            which uses the current device.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
 
@@ -58,6 +62,7 @@ class QueuedTRTEngine:
                 warmup_iterations=warmup_iterations,
                 warmup=warmup,
                 dla_core=dla_core,
+                device=device,
             )
         self._nvtx_tags = {
             "init": f"queued_engine::init [{self._engine.name}]",

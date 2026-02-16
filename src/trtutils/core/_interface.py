@@ -17,6 +17,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._bindings import Binding, allocate_bindings
+from ._device import Device
 from ._engine import create_engine, get_engine_names
 
 if TYPE_CHECKING:
@@ -32,6 +33,7 @@ class TRTEngineInterface(ABC):
         engine_path: Path | str,
         stream: cuda.cudaStream_t | None = None,
         dla_core: int | None = None,
+        device: int | None = None,
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
@@ -51,6 +53,9 @@ class TRTEngineInterface(ABC):
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+        device : int, optional
+            The CUDA device index to use for this engine. Default is None,
+            which uses the current device.
         pagelocked_mem : bool, optional
             Whether or not to use pagelocked memory for host allocations.
             By default None, which means pagelocked memory will be used.
@@ -71,36 +76,40 @@ class TRTEngineInterface(ABC):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(f"engine_interface::init [{self.name}]")
         self._dla_core = dla_core
+        self._device = device
+        self._device_guard = Device(device)
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._unified_mem = unified_mem if unified_mem is not None else FLAGS.IS_JETSON
         self._verbose = verbose
 
-        # engine, context, logger, and CUDA stream
-        self._engine, self._context, self._logger, self._stream = create_engine(
-            engine_path,
-            stream=stream,
-            dla_core=dla_core,
-            no_warn=no_warn,
-        )
+        with self._device_guard:
+            # engine, context, logger, and CUDA stream
+            self._engine, self._context, self._logger, self._stream = create_engine(
+                engine_path,
+                stream=stream,
+                dla_core=dla_core,
+                device=device,
+                no_warn=no_warn,
+            )
 
-        # get the input and output names
-        self._input_names, self._output_names = get_engine_names(self._engine)
+            # get the input and output names
+            self._input_names, self._output_names = get_engine_names(self._engine)
 
-        # allocate memory for inputs and outputs
-        self._inputs, self._outputs, self._allocations = allocate_bindings(
-            self._engine,
-            self._context,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=self._unified_mem,
-        )
-        self._input_allocations: list[int] = [input_b.allocation for input_b in self._inputs]
-        self._input_host_allocations: list[np.ndarray] = [
-            input_b.host_allocation for input_b in self._inputs
-        ]
-        self._output_allocations: list[int] = [output_b.allocation for output_b in self._outputs]
-        self._output_host_allocations: list[np.ndarray] = [
-            output_b.host_allocation for output_b in self._outputs
-        ]
+            # allocate memory for inputs and outputs
+            self._inputs, self._outputs, self._allocations = allocate_bindings(
+                self._engine,
+                self._context,
+                pagelocked_mem=self._pagelocked_mem,
+                unified_mem=self._unified_mem,
+            )
+            self._input_allocations: list[int] = [input_b.allocation for input_b in self._inputs]
+            self._input_host_allocations: list[np.ndarray] = [
+                input_b.host_allocation for input_b in self._inputs
+            ]
+            self._output_allocations: list[int] = [output_b.allocation for output_b in self._outputs]
+            self._output_host_allocations: list[np.ndarray] = [
+                output_b.host_allocation for output_b in self._outputs
+            ]
 
         # store useful properties about the engine
         self._memsize: int = 0
@@ -112,6 +121,7 @@ class TRTEngineInterface(ABC):
         # additional verbose output about loaded engine information
         if self._verbose:
             LOG.info(f"Loaded engine: {self._name}")
+            LOG.info(f"\tDevice: {self._device}")
             LOG.info(f"\tDLA Core: {self._dla_core}")
             LOG.info(f"\tPagelocked Mem: {self._pagelocked_mem}")
             LOG.info(f"\tUnified Mem: {self._unified_mem}")
@@ -167,6 +177,11 @@ class TRTEngineInterface(ABC):
     def dla_core(self: Self) -> int | None:
         """The DLA core assigned to the engine."""
         return self._dla_core
+
+    @property
+    def device(self: Self) -> int | None:
+        """The CUDA device assigned to the engine."""
+        return self._device
 
     @property
     def pagelocked_mem(self: Self) -> bool:
