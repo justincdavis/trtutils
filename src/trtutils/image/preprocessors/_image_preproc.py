@@ -421,6 +421,12 @@ class GPUImagePreprocessor(ImagePreprocessor):
             unified_mem=self._unified_mem,
         )
 
+        # Cache for _create_resize_args: avoid repacking kernel args for same resolution
+        self._cached_resize_key: tuple[int, int, str] | None = None
+        self._cached_resize_result: (
+            tuple[Kernel, np.ndarray, tuple[float, float], tuple[float, float]] | None
+        ) = None
+
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # gpu_init
 
@@ -567,6 +573,10 @@ class GPUImagePreprocessor(ImagePreprocessor):
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
+
+        # Invalidate resize args cache: input binding allocation changed
+        self._cached_resize_key = None
+        self._cached_resize_result = None
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # reallocate_input
@@ -880,6 +890,13 @@ class GPUImagePreprocessor(ImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["create_resize_args"])
 
+        # Check cache: for constant-resolution input, args are identical every frame
+        cache_key = (height, width, method)
+        if cache_key == self._cached_resize_key and self._cached_resize_result is not None:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # create_resize_args
+            return self._cached_resize_result
+
         if verbose:
             LOG.debug(f"{self._tag}: create_resize_args")
 
@@ -931,10 +948,15 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 verbose=verbose,
             )
 
+        # Store in cache
+        result = (resize_kernel, resize_args, ratios, padding)
+        self._cached_resize_key = cache_key
+        self._cached_resize_result = result
+
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # create_resize_args
 
-        return resize_kernel, resize_args, ratios, padding
+        return result
 
     def _resize_images_to_batch(
         self: Self,

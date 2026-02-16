@@ -144,6 +144,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         else:
             self._sst_kernel = Kernel(SST_FAST[0], SST_FAST[1])
 
+        # Cache for _create_sst_args: avoid repacking kernel args for same batch size
+        self._cached_sst_batch_size: int | None = None
+        self._cached_sst_args: np.ndarray | None = None
+
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
             if self._own_stream:
@@ -195,6 +199,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         self._current_batch_size = batch_size
 
+        # Invalidate SST args cache: buffer allocations changed
+        self._cached_sst_batch_size = None
+        self._cached_sst_args = None
+
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # reallocate_batch_buffers
 
@@ -220,6 +228,12 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["create_sst_args"])
+
+        # Check cache: for constant batch size, args are identical every frame
+        if batch_size == self._cached_sst_batch_size and self._cached_sst_args is not None:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # create_sst_args
+            return self._cached_sst_args
 
         if verbose:
             LOG.debug(f"{self._tag}: Making sst args (batch_size={batch_size})")
@@ -255,6 +269,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
                 batch_size,
                 verbose=verbose,
             )
+
+        # Store in cache
+        self._cached_sst_batch_size = batch_size
+        self._cached_sst_args = sst_args
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # create_sst_args
