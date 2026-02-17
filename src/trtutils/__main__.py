@@ -1091,6 +1091,8 @@ def _download(args: SimpleNamespace) -> None:
             Enable verbose output.
         - no_cache : bool
             Disable caching of downloaded weights, repos, and uv packages.
+        - simplify : bool
+            Simplify the ONNX model using onnxsim after exporting.
 
     """
     if args.list_models:
@@ -1129,6 +1131,7 @@ def _download(args: SimpleNamespace) -> None:
         args.opset,
         args.imgsz,
         requirements_export=args.requirements_export,
+        simplify=args.simplify,
         accept=True,
         verbose=args.verbose,
         no_cache=args.no_cache,
@@ -1805,6 +1808,11 @@ def _main() -> None:
         type=str,
         default=None,
         help="Specific torchvision model name when --model is torchvision_classifier.",
+    )
+    download_parser.add_argument(
+        "--simplify",
+        action="store_true",
+        help="Simplify the ONNX model using multiple tools (onnxsim, onnxslim, polygraphy) and pick the best result.",
     )
     download_parser.set_defaults(func=_download)
 
