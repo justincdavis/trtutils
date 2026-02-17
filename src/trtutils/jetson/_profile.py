@@ -19,6 +19,8 @@ from trtutils.compat._libs import trt
 from trtutils.profiling._profiler import LayerTiming, ProfilerResult
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from jetsontools._parsing import Metric as JMetric
     from typing_extensions import Self
 
@@ -90,6 +92,7 @@ class JetsonProfilerResult(ProfilerResult):
 
     """
 
+    layers: Sequence[JetsonLayerInfo]
     power_draw: Metric
     energy: Metric
 
