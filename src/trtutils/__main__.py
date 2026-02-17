@@ -85,9 +85,9 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup=True,
             verbose=args.verbose,
         )
-        latency = jresult.latency  # type: ignore[assignment]
-        energy = jresult.energy  # type: ignore[assignment]
-        power = jresult.power_draw  # type: ignore[assignment]
+        latency = jresult.latency
+        energy = jresult.energy
+        power = jresult.power_draw
     else:
         result = trtutils.benchmark_engine(
             engine=mpath,
@@ -97,7 +97,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup=True,
             verbose=args.verbose,
         )
-        latency = result.latency  # type: ignore[assignment]
+        latency = result.latency
 
     latency_in_ms = {
         "mean": latency.mean * 1000.0,
@@ -614,7 +614,7 @@ def _detect(args: SimpleNamespace) -> None:
         t3 = time.perf_counter()
         dets: list[tuple[tuple[int, int, int, int], float, int]] = detector.get_detections(
             p_results, verbose=args.verbose
-        )[0]  # type: ignore[assignment]
+        )[0]
         t4 = time.perf_counter()
         return (
             dets,
@@ -801,7 +801,7 @@ def _classify(args: SimpleNamespace) -> None:
             raise RuntimeError(err_msg)
         p_results = classifier.postprocess(results, no_copy=True)
         t3 = time.perf_counter()
-        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]  # type: ignore[assignment]
+        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]
         t4 = time.perf_counter()
         return (
             cls_results[0],
@@ -1103,6 +1103,12 @@ def _download(args: SimpleNamespace) -> None:
             LOG.info("")
         return
 
+    if args.model == "torchvision_classifier":
+        if args.torchvision_model is None:
+            LOG.error("--torchvision_model is required when --model is torchvision_classifier.")
+            return
+        args.model = args.torchvision_model
+
     if args.model is None or args.output is None:
         LOG.error("--model and --output are required for downloading.")
         return
@@ -1203,6 +1209,11 @@ def _main() -> None:
         "--verbose",
         action="store_true",
         help="Enable verbose output.",
+    )
+    general_parser.add_argument(
+        "--nvtx",
+        action="store_true",
+        help="Enable NVTX markers for profiling with Nsight Systems.",
     )
 
     # dla arguments parser (for commands that support DLA)
@@ -1789,6 +1800,12 @@ def _main() -> None:
         action="store_true",
         help="Disable caching of downloaded weights, repos, and uv packages.",
     )
+    download_parser.add_argument(
+        "--torchvision_model",
+        type=str,
+        default=None,
+        help="Specific torchvision model name when --model is torchvision_classifier.",
+    )
     download_parser.set_defaults(func=_download)
 
     # clear_cache parser
@@ -1809,6 +1826,10 @@ def _main() -> None:
 
     # set log level
     trtutils.set_log_level(args.log_level)
+
+    # enable NVTX markers if requested
+    if args.nvtx:
+        trtutils.enable_nvtx()
 
     # call function with args
     if hasattr(args, "func"):

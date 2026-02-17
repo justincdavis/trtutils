@@ -8,10 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, overload
 
 import numpy as np
+import nvtx
 
 from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._device import Device
 from trtutils.core._graph import CUDAGraph
 from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
 from trtutils.core._stream import stream_synchronize
@@ -38,12 +40,13 @@ class ImageModel:
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
         dla_core: int | None = None,
+        device: int | None = None,
         backend: str = "auto",
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = False,
+        cuda_graph: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -75,6 +78,9 @@ class ImageModel:
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+        device : int, optional
+            The CUDA device index to use for this model. Default is None,
+            which uses the current device.
         backend : str
             The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
             Default is 'auto', which selects the best available backend.
@@ -94,7 +100,7 @@ class ImageModel:
             end2end() will capture a CUDA graph of the full preprocessing +
             inference pipeline, and subsequent calls will replay it. Input
             dimensions are locked after the first end2end() call.
-            Only effective with async_v3 backend. Default is None (disabled).
+            Only effective with async_v3 backend. Default is True.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -111,9 +117,25 @@ class ImageModel:
         """
         self._tag: str = f"{Path(engine_path).stem}"
         self._verbose: bool = verbose if verbose is not None else False
+
+        self._nvtx_tags: dict[str, str] = {
+            "init": f"image_model::init [{self._tag}]",
+            "preprocess": f"image_model::preprocess [{self._tag}]",
+            "mock_run": f"image_model::mock_run [{self._tag}]",
+            "_end2end_graph_core": f"image_model::_end2end_graph_core [{self._tag}]",
+            "_copy_engine_outputs": f"image_model::_copy_engine_outputs [{self._tag}]",
+            "_setup_cpu_preproc": f"image_model::_setup_cpu_preproc [{self._tag}]",
+            "_setup_cuda_preproc": f"image_model::_setup_cuda_preproc [{self._tag}]",
+            "_setup_trt_preproc": f"image_model::_setup_trt_preproc [{self._tag}]",
+        }
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["init"])
+
         if self._verbose:
             LOG.debug(f"Creating ImageModel: {self._tag}")
 
+        self._device = device
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._engine = TRTEngine(
             engine_path=engine_path,
@@ -121,6 +143,7 @@ class ImageModel:
             backend=backend,
             warmup=warmup,
             dla_core=dla_core,
+            device=device,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
@@ -149,12 +172,16 @@ class ImageModel:
                     "Expected model to have input size of form: (batch, channels, height, width)"
                 )
                 err_msg += f", found {input_size}"
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # init
                 raise ValueError(err_msg)
             rgb_channels = 3
             if input_size[1] != rgb_channels:
                 err_msg = (
                     f"Expected model to take {rgb_channels} channel input, found {input_size[1]}"
                 )
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # init
                 raise ValueError(err_msg)
 
         # Extract batch size from engine
@@ -185,6 +212,8 @@ class ImageModel:
         valid_preprocessors = ["cpu", "cuda", "trt"]
         if preprocessor not in valid_preprocessors:
             err_msg = f"Invalid preprocessor found, options are: {valid_preprocessors}"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # init
             raise ValueError(err_msg)
         self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
         self._preproc_cuda: CUDAPreprocessor | None = None
@@ -195,15 +224,16 @@ class ImageModel:
             LOG.warning(
                 "Preprocessing method set to TensorRT, but platform doesnt have UINT8 support, fallback to CUDA."
             )
-        # existing logic
-        if preprocessor == "trt":
-            self._preproc_trt = self._setup_trt_preproc()
-            self._preprocessor = self._preproc_trt
-        elif preprocessor == "cuda" and self._dtype == np.float32:
-            self._preproc_cuda = self._setup_cuda_preproc()
-            self._preprocessor = self._preproc_cuda
-        else:
-            self._preprocessor = self._preproc_cpu
+        # existing logic — guard CUDA/TRT preprocessor setup on correct device
+        with Device(device):
+            if preprocessor == "trt":
+                self._preproc_trt = self._setup_trt_preproc()
+                self._preprocessor = self._preproc_trt
+            elif preprocessor == "cuda" and self._dtype == np.float32:
+                self._preproc_cuda = self._setup_cuda_preproc()
+                self._preprocessor = self._preproc_cuda
+            else:
+                self._preprocessor = self._preproc_cpu
 
         # basic profiler setup
         self._pre_profile: tuple[float, float] = (0.0, 0.0)
@@ -213,7 +243,7 @@ class ImageModel:
         # E2E graph state (enabled when cuda_graph=True)
         # Note: Preprocessing runs outside the graph since H2D copies cannot be captured.
         # Only TRTEngine inference is captured in the graph.
-        self._e2e_graph_enabled: bool = cuda_graph if cuda_graph is not None else False
+        self._e2e_graph_enabled: bool = cuda_graph if cuda_graph is not None else True
         self._e2e_graph: CUDAGraph | None = None
         self._e2e_input_dims: tuple[int, int] | None = None
         self._e2e_batch_size: int | None = None
@@ -222,8 +252,14 @@ class ImageModel:
         if warmup:
             self._preprocessor.warmup()
 
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
+
     def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
-        return CPUPreprocessor(
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["_setup_cpu_preproc"])
+
+        result = CPUPreprocessor(
             self._input_size,
             self._input_range,
             self._dtype,
@@ -232,8 +268,16 @@ class ImageModel:
             tag=self._tag,
         )
 
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # setup_cpu_preproc
+
+        return result
+
     def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
-        return CUDAPreprocessor(
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["_setup_cuda_preproc"])
+
+        result = CUDAPreprocessor(
             self._input_size,
             self._input_range,
             self._dtype,
@@ -247,8 +291,16 @@ class ImageModel:
             orig_size_dtype=self._orig_size_dtype,
         )
 
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # setup_cuda_preproc
+
+        return result
+
     def _setup_trt_preproc(self: Self) -> TRTPreprocessor:
-        return TRTPreprocessor(
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["_setup_trt_preproc"])
+
+        result = TRTPreprocessor(
             self._input_size,
             self._input_range,
             self._dtype,
@@ -262,6 +314,11 @@ class ImageModel:
             tag=self._tag,
             orig_size_dtype=self._orig_size_dtype,
         )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # setup_trt_preproc
+
+        return result
 
     def _configure_model(self: Self) -> None:
         """Configure model-specific state after engine load, before preprocessor creation."""
@@ -382,13 +439,23 @@ class ImageModel:
             The raw outputs of the model.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["mock_run"])
+
         if images is not None:
             # Stack images into batch tensor if provided as list
             if len(images) == 1:
-                return self._engine.mock_execute(data=[images[0]])
-            batch_tensor = np.stack(images, axis=0)
-            return self._engine.mock_execute(data=[batch_tensor])
-        return self._engine.mock_execute()
+                result = self._engine.mock_execute(data=[images[0]])
+            else:
+                batch_tensor = np.stack(images, axis=0)
+                result = self._engine.mock_execute(data=[batch_tensor])
+        else:
+            result = self._engine.mock_execute()
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # mock_run
+
+        return result
 
     # preprocess overloads
     @overload
@@ -452,6 +519,9 @@ class ImageModel:
             The preprocessed batch tensor, list of ratios per image, and list of padding per image.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["preprocess"])
+
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
@@ -488,10 +558,17 @@ class ImageModel:
             data = preprocessor(images, resize=resize, verbose=verbose)
             t1 = time.perf_counter()
         self._pre_profile = (t0, t1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # preprocess
+
         return data
 
     def _copy_engine_outputs(self: Self) -> list[np.ndarray]:
         """Copy engine outputs from device to host."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["_copy_engine_outputs"])
+
         outputs: list[np.ndarray] = []
         for binding in self._engine._outputs:  # noqa: SLF001
             if not (self._engine._unified_mem and self._engine._pagelocked_mem):  # noqa: SLF001
@@ -501,6 +578,10 @@ class ImageModel:
                     self._engine.stream,
                 )
             outputs.append(binding.host_allocation)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # copy_engine_outputs
+
         return outputs
 
     def _prepare_extra_engine_inputs_gpu(self: Self) -> list[int]:
@@ -602,6 +683,9 @@ class ImageModel:
             If CUDA graph capture fails.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["_end2end_graph_core"])
+
         batch_size = len(images)
 
         # Auto-capture on first call: lock dimensions
@@ -613,9 +697,13 @@ class ImageModel:
         img_dims = (images[0].shape[0], images[0].shape[1])
         if img_dims != self._e2e_input_dims:
             err_msg = f"Image dims {img_dims} != graph dims {self._e2e_input_dims}"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # end2end_graph_core
             raise RuntimeError(err_msg)
         if batch_size != self._e2e_batch_size:
             err_msg = f"Batch size {batch_size} != graph batch size {self._e2e_batch_size}"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # end2end_graph_core
             raise RuntimeError(err_msg)
 
         # Preprocess and get GPU pointer based on preprocessor type
@@ -632,7 +720,7 @@ class ImageModel:
         else:
             # CPU preprocessor: preprocess to numpy, copy to engine binding
             # Both Classifier and Detector have compatible preprocess signatures for basic call
-            tensor, ratios, padding = self.preprocess(images, no_copy=True, verbose=verbose)  # type: ignore[attr-defined]
+            tensor, ratios, padding = self.preprocess(images, no_copy=True, verbose=verbose)
 
             # Copy preprocessed tensor to engine's input binding (H2D)
             memcpy_host_to_device_async(
@@ -658,6 +746,8 @@ class ImageModel:
                 err_msg = (
                     "CUDA graph capture failed for end2end. Engine may not support graph capture."
                 )
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # end2end_graph_core
                 raise RuntimeError(err_msg)
 
             # Launch graph after capture to actually run inference
@@ -670,5 +760,8 @@ class ImageModel:
         # D2H copy of outputs + sync (outside the graph)
         raw_outputs = self._copy_engine_outputs()
         stream_synchronize(self._engine.stream)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # end2end_graph_core
 
         return raw_outputs, ratios, padding

@@ -7,6 +7,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, overload
 
 import numpy as np
+import nvtx
+
+from trtutils._flags import FLAGS
 
 from ._image_preproc import ImagePreprocessor, _is_single_image
 from ._process import preprocess
@@ -71,8 +74,18 @@ class CPUPreprocessor(ImagePreprocessor):
             tag=tag,
         )
 
+        self._nvtx_tags.update(
+            {
+                "cpu_warmup": f"preproc::cpu_warmup [{self._tag}]",
+                "cpu_preprocess": f"preproc::cpu_preprocess [{self._tag}]",
+            }
+        )
+
     def warmup(self: Self) -> None:
         """Compatibility function for CPU/CUDA parity."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cpu_warmup"])
+
         rand_data: np.ndarray = np.random.default_rng().integers(
             0,
             255,
@@ -80,6 +93,9 @@ class CPUPreprocessor(ImagePreprocessor):
             dtype=np.uint8,
         )
         self.preprocess([rand_data])
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # cpu_warmup
 
     # __call__ overloads
     @overload
@@ -187,6 +203,9 @@ class CPUPreprocessor(ImagePreprocessor):
             The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cpu_preprocess"])
+
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
@@ -207,7 +226,7 @@ class CPUPreprocessor(ImagePreprocessor):
             std_tuple = tuple(
                 std.reshape(-1) if std.size == _COLOR_CHANNELS else std.flatten()[:_COLOR_CHANNELS]
             )
-        return preprocess(
+        result = preprocess(
             images,  # type: ignore[arg-type]
             self._o_shape,
             self._o_dtype,
@@ -217,3 +236,8 @@ class CPUPreprocessor(ImagePreprocessor):
             std_tuple,
             verbose=verbose,
         )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # cpu_preprocess
+
+        return result

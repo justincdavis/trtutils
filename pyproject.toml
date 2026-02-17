@@ -52,6 +52,7 @@ dependencies = [
     "cv2ext>=0.1.0",
     "opencv-python>=4.8.0,<5.0.0",
     "numpy>=1.19.0,<3.0.0",
+    "nvtx>=0.2.14",
     "jetsontools>=0.1.0",
     "tqdm>=4.67.1,<5.0.0",
     "typing_extensions>=4.0.0",
@@ -99,8 +100,8 @@ compat = [
     "trtutils[sahi]",
 ]
 ci = [
-    "ruff==0.15.0",
-    "ty==0.0.16",
+    "ruff==0.15.1",
+    "ty==0.0.17",
 ]
 docs = [
     "sphinx>=7.0.0",
