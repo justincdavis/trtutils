@@ -3,11 +3,11 @@
 # MIT License
 from __future__ import annotations
 
-from ._classifier import export_torchvision_classifier
 from ._deim import export_deim, export_deimv2
 from ._dfine import export_dfine
 from ._rfdetr import export_rfdetr
 from ._rtdetr import export_rtdetrv1, export_rtdetrv2, export_rtdetrv3
+from ._torchvision import export_torchvision_classifier
 from ._ultralytics import export_ultralytics
 from ._yolo import (
     export_yolov7,
