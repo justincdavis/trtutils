@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """Profiling utilities for AxoNN optimization."""
@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import contextlib
+import gc
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -150,6 +151,120 @@ def extract_layer_info(
     return layers
 
 
+def _build_fused_layer_map(
+    layer_data: dict[str, tuple[float, float]],
+    onnx_layer_names: list[str] | None = None,
+) -> dict[str, tuple[str, int]]:
+    """
+    Build a mapping from individual layer names to their fused TRT layer.
+
+    TensorRT fuses layers in two ways:
+    - GPU engines: ``"LayerA + LayerB + LayerC"``
+    - DLA engines: ``"{ForeignNode[FirstLayer...LastLayer]}"``
+
+    This function parses both formats and maps each constituent ONNX layer
+    name to the fused name and total constituent count (for even cost splitting).
+
+    Parameters
+    ----------
+    layer_data : dict[str, tuple[float, float]]
+        Profiled layer data keyed by (possibly fused) layer name.
+    onnx_layer_names : list[str] | None, optional
+        Ordered list of all ONNX layer names. Required to resolve DLA
+        ``ForeignNode`` ranges which only name the first and last layer.
+
+    Returns
+    -------
+    dict[str, tuple[str, int]]
+        Maps individual layer name -> (fused_name, num_constituents).
+
+    """
+    fused_map: dict[str, tuple[str, int]] = {}
+    for fused_name in layer_data:
+        # GPU fusion: "LayerA + LayerB + LayerC"
+        parts = [p.strip() for p in fused_name.split(" + ")]
+        if len(parts) > 1:
+            for part in parts:
+                fused_map[part] = (fused_name, len(parts))
+            continue
+
+        # DLA ForeignNode: "{ForeignNode[/first/Layer.../last/Layer]}"
+        if fused_name.startswith("{ForeignNode[") and fused_name.endswith("]}"):
+            inner = fused_name[len("{ForeignNode[") : -len("]}") :]
+            # Split on "..." to get first and last layer names
+            range_parts = inner.split("...")
+            name_length = 2
+            if len(range_parts) == name_length and onnx_layer_names is not None:
+                first_name, last_name = range_parts[0].strip(), range_parts[1].strip()
+                # Find the index range in the ONNX layer list
+                try:
+                    first_idx = onnx_layer_names.index(first_name)
+                    last_idx = onnx_layer_names.index(last_name)
+                    covered = onnx_layer_names[first_idx : last_idx + 1]
+                    for name in covered:
+                        fused_map[name] = (fused_name, len(covered))
+                except ValueError:
+                    pass
+            elif len(range_parts) == 1 and onnx_layer_names is not None:
+                # Single layer ForeignNode: {ForeignNode[/layer/Name]}
+                single_name = range_parts[0].strip()
+                if single_name in onnx_layer_names:
+                    fused_map[single_name] = (fused_name, 1)
+
+    return fused_map
+
+
+def _resolve_layer_cost(
+    layer_name: str,
+    layer_data: dict[str, tuple[float, float]],
+    fused_map: dict[str, tuple[str, int]],
+    *,
+    verbose: bool | None = None,
+    label: str = "",
+) -> tuple[float, float] | None:
+    """
+    Look up profiling cost for a layer, handling TensorRT layer fusion.
+
+    Resolution order:
+    1. Exact match in ``layer_data``
+    2. Constituent of a fused layer (cost split evenly among constituents)
+    3. ``None`` — no data available
+
+    Parameters
+    ----------
+    layer_name : str
+        The ONNX layer name to look up.
+    layer_data : dict[str, tuple[float, float]]
+        Profiled (time_ms, energy_mj) keyed by TRT layer name.
+    fused_map : dict[str, tuple[str, int]]
+        Mapping from constituent names to (fused_name, num_parts).
+    verbose : bool | None, optional
+        Log warnings for unresolved layers.
+    label : str, optional
+        Label for log messages (e.g. "GPU" or "DLA").
+
+    Returns
+    -------
+    tuple[float, float] | None
+        (time_ms, energy_mj) or None if no data found.
+
+    """
+    # 1. Exact match
+    if layer_name in layer_data:
+        return layer_data[layer_name]
+
+    # 2. Fused layer match — split cost evenly
+    if layer_name in fused_map:
+        fused_name, num_parts = fused_map[layer_name]
+        total_time, total_energy = layer_data[fused_name]
+        return (total_time / num_parts, total_energy / num_parts)
+
+    # 3. No data
+    if verbose:
+        LOG.warning(f"Layer {layer_name} not found in {label} profile, using estimate")
+    return None
+
+
 def profile_for_axonn(
     onnx: Path | str,
     calibration_batcher: AbstractBatcher,
@@ -158,6 +273,7 @@ def profile_for_axonn(
     timing_cache: Path | str | None = None,
     calibration_cache: Path | str | None = None,
     *,
+    cuda_graph: bool = False,
     verbose: bool | None = None,
 ) -> tuple[list[Layer], dict[int, LayerCost]]:
     """
@@ -183,6 +299,8 @@ def profile_for_axonn(
         Path to timing cache.
     calibration_cache : Path | str | None, optional
         Path to calibration cache.
+    cuda_graph : bool, optional
+        Enable CUDA graph capture for GPU profiling. Default False.
     verbose : bool | None, optional
         Whether to print verbose output.
 
@@ -241,13 +359,24 @@ def profile_for_axonn(
             tegra_interval=5,
             dla_core=None,
             warmup=True,
+            cuda_graph=cuda_graph,
             verbose=verbose,
         )
 
         # Build layer name to GPU timing/energy mapping
+        # Use total inference energy distributed proportionally by execution time.
+        # Per-layer tegrastats energy is unreliable because individual layers
+        # execute in microseconds while tegrastats samples every 5ms.
+        gpu_total_energy = gpu_profile.energy.mean
+        gpu_total_time = sum(li.mean for li in gpu_profile.layers)
         gpu_layer_data: dict[str, tuple[float, float]] = {}
         for layer_info in gpu_profile.layers:
-            gpu_layer_data[layer_info.name] = (layer_info.mean, layer_info.energy)
+            time_frac = layer_info.mean / gpu_total_time if gpu_total_time > 0 else 0.0
+            layer_energy = gpu_total_energy * time_frac
+            gpu_layer_data[layer_info.name] = (layer_info.mean, layer_energy)
+
+        # ensure GPU engine resources are freed before DLA profiling
+        gc.collect()
 
         # Build and profile DLA engine if there are DLA-compatible layers
         dla_layer_data: dict[str, tuple[float, float]] = {}
@@ -300,47 +429,94 @@ def profile_for_axonn(
                     tegra_interval=5,
                     dla_core=config.dla_core,
                     warmup=True,
+                    cuda_graph=False,
                     verbose=verbose,
                 )
 
+                dla_total_energy = dla_profile.energy.mean
+                dla_total_time = sum(li.mean for li in dla_profile.layers)
                 for layer_info in dla_profile.layers:
-                    dla_layer_data[layer_info.name] = (layer_info.mean, layer_info.energy)
+                    time_frac = layer_info.mean / dla_total_time if dla_total_time > 0 else 0.0
+                    layer_energy = dla_total_energy * time_frac
+                    dla_layer_data[layer_info.name] = (layer_info.mean, layer_energy)
 
             except (RuntimeError, OSError) as e:
                 if verbose:
                     LOG.warning(f"Failed to build DLA engine: {e}")
                     LOG.warning("Continuing with GPU-only costs for DLA-compatible layers")
 
+        # Build reverse mapping: ONNX layer name -> fused TRT layer name
+        # GPU engines fuse as "LayerA + LayerB", DLA uses "{ForeignNode[A...Z]}"
+        onnx_layer_names = [layer.name for layer in layers]
+        gpu_fused_map = _build_fused_layer_map(gpu_layer_data, onnx_layer_names)
+        dla_fused_map = _build_fused_layer_map(dla_layer_data, onnx_layer_names)
+
+        # Pass 1: resolve GPU costs for every layer
+        gpu_per_layer: dict[int, tuple[float, float]] = {}
+        for layer in layers:
+            resolved_gpu = _resolve_layer_cost(
+                layer.name,
+                gpu_layer_data,
+                gpu_fused_map,
+                verbose=verbose,
+                label="GPU",
+            )
+            if resolved_gpu is not None:
+                gpu_per_layer[layer.index] = resolved_gpu
+            else:
+                gpu_per_layer[layer.index] = (0.01, 0.001)
+
+        # Pass 2: resolve DLA costs using proportional weighting for blobs
+        # For DLA ForeignNode blobs (which cover many ONNX layers), evenly
+        # splitting the blob cost gives every layer the same DLA cost. This
+        # makes the solver believe DLA is uniformly bad (or good) for all
+        # layers. Instead, distribute the blob cost proportionally to each
+        # layer's GPU cost so the relative layer-importance is preserved.
+        dla_per_layer: dict[int, tuple[float, float]] = {}
+
+        # Group layers by their DLA fused blob
+        blob_members: dict[str, list[int]] = {}
+        for layer in layers:
+            if not layer.can_run_on_dla:
+                continue
+            # Exact match first
+            if layer.name in dla_layer_data:
+                dla_per_layer[layer.index] = dla_layer_data[layer.name]
+                continue
+            # Fused match
+            if layer.name in dla_fused_map:
+                fused_name, _ = dla_fused_map[layer.name]
+                blob_members.setdefault(fused_name, []).append(layer.index)
+
+        # Distribute each DLA blob's cost proportionally to GPU costs
+        for fused_name, member_indices in blob_members.items():
+            blob_time, blob_energy = dla_layer_data[fused_name]
+            total_gpu_t = sum(gpu_per_layer[i][0] for i in member_indices)
+            total_gpu_e = sum(gpu_per_layer[i][1] for i in member_indices)
+            for idx in member_indices:
+                gpu_t, gpu_e = gpu_per_layer[idx]
+                t_weight = gpu_t / total_gpu_t if total_gpu_t > 0 else 1.0 / len(member_indices)
+                e_weight = gpu_e / total_gpu_e if total_gpu_e > 0 else 1.0 / len(member_indices)
+                dla_per_layer[idx] = (blob_time * t_weight, blob_energy * e_weight)
+
         # Build LayerCost objects
         costs: dict[int, LayerCost] = {}
 
         for layer in layers:
-            # Get GPU costs
-            gpu_time = 0.0
-            gpu_energy = 0.0
-            if layer.name in gpu_layer_data:
-                gpu_time, gpu_energy = gpu_layer_data[layer.name]
-            else:
-                # Layer might have been fused, try to estimate
-                if verbose:
-                    LOG.warning(f"Layer {layer.name} not found in GPU profile, using estimate")
-                gpu_time = 0.01  # Small default
-                gpu_energy = 0.001
+            gpu_time, gpu_energy = gpu_per_layer[layer.index]
 
-            # Get DLA costs if applicable
             dla_time: float | None = None
             dla_energy: float | None = None
 
-            if layer.can_run_on_dla and layer.name in dla_layer_data:
-                dla_time, dla_energy = dla_layer_data[layer.name]
-            elif layer.can_run_on_dla:
-                # Layer is DLA-compatible but no profile data
-                # Estimate DLA costs based on GPU costs
-                # DLA is typically slower but more energy efficient
-                if verbose:
-                    LOG.warning(f"Layer {layer.name} DLA profile missing, using estimate")
-                dla_time = gpu_time * 1.5  # DLA often slower
-                dla_energy = gpu_energy * 0.5  # DLA more efficient
+            if layer.can_run_on_dla:
+                if layer.index in dla_per_layer:
+                    dla_time, dla_energy = dla_per_layer[layer.index]
+                else:
+                    # DLA-compatible but no profile data at all
+                    if verbose:
+                        LOG.warning(f"Layer {layer.name} DLA profile missing, using estimate")
+                    dla_time = gpu_time * 1.5  # DLA often slower
+                    dla_energy = gpu_energy * 0.5  # DLA more efficient
 
             cost = LayerCost(
                 gpu_time_ms=gpu_time,

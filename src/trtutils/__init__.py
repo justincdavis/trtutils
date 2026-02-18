@@ -167,6 +167,7 @@ __all__ = [
     "trtexec",
 ]
 
+
 # attempt jetson module import
 with contextlib.suppress(ImportError):
     from . import jetson

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """Engine building for AxoNN optimization."""
@@ -17,7 +17,7 @@ from trtutils.builder._build import build_engine as trt_build_engine
 
 from ._cost import compute_gpu_only_costs
 from ._profile import profile_for_axonn
-from ._solver import find_optimal_schedule
+from ._solver import solve_schedule
 from ._types import AxoNNConfig, ProcessorType, Schedule
 
 if TYPE_CHECKING:
@@ -72,15 +72,12 @@ def build_engine(
     output: Path | str,
     calibration_batcher: AbstractBatcher,
     *,
-    # AxoNN parameters (from paper)
     energy_target: float | None = None,
     energy_ratio: float = 0.8,
     max_transitions: int = 3,
     dla_core: int = 0,
-    # Profiling parameters
     profile_iterations: int = 1000,
     warmup_iterations: int = 50,
-    # TensorRT build parameters
     workspace: float = 4.0,
     timing_cache: Path | str | None = None,
     calibration_cache: Path | str | None = None,
@@ -217,13 +214,23 @@ def build_engine(
     if verbose:
         LOG.info(f"GPU-only baseline: {gpu_time:.2f}ms, {gpu_energy:.2f}mJ")
 
-    # Find optimal schedule
-    schedule = find_optimal_schedule(
+    # Find optimal schedule via Z3 solver
+    schedule = solve_schedule(
         layers=layers,
         costs=costs,
         config=config,
         verbose=verbose,
     )
+
+    if schedule is None:
+        # Z3 found no feasible solution — fall back to GPU-only schedule
+        if verbose:
+            LOG.warning("No feasible AxoNN schedule found, using GPU-only schedule")
+        schedule = Schedule()
+        for layer in layers:
+            schedule.set_processor(layer.index, ProcessorType.GPU)
+        schedule.total_time_ms = gpu_time
+        schedule.total_energy_mj = gpu_energy
 
     if verbose:
         LOG.info(f"Optimal schedule: {schedule}")

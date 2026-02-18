@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -43,6 +43,7 @@ def benchmark_engine(
     dla_core: int | None = None,
     *,
     warmup: bool | None = None,
+    cuda_graph: bool | None = None,
     verbose: bool | None = None,
 ) -> JetsonBenchmarkResult:
     """
@@ -67,6 +68,10 @@ def benchmark_engine(
     warmup : bool, optional
         Whether to do warmup iterations, by default None
         If None, warmup will be set to True.
+    cuda_graph : bool, optional
+        Whether to enable CUDA graph capture for optimized execution.
+        By default None, which enables CUDA graphs.
+        Set to False for engines with DLA layers, as DLA does not support CUDA graphs.
     verbose : bool, optional
         Whether ot not to output additional information to stdout.
         Default None/False.
@@ -83,6 +88,7 @@ def benchmark_engine(
             warmup_iterations=warmup_iterations,
             warmup=warmup,
             dla_core=dla_core,
+            cuda_graph=cuda_graph,
             verbose=verbose,
         )
     else:
@@ -141,6 +147,9 @@ def benchmark_engine(
         metrics[metric_name] = metric
         LOG.debug(f"{metric_name}: {metric}")
 
+    # free engine resources to avoid DLA context exhaustion
+    del engine
+
     return JetsonBenchmarkResult(
         latency=metrics["latency"],
         power_draw=metrics["power_draw"],
@@ -155,6 +164,7 @@ def benchmark_engines(
     tegra_interval: int = 5,
     *,
     warmup: bool | None = None,
+    cuda_graph: bool | None = None,
     parallel: bool | None = None,
     verbose: bool | None = None,
 ) -> list[JetsonBenchmarkResult]:
@@ -176,6 +186,10 @@ def benchmark_engines(
     warmup : bool, optional
         Whether to do warmup iterations, by default None
         If None, warmup will be set to True.
+    cuda_graph : bool, optional
+        Whether to enable CUDA graph capture for optimized execution.
+        By default None, which enables CUDA graphs.
+        Set to False for engines with DLA layers, as DLA does not support CUDA graphs.
     parallel : bool, optional
         Whether or not to process the engines in parallel.
         Useful for assessing concurrent execution performance.
@@ -214,6 +228,7 @@ def benchmark_engines(
                 tegra_interval,
                 dla_core=dla_core,
                 warmup=warmup,
+                cuda_graph=cuda_graph,
                 verbose=verbose,
             )
             for engine, dla_core in zip(temp_engines, dla_assignments)
@@ -277,6 +292,9 @@ def benchmark_engines(
         metric = Metric(data)
         metrics[metric_name] = metric
         LOG.debug(f"{metric_name}: {metric}")
+
+    # free engine resources to avoid DLA context exhaustion
+    del trt_engines
 
     return [
         JetsonBenchmarkResult(

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -300,6 +300,7 @@ def profile_engine(
     device: int | None = None,
     *,
     warmup: bool | None = None,
+    cuda_graph: bool | None = None,
     verbose: bool | None = None,
 ) -> JetsonProfilerResult:
     """
@@ -339,6 +340,10 @@ def profile_engine(
     warmup : bool, optional
         Whether to do warmup iterations, by default None.
         If None, warmup will be set to True.
+    cuda_graph : bool, optional
+        Whether to enable CUDA graph capture for optimized execution.
+        By default None, which enables CUDA graphs.
+        Set to False for engines with DLA layers, as DLA does not support CUDA graphs.
     verbose : bool, optional
         Whether to output additional information to stdout.
         Default None/False.
@@ -363,6 +368,7 @@ def profile_engine(
             dla_core=dla_core,
             device=device,
             warmup=False,
+            cuda_graph=cuda_graph,
             verbose=verbose,
         )
         engine_loaded = True

@@ -19,6 +19,8 @@ from typing_extensions import TypeGuard
 import trtutils
 from trtutils._log import LOG
 from trtutils.core import cache as caching_tools
+from trtutils.research import discover_submodules
+from trtutils.research import register_cli as research_register_cli
 from trtutils.trtexec._cli import cli_trtexec
 
 if TYPE_CHECKING:
@@ -1820,6 +1822,30 @@ def _main() -> None:
         help="Suppress the warning about clearing the cache.",
     )
     clear_cache_parser.set_defaults(func=_clear_cache)
+
+    # research subcommand (dynamic discovery)
+    available_research = discover_submodules()
+    if available_research:
+        research_parser = subparsers.add_parser(
+            "research",
+            help="Research paper implementations.",
+            parents=[general_parser],
+        )
+        research_subparsers = research_parser.add_subparsers(
+            title="research modules",
+            dest="research_module",
+            required=False,
+        )
+
+        def _research_help(
+            _args: SimpleNamespace,
+            _parser: argparse.ArgumentParser = research_parser,
+        ) -> None:
+            LOG.info(f"Available research modules: {', '.join(available_research)}")
+            _parser.print_help()
+
+        research_parser.set_defaults(func=_research_help)
+        research_register_cli(research_subparsers, [general_parser])
 
     # parse args and call the function
     args, unknown = parser.parse_known_args()
