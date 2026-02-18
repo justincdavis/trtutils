@@ -1,0 +1,3 @@
+onnxsim==0.4.36
+onnxslim==0.1.85
+polygraphy==0.49.26
