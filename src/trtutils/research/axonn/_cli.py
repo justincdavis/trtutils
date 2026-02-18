@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     import argparse
     from types import SimpleNamespace
 
+    from trtutils.jetson import JetsonBenchmarkResult
+
 
 def _get_onnx_input(onnx_path: Path) -> tuple[str, tuple[int, ...]]:
     """Read the first input tensor name and shape from an ONNX model."""
@@ -264,30 +266,30 @@ def _axonn_benchmark(args: SimpleNamespace) -> None:
 def _print_results(
     model_name: str,
     imgsz: int,
-    gpu_result: object,
-    dla_result: object,
-    axonn_result: object,
+    gpu_result: JetsonBenchmarkResult,
+    dla_result: JetsonBenchmarkResult,
+    axonn_result: JetsonBenchmarkResult,
     axonn_build: tuple[float, float, int, int, int],
     *,
     iterations: int,
     energy_ratio: float,
     max_transitions: int,
 ) -> None:
-    gpu_lat_ms = gpu_result.latency.mean * 1000  # type: ignore[union-attr]
-    dla_lat_ms = dla_result.latency.mean * 1000  # type: ignore[union-attr]
-    axonn_lat_ms = axonn_result.latency.mean * 1000  # type: ignore[union-attr]
+    gpu_lat_ms = gpu_result.latency.mean * 1000
+    dla_lat_ms = dla_result.latency.mean * 1000
+    axonn_lat_ms = axonn_result.latency.mean * 1000
 
-    gpu_energy_mj = gpu_result.energy.mean  # type: ignore[union-attr]
-    dla_energy_mj = dla_result.energy.mean  # type: ignore[union-attr]
-    axonn_energy_mj = axonn_result.energy.mean  # type: ignore[union-attr]
+    gpu_energy_mj = gpu_result.energy.mean
+    dla_energy_mj = dla_result.energy.mean
+    axonn_energy_mj = axonn_result.energy.mean
 
-    gpu_fps = 1.0 / gpu_result.latency.mean if gpu_result.latency.mean > 0 else 0.0  # type: ignore[union-attr]
-    dla_fps = 1.0 / dla_result.latency.mean if dla_result.latency.mean > 0 else 0.0  # type: ignore[union-attr]
-    axonn_fps = 1.0 / axonn_result.latency.mean if axonn_result.latency.mean > 0 else 0.0  # type: ignore[union-attr]
+    gpu_fps = 1.0 / gpu_result.latency.mean if gpu_result.latency.mean > 0 else 0.0
+    dla_fps = 1.0 / dla_result.latency.mean if dla_result.latency.mean > 0 else 0.0
+    axonn_fps = 1.0 / axonn_result.latency.mean if axonn_result.latency.mean > 0 else 0.0
 
-    gpu_power_w = gpu_result.power_draw.mean / 1000  # type: ignore[union-attr]
-    dla_power_w = dla_result.power_draw.mean / 1000  # type: ignore[union-attr]
-    axonn_power_w = axonn_result.power_draw.mean / 1000  # type: ignore[union-attr]
+    gpu_power_w = gpu_result.power_draw.mean / 1000
+    dla_power_w = dla_result.power_draw.mean / 1000
+    axonn_power_w = axonn_result.power_draw.mean / 1000
 
     _, _, axonn_transitions, axonn_gpu_layers, axonn_dla_layers = axonn_build
 
@@ -362,7 +364,6 @@ def register_cli(
         required=True,
         help="Path to save the AxoNN-optimized engine.",
     )
-    # AxoNN parameters
     build_parser.add_argument(
         "--energy_target",
         type=float,
@@ -387,7 +388,6 @@ def register_cli(
         default=0,
         help="DLA core to use (0 or 1). Default is 0.",
     )
-    # Profiling parameters
     build_parser.add_argument(
         "--profile_iterations",
         type=int,
@@ -400,7 +400,6 @@ def register_cli(
         default=50,
         help="Number of warmup iterations. Default is 50.",
     )
-    # TRT build parameters
     build_parser.add_argument(
         "--workspace",
         type=float,
@@ -424,7 +423,6 @@ def register_cli(
         default=3,
         help="TensorRT builder optimization level (0-5). Default is 3.",
     )
-    # Calibration data
     build_parser.add_argument(
         "--calibration_dir",
         default=None,

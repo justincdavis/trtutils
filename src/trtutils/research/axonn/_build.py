@@ -1,16 +1,14 @@
-# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """Engine building for AxoNN optimization."""
 
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-with contextlib.suppress(ImportError):
-    import tensorrt as trt
+import tensorrt as trt
 
 from trtutils._log import LOG
 from trtutils.builder._build import build_engine as trt_build_engine
