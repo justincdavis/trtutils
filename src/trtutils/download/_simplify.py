@@ -1,11 +1,9 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: S603
 from __future__ import annotations
 
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 
@@ -14,9 +12,9 @@ from trtutils._log import LOG
 from ._tools import check_uv_version, get_tool_requirements, make_venv, run_cmd, run_uv_pip_install
 
 _TOOLS: list[tuple[str, str]] = [
+    ("polygraphy", "surgeon"),
     ("onnxsim", "cli"),
     ("onnxslim", "cli"),
-    ("polygraphy", "surgeon"),
 ]
 
 
@@ -29,10 +27,11 @@ def simplify(
     verbose: bool | None = None,
 ) -> None:
     """
-    Simplify an ONNX model using multiple tools and keep the best result.
+    Simplify an ONNX model by running tools as a sequential pipeline.
 
-    Runs onnxsim, onnxslim, and polygraphy, compares their outputs by
-    graph node count, and keeps the simplest result.
+    Runs polygraphy surgeon sanitize, onnxsim, and onnxslim in sequence,
+    where each tool's output becomes the next tool's input. If any tool
+    fails, it is skipped and the current result is passed to the next tool.
 
     Parameters
     ----------
@@ -81,48 +80,6 @@ def _build_tool_cmd(
     return [bin_path / tool_name, str(input_path), str(output_path)]
 
 
-def _count_nodes(python_path: Path, model_path: Path) -> int | None:
-    script = "import onnx; m = onnx.load(r'" + str(model_path) + "'); print(len(m.graph.node))"
-    try:
-        result = subprocess.run(
-            [str(python_path), "-c", script],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return int(result.stdout.strip())
-    except (subprocess.CalledProcessError, ValueError, OSError):
-        return None
-
-
-def _run_tool(
-    tool_name: str,
-    tool_type: str,
-    model_path: Path,
-    output_path: Path,
-    bin_path: Path,
-    *,
-    verbose: bool | None = None,
-) -> int | None:
-    try:
-        LOG.info(f"Running {tool_name} on {model_path.stem}")
-        cmd = _build_tool_cmd(tool_name, tool_type, bin_path, model_path, output_path)
-        run_cmd(cmd, verbose=verbose)
-        python_path = bin_path / "python"
-        node_count = _count_nodes(python_path, output_path)
-        if node_count is not None:
-            LOG.info(f"{tool_name} produced {node_count} nodes")
-        else:
-            LOG.warning(f"{tool_name} completed but could not count nodes in output")
-    except (subprocess.CalledProcessError, OSError, RuntimeError):
-        LOG.warning(f"{tool_name} failed, skipping")
-        if output_path.exists():
-            output_path.unlink()
-        return None
-    else:
-        return node_count
-
-
 def _run_simplify(
     model_path: Path,
     directory: Path,
@@ -144,50 +101,36 @@ def _run_simplify(
         verbose=verbose,
     )
 
-    best_count: int | None = None
-    best_path: Path | None = None
-    outputs: list[Path] = []
+    current_input = model_path
+    intermediates: list[Path] = []
 
     for tool_name, tool_type in _TOOLS:
         output_path = model_path.with_suffix(f".{tool_name}.onnx")
-        outputs.append(output_path)
-
-        node_count = _run_tool(
-            tool_name,
-            tool_type,
-            model_path,
-            output_path,
-            bin_path,
-            verbose=verbose,
-        )
-
-        if node_count is not None and (best_count is None or node_count < best_count):
-            # Clean up previous best if it exists
-            if best_path is not None and best_path.exists():
-                best_path.unlink()
-            best_count = node_count
-            best_path = output_path
-        elif output_path.exists():
-            # Not the best, clean up
-            output_path.unlink()
-
-    if best_path is None or best_count is None:
-        # Clean up any remaining outputs
-        for output_path in outputs:
+        try:
+            LOG.info(f"Running {tool_name} on {current_input.stem}")
+            cmd = _build_tool_cmd(tool_name, tool_type, bin_path, current_input, output_path)
+            run_cmd(cmd, verbose=verbose)
+            intermediates.append(output_path)
+            current_input = output_path
+        except (OSError, RuntimeError):
+            LOG.warning(f"{tool_name} failed, skipping")
             if output_path.exists():
                 output_path.unlink()
+
+    if current_input == model_path:
+        # Clean up any remaining intermediates
+        for path in intermediates:
+            if path.exists():
+                path.unlink()
         err_msg = "All simplification tools failed"
         raise RuntimeError(err_msg)
 
-    # Count original nodes for comparison
-    python_path = bin_path / "python"
-    original_count = _count_nodes(python_path, model_path)
-    if original_count is not None:
-        LOG.info(
-            f"Original: {original_count} nodes -> Best ({best_path.suffixes[-2][1:]}): {best_count} nodes"
-        )
-    else:
-        LOG.info(f"Best result from {best_path.suffixes[-2][1:]}: {best_count} nodes")
+    # Overwrite the original model with the final pipeline result
+    shutil.move(str(current_input), str(model_path))
 
-    shutil.move(str(best_path), str(model_path))
+    # Clean up intermediate files that aren't the final result
+    for path in intermediates:
+        if path.exists():
+            path.unlink()
+
     LOG.info(f"Simplified ONNX model: {model_path.stem}")
