@@ -90,7 +90,6 @@ def _run_simplify(
 ) -> None:
     LOG.info(f"Simplifying ONNX model: {model_path.stem}")
 
-    # Install all simplification tools at once
     LOG.info("Installing simplification tools into venv")
     run_uv_pip_install(
         directory,
@@ -118,17 +117,14 @@ def _run_simplify(
                 output_path.unlink()
 
     if current_input == model_path:
-        # Clean up any remaining intermediates
         for path in intermediates:
             if path.exists():
                 path.unlink()
         err_msg = "All simplification tools failed"
         raise RuntimeError(err_msg)
 
-    # Overwrite the original model with the final pipeline result
     shutil.move(str(current_input), str(model_path))
 
-    # Clean up intermediate files that aren't the final result
     for path in intermediates:
         if path.exists():
             path.unlink()
