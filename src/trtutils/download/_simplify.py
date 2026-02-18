@@ -100,22 +100,11 @@ def _run_tool(
     tool_type: str,
     model_path: Path,
     output_path: Path,
-    directory: Path,
     bin_path: Path,
     *,
-    no_uv_cache: bool | None = None,
     verbose: bool | None = None,
 ) -> int | None:
     try:
-        LOG.info(f"Installing {tool_name} into venv at {directory}")
-        run_uv_pip_install(
-            directory,
-            bin_path.parent,
-            model=None,
-            packages=["-r", get_tool_requirements(tool_name)],
-            no_cache=no_uv_cache,
-            verbose=verbose,
-        )
         LOG.info(f"Running {tool_name} on {model_path.stem}")
         cmd = _build_tool_cmd(tool_name, tool_type, bin_path, model_path, output_path)
         run_cmd(cmd, verbose=verbose)
@@ -144,6 +133,17 @@ def _run_simplify(
 ) -> None:
     LOG.info(f"Simplifying ONNX model: {model_path.stem}")
 
+    # Install all simplification tools at once
+    LOG.info("Installing simplification tools into venv")
+    run_uv_pip_install(
+        directory,
+        bin_path.parent,
+        model=None,
+        packages=["-r", get_tool_requirements("simplify")],
+        no_cache=no_uv_cache,
+        verbose=verbose,
+    )
+
     best_count: int | None = None
     best_path: Path | None = None
     outputs: list[Path] = []
@@ -157,9 +157,7 @@ def _run_simplify(
             tool_type,
             model_path,
             output_path,
-            directory,
             bin_path,
-            no_uv_cache=no_uv_cache,
             verbose=verbose,
         )
 
