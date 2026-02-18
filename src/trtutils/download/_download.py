@@ -15,6 +15,7 @@ from . import _simplify
 from ._models import (
     export_deim,
     export_deimv2,
+    export_depth_anything_v2,
     export_dfine,
     export_rfdetr,
     export_rtdetrv1,
@@ -179,6 +180,8 @@ def download_model(
         export_func = export_dfine
     elif "rfdetr" in model:
         export_func = export_rfdetr
+    elif "depth_anything_v2" in model:
+        export_func = export_depth_anything_v2
 
     # Single call site
     if export_func is None:

@@ -12,6 +12,7 @@ import time
 from functools import lru_cache
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
+from urllib.parse import urlsplit
 
 from trtutils._log import LOG
 
@@ -330,7 +331,11 @@ def run_download(
         filename = f"unused_{seed}"
     # Handle URL based models
     else:
-        filename = config["url"].rstrip("/").split("/")[-1]
+        parsed_url = urlsplit(config["url"])
+        filename = Path(parsed_url.path).name
+        if not filename:
+            err_msg = f"Unable to determine filename from URL: {config['url']}"
+            raise ValueError(err_msg)
         cache_key = f"wget_{filename}"
 
     cached_file = weights_cache_dir / cache_key
@@ -359,7 +364,7 @@ def run_download(
             )
         else:
             run_cmd(
-                ["wget", "-nc", config["url"]],
+                ["wget", "-O", filename, config["url"]],
                 cwd=directory,
                 verbose=verbose,
             )
