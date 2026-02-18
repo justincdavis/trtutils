@@ -1845,7 +1845,10 @@ def _main() -> None:
             _parser.print_help()
 
         research_parser.set_defaults(func=_research_help)
-        research_register_cli(research_subparsers, [general_parser])
+        research_register_cli(
+            research_subparsers,
+            [general_parser, dla_parser, build_common_parser, calibration_parser],
+        )
 
     # parse args and call the function
     args, unknown = parser.parse_known_args()

@@ -1,0 +1,2 @@
+numpy>=1.21.0,<3.0.0
+trtutils[cu12,onnx,axonn]>=0.7.0

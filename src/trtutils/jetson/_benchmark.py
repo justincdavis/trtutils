@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+import gc
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -82,6 +83,7 @@ def benchmark_engine(
         A dataclass containing the results of the benchmark.
 
     """
+    loaded_engine: bool = False
     if isinstance(engine, (Path, str)):
         engine = TRTEngine(
             engine,
@@ -91,6 +93,7 @@ def benchmark_engine(
             cuda_graph=cuda_graph,
             verbose=verbose,
         )
+        loaded_engine = True
     else:
         if warmup:
             for _ in range(warmup_iterations):
@@ -147,8 +150,9 @@ def benchmark_engine(
         metrics[metric_name] = metric
         LOG.debug(f"{metric_name}: {metric}")
 
-    # free engine resources to avoid DLA context exhaustion
-    del engine
+    if loaded_engine:
+        del engine
+        gc.collect()
 
     return JetsonBenchmarkResult(
         latency=metrics["latency"],
@@ -293,8 +297,10 @@ def benchmark_engines(
         metrics[metric_name] = metric
         LOG.debug(f"{metric_name}: {metric}")
 
-    # free engine resources to avoid DLA context exhaustion
+    # no need to check if we loaded the engines, since passed engines are not deleted
+    # explicitly by the ParallelTRTEngines class
     del trt_engines
+    gc.collect()
 
     return [
         JetsonBenchmarkResult(
