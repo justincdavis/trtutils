@@ -16,50 +16,14 @@ with contextlib.suppress(ImportError):
 
 from trtutils._log import LOG
 from trtutils.builder._build import build_engine
-from trtutils.builder._dla import can_run_on_dla
-from trtutils.builder._onnx import read_onnx
+from trtutils.inspect._onnx import inspect_onnx_layers
 from trtutils.jetson._profile import profile_engine as jetson_profile_engine
+from trtutils.profiling._fusion import build_fused_layer_map
 
 from ._types import AxoNNConfig, Layer, LayerCost
 
 if TYPE_CHECKING:
     from trtutils.builder._batcher import AbstractBatcher
-
-
-def _get_tensor_size(tensor: trt.ITensor) -> int:
-    """
-    Calculate the size of a tensor in bytes.
-
-    Parameters
-    ----------
-    tensor : trt.ITensor
-        The TensorRT tensor.
-
-    Returns
-    -------
-    int
-        Size in bytes.
-
-    """
-    shape = tensor.shape
-    # Handle dynamic dimensions by assuming 1
-    num_elements = 1
-    for dim in shape:
-        num_elements *= max(1, dim)
-
-    # Get dtype size
-    dtype = tensor.dtype
-    dtype_sizes = {
-        trt.DataType.FLOAT: 4,
-        trt.DataType.HALF: 2,
-        trt.DataType.INT8: 1,
-        trt.DataType.INT32: 4,
-        trt.DataType.BOOL: 1,
-        trt.DataType.UINT8: 1,
-    }
-    dtype_size = dtype_sizes.get(dtype, 4)
-
-    return num_elements * dtype_size
 
 
 def extract_layer_info(
@@ -70,6 +34,9 @@ def extract_layer_info(
 ) -> list[Layer]:
     """
     Extract layer information from an ONNX model.
+
+    Delegates to :func:`trtutils.inspect.inspect_onnx_layers` and converts
+    the result to AxoNN :class:`Layer` objects.
 
     Parameters
     ----------
@@ -91,127 +58,8 @@ def extract_layer_info(
         If config is not provided when onnx is a network.
 
     """
-    # Handle network input
-    if isinstance(onnx, trt.INetworkDefinition):
-        if config is None:
-            err_msg = "Config must be provided when onnx is a network"
-            raise ValueError(err_msg)
-        network = onnx
-    else:
-        network, _, config, _ = read_onnx(onnx)
-
-    # Get DLA compatibility using can_run_on_dla
-    _, chunks = can_run_on_dla(network, config, verbose_layers=False, verbose_chunks=False)
-
-    # Build a set of DLA-compatible layer indices
-    dla_layer_indices: set[int] = set()
-    for _layer_list, start, end, on_dla in chunks:
-        if on_dla:
-            for idx in range(start, end + 1):
-                dla_layer_indices.add(idx)
-
-    layers: list[Layer] = []
-
-    for idx in range(network.num_layers):
-        trt_layer = network.get_layer(idx)
-
-        # Get layer type as string
-        layer_type = str(trt_layer.type).split(".")[-1]
-
-        # Calculate output tensor size
-        output_size = 0
-        for out_idx in range(trt_layer.num_outputs):
-            output = trt_layer.get_output(out_idx)
-            if output is not None:
-                output_size += _get_tensor_size(output)
-
-        # Calculate input tensor size
-        input_size = 0
-        for in_idx in range(trt_layer.num_inputs):
-            inp = trt_layer.get_input(in_idx)
-            if inp is not None:
-                input_size += _get_tensor_size(inp)
-
-        # Check DLA compatibility from our pre-computed set
-        dla_valid = idx in dla_layer_indices
-
-        layer = Layer(
-            index=idx,
-            name=trt_layer.name,
-            layer_type=layer_type,
-            output_tensor_size=output_size,
-            can_run_on_dla=dla_valid,
-            input_tensor_size=input_size,
-        )
-        layers.append(layer)
-
-        if verbose:
-            LOG.info(f"Layer {idx}: {layer}")
-
-    return layers
-
-
-def _build_fused_layer_map(
-    layer_data: dict[str, tuple[float, float]],
-    onnx_layer_names: list[str] | None = None,
-) -> dict[str, tuple[str, int]]:
-    """
-    Build a mapping from individual layer names to their fused TRT layer.
-
-    TensorRT fuses layers in two ways:
-    - GPU engines: ``"LayerA + LayerB + LayerC"``
-    - DLA engines: ``"{ForeignNode[FirstLayer...LastLayer]}"``
-
-    This function parses both formats and maps each constituent ONNX layer
-    name to the fused name and total constituent count (for even cost splitting).
-
-    Parameters
-    ----------
-    layer_data : dict[str, tuple[float, float]]
-        Profiled layer data keyed by (possibly fused) layer name.
-    onnx_layer_names : list[str] | None, optional
-        Ordered list of all ONNX layer names. Required to resolve DLA
-        ``ForeignNode`` ranges which only name the first and last layer.
-
-    Returns
-    -------
-    dict[str, tuple[str, int]]
-        Maps individual layer name -> (fused_name, num_constituents).
-
-    """
-    fused_map: dict[str, tuple[str, int]] = {}
-    for fused_name in layer_data:
-        # GPU fusion: "LayerA + LayerB + LayerC"
-        parts = [p.strip() for p in fused_name.split(" + ")]
-        if len(parts) > 1:
-            for part in parts:
-                fused_map[part] = (fused_name, len(parts))
-            continue
-
-        # DLA ForeignNode: "{ForeignNode[/first/Layer.../last/Layer]}"
-        if fused_name.startswith("{ForeignNode[") and fused_name.endswith("]}"):
-            inner = fused_name[len("{ForeignNode[") : -len("]}") :]
-            # Split on "..." to get first and last layer names
-            range_parts = inner.split("...")
-            name_length = 2
-            if len(range_parts) == name_length and onnx_layer_names is not None:
-                first_name, last_name = range_parts[0].strip(), range_parts[1].strip()
-                # Find the index range in the ONNX layer list
-                try:
-                    first_idx = onnx_layer_names.index(first_name)
-                    last_idx = onnx_layer_names.index(last_name)
-                    covered = onnx_layer_names[first_idx : last_idx + 1]
-                    for name in covered:
-                        fused_map[name] = (fused_name, len(covered))
-                except ValueError:
-                    pass
-            elif len(range_parts) == 1 and onnx_layer_names is not None:
-                # Single layer ForeignNode: {ForeignNode[/layer/Name]}
-                single_name = range_parts[0].strip()
-                if single_name in onnx_layer_names:
-                    fused_map[single_name] = (fused_name, 1)
-
-    return fused_map
+    layer_infos = inspect_onnx_layers(onnx, config, verbose=verbose)
+    return [Layer.from_layer_info(info) for info in layer_infos]
 
 
 def _resolve_layer_cost(
@@ -448,8 +296,14 @@ def profile_for_axonn(
         # Build reverse mapping: ONNX layer name -> fused TRT layer name
         # GPU engines fuse as "LayerA + LayerB", DLA uses "{ForeignNode[A...Z]}"
         onnx_layer_names = [layer.name for layer in layers]
-        gpu_fused_map = _build_fused_layer_map(gpu_layer_data, onnx_layer_names)
-        dla_fused_map = _build_fused_layer_map(dla_layer_data, onnx_layer_names)
+        gpu_fused_map = build_fused_layer_map(
+            list(gpu_layer_data.keys()),
+            onnx_layer_names,
+        )
+        dla_fused_map = build_fused_layer_map(
+            list(dla_layer_data.keys()),
+            onnx_layer_names,
+        )
 
         # Pass 1: resolve GPU costs for every layer
         gpu_per_layer: dict[int, tuple[float, float]] = {}

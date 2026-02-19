@@ -11,7 +11,9 @@ from typing import Protocol
 from trtutils._log import LOG
 from trtutils.builder._build import build_engine
 from trtutils.compat._libs import trt
+from trtutils.inspect._onnx import inspect_onnx_layers
 
+from ._fusion import build_fused_layer_map, resolve_fused_layer_value
 from ._profiler import ProfilerResult, profile_engine
 
 
@@ -41,8 +43,11 @@ def identify_quantize_speedups_by_layer(
 
     This function builds both FP16 and INT8 engines from an ONNX model (using either a
     user-provided build function or :func:`trtutils.builder.build_engine`), profiles
-    them layer-by-layer, and computes the speedup percentage for each layer. Layers
-    are returned in execution order.
+    them layer-by-layer, and computes the speedup percentage for each layer.
+
+    When TensorRT fuses layers differently at FP16 vs INT8, ONNX layer names are used
+    as a common reference and fused layer costs are split evenly among their
+    constituents.
 
     Parameters
     ----------
@@ -69,7 +74,7 @@ def identify_quantize_speedups_by_layer(
     workspace : float, optional
         The size of the workspace in gigabytes. Default is 4.0 GiB.
     ignore_mismatch_layers : bool, optional
-        Whether to ignore layers that are only present in one datatype.
+        Whether to ignore layers that cannot be resolved in both profiles.
         Default is False.
     verbose : bool, optional
         Whether to output additional information to stdout.
@@ -81,13 +86,13 @@ def identify_quantize_speedups_by_layer(
         A tuple containing:
         - FP16 profiling results
         - INT8 profiling results
-        - List of (layer_name, speedup_percent) tuples in execution order.
+        - List of (layer_name, speedup_percent) tuples in ONNX layer order.
           Positive values indicate INT8 is faster, negative values indicate INT8 is slower.
 
     Raises
     ------
     ValueError
-        If layer names mismatch and mismatches are not ignored.
+        If a layer cannot be resolved in both profiles and mismatches are not ignored.
 
     """
     if build_func is None:
@@ -110,6 +115,10 @@ def identify_quantize_speedups_by_layer(
             )
 
     onnx_path = Path(onnx)
+
+    # Get ONNX layer names as common reference
+    onnx_layers = inspect_onnx_layers(onnx_path, verbose=False)
+    onnx_layer_names = [layer.name for layer in onnx_layers]
 
     # Create temporary files for engines
     with tempfile.NamedTemporaryFile(
@@ -154,31 +163,41 @@ def identify_quantize_speedups_by_layer(
             verbose=verbose,
         )
 
-        fp16_layer_map = {layer.name: layer for layer in fp16_results.layers}
-        int8_layer_map = {layer.name: layer for layer in int8_results.layers}
+        # Build fusion maps from profiled layer names
+        fp16_layer_names = [layer.name for layer in fp16_results.layers]
+        int8_layer_names = [layer.name for layer in int8_results.layers]
 
-        # validate the layer names are the same
-        if set(fp16_layer_map.keys()) != set(int8_layer_map.keys()) and not ignore_mismatch_layers:
-            err_msg = "Layer names do not match between FP16 and INT8 results"
-            raise ValueError(err_msg)
+        fp16_fused_map = build_fused_layer_map(fp16_layer_names, onnx_layer_names)
+        int8_fused_map = build_fused_layer_map(int8_layer_names, onnx_layer_names)
 
+        # Build value dicts keyed by profiled layer name
+        fp16_values: dict[str, float] = {layer.name: layer.mean for layer in fp16_results.layers}
+        int8_values: dict[str, float] = {layer.name: layer.mean for layer in int8_results.layers}
+
+        # Resolve per-ONNX-layer timing through fusion maps
         layer_deltas: list[tuple[str, float]] = []
 
-        for fp16_layer_name, fp16_layer in fp16_layer_map.items():
-            if fp16_layer_name not in int8_layer_map:
+        for layer_name in onnx_layer_names:
+            fp16_time = resolve_fused_layer_value(
+                layer_name,
+                fp16_values,
+                fp16_fused_map,
+            )
+            int8_time = resolve_fused_layer_value(
+                layer_name,
+                int8_values,
+                int8_fused_map,
+            )
+
+            if fp16_time is None or int8_time is None:
                 if ignore_mismatch_layers:
                     continue
-                err_msg = f"Layer {fp16_layer_name} found in FP16 but not in INT8 results"
+                err_msg = f"Layer {layer_name} could not be resolved in both FP16 and INT8 profiles"
                 raise ValueError(err_msg)
 
-            int8_layer = int8_layer_map[fp16_layer_name]
-            fp16_time = fp16_layer.mean
-            int8_time = int8_layer.mean
-
-            # Compute speedup percentage: (fp16_time - int8_time) / fp16_time * 100
             # Positive = INT8 is faster, negative = INT8 is slower
             speedup_percent = ((fp16_time - int8_time) / fp16_time) * 100.0 if fp16_time > 0 else 0.0
 
-            layer_deltas.append((fp16_layer_name, speedup_percent))
+            layer_deltas.append((layer_name, speedup_percent))
 
         return fp16_results, int8_results, layer_deltas

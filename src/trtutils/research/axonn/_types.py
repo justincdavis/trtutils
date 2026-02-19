@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+    from trtutils.inspect._types import LayerInfo
+
 
 class ProcessorType(Enum):
     """Enum representing available processor types."""
@@ -23,7 +25,9 @@ class ProcessorType(Enum):
 @dataclass
 class Layer:
     """
-    Represents a neural network layer with its properties.
+    Represents a neural network layer with its properties for AxoNN.
+
+    Thin adapter around :class:`trtutils.inspect.LayerInfo`.
 
     Attributes
     ----------
@@ -48,6 +52,31 @@ class Layer:
     output_tensor_size: int
     can_run_on_dla: bool
     input_tensor_size: int = 0
+
+    @classmethod
+    def from_layer_info(cls: type[Layer], info: LayerInfo) -> Layer:
+        """
+        Create a Layer from a LayerInfo instance.
+
+        Parameters
+        ----------
+        info : LayerInfo
+            The layer info from the main library.
+
+        Returns
+        -------
+        Layer
+            The AxoNN Layer.
+
+        """
+        return cls(
+            index=info.index,
+            name=info.name,
+            layer_type=info.layer_type,
+            output_tensor_size=info.output_tensor_size,
+            can_run_on_dla=info.dla_compatible,
+            input_tensor_size=info.input_tensor_size,
+        )
 
     def __str__(self: Self) -> str:
         dla_str = "DLA-compatible" if self.can_run_on_dla else "GPU-only"

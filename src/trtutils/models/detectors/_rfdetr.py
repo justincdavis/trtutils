@@ -178,10 +178,10 @@ class RFDETR(DETR):
         ]
         layer_info = inspect_onnx_layers(onnx, verbose=False)
         layer_precision = []
-        for idx, name, _, _ in layer_info:
-            lower_name = name.lower()
+        for layer in layer_info:
+            lower_name = layer.name.lower()
             if "reducemean" in lower_name or "downsample" in lower_name:
-                layer_precision.append((idx, trt.DataType.FLOAT))
+                layer_precision.append((layer.index, trt.DataType.FLOAT))
         build_engine(
             onnx=onnx,
             output=output,
