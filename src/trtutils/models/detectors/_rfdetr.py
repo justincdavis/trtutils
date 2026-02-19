@@ -83,6 +83,7 @@ class RFDETR(DETR):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -100,6 +101,8 @@ class RFDETR(DETR):
             Image size used for export.
         opset: int = 17
             ONNX opset to export with.
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None
@@ -125,6 +128,7 @@ class RFDETR(DETR):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,

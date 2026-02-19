@@ -67,6 +67,7 @@ class DenseNet(Classifier):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -84,6 +85,8 @@ class DenseNet(Classifier):
             The image size to use for the model. Default is 224.
         opset : int
             The ONNX opset to use for the model. Default is 17.
+        simplify : bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept : bool
             Whether to accept the license terms for the model.
         no_cache : bool | None
@@ -101,6 +104,7 @@ class DenseNet(Classifier):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,

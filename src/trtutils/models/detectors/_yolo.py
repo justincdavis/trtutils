@@ -77,6 +77,7 @@ class YOLOX(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -95,6 +96,8 @@ class YOLOX(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -112,6 +115,7 @@ class YOLOX(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -244,6 +248,7 @@ class YOLO3(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -262,6 +267,8 @@ class YOLO3(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -279,6 +286,7 @@ class YOLO3(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -410,6 +418,7 @@ class YOLO5(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -428,6 +437,8 @@ class YOLO5(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -445,6 +456,7 @@ class YOLO5(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -576,6 +588,7 @@ class YOLO7(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -594,6 +607,8 @@ class YOLO7(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -611,6 +626,7 @@ class YOLO7(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -723,6 +739,7 @@ class YOLO8(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -741,6 +758,8 @@ class YOLO8(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -758,6 +777,7 @@ class YOLO8(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -890,6 +910,7 @@ class YOLO9(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -908,6 +929,8 @@ class YOLO9(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -925,6 +948,7 @@ class YOLO9(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -1037,6 +1061,7 @@ class YOLO10(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -1055,6 +1080,8 @@ class YOLO10(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -1072,6 +1099,7 @@ class YOLO10(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -1184,6 +1212,7 @@ class YOLO11(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -1202,6 +1231,8 @@ class YOLO11(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -1219,6 +1250,7 @@ class YOLO11(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -1351,6 +1383,7 @@ class YOLO12(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -1369,6 +1402,8 @@ class YOLO12(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -1386,6 +1421,7 @@ class YOLO12(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -1518,6 +1554,7 @@ class YOLO13(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -1536,6 +1573,8 @@ class YOLO13(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -1553,6 +1592,7 @@ class YOLO13(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -1685,6 +1725,7 @@ class YOLO26(YOLO):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -1703,6 +1744,8 @@ class YOLO26(YOLO):
         opset: int = 17
             The ONNX opset to use for the model.
         *,
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None,
@@ -1720,6 +1763,7 @@ class YOLO26(YOLO):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
