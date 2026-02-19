@@ -4,9 +4,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from trtutils.download._download import download as _download
 from trtutils.download._download import load_model_configs
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def get_valid_models(model_type: str) -> list[str]:
@@ -38,6 +42,7 @@ def download_model_internal(
     imgsz: int = 640,
     opset: int = 17,
     *,
+    simplify: Sequence[str] | bool | None = None,
     no_cache: bool | None = None,
     accept: bool | None = None,
     verbose: bool | None = None,
@@ -59,6 +64,8 @@ def download_model_internal(
         Image size to use during export.
     opset : int, optional
         ONNX opset to use during export.
+    simplify : Sequence[str] or bool, optional
+        Whether to simplify the ONNX model after export.
     no_cache : bool, optional
         Disable caching of downloaded weights and repos.
     accept : bool, optional
@@ -80,6 +87,7 @@ def download_model_internal(
         output=Path(output),
         imgsz=imgsz,
         opset=opset,
+        simplify=simplify,
         no_cache=no_cache,
         accept=accept,
         verbose=verbose,
