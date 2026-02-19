@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """
@@ -8,6 +8,8 @@ Classes
 -------
 ClassifierInterface
     Interface for image classifiers.
+DepthEstimatorInterface
+    Interface for depth estimators.
 DetectorInterface
     Interface for image detectors.
 
@@ -281,6 +283,256 @@ class ClassifierInterface(ABC):
         *,
         verbose: bool | None = None,
     ) -> list[tuple[int, float]] | list[list[tuple[int, float]]]:
+        """Perform end to end inference for a batch of images."""
+
+
+class DepthEstimatorInterface(ABC):
+    """Interface for depth estimators."""
+
+    @property
+    @abstractmethod
+    def engine(self: Self) -> TRTEngine:
+        """Get the underlying TRTEngine."""
+
+    @property
+    @abstractmethod
+    def name(self: Self) -> str:
+        """Get the name of the engine."""
+
+    @property
+    @abstractmethod
+    def input_shape(self: Self) -> tuple[int, int]:
+        """Get the input shape of the model."""
+
+    @property
+    @abstractmethod
+    def dtype(self: Self) -> np.dtype:
+        """Get the dtype required by the model."""
+
+    # preprocess overloads
+    @overload
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray,
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: list[np.ndarray],
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        resize: str | None = None,
+        method: str | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        """Preprocess the input images."""
+
+    @abstractmethod
+    def postprocess(
+        self: Self,
+        outputs: list[np.ndarray],
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Postprocess the outputs."""
+
+    # __call__ overloads
+    @overload
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Run the model on input."""
+
+    # run overloads - batch input (3 overloads)
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Run the model on input."""
+
+    # get_depth_maps overloads
+    @overload
+    @abstractmethod
+    def get_depth_maps(
+        self: Self,
+        outputs: list[np.ndarray],
+        *,
+        verbose: bool | None = ...,
+    ) -> np.ndarray: ...
+
+    @overload
+    @abstractmethod
+    def get_depth_maps(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+        *,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @abstractmethod
+    def get_depth_maps(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+        *,
+        verbose: bool | None = None,
+    ) -> np.ndarray | list[np.ndarray]:
+        """Get the depth maps for each image."""
+
+    # end2end overloads
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray,
+        *,
+        verbose: bool | None = ...,
+    ) -> np.ndarray: ...
+
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        *,
+        verbose: bool | None = None,
+    ) -> np.ndarray | list[np.ndarray]:
         """Perform end to end inference for a batch of images."""
 
 

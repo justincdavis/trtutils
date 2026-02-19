@@ -8,6 +8,7 @@ import shutil
 import tempfile
 from functools import lru_cache
 from pathlib import Path
+from typing import Sequence
 
 from trtutils._log import LOG
 
@@ -15,6 +16,7 @@ from . import _simplify
 from ._models import (
     export_deim,
     export_deimv2,
+    export_depth_anything_v2,
     export_dfine,
     export_rfdetr,
     export_rtdetrv1,
@@ -77,7 +79,7 @@ def download_model(
     imgsz: int | None = None,
     requirements_export: Path | None = None,
     *,
-    simplify: bool | None = None,
+    simplify: Sequence[str] | bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -100,8 +102,12 @@ def download_model(
         By default, the model will use the default image size for the model.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
-    simplify : bool, optional
-        Whether to simplify the model after exporting.
+    simplify : Sequence[str] or bool, optional
+        Whether and how to simplify the model after exporting.
+        If True, uses default tools (polygraphy, onnxslim).
+        If a sequence of tool names, runs those tools in the given order.
+        Valid tool names: "polygraphy", "onnxslim", "onnxsim".
+        If False or None, no simplification is performed.
     no_cache : bool, optional
         Whether to disable caching of downloaded weights and repos.
     no_uv_cache : bool, optional
@@ -179,6 +185,8 @@ def download_model(
         export_func = export_dfine
     elif "rfdetr" in model:
         export_func = export_rfdetr
+    elif "depth_anything_v2" in model:
+        export_func = export_depth_anything_v2
 
     # Single call site
     if export_func is None:
@@ -203,8 +211,15 @@ def download_model(
         export_requirements(bin_path.parent, requirements_export_path, verbose=verbose)
 
     if simplify:
+        if isinstance(simplify, bool):
+            tools = None
+        elif isinstance(simplify, str):
+            tools = [simplify]
+        else:
+            tools = list(simplify)
         _simplify.simplify(
             model_path,
+            tools=tools,
             directory=directory,
             bin_path=bin_path,
             no_uv_cache=no_uv_cache,
@@ -221,7 +236,7 @@ def download(
     imgsz: int | None = None,
     requirements_export: Path | None = None,
     *,
-    simplify: bool | None = None,
+    simplify: Sequence[str] | bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -244,8 +259,12 @@ def download(
         By default, the model will use the default image size for the model.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
-    simplify : bool, optional
-        Whether to simplify the model after exporting.
+    simplify : Sequence[str] or bool, optional
+        Whether and how to simplify the model after exporting.
+        If True, uses default tools (polygraphy, onnxslim).
+        If a sequence of tool names, runs those tools in the given order.
+        Valid tool names: "polygraphy", "onnxslim", "onnxsim".
+        If False or None, no simplification is performed.
     no_cache : bool, optional
         Whether to disable caching of downloaded weights and repos.
     no_uv_cache : bool, optional

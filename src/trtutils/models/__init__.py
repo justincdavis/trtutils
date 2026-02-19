@@ -86,6 +86,8 @@ Classes
     Alias for the Classifier class with args preset for ViT.
 :class:`WideResNet`
     Alias for the Classifier class with args preset for Wide ResNet.
+:class:`DepthAnythingV2`
+    Alias for the DepthEstimator class with args preset for Depth-Anything-V2.
 
 """
 
@@ -114,6 +116,7 @@ from .classifiers import (
     ViT,
     WideResNet,
 )
+from .depth_estimators import DepthAnythingV2
 from .detectors import (
     DEIM,
     DETR,
@@ -157,6 +160,7 @@ __all__ = [
     "ConvNeXt",
     "DEIMv2",
     "DenseNet",
+    "DepthAnythingV2",
     "EfficientNet",
     "EfficientNetV2",
     "GoogLeNet",
