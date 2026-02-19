@@ -31,8 +31,8 @@ Example:
 ...     onnx="model.onnx",
 ...     output="model.engine",
 ...     calibration_batcher=batcher,
-...     energy_ratio=0.8,      # Target 80% of GPU energy (ECT)
-...     max_transitions=3,     # Max GPU<->DLA transitions
+...     energy_ratio=0.8,      # ECT = 80% of GPU-only baseline energy
+...     max_transitions=1,     # Max GPU<->DLA transitions
 ...     verbose=True,
 ... )
 >>>

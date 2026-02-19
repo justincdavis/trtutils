@@ -72,7 +72,7 @@ def build_engine(
     *,
     energy_target: float | None = None,
     energy_ratio: float = 0.8,
-    max_transitions: int = 3,
+    max_transitions: int = 1,
     dla_core: int = 0,
     profile_iterations: int = 1000,
     warmup_iterations: int = 50,
@@ -109,19 +109,33 @@ def build_engine(
     calibration_batcher : AbstractBatcher
         Data batcher for INT8 calibration (required for DLA).
     energy_target : float | None, optional
-        Energy Consumption Target (ECT) in millijoules per inference.
-        If None, computed as `energy_ratio * GPU_only_energy`.
+        Explicit Energy Consumption Target (ECT) in millijoules per inference.
+        When set, the solver constrains the schedule so total energy per
+        inference does not exceed this value. If None (default), the ECT is
+        derived automatically from ``energy_ratio``.
     energy_ratio : float, optional
-        Ratio of GPU-only energy to use as ECT (0.0-1.0). Default 0.8.
-        Only used if `energy_target` is None.
+        Fraction of the GPU-only baseline energy to use as the ECT. Default
+        0.8. Only used when ``energy_target`` is None. The model is first
+        profiled running entirely on GPU to measure baseline energy. The ECT
+        is then set to ``energy_ratio * gpu_baseline_energy``. For example,
+        ``energy_ratio=0.8`` means "find a schedule that uses at most 80% of
+        the energy that GPU-only execution consumes." Lower values impose a
+        tighter energy budget, pushing more layers to DLA (potentially slower
+        but more energy-efficient). Higher values relax the constraint,
+        keeping more layers on GPU (faster but higher energy).
     max_transitions : int, optional
-        Maximum GPU<->DLA transitions allowed. Default 3.
+        Maximum number of GPU<->DLA device transitions allowed in the
+        schedule. Each transition incurs overhead from memory transfers
+        between accelerators. Default 1.
     dla_core : int, optional
         DLA core to use (0 or 1). Default 0.
     profile_iterations : int, optional
-        Number of iterations for profiling each configuration. Default 1000.
+        Number of inference iterations for profiling each layer/engine
+        configuration. More iterations yield more stable timing and power
+        measurements at the cost of longer profiling time. Default 1000.
     warmup_iterations : int, optional
-        Warmup iterations before profiling. Default 50.
+        Number of warmup iterations run before profiling begins, to ensure
+        GPU/DLA clocks are stable. Default 50.
     workspace : float, optional
         TensorRT workspace size in GB. Default 4.0.
     timing_cache : Path | str | None, optional
@@ -166,8 +180,8 @@ def build_engine(
     ...     onnx="model.onnx",
     ...     output="model.engine",
     ...     calibration_batcher=batcher,
-    ...     energy_ratio=0.8,  # Target 80% of GPU energy
-    ...     max_transitions=3,
+    ...     energy_ratio=0.8,  # ECT = 80% of GPU-only baseline energy
+    ...     max_transitions=1,
     ...     verbose=True,
     ... )
     >>> print(f"Time: {time_ms:.2f}ms, Energy: {energy_mj:.2f}mJ")

@@ -160,19 +160,26 @@ def register_cli(
         "--energy_target",
         type=float,
         default=None,
-        help="Energy Consumption Target (ECT) in millijoules. If not set, uses energy_ratio.",
+        help=(
+            "Explicit Energy Consumption Target (ECT) in millijoules per inference. "
+            "Overrides --energy_ratio when set."
+        ),
     )
     build_parser.add_argument(
         "--energy_ratio",
         type=float,
         default=0.8,
-        help="Ratio of GPU-only energy to use as ECT (0.0-1.0). Default is 0.8.",
+        help=(
+            "Fraction of GPU-only baseline energy to use as ECT (0.0-1.0). "
+            "E.g. 0.8 = schedule must use <=80%% of GPU-only energy. "
+            "Lower values push more layers to DLA. Default is 0.8."
+        ),
     )
     build_parser.add_argument(
         "--max_transitions",
         type=int,
-        default=3,
-        help="Maximum GPU<->DLA transitions. Default is 3.",
+        default=1,
+        help="Maximum GPU<->DLA transitions. Default is 1.",
     )
     build_parser.add_argument(
         "--profile_iterations",

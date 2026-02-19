@@ -263,13 +263,16 @@ class AxoNNConfig:
     Attributes
     ----------
     energy_target_mj : float | None
-        Target energy consumption in millijoules per inference.
-        If None, will be computed as a fraction of GPU-only energy.
+        Explicit Energy Consumption Target (ECT) in millijoules per
+        inference.  If None, the ECT is derived as
+        ``energy_target_ratio * gpu_baseline_energy``.
     energy_target_ratio : float
-        Ratio of GPU energy to use as target if energy_target_mj is None.
-        Default is 0.8 (80% of GPU energy).
+        Fraction of GPU-only baseline energy to use as the ECT when
+        ``energy_target_mj`` is None. Default 0.8 means the schedule
+        must consume at most 80% of the GPU-only energy.
     max_transitions : int
-        Maximum allowed number of GPU<->DLA transitions.
+        Maximum allowed number of GPU<->DLA transitions. Each transition
+        incurs memory-transfer overhead. Default 1.
     transition_time_base_ms : float
         Base transition time overhead in milliseconds.
     transition_time_per_mb : float
@@ -289,7 +292,7 @@ class AxoNNConfig:
 
     energy_target_mj: float | None = None
     energy_target_ratio: float = 0.8
-    max_transitions: int = 3
+    max_transitions: int = 1
     transition_time_base_ms: float = 0.1
     transition_time_per_mb: float = 0.05
     transition_energy_base_mj: float = 0.01
