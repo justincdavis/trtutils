@@ -1119,13 +1119,20 @@ def _download(args: SimpleNamespace) -> None:
             LOG.info("License not accepted. Aborting download.")
             return
 
+    if args.simplify is None:
+        simplify_value = None
+    elif len(args.simplify) == 0:
+        simplify_value = True
+    else:
+        simplify_value = args.simplify
+
     trtutils.download.download(
         args.model,
         args.output,
         args.opset,
         args.imgsz,
         requirements_export=args.requirements_export,
-        simplify=args.simplify,
+        simplify=simplify_value,
         accept=True,
         verbose=args.verbose,
         no_cache=args.no_cache,
@@ -1799,8 +1806,11 @@ def _main() -> None:
     )
     download_parser.add_argument(
         "--simplify",
-        action="store_true",
-        help="Simplify the ONNX model using multiple tools (onnxsim, onnxslim, polygraphy) and pick the best result.",
+        nargs="*",
+        metavar="TOOL",
+        help="Simplify the ONNX model. Without arguments, uses default tools "
+        "(polygraphy, onnxslim). Optionally specify tools and order: "
+        "--simplify polygraphy onnxslim onnxsim",
     )
     download_parser.set_defaults(func=_download)
 
