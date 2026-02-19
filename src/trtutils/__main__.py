@@ -1093,6 +1093,8 @@ def _download(args: SimpleNamespace) -> None:
             Enable verbose output.
         - no_cache : bool
             Disable caching of downloaded weights, repos, and uv packages.
+        - simplify : bool
+            Simplify the ONNX model using onnxsim after exporting.
 
     """
     if args.list_models:
@@ -1104,12 +1106,6 @@ def _download(args: SimpleNamespace) -> None:
             LOG.info(f"    {', '.join(model_names)}")
             LOG.info("")
         return
-
-    if args.model == "torchvision_classifier":
-        if args.torchvision_model is None:
-            LOG.error("--torchvision_model is required when --model is torchvision_classifier.")
-            return
-        args.model = args.torchvision_model
 
     if args.model is None or args.output is None:
         LOG.error("--model and --output are required for downloading.")
@@ -1125,12 +1121,20 @@ def _download(args: SimpleNamespace) -> None:
             LOG.info("License not accepted. Aborting download.")
             return
 
+    if args.simplify is None:
+        simplify_value = None
+    elif len(args.simplify) == 0:
+        simplify_value = True
+    else:
+        simplify_value = args.simplify
+
     trtutils.download.download(
         args.model,
         args.output,
         args.opset,
         args.imgsz,
         requirements_export=args.requirements_export,
+        simplify=simplify_value,
         accept=True,
         verbose=args.verbose,
         no_cache=args.no_cache,
@@ -1803,10 +1807,12 @@ def _main() -> None:
         help="Disable caching of downloaded weights, repos, and uv packages.",
     )
     download_parser.add_argument(
-        "--torchvision_model",
-        type=str,
-        default=None,
-        help="Specific torchvision model name when --model is torchvision_classifier.",
+        "--simplify",
+        nargs="*",
+        metavar="TOOL",
+        help="Simplify the ONNX model. Without arguments, uses default tools "
+        "(polygraphy, onnxslim). Optionally specify tools and order: "
+        "--simplify polygraphy onnxslim onnxsim",
     )
     download_parser.set_defaults(func=_download)
 

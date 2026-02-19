@@ -80,6 +80,7 @@ class DEIM(DETR):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -97,6 +98,8 @@ class DEIM(DETR):
             Image size used for export.
         opset: int = 17
             ONNX opset to export with.
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None
@@ -122,6 +125,7 @@ class DEIM(DETR):
             output=output,
             imgsz=imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,
@@ -249,6 +253,7 @@ class DEIMv2(DETR):
         imgsz: int | None = None,
         opset: int = 17,
         *,
+        simplify: bool = True,
         accept: bool = False,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -269,6 +274,8 @@ class DEIMv2(DETR):
             All others (pico, n, s, m, l) require 640
         opset: int = 17
             ONNX opset to export with.
+        simplify: bool
+            Whether to simplify the ONNX model after export. Default is True.
         accept: bool, default False
             Whether to accept the license terms for the model.
         no_cache: bool | None = None
@@ -300,6 +307,7 @@ class DEIMv2(DETR):
             output=output,
             imgsz=expected_imgsz,
             opset=opset,
+            simplify=simplify,
             no_cache=no_cache,
             accept=accept,
             verbose=verbose,

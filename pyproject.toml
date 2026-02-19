@@ -162,5 +162,6 @@ trtutils = [
     "src/trtutils/download/patches/*.patch",
     "src/trtutils/download/configs/*.json",
     "src/trtutils/download/requirements/*.txt",
+    "src/trtutils/download/requirements_tools/*.txt",
     "src/trtutils/py.typed",
 ]

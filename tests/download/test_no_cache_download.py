@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from trtutils.download import _download as dl
+from trtutils.download import _tools as dl_tools
 from trtutils.download import download
 
 from .common import MODEL_CONFIGS, TEST_MODELS
@@ -27,7 +27,7 @@ def _expected_cache_file(model: str) -> Path | None:
     if config is None:
         return None
 
-    weights_cache = dl._get_weights_cache_dir()  # noqa: SLF001
+    weights_cache = dl_tools.get_weights_cache_dir()
     if "weights" in config:
         return weights_cache / config["weights"]
     if config.get("url") == "ultralytics":
@@ -68,14 +68,14 @@ def patch_home(monkeypatch: pytest.MonkeyPatch, cache_home: Path) -> Generator[N
         Control back to the test.
 
     """
-    dl._get_cache_dir.cache_clear()  # noqa: SLF001
-    dl._get_repo_cache_dir.cache_clear()  # noqa: SLF001
-    dl._get_weights_cache_dir.cache_clear()  # noqa: SLF001
+    dl_tools.get_cache_dir.cache_clear()
+    dl_tools.get_repo_cache_dir.cache_clear()
+    dl_tools.get_weights_cache_dir.cache_clear()
     monkeypatch.setattr(Path, "home", lambda: cache_home)
     yield
-    dl._get_cache_dir.cache_clear()  # noqa: SLF001
-    dl._get_repo_cache_dir.cache_clear()  # noqa: SLF001
-    dl._get_weights_cache_dir.cache_clear()  # noqa: SLF001
+    dl_tools.get_cache_dir.cache_clear()
+    dl_tools.get_repo_cache_dir.cache_clear()
+    dl_tools.get_weights_cache_dir.cache_clear()
 
 
 @pytest.mark.parametrize("model", TEST_MODELS)

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """
@@ -23,6 +23,8 @@ Classes
 -------
 :class:`Classifer`
     Wrapper around classification models.
+:class:`DepthEstimator`
+    Wrapper around depth estimation models.
 :class:`Detector`
     Wrapper around detection models.
 :class:`SAHI`
@@ -43,6 +45,7 @@ from . import (
     sahi,
 )
 from ._classifier import Classifier
+from ._depth_estimator import DepthEstimator
 from ._detector import Detector
 from ._image_model import ImageModel
 from .sahi import SAHI
@@ -50,6 +53,7 @@ from .sahi import SAHI
 __all__ = [
     "SAHI",
     "Classifier",
+    "DepthEstimator",
     "Detector",
     "ImageModel",
     "interfaces",

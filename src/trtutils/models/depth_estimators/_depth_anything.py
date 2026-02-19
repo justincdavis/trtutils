@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from trtutils.builder._build import build_engine
-from trtutils.image._classifier import Classifier
+from trtutils.image._depth_estimator import DepthEstimator
 from trtutils.models._utils import download_model_internal
 
 if TYPE_CHECKING:
@@ -15,10 +15,10 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class ViT(Classifier):
-    """Alias of Classifier with default args for ViT."""
+class DepthAnythingV2(DepthEstimator):
+    """Alias of DepthEstimator with default args for Depth-Anything-V2."""
 
-    _default_imgsz = 224
+    _default_imgsz = 518
 
     def __init__(
         self: Self,
@@ -40,7 +40,7 @@ class ViT(Classifier):
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
-        Classifier.__init__(
+        DepthEstimator.__init__(
             self,
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -73,7 +73,7 @@ class ViT(Classifier):
         verbose: bool | None = None,
     ) -> None:
         """
-        Download a ViT model.
+        Download a Depth-Anything-V2 model.
 
         Parameters
         ----------
@@ -82,7 +82,7 @@ class ViT(Classifier):
         output : Path | str
             The output path to save the model to.
         imgsz : int, optional
-            The image size to use for the model. Default is 224.
+            The image size to use for the model. Default is 518.
         opset : int
             The ONNX opset to use for the model. Default is 17.
         simplify : bool
@@ -96,10 +96,10 @@ class ViT(Classifier):
 
         """
         if imgsz is None:
-            imgsz = ViT._default_imgsz
+            imgsz = DepthAnythingV2._default_imgsz
         download_model_internal(
-            model_type="torchvision_classifier",
-            friendly_name="ViT",
+            model_type="depth_anything_v2",
+            friendly_name="Depth-Anything-V2",
             model=model,
             output=output,
             imgsz=imgsz,
@@ -122,7 +122,7 @@ class ViT(Classifier):
         verbose: bool | None = None,
     ) -> None:
         """
-        Build a TensorRT engine for ViT.
+        Build a TensorRT engine for Depth-Anything-V2.
 
         Parameters
         ----------
@@ -131,7 +131,7 @@ class ViT(Classifier):
         output : Path | str
             Output path for the built engine.
         imgsz : int, optional
-            Input image size used for shapes. Default is 224.
+            Input image size used for shapes. Default is 518.
         batch_size : int
             Batch size for the engine. Default is 1.
         dla_core : int | None
@@ -143,7 +143,7 @@ class ViT(Classifier):
 
         """
         if imgsz is None:
-            imgsz = ViT._default_imgsz
+            imgsz = DepthAnythingV2._default_imgsz
         shapes = [("input", (batch_size, 3, imgsz, imgsz))]
         build_engine(
             onnx=onnx,
