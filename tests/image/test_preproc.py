@@ -183,6 +183,45 @@ class TestBatchProcessing:
             assert batch_ratios[i] == single_ratios[0]
             assert batch_padding[i] == single_padding[0]
 
+    @pytest.mark.parametrize("ptype", ["cuda", "trt"])
+    def test_heterogeneous_batch_parity(
+        self,
+        make_preprocessor: Callable[..., CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor],
+        ptype: str,
+    ) -> None:
+        """Mixed-resolution batch matches single-image results."""
+        preproc = make_preprocessor(ptype)
+        rng = np.random.default_rng(42)
+        images = [
+            rng.integers(0, 255, (480, 640, 3), dtype=np.uint8),
+            rng.integers(0, 255, (720, 1280, 3), dtype=np.uint8),
+            rng.integers(0, 255, (300, 400, 3), dtype=np.uint8),
+        ]
+        batch_result, batch_ratios, batch_padding = preproc.preprocess(images)
+        assert batch_result.shape == (3, 3, 640, 640)
+        for i, img in enumerate(images):
+            single_result, single_ratios, single_padding = preproc.preprocess([img])
+            assert np.allclose(batch_result[i], single_result[0], rtol=1e-5, atol=1e-5)
+            assert batch_ratios[i] == single_ratios[0]
+            assert batch_padding[i] == single_padding[0]
+
+    @pytest.mark.parametrize("ptype", ["cuda", "trt"])
+    def test_batch_parity_linear(
+        self,
+        make_preprocessor: Callable[..., CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor],
+        ptype: str,
+        test_images: list[np.ndarray],
+    ) -> None:
+        """Batch linear resize matches single-image results."""
+        preproc = make_preprocessor(ptype)
+        images = test_images[:3] if len(test_images) >= 3 else test_images
+        batch_result, batch_ratios, batch_padding = preproc.preprocess(images, resize="linear")
+        for i, img in enumerate(images):
+            single_result, single_ratios, single_padding = preproc.preprocess([img], resize="linear")
+            assert np.allclose(batch_result[i], single_result[0], rtol=1e-5, atol=1e-5)
+            assert batch_ratios[i] == single_ratios[0]
+            assert batch_padding[i] == single_padding[0]
+
     def test_cuda_dynamic_realloc(self, horse_image: np.ndarray) -> None:
         """CUDA preprocessor reallocates for varying batch sizes."""
         preproc = CUDAPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE)
@@ -267,3 +306,39 @@ class TestPerformance:
         print(
             f"Pagelocked - CPU: {cpu_time:.3f}s, TRT: {trt_time:.3f}s, speedup: {cpu_time / trt_time:.2f}x"
         )
+
+    def test_batch_throughput_scaling(self) -> None:
+        """Batch preprocessing is not catastrophically slower than repeated single."""
+        batch_n = 8
+        cuda = CUDAPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE)
+        img = _read_image(HORSE_IMAGE_PATH)
+        images = [img] * batch_n
+        # warmup
+        for _ in range(5):
+            cuda.preprocess(images)
+            cuda.preprocess([img])
+        # measure repeated single
+        single_times = []
+        for _ in range(20):
+            t0 = time.perf_counter()
+            for _ in range(batch_n):
+                cuda.preprocess([img])
+            single_times.append(time.perf_counter() - t0)
+        # measure batch
+        batch_times = []
+        for _ in range(20):
+            t0 = time.perf_counter()
+            cuda.preprocess(images)
+            batch_times.append(time.perf_counter() - t0)
+        avg_single = float(np.mean(single_times))
+        avg_batch = float(np.mean(batch_times))
+        ratio = avg_batch / avg_single if avg_single > 0 else float("inf")
+        print(
+            f"Batch={batch_n} - single x{batch_n}: {avg_single:.4f}s, batch: {avg_batch:.4f}s, "
+            f"ratio: {ratio:.2f}x"
+        )
+        # Batch path must not regress beyond 5x of sequential single-image time.
+        # The batch kernel itself is faster, but CPU-side staging adds overhead
+        # that dominates at small image counts. The full-pipeline benefit comes
+        # from amortising H2D/D2H and SST across the batch.
+        assert avg_batch < avg_single * 5

@@ -110,11 +110,14 @@ def build_model(
     onnx: Path,
     output: Path,
     imgsz: int,
+    batch_size: int = 1,
     opt_level: int = 3,
+    model_name: str | None = None,
 ) -> None:
     """Build a model from an ONNX file using the appropriate model class."""
     # Extract model name from the onnx filename (e.g., "yolov10n_640" -> "yolov10n")
-    model_name = onnx.stem.rsplit("_", 1)[0]
+    if model_name is None:
+        model_name = onnx.stem.rsplit("_", 1)[0]
 
     # Get the appropriate model class and call its build method
     model_class = _get_model_class(model_name)
@@ -122,5 +125,6 @@ def build_model(
         onnx=onnx,
         output=output,
         imgsz=imgsz,
+        batch_size=batch_size,
         opt_level=opt_level,
     )

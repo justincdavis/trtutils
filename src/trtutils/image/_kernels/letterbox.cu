@@ -9,17 +9,23 @@ void letterboxResize(
     const int startX,
     const int startY,
     const int regionWidth,
-    const int regionHeight
+    const int regionHeight,
+    const int inputStride,
+    const int outputStride
 ) {
     const int tx = blockIdx.x * blockDim.x + threadIdx.x;
     const int ty = blockIdx.y * blockDim.y + threadIdx.y;
+    const int batchIdx = blockIdx.z;
+
+    const unsigned char* inputBase = inImg + (batchIdx * inputStride);
+    unsigned char* outputBase = outImg + (batchIdx * outputStride);
 
     if (tx >= widthOut || ty >= heightOut) return;
 
     const int outputIdx = (ty * widthOut + tx) * 3;
-    outImg[outputIdx + 0] = 114;
-    outImg[outputIdx + 1] = 114;
-    outImg[outputIdx + 2] = 114;
+    outputBase[outputIdx + 0] = 114;
+    outputBase[outputIdx + 1] = 114;
+    outputBase[outputIdx + 2] = 114;
 
     if (tx >= startX && tx < startX + regionWidth &&
         ty >= startY && ty < startY + regionHeight) {
@@ -57,12 +63,12 @@ void letterboxResize(
         // bilinear interpolation for each color channel
         for (int c = 0; c < 3; ++c) {
             const float interpolatedValue = 
-                inImg[inputIdx00 + c] * w00 +
-                inImg[inputIdx01 + c] * w01 +
-                inImg[inputIdx10 + c] * w10 +
-                inImg[inputIdx11 + c] * w11;
+                inputBase[inputIdx00 + c] * w00 +
+                inputBase[inputIdx01 + c] * w01 +
+                inputBase[inputIdx10 + c] * w10 +
+                inputBase[inputIdx11 + c] * w11;
 
-            outImg[outputIdx + c] = static_cast<unsigned char>(interpolatedValue);
+            outputBase[outputIdx + c] = static_cast<unsigned char>(interpolatedValue);
         }
     }
 }

@@ -545,6 +545,242 @@ def plot_optimizations(device: str, *, overwrite: bool) -> None:
     print(f"Saved {plot_path}")
 
 
+BATCH_FRAMEWORKS = [
+    "trtutils",
+    "trtutils(graph)",
+    "ultralytics(trt)",
+    "ultralytics(torch)",
+]
+BATCH_COLORS = {
+    fw: plt.cm.tab10(idx) for idx, fw in enumerate(BATCH_FRAMEWORKS)
+}
+
+
+def load_batch_data(
+    device: str,
+) -> dict[str, dict[str, dict[str, dict[str, float]]]] | None:
+    """Load batch benchmark data for a device."""
+    batch_dir = Path(__file__).parent / "data" / "batch"
+    path = batch_dir / f"{device}.json"
+    if not path.exists():
+        return None
+    with path.open("r") as f:
+        return json.load(f)
+
+
+def plot_batch_throughput(
+    device: str,
+    data: dict[str, dict[str, dict[str, dict[str, float]]]],
+    *,
+    overwrite: bool,
+) -> None:
+    """Line plot: batch size vs images/sec per framework."""
+    plot_dir = Path(__file__).parent / "plots" / device
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    plot_path = plot_dir / "batch_throughput.png"
+    if plot_path.exists() and not overwrite:
+        return
+
+    plt.style.use("seaborn-v0_8")
+    _, ax = plt.subplots(figsize=(10, 6))
+
+    fontsize = 14
+
+    for fw in BATCH_FRAMEWORKS:
+        fw_data = data.get(fw, {})
+        # Collect all models' data (typically one model per batch run)
+        for model_name, model_data in fw_data.items():
+            batch_sizes = sorted(int(k) for k in model_data)
+            throughputs = [model_data[str(bs)]["throughput"] for bs in batch_sizes]
+
+            ax.plot(
+                batch_sizes,
+                throughputs,
+                marker="o",
+                linewidth=2,
+                markersize=8,
+                label=fw,
+                color=BATCH_COLORS[fw],
+            )
+
+            # Annotate each point
+            for bs, tp in zip(batch_sizes, throughputs):
+                ax.annotate(
+                    f"{tp:.0f}",
+                    xy=(bs, tp),
+                    xytext=(0, 8),
+                    textcoords="offset points",
+                    ha="center",
+                    fontsize=fontsize - 3,
+                )
+
+    ax.set_xlabel("Batch Size", fontsize=fontsize)
+    ax.set_ylabel("Throughput (images/sec)", fontsize=fontsize)
+    ax.set_title(
+        f"{device} - Batch Size vs Throughput", fontsize=fontsize + 4, fontweight="bold",
+    )
+    ax.set_xscale("log", base=2)
+    ax.tick_params(axis="both", labelsize=fontsize)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=fontsize - 1, loc="best")
+
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"Saved {plot_path}")
+
+
+def plot_batch_latency(
+    device: str,
+    data: dict[str, dict[str, dict[str, dict[str, float]]]],
+    *,
+    overwrite: bool,
+) -> None:
+    """Line plot: batch size vs latency (ms) per framework."""
+    plot_dir = Path(__file__).parent / "plots" / device
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    plot_path = plot_dir / "batch_latency.png"
+    if plot_path.exists() and not overwrite:
+        return
+
+    plt.style.use("seaborn-v0_8")
+    _, ax = plt.subplots(figsize=(10, 6))
+
+    fontsize = 14
+
+    for fw in BATCH_FRAMEWORKS:
+        fw_data = data.get(fw, {})
+        for model_name, model_data in fw_data.items():
+            batch_sizes = sorted(int(k) for k in model_data)
+            latencies = [model_data[str(bs)]["mean"] for bs in batch_sizes]
+
+            ax.plot(
+                batch_sizes,
+                latencies,
+                marker="o",
+                linewidth=2,
+                markersize=8,
+                label=fw,
+                color=BATCH_COLORS[fw],
+            )
+
+            for bs, lat in zip(batch_sizes, latencies):
+                ax.annotate(
+                    f"{lat:.1f}",
+                    xy=(bs, lat),
+                    xytext=(0, 8),
+                    textcoords="offset points",
+                    ha="center",
+                    fontsize=fontsize - 3,
+                )
+
+    ax.set_xlabel("Batch Size", fontsize=fontsize)
+    ax.set_ylabel("Latency (ms)", fontsize=fontsize)
+    ax.set_title(
+        f"{device} - Batch Size vs Latency", fontsize=fontsize + 4, fontweight="bold",
+    )
+    ax.set_xscale("log", base=2)
+    ax.tick_params(axis="both", labelsize=fontsize)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=fontsize - 1, loc="best")
+
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"Saved {plot_path}")
+
+
+def plot_batch_scaling(
+    device: str,
+    data: dict[str, dict[str, dict[str, dict[str, float]]]],
+    *,
+    overwrite: bool,
+) -> None:
+    """Line plot: batch size vs scaling efficiency per framework.
+
+    efficiency(N) = throughput_at_N / (N * throughput_at_1)
+    1.0 = perfect linear scaling.
+    """
+    plot_dir = Path(__file__).parent / "plots" / device
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    plot_path = plot_dir / "batch_scaling.png"
+    if plot_path.exists() and not overwrite:
+        return
+
+    plt.style.use("seaborn-v0_8")
+    _, ax = plt.subplots(figsize=(10, 6))
+
+    fontsize = 14
+
+    for fw in BATCH_FRAMEWORKS:
+        fw_data = data.get(fw, {})
+        for model_name, model_data in fw_data.items():
+            batch_sizes = sorted(int(k) for k in model_data)
+            if not batch_sizes or "1" not in model_data:
+                continue
+
+            tp_at_1 = model_data["1"]["throughput"]
+            if tp_at_1 <= 0:
+                continue
+
+            efficiencies = []
+            for bs in batch_sizes:
+                tp = model_data[str(bs)]["throughput"]
+                efficiencies.append(tp / (bs * tp_at_1))
+
+            ax.plot(
+                batch_sizes,
+                efficiencies,
+                marker="o",
+                linewidth=2,
+                markersize=8,
+                label=fw,
+                color=BATCH_COLORS[fw],
+            )
+
+            for bs, eff in zip(batch_sizes, efficiencies):
+                ax.annotate(
+                    f"{eff:.2f}",
+                    xy=(bs, eff),
+                    xytext=(0, 8),
+                    textcoords="offset points",
+                    ha="center",
+                    fontsize=fontsize - 3,
+                )
+
+    # Draw perfect scaling reference line
+    ax.axhline(y=1.0, color="gray", linestyle="--", linewidth=1.5, alpha=0.7, label="Perfect scaling")
+
+    ax.set_xlabel("Batch Size", fontsize=fontsize)
+    ax.set_ylabel("Scaling Efficiency", fontsize=fontsize)
+    ax.set_title(
+        f"{device} - Batch Scaling Efficiency", fontsize=fontsize + 4, fontweight="bold",
+    )
+    ax.set_xscale("log", base=2)
+    ax.set_ylim(0, 1.3)
+    ax.tick_params(axis="both", labelsize=fontsize)
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=fontsize - 1, loc="best")
+
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"Saved {plot_path}")
+
+
+def plot_batch(device: str, *, overwrite: bool) -> None:
+    """Generate all batch plots for a device."""
+    data = load_batch_data(device)
+    if data is None:
+        print(f"Warning: No batch data for {device}, skipping...")
+        return
+
+    print(f"Plotting batch results - {device}")
+    plot_batch_throughput(device, data, overwrite=overwrite)
+    plot_batch_latency(device, data, overwrite=overwrite)
+    plot_batch_scaling(device, data, overwrite=overwrite)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         "Generate plots for each device based on benchmark results."
@@ -593,13 +829,36 @@ if __name__ == "__main__":
         action="store_true",
         help="Generate per-device optimization speedup bar charts from data/optimizations/.",
     )
+    parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="Generate batch throughput/latency/scaling plots from data/batch/.",
+    )
     args = parser.parse_args()
 
     skip_devices = set()
     if args.skip_devices:
         skip_devices = {d.strip() for d in args.skip_devices.split(",") if d.strip()}
 
-    if args.optimizations:
+    if args.batch:
+        batch_dir = Path(__file__).parent / "data" / "batch"
+        if not batch_dir.exists():
+            print("Warning: data/batch/ not found, nothing to plot.")
+        else:
+            devices = [
+                f.stem for f in batch_dir.iterdir() if f.is_file() and f.suffix == ".json"
+            ]
+            if args.device is not None:
+                devices = [d for d in devices if d == args.device]
+            for device in devices:
+                if device in skip_devices:
+                    print(f"Skipping device: {device}")
+                    continue
+                try:
+                    plot_batch(device, overwrite=args.overwrite)
+                except Exception as e:
+                    print(f"Warning: Failed to generate batch plots for {device}: {e}")
+    elif args.optimizations:
         opt_dir = Path(__file__).parent / "data" / "optimizations"
         if not opt_dir.exists():
             print("Warning: data/optimizations/ not found, nothing to plot.")
