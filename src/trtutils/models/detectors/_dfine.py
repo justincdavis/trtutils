@@ -9,15 +9,13 @@ from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
 from trtutils.models._model import Model
 
-from ._archs import DETR
-
 if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
 
 
-class DFINE(DETR, Model):
+class DFINE(Detector, Model):
     """Alias of DETR with default args for D-FINE."""
 
     _model_type = "dfine"

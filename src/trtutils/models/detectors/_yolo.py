@@ -9,8 +9,6 @@ from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
 from trtutils.models._model import Model, nms_build_hook
 
-from ._archs import YOLO
-
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
@@ -18,7 +16,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class YOLOX(YOLO, Model):
+class YOLOX(Detector, Model):
     """Alias of Detector with default args for YOLOX."""
 
     _model_type = "yolox"
@@ -74,7 +72,7 @@ class YOLOX(YOLO, Model):
         )
 
 
-class YOLO3(YOLO, Model):
+class YOLO3(Detector, Model):
     """Alias of Detector with default args for YOLOv3."""
 
     _model_type = "yolov3"
@@ -130,7 +128,7 @@ class YOLO3(YOLO, Model):
         )
 
 
-class YOLO5(YOLO, Model):
+class YOLO5(Detector, Model):
     """Alias of Detector with default args for YOLOv5."""
 
     _model_type = "yolov5"
@@ -186,7 +184,7 @@ class YOLO5(YOLO, Model):
         )
 
 
-class YOLO7(YOLO, Model):
+class YOLO7(Detector, Model):
     """Alias of Detector with default args for YOLO7."""
 
     _model_type = "yolov7"
@@ -241,7 +239,7 @@ class YOLO7(YOLO, Model):
         )
 
 
-class YOLO8(YOLO, Model):
+class YOLO8(Detector, Model):
     """Alias of Detector with default args for YOLO8."""
 
     _model_type = "yolov8"
@@ -297,7 +295,7 @@ class YOLO8(YOLO, Model):
         )
 
 
-class YOLO9(YOLO, Model):
+class YOLO9(Detector, Model):
     """Alias of Detector with default args for YOLO9."""
 
     _model_type = "yolov9"
@@ -352,7 +350,7 @@ class YOLO9(YOLO, Model):
         )
 
 
-class YOLO10(YOLO, Model):
+class YOLO10(Detector, Model):
     """Alias of Detector with default args for YOLO10."""
 
     _model_type = "yolov10"
@@ -407,7 +405,7 @@ class YOLO10(YOLO, Model):
         )
 
 
-class YOLO11(YOLO, Model):
+class YOLO11(Detector, Model):
     """Alias of Detector with default args for YOLO11."""
 
     _model_type = "yolov11"
@@ -463,7 +461,7 @@ class YOLO11(YOLO, Model):
         )
 
 
-class YOLO12(YOLO, Model):
+class YOLO12(Detector, Model):
     """Alias of Detector with default args for YOLO12."""
 
     _model_type = "yolov12"
@@ -519,7 +517,7 @@ class YOLO12(YOLO, Model):
         )
 
 
-class YOLO13(YOLO, Model):
+class YOLO13(Detector, Model):
     """Alias of Detector with default args for YOLO13."""
 
     _model_type = "yolov13"
@@ -575,7 +573,7 @@ class YOLO13(YOLO, Model):
         )
 
 
-class YOLO26(YOLO, Model):
+class YOLO26(Detector, Model):
     """Alias of Detector with default args for YOLO26."""
 
     _model_type = "yolov26"

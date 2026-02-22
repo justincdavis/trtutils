@@ -12,8 +12,6 @@ from trtutils.image._schema import InputSchema, OutputSchema
 from trtutils.inspect._onnx import inspect_onnx_layers
 from trtutils.models._model import Model
 
-from ._archs import DETR
-
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
@@ -45,7 +43,7 @@ def rfdetr_precision_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]
     return {"layer_precision": layer_precision or None}
 
 
-class RFDETR(DETR, Model):
+class RFDETR(Detector, Model):
     """Alias of DETR with default args for RF-DETR."""
 
     _model_type = "rfdetr"

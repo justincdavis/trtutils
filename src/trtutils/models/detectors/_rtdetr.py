@@ -9,15 +9,13 @@ from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
 from trtutils.models._model import Model
 
-from ._archs import DETR
-
 if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
 
 
-class RTDETRv1(DETR, Model):
+class RTDETRv1(Detector, Model):
     """Alias of DETR with default args for RT-DETRv1."""
 
     _model_type = "rtdetrv1"
@@ -80,7 +78,7 @@ class RTDETRv1(DETR, Model):
         )
 
 
-class RTDETRv2(DETR, Model):
+class RTDETRv2(Detector, Model):
     """Alias of DETR with default args for RT-DETRv2."""
 
     _model_type = "rtdetrv2"
@@ -143,7 +141,7 @@ class RTDETRv2(DETR, Model):
         )
 
 
-class RTDETRv3(DETR, Model):
+class RTDETRv3(Detector, Model):
     """Alias of DETR with default args for RT-DETRv3."""
 
     _model_type = "rtdetrv3"
