@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
-from trtutils.models._model import Model, yolo_nms_build_hook
+from trtutils.models._model import Model, nms_build_hook
 
 from ._archs import YOLO
 
@@ -25,7 +25,7 @@ class YOLOX(YOLO, Model):
     _friendly_name = "YOLOX"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
-    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [yolo_nms_build_hook]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [nms_build_hook]
 
     def __init__(
         self: Self,
@@ -81,7 +81,7 @@ class YOLO3(YOLO, Model):
     _friendly_name = "YOLOv3"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
-    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [yolo_nms_build_hook]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [nms_build_hook]
 
     def __init__(
         self: Self,
@@ -137,7 +137,7 @@ class YOLO5(YOLO, Model):
     _friendly_name = "YOLOv5"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
-    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [yolo_nms_build_hook]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [nms_build_hook]
 
     def __init__(
         self: Self,
@@ -248,7 +248,7 @@ class YOLO8(YOLO, Model):
     _friendly_name = "YOLOv8"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
-    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [yolo_nms_build_hook]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [nms_build_hook]
 
     def __init__(
         self: Self,
@@ -414,7 +414,7 @@ class YOLO11(YOLO, Model):
     _friendly_name = "YOLOv11"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
-    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [yolo_nms_build_hook]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [nms_build_hook]
 
     def __init__(
         self: Self,
@@ -470,7 +470,7 @@ class YOLO12(YOLO, Model):
     _friendly_name = "YOLOv12"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
-    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [yolo_nms_build_hook]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [nms_build_hook]
 
     def __init__(
         self: Self,
@@ -526,7 +526,7 @@ class YOLO13(YOLO, Model):
     _friendly_name = "YOLOv13"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
-    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [yolo_nms_build_hook]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [nms_build_hook]
 
     def __init__(
         self: Self,

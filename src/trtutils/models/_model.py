@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def yolo_nms_build_hook(
+def nms_build_hook(
     *,
     num_classes: int = 80,
     conf_threshold: float = 0.25,
@@ -59,25 +59,50 @@ def yolo_nms_build_hook(
 
 
 class Model:
-    """Mixin providing concrete build() and download() classmethods driven by class attributes."""
+    """
+    Mixin providing concrete build() and download() classmethods driven by class attributes.
+
+    Subclasses must define the following class attributes:
+
+    Attributes
+    ----------
+    _model_type : str
+        Download config key for the model family (e.g. ``"yolov11"``, ``"rfdetr"``).
+    _friendly_name : str
+        Human-readable name used in error messages (e.g. ``"YOLOv11"``, ``"RF-DETR"``).
+    _default_imgsz : int
+        Default input image size (e.g. ``640``, ``224``, ``518``).
+    _input_tensors : list[tuple[str, str]]
+        Input tensor definitions as ``(name, kind)`` pairs. ``kind`` is one of:
+
+        - ``"image"`` — shape ``(batch, 3, imgsz, imgsz)``
+        - ``"size"``  — shape ``(batch, 2)``
+
+    _build_hooks : list[Callable[..., dict[str, Any]]]
+        Optional. List of callables invoked during ``build()``. Each receives
+        ``onnx``, ``imgsz``, ``batch_size``, plus any extra ``**kwargs`` from
+        the caller, and returns a dict of ``build_engine()`` argument overrides.
+        Defaults to ``[]``.
+    _valid_imgszs : list[int] | None
+        Optional. Exact set of allowed image sizes.
+        Defaults to ``None`` (no restriction).
+    _imgsz_divisor : int | None
+        Optional. Image size must be divisible by this value.
+        Defaults to ``None`` (no restriction).
+    _model_imgszs : dict[str, int] | None
+        Optional. Maps model-name substrings to expected image sizes for
+        variant-dependent downloads (e.g. ``{"atto": 320, "femto": 416}``).
+        Defaults to ``None``.
+
+    """
 
     _model_type: ClassVar[str]
     _friendly_name: ClassVar[str]
     _default_imgsz: ClassVar[int]
-
-    # Build: list of (tensor_name, shape_kind) where shape_kind is:
-    #   "image" -> (batch, 3, imgsz, imgsz)
-    #   "size"  -> (batch, 2)
     _input_tensors: ClassVar[list[tuple[str, str]]]
-
-    # Build hooks: list of callables returning build_engine override dicts
     _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = []
-
-    # Validation: exact allowed sizes or divisibility constraint
     _valid_imgszs: ClassVar[list[int] | None] = None
     _imgsz_divisor: ClassVar[int | None] = None
-
-    # Download: variant-dependent imgsz mapping (e.g. {"atto": 320, "femto": 416})
     _model_imgszs: ClassVar[dict[str, int] | None] = None
 
     @classmethod
