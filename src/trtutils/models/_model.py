@@ -169,6 +169,11 @@ class Model:
         verbose : bool | None
             Print verbose output.
 
+        Note
+        ----
+        Models downloaded through this method may have license restrictions.
+        Users must ensure they comply with the model's license terms.
+
         """
         expected_imgsz = cls._default_imgsz
         if cls._model_imgszs is not None:
