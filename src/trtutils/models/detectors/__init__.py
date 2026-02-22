@@ -10,7 +10,7 @@ from ._deim import DEIM, DEIMv2
 from ._dfine import DFINE
 from ._rfdetr import RFDETR
 from ._rtdetr import RTDETRv1, RTDETRv2, RTDETRv3
-from ._yolo import YOLO3, YOLO5, YOLO7, YOLO8, YOLO9, YOLO10, YOLO11, YOLO12, YOLO13, YOLOX
+from ._yolo import YOLO3, YOLO5, YOLO7, YOLO8, YOLO9, YOLO10, YOLO11, YOLO12, YOLO13, YOLO26, YOLOX
 
 __all__ = [
     "DEIM",
@@ -27,6 +27,7 @@ __all__ = [
     "YOLO11",
     "YOLO12",
     "YOLO13",
+    "YOLO26",
     "YOLOX",
     "DEIMv2",
     "RTDETRv1",

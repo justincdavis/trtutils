@@ -3,11 +3,10 @@
 # MIT License
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
-from trtutils.builder._build import build_engine
 from trtutils.image._classifier import Classifier
-from trtutils.models._utils import download_model_internal
+from trtutils.models._model import Model
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -15,10 +14,13 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
-class MaxViT(Classifier):
+class MaxViT(Classifier, Model):
     """Alias of Classifier with default args for MaxViT."""
 
+    _model_type = "torchvision_classifier"
+    _friendly_name = "MaxViT"
     _default_imgsz = 224
+    _input_tensors: ClassVar[list[tuple[str, str]]] = [("input", "image")]
 
     def __init__(
         self: Self,
@@ -57,100 +59,5 @@ class MaxViT(Classifier):
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
             no_warn=no_warn,
-            verbose=verbose,
-        )
-
-    @staticmethod
-    def download(
-        model: str,
-        output: Path | str,
-        imgsz: int | None = None,
-        opset: int = 17,
-        *,
-        simplify: bool = True,
-        accept: bool = False,
-        no_cache: bool | None = None,
-        verbose: bool | None = None,
-    ) -> None:
-        """
-        Download a MaxViT model.
-
-        Parameters
-        ----------
-        model : str
-            The model to download.
-        output : Path | str
-            The output path to save the model to.
-        imgsz : int, optional
-            The image size to use for the model. Default is 224.
-        opset : int
-            The ONNX opset to use for the model. Default is 17.
-        simplify : bool
-            Whether to simplify the ONNX model after export. Default is True.
-        accept : bool
-            Whether to accept the license terms for the model.
-        no_cache : bool | None
-            Disable caching of downloaded weights and repos.
-        verbose : bool | None
-            Print verbose output.
-
-        """
-        if imgsz is None:
-            imgsz = MaxViT._default_imgsz
-        download_model_internal(
-            model_type="torchvision_classifier",
-            friendly_name="MaxViT",
-            model=model,
-            output=output,
-            imgsz=imgsz,
-            opset=opset,
-            simplify=simplify,
-            no_cache=no_cache,
-            accept=accept,
-            verbose=verbose,
-        )
-
-    @staticmethod
-    def build(
-        onnx: Path | str,
-        output: Path | str,
-        imgsz: int | None = None,
-        batch_size: int = 1,
-        dla_core: int | None = None,
-        opt_level: int = 3,
-        *,
-        verbose: bool | None = None,
-    ) -> None:
-        """
-        Build a TensorRT engine for MaxViT.
-
-        Parameters
-        ----------
-        onnx : Path | str
-            Path to the ONNX model.
-        output : Path | str
-            Output path for the built engine.
-        imgsz : int, optional
-            Input image size used for shapes. Default is 224.
-        batch_size : int
-            Batch size for the engine. Default is 1.
-        dla_core : int | None
-            The DLA core to build the engine for.
-        opt_level : int
-            TensorRT builder optimization level (0-5). Default is 3.
-        verbose : bool | None
-            Enable verbose builder output.
-
-        """
-        if imgsz is None:
-            imgsz = MaxViT._default_imgsz
-        shapes = [("input", (batch_size, 3, imgsz, imgsz))]
-        build_engine(
-            onnx=onnx,
-            output=output,
-            shapes=shapes,
-            fp16=True,
-            dla_core=dla_core,
-            optimization_level=opt_level,
             verbose=verbose,
         )
