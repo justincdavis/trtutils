@@ -1069,7 +1069,7 @@ def _download(args: SimpleNamespace) -> None:
     Download a model from a remote source and convert it to ONNX format.
 
     Downloads pre-trained models and automatically converts them to ONNX format
-    for use with TensorRT. Includes license acceptance flow for model usage.
+    for use with TensorRT.
 
     Parameters
     ----------
@@ -1085,8 +1085,6 @@ def _download(args: SimpleNamespace) -> None:
             Image size for the model.
         - requirements_export : Path | None
             Optional path to export the created virtual environment's requirements file.
-        - accept : bool
-            Whether to accept license terms automatically.
         - verbose : bool
             Enable verbose output.
         - no_cache : bool
@@ -1109,16 +1107,6 @@ def _download(args: SimpleNamespace) -> None:
         LOG.error("--model and --output are required for downloading.")
         return
 
-    if not args.accept:
-        LOG.info(
-            f"You are about to download model '{args.model}' which may have license restrictions."
-        )
-        LOG.info("Please ensure you comply with the model's license terms.")
-        response = input("Do you accept the license terms? (y/N): ").strip().lower()
-        if response not in ["y", "yes"]:
-            LOG.info("License not accepted. Aborting download.")
-            return
-
     if args.simplify is None:
         simplify_value = None
     elif len(args.simplify) == 0:
@@ -1133,7 +1121,6 @@ def _download(args: SimpleNamespace) -> None:
         args.imgsz,
         requirements_export=args.requirements_export,
         simplify=simplify_value,
-        accept=True,
         verbose=args.verbose,
         no_cache=args.no_cache,
         no_uv_cache=args.no_cache,
@@ -1793,11 +1780,6 @@ def _main() -> None:
         type=Path,
         default=None,
         help="Export the created virtual environment's requirements to this path using uv pip freeze.",
-    )
-    download_parser.add_argument(
-        "--accept",
-        action="store_true",
-        help="Accept the license terms for the model. If not provided, you will be prompted.",
     )
     download_parser.add_argument(
         "--no_cache",

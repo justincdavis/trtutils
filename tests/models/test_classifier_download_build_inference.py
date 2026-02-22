@@ -105,7 +105,6 @@ def test_classifier_download_build_inference(
             model=model_name,
             output=onnx_path,
             imgsz=imgsz,
-            accept=True,
         )
         assert onnx_path.exists(), f"ONNX file was not created: {onnx_path}"
 

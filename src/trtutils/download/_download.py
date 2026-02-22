@@ -83,7 +83,6 @@ def download_model(
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
-    accept: bool | None = None,
     verbose: bool | None = None,
 ) -> Path:
     """
@@ -114,9 +113,6 @@ def download_model(
         Whether to disable caching of uv packages.
     no_warn : bool, optional
         Whether to disable warnings for the model.
-    accept : bool, optional
-        Whether to accept the license terms for the model. If None or False, will raise an error.
-        Must be True to proceed with the download.
     verbose : bool, optional
         Whether to print verbose output.
 
@@ -128,15 +124,9 @@ def download_model(
     Raises
     ------
     ValueError
-        If the model is not supported or license is not accepted.
+        If the model is not supported.
 
     """
-    if not accept:
-        err_msg = (
-            f"License acceptance required for model '{model}'. Please accept the license terms."
-        )
-        raise ValueError(err_msg)
-
     model_configs: dict[str, dict[str, dict[str, str]]] = load_model_configs()
     config: dict[str, str] | None = None
     for model_set in model_configs.values():
@@ -240,7 +230,6 @@ def download(
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
-    accept: bool | None = None,
     verbose: bool | None = None,
 ) -> None:
     """
@@ -271,9 +260,6 @@ def download(
         Whether to disable caching of uv packages.
     no_warn : bool, optional
         Whether to disable warnings for the model.
-    accept : bool, optional
-        Whether to accept the license terms for the model. If None, will prompt the user.
-        If False, will raise an error. If True, will proceed without prompting.
     verbose : bool, optional
         Whether to print verbose output.
 
@@ -291,7 +277,6 @@ def download(
             no_cache=no_cache,
             no_uv_cache=no_uv_cache,
             no_warn=no_warn,
-            accept=accept,
             verbose=verbose,
         )
         shutil.copy(model_path, output)
