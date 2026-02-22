@@ -60,7 +60,7 @@ def test_download_torchvision_classifier(model: str) -> None:
     """Download a representative torchvision classifier model and verify the ONNX file is created."""
     with _temporary_dir() as temp_dir:
         output = temp_dir / f"{model}.onnx"
-        download(model, output, accept=True)
+        download(model, output)
         assert output.exists(), f"ONNX file was not created for {model}"
         assert output.stat().st_size > 0, f"ONNX file is empty for {model}"
 
@@ -70,6 +70,6 @@ def test_download_all_torchvision_classifiers(model: str) -> None:
     """Download every torchvision classifier model and verify the ONNX file is created."""
     with _temporary_dir() as temp_dir:
         output = temp_dir / f"{model}.onnx"
-        download(model, output, accept=True)
+        download(model, output)
         assert output.exists(), f"ONNX file was not created for {model}"
         assert output.stat().st_size > 0, f"ONNX file is empty for {model}"

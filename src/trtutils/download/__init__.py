@@ -13,12 +13,6 @@ Functions
 :func:`get_supported_models`
     Return a list of supported model names.
 
-Note:
-----
-All models downloaded through this module may have license restrictions.
-Users must accept the license terms before downloading by using the accept parameter
-or by responding to the interactive prompt.
-
 """
 
 from __future__ import annotations

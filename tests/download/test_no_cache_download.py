@@ -83,7 +83,7 @@ def test_download_all_models_real_downloads(model: str, tmp_path: Path) -> None:
     """Download models without cache and verify outputs."""
     output = tmp_path / f"{model}.onnx"
 
-    download(model, output, accept=True)
+    download(model, output)
 
     assert output.exists()
     cache_file = _expected_cache_file(model)

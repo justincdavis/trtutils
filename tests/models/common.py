@@ -174,7 +174,6 @@ def build_detector(model_id: str, *, use_dla: bool | None = None) -> Path:
         model_class.download(  # type: ignore[attr-defined]
             model=download_model_name,
             output=onnx_path,
-            accept=True,
             no_warn=True,
         )
 
