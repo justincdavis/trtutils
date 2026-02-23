@@ -8,24 +8,24 @@ Classes
 -------
 :class:`YOLO`
     Alias for the Detector class with args preset for YOLO.
-:class:`YOLO3`
+:class:`YOLOv3`
     Alias for the YOLO class with args preset for YOLOv3.
-:class:`YOLO5`
+:class:`YOLOv5`
     Alias for the YOLO class with args preset for YOLOv5.
-:class:`YOLO7`
-    Alias for the YOLO class with args preset for YOLO7.
-:class:`YOLO8`
-    Alias for the YOLO class with args preset for YOLO8.
-:class:`YOLO9`
-    Alias for the YOLO class with args preset for YOLO9.
-:class:`YOLO10`
-    Alias for the YOLO class with args preset for YOLO10.
-:class:`YOLO11`
-    Alias for the YOLO class with args preset for YOLO11.
-:class:`YOLO12`
-    Alias for the YOLO class with args preset for YOLO12.
-:class:`YOLO13`
-    Alias for the YOLO class with args preset for YOLO13.
+:class:`YOLOv7`
+    Alias for the YOLO class with args preset for YOLOv7.
+:class:`YOLOv8`
+    Alias for the YOLO class with args preset for YOLOv8.
+:class:`YOLOv9`
+    Alias for the YOLO class with args preset for YOLOv9.
+:class:`YOLOv10`
+    Alias for the YOLO class with args preset for YOLOv10.
+:class:`YOLOv11`
+    Alias for the YOLO class with args preset for YOLOv11.
+:class:`YOLOv12`
+    Alias for the YOLO class with args preset for YOLOv12.
+:class:`YOLOv13`
+    Alias for the YOLO class with args preset for YOLOv13.
 :class:`YOLOX`
     Alias for the YOLO class with args preset for YOLOX.
 :class:`DETR`
@@ -123,20 +123,21 @@ from .detectors import (
     DFINE,
     RFDETR,
     YOLO,
-    YOLO3,
-    YOLO5,
-    YOLO7,
-    YOLO8,
-    YOLO9,
-    YOLO10,
-    YOLO11,
-    YOLO12,
-    YOLO13,
     YOLOX,
     DEIMv2,
     RTDETRv1,
     RTDETRv2,
     RTDETRv3,
+    YOLOv3,
+    YOLOv5,
+    YOLOv7,
+    YOLOv8,
+    YOLOv9,
+    YOLOv10,
+    YOLOv11,
+    YOLOv12,
+    YOLOv13,
+    YOLOv26,
 )
 
 __all__ = [
@@ -146,15 +147,6 @@ __all__ = [
     "RFDETR",
     "VGG",
     "YOLO",
-    "YOLO3",
-    "YOLO5",
-    "YOLO7",
-    "YOLO8",
-    "YOLO9",
-    "YOLO10",
-    "YOLO11",
-    "YOLO12",
-    "YOLO13",
     "YOLOX",
     "AlexNet",
     "ConvNeXt",
@@ -181,4 +173,14 @@ __all__ = [
     "SwinTransformerV2",
     "ViT",
     "WideResNet",
+    "YOLOv3",
+    "YOLOv5",
+    "YOLOv7",
+    "YOLOv8",
+    "YOLOv9",
+    "YOLOv10",
+    "YOLOv11",
+    "YOLOv12",
+    "YOLOv13",
+    "YOLOv26",
 ]
