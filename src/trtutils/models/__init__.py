@@ -26,6 +26,8 @@ Classes
     Alias for the YOLO class with args preset for YOLOv12.
 :class:`YOLOv13`
     Alias for the YOLO class with args preset for YOLOv13.
+:class:`YOLOv26`
+    Alias for the YOLO class with args preset for YOLOv26.
 :class:`YOLOX`
     Alias for the YOLO class with args preset for YOLOX.
 :class:`DETR`
