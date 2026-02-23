@@ -61,13 +61,13 @@ for running YOLOv9 inference:
 .. code-block:: python
 
     import cv2
-    from trtutils.models import YOLO, YOLO9
+    from trtutils.models import YOLO, YOLOv9
 
     # Load the YOLOv9 model
     yolo = YOLO("yolov9.engine")
 
-    # OR, use the YOLO9 class
-    yolo = YOLO9("yolov9.engine")
+    # OR, use the YOLOv9 class
+    yolo = YOLOv9("yolov9.engine")
 
     # Read and process an image
     img = cv2.imread("example.jpg")

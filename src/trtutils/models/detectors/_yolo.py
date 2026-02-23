@@ -72,7 +72,7 @@ class YOLOX(Detector, Model):
         )
 
 
-class YOLO3(Detector, Model):
+class YOLOv3(Detector, Model):
     """Alias of Detector with default args for YOLOv3."""
 
     _model_type = "yolov3"
@@ -128,7 +128,7 @@ class YOLO3(Detector, Model):
         )
 
 
-class YOLO5(Detector, Model):
+class YOLOv5(Detector, Model):
     """Alias of Detector with default args for YOLOv5."""
 
     _model_type = "yolov5"
@@ -184,8 +184,8 @@ class YOLO5(Detector, Model):
         )
 
 
-class YOLO7(Detector, Model):
-    """Alias of Detector with default args for YOLO7."""
+class YOLOv7(Detector, Model):
+    """Alias of Detector with default args for YOLOv7."""
 
     _model_type = "yolov7"
     _friendly_name = "YOLOv7"
@@ -239,8 +239,8 @@ class YOLO7(Detector, Model):
         )
 
 
-class YOLO8(Detector, Model):
-    """Alias of Detector with default args for YOLO8."""
+class YOLOv8(Detector, Model):
+    """Alias of Detector with default args for YOLOv8."""
 
     _model_type = "yolov8"
     _friendly_name = "YOLOv8"
@@ -295,8 +295,8 @@ class YOLO8(Detector, Model):
         )
 
 
-class YOLO9(Detector, Model):
-    """Alias of Detector with default args for YOLO9."""
+class YOLOv9(Detector, Model):
+    """Alias of Detector with default args for YOLOv9."""
 
     _model_type = "yolov9"
     _friendly_name = "YOLOv9"
@@ -350,8 +350,8 @@ class YOLO9(Detector, Model):
         )
 
 
-class YOLO10(Detector, Model):
-    """Alias of Detector with default args for YOLO10."""
+class YOLOv10(Detector, Model):
+    """Alias of Detector with default args for YOLOv10."""
 
     _model_type = "yolov10"
     _friendly_name = "YOLOv10"
@@ -405,8 +405,8 @@ class YOLO10(Detector, Model):
         )
 
 
-class YOLO11(Detector, Model):
-    """Alias of Detector with default args for YOLO11."""
+class YOLOv11(Detector, Model):
+    """Alias of Detector with default args for YOLOv11."""
 
     _model_type = "yolov11"
     _friendly_name = "YOLOv11"
@@ -461,8 +461,8 @@ class YOLO11(Detector, Model):
         )
 
 
-class YOLO12(Detector, Model):
-    """Alias of Detector with default args for YOLO12."""
+class YOLOv12(Detector, Model):
+    """Alias of Detector with default args for YOLOv12."""
 
     _model_type = "yolov12"
     _friendly_name = "YOLOv12"
@@ -517,8 +517,8 @@ class YOLO12(Detector, Model):
         )
 
 
-class YOLO13(Detector, Model):
-    """Alias of Detector with default args for YOLO13."""
+class YOLOv13(Detector, Model):
+    """Alias of Detector with default args for YOLOv13."""
 
     _model_type = "yolov13"
     _friendly_name = "YOLOv13"
@@ -573,8 +573,8 @@ class YOLO13(Detector, Model):
         )
 
 
-class YOLO26(Detector, Model):
-    """Alias of Detector with default args for YOLO26."""
+class YOLOv26(Detector, Model):
+    """Alias of Detector with default args for YOLOv26."""
 
     _model_type = "yolov26"
     _friendly_name = "YOLOv26"
