@@ -1,0 +1,22 @@
+{
+    "yolov26n": {
+      "url": "ultralytics",
+      "name": "yolo26n"
+    },
+    "yolov26s": {
+      "url": "ultralytics",
+      "name": "yolo26s"
+    },
+    "yolov26m": {
+      "url": "ultralytics",
+      "name": "yolo26m"
+    },
+    "yolov26l": {
+      "url": "ultralytics",
+      "name": "yolo26l"
+    },
+    "yolov26x": {
+      "url": "ultralytics",
+      "name": "yolo26x"
+    }
+  }

@@ -10,7 +10,9 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, overload
 
 import numpy as np
+import nvtx
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
@@ -111,6 +113,16 @@ class ImagePreprocessor(ABC):
         # class info
         self._tag: str | None = tag
 
+        # setup nvtx tags
+        self._nvtx_tags: dict[str, str] = {
+            "init": f"preproc::init [{self._tag}]",
+            "warmup": f"preproc::warmup [{self._tag}]",
+            "preprocess": f"preproc::preprocess [{self._tag}]",
+        }
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["init"])
+
         # compute scale, offset
         self.update_output_range(output_range)
         # setup the mean and std arrays
@@ -120,6 +132,8 @@ class ImagePreprocessor(ABC):
         # check resize method
         if resize not in ImagePreprocessor._valid_methods:
             err_msg = f"{self._tag}: Unknown method for image resizing. Options are {ImagePreprocessor._valid_methods}"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # init
             raise ValueError(err_msg)
         self._resize: str = resize
 
@@ -127,6 +141,9 @@ class ImagePreprocessor(ABC):
         LOG.debug(
             f"{self._tag}: Creating preprocessor: {output_shape}, {output_range}, {dtype}",
         )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
 
     def update_output_range(self: Self, output_range: tuple[float, float]) -> None:
         """
@@ -310,6 +327,24 @@ class GPUImagePreprocessor(ImagePreprocessor):
             tag=tag,
         )
 
+        self._nvtx_tags.update(
+            {
+                "gpu_init": f"preproc::gpu_init [{self._tag}]",
+                "gpu_warmup": f"preproc::gpu_warmup [{self._tag}]",
+                "gpu_preprocess": f"preproc::gpu_preprocess [{self._tag}]",
+                "direct_preproc": f"preproc::direct_preproc [{self._tag}]",
+                "resize_images_to_batch": f"preproc::resize_images_to_batch [{self._tag}]",
+                "create_resize_args": f"preproc::create_resize_args [{self._tag}]",
+                "update_extra_buffers": f"preproc::update_extra_buffers [{self._tag}]",
+                "validate_input": f"preproc::validate_input [{self._tag}]",
+                "reallocate_input": f"preproc::reallocate_input [{self._tag}]",
+                "allocate_imagenet_buffers": f"preproc::allocate_imagenet_buffers [{self._tag}]",
+            }
+        )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["gpu_init"])
+
         # handle memory flags
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._unified_mem = unified_mem
@@ -386,6 +421,15 @@ class GPUImagePreprocessor(ImagePreprocessor):
             unified_mem=self._unified_mem,
         )
 
+        # Cache for _create_resize_args: avoid repacking kernel args for same resolution
+        self._cached_resize_key: tuple[int, int, str] | None = None
+        self._cached_resize_result: (
+            tuple[Kernel, np.ndarray, tuple[float, float], tuple[float, float]] | None
+        ) = None
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # gpu_init
+
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError):
             del self._orig_size_buffer
@@ -407,6 +451,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
         Allocates all CUDA memory and enables future passes
         to be significantly faster.
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["gpu_warmup"])
+
         rand_data: np.ndarray = np.random.default_rng().integers(
             0,
             255,
@@ -414,6 +461,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             dtype=np.uint8,
         )
         self.preprocess([rand_data], resize=self._resize, no_copy=True)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # gpu_warmup
 
     # __call__ overloads
     @overload
@@ -475,9 +525,14 @@ class GPUImagePreprocessor(ImagePreprocessor):
         return self.preprocess(images, resize=resize, no_copy=no_copy, verbose=verbose)
 
     def _allocate_imagenet_buffers(self: Self) -> None:
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["allocate_imagenet_buffers"])
+
         # self._mean and self._std are set during the initialiation of ImagePreprocessor
         if self._mean is None or self._std is None:
             err_msg = "Imagenet buffers require mean/std to be set."
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # allocate_imagenet_buffers
             raise ValueError(err_msg)
         self._mean_buffer = create_binding(self._mean)
         memcpy_host_to_device_async(
@@ -492,6 +547,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             self._stream,
         )
 
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # allocate_imagenet_buffers
+
     def _reallocate_input(
         self: Self,
         image: np.ndarray,
@@ -499,6 +557,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
         *,
         verbose: bool | None = None,
     ) -> None:
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["reallocate_input"])
+
         if verbose:
             LOG.debug(f"{self._tag}: Reallocating input bindings")
             LOG.debug(
@@ -513,6 +574,13 @@ class GPUImagePreprocessor(ImagePreprocessor):
             unified_mem=self._unified_mem,
         )
 
+        # Invalidate resize args cache: input binding allocation changed
+        self._cached_resize_key = None
+        self._cached_resize_result = None
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # reallocate_input
+
     def _validate_input(
         self: Self,
         image: np.ndarray,
@@ -520,6 +588,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
         *,
         verbose: bool | None = None,
     ) -> str:
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["validate_input"])
+
         if verbose:
             LOG.debug(f"{self._tag}: validate_input")
 
@@ -529,10 +600,14 @@ class GPUImagePreprocessor(ImagePreprocessor):
             err_msg = (
                 f"{self._tag}: Unknown method for image resizing. Options are {self._valid_methods}"
             )
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # validate_input
             raise ValueError(err_msg)
 
         if image.ndim != _IMAGE_DIMENSIONS:
             err_msg = f"{self._tag}: Image must be (height, width, channels)"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # validate_input
             raise ValueError(err_msg)
 
         # verified ndim is 3 above, so we can ignore the type checker
@@ -548,9 +623,14 @@ class GPUImagePreprocessor(ImagePreprocessor):
             # put ignore here, since we verified dmin is 3 above
             if img_shape[2] != _COLOR_CHANNELS:
                 err_msg = f"{self._tag}: Can only preprocess color images."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # validate_input
                 raise ValueError(err_msg)
 
             self._reallocate_input(image, img_shape, verbose=verbose)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # validate_input
 
         return resize
 
@@ -665,6 +745,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["gpu_preprocess"])
+
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
@@ -690,8 +773,14 @@ class GPUImagePreprocessor(ImagePreprocessor):
         stream_synchronize(self._stream)
 
         if no_copy:
-            return output_binding.host_allocation[:batch_size], ratios_list, padding_list
-        return output_binding.host_allocation[:batch_size].copy(), ratios_list, padding_list
+            result = (output_binding.host_allocation[:batch_size], ratios_list, padding_list)
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # gpu_preprocess
+            return result
+        result = (output_binding.host_allocation[:batch_size].copy(), ratios_list, padding_list)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # gpu_preprocess
+        return result
 
     @property
     def orig_size_allocation(self: Self) -> tuple[int, bool]:
@@ -738,8 +827,13 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The scale ratios (scale_x, scale_y).
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["update_extra_buffers"])
+
         current_shape = (height, width)
         if self._last_transferred_shape == current_shape:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # update_extra_buffers
             return
 
         # Update host arrays
@@ -761,6 +855,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         self._last_transferred_shape = current_shape
         self._buffers_valid = True
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # update_extra_buffers
 
     def _create_resize_args(
         self: Self,
@@ -790,6 +887,16 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Resize kernel, kernel args, ratios, and padding.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["create_resize_args"])
+
+        # Check cache: for constant-resolution input, args are identical every frame
+        cache_key = (height, width, method)
+        if cache_key == self._cached_resize_key and self._cached_resize_result is not None:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # create_resize_args
+            return self._cached_resize_result
+
         if verbose:
             LOG.debug(f"{self._tag}: create_resize_args")
 
@@ -841,7 +948,15 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 verbose=verbose,
             )
 
-        return resize_kernel, resize_args, ratios, padding
+        # Store in cache
+        result = (resize_kernel, resize_args, ratios, padding)
+        self._cached_resize_key = cache_key
+        self._cached_resize_result = result
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # create_resize_args
+
+        return result
 
     def _resize_images_to_batch(
         self: Self,
@@ -871,6 +986,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Lists of ratios and padding per image.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["resize_images_to_batch"])
+
         ratios_list: list[tuple[float, float]] = []
         padding_list: list[tuple[float, float]] = []
 
@@ -926,5 +1044,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 single_image_bytes,
                 self._stream,
             )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # resize_images_to_batch
 
         return ratios_list, padding_list

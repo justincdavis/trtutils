@@ -85,9 +85,9 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup=True,
             verbose=args.verbose,
         )
-        latency = jresult.latency  # type: ignore[assignment]
-        energy = jresult.energy  # type: ignore[assignment]
-        power = jresult.power_draw  # type: ignore[assignment]
+        latency = jresult.latency
+        energy = jresult.energy
+        power = jresult.power_draw
     else:
         result = trtutils.benchmark_engine(
             engine=mpath,
@@ -97,7 +97,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup=True,
             verbose=args.verbose,
         )
-        latency = result.latency  # type: ignore[assignment]
+        latency = result.latency
 
     latency_in_ms = {
         "mean": latency.mean * 1000.0,
@@ -614,7 +614,7 @@ def _detect(args: SimpleNamespace) -> None:
         t3 = time.perf_counter()
         dets: list[tuple[tuple[int, int, int, int], float, int]] = detector.get_detections(
             p_results, verbose=args.verbose
-        )[0]  # type: ignore[assignment]
+        )[0]
         t4 = time.perf_counter()
         return (
             dets,
@@ -801,7 +801,7 @@ def _classify(args: SimpleNamespace) -> None:
             raise RuntimeError(err_msg)
         p_results = classifier.postprocess(results, no_copy=True)
         t3 = time.perf_counter()
-        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]  # type: ignore[assignment]
+        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]
         t4 = time.perf_counter()
         return (
             cls_results[0],
@@ -1069,7 +1069,7 @@ def _download(args: SimpleNamespace) -> None:
     Download a model from a remote source and convert it to ONNX format.
 
     Downloads pre-trained models and automatically converts them to ONNX format
-    for use with TensorRT. Includes license acceptance flow for model usage.
+    for use with TensorRT.
 
     Parameters
     ----------
@@ -1085,12 +1085,12 @@ def _download(args: SimpleNamespace) -> None:
             Image size for the model.
         - requirements_export : Path | None
             Optional path to export the created virtual environment's requirements file.
-        - accept : bool
-            Whether to accept license terms automatically.
         - verbose : bool
             Enable verbose output.
         - no_cache : bool
             Disable caching of downloaded weights, repos, and uv packages.
+        - simplify : bool
+            Simplify the ONNX model using onnxsim after exporting.
 
     """
     if args.list_models:
@@ -1107,15 +1107,12 @@ def _download(args: SimpleNamespace) -> None:
         LOG.error("--model and --output are required for downloading.")
         return
 
-    if not args.accept:
-        LOG.info(
-            f"You are about to download model '{args.model}' which may have license restrictions."
-        )
-        LOG.info("Please ensure you comply with the model's license terms.")
-        response = input("Do you accept the license terms? (y/N): ").strip().lower()
-        if response not in ["y", "yes"]:
-            LOG.info("License not accepted. Aborting download.")
-            return
+    if args.simplify is None:
+        simplify_value = None
+    elif len(args.simplify) == 0:
+        simplify_value = True
+    else:
+        simplify_value = args.simplify
 
     trtutils.download.download(
         args.model,
@@ -1123,7 +1120,7 @@ def _download(args: SimpleNamespace) -> None:
         args.opset,
         args.imgsz,
         requirements_export=args.requirements_export,
-        accept=True,
+        simplify=simplify_value,
         verbose=args.verbose,
         no_cache=args.no_cache,
         no_uv_cache=args.no_cache,
@@ -1203,6 +1200,11 @@ def _main() -> None:
         "--verbose",
         action="store_true",
         help="Enable verbose output.",
+    )
+    general_parser.add_argument(
+        "--nvtx",
+        action="store_true",
+        help="Enable NVTX markers for profiling with Nsight Systems.",
     )
 
     # dla arguments parser (for commands that support DLA)
@@ -1780,14 +1782,17 @@ def _main() -> None:
         help="Export the created virtual environment's requirements to this path using uv pip freeze.",
     )
     download_parser.add_argument(
-        "--accept",
-        action="store_true",
-        help="Accept the license terms for the model. If not provided, you will be prompted.",
-    )
-    download_parser.add_argument(
         "--no_cache",
         action="store_true",
         help="Disable caching of downloaded weights, repos, and uv packages.",
+    )
+    download_parser.add_argument(
+        "--simplify",
+        nargs="*",
+        metavar="TOOL",
+        help="Simplify the ONNX model. Without arguments, uses default tools "
+        "(polygraphy, onnxslim). Optionally specify tools and order: "
+        "--simplify polygraphy onnxslim onnxsim",
     )
     download_parser.set_defaults(func=_download)
 
@@ -1809,6 +1814,10 @@ def _main() -> None:
 
     # set log level
     trtutils.set_log_level(args.log_level)
+
+    # enable NVTX markers if requested
+    if args.nvtx:
+        trtutils.enable_nvtx()
 
     # call function with args
     if hasattr(args, "func"):

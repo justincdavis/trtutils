@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, cast, overload
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
+import nvtx
 from typing_extensions import Literal, TypeGuard
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._memory import memcpy_host_to_device_async
 
@@ -59,12 +61,13 @@ class Detector(ImageModel, DetectorInterface):
         input_schema: InputSchema | str | None = None,
         output_schema: OutputSchema | str | None = None,
         dla_core: int | None = None,
+        device: int | None = None,
         backend: str = "auto",
         *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = False,
+        cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
@@ -116,6 +119,9 @@ class Detector(ImageModel, DetectorInterface):
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+        device : int, optional
+            The CUDA device index to use for this detector. Default is None,
+            which uses the current device.
         backend : str
             The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
             Default is 'auto', which selects the best available backend.
@@ -135,7 +141,7 @@ class Detector(ImageModel, DetectorInterface):
             end2end() will capture a CUDA graph of the full preprocessing +
             inference pipeline, and subsequent calls will replay it. Input
             dimensions are locked after the first end2end() call.
-            Only effective with async_v3 backend. Default is None (disabled).
+            Only effective with async_v3 backend. Default is True.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -170,6 +176,7 @@ class Detector(ImageModel, DetectorInterface):
             mean=mean,
             std=std,
             dla_core=dla_core,
+            device=device,
             backend=backend,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
@@ -178,6 +185,25 @@ class Detector(ImageModel, DetectorInterface):
             no_warn=no_warn,
             verbose=verbose,
         )
+
+        # prepend with 'det_' to avoid conflicts with ImageModel._nvtx_tags
+        self._nvtx_tags.update(
+            {
+                "det_init": f"detector::init [{self._tag}]",
+                "det_postprocess": f"detector::postprocess [{self._tag}]",
+                "det_run": f"detector::run [{self._tag}]",
+                "det_get_detections": f"detector::get_detections [{self._tag}]",
+                "det_end2end": f"detector::end2end [{self._tag}]",
+                "det__end2end": f"detector::_end2end [{self._tag}]",
+                "det__end2end_graph": f"detector::_end2end_graph [{self._tag}]",
+                "det__prepare_extra_gpu": f"detector::_prepare_extra_gpu [{self._tag}]",
+                "det__prepare_extra_cpu": f"detector::_prepare_extra_cpu [{self._tag}]",
+            }
+        )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["det_init"])
+
         self._conf_thres: float = conf_thres
         self._nms_iou: float = nms_iou_thres
         self._nms: bool | None = extra_nms
@@ -207,6 +233,9 @@ class Detector(ImageModel, DetectorInterface):
         if self._verbose:
             LOG.debug(f"{self._tag}: Using image size: {self._use_image_size}")
             LOG.debug(f"{self._tag}: Using scale factor: {self._use_scale_factor}")
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
 
     @property
     def input_schema(self: Self) -> InputSchema:
@@ -267,6 +296,9 @@ class Detector(ImageModel, DetectorInterface):
             [bboxes, scores, class_ids].
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["det_postprocess"])
+
         if verbose:
             LOG.debug(f"{self._tag}: postprocess")
 
@@ -283,6 +315,10 @@ class Detector(ImageModel, DetectorInterface):
         )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # postprocess
+
         return data
 
     # __call__ overloads
@@ -526,6 +562,9 @@ class Detector(ImageModel, DetectorInterface):
             If preprocessed inputs are not a single batch tensor.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["det_run"])
+
         if verbose:
             LOG.debug(f"{self._tag}: run")
 
@@ -581,6 +620,8 @@ class Detector(ImageModel, DetectorInterface):
             # images is already preprocessed tensor when preprocessed=True
             if len(images) != 1:
                 err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
                 raise ValueError(err_msg)
             tensor = images[0]
 
@@ -627,6 +668,8 @@ class Detector(ImageModel, DetectorInterface):
                 LOG.debug("Postprocessing outputs")
             if ratios is None or padding is None:
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
                 raise RuntimeError(err_msg)
             postprocessed_outputs = self.postprocess(
                 outputs,
@@ -639,10 +682,17 @@ class Detector(ImageModel, DetectorInterface):
 
             # Unwrap for single-image input
             if is_single:
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
                 return postprocessed_outputs[0]
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # run
             return postprocessed_outputs
 
         self._infer_profile = (t0, t1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # run
 
         return outputs
 
@@ -717,6 +767,9 @@ class Detector(ImageModel, DetectorInterface):
             For batch: list[list[tuple[...]]] (detections per image).
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["det_get_detections"])
+
         if verbose:
             LOG.debug(f"{self._tag}: get_detections")
 
@@ -739,9 +792,11 @@ class Detector(ImageModel, DetectorInterface):
                 agnostic_nms=agnostic,
                 verbose=verbose,
             )
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # get_detections
             return result[0]  # Unwrap
 
-        return self._get_detections_fn(
+        result_batch = self._get_detections_fn(
             outputs,  # type: ignore[arg-type]
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou,
@@ -749,6 +804,11 @@ class Detector(ImageModel, DetectorInterface):
             agnostic_nms=agnostic,
             verbose=verbose,
         )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # get_detections
+
+        return result_batch
 
     # end2end overloads
     @overload
@@ -835,6 +895,9 @@ class Detector(ImageModel, DetectorInterface):
             If end2end_graph is enabled and CUDA graph capture fails.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["det_end2end"])
+
         if verbose:
             LOG.debug(f"{self._tag}: end2end")
 
@@ -868,8 +931,16 @@ class Detector(ImageModel, DetectorInterface):
             # result is already unwrapped from get_detections for single image
             # but we need to check if it was processed as batch
             if isinstance(result, list) and result and isinstance(result[0], list):
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # end2end
                 return result[0]
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # end2end
             return result
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # end2end
+
         return result
 
     def _end2end(
@@ -883,6 +954,9 @@ class Detector(ImageModel, DetectorInterface):
         verbose: bool | None = None,
     ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
         """Execute the standard end2end path without graph capture."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["det__end2end"])
+
         outputs: list[np.ndarray] | list[list[np.ndarray]]
         postprocessed: list[list[np.ndarray]]
         # if using CPU preprocessor best you can do is remove host-to-host copies
@@ -900,6 +974,8 @@ class Detector(ImageModel, DetectorInterface):
             )
             if not _is_postprocessed_outputs(outputs):
                 err_msg = "Expected postprocessed detector outputs in end2end."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # _end2end
                 raise RuntimeError(err_msg)
             postprocessed = outputs
         else:
@@ -920,10 +996,14 @@ class Detector(ImageModel, DetectorInterface):
                 orig_size_ptr, valid = self._preprocessor.orig_size_allocation
                 if not valid:
                     err_msg = "orig_image_size buffer not valid"
+                    if FLAGS.NVTX_ENABLED:
+                        nvtx.pop_range()  # _end2end
                     raise RuntimeError(err_msg)
                 scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation
                 if not scale_valid:
                     err_msg = "scale_factor buffer not valid"
+                    if FLAGS.NVTX_ENABLED:
+                        nvtx.pop_range()  # _end2end
                     raise RuntimeError(err_msg)
                 input_ptrs = [orig_size_ptr, gpu_ptr, scale_ptr]
             else:
@@ -934,6 +1014,8 @@ class Detector(ImageModel, DetectorInterface):
                         input_ptrs.append(orig_size_ptr)
                     else:
                         err_msg = "orig_image_size buffer not valid"
+                        if FLAGS.NVTX_ENABLED:
+                            nvtx.pop_range()  # _end2end
                         raise RuntimeError(err_msg)
                 if self._use_scale_factor:
                     scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation
@@ -941,6 +1023,8 @@ class Detector(ImageModel, DetectorInterface):
                         input_ptrs.append(scale_ptr)
                     else:
                         err_msg = "scale_factor buffer not valid"
+                        if FLAGS.NVTX_ENABLED:
+                            nvtx.pop_range()  # _end2end
                         raise RuntimeError(err_msg)
 
             raw_outputs = self._engine.direct_exec(input_ptrs, no_warn=True)
@@ -954,34 +1038,46 @@ class Detector(ImageModel, DetectorInterface):
             )
 
         # generate the detections
-        # cast needed: ty can't resolve overload with numpy 1.x type stubs
-        return cast(
-            "list[list[tuple[tuple[int, int, int, int], float, int]]]",
-            self.get_detections(
-                postprocessed,
-                conf_thres=conf_thres,
-                nms_iou_thres=nms_iou_thres,
-                extra_nms=extra_nms,
-                agnostic_nms=agnostic_nms,
-                verbose=verbose,
-            ),
+        result = self.get_detections(
+            postprocessed,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou_thres,
+            extra_nms=extra_nms,
+            agnostic_nms=agnostic_nms,
+            verbose=verbose,
         )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # _end2end
+
+        return result
 
     def _prepare_extra_engine_inputs_gpu(self: Self) -> list[int]:
         """Return additional GPU input pointers for DETR-style models (GPU preprocessor path)."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["det__prepare_extra_gpu"])
+
         input_ptrs: list[int] = []
         if self._use_image_size:
             orig_size_ptr, valid = self._preprocessor.orig_size_allocation  # type: ignore[union-attr]
             if not valid:
                 err_msg = "orig_image_size buffer not valid"
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # prepare_extra_gpu
                 raise RuntimeError(err_msg)
             input_ptrs.append(orig_size_ptr)
         if self._use_scale_factor:
             scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation  # type: ignore[union-attr]
             if not scale_valid:
                 err_msg = "scale_factor buffer not valid"
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # prepare_extra_gpu
                 raise RuntimeError(err_msg)
             input_ptrs.append(scale_ptr)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # prepare_extra_gpu
+
         return input_ptrs
 
     def _prepare_extra_engine_inputs_cpu(
@@ -990,6 +1086,9 @@ class Detector(ImageModel, DetectorInterface):
         ratios: list[tuple[float, float]],
     ) -> list[int]:
         """Return additional GPU input pointers for DETR-style models (CPU preprocessor path)."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["det__prepare_extra_cpu"])
+
         input_ptrs: list[int] = []
         input_idx = 1  # Start after the main image input
 
@@ -1020,6 +1119,9 @@ class Detector(ImageModel, DetectorInterface):
                 self._engine.stream,
             )
             input_ptrs.append(self._engine._inputs[input_idx].allocation)  # noqa: SLF001
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # prepare_extra_cpu
 
         return input_ptrs
 
@@ -1053,6 +1155,9 @@ class Detector(ImageModel, DetectorInterface):
         Preprocessing runs outside the graph since H2D copies cannot be captured.
         Supports CPU, CUDA, and TRT preprocessors.
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["det__end2end_graph"])
+
         # Use shared core graph execution
         raw_outputs, ratios, padding = self._end2end_graph_core(images, verbose=verbose)
 
@@ -1065,15 +1170,16 @@ class Detector(ImageModel, DetectorInterface):
             no_copy=True,
             verbose=verbose,
         )
-        # cast needed: ty can't resolve overload with numpy 1.x type stubs
-        return cast(
-            "list[list[tuple[tuple[int, int, int, int], float, int]]]",
-            self.get_detections(
-                postprocessed,
-                conf_thres=conf_thres,
-                nms_iou_thres=nms_iou_thres,
-                extra_nms=extra_nms,
-                agnostic_nms=agnostic_nms,
-                verbose=verbose,
-            ),
+        result = self.get_detections(
+            postprocessed,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou_thres,
+            extra_nms=extra_nms,
+            agnostic_nms=agnostic_nms,
+            verbose=verbose,
         )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # _end2end_graph
+
+        return result

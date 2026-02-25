@@ -4,10 +4,9 @@
 ![PyPI](https://img.shields.io/pypi/v/trtutils.svg?style=plastic)
 [![CodeFactor](https://www.codefactor.io/repository/github/justincdavis/trtutils/badge)](https://www.codefactor.io/repository/github/justincdavis/trtutils)
 
-![MyPy](https://github.com/justincdavis/trtutils/actions/workflows/mypy.yaml/badge.svg?branch=main)
+![Ty](https://github.com/justincdavis/trtutils/actions/workflows/ty.yaml/badge.svg?branch=main)
 ![Ruff](https://github.com/justincdavis/trtutils/actions/workflows/ruff.yaml/badge.svg?branch=main)
-![PyPi Build](https://github.com/justincdavis/trtutils/actions/workflows/build-check.yaml/badge.svg?branch=main)
-<!-- ![Black](https://github.com/justincdavis/trtutils/actions/workflows/black.yaml/badge.svg?branch=main) -->
+![PyPI Build](https://github.com/justincdavis/trtutils/actions/workflows/build-check.yaml/badge.svg?branch=main)
 
 A high-level Python interface for TensorRT inference, providing a simple and unified way to run arbitrary TensorRT engines. This library abstracts away the complexity of CUDA memory management, binding management, and engine execution, making it easy to perform inference with any TensorRT engine.
 

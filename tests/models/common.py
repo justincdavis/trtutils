@@ -44,47 +44,47 @@ DETECTOR_CONFIG: dict[str, DetectorConfig] = {
         "engine_path": YOLO_ENGINE_PATHS[0],
     },
     "yolov3": {
-        "model_class": models.YOLO3,
+        "model_class": models.YOLOv3,
         "onnx_path": YOLO_ONNX_PATHS[3],
         "engine_path": YOLO_ENGINE_PATHS[3],
     },
     "yolov5": {
-        "model_class": models.YOLO5,
+        "model_class": models.YOLOv5,
         "onnx_path": YOLO_ONNX_PATHS[5],
         "engine_path": YOLO_ENGINE_PATHS[5],
     },
     "yolov7": {
-        "model_class": models.YOLO7,
+        "model_class": models.YOLOv7,
         "onnx_path": YOLO_ONNX_PATHS[7],
         "engine_path": YOLO_ENGINE_PATHS[7],
     },
     "yolov8": {
-        "model_class": models.YOLO8,
+        "model_class": models.YOLOv8,
         "onnx_path": YOLO_ONNX_PATHS[8],
         "engine_path": YOLO_ENGINE_PATHS[8],
     },
     "yolov9": {
-        "model_class": models.YOLO9,
+        "model_class": models.YOLOv9,
         "onnx_path": YOLO_ONNX_PATHS[9],
         "engine_path": YOLO_ENGINE_PATHS[9],
     },
     "yolov10": {
-        "model_class": models.YOLO10,
+        "model_class": models.YOLOv10,
         "onnx_path": YOLO_ONNX_PATHS[10],
         "engine_path": YOLO_ENGINE_PATHS[10],
     },
     "yolov11": {
-        "model_class": models.YOLO11,
+        "model_class": models.YOLOv11,
         "onnx_path": YOLO_ONNX_PATHS[11],
         "engine_path": YOLO_ENGINE_PATHS[11],
     },
     "yolov12": {
-        "model_class": models.YOLO12,
+        "model_class": models.YOLOv12,
         "onnx_path": YOLO_ONNX_PATHS[12],
         "engine_path": YOLO_ENGINE_PATHS[12],
     },
     "yolov13": {
-        "model_class": models.YOLO13,
+        "model_class": models.YOLOv13,
         "onnx_path": YOLO_ONNX_PATHS[13],
         "engine_path": YOLO_ENGINE_PATHS[13],
     },
@@ -174,7 +174,6 @@ def build_detector(model_id: str, *, use_dla: bool | None = None) -> Path:
         model_class.download(  # type: ignore[attr-defined]
             model=download_model_name,
             output=onnx_path,
-            accept=True,
             no_warn=True,
         )
 
@@ -605,15 +604,15 @@ def detr_results(model_name: str, preprocessor: str = "cpu", *, use_dla: bool | 
 MODEL_DOWNLOAD_CONFIGS = [
     # YOLO models (all use default imgsz=640)
     (models.YOLOX, "yoloxn", None),
-    (models.YOLO3, "yolov3tu", None),
-    (models.YOLO5, "yolov5nu", None),
-    (models.YOLO7, "yolov7t", None),
-    (models.YOLO8, "yolov8n", None),
-    (models.YOLO9, "yolov9t", None),
-    (models.YOLO10, "yolov10n", None),
-    (models.YOLO11, "yolov11n", None),
-    (models.YOLO12, "yolov12n", None),
-    (models.YOLO13, "yolov13n", None),
+    (models.YOLOv3, "yolov3tu", None),
+    (models.YOLOv5, "yolov5nu", None),
+    (models.YOLOv7, "yolov7t", None),
+    (models.YOLOv8, "yolov8n", None),
+    (models.YOLOv9, "yolov9t", None),
+    (models.YOLOv10, "yolov10n", None),
+    (models.YOLOv11, "yolov11n", None),
+    (models.YOLOv12, "yolov12n", None),
+    (models.YOLOv13, "yolov13n", None),
     # DETR models (most use default imgsz=640)
     (models.RTDETRv1, "rtdetrv1_r18", None),
     (models.RTDETRv2, "rtdetrv2_r18", None),

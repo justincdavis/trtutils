@@ -33,7 +33,7 @@ def download_with_args(model: str) -> None:
     """Download a model with the given arguments."""
     with _temporary_dir() as temp_dir:
         output = temp_dir / "model.onnx"
-        download(model, output, accept=True)
+        download(model, output)
         assert output.exists()
 
 

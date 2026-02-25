@@ -5,6 +5,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import nvtx
+
+from trtutils._flags import FLAGS
+
 from ._queued_engine import QueuedTRTEngine
 
 if TYPE_CHECKING:
@@ -22,7 +26,13 @@ class ParallelTRTEngines:
 
     def __init__(
         self: Self,
-        engines: Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]],
+        engines: Sequence[
+            TRTEngine
+            | Path
+            | str
+            | tuple[TRTEngine | Path | str, int]
+            | tuple[TRTEngine | Path | str, int | None, int | None]
+        ],
         warmup_iterations: int = 5,
         *,
         warmup: bool | None = None,
@@ -32,8 +42,11 @@ class ParallelTRTEngines:
 
         Parameters
         ----------
-        engines : Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]]
-            The Paths to the compiled engines to use.
+        engines : Sequence[...]
+            The engines to use. Each element can be:
+            - A TRTEngine, Path, or str
+            - A 2-tuple of (engine, dla_core)
+            - A 3-tuple of (engine, dla_core, device)
         warmup_iterations : int
             The number of iterations to perform warmup for.
             By default 5
@@ -41,22 +54,26 @@ class ParallelTRTEngines:
             Whether or not to run warmup iterations on the engines.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("parallel_engines::init")
         self._engines: list[QueuedTRTEngine] = []
         for engine_info in engines:
-            engine: TRTEngine | Path | str
             dla_core: int | None = None
+            device: int | None = None
             if isinstance(engine_info, tuple):
-                engine = engine_info[0]  # type: ignore[assignment]
-                dla_core = engine_info[1]  # type: ignore[assignment]
+                engine, dla_core = engine_info  # type: ignore[assignment]
             else:
                 engine = engine_info
             q_engine = QueuedTRTEngine(
-                engine=engine,
+                engine=engine,  # type: ignore[arg-type]
                 warmup_iterations=warmup_iterations,
                 warmup=warmup,
                 dla_core=dla_core,
+                device=device,
             )
             self._engines.append(q_engine)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
 
     def get_random_input(
         self: Self,
@@ -104,11 +121,17 @@ class ParallelTRTEngines:
             If the inputs are not the same size as the engines.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("parallel_engines::submit")
         if len(inputs) != len(self._engines):
             err_msg = f"Cannot match {len(inputs)} inputs to {len(self._engines)} engines."
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise ValueError(err_msg)
         for data, engine in zip(inputs, self._engines):
             engine.submit(data)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     def mock_submit(
         self: Self,
@@ -135,4 +158,9 @@ class ParallelTRTEngines:
             The output from the engines.
 
         """
-        return [engine.retrieve(timeout=timeout) for engine in self._engines]
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("parallel_engines::retrieve")
+        results = [engine.retrieve(timeout=timeout) for engine in self._engines]
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
+        return results

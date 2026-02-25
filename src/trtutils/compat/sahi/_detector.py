@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import nvtx
 from sahi.models.base import DetectionModel
 from sahi.prediction import ObjectPrediction
 
+from trtutils._flags import FLAGS
 from trtutils.image import Detector
 
 if TYPE_CHECKING:
@@ -22,26 +24,40 @@ class TRTDetectionModel(DetectionModel):
         pass
 
     def load_model(self: Self) -> None:
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("compat::sahi::trt_detection_model::load_model")
         if self.model_path is None:
             err_msg = "model_path must be set before loading model"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise ValueError(err_msg)
         self.model = Detector(self.model_path, warmup=True)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     @property
     def has_mask(self: Self) -> bool:
         return False
 
     def perform_inference(self: Self, image: np.ndarray, image_size: int | None = None) -> None:
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("compat::sahi::trt_detection_model::perform_inference")
         if self.model is None:
             err_msg = "Model must be loaded before performing inference"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             raise RuntimeError(err_msg)
         self._original_predictions = self.model.end2end([image])[0]
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()
 
     def _create_object_prediction_list_from_original_predictions(
         self,
         shift_amount_list: list[list[int]] | None = [[0, 0]],
         full_shape_list: list[list[int]] | None = None,
     ) -> None:
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range("compat::sahi::trt_detection_model::create_predictions")
         if shift_amount_list is None:
             shift_amount_list = [[0, 0]]
 
@@ -75,12 +91,16 @@ class TRTDetectionModel(DetectionModel):
 
         if self._original_predictions is None:
             self._object_prediction_list_per_image = [predictions]
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             return
 
         num_dets = len(self._original_predictions)
 
         if num_dets == 0:
             self._object_prediction_list_per_image = [predictions]
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
             return
 
         for (x1, y1, x2, y2), score, class_id in self._original_predictions:
@@ -110,3 +130,5 @@ class TRTDetectionModel(DetectionModel):
                 )
             )
         self._object_prediction_list_per_image = [predictions]
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # create_predictions

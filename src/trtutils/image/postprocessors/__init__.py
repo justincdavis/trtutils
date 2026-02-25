@@ -8,8 +8,12 @@ Functions
 ---------
 :func:`get_classifications`
     Get the classifications from the output of a classification model.
+:func:`get_depth_maps`
+    Get the depth maps from the output of a depth estimation model.
 :func:`postprocess_classifications`
     Postprocess the output of a classification model.
+:func:`postprocess_depth`
+    Postprocess the output of a depth estimation model.
 :func:`get_detections`
     Get the detections from unified postprocessed outputs.
 :func:`postprocess_yolov10`
@@ -30,6 +34,7 @@ Functions
 from __future__ import annotations
 
 from ._classifier import get_classifications, postprocess_classifications
+from ._depth import get_depth_maps, postprocess_depth
 from ._detection import (
     get_detections,
     postprocess_detr,
@@ -42,8 +47,10 @@ from ._detection import (
 
 __all__ = [
     "get_classifications",
+    "get_depth_maps",
     "get_detections",
     "postprocess_classifications",
+    "postprocess_depth",
     "postprocess_detr",
     "postprocess_detr_lbs",
     "postprocess_efficient_nms",

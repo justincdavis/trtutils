@@ -1,0 +1,8 @@
+onnx==1.19.1
+onnxscript==0.6.2
+onnxruntime==1.23.2
+onnxsim==0.4.36
+onnxslim==0.1.85
+onnx_graphsurgeon==0.5.8
+polygraphy==0.49.26
+colored==2.3.1
