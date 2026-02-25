@@ -10,7 +10,7 @@ jobs:
         with:
           python-version: 3.8
       - name: Install ruff
-        run: pip install ruff==0.14.14
+        run: pip install --upgrade ruff
       - name: Ruff Format Check
         run: ./ci/run_format.sh --check --diff
 
@@ -23,6 +23,6 @@ jobs:
         with:
           python-version: 3.8
       - name: Install ruff
-        run: pip install ruff==0.14.14
+        run: pip install --upgrade ruff
       - name: Ruff Check
         run: ./ci/run_lint.sh --no-fix
