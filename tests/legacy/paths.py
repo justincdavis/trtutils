@@ -9,9 +9,9 @@ from pathlib import Path
 def get_trt_version() -> str | None:
     """Get full TRT version string for engine filename tagging."""
     try:
-        from trtutils.compat._libs import trt  # noqa: PLC0415
+        from trtutils.compat._libs import trt
 
-        return trt.__version__  # noqa: TRY300
+        return trt.__version__
     except (ImportError, AttributeError):
         return None
 

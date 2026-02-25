@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.models.common import (
+from tests.legacy.models.common import (
     DETECTOR_CONFIG,
     DLA_ENGINES,
     detector_pagelocked_perf,

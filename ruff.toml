@@ -41,7 +41,8 @@ unfixable = []
 per-file-ignores = {
     "demos/**/*.py" = ["INP001", "T201"],
     "examples/**/*.py" = ["INP001", "T201", "D103"],
-    "tests/**/*.py" = ["S101", "D100", "D104", "PLR2004", "T201"],
+    "tests/**/*.py" = ["S101", "D100", "D104", "PLR2004", "T201", "PLC0415", "BLE001", "FBT001", "TRY300", "D401"],
+    "ci/**/*.py" = ["INP001", "T201", "S603", "S607", "PLR2004"],
 }
 
 # Allow unused variables when underscore-prefixed.

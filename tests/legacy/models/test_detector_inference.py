@@ -18,7 +18,7 @@ import pytest
 
 import trtutils
 import trtutils.builder
-from tests.helpers import HORSE_IMAGE_PATH, PEOPLE_IMAGE_PATH, read_image
+from tests.legacy.helpers import HORSE_IMAGE_PATH, PEOPLE_IMAGE_PATH, read_image
 from trtutils.image import Classifier
 
 from .common import (

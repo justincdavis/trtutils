@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.paths import TRT_VERSION, version_engine_path
+from tests.legacy.paths import TRT_VERSION, version_engine_path
 
 BASE = Path(__file__).parent.parent.parent
 
@@ -66,7 +66,7 @@ ENGINE_PATHS = YOLO_ENGINE_PATHS
 ONNX_PATHS = YOLO_ONNX_PATHS
 
 # Image paths (imported from helpers for backward compatibility)
-from tests.helpers import (  # noqa: E402, F401
+from tests.legacy.helpers import (  # noqa: E402, F401
     HORSE_IMAGE_PATH,
     IMAGE_PATHS,
     PEOPLE_IMAGE_PATH,

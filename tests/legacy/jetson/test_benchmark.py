@@ -3,7 +3,7 @@
 # MIT License
 from __future__ import annotations
 
-from tests.common import build_engine
+from tests.legacy.common import build_engine
 from trtutils import FLAGS, Metric
 from trtutils.jetson import (
     JetsonBenchmarkResult,

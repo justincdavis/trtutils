@@ -13,8 +13,8 @@ import numpy as np
 import pytest
 
 import trtutils
-from tests.ground_truth import HORSE_CLASS_ID, PERSON_CLASS_ID
-from tests.helpers import HORSE_IMAGE_PATH, PEOPLE_IMAGE_PATH, read_image
+from tests.legacy.ground_truth import HORSE_CLASS_ID, PERSON_CLASS_ID
+from tests.legacy.helpers import HORSE_IMAGE_PATH, PEOPLE_IMAGE_PATH, read_image
 from trtutils.image._schema import InputSchema
 from trtutils.image.preprocessors import CUDAPreprocessor
 

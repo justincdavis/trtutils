@@ -73,7 +73,7 @@ The `build_engine()` and `build_detector()` functions skip building if the engin
 `ground_truth.py` provides structured data for test images:
 
 ```python
-from tests.ground_truth import HORSE_GT, PEOPLE_GT, HORSE_CLASS_ID
+from tests.legacy.ground_truth import HORSE_GT, PEOPLE_GT, HORSE_CLASS_ID
 
 assert len(detections) >= HORSE_GT.min_detections
 assert any(det[2] == HORSE_CLASS_ID for det in detections)

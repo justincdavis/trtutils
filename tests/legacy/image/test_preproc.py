@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from tests.helpers import HORSE_IMAGE_PATH, IMAGE_PATHS, read_image
+from tests.legacy.helpers import HORSE_IMAGE_PATH, IMAGE_PATHS, read_image
 from trtutils.image.preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,

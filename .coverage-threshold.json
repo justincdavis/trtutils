@@ -1,0 +1,23 @@
+{
+    "trtutils/core": 0,
+    "trtutils/_engine": 0,
+    "trtutils/_flags": 0,
+    "trtutils/_log": 0,
+    "trtutils/_benchmark": 0,
+    "trtutils/_config": 0,
+    "trtutils/_jit": 0,
+    "trtutils/_nvtx": 0,
+    "trtutils/_profile": 0,
+    "trtutils/__init__": 0,
+    "trtutils/__main__": 0,
+    "trtutils/builder": 0,
+    "trtutils/download": 0,
+    "trtutils/inspect": 0,
+    "trtutils/models": 0,
+    "trtutils/image": 0,
+    "trtutils/parallel": 0,
+    "trtutils/profiling": 0,
+    "trtutils/jetson": 0,
+    "trtutils/trtexec": 0,
+    "trtutils/research": 0
+}

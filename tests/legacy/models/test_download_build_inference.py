@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import cv2
 import pytest
 
-from tests.helpers import HORSE_IMAGE_PATH
+from tests.legacy.helpers import HORSE_IMAGE_PATH
 
 from .common import MODEL_DOWNLOAD_CONFIGS
 
