@@ -1,1 +1,128 @@
+"""Builder test fixtures -- ONNX files, temp dirs, test images."""
+
 from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import numpy as np
+import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+# tests/builder/conftest.py -> tests/builder -> tests -> project_root -> data/
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
+ONNX_PATH = DATA_DIR / "simple.onnx"
+
+
+@pytest.fixture(scope="session")
+def onnx_path() -> Path:
+    """Path to the test ONNX model."""
+    if not ONNX_PATH.exists():
+        pytest.skip("Test ONNX model not found")
+    return ONNX_PATH
+
+
+@pytest.fixture
+def output_engine_path(tmp_path: Path) -> Path:
+    """Temporary path for built engine output."""
+    return tmp_path / "test_output.engine"
+
+
+@pytest.fixture
+def test_image_dir(tmp_path: Path) -> Path:
+    """Create a temp directory with synthetic test images."""
+    import cv2
+
+    img_dir = tmp_path / "images"
+    img_dir.mkdir()
+    rng = np.random.default_rng(42)
+    for i in range(8):
+        img = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+        cv2.imwrite(str(img_dir / f"test_{i:03d}.jpg"), img)
+    return img_dir
+
+
+@pytest.fixture
+def small_image_dir(tmp_path: Path) -> Path:
+    """Create a temp directory with fewer images (for batch boundary testing)."""
+    import cv2
+
+    img_dir = tmp_path / "small_images"
+    img_dir.mkdir()
+    rng = np.random.default_rng(99)
+    for i in range(3):
+        img = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+        cv2.imwrite(str(img_dir / f"img_{i:03d}.jpg"), img)
+    return img_dir
+
+
+@pytest.fixture
+def single_image_dir(tmp_path: Path) -> Path:
+    """Create a temp directory with exactly one image."""
+    import cv2
+
+    img_dir = tmp_path / "single_image"
+    img_dir.mkdir()
+    rng = np.random.default_rng(7)
+    img = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+    cv2.imwrite(str(img_dir / "only.jpg"), img)
+    return img_dir
+
+
+@pytest.fixture
+def empty_dir(tmp_path: Path) -> Path:
+    """Empty directory (no images)."""
+    d = tmp_path / "empty"
+    d.mkdir()
+    return d
+
+
+@pytest.fixture
+def invalid_onnx_file(tmp_path: Path) -> Path:
+    """Create a file with .onnx extension but invalid binary content."""
+    import struct
+
+    p = tmp_path / "invalid.onnx"
+    # Binary junk that triggers protobuf parse failure
+    p.write_bytes(
+        struct.pack(
+            ">IIIIII",
+            0xDEADBEEF,
+            0xCAFEBABE,
+            0xBAADF00D,
+            0x12345678,
+            0xFEEDFACE,
+            0xDECAF000,
+        )
+    )
+    return p
+
+
+@pytest.fixture
+def non_onnx_file(tmp_path: Path) -> Path:
+    """Create a file with wrong extension."""
+    p = tmp_path / "model.txt"
+    p.write_text("not an onnx file")
+    return p
+
+
+@pytest.fixture
+def calibration_cache_path(tmp_path: Path) -> Path:
+    """Temporary path for calibration cache."""
+    return tmp_path / "calibration.cache"
+
+
+@pytest.fixture
+def timing_cache_path(tmp_path: Path) -> Path:
+    """Temporary path for timing cache."""
+    return tmp_path / "timing.cache"
+
+
+@pytest.fixture
+def cache_dir(tmp_path: Path) -> Generator[Path, None, None]:
+    """Temporary directory for engine caching."""
+    d = tmp_path / "cache"
+    d.mkdir()
+    return d

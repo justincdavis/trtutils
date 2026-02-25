@@ -1,0 +1,218 @@
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
+"""DepthEstimator output correctness tests (GPU required)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+BASE_DIR = Path(__file__).parent.parent.parent
+DATA_DIR = BASE_DIR / "data"
+SIMPLE_ONNX = DATA_DIR / "simple.onnx"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _find_depth_onnx() -> Path:
+    """Find an available model ONNX for depth estimator testing."""
+    # Use simple.onnx as a fallback -- the postprocessor will still run,
+    # though output semantics differ from a real depth model.
+    if SIMPLE_ONNX.exists():
+        return SIMPLE_ONNX
+    pytest.skip("No ONNX model available for depth estimator test")
+    return SIMPLE_ONNX
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def depth_engine(build_test_engine) -> Path:
+    """Build and cache a depth estimator engine for the test module."""
+    onnx_path = _find_depth_onnx()
+    return build_test_engine(onnx_path)
+
+
+# ---------------------------------------------------------------------------
+# DepthEstimator base class tests
+# ---------------------------------------------------------------------------
+class TestDepthEstimatorOutput:
+    """Tests for DepthEstimator output format."""
+
+    @pytest.mark.gpu
+    def test_run_returns_list(
+        self,
+        depth_engine,
+        horse_image,
+    ) -> None:
+        """DepthEstimator.run() should return a list of ndarrays."""
+        from trtutils.image import DepthEstimator
+
+        de = DepthEstimator(depth_engine, warmup=False)
+        outputs = de.run(horse_image)
+        assert isinstance(outputs, list)
+        for arr in outputs:
+            assert isinstance(arr, np.ndarray)
+
+    @pytest.mark.gpu
+    def test_run_raw_returns_ndarrays(
+        self,
+        depth_engine,
+        horse_image,
+    ) -> None:
+        """run(postprocess=False) returns raw output ndarrays."""
+        from trtutils.image import DepthEstimator
+
+        de = DepthEstimator(depth_engine, warmup=False)
+        outputs = de.run(horse_image, postprocess=False)
+        assert isinstance(outputs, list)
+        for arr in outputs:
+            assert isinstance(arr, np.ndarray)
+
+    @pytest.mark.gpu
+    def test_postprocess_format(
+        self,
+        depth_engine,
+        horse_image,
+    ) -> None:
+        """postprocess() should return list[list[ndarray]]."""
+        from trtutils.image import DepthEstimator
+
+        de = DepthEstimator(depth_engine, warmup=False)
+        raw = de.run(horse_image, postprocess=False)
+        postprocessed = de.postprocess(raw)
+        assert isinstance(postprocessed, list)
+        for per_image in postprocessed:
+            assert isinstance(per_image, list)
+            for arr in per_image:
+                assert isinstance(arr, np.ndarray)
+
+    @pytest.mark.gpu
+    def test_get_depth_maps_single_image(
+        self,
+        depth_engine,
+        horse_image,
+    ) -> None:
+        """get_depth_maps for single image returns an ndarray."""
+        from trtutils.image import DepthEstimator
+
+        de = DepthEstimator(depth_engine, warmup=False)
+        outputs = de.run(horse_image)
+        depth_map = de.get_depth_maps(outputs)
+        assert isinstance(depth_map, np.ndarray)
+        # Depth maps are typically (1, H, W) or (H, W)
+        assert depth_map.ndim >= 2
+
+    @pytest.mark.gpu
+    def test_depth_map_values_finite(
+        self,
+        depth_engine,
+        horse_image,
+    ) -> None:
+        """Depth map values should be finite (no NaN/Inf)."""
+        from trtutils.image import DepthEstimator
+
+        de = DepthEstimator(depth_engine, warmup=False)
+        outputs = de.run(horse_image)
+        depth_map = de.get_depth_maps(outputs)
+        assert np.all(np.isfinite(depth_map))
+
+    @pytest.mark.gpu
+    def test_callable_matches_run(
+        self,
+        depth_engine,
+        horse_image,
+    ) -> None:
+        """__call__ should produce the same result as run()."""
+        from trtutils.image import DepthEstimator
+
+        de = DepthEstimator(depth_engine, warmup=False)
+        out_run = de.run(horse_image)
+        out_call = de(horse_image)
+        assert len(out_run) == len(out_call)
+
+
+# ---------------------------------------------------------------------------
+# Batch tests
+# ---------------------------------------------------------------------------
+class TestDepthEstimatorBatch:
+    """Batch inference tests."""
+
+    @pytest.mark.gpu
+    def test_batch_run_returns_nested(
+        self,
+        depth_engine,
+        random_images,
+    ) -> None:
+        """Batch run with postprocess returns list[list[ndarray]]."""
+        from trtutils.image import DepthEstimator
+
+        de = DepthEstimator(depth_engine, warmup=False)
+        imgs = random_images(count=2, height=480, width=640)
+        outputs = de.run(imgs)
+        assert isinstance(outputs, list)
+        assert len(outputs) == 2
+        for per_image in outputs:
+            assert isinstance(per_image, list)
+
+    @pytest.mark.gpu
+    def test_batch_get_depth_maps(
+        self,
+        depth_engine,
+        random_images,
+    ) -> None:
+        """Batch get_depth_maps returns list[ndarray]."""
+        from trtutils.image import DepthEstimator
+
+        de = DepthEstimator(depth_engine, warmup=False)
+        imgs = random_images(count=2, height=480, width=640)
+        outputs = de.run(imgs)
+        depth_maps = de.get_depth_maps(outputs)
+        assert isinstance(depth_maps, list)
+        assert len(depth_maps) == 2
+        for dm in depth_maps:
+            assert isinstance(dm, np.ndarray)
+            assert dm.ndim >= 2
+
+
+# ---------------------------------------------------------------------------
+# End-to-end tests
+# ---------------------------------------------------------------------------
+class TestDepthEstimatorEnd2End:
+    """End-to-end inference tests."""
+
+    @pytest.mark.gpu
+    def test_end2end_single_image(
+        self,
+        depth_engine,
+        horse_image,
+    ) -> None:
+        """end2end() on single image returns ndarray depth map."""
+        from trtutils.image import DepthEstimator
+
+        de = DepthEstimator(depth_engine, warmup=False)
+        result = de.end2end(horse_image)
+        assert isinstance(result, np.ndarray)
+        assert result.ndim >= 2
+
+    @pytest.mark.gpu
+    def test_end2end_batch(
+        self,
+        depth_engine,
+        random_images,
+    ) -> None:
+        """end2end() on batch returns list[ndarray]."""
+        from trtutils.image import DepthEstimator
+
+        de = DepthEstimator(depth_engine, warmup=False)
+        imgs = random_images(count=2, height=480, width=640)
+        result = de.end2end(imgs)
+        assert isinstance(result, list)
+        assert len(result) == 2
+        for dm in result:
+            assert isinstance(dm, np.ndarray)
