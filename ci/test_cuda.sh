@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CUDA_VERSION="${1:?Usage: $0 <cuda-version> [--test] [--lint] [--typecheck] [--all]}"
+shift
+
 COMPOSE="docker compose -f docker/docker-compose.test.yml"
-SERVICE="test-cu11"
+SERVICE="test-cu${CUDA_VERSION}"
 
 # Build the container (uses cache if already built)
 $COMPOSE build $SERVICE
@@ -34,7 +37,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--test] [--lint] [--typecheck] [--all]"
+            echo "Usage: $0 <cuda-version> [--test] [--lint] [--typecheck] [--all]"
             exit 1
             ;;
     esac
@@ -51,7 +54,7 @@ fi
 EXIT_CODE=0
 
 if [ "$DO_LINT" = true ]; then
-    echo "=== Running lint (cu11) ==="
+    echo "=== Running lint (cu${CUDA_VERSION}) ==="
     if $COMPOSE run --rm $SERVICE ./ci/run_lint.sh --no-fix; then
         echo "Lint passed"
     else
@@ -61,7 +64,7 @@ if [ "$DO_LINT" = true ]; then
 fi
 
 if [ "$DO_TYPECHECK" = true ]; then
-    echo "=== Running typecheck (cu11) ==="
+    echo "=== Running typecheck (cu${CUDA_VERSION}) ==="
     if $COMPOSE run --rm $SERVICE ./ci/run_type_check.sh; then
         echo "Typecheck passed"
     else
@@ -71,7 +74,7 @@ if [ "$DO_TYPECHECK" = true ]; then
 fi
 
 if [ "$DO_TEST" = true ]; then
-    echo "=== Running tests (cu11) ==="
+    echo "=== Running tests (cu${CUDA_VERSION}) ==="
     if $COMPOSE run --rm $SERVICE python3 -m pytest -rP -v tests/; then
         echo "Tests passed"
     else

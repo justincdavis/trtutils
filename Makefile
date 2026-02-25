@@ -58,22 +58,22 @@ docker:
 	docker build -f docker/Dockerfile.act -t trtutils-act:latest .
 
 test-cu11:
-	./ci/test_cu11.sh --test
+	./ci/test_cuda.sh 11 --test
 
 test-cu12:
-	./ci/test_cu12.sh --test
+	./ci/test_cuda.sh 12 --test
 
 test-cu13:
-	./ci/test_cu13.sh --test
+	./ci/test_cuda.sh 13 --test
 
 ci-cu11:
-	./ci/test_cu11.sh --all
+	./ci/test_cuda.sh 11 --all
 
 ci-cu12:
-	./ci/test_cu12.sh --all
+	./ci/test_cuda.sh 12 --all
 
 ci-cu13:
-	./ci/test_cu13.sh --all
+	./ci/test_cuda.sh 13 --all
 
 docker-test-build:
 	docker compose -f docker/docker-compose.test.yml build
