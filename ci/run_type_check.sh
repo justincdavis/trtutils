@@ -15,7 +15,7 @@ else
     exit 1
 fi
 
-DIRS=("examples" "tests" "src")
+DIRS=("examples" "demos" "src")
 
 for dir in "${DIRS[@]}"; do
     echo "Type checking $dir..."
