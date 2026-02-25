@@ -23,7 +23,7 @@ extern "C" __global__ void trivial_kernel(float *out, int n) {
 class TestCreateKernelArgs:
     """Tests for create_kernel_args() argument conversion."""
 
-    def test_int_arg(self):
+    def test_int_arg(self) -> None:
         """Integer arguments are converted to uint64 arrays."""
         from trtutils.core._kernels import create_kernel_args
 
@@ -34,7 +34,7 @@ class TestCreateKernelArgs:
         assert len(intermediates) == 1
         assert intermediates[0].dtype == np.uint64
 
-    def test_float_arg(self):
+    def test_float_arg(self) -> None:
         """Float arguments are converted to float32 arrays."""
         from trtutils.core._kernels import create_kernel_args
 
@@ -43,7 +43,7 @@ class TestCreateKernelArgs:
         assert len(ptrs) == 1
         assert intermediates[0].dtype == np.float32
 
-    def test_ndarray_arg(self):
+    def test_ndarray_arg(self) -> None:
         """Pre-formed np.ndarray arguments are passed through."""
         from trtutils.core._kernels import create_kernel_args
 
@@ -52,7 +52,7 @@ class TestCreateKernelArgs:
         assert len(ptrs) == 1
         assert intermediates[0] is arr
 
-    def test_multiple_args(self):
+    def test_multiple_args(self) -> None:
         """Multiple arguments produce correct number of pointers."""
         from trtutils.core._kernels import create_kernel_args
 
@@ -60,18 +60,18 @@ class TestCreateKernelArgs:
         assert len(ptrs) == 3
         assert len(intermediates) == 3
 
-    def test_unsupported_type_raises(self):
+    def test_unsupported_type_raises(self) -> None:
         """Passing an unsupported type raises TypeError."""
         from trtutils.core._kernels import create_kernel_args
 
         with pytest.raises(TypeError, match="Unrecognized arg type"):
             create_kernel_args("not_a_valid_arg")
 
-    def test_verbose_output(self):
+    def test_verbose_output(self) -> None:
         """verbose=True does not raise (exercises LOG.debug paths)."""
         from trtutils.core._kernels import create_kernel_args
 
-        ptrs, intermediates = create_kernel_args(42, 3.14, verbose=True)
+        ptrs, _intermediates = create_kernel_args(42, 3.14, verbose=True)
         assert len(ptrs) == 2
 
     @pytest.mark.parametrize(
@@ -83,7 +83,7 @@ class TestCreateKernelArgs:
             pytest.param(np.uint8, id="uint8"),
         ],
     )
-    def test_ndarray_various_dtypes(self, dtype):
+    def test_ndarray_various_dtypes(self, dtype) -> None:
         """np.ndarray args with various dtypes are passed through."""
         from trtutils.core._kernels import create_kernel_args
 
@@ -100,7 +100,7 @@ class TestCreateKernelArgs:
 class TestKernelCompilation:
     """Tests for Kernel class compilation from .cu source."""
 
-    def test_compile_from_cu_file(self, tmp_path):
+    def test_compile_from_cu_file(self, tmp_path) -> None:
         """Kernel compiles from a .cu file path."""
         from trtutils.core._kernels import Kernel
 
@@ -112,7 +112,7 @@ class TestKernelCompilation:
         assert kernel._module is not None
         kernel.free()
 
-    def test_compile_from_string_path(self, tmp_path):
+    def test_compile_from_string_path(self, tmp_path) -> None:
         """Kernel accepts a string path (not just Path objects)."""
         from trtutils.core._kernels import Kernel
 
@@ -123,7 +123,7 @@ class TestKernelCompilation:
         assert kernel._kernel is not None
         kernel.free()
 
-    def test_kernel_has_function(self, tmp_path):
+    def test_kernel_has_function(self, tmp_path) -> None:
         """Kernel._kernel attribute is set after compilation."""
         from trtutils.core._kernels import Kernel
 
@@ -134,7 +134,7 @@ class TestKernelCompilation:
         assert kernel._kernel is not None
         kernel.free()
 
-    def test_kernel_has_module(self, tmp_path):
+    def test_kernel_has_module(self, tmp_path) -> None:
         """Kernel._module attribute is set after compilation."""
         from trtutils.core._kernels import Kernel
 
@@ -145,7 +145,7 @@ class TestKernelCompilation:
         assert kernel._module is not None
         kernel.free()
 
-    def test_free_unloads(self, tmp_path):
+    def test_free_unloads(self, tmp_path) -> None:
         """free() sets _module to None and _freed to True."""
         from trtutils.core._kernels import Kernel
 
@@ -157,7 +157,7 @@ class TestKernelCompilation:
         assert kernel._module is None
         assert kernel._freed is True
 
-    def test_free_idempotent(self, tmp_path):
+    def test_free_idempotent(self, tmp_path) -> None:
         """Calling free() twice does not raise."""
         from trtutils.core._kernels import Kernel
 
@@ -168,7 +168,7 @@ class TestKernelCompilation:
         kernel.free()
         kernel.free()  # Should not raise
 
-    def test_del_calls_free(self, tmp_path):
+    def test_del_calls_free(self, tmp_path) -> None:
         """__del__ cleans up without error."""
         from trtutils.core._kernels import Kernel
 
@@ -178,7 +178,7 @@ class TestKernelCompilation:
         kernel = Kernel(cu_file, "trivial_kernel")
         del kernel  # Should not crash
 
-    def test_compile_with_verbose(self, tmp_path):
+    def test_compile_with_verbose(self, tmp_path) -> None:
         """Kernel with verbose=True does not raise."""
         from trtutils.core._kernels import Kernel
 
@@ -197,7 +197,7 @@ class TestKernelCompilation:
 class TestKernelArgs:
     """Tests for Kernel.create_args() and the deque-based arg cache."""
 
-    def test_create_args_returns_ndarray(self, tmp_path):
+    def test_create_args_returns_ndarray(self, tmp_path) -> None:
         """create_args returns a numpy array of pointers."""
         from trtutils.core._kernels import Kernel
 
@@ -211,7 +211,7 @@ class TestKernelArgs:
         assert len(args) == 2
         kernel.free()
 
-    def test_args_caching(self, tmp_path):
+    def test_args_caching(self, tmp_path) -> None:
         """The deque cache retains intermediate arg arrays."""
         from trtutils.core._kernels import Kernel
 
@@ -228,7 +228,7 @@ class TestKernelArgs:
         assert len(kernel._inter_args) == 2
         kernel.free()
 
-    def test_create_args_pointer_arg(self, tmp_path):
+    def test_create_args_pointer_arg(self, tmp_path) -> None:
         """Integer pointer args are handled correctly."""
         from trtutils.core._kernels import Kernel
         from trtutils.core._memory import cuda_free, cuda_malloc
@@ -251,7 +251,7 @@ class TestKernelArgs:
 class TestKernelLaunch:
     """Tests for launching a compiled kernel."""
 
-    def test_launch_simple_kernel(self, tmp_path, cuda_stream):
+    def test_launch_simple_kernel(self, tmp_path, cuda_stream) -> None:
         """Execute a compiled kernel via launch_kernel."""
         from trtutils.core._kernels import Kernel, launch_kernel
         from trtutils.core._memory import (
@@ -289,7 +289,7 @@ class TestKernelLaunch:
         kernel.free()
         cuda_free(d_out)
 
-    def test_launch_via_call(self, tmp_path, cuda_stream):
+    def test_launch_via_call(self, tmp_path, cuda_stream) -> None:
         """Execute a kernel via Kernel.__call__ (the call method)."""
         from trtutils.core._kernels import Kernel
         from trtutils.core._memory import (
@@ -321,7 +321,7 @@ class TestKernelLaunch:
         kernel.free()
         cuda_free(d_out)
 
-    def test_launch_with_verbose(self, tmp_path, cuda_stream):
+    def test_launch_with_verbose(self, tmp_path, cuda_stream) -> None:
         """Kernel.call with verbose=True does not raise."""
         from trtutils.core._kernels import Kernel
         from trtutils.core._memory import cuda_free, cuda_malloc

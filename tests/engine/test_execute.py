@@ -6,10 +6,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 pytestmark = [pytest.mark.gpu]
 
@@ -329,7 +332,7 @@ class TestExecuteNoCopyBehavior:
         outputs_first = engine.execute(  # type: ignore[union-attr]
             random_input, no_copy=True
         )
-        saved_data = [o.copy() for o in outputs_first]
+        [o.copy() for o in outputs_first]
 
         # Run again with different input (new random)
         new_input = engine.get_random_input(new=True)  # type: ignore[union-attr]

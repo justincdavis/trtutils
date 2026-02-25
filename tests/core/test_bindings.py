@@ -13,7 +13,7 @@ import pytest
 class TestBindingDataclass:
     """Tests for the Binding dataclass fields and free() method."""
 
-    def test_binding_fields(self):
+    def test_binding_fields(self) -> None:
         """Binding has all expected dataclass fields."""
         from trtutils.core._bindings import create_binding
 
@@ -32,7 +32,7 @@ class TestBindingDataclass:
         assert hasattr(binding, "unified_mem")
         binding.free()
 
-    def test_binding_is_dataclass(self):
+    def test_binding_is_dataclass(self) -> None:
         """Binding is a dataclass instance."""
         import dataclasses
 
@@ -43,7 +43,7 @@ class TestBindingDataclass:
         assert dataclasses.is_dataclass(binding)
         binding.free()
 
-    def test_binding_free(self):
+    def test_binding_free(self) -> None:
         """free() deallocates memory without error."""
         from trtutils.core._bindings import create_binding
 
@@ -51,7 +51,7 @@ class TestBindingDataclass:
         binding = create_binding(arr)
         binding.free()  # Should not raise
 
-    def test_binding_free_idempotent(self):
+    def test_binding_free_idempotent(self) -> None:
         """Calling free() multiple times does not crash (via __del__)."""
         from trtutils.core._bindings import create_binding
 
@@ -61,7 +61,7 @@ class TestBindingDataclass:
         # The __del__ will call free() again and suppress RuntimeError
         del binding  # Should not crash
 
-    def test_binding_shape_matches(self):
+    def test_binding_shape_matches(self) -> None:
         """Binding shape matches the input array shape."""
         from trtutils.core._bindings import create_binding
 
@@ -71,7 +71,7 @@ class TestBindingDataclass:
         assert binding.shape == list(shape)
         binding.free()
 
-    def test_binding_dtype_matches(self):
+    def test_binding_dtype_matches(self) -> None:
         """Binding dtype matches the input array dtype."""
         from trtutils.core._bindings import create_binding
 
@@ -96,7 +96,7 @@ class TestCreateBinding:
             pytest.param(np.int32, id="int32"),
         ],
     )
-    def test_create_binding_dtypes(self, dtype):
+    def test_create_binding_dtypes(self, dtype) -> None:
         """create_binding works with various numpy dtypes."""
         from trtutils.core._bindings import create_binding
 
@@ -107,7 +107,7 @@ class TestCreateBinding:
         assert isinstance(binding.host_allocation, np.ndarray)
         binding.free()
 
-    def test_create_binding_default_pagelocked(self):
+    def test_create_binding_default_pagelocked(self) -> None:
         """Defaults to pagelocked memory (pagelocked_mem=None -> True)."""
         from trtutils.core._bindings import create_binding
 
@@ -116,7 +116,7 @@ class TestCreateBinding:
         assert binding.pagelocked_mem is True
         binding.free()
 
-    def test_create_binding_no_pagelocked(self):
+    def test_create_binding_no_pagelocked(self) -> None:
         """pagelocked_mem=False uses regular numpy arrays for host."""
         from trtutils.core._bindings import create_binding
 
@@ -126,7 +126,7 @@ class TestCreateBinding:
         assert isinstance(binding.host_allocation, np.ndarray)
         binding.free()
 
-    def test_create_binding_pagelocked_explicit(self):
+    def test_create_binding_pagelocked_explicit(self) -> None:
         """pagelocked_mem=True uses page-locked memory."""
         from trtutils.core._bindings import create_binding
 
@@ -135,7 +135,7 @@ class TestCreateBinding:
         assert binding.pagelocked_mem is True
         binding.free()
 
-    def test_create_binding_unified_memory(self):
+    def test_create_binding_unified_memory(self) -> None:
         """pagelocked=True, unified=True uses the unified memory path."""
         from trtutils.core._bindings import create_binding
 
@@ -145,7 +145,7 @@ class TestCreateBinding:
         assert binding.allocation != 0
         binding.free()
 
-    def test_create_binding_with_array_data(self):
+    def test_create_binding_with_array_data(self) -> None:
         """use_array_data=True copies data from the input array."""
         from trtutils.core._bindings import create_binding
 
@@ -154,7 +154,7 @@ class TestCreateBinding:
         np.testing.assert_array_equal(binding.host_allocation, arr)
         binding.free()
 
-    def test_create_binding_without_array_data(self):
+    def test_create_binding_without_array_data(self) -> None:
         """use_array_data=None does not copy input data."""
         from trtutils.core._bindings import create_binding
 
@@ -164,7 +164,7 @@ class TestCreateBinding:
         np.testing.assert_array_equal(binding.host_allocation, np.zeros_like(arr))
         binding.free()
 
-    def test_create_binding_name_and_id(self):
+    def test_create_binding_name_and_id(self) -> None:
         """create_binding stores the given name and bind_id."""
         from trtutils.core._bindings import create_binding
 
@@ -174,7 +174,7 @@ class TestCreateBinding:
         assert binding.name == "test_tensor"
         binding.free()
 
-    def test_create_binding_is_input(self):
+    def test_create_binding_is_input(self) -> None:
         """create_binding stores the is_input flag."""
         from trtutils.core._bindings import create_binding
 
@@ -186,7 +186,7 @@ class TestCreateBinding:
         binding_input.free()
         binding_output.free()
 
-    def test_create_binding_multidim_shape(self):
+    def test_create_binding_multidim_shape(self) -> None:
         """create_binding preserves multi-dimensional shapes."""
         from trtutils.core._bindings import create_binding
 
@@ -205,14 +205,14 @@ class TestAllocateBindings:
     """Tests for allocate_bindings() using a real TensorRT engine."""
 
     @pytest.mark.parametrize(
-        "pagelocked,unified",
+        ("pagelocked", "unified"),
         [
             pytest.param(True, False, id="pagelocked"),
             pytest.param(False, False, id="default"),
             pytest.param(True, True, id="unified"),
         ],
     )
-    def test_allocate_returns_io_bindings(self, simple_engine_path, pagelocked, unified):
+    def test_allocate_returns_io_bindings(self, simple_engine_path, pagelocked, unified) -> None:
         """allocate_bindings returns (inputs, outputs, allocations)."""
         from trtutils.core._bindings import allocate_bindings
         from trtutils.core._engine import create_engine
@@ -239,7 +239,7 @@ class TestAllocateBindings:
         finally:
             destroy_stream(stream)
 
-    def test_bindings_count_matches_engine(self, simple_engine_path):
+    def test_bindings_count_matches_engine(self, simple_engine_path) -> None:
         """Number of input+output bindings matches engine tensor count."""
         from trtutils._flags import FLAGS
         from trtutils.core._bindings import allocate_bindings
@@ -250,10 +250,7 @@ class TestAllocateBindings:
         try:
             inputs, outputs, allocations = allocate_bindings(engine, context)
 
-            if FLAGS.TRT_10:
-                expected = engine.num_io_tensors
-            else:
-                expected = engine.num_bindings
+            expected = engine.num_io_tensors if FLAGS.TRT_10 else engine.num_bindings
 
             assert len(inputs) + len(outputs) == expected
             assert len(allocations) == expected
@@ -263,7 +260,7 @@ class TestAllocateBindings:
         finally:
             destroy_stream(stream)
 
-    def test_bindings_have_device_allocation(self, simple_engine_path):
+    def test_bindings_have_device_allocation(self, simple_engine_path) -> None:
         """Each binding has a non-zero device allocation pointer."""
         from trtutils.core._bindings import allocate_bindings
         from trtutils.core._engine import create_engine
@@ -282,7 +279,7 @@ class TestAllocateBindings:
         finally:
             destroy_stream(stream)
 
-    def test_bindings_have_host_allocation(self, simple_engine_path):
+    def test_bindings_have_host_allocation(self, simple_engine_path) -> None:
         """Each binding has a numpy array host allocation."""
         from trtutils.core._bindings import allocate_bindings
         from trtutils.core._engine import create_engine
@@ -300,7 +297,7 @@ class TestAllocateBindings:
         finally:
             destroy_stream(stream)
 
-    def test_free_all_bindings(self, simple_engine_path):
+    def test_free_all_bindings(self, simple_engine_path) -> None:
         """All bindings can be freed without error."""
         from trtutils.core._bindings import allocate_bindings
         from trtutils.core._engine import create_engine
@@ -315,7 +312,7 @@ class TestAllocateBindings:
         finally:
             destroy_stream(stream)
 
-    def test_bindings_input_output_flags(self, simple_engine_path):
+    def test_bindings_input_output_flags(self, simple_engine_path) -> None:
         """Input bindings have is_input=True, outputs is_input=False."""
         from trtutils.core._bindings import allocate_bindings
         from trtutils.core._engine import create_engine

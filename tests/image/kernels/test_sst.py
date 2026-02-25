@@ -87,7 +87,8 @@ def _run_sst_kernel(
     kernel_obj = Kernel(kernel_data[0], kernel_data[1])
 
     if is_imagenet:
-        assert mean is not None and std is not None
+        assert mean is not None
+        assert std is not None
         mean_array = np.array(mean, dtype=np.float32).reshape(1, 3, 1, 1)
         std_array = np.array(std, dtype=np.float32).reshape(1, 3, 1, 1)
         mean_binding = create_binding(mean_array)

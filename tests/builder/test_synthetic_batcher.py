@@ -10,7 +10,7 @@ import pytest
 class TestSyntheticBatcherInit:
     """Tests for SyntheticBatcher initialization."""
 
-    def test_init_defaults(self):
+    def test_init_defaults(self) -> None:
         """Default initialization works."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -21,7 +21,7 @@ class TestSyntheticBatcherInit:
         assert batcher.num_batches == 10
         assert batcher.batch_size == 8
 
-    def test_custom_params(self):
+    def test_custom_params(self) -> None:
         """Custom parameters are stored correctly."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -35,7 +35,7 @@ class TestSyntheticBatcherInit:
         assert batcher.num_batches == 5
         assert batcher.batch_size == 4
 
-    def test_invalid_order(self):
+    def test_invalid_order(self) -> None:
         """ValueError for invalid order."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -46,7 +46,7 @@ class TestSyntheticBatcherInit:
                 order="INVALID",
             )
 
-    def test_num_batches_zero(self):
+    def test_num_batches_zero(self) -> None:
         """ValueError when num_batches < 1."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -57,7 +57,7 @@ class TestSyntheticBatcherInit:
                 num_batches=0,
             )
 
-    def test_nhwc_order(self):
+    def test_nhwc_order(self) -> None:
         """NHWC order sets correct data shape."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -68,7 +68,7 @@ class TestSyntheticBatcherInit:
         )
         assert batcher.num_batches == 10
 
-    def test_verbose(self):
+    def test_verbose(self) -> None:
         """Verbose mode does not raise."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -85,7 +85,7 @@ class TestSyntheticBatcherOutput:
     """Tests for SyntheticBatcher output shape, dtype, and data range."""
 
     @pytest.mark.parametrize("order", ["NCHW", "NHWC"], ids=["nchw", "nhwc"])
-    def test_batch_shape(self, order):
+    def test_batch_shape(self, order) -> None:
         """Shape matches config for both NCHW and NHWC."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -105,7 +105,7 @@ class TestSyntheticBatcherOutput:
     @pytest.mark.parametrize(
         "dtype", [np.float32, np.float16, np.int8], ids=["fp32", "fp16", "int8"]
     )
-    def test_batch_dtype(self, dtype):
+    def test_batch_dtype(self, dtype) -> None:
         """Dtype matches config."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -117,7 +117,7 @@ class TestSyntheticBatcherOutput:
         batch = batcher.get_next_batch()
         assert batch.dtype == dtype
 
-    def test_data_range(self):
+    def test_data_range(self) -> None:
         """Values fall within configured data_range."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -138,7 +138,7 @@ class TestSyntheticBatcherIteration:
     """Tests for SyntheticBatcher batch retrieval."""
 
     @pytest.mark.parametrize("num_batches", [1, 5, 10], ids=["1_batch", "5_batches", "10_batches"])
-    def test_correct_batch_count(self, num_batches):
+    def test_correct_batch_count(self, num_batches) -> None:
         """Exact num_batches batches are produced."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -152,7 +152,7 @@ class TestSyntheticBatcherIteration:
             count += 1
         assert count == num_batches
 
-    def test_exhausted_returns_none(self):
+    def test_exhausted_returns_none(self) -> None:
         """get_next_batch returns None after all batches consumed."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -165,7 +165,7 @@ class TestSyntheticBatcherIteration:
         batcher.get_next_batch()
         assert batcher.get_next_batch() is None
 
-    def test_num_batches_property(self):
+    def test_num_batches_property(self) -> None:
         """Returns configured count."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -176,7 +176,7 @@ class TestSyntheticBatcherIteration:
         )
         assert batcher.num_batches == 7
 
-    def test_batch_size_property(self):
+    def test_batch_size_property(self) -> None:
         """Returns configured batch size."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -187,7 +187,7 @@ class TestSyntheticBatcherIteration:
         )
         assert batcher.batch_size == 16
 
-    def test_c_contiguous_output(self):
+    def test_c_contiguous_output(self) -> None:
         """Output is C-contiguous."""
         from trtutils.builder._batcher import SyntheticBatcher
 
@@ -199,7 +199,7 @@ class TestSyntheticBatcherIteration:
         batch = batcher.get_next_batch()
         assert batch.flags["C_CONTIGUOUS"]
 
-    def test_dtype_conversion(self):
+    def test_dtype_conversion(self) -> None:
         """Data is converted to requested dtype."""
         from trtutils.builder._batcher import SyntheticBatcher
 

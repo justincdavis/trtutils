@@ -12,7 +12,7 @@ import pytest
 class TestCreateEngine:
     """Tests for create_engine()."""
 
-    def test_create_from_valid_path(self, simple_engine_path):
+    def test_create_from_valid_path(self, simple_engine_path) -> None:
         """create_engine returns a 4-tuple (engine, context, logger, stream)."""
         from trtutils.core._engine import create_engine
         from trtutils.core._stream import destroy_stream
@@ -29,7 +29,7 @@ class TestCreateEngine:
 
         destroy_stream(stream)
 
-    def test_create_with_str_path(self, simple_engine_path):
+    def test_create_with_str_path(self, simple_engine_path) -> None:
         """create_engine accepts a string path."""
         from trtutils.core._engine import create_engine
         from trtutils.core._stream import destroy_stream
@@ -38,7 +38,7 @@ class TestCreateEngine:
         assert engine is not None
         destroy_stream(stream)
 
-    def test_create_with_external_stream(self, simple_engine_path, cuda_stream):
+    def test_create_with_external_stream(self, simple_engine_path, cuda_stream) -> None:
         """create_engine reuses the provided stream."""
         from trtutils.core._engine import create_engine
 
@@ -47,7 +47,7 @@ class TestCreateEngine:
         # Should return the same stream we passed in
         assert stream is cuda_stream
 
-    def test_create_without_stream(self, simple_engine_path):
+    def test_create_without_stream(self, simple_engine_path) -> None:
         """create_engine creates a new stream when none is provided."""
         from trtutils.core._engine import create_engine
         from trtutils.core._stream import destroy_stream
@@ -56,7 +56,7 @@ class TestCreateEngine:
         assert stream is not None
         destroy_stream(stream)
 
-    def test_invalid_path_raises(self, tmp_path):
+    def test_invalid_path_raises(self, tmp_path) -> None:
         """create_engine raises FileNotFoundError for a non-existent path."""
         from trtutils.core._engine import create_engine
 
@@ -64,7 +64,7 @@ class TestCreateEngine:
         with pytest.raises(FileNotFoundError, match="Engine file not found"):
             create_engine(fake_path)
 
-    def test_no_warn(self, simple_engine_path):
+    def test_no_warn(self, simple_engine_path) -> None:
         """create_engine with no_warn=True suppresses warnings without error."""
         from trtutils.core._engine import create_engine
         from trtutils.core._stream import destroy_stream
@@ -81,7 +81,7 @@ class TestCreateEngine:
 class TestGetEngineNames:
     """Tests for get_engine_names()."""
 
-    def test_returns_input_output_names(self, simple_engine_path):
+    def test_returns_input_output_names(self, simple_engine_path) -> None:
         """get_engine_names returns a tuple of (input_names, output_names)."""
         from trtutils.core._engine import create_engine, get_engine_names
         from trtutils.core._stream import destroy_stream
@@ -98,7 +98,7 @@ class TestGetEngineNames:
         finally:
             destroy_stream(stream)
 
-    def test_names_are_non_empty(self, simple_engine_path):
+    def test_names_are_non_empty(self, simple_engine_path) -> None:
         """Engine has at least one input and one output name."""
         from trtutils.core._engine import create_engine, get_engine_names
         from trtutils.core._stream import destroy_stream
@@ -111,7 +111,7 @@ class TestGetEngineNames:
         finally:
             destroy_stream(stream)
 
-    def test_names_are_strings(self, simple_engine_path):
+    def test_names_are_strings(self, simple_engine_path) -> None:
         """All returned names are strings."""
         from trtutils.core._engine import create_engine, get_engine_names
         from trtutils.core._stream import destroy_stream
@@ -125,7 +125,7 @@ class TestGetEngineNames:
         finally:
             destroy_stream(stream)
 
-    def test_names_match_engine_tensor_count(self, simple_engine_path):
+    def test_names_match_engine_tensor_count(self, simple_engine_path) -> None:
         """Total names count matches engine's io tensor count."""
         from trtutils._flags import FLAGS
         from trtutils.core._engine import create_engine, get_engine_names
@@ -135,10 +135,7 @@ class TestGetEngineNames:
         try:
             input_names, output_names = get_engine_names(engine)
 
-            if FLAGS.TRT_10:
-                expected = engine.num_io_tensors
-            else:
-                expected = engine.num_bindings
+            expected = engine.num_io_tensors if FLAGS.TRT_10 else engine.num_bindings
 
             assert len(input_names) + len(output_names) == expected
         finally:

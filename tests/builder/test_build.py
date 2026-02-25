@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +139,7 @@ class TestBuildEngineCache:
 
         # First build: store in cache
         build_engine(onnx_path, output_engine_path, cache=True, optimization_level=1)
-        first_size = output_engine_path.stat().st_size
+        output_engine_path.stat().st_size
 
         # Remove output file but cache should still have it
         output_engine_path.unlink()
@@ -204,7 +207,7 @@ class TestBuildEngineTimingCache:
             timing_cache=timing_cache_path,
             optimization_level=1,
         )
-        first_size = timing_cache_path.stat().st_size
+        timing_cache_path.stat().st_size
 
         # Second build reads existing timing cache
         out2 = output_engine_path.parent / "test2.engine"

@@ -9,28 +9,28 @@ import pytest
 class TestMakePluginField:
     """Tests for make_plugin_field() utility."""
 
-    def test_int_value(self):
+    def test_int_value(self) -> None:
         """Integer value creates INT32 field."""
         from trtutils.builder.hooks._common import make_plugin_field
 
         field = make_plugin_field("test_int", 42)
         assert field.name == "test_int"
 
-    def test_float_value(self):
+    def test_float_value(self) -> None:
         """Float value creates FLOAT32 field."""
         from trtutils.builder.hooks._common import make_plugin_field
 
         field = make_plugin_field("test_float", 0.5)
         assert field.name == "test_float"
 
-    def test_list_int_value(self):
+    def test_list_int_value(self) -> None:
         """List of ints creates INT32 field."""
         from trtutils.builder.hooks._common import make_plugin_field
 
         field = make_plugin_field("test_list", [1, 2, 3])
         assert field.name == "test_list"
 
-    def test_list_float_value(self):
+    def test_list_float_value(self) -> None:
         """List of floats creates FLOAT32 field."""
         from trtutils.builder.hooks._common import make_plugin_field
 
@@ -42,14 +42,14 @@ class TestMakePluginField:
 class TestYoloEfficientNmsHook:
     """Tests for yolo_efficient_nms_hook() factory function."""
 
-    def test_returns_callable(self):
+    def test_returns_callable(self) -> None:
         """yolo_efficient_nms_hook returns a callable."""
         from trtutils.builder.hooks._yolo import yolo_efficient_nms_hook
 
         hook = yolo_efficient_nms_hook(num_classes=80)
         assert callable(hook)
 
-    def test_custom_params(self):
+    def test_custom_params(self) -> None:
         """Custom parameters are accepted."""
         from trtutils.builder.hooks._yolo import yolo_efficient_nms_hook
 
@@ -63,7 +63,7 @@ class TestYoloEfficientNmsHook:
         )
         assert callable(hook)
 
-    def test_default_params(self):
+    def test_default_params(self) -> None:
         """Default parameters produce a valid hook."""
         from trtutils.builder.hooks._yolo import yolo_efficient_nms_hook
 
@@ -82,7 +82,7 @@ class TestYoloHookNetworkModification:
         network, builder, config, _ = read_onnx(onnx_path)
         return network, builder, config
 
-    def test_yolov10_passthrough(self, onnx_path):
+    def test_yolov10_passthrough(self, onnx_path) -> None:
         """YOLOv10-style (1,300,6) output passes through unmodified."""
         from unittest.mock import MagicMock
 
@@ -100,15 +100,14 @@ class TestYoloHookNetworkModification:
         # Should return the same network unmodified
         assert result is mock_network
 
-    def test_hook_modifies_network(self, onnx_path):
+    def test_hook_modifies_network(self, onnx_path) -> None:
         """Hook adds EfficientNMS plugin to YOLO-like network."""
         from trtutils.builder._onnx import read_onnx
         from trtutils.builder.hooks._yolo import yolo_efficient_nms_hook
 
-        network, _, config, _ = read_onnx(onnx_path)
+        network, _, _config, _ = read_onnx(onnx_path)
 
         # Only run if the model has a compatible output shape
-        original_outputs = network.num_outputs
         output = network.get_output(0)
         dims = output.shape
 
@@ -130,7 +129,7 @@ class TestYoloHookNetworkModification:
             pytest.skip("EfficientNMS_TRT plugin not available")
 
     @pytest.mark.parametrize("box_coding", ["center_size", "corner"], ids=["center", "corner"])
-    def test_box_coding_modes(self, box_coding):
+    def test_box_coding_modes(self, box_coding) -> None:
         """Both box coding modes produce valid hooks."""
         from trtutils.builder.hooks._yolo import yolo_efficient_nms_hook
 
@@ -140,21 +139,21 @@ class TestYoloHookNetworkModification:
     @pytest.mark.parametrize(
         "class_agnostic", [True, False, None], ids=["agnostic", "per_class", "default"]
     )
-    def test_class_agnostic(self, class_agnostic):
+    def test_class_agnostic(self, class_agnostic) -> None:
         """class_agnostic parameter variants produce valid hooks."""
         from trtutils.builder.hooks._yolo import yolo_efficient_nms_hook
 
         hook = yolo_efficient_nms_hook(num_classes=80, class_agnostic=class_agnostic)
         assert callable(hook)
 
-    def test_with_objectness_mock(self):
+    def test_with_objectness_mock(self) -> None:
         """Hook handles YOLOX-style output with objectness channel (N+5 channels)."""
         from unittest.mock import MagicMock, PropertyMock
 
         from trtutils.builder.hooks._yolo import yolo_efficient_nms_hook
 
         num_classes = 80
-        hook = yolo_efficient_nms_hook(num_classes=num_classes)
+        yolo_efficient_nms_hook(num_classes=num_classes)
 
         # Mock a network where the output has channels_with_obj = 85 (80 + 5)
         mock_network = MagicMock()
@@ -177,7 +176,7 @@ class TestYoloHookNetworkModification:
         hook2 = yolo_efficient_nms_hook(num_classes=num_classes)
         assert callable(hook2)
 
-    def test_without_objectness_mock(self):
+    def test_without_objectness_mock(self) -> None:
         """Hook handles YOLOv8-style output without objectness (N+4 channels)."""
         from trtutils.builder.hooks._yolo import yolo_efficient_nms_hook
 

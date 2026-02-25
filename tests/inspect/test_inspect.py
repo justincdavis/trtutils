@@ -52,7 +52,7 @@ class TestInspectEngine:
         for entry in inputs:
             assert isinstance(entry, tuple)
             assert len(entry) == 4
-            name, shape, dtype, fmt = entry
+            name, _shape, _dtype, _fmt = entry
             assert isinstance(name, str)
             assert len(name) > 0
 
@@ -68,7 +68,7 @@ class TestInspectEngine:
         for entry in outputs:
             assert isinstance(entry, tuple)
             assert len(entry) == 4
-            name, shape, dtype, fmt = entry
+            name, _shape, _dtype, _fmt = entry
             assert isinstance(name, str)
             assert len(name) > 0
 
@@ -121,7 +121,7 @@ class TestInspectOnnxLayers:
         for entry in layers:
             assert isinstance(entry, tuple)
             assert len(entry) == 4
-            idx, name, layer_type, precision = entry
+            idx, name, _layer_type, _precision = entry
             assert isinstance(idx, int)
             assert isinstance(name, str)
 

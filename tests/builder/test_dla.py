@@ -12,7 +12,7 @@ import pytest
 class TestCanRunOnDla:
     """Tests for can_run_on_dla() analysis function."""
 
-    def test_returns_tuple(self, onnx_path):
+    def test_returns_tuple(self, onnx_path) -> None:
         """can_run_on_dla returns (bool, list) tuple."""
         from trtutils.builder._dla import can_run_on_dla
 
@@ -23,7 +23,7 @@ class TestCanRunOnDla:
         assert isinstance(full_dla, bool)
         assert isinstance(chunks, list)
 
-    def test_chunks_have_correct_structure(self, onnx_path):
+    def test_chunks_have_correct_structure(self, onnx_path) -> None:
         """Each chunk is (layers, start, end, on_dla) tuple."""
         from trtutils.builder._dla import can_run_on_dla
 
@@ -36,7 +36,7 @@ class TestCanRunOnDla:
             assert isinstance(end, int)
             assert isinstance(on_dla, bool)
 
-    def test_network_input_requires_config(self, onnx_path):
+    def test_network_input_requires_config(self, onnx_path) -> None:
         """ValueError when passing network without config."""
         from trtutils.builder._dla import can_run_on_dla
         from trtutils.builder._onnx import read_onnx
@@ -45,7 +45,7 @@ class TestCanRunOnDla:
         with pytest.raises(ValueError, match="Config must be provided"):
             can_run_on_dla(network, config=None)
 
-    def test_network_input_with_config(self, onnx_path):
+    def test_network_input_with_config(self, onnx_path) -> None:
         """can_run_on_dla accepts a pre-made network with config."""
         from trtutils.builder._dla import can_run_on_dla
         from trtutils.builder._onnx import read_onnx
@@ -55,13 +55,13 @@ class TestCanRunOnDla:
         assert isinstance(full_dla, bool)
         assert isinstance(chunks, list)
 
-    def test_verbose_layers(self, onnx_path):
+    def test_verbose_layers(self, onnx_path) -> None:
         """verbose_layers=True does not raise."""
         from trtutils.builder._dla import can_run_on_dla
 
         can_run_on_dla(onnx_path, verbose_layers=True)
 
-    def test_verbose_chunks(self, onnx_path):
+    def test_verbose_chunks(self, onnx_path) -> None:
         """verbose_chunks=True does not raise."""
         from trtutils.builder._dla import can_run_on_dla
 
@@ -84,7 +84,7 @@ class TestBuildDlaEngine:
             order="NCHW",
         )
 
-    def test_build_basic(self, onnx_path, output_engine_path):
+    def test_build_basic(self, onnx_path, output_engine_path) -> None:
         """build_dla_engine runs without error."""
         from trtutils.builder._dla import build_dla_engine
 
@@ -98,7 +98,7 @@ class TestBuildDlaEngine:
         )
         assert output_engine_path.exists()
 
-    def test_full_dla_path(self, onnx_path, output_engine_path):
+    def test_full_dla_path(self, onnx_path, output_engine_path) -> None:
         """When full_dla is True, build_engine is called with DLA default_device."""
         from trtutils.builder._dla import build_dla_engine
 
@@ -119,7 +119,7 @@ class TestBuildDlaEngine:
                 assert call_kwargs.kwargs.get("fp16") is True
                 assert call_kwargs.kwargs.get("int8") is True
 
-    def test_no_dla_chunks(self, onnx_path, output_engine_path):
+    def test_no_dla_chunks(self, onnx_path, output_engine_path) -> None:
         """No DLA-compatible layers → GPU-only build with warning."""
         from trtutils.builder._dla import build_dla_engine
 
@@ -138,7 +138,7 @@ class TestBuildDlaEngine:
                 )
                 mock_build.assert_called_once()
 
-    def test_mixed_dla_gpu(self, onnx_path, output_engine_path):
+    def test_mixed_dla_gpu(self, onnx_path, output_engine_path) -> None:
         """Partial DLA → layer assignments with mixed devices."""
         from trtutils.builder._dla import build_dla_engine
 
@@ -154,7 +154,7 @@ class TestBuildDlaEngine:
         )
         assert output_engine_path.exists()
 
-    def test_max_chunks_limit(self, onnx_path, output_engine_path):
+    def test_max_chunks_limit(self, onnx_path, output_engine_path) -> None:
         """max_chunks parameter limits DLA chunk assignment."""
         from trtutils.builder._dla import build_dla_engine
 
@@ -170,7 +170,7 @@ class TestBuildDlaEngine:
         )
         assert output_engine_path.exists()
 
-    def test_min_layers_filter(self, onnx_path, output_engine_path):
+    def test_min_layers_filter(self, onnx_path, output_engine_path) -> None:
         """min_layers parameter filters small chunks."""
         from trtutils.builder._dla import build_dla_engine
 
@@ -185,7 +185,7 @@ class TestBuildDlaEngine:
         )
         assert output_engine_path.exists()
 
-    def test_verbose_output(self, onnx_path, output_engine_path):
+    def test_verbose_output(self, onnx_path, output_engine_path) -> None:
         """verbose=True produces log output without error."""
         from trtutils.builder._dla import build_dla_engine
 
@@ -206,7 +206,7 @@ class TestBuildDlaEngine:
 class TestGetCheckDla:
     """Tests for get_check_dla() utility function."""
 
-    def test_returns_callable(self, onnx_path):
+    def test_returns_callable(self, onnx_path) -> None:
         """get_check_dla returns a callable."""
         from trtutils.builder._onnx import read_onnx
         from trtutils.builder._utils import get_check_dla
@@ -215,7 +215,7 @@ class TestGetCheckDla:
         check_fn = get_check_dla(config)
         assert callable(check_fn)
 
-    def test_function_accepts_layer(self, onnx_path):
+    def test_function_accepts_layer(self, onnx_path) -> None:
         """Returned function can be called with a layer."""
         from trtutils.builder._onnx import read_onnx
         from trtutils.builder._utils import get_check_dla

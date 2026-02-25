@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -134,10 +135,8 @@ class TestDownloadModelMocked:
             return_value=download_tmp_dir / "model.onnx",
         ):
             (download_tmp_dir / "model.onnx").touch()
-            try:
+            with contextlib.suppress(Exception):
                 download_model("yolov10n", download_tmp_dir)
-            except Exception:
-                pass
             mock_venv.assert_called_once()
 
 
@@ -273,7 +272,7 @@ class TestExportFunctionRouting:
 
     @pytest.mark.cpu
     @pytest.mark.parametrize(
-        "model,export_func_name",
+        ("model", "export_func_name"),
         [
             pytest.param("yolov8n", "export_ultralytics", id="ultralytics-yolov8"),
             pytest.param("yolov11n", "export_ultralytics", id="ultralytics-yolov11"),
@@ -316,7 +315,7 @@ class TestGetValidModels:
 
     @pytest.mark.cpu
     @pytest.mark.parametrize(
-        "model_type,expected_count",
+        ("model_type", "expected_count"),
         [
             pytest.param("yolov8", 5, id="yolov8"),
             pytest.param("yolov10", 11, id="yolov10"),

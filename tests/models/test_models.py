@@ -14,10 +14,10 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 def _make_mock_engine(
-    input_names: list = None,
-    output_names: list = None,
-    input_spec: list = None,
-    output_spec: list = None,
+    input_names: list | None = None,
+    output_names: list | None = None,
+    input_spec: list | None = None,
+    output_spec: list | None = None,
 ) -> MagicMock:
     """Create a mock TRTEngine with configurable tensor names/specs."""
     engine = MagicMock()
@@ -153,7 +153,7 @@ class TestModelMakeShapes:
         cls = _get_model_class(cls_name)
         batch = 4
         shapes = cls._make_shapes(batch, cls._default_imgsz)
-        for name, shape in shapes:
+        for _name, shape in shapes:
             assert shape[0] == batch
 
     @pytest.mark.cpu
@@ -163,7 +163,7 @@ class TestModelMakeShapes:
         cls = _get_model_class(cls_name)
         imgsz = cls._default_imgsz
         shapes = cls._make_shapes(1, imgsz)
-        for i, (name, kind) in enumerate(cls._input_tensors):
+        for i, (_name, kind) in enumerate(cls._input_tensors):
             _, shape = shapes[i]
             if kind == "image":
                 assert len(shape) == 4

@@ -29,7 +29,7 @@ SIZES = [
 class TestCudaMalloc:
     """Tests for cuda_malloc and cuda_free."""
 
-    def test_returns_int(self):
+    def test_returns_int(self) -> None:
         """cuda_malloc should return an int pointer."""
         from trtutils.core._memory import cuda_free, cuda_malloc
 
@@ -47,7 +47,7 @@ class TestCudaMalloc:
             pytest.param(16 * 1024 * 1024, id="16MB"),
         ],
     )
-    def test_different_sizes(self, nbytes):
+    def test_different_sizes(self, nbytes) -> None:
         """cuda_malloc works for various sizes."""
         from trtutils.core._memory import cuda_free, cuda_malloc
 
@@ -56,7 +56,7 @@ class TestCudaMalloc:
         assert ptr != 0
         cuda_free(ptr)
 
-    def test_cuda_free(self):
+    def test_cuda_free(self) -> None:
         """cuda_free on a valid pointer should not raise."""
         from trtutils.core._memory import cuda_free, cuda_malloc
 
@@ -68,7 +68,7 @@ class TestCudaMalloc:
 class TestAllocatePinnedMemory:
     """Tests for allocate_pinned_memory."""
 
-    def test_returns_ndarray(self):
+    def test_returns_ndarray(self) -> None:
         """allocate_pinned_memory returns a numpy array."""
         from trtutils.core._memory import allocate_pinned_memory, cuda_host_free
 
@@ -77,7 +77,7 @@ class TestAllocatePinnedMemory:
         assert arr.dtype == np.float32
         cuda_host_free(arr)
 
-    def test_size_matches(self):
+    def test_size_matches(self) -> None:
         """Allocated array has the correct number of elements."""
         from trtutils.core._memory import allocate_pinned_memory, cuda_host_free
 
@@ -86,7 +86,7 @@ class TestAllocatePinnedMemory:
         assert arr.size == 100
         cuda_host_free(arr)
 
-    def test_custom_shape(self):
+    def test_custom_shape(self) -> None:
         """allocate_pinned_memory with explicit shape."""
         from trtutils.core._memory import allocate_pinned_memory, cuda_host_free
 
@@ -95,7 +95,7 @@ class TestAllocatePinnedMemory:
         assert arr.shape == (2, 3)
         cuda_host_free(arr)
 
-    def test_unified_memory(self):
+    def test_unified_memory(self) -> None:
         """allocate_pinned_memory with unified_mem=True."""
         from trtutils.core._memory import allocate_pinned_memory, cuda_host_free
 
@@ -108,14 +108,14 @@ class TestAllocatePinnedMemory:
 class TestCudaHostFree:
     """Tests for cuda_host_free."""
 
-    def test_free_pinned_array(self):
+    def test_free_pinned_array(self) -> None:
         """cuda_host_free on a pinned ndarray should not raise."""
         from trtutils.core._memory import allocate_pinned_memory, cuda_host_free
 
         arr = allocate_pinned_memory(1024, np.dtype(np.float32))
         cuda_host_free(arr)  # Should not raise
 
-    def test_free_int_ptr(self):
+    def test_free_int_ptr(self) -> None:
         """cuda_host_free can also accept an int host pointer."""
         from trtutils.core._memory import allocate_pinned_memory, cuda_host_free
 
@@ -128,7 +128,7 @@ class TestCudaHostFree:
 class TestGetPtrPair:
     """Tests for get_ptr_pair."""
 
-    def test_returns_tuple(self):
+    def test_returns_tuple(self) -> None:
         """get_ptr_pair returns (host_ptr, device_ptr) tuple."""
         from trtutils.core._memory import (
             allocate_pinned_memory,
@@ -149,7 +149,7 @@ class TestGetPtrPair:
 class TestAllocateManagedMemory:
     """Tests for allocate_managed_memory."""
 
-    def test_returns_int_ptr(self):
+    def test_returns_int_ptr(self) -> None:
         """allocate_managed_memory returns an int pointer."""
         from trtutils.core._memory import allocate_managed_memory, cuda_free
 
@@ -158,7 +158,7 @@ class TestAllocateManagedMemory:
         assert ptr != 0
         cuda_free(ptr)
 
-    def test_with_stream(self, cuda_stream):
+    def test_with_stream(self, cuda_stream) -> None:
         """allocate_managed_memory with a stream attaches memory."""
         from trtutils.core._memory import allocate_managed_memory, cuda_free
 
@@ -167,7 +167,7 @@ class TestAllocateManagedMemory:
         assert ptr != 0
         cuda_free(ptr)
 
-    def test_without_stream(self):
+    def test_without_stream(self) -> None:
         """allocate_managed_memory without a stream (stream=None)."""
         from trtutils.core._memory import allocate_managed_memory, cuda_free
 
@@ -186,7 +186,7 @@ class TestMemcpyRoundtrip:
 
     @pytest.mark.parametrize("dtype", DTYPES)
     @pytest.mark.parametrize("size", SIZES)
-    def test_h2d_d2h_sync(self, dtype, size):
+    def test_h2d_d2h_sync(self, dtype, size) -> None:
         """Data survives a H2D->D2H roundtrip (sync)."""
         from trtutils.core._memory import (
             cuda_free,
@@ -209,7 +209,7 @@ class TestMemcpyRoundtrip:
 
     @pytest.mark.parametrize("dtype", DTYPES)
     @pytest.mark.parametrize("size", SIZES)
-    def test_h2d_d2h_async(self, dtype, size, cuda_stream):
+    def test_h2d_d2h_async(self, dtype, size, cuda_stream) -> None:
         """Data survives a H2D->D2H roundtrip (async + sync)."""
         from trtutils.core._memory import (
             cuda_free,
@@ -238,7 +238,7 @@ class TestMemcpyRoundtrip:
 class TestMemcpyD2D:
     """Tests for device-to-device memcpy."""
 
-    def test_d2d_sync(self):
+    def test_d2d_sync(self) -> None:
         """D2D sync copy preserves data."""
         from trtutils.core._memory import (
             cuda_free,
@@ -264,7 +264,7 @@ class TestMemcpyD2D:
         cuda_free(ptr1)
         cuda_free(ptr2)
 
-    def test_d2d_async(self, cuda_stream):
+    def test_d2d_async(self, cuda_stream) -> None:
         """D2D async copy preserves data."""
         from trtutils.core._memory import (
             cuda_free,
@@ -297,7 +297,7 @@ class TestMemcpyD2D:
 class TestMemcpyOffset:
     """Tests for H2D offset memcpy."""
 
-    def test_h2d_offset_sync(self):
+    def test_h2d_offset_sync(self) -> None:
         """H2D with byte offset writes to correct location."""
         from trtutils.core._memory import (
             cuda_free,
@@ -331,7 +331,7 @@ class TestMemcpyOffset:
         np.testing.assert_array_equal(result, expected)
         cuda_free(ptr)
 
-    def test_h2d_offset_async(self, cuda_stream):
+    def test_h2d_offset_async(self, cuda_stream) -> None:
         """H2D async with byte offset writes to correct location."""
         from trtutils.core._memory import (
             cuda_free,
@@ -373,7 +373,7 @@ class TestAllocateToDevice:
     """Tests for allocate_to_device."""
 
     @pytest.mark.parametrize("dtype", DTYPES)
-    def test_allocate_copies_to_device(self, dtype):
+    def test_allocate_copies_to_device(self, dtype) -> None:
         """allocate_to_device copies arrays to GPU and returns pointers."""
         from trtutils.core._memory import (
             allocate_to_device,
@@ -395,7 +395,7 @@ class TestAllocateToDevice:
 
         free_device_ptrs(ptrs)
 
-    def test_multiple_arrays(self):
+    def test_multiple_arrays(self) -> None:
         """allocate_to_device handles multiple arrays."""
         from trtutils.core._memory import allocate_to_device, free_device_ptrs
 
@@ -416,21 +416,21 @@ class TestAllocateToDevice:
 class TestFreeDevicePtrs:
     """Tests for free_device_ptrs."""
 
-    def test_free_single_ptr(self):
+    def test_free_single_ptr(self) -> None:
         """Free a single pointer."""
         from trtutils.core._memory import cuda_malloc, free_device_ptrs
 
         ptr = cuda_malloc(1024)
         free_device_ptrs([ptr])  # Should not raise
 
-    def test_free_multiple_ptrs(self):
+    def test_free_multiple_ptrs(self) -> None:
         """Free multiple pointers."""
         from trtutils.core._memory import cuda_malloc, free_device_ptrs
 
         ptrs = [cuda_malloc(1024) for _ in range(5)]
         free_device_ptrs(ptrs)  # Should not raise
 
-    def test_free_empty_list(self):
+    def test_free_empty_list(self) -> None:
         """Free with an empty list should not raise."""
         from trtutils.core._memory import free_device_ptrs
 

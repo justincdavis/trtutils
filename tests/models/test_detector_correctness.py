@@ -31,8 +31,7 @@ def yolov10_detector(yolov10_engine) -> YOLOv10:
     """Instantiate a YOLOv10 detector for the module."""
     from trtutils.models import YOLOv10
 
-    det = YOLOv10(yolov10_engine, warmup=False)
-    return det
+    return YOLOv10(yolov10_engine, warmup=False)
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +193,7 @@ class TestDetectorConfThreshold:
             outputs,
             conf_thres=threshold,
         )
-        for bbox, score, cls_id in dets:
+        for _bbox, score, _cls_id in dets:
             assert float(score) >= threshold - 1e-6
 
 
@@ -213,6 +212,6 @@ class TestDetectorBboxValidity:
         """x2 should be >= x1 for all detections."""
         outputs = yolov10_detector.run(horse_image)
         dets = yolov10_detector.get_detections(outputs)
-        for (x1, y1, x2, y2), score, cls_id in dets:
+        for (x1, y1, x2, y2), _score, _cls_id in dets:
             assert int(x2) >= int(x1)
             assert int(y2) >= int(y1)

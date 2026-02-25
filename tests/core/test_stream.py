@@ -9,7 +9,7 @@ import pytest
 class TestCreateStream:
     """Tests for create_stream()."""
 
-    def test_create_stream_returns_value(self):
+    def test_create_stream_returns_value(self) -> None:
         """create_stream() returns a non-None stream object."""
         from trtutils.core._stream import create_stream, destroy_stream
 
@@ -17,7 +17,7 @@ class TestCreateStream:
         assert stream is not None
         destroy_stream(stream)
 
-    def test_create_stream_type(self):
+    def test_create_stream_type(self) -> None:
         """create_stream() returns a cudaStream_t."""
         from trtutils.compat._libs import cudart
         from trtutils.core._stream import create_stream, destroy_stream
@@ -31,7 +31,7 @@ class TestCreateStream:
 class TestDestroyStream:
     """Tests for destroy_stream()."""
 
-    def test_destroy_stream_valid(self):
+    def test_destroy_stream_valid(self) -> None:
         """destroy_stream() on a valid stream should not raise."""
         from trtutils.core._stream import create_stream, destroy_stream
 
@@ -43,7 +43,7 @@ class TestDestroyStream:
 class TestStreamSynchronize:
     """Tests for stream_synchronize()."""
 
-    def test_stream_synchronize(self):
+    def test_stream_synchronize(self) -> None:
         """stream_synchronize() on a valid stream should not raise."""
         from trtutils.core._stream import (
             create_stream,
@@ -60,7 +60,7 @@ class TestStreamSynchronize:
 class TestStreamLifecycle:
     """Integration tests for full stream lifecycle."""
 
-    def test_create_sync_destroy(self):
+    def test_create_sync_destroy(self) -> None:
         """Full lifecycle: create, synchronize, destroy."""
         from trtutils.core._stream import (
             create_stream,
@@ -72,7 +72,7 @@ class TestStreamLifecycle:
         stream_synchronize(stream)
         destroy_stream(stream)
 
-    def test_multiple_streams(self):
+    def test_multiple_streams(self) -> None:
         """Multiple streams can be created and destroyed independently."""
         from trtutils.core._stream import create_stream, destroy_stream
 

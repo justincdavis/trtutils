@@ -13,7 +13,7 @@ class TestExtractSubgraph:
         reason="Source bug: onnx_graphsurgeon Variable objects are not hashable in newer versions",
         strict=False,
     )
-    def test_extract_basic(self, onnx_path):
+    def test_extract_basic(self, onnx_path) -> None:
         """Extract a subgraph from a valid ONNX model."""
         import onnx
 
@@ -27,7 +27,7 @@ class TestExtractSubgraph:
         subgraph = extract_subgraph(model, 0, num_nodes - 1)
         assert isinstance(subgraph, onnx.ModelProto)
 
-    def test_extract_invalid_start(self, onnx_path):
+    def test_extract_invalid_start(self, onnx_path) -> None:
         """ValueError for negative start_idx."""
         import onnx
 
@@ -37,7 +37,7 @@ class TestExtractSubgraph:
         with pytest.raises(ValueError, match="start_idx must be greater"):
             extract_subgraph(model, -1, 0)
 
-    def test_extract_start_gt_end(self, onnx_path):
+    def test_extract_start_gt_end(self, onnx_path) -> None:
         """ValueError when start_idx > end_idx."""
         import onnx
 
@@ -51,7 +51,7 @@ class TestExtractSubgraph:
         with pytest.raises(ValueError, match="start_idx must be less"):
             extract_subgraph(model, num_nodes - 1, 0)
 
-    def test_extract_end_too_large(self, onnx_path):
+    def test_extract_end_too_large(self, onnx_path) -> None:
         """ValueError when end_idx >= num_nodes."""
         import onnx
 
@@ -66,7 +66,7 @@ class TestExtractSubgraph:
         reason="Source bug: onnx_graphsurgeon Variable objects are not hashable in newer versions",
         strict=False,
     )
-    def test_accepts_graph_surgeon_graph(self, onnx_path):
+    def test_accepts_graph_surgeon_graph(self, onnx_path) -> None:
         """Works with gs.Graph input (skips gs.import_onnx call)."""
         import onnx
         import onnx_graphsurgeon as gs
@@ -88,7 +88,7 @@ class TestExtractSubgraph:
         reason="Source bug: onnx_graphsurgeon Variable objects are not hashable in newer versions",
         strict=False,
     )
-    def test_extract_first_nodes(self, onnx_path):
+    def test_extract_first_nodes(self, onnx_path) -> None:
         """Extract from index 0."""
         import onnx
 
@@ -106,7 +106,7 @@ class TestExtractSubgraph:
         reason="Source bug: onnx_graphsurgeon Variable objects are not hashable in newer versions",
         strict=False,
     )
-    def test_extract_last_nodes(self, onnx_path):
+    def test_extract_last_nodes(self, onnx_path) -> None:
         """Extract ending at last node."""
         import onnx
 
@@ -129,7 +129,7 @@ class TestSplitModel:
         reason="Source bug: onnx_graphsurgeon Variable objects are not hashable in newer versions",
         strict=False,
     )
-    def test_split_basic(self, onnx_path):
+    def test_split_basic(self, onnx_path) -> None:
         """Split a model at a valid index."""
         import onnx
 
@@ -149,7 +149,7 @@ class TestSplitModel:
         reason="Source bug: onnx_graphsurgeon Variable objects are not hashable in newer versions",
         strict=False,
     )
-    def test_split_into_three(self, onnx_path):
+    def test_split_into_three(self, onnx_path) -> None:
         """Split with two split points produces 3 subgraphs."""
         import onnx
 
@@ -167,7 +167,7 @@ class TestSplitModel:
         for sg in subgraphs:
             assert isinstance(sg, onnx.ModelProto)
 
-    def test_split_empty_indices(self, onnx_path):
+    def test_split_empty_indices(self, onnx_path) -> None:
         """ValueError for empty split indices."""
         import onnx
 
@@ -177,7 +177,7 @@ class TestSplitModel:
         with pytest.raises(ValueError, match="non-empty list"):
             split_model(model, [])
 
-    def test_split_negative_index(self, onnx_path):
+    def test_split_negative_index(self, onnx_path) -> None:
         """ValueError for negative split index."""
         import onnx
 
@@ -187,7 +187,7 @@ class TestSplitModel:
         with pytest.raises(ValueError, match="greater than 0"):
             split_model(model, [-1])
 
-    def test_split_index_too_large(self, onnx_path):
+    def test_split_index_too_large(self, onnx_path) -> None:
         """ValueError when split index >= num_nodes."""
         import onnx
 
@@ -202,7 +202,7 @@ class TestSplitModel:
         reason="Source bug: onnx_graphsurgeon Variable objects are not hashable in newer versions",
         strict=False,
     )
-    def test_subgraphs_are_valid_onnx(self, onnx_path):
+    def test_subgraphs_are_valid_onnx(self, onnx_path) -> None:
         """Each split part is a valid ONNX model."""
         import onnx
 
@@ -228,7 +228,7 @@ class TestExtractSubgraphFromFile:
         reason="Source bug: onnx_graphsurgeon Variable objects are not hashable in newer versions",
         strict=False,
     )
-    def test_extract_from_file(self, onnx_path, tmp_path):
+    def test_extract_from_file(self, onnx_path, tmp_path) -> None:
         """extract_subgraph_from_file creates output file."""
         import onnx
 
@@ -247,7 +247,7 @@ class TestExtractSubgraphFromFile:
         reason="Source bug: onnx_graphsurgeon Variable objects are not hashable in newer versions",
         strict=False,
     )
-    def test_split_from_file(self, onnx_path, tmp_path):
+    def test_split_from_file(self, onnx_path, tmp_path) -> None:
         """split_model_from_file creates output files."""
         import onnx
 

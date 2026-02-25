@@ -9,7 +9,7 @@ import pytest
 class TestProgressBar:
     """Tests for ProgressBar class."""
 
-    def test_init(self):
+    def test_init(self) -> None:
         """ProgressBar initializes without error."""
         from trtutils.builder._progress import ProgressBar
 
@@ -17,7 +17,7 @@ class TestProgressBar:
         assert pb._progress_bars == {}
         assert pb._interrupted is False
 
-    def test_phase_start(self):
+    def test_phase_start(self) -> None:
         """phase_start creates a progress bar entry."""
         from trtutils.builder._progress import ProgressBar
 
@@ -27,7 +27,7 @@ class TestProgressBar:
         assert pb._last_steps["test_phase"] == 0
         pb.phase_finish("test_phase")
 
-    def test_phase_start_with_parent(self):
+    def test_phase_start_with_parent(self) -> None:
         """phase_start with parent sets correct indentation."""
         from trtutils.builder._progress import ProgressBar
 
@@ -39,7 +39,7 @@ class TestProgressBar:
         pb.phase_finish("child")
         pb.phase_finish("parent")
 
-    def test_step_complete(self):
+    def test_step_complete(self) -> None:
         """step_complete updates progress."""
         from trtutils.builder._progress import ProgressBar
 
@@ -50,7 +50,7 @@ class TestProgressBar:
         assert pb._last_steps["phase"] == 5
         pb.phase_finish("phase")
 
-    def test_step_complete_returns_true(self):
+    def test_step_complete_returns_true(self) -> None:
         """step_complete returns True when not interrupted."""
         from trtutils.builder._progress import ProgressBar
 
@@ -59,7 +59,7 @@ class TestProgressBar:
         assert pb.step_complete("phase", 1) is True
         pb.phase_finish("phase")
 
-    def test_step_complete_no_regression(self):
+    def test_step_complete_no_regression(self) -> None:
         """step_complete ignores steps <= last step."""
         from trtutils.builder._progress import ProgressBar
 
@@ -70,7 +70,7 @@ class TestProgressBar:
         assert pb._last_steps["phase"] == 5
         pb.phase_finish("phase")
 
-    def test_phase_finish_cleanup(self):
+    def test_phase_finish_cleanup(self) -> None:
         """phase_finish removes the phase from tracking."""
         from trtutils.builder._progress import ProgressBar
 
@@ -82,7 +82,7 @@ class TestProgressBar:
         assert "phase" not in pb._indentation_levels
         assert "phase" not in pb._last_steps
 
-    def test_del_closes_bars(self):
+    def test_del_closes_bars(self) -> None:
         """__del__ closes all progress bars."""
         from trtutils.builder._progress import ProgressBar
 
@@ -95,7 +95,7 @@ class TestProgressBar:
 class TestProgressBarEdgeCases:
     """Edge case tests for ProgressBar."""
 
-    def test_step_zero_delta(self):
+    def test_step_zero_delta(self) -> None:
         """step_diff=0 produces no update."""
         from trtutils.builder._progress import ProgressBar
 
@@ -107,7 +107,7 @@ class TestProgressBarEdgeCases:
         assert pb._last_steps["phase"] == 5
         pb.phase_finish("phase")
 
-    def test_unknown_phase_step(self):
+    def test_unknown_phase_step(self) -> None:
         """step_complete on unknown phase silently does nothing."""
         from trtutils.builder._progress import ProgressBar
 
@@ -116,7 +116,7 @@ class TestProgressBarEdgeCases:
         result = pb.step_complete("nonexistent_phase", 1)
         assert result is True  # Not interrupted
 
-    def test_phase_finish_unknown_phase(self):
+    def test_phase_finish_unknown_phase(self) -> None:
         """phase_finish on unknown phase does not raise."""
         from trtutils.builder._progress import ProgressBar
 
@@ -124,7 +124,7 @@ class TestProgressBarEdgeCases:
         # Should not raise — all cleanup is guarded by `if phase_name in`
         pb.phase_finish("nonexistent")
 
-    def test_nested_phases_indentation(self):
+    def test_nested_phases_indentation(self) -> None:
         """Nested phases get increasing indentation levels."""
         from trtutils.builder._progress import ProgressBar
 
@@ -139,7 +139,7 @@ class TestProgressBarEdgeCases:
         pb.phase_finish("level1")
         pb.phase_finish("root")
 
-    def test_parent_not_in_levels(self):
+    def test_parent_not_in_levels(self) -> None:
         """phase_start with unknown parent defaults to indentation 0."""
         from trtutils.builder._progress import ProgressBar
 

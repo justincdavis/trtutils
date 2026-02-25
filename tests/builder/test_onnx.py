@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _read_onnx_import():
@@ -59,14 +62,14 @@ class TestReadOnnx:
         """Custom workspace size is applied to config."""
         read_onnx = _read_onnx_import()
         # Using a small workspace of 1.0 GiB
-        network, builder, config, parser = read_onnx(onnx_path, workspace=1.0)
+        network, _builder, _config, _parser = read_onnx(onnx_path, workspace=1.0)
         assert network is not None
 
     @pytest.mark.gpu
     def test_string_path(self, onnx_path: Path) -> None:
         """Accepts string path in addition to Path object."""
         read_onnx = _read_onnx_import()
-        network, builder, config, parser = read_onnx(str(onnx_path))
+        network, _builder, _config, _parser = read_onnx(str(onnx_path))
         assert network.num_inputs > 0
 
     @pytest.mark.gpu

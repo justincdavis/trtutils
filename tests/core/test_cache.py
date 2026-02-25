@@ -11,27 +11,27 @@ import pytest
 class TestGetCacheDir:
     """Tests for get_cache_dir()."""
 
-    def test_returns_path(self):
+    def test_returns_path(self) -> None:
         """get_cache_dir() should return a Path object."""
         from trtutils.core.cache import get_cache_dir
 
         result = get_cache_dir()
         assert isinstance(result, Path)
 
-    def test_points_to_engine_cache(self):
+    def test_points_to_engine_cache(self) -> None:
         """get_cache_dir() should point to _engine_cache subdir."""
         from trtutils.core.cache import get_cache_dir
 
         result = get_cache_dir()
         assert result.name == "_engine_cache"
 
-    def test_is_idempotent(self):
+    def test_is_idempotent(self) -> None:
         """Multiple calls return the same directory."""
         from trtutils.core.cache import get_cache_dir
 
         assert get_cache_dir() == get_cache_dir()
 
-    def test_directory_exists(self):
+    def test_directory_exists(self) -> None:
         """The cache directory should already exist in the source tree."""
         from trtutils.core.cache import get_cache_dir
 
@@ -42,42 +42,42 @@ class TestGetCacheDir:
 class TestGetCacheFilePath:
     """Tests for internal _get_cache_file_path helper."""
 
-    def test_filename_without_extension(self):
+    def test_filename_without_extension(self) -> None:
         """Filenames without dots get the extension appended."""
         from trtutils.core.cache import _get_cache_file_path, get_cache_dir
 
         result = _get_cache_file_path("mymodel", "engine")
         assert result == get_cache_dir() / "mymodel.engine"
 
-    def test_filename_with_valid_extension(self):
+    def test_filename_with_valid_extension(self) -> None:
         """Filenames with a known valid extension are used as-is."""
         from trtutils.core.cache import _get_cache_file_path, get_cache_dir
 
         result = _get_cache_file_path("mymodel.engine", "engine")
         assert result == get_cache_dir() / "mymodel.engine"
 
-    def test_filename_with_onnx_extension(self):
+    def test_filename_with_onnx_extension(self) -> None:
         """Filenames with .onnx are valid extensions and used as-is."""
         from trtutils.core.cache import _get_cache_file_path, get_cache_dir
 
         result = _get_cache_file_path("mymodel.onnx", "engine")
         assert result == get_cache_dir() / "mymodel.onnx"
 
-    def test_filename_with_cache_extension(self):
+    def test_filename_with_cache_extension(self) -> None:
         """Filenames with .cache are valid extensions and used as-is."""
         from trtutils.core.cache import _get_cache_file_path, get_cache_dir
 
         result = _get_cache_file_path("global.cache", "engine")
         assert result == get_cache_dir() / "global.cache"
 
-    def test_filename_with_invalid_extension(self):
+    def test_filename_with_invalid_extension(self) -> None:
         """Filenames with non-valid extensions get the given extension appended."""
         from trtutils.core.cache import _get_cache_file_path, get_cache_dir
 
         result = _get_cache_file_path("mymodel.txt", "engine")
         assert result == get_cache_dir() / "mymodel.txt.engine"
 
-    def test_filename_with_dot_no_valid_ext(self):
+    def test_filename_with_dot_no_valid_ext(self) -> None:
         """Filenames with dots but no recognized extension get extension appended."""
         from trtutils.core.cache import _get_cache_file_path, get_cache_dir
 
@@ -89,7 +89,7 @@ class TestGetCacheFilePath:
 class TestDeleteFolder:
     """Tests for internal _delete_folder helper."""
 
-    def test_delete_empty_dir(self, tmp_path):
+    def test_delete_empty_dir(self, tmp_path) -> None:
         """Empty directory is removed without error."""
         from trtutils.core.cache import _delete_folder
 
@@ -98,7 +98,7 @@ class TestDeleteFolder:
         _delete_folder(d)
         assert not d.exists()
 
-    def test_delete_dir_with_files(self, tmp_path):
+    def test_delete_dir_with_files(self, tmp_path) -> None:
         """Directory with files is fully removed."""
         from trtutils.core.cache import _delete_folder
 
@@ -109,7 +109,7 @@ class TestDeleteFolder:
         _delete_folder(d)
         assert not d.exists()
 
-    def test_delete_dir_with_subdirs(self, tmp_path):
+    def test_delete_dir_with_subdirs(self, tmp_path) -> None:
         """Directory with nested subdirectories is fully removed."""
         from trtutils.core.cache import _delete_folder
 
@@ -121,7 +121,7 @@ class TestDeleteFolder:
         _delete_folder(d)
         assert not d.exists()
 
-    def test_delete_dir_mixed(self, tmp_path):
+    def test_delete_dir_mixed(self, tmp_path) -> None:
         """Directory with mixed files and subdirs is fully removed."""
         from trtutils.core.cache import _delete_folder
 
@@ -139,7 +139,7 @@ class TestDeleteFolder:
 class TestClear:
     """Tests for clear()."""
 
-    def test_clear_creates_empty_dir(self, tmp_path, monkeypatch):
+    def test_clear_creates_empty_dir(self, tmp_path, monkeypatch) -> None:
         """clear() should remove contents and recreate the directory."""
         from trtutils.core import cache
 
@@ -153,7 +153,7 @@ class TestClear:
         assert cache_dir.exists()
         assert list(cache_dir.iterdir()) == []
 
-    def test_clear_empty_dir(self, tmp_path, monkeypatch):
+    def test_clear_empty_dir(self, tmp_path, monkeypatch) -> None:
         """clear() on an empty dir should not error."""
         from trtutils.core import cache
 
@@ -165,7 +165,7 @@ class TestClear:
         cache.clear(no_warn=True)
         assert cache_dir.exists()
 
-    def test_clear_with_nested(self, tmp_path, monkeypatch):
+    def test_clear_with_nested(self, tmp_path, monkeypatch) -> None:
         """clear() on directory with nested content works."""
         from trtutils.core import cache
 
@@ -181,7 +181,7 @@ class TestClear:
         assert cache_dir.exists()
         assert list(cache_dir.iterdir()) == []
 
-    def test_clear_issues_warning_by_default(self, tmp_path, monkeypatch):
+    def test_clear_issues_warning_by_default(self, tmp_path, monkeypatch) -> None:
         """clear() with no_warn=None (default) should issue a log warning."""
         from trtutils.core import cache
 
@@ -194,7 +194,7 @@ class TestClear:
         cache.clear()
         assert cache_dir.exists()
 
-    def test_clear_no_warn_false_issues_warning(self, tmp_path, monkeypatch):
+    def test_clear_no_warn_false_issues_warning(self, tmp_path, monkeypatch) -> None:
         """clear() with no_warn=False should issue the warning."""
         from trtutils.core import cache
 
@@ -211,7 +211,7 @@ class TestClear:
 class TestQueryStore:
     """Tests for query, query_file, store, store_file."""
 
-    def test_query_nonexistent(self, tmp_path, monkeypatch):
+    def test_query_nonexistent(self, tmp_path, monkeypatch) -> None:
         """query() for a non-existent file returns (False, path)."""
         from trtutils.core import cache
 
@@ -223,7 +223,7 @@ class TestQueryStore:
         assert exists is False
         assert isinstance(path, Path)
 
-    def test_query_file_nonexistent(self, tmp_path, monkeypatch):
+    def test_query_file_nonexistent(self, tmp_path, monkeypatch) -> None:
         """query_file() for a non-existent file returns (False, path)."""
         from trtutils.core import cache
 
@@ -235,7 +235,7 @@ class TestQueryStore:
         assert exists is False
         assert path.name == "nofile.cache"
 
-    def test_store_then_query(self, tmp_path, monkeypatch):
+    def test_store_then_query(self, tmp_path, monkeypatch) -> None:
         """Store a file then query should return (True, path)."""
         from trtutils.core import cache
 
@@ -251,7 +251,7 @@ class TestQueryStore:
         assert exists is True
         assert path.exists()
 
-    def test_store_file_then_query_file(self, tmp_path, monkeypatch):
+    def test_store_file_then_query_file(self, tmp_path, monkeypatch) -> None:
         """store_file then query_file roundtrip works."""
         from trtutils.core import cache
 
@@ -265,10 +265,10 @@ class TestQueryStore:
         new_path = cache.store_file(src, cache_filename="data.cache")
         assert new_path.exists()
 
-        exists, path = cache.query_file("data", "cache")
+        exists, _path = cache.query_file("data", "cache")
         assert exists is True
 
-    def test_store_overwrite_true(self, tmp_path, monkeypatch):
+    def test_store_overwrite_true(self, tmp_path, monkeypatch) -> None:
         """Store with overwrite=True replaces existing file."""
         from trtutils.core import cache
 
@@ -289,7 +289,7 @@ class TestQueryStore:
         stored = cache_dir / "model.engine"
         assert stored.read_text() == "version2"
 
-    def test_store_overwrite_false_keeps_old(self, tmp_path, monkeypatch):
+    def test_store_overwrite_false_keeps_old(self, tmp_path, monkeypatch) -> None:
         """Store with overwrite=False keeps the original file."""
         from trtutils.core import cache
 
@@ -309,7 +309,7 @@ class TestQueryStore:
         stored = cache_dir / "model.engine"
         assert stored.read_text() == "version1"
 
-    def test_store_clear_old_true(self, tmp_path, monkeypatch):
+    def test_store_clear_old_true(self, tmp_path, monkeypatch) -> None:
         """Store with clear_old=True removes the source file."""
         from trtutils.core import cache
 
@@ -323,7 +323,7 @@ class TestQueryStore:
         cache.store(src, clear_old=True)
         assert not src.exists()
 
-    def test_store_clear_old_no_overwrite_existing(self, tmp_path, monkeypatch):
+    def test_store_clear_old_no_overwrite_existing(self, tmp_path, monkeypatch) -> None:
         """Store with clear_old=True, overwrite=False and existing target removes source."""
         from trtutils.core import cache
 
@@ -343,7 +343,9 @@ class TestQueryStore:
         # Cache should keep old version
         assert (cache_dir / "model.engine").read_text() == "old"
 
-    def test_store_file_uses_original_name_when_cache_filename_is_none(self, tmp_path, monkeypatch):
+    def test_store_file_uses_original_name_when_cache_filename_is_none(
+        self, tmp_path, monkeypatch
+    ) -> None:
         """store_file without cache_filename uses the original filename."""
         from trtutils.core import cache
 
@@ -358,7 +360,7 @@ class TestQueryStore:
         assert result.name == "original.engine"
         assert result.exists()
 
-    def test_store_clear_old_true_with_overwrite_true(self, tmp_path, monkeypatch):
+    def test_store_clear_old_true_with_overwrite_true(self, tmp_path, monkeypatch) -> None:
         """Store with clear_old=True and overwrite=True removes source and writes new."""
         from trtutils.core import cache
 
@@ -381,7 +383,7 @@ class TestQueryStore:
 class TestRemove:
     """Tests for remove and remove_file."""
 
-    def test_remove_existing(self, tmp_path, monkeypatch):
+    def test_remove_existing(self, tmp_path, monkeypatch) -> None:
         """remove() deletes an existing engine from cache."""
         from trtutils.core import cache
 
@@ -393,7 +395,7 @@ class TestRemove:
         cache.remove("model")
         assert not (cache_dir / "model.engine").exists()
 
-    def test_remove_nonexistent_raises(self, tmp_path, monkeypatch):
+    def test_remove_nonexistent_raises(self, tmp_path, monkeypatch) -> None:
         """remove() on a non-existent file raises FileNotFoundError."""
         from trtutils.core import cache
 
@@ -404,7 +406,7 @@ class TestRemove:
         with pytest.raises(FileNotFoundError):
             cache.remove("nonexistent")
 
-    def test_remove_file_existing(self, tmp_path, monkeypatch):
+    def test_remove_file_existing(self, tmp_path, monkeypatch) -> None:
         """remove_file() deletes a file with the given extension."""
         from trtutils.core import cache
 
@@ -416,7 +418,7 @@ class TestRemove:
         cache.remove_file("data", "cache")
         assert not (cache_dir / "data.cache").exists()
 
-    def test_remove_file_nonexistent_raises(self, tmp_path, monkeypatch):
+    def test_remove_file_nonexistent_raises(self, tmp_path, monkeypatch) -> None:
         """remove_file() on a non-existent file raises FileNotFoundError."""
         from trtutils.core import cache
 
@@ -427,7 +429,7 @@ class TestRemove:
         with pytest.raises(FileNotFoundError):
             cache.remove_file("nonexistent", "cache")
 
-    def test_remove_file_with_valid_extension_in_name(self, tmp_path, monkeypatch):
+    def test_remove_file_with_valid_extension_in_name(self, tmp_path, monkeypatch) -> None:
         """remove_file() with valid extension in the name itself."""
         from trtutils.core import cache
 
@@ -444,7 +446,7 @@ class TestRemove:
 class TestTimingCache:
     """Tests for query_timing_cache, store_timing_cache, save_timing_cache_to_global."""
 
-    def test_query_timing_cache_missing(self, tmp_path, monkeypatch):
+    def test_query_timing_cache_missing(self, tmp_path, monkeypatch) -> None:
         """query_timing_cache() returns (False, path) when no global cache exists."""
         from trtutils.core import cache
 
@@ -456,7 +458,7 @@ class TestTimingCache:
         assert exists is False
         assert path.name == "global.cache"
 
-    def test_store_and_query_timing_cache(self, tmp_path, monkeypatch):
+    def test_store_and_query_timing_cache(self, tmp_path, monkeypatch) -> None:
         """store_timing_cache followed by query_timing_cache roundtrip works."""
         from trtutils.core import cache
 
@@ -472,7 +474,7 @@ class TestTimingCache:
         assert exists is True
         assert path.read_bytes() == b"timing data bytes"
 
-    def test_store_timing_cache_overwrite(self, tmp_path, monkeypatch):
+    def test_store_timing_cache_overwrite(self, tmp_path, monkeypatch) -> None:
         """store_timing_cache with overwrite=True replaces existing."""
         from trtutils.core import cache
 
@@ -491,7 +493,7 @@ class TestTimingCache:
         _, path = cache.query_timing_cache()
         assert path.read_bytes() == b"v2"
 
-    def test_store_timing_cache_clear_old(self, tmp_path, monkeypatch):
+    def test_store_timing_cache_clear_old(self, tmp_path, monkeypatch) -> None:
         """store_timing_cache with clear_old=True removes original file."""
         from trtutils.core import cache
 
@@ -504,7 +506,7 @@ class TestTimingCache:
         cache.store_timing_cache(src, clear_old=True)
         assert not src.exists()
 
-    def test_save_timing_cache_to_global(self, tmp_path, monkeypatch):
+    def test_save_timing_cache_to_global(self, tmp_path, monkeypatch) -> None:
         """save_timing_cache_to_global serializes and stores the cache object."""
         from trtutils.core import cache
 
@@ -513,7 +515,7 @@ class TestTimingCache:
         monkeypatch.setattr(cache, "get_cache_dir", lambda: cache_dir)
 
         class MockTimingCache:
-            def serialize(self):
+            def serialize(self) -> bytes:
                 return b"serialized cache data"
 
         result = cache.save_timing_cache_to_global(MockTimingCache())
@@ -524,7 +526,7 @@ class TestTimingCache:
         assert exists is True
         assert path.read_bytes() == b"serialized cache data"
 
-    def test_save_timing_cache_to_global_overwrite(self, tmp_path, monkeypatch):
+    def test_save_timing_cache_to_global_overwrite(self, tmp_path, monkeypatch) -> None:
         """save_timing_cache_to_global overwrites by default (overwrite=True)."""
         from trtutils.core import cache
 
@@ -533,7 +535,7 @@ class TestTimingCache:
         monkeypatch.setattr(cache, "get_cache_dir", lambda: cache_dir)
 
         class MockTimingCache:
-            def __init__(self, data):
+            def __init__(self, data) -> None:
                 self._data = data
 
             def serialize(self):
@@ -545,7 +547,7 @@ class TestTimingCache:
         _, path = cache.query_timing_cache()
         assert path.read_bytes() == b"second"
 
-    def test_save_timing_cache_to_global_no_overwrite(self, tmp_path, monkeypatch):
+    def test_save_timing_cache_to_global_no_overwrite(self, tmp_path, monkeypatch) -> None:
         """save_timing_cache_to_global with overwrite=False keeps original."""
         from trtutils.core import cache
 
@@ -554,7 +556,7 @@ class TestTimingCache:
         monkeypatch.setattr(cache, "get_cache_dir", lambda: cache_dir)
 
         class MockTimingCache:
-            def __init__(self, data):
+            def __init__(self, data) -> None:
                 self._data = data
 
             def serialize(self):
