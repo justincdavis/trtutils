@@ -5,9 +5,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +223,7 @@ class TestModelDownloadValidation:
         """download() should raise for an invalid model name."""
         cls = _get_model_class("YOLOv10")
         out_path = tmp_path / "out.onnx"
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="Model fake_model_xyz not supported"):
             cls.download("fake_model_xyz", out_path)
 
     @pytest.mark.cpu
@@ -227,7 +231,7 @@ class TestModelDownloadValidation:
         """DEIMv2 with model-specific imgsz mismatch should raise."""
         cls = _get_model_class("DEIMv2")
         out_path = tmp_path / "out.onnx"
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="deimv2_atto requires imgsz of 320"):
             cls.download(
                 "deimv2_atto",
                 out_path,
@@ -293,7 +297,7 @@ class TestMakeShapesEdgeCases:
             _model_type = "fake"
             _friendly_name = "Fake"
             _default_imgsz = 640
-            _input_tensors = [("input", "unknown_kind")]
+            _input_tensors = (("input", "unknown_kind"),)
 
         with pytest.raises(ValueError, match="Unknown input tensor kind"):
             FakeModel._make_shapes(1, 640)
@@ -365,8 +369,8 @@ class TestModelImgszVariants:
     def test_deimv2_atto_wrong_imgsz_raises(self, tmp_path: Path) -> None:
         """DEIMv2.download('deimv2_atto', ..., imgsz=640) should raise."""
         cls = _get_model_class("DEIMv2")
+        out_path = tmp_path / "out.onnx"
         with pytest.raises(ValueError, match="requires imgsz of 320"):
-            out_path = tmp_path / "out.onnx"
             cls.download("deimv2_atto", out_path, imgsz=640)
 
 

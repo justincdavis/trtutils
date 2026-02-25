@@ -1,7 +1,6 @@
 # Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: SLF001
 """Tests for TRTEngine.execute() with all branch paths."""
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ pytestmark = [pytest.mark.gpu]
 class TestExecuteBasic:
     """Test that execute() returns correct outputs."""
 
-    def test_execute_returns_outputs(self, engine: object, random_input: list) -> None:
+    def test_execute_returns_outputs(self, engine, random_input: list) -> None:
         """execute() returns a list of np.ndarray."""
         outputs = engine.execute(random_input)  # type: ignore[union-attr]
         assert isinstance(outputs, list)
@@ -33,7 +32,7 @@ class TestExecuteBasic:
         for out in outputs:
             assert isinstance(out, np.ndarray)
 
-    def test_execute_output_shapes_match(self, engine: object, random_input: list) -> None:
+    def test_execute_output_shapes_match(self, engine, random_input: list) -> None:
         """Output shapes match engine output_spec shapes."""
         outputs = engine.execute(random_input)  # type: ignore[union-attr]
         for out, (shape, _dtype) in zip(
@@ -42,7 +41,7 @@ class TestExecuteBasic:
         ):
             assert list(out.shape) == shape
 
-    def test_execute_output_dtypes_match(self, engine: object, random_input: list) -> None:
+    def test_execute_output_dtypes_match(self, engine, random_input: list) -> None:
         """Output dtypes match engine output_spec dtypes."""
         outputs = engine.execute(random_input)  # type: ignore[union-attr]
         for out, (_shape, dtype) in zip(
@@ -51,14 +50,14 @@ class TestExecuteBasic:
         ):
             assert out.dtype == dtype
 
-    def test_execute_deterministic(self, engine: object, random_input: list) -> None:
+    def test_execute_deterministic(self, engine, random_input: list) -> None:
         """Same input produces same output across two runs."""
         out1 = engine.execute(random_input)  # type: ignore[union-attr]
         out2 = engine.execute(random_input)  # type: ignore[union-attr]
         for o1, o2 in zip(out1, out2):
             assert np.array_equal(o1, o2)
 
-    def test_execute_with_multiple_inputs(self, engine: object, random_input: list) -> None:
+    def test_execute_with_multiple_inputs(self, engine, random_input: list) -> None:
         """Execute works when called multiple times in sequence."""
         for _ in range(5):
             outputs = engine.execute(random_input)  # type: ignore[union-attr]
@@ -76,7 +75,7 @@ class TestExecuteFlags:
     @pytest.mark.parametrize("no_copy", [True, False, None])
     def test_execute_no_copy(
         self,
-        engine: object,
+        engine,
         random_input: list,
         no_copy: bool | None,
     ) -> None:
@@ -90,7 +89,7 @@ class TestExecuteFlags:
     @pytest.mark.parametrize("verbose", [True, False, None])
     def test_execute_verbose(
         self,
-        engine: object,
+        engine,
         random_input: list,
         verbose: bool | None,
     ) -> None:
@@ -103,7 +102,7 @@ class TestExecuteFlags:
     @pytest.mark.parametrize("debug", [True, False, None])
     def test_execute_debug(
         self,
-        engine: object,
+        engine,
         random_input: list,
         debug: bool | None,
     ) -> None:
@@ -113,13 +112,13 @@ class TestExecuteFlags:
         )
         assert outputs is not None
 
-    def test_execute_verbose_with_verbose_engine(self, engine_verbose: object) -> None:
+    def test_execute_verbose_with_verbose_engine(self, engine_verbose) -> None:
         """Verbose engine + verbose=None uses engine's verbose setting."""
         rand_input = engine_verbose.get_random_input()  # type: ignore[union-attr]
         outputs = engine_verbose.execute(rand_input)  # type: ignore[union-attr]
         assert outputs is not None
 
-    def test_execute_verbose_override(self, engine_verbose: object) -> None:
+    def test_execute_verbose_override(self, engine_verbose) -> None:
         """verbose=False overrides engine's verbose=True."""
         rand_input = engine_verbose.get_random_input()  # type: ignore[union-attr]
         outputs = engine_verbose.execute(  # type: ignore[union-attr]
@@ -136,14 +135,14 @@ class TestExecuteFlags:
 class TestExecuteMemoryModes:
     """Test execute() across different memory configurations."""
 
-    def test_execute_pagelocked(self, engine: object, random_input: list) -> None:
+    def test_execute_pagelocked(self, engine, random_input: list) -> None:
         """Pagelocked memory (default) produces correct outputs."""
         assert engine.pagelocked_mem is True  # type: ignore[union-attr]
         outputs = engine.execute(random_input)  # type: ignore[union-attr]
         assert outputs is not None
         assert len(outputs) >= 1
 
-    def test_execute_no_pagelocked(self, engine_no_pagelocked: object) -> None:
+    def test_execute_no_pagelocked(self, engine_no_pagelocked) -> None:
         """Non-pagelocked memory path produces correct outputs."""
         assert engine_no_pagelocked.pagelocked_mem is False  # type: ignore[union-attr]
         rand_input = engine_no_pagelocked.get_random_input()  # type: ignore[union-attr]
@@ -294,7 +293,7 @@ class TestExecuteBindingReset:
 class TestExecuteNoCopyBehavior:
     """Test no_copy parameter semantics in detail."""
 
-    def test_no_copy_true_returns_same_buffer(self, engine: object, random_input: list) -> None:
+    def test_no_copy_true_returns_same_buffer(self, engine, random_input: list) -> None:
         """no_copy=True returns the internal host allocation buffers."""
         outputs = engine.execute(  # type: ignore[union-attr]
             random_input, no_copy=True
@@ -305,7 +304,7 @@ class TestExecuteNoCopyBehavior:
         ):
             assert out is binding.host_allocation
 
-    def test_no_copy_false_returns_copy(self, engine: object, random_input: list) -> None:
+    def test_no_copy_false_returns_copy(self, engine, random_input: list) -> None:
         """no_copy=False returns independent copies."""
         outputs = engine.execute(  # type: ignore[union-attr]
             random_input, no_copy=False
@@ -318,7 +317,7 @@ class TestExecuteNoCopyBehavior:
             # But values should match
             assert np.array_equal(out, binding.host_allocation)
 
-    def test_no_copy_none_defaults_to_copy(self, engine: object, random_input: list) -> None:
+    def test_no_copy_none_defaults_to_copy(self, engine, random_input: list) -> None:
         """Default (None) behavior is to copy."""
         outputs = engine.execute(random_input)  # type: ignore[union-attr]
         for out, binding in zip(
@@ -327,7 +326,7 @@ class TestExecuteNoCopyBehavior:
         ):
             assert out is not binding.host_allocation
 
-    def test_no_copy_true_overwritten_by_next_exec(self, engine: object, random_input: list) -> None:
+    def test_no_copy_true_overwritten_by_next_exec(self, engine, random_input: list) -> None:
         """no_copy=True buffers are overwritten by next execute call."""
         outputs_first = engine.execute(  # type: ignore[union-attr]
             random_input, no_copy=True

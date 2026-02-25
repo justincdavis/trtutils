@@ -6,10 +6,13 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -176,9 +179,10 @@ class TestToolsUvChecks:
         """Should raise RuntimeError when uv is not on PATH."""
         from trtutils.download._tools import check_uv_available
 
-        with patch("shutil.which", return_value=None):
-            with pytest.raises(RuntimeError, match="uv is not available"):
-                check_uv_available()
+        with patch("shutil.which", return_value=None), pytest.raises(
+            RuntimeError, match="uv is not available"
+        ):
+            check_uv_available()
 
     @pytest.mark.cpu
     def test_check_uv_available_with_uv(self) -> None:
@@ -506,7 +510,7 @@ class TestDownloadHighLevel:
             "trtutils.download._download.shutil.copy",
         ) as mock_copy:
             # download_model returns a path inside the temp dir
-            mock_dm.return_value = Path("/tmp/fake/model.onnx")
+            mock_dm.return_value = download_tmp_dir / "fake" / "model.onnx"
             download("yolov10n", output_path)
             mock_dm.assert_called_once()
             mock_copy.assert_called_once()
@@ -526,7 +530,7 @@ class TestDownloadHighLevel:
             "trtutils.download._download.check_uv_version",
         ), patch(
             "trtutils.download._download.download_model",
-            return_value=Path("/tmp/fake/model.onnx"),
+            return_value=download_tmp_dir / "fake" / "model.onnx",
         ), patch(
             "trtutils.download._download.shutil.copy",
         ):

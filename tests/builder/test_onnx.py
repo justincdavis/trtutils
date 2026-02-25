@@ -115,7 +115,7 @@ class TestReadOnnxErrors:
     def test_wrong_extension(self, non_onnx_file: Path) -> None:
         """ValueError when file doesn't have .onnx extension."""
         read_onnx = _read_onnx_import()
-        with pytest.raises(ValueError, match="File does not have .onnx extension"):
+        with pytest.raises(ValueError, match=r"File does not have \.onnx extension"):
             read_onnx(non_onnx_file)
 
     @pytest.mark.gpu

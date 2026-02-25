@@ -66,7 +66,7 @@ class TestRawExec:
         result = engine_verbose.raw_exec(ptrs, no_warn=True)
         assert isinstance(result, list)
 
-    def test_raw_exec_output_pointers_match_bindings(self, engine, random_input) -> None:
+    def test_raw_exec_output_pointers_match_bindings(self, engine, random_input: object) -> None:
         """Returned pointers match the output binding allocations."""
         ptrs = [b.allocation for b in engine.input_bindings]
         result = engine.raw_exec(ptrs, no_warn=True)

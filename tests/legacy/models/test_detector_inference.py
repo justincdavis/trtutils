@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: SLF001
 # mypy: disable-error-code="misc,no-any-return,var-annotated"
 """Unified GPU-only detector and classifier inference tests."""
 

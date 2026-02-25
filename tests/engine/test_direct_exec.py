@@ -1,7 +1,6 @@
 # Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: SLF001
 """Tests for TRTEngine.direct_exec() method paths."""
 
 from __future__ import annotations

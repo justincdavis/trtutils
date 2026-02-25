@@ -212,7 +212,9 @@ class TestAllocateBindings:
             pytest.param(True, True, id="unified"),
         ],
     )
-    def test_allocate_returns_io_bindings(self, simple_engine_path, pagelocked, unified) -> None:
+    def test_allocate_returns_io_bindings(
+        self, simple_engine_path, pagelocked, unified: object
+    ) -> None:
         """allocate_bindings returns (inputs, outputs, allocations)."""
         from trtutils.core._bindings import allocate_bindings
         from trtutils.core._engine import create_engine

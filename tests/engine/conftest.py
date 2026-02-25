@@ -65,6 +65,6 @@ def engine_no_pagelocked(engine_path: Path) -> Generator:
 
 
 @pytest.fixture
-def random_input(engine: object) -> list:
+def random_input(engine) -> list:
     """Generate random input matching engine spec."""
     return engine.get_random_input()  # type: ignore[union-attr]

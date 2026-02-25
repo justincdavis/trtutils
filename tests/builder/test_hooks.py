@@ -162,7 +162,7 @@ class TestYoloHookNetworkModification:
         mock_output_0 = MagicMock()
         mock_output_0.shape = (1, 85, 8400)
 
-        def get_output_side_effect(idx):
+        def get_output_side_effect(_idx):
             return mock_output_0
 
         mock_network.get_output.side_effect = get_output_side_effect

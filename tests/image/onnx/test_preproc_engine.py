@@ -16,6 +16,10 @@ import cv2
 import numpy as np
 import pytest
 
+from trtutils import TRTEngine
+from trtutils.image.onnx_models import build_image_preproc, build_image_preproc_imagenet
+from trtutils.image.preprocessors import preprocess
+
 _TRT_VERSION: str | None = None
 try:
     import tensorrt as _trt_module  # type: ignore[import-untyped]
@@ -23,10 +27,6 @@ try:
     _TRT_VERSION = str(_trt_module.__version__)
 except ImportError:
     _trt_module = None  # type: ignore[assignment]
-
-from trtutils import TRTEngine
-from trtutils.image.onnx_models import build_image_preproc, build_image_preproc_imagenet
-from trtutils.image.preprocessors import preprocess
 
 _DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
 _HORSE_IMAGE_PATH = _DATA_DIR / "horse.jpg"

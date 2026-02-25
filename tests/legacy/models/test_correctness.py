@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: SLF001
 # mypy: disable-error-code="misc,no-any-return"
 """Detection correctness and regression tests."""
 
@@ -42,7 +41,7 @@ Detection = tuple[tuple[int, int, int, int], float, int]
 
 
 def _run_inference(
-    detector: object,
+    detector,
     images: list[np.ndarray],
     mode: str,
 ) -> list[list[Detection]]:

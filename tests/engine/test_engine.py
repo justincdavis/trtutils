@@ -1,7 +1,6 @@
 # Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: SLF001
 """Tests for TRTEngine initialization, backend selection, properties, and destruction."""
 
 from __future__ import annotations
@@ -224,39 +223,39 @@ class TestEngineInit:
 class TestEngineProperties:
     """Test all TRTEngine property accessors."""
 
-    def test_name(self, engine: object) -> None:
+    def test_name(self, engine) -> None:
         """Name returns string matching engine file stem."""
         name = engine.name  # type: ignore[union-attr]
         assert isinstance(name, str)
         assert len(name) > 0
 
-    def test_engine_object(self, engine: object) -> None:
+    def test_engine_object(self, engine) -> None:
         """Engine property returns a TensorRT ICudaEngine."""
         eng_obj = engine.engine  # type: ignore[union-attr]
         assert eng_obj is not None
 
-    def test_context_object(self, engine: object) -> None:
+    def test_context_object(self, engine) -> None:
         """Context property returns a TensorRT IExecutionContext."""
         ctx = engine.context  # type: ignore[union-attr]
         assert ctx is not None
 
-    def test_stream_object(self, engine: object) -> None:
+    def test_stream_object(self, engine) -> None:
         """Stream property returns a CUDA stream."""
         stream = engine.stream  # type: ignore[union-attr]
         assert stream is not None
 
-    def test_logger_object(self, engine: object) -> None:
+    def test_logger_object(self, engine) -> None:
         """Logger property returns a TensorRT ILogger."""
         logger = engine.logger  # type: ignore[union-attr]
         assert logger is not None
 
-    def test_memsize_positive(self, engine: object) -> None:
+    def test_memsize_positive(self, engine) -> None:
         """Memsize returns a non-negative integer."""
         memsize = engine.memsize  # type: ignore[union-attr]
         assert isinstance(memsize, int)
         assert memsize >= 0
 
-    def test_input_spec(self, engine: object) -> None:
+    def test_input_spec(self, engine) -> None:
         """input_spec returns list of (shape, dtype) tuples."""
         spec = engine.input_spec  # type: ignore[union-attr]
         assert isinstance(spec, list)
@@ -265,7 +264,7 @@ class TestEngineProperties:
             assert isinstance(shape, list)
             assert isinstance(dtype, np.dtype)
 
-    def test_input_shapes(self, engine: object) -> None:
+    def test_input_shapes(self, engine) -> None:
         """input_shapes returns list of tuple[int, ...]."""
         shapes = engine.input_shapes  # type: ignore[union-attr]
         assert isinstance(shapes, list)
@@ -274,7 +273,7 @@ class TestEngineProperties:
             assert isinstance(shape, tuple)
             assert all(isinstance(d, int) for d in shape)
 
-    def test_input_dtypes(self, engine: object) -> None:
+    def test_input_dtypes(self, engine) -> None:
         """input_dtypes returns list of np.dtype."""
         dtypes = engine.input_dtypes  # type: ignore[union-attr]
         assert isinstance(dtypes, list)
@@ -282,7 +281,7 @@ class TestEngineProperties:
         for dtype in dtypes:
             assert isinstance(dtype, np.dtype)
 
-    def test_input_names(self, engine: object) -> None:
+    def test_input_names(self, engine) -> None:
         """input_names returns list of str."""
         names = engine.input_names  # type: ignore[union-attr]
         assert isinstance(names, list)
@@ -291,7 +290,7 @@ class TestEngineProperties:
             assert isinstance(name, str)
             assert len(name) > 0
 
-    def test_output_spec(self, engine: object) -> None:
+    def test_output_spec(self, engine) -> None:
         """output_spec returns list of (shape, dtype) tuples."""
         spec = engine.output_spec  # type: ignore[union-attr]
         assert isinstance(spec, list)
@@ -300,7 +299,7 @@ class TestEngineProperties:
             assert isinstance(shape, list)
             assert isinstance(dtype, np.dtype)
 
-    def test_output_shapes(self, engine: object) -> None:
+    def test_output_shapes(self, engine) -> None:
         """output_shapes returns list of tuple[int, ...]."""
         shapes = engine.output_shapes  # type: ignore[union-attr]
         assert isinstance(shapes, list)
@@ -309,7 +308,7 @@ class TestEngineProperties:
             assert isinstance(shape, tuple)
             assert all(isinstance(d, int) for d in shape)
 
-    def test_output_dtypes(self, engine: object) -> None:
+    def test_output_dtypes(self, engine) -> None:
         """output_dtypes returns list of np.dtype."""
         dtypes = engine.output_dtypes  # type: ignore[union-attr]
         assert isinstance(dtypes, list)
@@ -317,7 +316,7 @@ class TestEngineProperties:
         for dtype in dtypes:
             assert isinstance(dtype, np.dtype)
 
-    def test_output_names(self, engine: object) -> None:
+    def test_output_names(self, engine) -> None:
         """output_names returns list of str."""
         names = engine.output_names  # type: ignore[union-attr]
         assert isinstance(names, list)
@@ -326,18 +325,18 @@ class TestEngineProperties:
             assert isinstance(name, str)
             assert len(name) > 0
 
-    def test_batch_size(self, engine: object) -> None:
+    def test_batch_size(self, engine) -> None:
         """batch_size returns int >= 1."""
         bs = engine.batch_size  # type: ignore[union-attr]
         assert isinstance(bs, int)
         assert bs >= 1
 
-    def test_is_dynamic_batch(self, engine: object) -> None:
+    def test_is_dynamic_batch(self, engine) -> None:
         """is_dynamic_batch returns a bool."""
         is_dyn = engine.is_dynamic_batch  # type: ignore[union-attr]
         assert isinstance(is_dyn, bool)
 
-    def test_input_bindings(self, engine: object) -> None:
+    def test_input_bindings(self, engine) -> None:
         """input_bindings returns list of Binding objects."""
         from trtutils.core._bindings import Binding
 
@@ -347,7 +346,7 @@ class TestEngineProperties:
         for b in bindings:
             assert isinstance(b, Binding)
 
-    def test_output_bindings(self, engine: object) -> None:
+    def test_output_bindings(self, engine) -> None:
         """output_bindings returns list of Binding objects."""
         from trtutils.core._bindings import Binding
 
@@ -357,43 +356,43 @@ class TestEngineProperties:
         for b in bindings:
             assert isinstance(b, Binding)
 
-    def test_pagelocked_mem_property(self, engine: object) -> None:
+    def test_pagelocked_mem_property(self, engine) -> None:
         """pagelocked_mem property returns True by default."""
         assert engine.pagelocked_mem is True  # type: ignore[union-attr]
 
-    def test_unified_mem_property(self, engine: object) -> None:
+    def test_unified_mem_property(self, engine) -> None:
         """unified_mem property returns bool."""
         from trtutils import FLAGS
 
         assert engine.unified_mem is FLAGS.IS_JETSON  # type: ignore[union-attr]
 
-    def test_dla_core_property(self, engine: object) -> None:
+    def test_dla_core_property(self, engine) -> None:
         """dla_core returns None on non-Jetson platforms."""
         assert engine.dla_core is None  # type: ignore[union-attr]
 
-    def test_device_property(self, engine: object) -> None:
+    def test_device_property(self, engine) -> None:
         """Device returns None when not explicitly set."""
         assert engine.device is None  # type: ignore[union-attr]
 
-    def test_input_spec_is_cached(self, engine: object) -> None:
+    def test_input_spec_is_cached(self, engine) -> None:
         """input_spec is a cached_property, returns same object on repeat."""
         spec1 = engine.input_spec  # type: ignore[union-attr]
         spec2 = engine.input_spec  # type: ignore[union-attr]
         assert spec1 is spec2
 
-    def test_output_spec_is_cached(self, engine: object) -> None:
+    def test_output_spec_is_cached(self, engine) -> None:
         """output_spec is a cached_property, returns same object on repeat."""
         spec1 = engine.output_spec  # type: ignore[union-attr]
         spec2 = engine.output_spec  # type: ignore[union-attr]
         assert spec1 is spec2
 
-    def test_input_shapes_is_cached(self, engine: object) -> None:
+    def test_input_shapes_is_cached(self, engine) -> None:
         """input_shapes is cached."""
         shapes1 = engine.input_shapes  # type: ignore[union-attr]
         shapes2 = engine.input_shapes  # type: ignore[union-attr]
         assert shapes1 is shapes2
 
-    def test_input_dtypes_is_cached(self, engine: object) -> None:
+    def test_input_dtypes_is_cached(self, engine) -> None:
         """input_dtypes is cached."""
         dt1 = engine.input_dtypes  # type: ignore[union-attr]
         dt2 = engine.input_dtypes  # type: ignore[union-attr]
@@ -440,6 +439,6 @@ class TestEngineDestruction:
         eng.__del__()
         eng.__del__()  # Second call should not error
 
-    def test_using_engine_tensors_flag_default(self, engine: object) -> None:
+    def test_using_engine_tensors_flag_default(self, engine) -> None:
         """_using_engine_tensors is True by default after init."""
         assert engine._using_engine_tensors is True  # type: ignore[union-attr]

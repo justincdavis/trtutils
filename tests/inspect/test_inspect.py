@@ -87,8 +87,8 @@ class TestInspectEngine:
         """A nonexistent engine file should raise."""
         from trtutils.inspect import inspect_engine
 
-        with pytest.raises(Exception):
-            inspect_engine("/tmp/nonexistent_engine_abc123.engine")
+        with pytest.raises(FileNotFoundError):
+            inspect_engine("nonexistent_engine_abc123.engine")
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +141,8 @@ class TestInspectOnnxLayers:
         """Nonexistent ONNX file should raise."""
         from trtutils.inspect import inspect_onnx_layers
 
-        with pytest.raises(Exception):
-            inspect_onnx_layers("/tmp/nonexistent_model_abc123.onnx")
+        with pytest.raises(FileNotFoundError):
+            inspect_onnx_layers("nonexistent_model_abc123.onnx")
 
     @pytest.mark.gpu
     def test_inspect_onnx_yolov10(self) -> None:

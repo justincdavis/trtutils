@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -139,7 +140,7 @@ class TestBuildEngineCache:
 
         # First build: store in cache
         build_engine(onnx_path, output_engine_path, cache=True, optimization_level=1)
-        output_engine_path.stat().st_size
+        assert output_engine_path.stat().st_size > 0
 
         # Remove output file but cache should still have it
         output_engine_path.unlink()
@@ -207,7 +208,7 @@ class TestBuildEngineTimingCache:
             timing_cache=timing_cache_path,
             optimization_level=1,
         )
-        timing_cache_path.stat().st_size
+        assert timing_cache_path.stat().st_size > 0
 
         # Second build reads existing timing cache
         out2 = output_engine_path.parent / "test2.engine"
@@ -370,16 +371,13 @@ class TestBuildEngineShapes:
         build_engine = _build_engine_import()
         # The simple.onnx model's input name may vary; build should still succeed
         # or raise a runtime error if names don't match (which is expected)
-        try:
+        with contextlib.suppress(RuntimeError):
             build_engine(
                 onnx_path,
                 output_engine_path,
                 shapes=[("input", (1, 3, 8, 8))],
                 optimization_level=1,
             )
-        except RuntimeError:
-            # Input name mismatch is acceptable -- we tested the shapes code path
-            pass
 
 
 # ===========================================================================
@@ -793,11 +791,11 @@ class TestBuildEngineErrors:
         # Mock the builder to return None for engine_bytes
         with patch("trtutils.builder._build.FLAGS") as mock_flags:
             # Copy real flags but force BUILD_SERIALIZED to True so we mock the right path
-            from trtutils._flags import FLAGS as real_flags
+            from trtutils._flags import FLAGS as REAL_FLAGS
 
-            for attr in dir(real_flags):
+            for attr in dir(REAL_FLAGS):
                 if not attr.startswith("_"):
-                    setattr(mock_flags, attr, getattr(real_flags, attr))
+                    setattr(mock_flags, attr, getattr(REAL_FLAGS, attr))
             mock_flags.BUILD_SERIALIZED = True
             mock_flags.BUILD_PROGRESS = False
 

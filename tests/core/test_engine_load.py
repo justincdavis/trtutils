@@ -38,7 +38,7 @@ class TestCreateEngine:
         assert engine is not None
         destroy_stream(stream)
 
-    def test_create_with_external_stream(self, simple_engine_path, cuda_stream) -> None:
+    def test_create_with_external_stream(self, simple_engine_path, cuda_stream: object) -> None:
         """create_engine reuses the provided stream."""
         from trtutils.core._engine import create_engine
 

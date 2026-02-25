@@ -323,7 +323,7 @@ class TestQueryStore:
         cache.store(src, clear_old=True)
         assert not src.exists()
 
-    def test_store_clear_old_no_overwrite_existing(self, tmp_path, monkeypatch) -> None:
+    def test_store_clear_old_no_overwrite_existing(self, tmp_path, monkeypatch: object) -> None:
         """Store with clear_old=True, overwrite=False and existing target removes source."""
         from trtutils.core import cache
 
@@ -344,7 +344,7 @@ class TestQueryStore:
         assert (cache_dir / "model.engine").read_text() == "old"
 
     def test_store_file_uses_original_name_when_cache_filename_is_none(
-        self, tmp_path, monkeypatch
+        self, tmp_path, monkeypatch: object
     ) -> None:
         """store_file without cache_filename uses the original filename."""
         from trtutils.core import cache
@@ -360,7 +360,7 @@ class TestQueryStore:
         assert result.name == "original.engine"
         assert result.exists()
 
-    def test_store_clear_old_true_with_overwrite_true(self, tmp_path, monkeypatch) -> None:
+    def test_store_clear_old_true_with_overwrite_true(self, tmp_path, monkeypatch: object) -> None:
         """Store with clear_old=True and overwrite=True removes source and writes new."""
         from trtutils.core import cache
 
@@ -429,7 +429,7 @@ class TestRemove:
         with pytest.raises(FileNotFoundError):
             cache.remove_file("nonexistent", "cache")
 
-    def test_remove_file_with_valid_extension_in_name(self, tmp_path, monkeypatch) -> None:
+    def test_remove_file_with_valid_extension_in_name(self, tmp_path, monkeypatch: object) -> None:
         """remove_file() with valid extension in the name itself."""
         from trtutils.core import cache
 
@@ -526,7 +526,7 @@ class TestTimingCache:
         assert exists is True
         assert path.read_bytes() == b"serialized cache data"
 
-    def test_save_timing_cache_to_global_overwrite(self, tmp_path, monkeypatch) -> None:
+    def test_save_timing_cache_to_global_overwrite(self, tmp_path, monkeypatch: object) -> None:
         """save_timing_cache_to_global overwrites by default (overwrite=True)."""
         from trtutils.core import cache
 
@@ -547,7 +547,7 @@ class TestTimingCache:
         _, path = cache.query_timing_cache()
         assert path.read_bytes() == b"second"
 
-    def test_save_timing_cache_to_global_no_overwrite(self, tmp_path, monkeypatch) -> None:
+    def test_save_timing_cache_to_global_no_overwrite(self, tmp_path, monkeypatch: object) -> None:
         """save_timing_cache_to_global with overwrite=False keeps original."""
         from trtutils.core import cache
 
