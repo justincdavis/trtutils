@@ -1,5 +1,5 @@
 .PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test release docker \
-       test-cu11 test-cu12 test-cu13 ci-cu11 ci-cu12 ci-cu13 docker-test-build validate-docker
+       test-cu11 test-cu12 test-cu13 ci-cu11 ci-cu12 ci-cu13 docker-test-build
 
 help:
 	@echo "Please use \`make <target>' where <target> is one of"
@@ -20,7 +20,6 @@ help:
 	@echo "  ci-cu12             to run full CI in CUDA 12 Docker container"
 	@echo "  ci-cu13             to run full CI in CUDA 13 Docker container"
 	@echo "  docker-test-build   to build all test Docker images"
-	@echo "  validate-docker     to validate packages in all test Docker containers"
 
 clean:
 	rm -rf build
@@ -75,9 +74,6 @@ ci-cu12:
 
 ci-cu13:
 	./ci/test_cuda.sh 13 --all
-
-validate-docker:
-	./ci/validate_docker.sh
 
 docker-test-build:
 	docker compose -f docker/docker-compose.test.yml build
