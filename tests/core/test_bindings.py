@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
@@ -144,6 +146,25 @@ class TestCreateBinding:
         assert binding.unified_mem is True
         assert binding.allocation != 0
         binding.free()
+
+    def test_create_binding_unified_memory_frees_host_only(self) -> None:
+        """Mapped unified host allocations should not be freed with cudaFree."""
+        from trtutils.core import _bindings
+
+        arr = np.zeros((4,), dtype=np.float32)
+        binding = _bindings.create_binding(arr, pagelocked_mem=True, unified_mem=True)
+
+        with patch.object(
+            _bindings.cudart, "cudaFree", wraps=_bindings.cudart.cudaFree
+        ) as cuda_free, patch.object(
+            _bindings.cudart,
+            "cudaFreeHost",
+            wraps=_bindings.cudart.cudaFreeHost,
+        ) as cuda_free_host:
+            binding.free()
+
+        cuda_free.assert_not_called()
+        cuda_free_host.assert_called_once()
 
     def test_create_binding_with_array_data(self) -> None:
         """use_array_data=True copies data from the input array."""

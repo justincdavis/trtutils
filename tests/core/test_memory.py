@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
@@ -175,6 +177,46 @@ class TestAllocateManagedMemory:
         assert isinstance(ptr, int)
         assert ptr != 0
         cuda_free(ptr)
+
+    def test_calls_cuda_malloc_managed_with_global_flag(self) -> None:
+        """Managed allocation uses explicit cudaMemAttachGlobal flag."""
+        from trtutils.core import _memory
+
+        with patch.object(
+            _memory.cudart,
+            "cudaMallocManaged",
+            return_value=(_memory.cudart.cudaError_t.cudaSuccess, 1234),
+        ) as malloc_managed, patch.object(_memory.cudart, "cudaStreamAttachMemAsync") as attach_mem:
+            ptr = _memory.allocate_managed_memory(1024)
+
+        assert ptr == 1234
+        malloc_managed.assert_called_once_with(1024, _memory.cudart.cudaMemAttachGlobal)
+        attach_mem.assert_not_called()
+
+    def test_calls_stream_attach_with_full_argument_set(self) -> None:
+        """Stream attach path passes stream, ptr, length, and flags."""
+        from trtutils.core import _memory
+
+        fake_stream = object()
+        with patch.object(
+            _memory.cudart,
+            "cudaMallocManaged",
+            return_value=(_memory.cudart.cudaError_t.cudaSuccess, 5678),
+        ) as malloc_managed, patch.object(
+            _memory.cudart,
+            "cudaStreamAttachMemAsync",
+            return_value=(_memory.cudart.cudaError_t.cudaSuccess,),
+        ) as attach_mem:
+            ptr = _memory.allocate_managed_memory(2048, stream=fake_stream)
+
+        assert ptr == 5678
+        malloc_managed.assert_called_once_with(2048, _memory.cudart.cudaMemAttachGlobal)
+        attach_mem.assert_called_once_with(
+            fake_stream,
+            5678,
+            0,
+            _memory.cudart.cudaMemAttachGlobal,
+        )
 
 
 # ---------------------------------------------------------------------------

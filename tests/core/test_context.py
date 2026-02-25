@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 
@@ -33,6 +35,28 @@ class TestCreateContext:
         ctx = create_context()
         assert isinstance(ctx, cuda.CUcontext)
         destroy_context(ctx)
+
+    def test_create_context_uses_ctx_create_params_placeholder(self) -> None:
+        """create_context() passes None as the first cuCtxCreate argument."""
+        from trtutils.compat._libs import cuda
+        from trtutils.core import _context
+
+        fake_device = object()
+        fake_context = object()
+        with patch.object(
+            _context.cuda,
+            "cuDeviceGet",
+            return_value=(cuda.CUresult.CUDA_SUCCESS, fake_device),
+        ) as device_get, patch.object(
+            _context.cuda,
+            "cuCtxCreate",
+            return_value=(cuda.CUresult.CUDA_SUCCESS, fake_context),
+        ) as ctx_create:
+            ctx = _context.create_context()
+
+        assert ctx is fake_context
+        device_get.assert_called_once_with(0)
+        ctx_create.assert_called_once_with(None, 0, fake_device)
 
 
 @pytest.mark.gpu

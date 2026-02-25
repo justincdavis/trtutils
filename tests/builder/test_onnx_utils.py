@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("onnx_graphsurgeon")
+
 
 @pytest.mark.cpu
 class TestExtractSubgraph:

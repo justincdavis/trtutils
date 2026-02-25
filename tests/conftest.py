@@ -50,8 +50,11 @@ def version_engine_path(path: Path) -> Path:
 def gpu_available() -> bool:
     """Check if a CUDA GPU is available."""
     try:
+        from trtutils.compat._libs import cudart
         from trtutils.core import get_device_count
 
+        if not hasattr(cudart, "cudaStreamCreate"):
+            return False
         return get_device_count() > 0
     except Exception:
         return False
@@ -156,20 +159,45 @@ def build_test_engine() -> Callable[..., Path]:
         onnx_path: Path,
         engine_dir: Path | None = None,
         optimization_level: int = 1,
+        batch_size: int = 1,
     ) -> Path:
         if engine_dir is None:
             engine_dir = ENGINES_DIR
         engine_dir.mkdir(parents=True, exist_ok=True)
 
-        engine_path = version_engine_path(engine_dir / f"{onnx_path.stem}.engine")
+        engine_path = version_engine_path(engine_dir / f"{onnx_path.stem}_b{batch_size}.engine")
 
         if not engine_path.exists():
+            shapes = None
+            if batch_size > 1:
+                import onnx
+
+                model = onnx.load(str(onnx_path))
+                shapes = []
+                for tensor in model.graph.input:
+                    dims = []
+                    for dim in tensor.type.tensor_type.shape.dim:
+                        if dim.dim_param:
+                            dims.append(1)
+                        elif dim.dim_value:
+                            dims.append(int(dim.dim_value))
+                    if not dims:
+                        continue
+                    if len(dims) >= 1:
+                        # First dimension is treated as batch.
+                        if dims[0] not in (0, 1, batch_size):
+                            err_msg = f"Model {onnx_path.name} has fixed batch {dims[0]} and cannot use {batch_size}"
+                            raise ValueError(err_msg)
+                        dims[0] = batch_size
+                    shapes.append((tensor.name, tuple(dims)))
+
             from trtutils.builder import build_engine
 
             build_engine(
                 onnx_path,
                 engine_path,
                 optimization_level=optimization_level,
+                shapes=shapes,
             )
 
         return engine_path

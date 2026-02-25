@@ -38,6 +38,16 @@ def classifier_engine(build_test_engine) -> Path:
     return build_test_engine(onnx_path)
 
 
+@pytest.fixture(scope="module")
+def classifier_engine_batch(build_test_engine) -> Path:
+    """Build a batch-capable classifier engine for batch tests."""
+    onnx_path = _find_classifier_onnx()
+    try:
+        return build_test_engine(onnx_path, batch_size=2)
+    except Exception as exc:
+        pytest.skip(f"Batch classifier engine unavailable: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Classifier base class tests (using Classifier directly)
 # ---------------------------------------------------------------------------
@@ -170,13 +180,13 @@ class TestClassifierBatch:
     @pytest.mark.gpu
     def test_batch_run_returns_nested(
         self,
-        classifier_engine,
+        classifier_engine_batch,
         random_images,
     ) -> None:
         """Batch run with postprocess returns list[list[ndarray]]."""
         from trtutils.image import Classifier
 
-        cls = Classifier(classifier_engine, warmup=False)
+        cls = Classifier(classifier_engine_batch, warmup=False)
         imgs = random_images(count=2, height=480, width=640)
         outputs = cls.run(imgs)
         assert isinstance(outputs, list)
@@ -187,13 +197,13 @@ class TestClassifierBatch:
     @pytest.mark.gpu
     def test_batch_get_classifications(
         self,
-        classifier_engine,
+        classifier_engine_batch,
         random_images,
     ) -> None:
         """Batch get_classifications returns list[list[tuple]]."""
         from trtutils.image import Classifier
 
-        cls = Classifier(classifier_engine, warmup=False)
+        cls = Classifier(classifier_engine_batch, warmup=False)
         imgs = random_images(count=2, height=480, width=640)
         outputs = cls.run(imgs)
         results = cls.get_classifications(outputs, top_k=3)

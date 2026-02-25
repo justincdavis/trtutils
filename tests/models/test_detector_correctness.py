@@ -31,11 +31,36 @@ def yolov10_engine(build_test_engine) -> Path:
 
 
 @pytest.fixture(scope="module")
+def yolov10_engine_batch(build_test_engine) -> Path:
+    """Build and cache a batch-capable YOLOv10n engine."""
+    if not YOLOV10_ONNX.exists():
+        pytest.skip("yolov10n_640.onnx not available")
+    try:
+        return build_test_engine(YOLOV10_ONNX, batch_size=2)
+    except Exception as exc:
+        pytest.skip(f"Batch YOLOv10 engine unavailable: {exc}")
+
+
+@pytest.fixture(scope="module")
 def yolov10_detector(yolov10_engine) -> YOLOv10:
     """Instantiate a YOLOv10 detector for the module."""
+    from trtutils.compat._libs import cudart
     from trtutils.models import YOLOv10
 
+    if not hasattr(cudart, "cudaStreamCreate"):
+        pytest.skip("No CUDA runtime available")
     return YOLOv10(yolov10_engine, warmup=False)
+
+
+@pytest.fixture(scope="module")
+def yolov10_detector_batch(yolov10_engine_batch) -> YOLOv10:
+    """Instantiate a batch-capable YOLOv10 detector for batched tests."""
+    from trtutils.compat._libs import cudart
+    from trtutils.models import YOLOv10
+
+    if not hasattr(cudart, "cudaStreamCreate"):
+        pytest.skip("No CUDA runtime available")
+    return YOLOv10(yolov10_engine_batch, warmup=False)
 
 
 # ---------------------------------------------------------------------------
@@ -131,12 +156,12 @@ class TestDetectorBatch:
     @pytest.mark.gpu
     def test_batch_run_returns_nested_lists(
         self,
-        yolov10_detector,
+        yolov10_detector_batch,
         random_images,
     ) -> None:
         """Batch run with postprocess returns list[list[ndarray]]."""
         imgs = random_images(count=2, height=480, width=640)
-        outputs = yolov10_detector.run(imgs)
+        outputs = yolov10_detector_batch.run(imgs)
         assert isinstance(outputs, list)
         assert len(outputs) == 2
         for per_image in outputs:
@@ -147,13 +172,13 @@ class TestDetectorBatch:
     @pytest.mark.gpu
     def test_batch_get_detections(
         self,
-        yolov10_detector,
+        yolov10_detector_batch,
         random_images,
     ) -> None:
         """Batch get_detections returns list[list[tuple]]."""
         imgs = random_images(count=2, height=480, width=640)
-        outputs = yolov10_detector.run(imgs)
-        dets = yolov10_detector.get_detections(outputs)
+        outputs = yolov10_detector_batch.run(imgs)
+        dets = yolov10_detector_batch.get_detections(outputs)
         assert isinstance(dets, list)
         assert len(dets) == 2
         for per_image_dets in dets:

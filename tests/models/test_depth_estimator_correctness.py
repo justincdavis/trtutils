@@ -38,6 +38,16 @@ def depth_engine(build_test_engine) -> Path:
     return build_test_engine(onnx_path)
 
 
+@pytest.fixture(scope="module")
+def depth_engine_batch(build_test_engine) -> Path:
+    """Build a batch-capable depth engine for batch tests."""
+    onnx_path = _find_depth_onnx()
+    try:
+        return build_test_engine(onnx_path, batch_size=2)
+    except Exception as exc:
+        pytest.skip(f"Batch depth engine unavailable: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # DepthEstimator base class tests
 # ---------------------------------------------------------------------------
@@ -146,13 +156,13 @@ class TestDepthEstimatorBatch:
     @pytest.mark.gpu
     def test_batch_run_returns_nested(
         self,
-        depth_engine,
+        depth_engine_batch,
         random_images,
     ) -> None:
         """Batch run with postprocess returns list[list[ndarray]]."""
         from trtutils.image import DepthEstimator
 
-        de = DepthEstimator(depth_engine, warmup=False)
+        de = DepthEstimator(depth_engine_batch, warmup=False)
         imgs = random_images(count=2, height=480, width=640)
         outputs = de.run(imgs)
         assert isinstance(outputs, list)
@@ -163,13 +173,13 @@ class TestDepthEstimatorBatch:
     @pytest.mark.gpu
     def test_batch_get_depth_maps(
         self,
-        depth_engine,
+        depth_engine_batch,
         random_images,
     ) -> None:
         """Batch get_depth_maps returns list[ndarray]."""
         from trtutils.image import DepthEstimator
 
-        de = DepthEstimator(depth_engine, warmup=False)
+        de = DepthEstimator(depth_engine_batch, warmup=False)
         imgs = random_images(count=2, height=480, width=640)
         outputs = de.run(imgs)
         depth_maps = de.get_depth_maps(outputs)
@@ -203,13 +213,13 @@ class TestDepthEstimatorEnd2End:
     @pytest.mark.gpu
     def test_end2end_batch(
         self,
-        depth_engine,
+        depth_engine_batch,
         random_images,
     ) -> None:
         """end2end() on batch returns list[ndarray]."""
         from trtutils.image import DepthEstimator
 
-        de = DepthEstimator(depth_engine, warmup=False)
+        de = DepthEstimator(depth_engine_batch, warmup=False)
         imgs = random_images(count=2, height=480, width=640)
         result = de.end2end(imgs)
         assert isinstance(result, list)

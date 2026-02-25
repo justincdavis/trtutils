@@ -77,7 +77,7 @@ def download_model_internal(
 
     """
     if model not in get_valid_models(model_type):
-        err_msg = f"Model {model} is not a valid {friendly_name} model."
+        err_msg = f"Model {model} not supported for {friendly_name}."
         raise ValueError(err_msg)
     _download(
         model=model,

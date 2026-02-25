@@ -89,13 +89,12 @@ class TestFlagConsistency:
     """Tests for logical consistency between related flags."""
 
     def test_exec_backend_primary_consistency(self) -> None:
-        """If EXEC_ASYNC_V3 is True, V2 and V1 should also be True."""
+        """If EXEC_ASYNC_V3 is True, execute_v2 path should be available."""
         from trtutils._flags import FLAGS
 
-        # V3 implies V2 and V1 (backward compatibility)
+        # TRT 10 can expose V3 while not exposing legacy async entry points.
         if FLAGS.EXEC_ASYNC_V3:
-            assert FLAGS.EXEC_ASYNC_V2 is True
-            assert FLAGS.EXEC_ASYNC_V1 is True
+            assert FLAGS.EXEC_V2 is True
 
     def test_exec_async_v2_implies_v1(self) -> None:
         """If EXEC_ASYNC_V2 is True, V1 should also be True."""

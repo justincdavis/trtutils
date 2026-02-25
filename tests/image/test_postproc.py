@@ -4,7 +4,7 @@
 # mypy: disable-error-code="misc"
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import Callable, List, Tuple
 
 import numpy as np
 import pytest
@@ -19,12 +19,12 @@ from trtutils.image.postprocessors import (
     postprocess_yolov10,
 )
 
-RatiosPaddingFactory = Callable[..., tuple[list[tuple[float, float]], list[tuple[float, float]]]]
-YoloOutputFactory = Callable[..., list[np.ndarray]]
-EfficientNmsOutputFactory = Callable[..., list[np.ndarray]]
-RfdetrOutputFactory = Callable[..., list[np.ndarray]]
-DetrOutputFactory = Callable[..., list[np.ndarray]]
-ClassificationOutputFactory = Callable[..., list[np.ndarray]]
+RatiosPaddingFactory = Callable[..., Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]]
+YoloOutputFactory = Callable[..., List[np.ndarray]]
+EfficientNmsOutputFactory = Callable[..., List[np.ndarray]]
+RfdetrOutputFactory = Callable[..., List[np.ndarray]]
+DetrOutputFactory = Callable[..., List[np.ndarray]]
+ClassificationOutputFactory = Callable[..., List[np.ndarray]]
 
 
 class TestYOLOv10Postproc:

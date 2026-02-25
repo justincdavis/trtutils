@@ -101,6 +101,13 @@ def _get_classifications_core(
     outputs: list[np.ndarray],
     top_k: int = 5,
 ) -> list[tuple[int, float]]:
-    probabilities = outputs[0][0]  # (1000,) - flatten from (1, 1000)
+    # Normalize to a 1D probability vector regardless of model output rank.
+    probs = outputs[0]
+    if probs.ndim == 0:
+        probabilities = probs.reshape(1)
+    elif probs.ndim == 1:
+        probabilities = probs
+    else:
+        probabilities = probs[0].reshape(-1)
     top_indices = np.argsort(probabilities)[::-1][:top_k]
     return [(int(idx), float(probabilities[idx])) for idx in top_indices]
