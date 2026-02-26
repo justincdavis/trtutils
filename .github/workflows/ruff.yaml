@@ -12,7 +12,7 @@ jobs:
       - name: Install ruff
         run: pip install --upgrade ruff
       - name: Ruff Format Check
-        run: ./ci/run_format.sh --check --diff
+        run: ./ci/run_ruff.sh --format --check --diff
 
   Check:
     runs-on: ubuntu-latest
@@ -25,4 +25,4 @@ jobs:
       - name: Install ruff
         run: pip install --upgrade ruff
       - name: Ruff Check
-        run: ./ci/run_lint.sh --no-fix
+        run: ./ci/run_ruff.sh --lint --no-fix

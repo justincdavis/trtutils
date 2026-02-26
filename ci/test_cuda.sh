@@ -55,7 +55,7 @@ EXIT_CODE=0
 
 if [ "$DO_LINT" = true ]; then
     echo "=== Running lint (cu${CUDA_VERSION}) ==="
-    if $COMPOSE run --rm $SERVICE ./ci/run_lint.sh --no-fix; then
+    if $COMPOSE run --rm $SERVICE ./ci/run_ruff.sh --lint --no-fix; then
         echo "Lint passed"
     else
         echo "Lint failed"

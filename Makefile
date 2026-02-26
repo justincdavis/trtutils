@@ -40,8 +40,8 @@ test:
 	./ci/run_tests.sh
 
 fix:
-	./ci/run_format.sh
-	./ci/run_lint.sh
+	./ci/run_ruff.sh --format
+	./ci/run_ruff.sh --lint
 
 ci:
 	./ci/act.sh $(ACT_ARGS)
