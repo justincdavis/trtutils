@@ -13,15 +13,23 @@ FROM ${BASE_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
 
 ARG PIP_EXTRA_FLAGS=""
+ARG UPGRADE_PIP="true"
 ARG CUDA_VERSION
 ARG CUDA_REQUIREMENTS_FILE
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-dev \
-        libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev git \
+        python3 python3-pip python3-dev curl \
+        libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python3 -m pip install ${PIP_EXTRA_FLAGS} --upgrade pip setuptools wheel
+RUN if [ "${UPGRADE_PIP}" = "true" ]; then \
+        python3 -m pip install ${PIP_EXTRA_FLAGS} --upgrade pip setuptools wheel; \
+    else \
+        echo "Skipping pip/setuptools/wheel upgrade for Debian-managed Python"; \
+    fi
+
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh
+RUN uv --version
 
 WORKDIR /workspace/trtutils
 
@@ -29,9 +37,9 @@ COPY pyproject.toml README.md ./
 COPY src/ src/
 COPY docker/requirements_cu11.txt docker/requirements_cu12.txt docker/requirements_cu13.txt /tmp/
 
-RUN python3 -m pip install ${PIP_EXTRA_FLAGS} --no-cache-dir -r "/tmp/${CUDA_REQUIREMENTS_FILE}" && \
-    python3 -m pip install ${PIP_EXTRA_FLAGS} --no-cache-dir ".[cu${CUDA_VERSION},test,ci]" && \
-    python3 -m pip show cuda-python "tensorrt_cu${CUDA_VERSION}"
+RUN python3 -m pip install ${PIP_EXTRA_FLAGS} --no-cache-dir -r "/tmp/${CUDA_REQUIREMENTS_FILE}"
+RUN python3 -m pip install ${PIP_EXTRA_FLAGS} --no-cache-dir ".[cu${CUDA_VERSION},test,ci]"
+RUN python3 -m pip show cuda-python "tensorrt_cu${CUDA_VERSION}"
 
 COPY tests/ tests/
 COPY data/ data/

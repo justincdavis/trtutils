@@ -1,5 +1,5 @@
-.PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test release docker \
-       test-cu11 test-cu12 test-cu13 ci-cu11 ci-cu12 ci-cu13 ci-cu-all docker-test-build
+.PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test release \
+       test-cu11 test-cu12 test-cu13 ci-cu11 ci-cu12 ci-cu13 ci-cu-all dockers
 
 help:
 	@echo "Please use \`make <target>' where <target> is one of"
@@ -12,7 +12,7 @@ help:
 	@echo "  typecheck           to run the ty static type checker"
 	@echo "  test                to run the tests"
 	@echo "  release             to perform all actions required for a release"
-	@echo "  docker              to build the local act Docker image"
+	@echo "  dockers             to build all project Docker images (act + CUDA test)"
 	@echo "  test-cu11           to run tests in CUDA 11 Docker container"
 	@echo "  test-cu12           to run tests in CUDA 12 Docker container"
 	@echo "  test-cu13           to run tests in CUDA 13 Docker container"
@@ -20,7 +20,7 @@ help:
 	@echo "  ci-cu12             to run full CI in CUDA 12 Docker container"
 	@echo "  ci-cu13             to run full CI in CUDA 13 Docker container"
 	@echo "  ci-cu-all           to run full CI for CUDA 11, 12, and 13"
-	@echo "  docker-test-build   to build all test Docker images"
+	@echo "  dockers             to build all project Docker images (act + CUDA test)"
 
 clean:
 	rm -rf build
@@ -55,9 +55,6 @@ release: clean ci test docs
 ci_env:
 	./ci/make_venv.sh
 
-docker:
-	docker build -f docker/Dockerfile.act -t trtutils-act:latest .
-
 test-cu11:
 	./ci/test_cuda.sh 11 --test
 
@@ -81,5 +78,6 @@ ci-cu-all:
 	$(MAKE) ci-cu12
 	$(MAKE) ci-cu13
 
-docker-test-build:
+dockers:
+	docker build -f docker/Dockerfile.act -t trtutils-act:latest .
 	docker compose -f docker/docker-compose.test.yml build

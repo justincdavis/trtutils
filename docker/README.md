@@ -19,8 +19,8 @@ You also need a host with NVIDIA GPU support configured for Docker.
 
 From repo root:
 
-- Build all CUDA test images:
-  - `make docker-test-build`
+- Build all project Docker images (`Dockerfile.act` + CUDA test images):
+  - `make dockers`
 - Run tests only:
   - `make test-cu11`
   - `make test-cu12`
@@ -61,6 +61,6 @@ these Docker test images.
 
 1. Update the relevant `docker/requirements_cu*.txt` file(s).
 2. Rebuild images:
-   - `make docker-test-build`
+   - `make dockers`
 3. Re-run full checks:
    - `make ci-cu-all`
