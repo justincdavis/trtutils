@@ -12,7 +12,7 @@ help:
 	@echo "  typecheck           to run the ty static type checker"
 	@echo "  test                to run the tests"
 	@echo "  release             to perform all actions required for a release"
-	@echo "  dockers             to build all project Docker images (act + CUDA test)"
+	@echo "  dockers             to build all project Docker images (see docker/build.sh --help)"
 	@echo "  test-cu11           to run tests in CUDA 11 Docker container"
 	@echo "  test-cu12           to run tests in CUDA 12 Docker container"
 	@echo "  test-cu13           to run tests in CUDA 13 Docker container"
@@ -20,7 +20,6 @@ help:
 	@echo "  ci-cu12             to run full CI in CUDA 12 Docker container"
 	@echo "  ci-cu13             to run full CI in CUDA 13 Docker container"
 	@echo "  ci-cu-all           to run full CI for CUDA 11, 12, and 13"
-	@echo "  dockers             to build all project Docker images (act + CUDA test)"
 
 clean:
 	rm -rf build
@@ -79,5 +78,4 @@ ci-cu-all:
 	$(MAKE) ci-cu13
 
 dockers:
-	docker build -f docker/Dockerfile.act -t trtutils-act:latest .
-	docker compose -f docker/docker-compose.test.yml build
+	./docker/build.sh --all

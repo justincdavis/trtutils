@@ -20,6 +20,9 @@ From repo root:
 
 - Build all project Docker images (`Dockerfile.act` + CUDA test images):
   - `make dockers`
+  - `./docker/build.sh --cu12`          (build a single image)
+  - `./docker/build.sh --cu11 --cu13`   (build specific images)
+  - `./docker/build.sh --all --log`     (build all with per-image logs in `docker/logs/`)
 - Run tests only:
   - `make test-cu11`
   - `make test-cu12`
