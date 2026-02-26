@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -8,7 +8,9 @@ import contextlib
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import nvtx
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
@@ -41,6 +43,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a CUDAPreprocessor for image processing models.
@@ -83,6 +86,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        orig_size_dtype : np.dtype, optional
+            The dtype to use for the orig_size buffer. Default is np.int32.
 
         """
         tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
@@ -98,6 +103,15 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             tag,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            orig_size_dtype=orig_size_dtype,
+        )
+
+        self._nvtx_tags.update(
+            {
+                "cuda_direct_preproc": f"preproc::cuda_direct_preproc [{self._tag}]",
+                "reallocate_batch_buffers": f"preproc::reallocate_batch_buffers [{self._tag}]",
+                "create_sst_args": f"preproc::create_sst_args [{self._tag}]",
+            }
         )
 
         # SST input binding: (N, H', W', 3) uint8 - starts at batch_size=1
@@ -130,6 +144,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         else:
             self._sst_kernel = Kernel(SST_FAST[0], SST_FAST[1])
 
+        # Cache for _create_sst_args: avoid repacking kernel args for same batch size
+        self._cached_sst_batch_size: int | None = None
+        self._cached_sst_args: np.ndarray | None = None
+
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
             if self._own_stream:
@@ -148,7 +166,12 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
     def _reallocate_batch_buffers(self: Self, batch_size: int) -> None:
         """Reallocate SST buffers if batch size changed."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["reallocate_batch_buffers"])
+
         if batch_size == self._current_batch_size:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # reallocate_batch_buffers
             return
 
         # Reallocate SST input buffer: (N, H', W', 3) uint8
@@ -176,6 +199,13 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         self._current_batch_size = batch_size
 
+        # Invalidate SST args cache: buffer allocations changed
+        self._cached_sst_batch_size = None
+        self._cached_sst_args = None
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # reallocate_batch_buffers
+
     def _create_sst_args(
         self: Self,
         batch_size: int,
@@ -196,6 +226,15 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             If the imagenet buffers are not allocated.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["create_sst_args"])
+
+        # Check cache: for constant batch size, args are identical every frame
+        if batch_size == self._cached_sst_batch_size and self._cached_sst_args is not None:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # create_sst_args
+            return self._cached_sst_args
+
         if verbose:
             LOG.debug(f"{self._tag}: Making sst args (batch_size={batch_size})")
 
@@ -204,6 +243,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         if self._use_imagenet:
             if self._mean_buffer is None or self._std_buffer is None:
                 err_msg = "Imagenet buffers not allocated for SST kernel."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # create_sst_args
                 raise RuntimeError(err_msg)
             # Signature: input, output, mean, std, height, width, batch_size
             sst_args = self._sst_kernel.create_args(
@@ -228,6 +269,13 @@ class CUDAPreprocessor(GPUImagePreprocessor):
                 batch_size,
                 verbose=verbose,
             )
+
+        # Store in cache
+        self._cached_sst_batch_size = batch_size
+        self._cached_sst_args = sst_args
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # create_sst_args
 
         return sst_args
 
@@ -262,6 +310,9 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             The GPU pointer to preprocessed data, list of ratios, and list of padding per image.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cuda_direct_preproc"])
+
         if verbose:
             LOG.debug(f"{self._tag}: direct_preproc")
 
@@ -299,5 +350,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             self._stream,
             sst_args,
         )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # cuda_direct_preproc
 
         return self._output_binding.allocation, ratios_list, padding_list

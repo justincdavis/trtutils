@@ -70,13 +70,13 @@ for running YOLOv7 inference:
 .. code-block:: python
 
     import cv2
-    from trtutils.models import YOLO, YOLO7
+    from trtutils.models import YOLO, YOLOv7
 
     # Load the YOLOv7 model
     yolo = YOLO("yolov7.engine")
 
-    # OR, use the YOLO7 class
-    yolo = YOLO7("yolov7.engine")
+    # OR, use the YOLOv7 class
+    yolo = YOLOv7("yolov7.engine")
 
     # Read and process an image
     img = cv2.imread("example.jpg")

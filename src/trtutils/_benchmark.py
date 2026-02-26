@@ -64,6 +64,7 @@ def benchmark_engine(
     iterations: int = 1000,
     warmup_iterations: int = 50,
     dla_core: int | None = None,
+    device: int | None = None,
     *,
     warmup: bool | None = None,
     verbose: bool | None = None,
@@ -83,6 +84,9 @@ def benchmark_engine(
     dla_core : int, optional
         The DLA core to assign DLA layers of the engine to. Default is None.
         If None, any DLA layers will be assigned to DLA core 0.
+    device : int, optional
+        The CUDA device index to use for the engine. Default is None,
+        which uses the current device.
     warmup : bool, optional
         Whether to do warmup iterations, by default None
         If None, warmup will be set to True.
@@ -104,6 +108,7 @@ def benchmark_engine(
             engine,
             warmup_iterations=warmup_iterations,
             dla_core=dla_core,
+            device=device,
             warmup=warmup,
             verbose=verbose,
         )
@@ -142,7 +147,13 @@ def benchmark_engine(
 
 
 def benchmark_engines(
-    engines: Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]],
+    engines: Sequence[
+        TRTEngine
+        | Path
+        | str
+        | tuple[TRTEngine | Path | str, int]
+        | tuple[TRTEngine | Path | str, int | None, int | None]
+    ],
     iterations: int = 1000,
     warmup_iterations: int = 50,
     *,
@@ -155,8 +166,9 @@ def benchmark_engines(
 
     Parameters
     ----------
-    engines : Sequence[TRTEngine | Path | str | tuple[TRTEngine | Path | str, int]],
-        The engines to benchmark as paths to the engine files.
+    engines : Sequence[...]
+        The engines to benchmark. Each element can be a TRTEngine, Path, str,
+        a 2-tuple of (engine, dla_core), or a 3-tuple of (engine, dla_core, device).
     iterations : int, optional
         The number of iterations to run the benchmark for, by default 1000.
     warmup_iterations : int, optional
@@ -182,18 +194,19 @@ def benchmark_engines(
     """
     temp_engines: list[Path | TRTEngine] = []
     dla_assignments: list[int | None] = []
+    device_assignments: list[int | None] = []
     for engine_info in engines:
-        engine: TRTEngine | Path | str
         dla_core: int | None = None
+        device: int | None = None
         if isinstance(engine_info, tuple):
-            engine = engine_info[0]  # type: ignore[assignment]
-            dla_core = engine_info[1]  # type: ignore[assignment]
+            engine, dla_core = engine_info  # type: ignore[assignment]
         else:
             engine = engine_info
         if isinstance(engine, str):
             engine = Path(engine)
-        temp_engines.append(engine)
+        temp_engines.append(engine)  # type: ignore[arg-type]
         dla_assignments.append(dla_core)
+        device_assignments.append(device)
 
     if not parallel:
         return [
@@ -202,10 +215,11 @@ def benchmark_engines(
                 iterations,
                 warmup_iterations,
                 dla_core=dla_core,
+                device=device,
                 warmup=warmup,
                 verbose=verbose,
             )
-            for engine, dla_core in zip(temp_engines, dla_assignments)
+            for engine, dla_core, device in zip(temp_engines, dla_assignments, device_assignments)
         ]
 
     # otherwise we need a parallel setup

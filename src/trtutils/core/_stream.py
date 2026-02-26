@@ -6,8 +6,12 @@ from __future__ import annotations
 
 import contextlib
 
+import nvtx
+
 with contextlib.suppress(Exception):
     from trtutils.compat._libs import cudart
+
+from trtutils._flags import FLAGS
 
 from ._cuda import cuda_call
 
@@ -22,7 +26,12 @@ def create_stream() -> cudart.cudaStream_t:
         The CUDA stream.
 
     """
-    return cuda_call(cudart.cudaStreamCreate())
+    if FLAGS.NVTX_ENABLED:
+        nvtx.push_range("core::create_stream")
+    result = cuda_call(cudart.cudaStreamCreate())
+    if FLAGS.NVTX_ENABLED:
+        nvtx.pop_range()
+    return result
 
 
 def destroy_stream(stream: cudart.cudaStream_t) -> None:
@@ -48,4 +57,8 @@ def stream_synchronize(stream: cudart.cudaStream_t) -> None:
         The stream to synchronize calls for.
 
     """
+    if FLAGS.NVTX_ENABLED:
+        nvtx.push_range("core::stream_synchronize")
     cuda_call(cudart.cudaStreamSynchronize(stream))
+    if FLAGS.NVTX_ENABLED:
+        nvtx.pop_range()

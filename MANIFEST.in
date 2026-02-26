@@ -4,3 +4,4 @@ include src/trtutils/image/_onnx/*.onnx
 include src/trtutils/download/patches/*.patch
 include src/trtutils/download/configs/*.json
 include src/trtutils/download/requirements/*.txt
+include src/trtutils/download/requirements_tools/*.txt

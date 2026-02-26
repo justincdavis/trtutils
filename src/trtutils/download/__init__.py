@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """
@@ -16,17 +16,17 @@ Functions
 Note:
 ----
 All models downloaded through this module may have license restrictions.
-Users must accept the license terms before downloading by using the accept parameter
-or by responding to the interactive prompt.
+Users must ensure they comply with the model's license terms.
 
 """
 
 from __future__ import annotations
 
-from ._download import download, download_model, get_supported_models
+from ._download import download, download_model, get_supported_models, load_model_configs
 
 __all__ = [
     "download",
     "download_model",
     "get_supported_models",
+    "load_model_configs",
 ]

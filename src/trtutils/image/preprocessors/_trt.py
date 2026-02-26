@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -8,8 +8,10 @@ import contextlib
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import nvtx
 
 from trtutils._engine import TRTEngine
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
 from trtutils.core._bindings import create_binding
@@ -44,6 +46,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a TRTPreprocessor for image processing models.
@@ -89,6 +92,8 @@ class TRTPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        orig_size_dtype : np.dtype, optional
+            The dtype to use for the orig_size buffer. Default is np.int32.
 
         Raises
         ------
@@ -109,6 +114,13 @@ class TRTPreprocessor(GPUImagePreprocessor):
             tag,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            orig_size_dtype=orig_size_dtype,
+        )
+
+        self._nvtx_tags.update(
+            {
+                "trt_direct_preproc": f"preproc::trt_direct_preproc [{self._tag}]",
+            }
         )
 
         self._batch_size = batch_size
@@ -236,6 +248,9 @@ class TRTPreprocessor(GPUImagePreprocessor):
             If batch size exceeds the configured batch size for the TRT engine.
 
         """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["trt_direct_preproc"])
+
         if verbose:
             LOG.debug(f"{self._tag}: direct_preproc")
 
@@ -249,6 +264,8 @@ class TRTPreprocessor(GPUImagePreprocessor):
         # Check batch size doesn't exceed configured engine batch size
         if batch_size > self._batch_size:
             err_msg = f"{self._tag}: Batch size {batch_size} exceeds configured batch size {self._batch_size}"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # trt_direct_preproc
             raise ValueError(err_msg)
 
         # Resize images and copy to batch buffer
@@ -261,5 +278,8 @@ class TRTPreprocessor(GPUImagePreprocessor):
 
         # Run TRT engine on batched intermediate buffer
         output_ptrs = self._engine.raw_exec(self._gpu_pointers, no_warn=True)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # trt_direct_preproc
 
         return output_ptrs[0], ratios_list, padding_list

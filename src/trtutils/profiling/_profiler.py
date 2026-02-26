@@ -167,6 +167,7 @@ def profile_engine(
     iterations: int = 100,
     warmup_iterations: int = 10,
     dla_core: int | None = None,
+    device: int | None = None,
     *,
     warmup: bool | None = None,
     verbose: bool | None = None,
@@ -195,6 +196,9 @@ def profile_engine(
     dla_core : int, optional
         The DLA core to assign DLA layers of the engine to. Default is None.
         If None, any DLA layers will be assigned to DLA core 0.
+    device : int, optional
+        The CUDA device index to use for the engine. Default is None,
+        which uses the current device.
     warmup : bool, optional
         Whether to do warmup iterations, by default None.
         If None, warmup will be set to True.
@@ -219,6 +223,7 @@ def profile_engine(
         engine = TRTEngine(
             engine,
             dla_core=dla_core,
+            device=device,
             warmup=False,
             verbose=verbose,
         )
