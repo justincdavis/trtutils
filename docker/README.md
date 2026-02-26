@@ -11,7 +11,6 @@ missing or unhealthy:
 - `docker`
 - `docker compose` (v2)
 - `nvidia-smi`
-- `nvcc`
 
 You also need a host with NVIDIA GPU support configured for Docker.
 

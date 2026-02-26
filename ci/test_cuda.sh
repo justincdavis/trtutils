@@ -9,27 +9,13 @@ die() {
     exit 1
 }
 
-require_cmd() {
-    local cmd="$1"
-    command -v "$cmd" >/dev/null 2>&1 || die "required command not found: $cmd"
-}
-
-validate_cmd_healthy() {
-    local label="$1"
-    shift
-    "$@" >/dev/null 2>&1 || die "$label check failed; ensure host GPU/CUDA tooling is correctly installed"
-}
-
 if [[ ! "$CUDA_VERSION" =~ ^(11|12|13)$ ]]; then
     die "cuda-version must be one of: 11, 12, 13"
 fi
 
-require_cmd docker
-validate_cmd_healthy "docker compose" docker compose version
-require_cmd nvidia-smi
-validate_cmd_healthy "nvidia-smi" nvidia-smi
-require_cmd nvcc
-validate_cmd_healthy "nvcc" nvcc --version
+command -v docker >/dev/null 2>&1 || die "required command not found: docker"
+docker compose version >/dev/null 2>&1 || die "docker compose check failed; ensure docker compose v2 is installed"
+nvidia-smi >/dev/null 2>&1 || die "nvidia-smi check failed; ensure NVIDIA driver is installed"
 
 COMPOSE="docker compose -f docker/docker-compose.test.yml"
 SERVICE="test-cu${CUDA_VERSION}"
