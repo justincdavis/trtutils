@@ -1,0 +1,2 @@
+cuda-python==11.8.7
+tensorrt_cu11==10.13.0.35
