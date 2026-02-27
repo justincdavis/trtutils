@@ -372,7 +372,7 @@ class TestYoloHookIntegration:
     """Full integration tests for yolo_efficient_nms_hook inner function."""
 
     @staticmethod
-    def _setup_yolo_network(*, output_shape, num_outputs=1):
+    def _setup_yolo_network(*, output_shape, num_outputs=1) -> MagicMock:
         """Create a mock network for YOLO hook testing."""
         mock_network = MagicMock()
         mock_output = MagicMock()

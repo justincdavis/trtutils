@@ -442,3 +442,66 @@ class TestEngineDestruction:
     def test_using_engine_tensors_flag_default(self, engine) -> None:
         """_using_engine_tensors is True by default after init."""
         assert engine._using_engine_tensors is True  # type: ignore[union-attr]
+
+
+# ============================================================================
+# Execution -- async_v2 and graph capture failure paths
+# ============================================================================
+
+
+class TestEngineAsyncV2:
+    """Tests for the async_v2 execution backend (line 379 in _engine.py)."""
+
+    def test_async_v2_backend_init(self, engine_path: Path) -> None:
+        """backend='async_v2' sets _async_v3=False and disables CUDA graph."""
+        from trtutils import TRTEngine
+
+        eng = TRTEngine(engine_path, warmup=False, backend="async_v2")
+        assert eng._async_v3 is False
+        assert eng._cuda_graph is None  # No graph with async_v2
+        del eng
+
+    @pytest.mark.xfail(reason="execute_async_v2 removed in TRT 10+", raises=AttributeError)
+    def test_async_v2_backend_execute(self, engine_path: Path) -> None:
+        """Execute with backend='async_v2' exercises execute_async_v2 path."""
+        from trtutils import TRTEngine
+
+        eng = TRTEngine(engine_path, warmup=False, backend="async_v2")
+        data = eng.get_random_input()
+        outputs = eng.execute(data)
+        assert isinstance(outputs, list)
+        assert len(outputs) > 0
+        del eng
+
+
+class TestEngineGraphCaptureFailure:
+    """Tests for graph capture failure fallback (lines 249-255 in _engine.py)."""
+
+    def test_graph_capture_failure_falls_through(self, engine_path: Path) -> None:
+        """When graph capture fails, engine falls back to direct execution."""
+        from unittest.mock import patch
+
+        from trtutils import FLAGS, TRTEngine
+
+        if not FLAGS.EXEC_ASYNC_V3:
+            pytest.skip("async_v3 required for CUDA graph")
+
+        eng = TRTEngine(engine_path, warmup=False, backend="async_v3", cuda_graph=True)
+
+        # Force graph capture failure by making stop() return False (not captured)
+        original_stop = eng._cuda_graph.stop
+        cuda_graph_ref = eng._cuda_graph
+
+        def failing_stop():
+            original_stop()  # Let it run normally but then clear
+            cuda_graph_ref._graph_exec = None
+            cuda_graph_ref._graph = None
+            return True  # __exit__ inverts this
+
+        with patch.object(eng._cuda_graph, "stop", side_effect=failing_stop):
+            # Execute should detect capture failure (is_captured=False after context manager)
+            # and raise RuntimeError about graph capture failure
+            data = eng.get_random_input()
+            with pytest.raises(RuntimeError, match="graph capture failed"):
+                eng.execute(data)
+        del eng

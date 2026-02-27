@@ -4,6 +4,7 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+from trtutils._flags import FLAGS
 from trtutils.compat._libs import cuda
 
 from ._cuda import cuda_call
@@ -25,10 +26,10 @@ def create_context(device: int = 0) -> cuda.CUcontext:
 
     """
     cu_device = cuda_call(cuda.cuDeviceGet(device))
-    try:
-        return cuda_call(cuda.cuCtxCreate(0, cu_device))
-    except TypeError:
-        return cuda_call(cuda.cuCtxCreate(None, 0, cu_device))
+    if FLAGS.CUDA_PYTHON_13:
+        # cuda-python 13+ requires CUctxCreateParams as first argument
+        return cuda_call(cuda.cuCtxCreate(cuda.CUctxCreateParams(), 0, cu_device))
+    return cuda_call(cuda.cuCtxCreate(0, cu_device))
 
 
 def destroy_context(context: cuda.CUcontext) -> None:

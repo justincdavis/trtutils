@@ -342,13 +342,23 @@ class TestPerformance:
 
     def test_gpu_faster_than_cpu_trt(self) -> None:
         """TRT preprocessing is faster than CPU."""
-        trt = TRTPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, pagelocked_mem=False)
+        try:
+            trt = TRTPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, pagelocked_mem=False)
+        except RuntimeError as e:
+            if "Failed to build engine" in str(e):
+                pytest.skip(f"TRT cannot build for this GPU: {e}")
+            raise
         cpu_time, trt_time = self._run_perf_test(trt)
         print(f"CPU: {cpu_time:.3f}s, TRT: {trt_time:.3f}s, speedup: {cpu_time / trt_time:.2f}x")
 
     def test_gpu_pagelocked_faster_trt(self) -> None:
         """TRT preprocessing speedup with pagelocked memory."""
-        trt = TRTPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, pagelocked_mem=True)
+        try:
+            trt = TRTPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, pagelocked_mem=True)
+        except RuntimeError as e:
+            if "Failed to build engine" in str(e):
+                pytest.skip(f"TRT cannot build for this GPU: {e}")
+            raise
         cpu_time, trt_time = self._run_perf_test(trt)
         print(
             f"Pagelocked - CPU: {cpu_time:.3f}s, TRT: {trt_time:.3f}s,"

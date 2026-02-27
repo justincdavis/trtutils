@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -250,3 +251,176 @@ class TestCompileAndLoadKernel:
         # might require specific CUDA headers
         kernel_file = kernel_files[0]
         assert kernel_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# Tests for uncovered lines
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.cpu
+class TestFindCudaIncludeDirCommonPaths:
+    """Tests for the common-paths fallback in find_cuda_include_dir() (lines 58-71)."""
+
+    def test_common_path_found(self, monkeypatch) -> None:
+        """When env vars and nvcc are absent, common paths are tried."""
+        from trtutils.core._nvrtc import find_cuda_include_dir
+
+        find_cuda_include_dir.cache_clear()
+        monkeypatch.delenv("CUDA_HOME", raising=False)
+        monkeypatch.delenv("CUDA_PATH", raising=False)
+
+        # Patch shutil.which to return None (no nvcc)
+        with patch("trtutils.core._nvrtc.shutil.which", return_value=None):
+            # Patch Path.exists so only the third common path "matches"
+            original_exists = Path.exists
+
+            def fake_exists(self: Path) -> bool:
+                # Match only the /usr/local/cuda-12/include entry
+                if str(self) == "/usr/local/cuda-12/include":
+                    return True
+                # Let all other paths (including the common ones) report False
+                common_strs = {
+                    "/usr/local/cuda/include",
+                    "/usr/local/cuda-13/include",
+                    "/usr/local/cuda-11/include",
+                    "/opt/cuda/include",
+                }
+                if str(self) in common_strs:
+                    return False
+                return original_exists(self)
+
+            with patch.object(Path, "exists", fake_exists):
+                result = find_cuda_include_dir()
+
+        assert result == Path("/usr/local/cuda-12/include")
+        find_cuda_include_dir.cache_clear()
+
+    def test_first_common_path_wins(self, monkeypatch) -> None:
+        """The first existing common path is returned."""
+        from trtutils.core._nvrtc import find_cuda_include_dir
+
+        find_cuda_include_dir.cache_clear()
+        monkeypatch.delenv("CUDA_HOME", raising=False)
+        monkeypatch.delenv("CUDA_PATH", raising=False)
+
+        with patch("trtutils.core._nvrtc.shutil.which", return_value=None):
+            original_exists = Path.exists
+
+            def fake_exists(self: Path) -> bool:
+                # Both /usr/local/cuda/include and /opt/cuda/include exist,
+                # but /usr/local/cuda/include comes first in the list.
+                if str(self) in (
+                    "/usr/local/cuda/include",
+                    "/opt/cuda/include",
+                ):
+                    return True
+                common_strs = {
+                    "/usr/local/cuda-13/include",
+                    "/usr/local/cuda-12/include",
+                    "/usr/local/cuda-11/include",
+                }
+                if str(self) in common_strs:
+                    return False
+                return original_exists(self)
+
+            with patch.object(Path, "exists", fake_exists):
+                result = find_cuda_include_dir()
+
+        assert result == Path("/usr/local/cuda/include")
+        find_cuda_include_dir.cache_clear()
+
+    def test_no_common_path_returns_none(self, monkeypatch) -> None:
+        """When no env vars, no nvcc, and no common paths exist, returns None."""
+        from trtutils.core._nvrtc import find_cuda_include_dir
+
+        find_cuda_include_dir.cache_clear()
+        monkeypatch.delenv("CUDA_HOME", raising=False)
+        monkeypatch.delenv("CUDA_PATH", raising=False)
+
+        with patch("trtutils.core._nvrtc.shutil.which", return_value=None):
+            original_exists = Path.exists
+
+            def fake_exists(self: Path) -> bool:
+                common_strs = {
+                    "/usr/local/cuda/include",
+                    "/usr/local/cuda-13/include",
+                    "/usr/local/cuda-12/include",
+                    "/usr/local/cuda-11/include",
+                    "/opt/cuda/include",
+                }
+                if str(self) in common_strs:
+                    return False
+                return original_exists(self)
+
+            with patch.object(Path, "exists", fake_exists):
+                result = find_cuda_include_dir()
+
+        assert result is None
+        find_cuda_include_dir.cache_clear()
+
+
+@pytest.mark.cpu
+class TestGetDefaultNvrtcOptsNoCuda:
+    """Tests for _get_default_nvrtc_opts when no CUDA include dir is found (line 78->81)."""
+
+    def test_returns_empty_list_when_no_include_dir(self) -> None:
+        """When find_cuda_include_dir returns None, opts list has no -I flag."""
+        from trtutils.core._nvrtc import _get_default_nvrtc_opts, find_cuda_include_dir
+
+        find_cuda_include_dir.cache_clear()
+
+        with patch("trtutils.core._nvrtc.find_cuda_include_dir", return_value=None):
+            opts = _get_default_nvrtc_opts()
+
+        assert opts == []
+        find_cuda_include_dir.cache_clear()
+
+
+@pytest.mark.cpu
+class TestCompileKernelDlopenError:
+    """Tests for the dlopen libnvrtc error handling in compile_kernel (lines 177-184)."""
+
+    def test_dlopen_error_is_reraised_with_extra_info(self) -> None:
+        """RuntimeError with 'Failed to dlopen libnvrtc' gets extra guidance."""
+        from trtutils.core._nvrtc import compile_kernel
+
+        original_error = RuntimeError("Failed to dlopen libnvrtc.so.12.0")
+
+        # nvrtc.nvrtcCreateProgram is evaluated first (before nvrtc_call);
+        # when the shared library cannot be loaded, this is where the error
+        # originates. We mock the entire nvrtc module attribute so that
+        # calling nvrtc.nvrtcCreateProgram(...) raises immediately.
+        mock_nvrtc = MagicMock()
+        mock_nvrtc.nvrtcCreateProgram.side_effect = original_error
+
+        with patch("trtutils.core._nvrtc.nvrtc", mock_nvrtc):
+            with pytest.raises(RuntimeError, match="Ensure the version of cuda-python"):
+                compile_kernel(TRIVIAL_KERNEL, "trivial_kernel")
+
+    def test_dlopen_error_chains_original(self) -> None:
+        """The re-raised RuntimeError chains the original via __cause__."""
+        from trtutils.core._nvrtc import compile_kernel
+
+        original_error = RuntimeError("Failed to dlopen libnvrtc.so.12.0")
+
+        mock_nvrtc = MagicMock()
+        mock_nvrtc.nvrtcCreateProgram.side_effect = original_error
+
+        with patch("trtutils.core._nvrtc.nvrtc", mock_nvrtc):
+            with pytest.raises(RuntimeError) as exc_info:
+                compile_kernel(TRIVIAL_KERNEL, "trivial_kernel")
+            assert exc_info.value.__cause__ is original_error
+
+    def test_other_runtime_errors_are_reraised_unchanged(self) -> None:
+        """RuntimeError without the dlopen message propagates unchanged."""
+        from trtutils.core._nvrtc import compile_kernel
+
+        original_error = RuntimeError("Some other NVRTC error")
+
+        mock_nvrtc = MagicMock()
+        mock_nvrtc.nvrtcCreateProgram.side_effect = original_error
+
+        with patch("trtutils.core._nvrtc.nvrtc", mock_nvrtc):
+            with pytest.raises(RuntimeError, match="Some other NVRTC error"):
+                compile_kernel(TRIVIAL_KERNEL, "trivial_kernel")

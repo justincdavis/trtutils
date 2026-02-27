@@ -37,7 +37,10 @@ class TestCreateContext:
         destroy_context(ctx)
 
     def test_create_context_calls_cu_ctx_create(self) -> None:
-        """create_context() calls cuCtxCreate with the correct device."""
+        """create_context() calls cuCtxCreate with the correct arguments."""
+        from unittest.mock import ANY
+
+        from trtutils._flags import FLAGS
         from trtutils.compat._libs import cuda
         from trtutils.core import _context
 
@@ -56,8 +59,12 @@ class TestCreateContext:
 
         assert ctx is fake_context
         device_get.assert_called_once_with(0)
-        # With mocks, the new 2-arg API (flags, device) succeeds on the first try
-        ctx_create.assert_called_once_with(0, fake_device)
+        if FLAGS.CUDA_PYTHON_13:
+            # cuda-python 13+: cuCtxCreate(CUctxCreateParams(), flags, device)
+            ctx_create.assert_called_once_with(ANY, 0, fake_device)
+        else:
+            # cuda-python 11/12: cuCtxCreate(flags, device)
+            ctx_create.assert_called_once_with(0, fake_device)
 
 
 @pytest.mark.gpu

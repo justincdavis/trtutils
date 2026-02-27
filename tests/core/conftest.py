@@ -19,6 +19,45 @@ def simple_engine_path(build_test_engine, simple_onnx_path) -> Path:
     return build_test_engine(simple_onnx_path)
 
 
+@pytest.fixture(scope="session")
+def _cuda_graph_api_compatible() -> bool:
+    """Check if CUDA graph APIs work correctly on this cuda-python version."""
+    try:
+        from trtutils._flags import FLAGS
+        from trtutils.compat._libs import cudart
+        from trtutils.core._cuda import cuda_call
+
+        stream = cuda_call(cudart.cudaStreamCreate())
+        mode = cudart.cudaStreamCaptureMode.cudaStreamCaptureModeThreadLocal
+        cuda_call(cudart.cudaStreamBeginCapture(stream, mode))
+        graph = cuda_call(cudart.cudaStreamEndCapture(stream))
+        # Use the flag to select the correct API signature
+        if FLAGS.CUDA_PYTHON_12:
+            graph_exec = cuda_call(cudart.cudaGraphInstantiate(graph, 0))
+        else:
+            graph_exec = cuda_call(cudart.cudaGraphInstantiate(graph, b"", 0))
+        cuda_call(cudart.cudaGraphExecDestroy(graph_exec))
+        cuda_call(cudart.cudaGraphDestroy(graph))
+        cuda_call(cudart.cudaStreamDestroy(stream))
+        return True
+    except (TypeError, RuntimeError, Exception):
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _skip_cuda_graph_tests(request: pytest.FixtureRequest, _cuda_graph_api_compatible: bool) -> None:
+    """Skip CUDA graph tests if the graph API is incompatible."""
+    if request.node.get_closest_marker("cuda_graph") and not _cuda_graph_api_compatible:
+        pytest.skip("CUDA graph API incompatible with this cuda-python version")
+    # Also check by fixture name — graph tests use cuda_stream fixture
+    if (
+        "cuda_stream" in getattr(request, "fixturenames", [])
+        and "CUDAGraph" in (request.node.nodeid or "")
+        and not _cuda_graph_api_compatible
+    ):
+        pytest.skip("CUDA graph API incompatible with this cuda-python version")
+
+
 @pytest.fixture
 def cuda_stream():
     """Create a CUDA stream for the test, destroy after."""

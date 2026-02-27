@@ -225,7 +225,7 @@ class TestBuildDlaEngineMixedAssignment:
     @staticmethod
     def _make_mock_network(
         num_layers: int, *, constant_indices=None, shuffle_indices=None, tile_name_indices=None
-    ):
+    ) -> MagicMock:
         """Create a mock network with controllable layer types."""
         from trtutils.compat._libs import trt
 
