@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+# Parameterized Dockerfile for trtutils CUDA test containers.
+# Used by docker-compose.test.yml with build args per CUDA version.
+#
+# Args:
+#   BASE_IMAGE     – NVIDIA CUDA base image (e.g. nvidia/cuda:12.6.0-cudnn-devel-ubuntu22.04)
+#   CUDA_VERSION   – Major CUDA version used to select the pip extras group (11, 12, or 13)
+#   CUDA_REQUIREMENTS_FILE – One of requirements_cu11.txt, requirements_cu12.txt, requirements_cu13.txt
+#   PIP_EXTRA_FLAGS – Extra flags for uv pip install (e.g. --break-system-packages for Ubuntu 24.04)
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV UV_SYSTEM_PYTHON=1
+ENV UV_LINK_MODE=copy
+
+ARG PIP_EXTRA_FLAGS=""
+ARG CUDA_VERSION
+ARG CUDA_REQUIREMENTS_FILE
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-dev \
+        libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/trtutils
+
+COPY pyproject.toml README.md ./
+COPY src/ src/
+COPY docker/requirements_cu11.txt docker/requirements_cu12.txt docker/requirements_cu13.txt /tmp/
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install ${PIP_EXTRA_FLAGS} \
+    --extra-index-url https://pypi.nvidia.com \
+    -r "/tmp/${CUDA_REQUIREMENTS_FILE}"
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install ${PIP_EXTRA_FLAGS} \
+    --extra-index-url https://pypi.nvidia.com \
+    ".[cu${CUDA_VERSION},test,ci]"
+RUN uv pip show cuda-python "tensorrt_cu${CUDA_VERSION}"
+
+COPY tests/ tests/
+COPY data/ data/
+COPY ci/ ci/
+COPY demos/ demos/
+COPY examples/ examples/
