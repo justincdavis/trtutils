@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 
 # Ensure .venv-ci exists
 if [ ! -d ".venv-ci" ]; then

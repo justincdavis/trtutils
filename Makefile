@@ -1,4 +1,4 @@
-.PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test release \
+.PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test test-cpu test-cov release \
        test-cu11 test-cu12 test-cu13 ci-cu11 ci-cu12 ci-cu13 dockers
 
 help:
@@ -11,6 +11,8 @@ help:
 	@echo "  ci_env              to create the CI environment"
 	@echo "  typecheck           to run the ty static type checker"
 	@echo "  test                to run the tests"
+	@echo "  test-cpu            to run CPU-only tests"
+	@echo "  test-cov            to run tests with coverage"
 	@echo "  release             to perform all actions required for a release"
 	@echo "  dockers             to build all project Docker images (see docker/build.sh --help)"
 	@echo "  test-cu11           to run tests in CUDA 11 Docker container"
@@ -37,6 +39,12 @@ docs:
 
 test:
 	./ci/run_tests.sh
+
+test-cpu:
+	python3 -m pytest -rP -v tests/ -m cpu
+
+test-cov:
+	python3 -m pytest --cov=src/trtutils --cov-branch --cov-report=term-missing --cov-report=json:.coverage.json tests/
 
 fix:
 	./ci/run_ruff.sh --format

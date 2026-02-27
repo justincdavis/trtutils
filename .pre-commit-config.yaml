@@ -32,3 +32,12 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+
+      # Coverage threshold check (manual stage — run with: pre-commit run --hook-stage manual coverage-check)
+      - id: coverage-check
+        name: Coverage threshold check
+        entry: bash -c 'python3 ci/check_coverage.py'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [manual]

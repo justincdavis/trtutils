@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
+
 set -euo pipefail
 
 CUDA_VERSION="${1:?Usage: $0 <cuda-version> [--test] [--lint] [--typecheck] [--coverage] [--all]}"
