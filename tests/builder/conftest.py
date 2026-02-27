@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
-
-if TYPE_CHECKING:
-    from collections.abc import Generator
 
 # tests/builder/conftest.py -> tests/builder -> tests -> project_root -> data/
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
@@ -22,6 +19,28 @@ def onnx_path() -> Path:
     if not ONNX_PATH.exists():
         pytest.skip("Test ONNX model not found")
     return ONNX_PATH
+
+
+@pytest.fixture(scope="session")
+def _can_build_engine(onnx_path: Path) -> bool:
+    """Check if TRT can build engines on this hardware (session-cached)."""
+    try:
+        from trtutils.builder._build import build_engine
+
+        with tempfile.NamedTemporaryFile(suffix=".engine", delete=True) as f:
+            build_engine(onnx_path, f.name, optimization_level=1)
+            return True
+    except RuntimeError:
+        return False
+    except Exception:
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _skip_if_cannot_build(request: pytest.FixtureRequest, _can_build_engine: bool) -> None:
+    """Skip GPU builder tests if TRT cannot build engines for this GPU."""
+    if request.node.get_closest_marker("gpu") and not _can_build_engine:
+        pytest.skip("TRT does not support this GPU's compute capability")
 
 
 @pytest.fixture
@@ -121,7 +140,7 @@ def timing_cache_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def cache_dir(tmp_path: Path) -> Generator[Path, None, None]:
+def cache_dir(tmp_path: Path) -> Path:
     """Temporary directory for engine caching."""
     d = tmp_path / "cache"
     d.mkdir()

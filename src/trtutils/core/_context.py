@@ -25,7 +25,10 @@ def create_context(device: int = 0) -> cuda.CUcontext:
 
     """
     cu_device = cuda_call(cuda.cuDeviceGet(device))
-    return cuda_call(cuda.cuCtxCreate(None, 0, cu_device))
+    try:
+        return cuda_call(cuda.cuCtxCreate(0, cu_device))
+    except TypeError:
+        return cuda_call(cuda.cuCtxCreate(None, 0, cu_device))
 
 
 def destroy_context(context: cuda.CUcontext) -> None:

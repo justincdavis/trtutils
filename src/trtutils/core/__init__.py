@@ -92,6 +92,8 @@ Functions
     Launch a CUDA kernel.
 :func:`create_kernel_args`
     Create the argument array for a kernel call.
+:func:`get_compute_capability`
+    Get the compute capability (SM version) of a CUDA device.
 :func:`get_device`
     Get the current CUDA device.
 :func:`get_device_count`
@@ -121,7 +123,7 @@ from ._bindings import (
 )
 from ._context import create_context, destroy_context
 from ._cuda import cuda_call, init_cuda
-from ._device import Device, get_device, get_device_count, set_device
+from ._device import Device, get_compute_capability, get_device, get_device_count, set_device
 from ._engine import create_engine, get_engine_names
 from ._graph import (
     CUDAGraph,
@@ -185,6 +187,7 @@ __all__ = [
     "destroy_context",
     "destroy_stream",
     "free_device_ptrs",
+    "get_compute_capability",
     "get_device",
     "get_device_count",
     "get_engine_names",

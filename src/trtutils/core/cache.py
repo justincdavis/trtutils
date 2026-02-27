@@ -192,6 +192,7 @@ def store_file(
         return new_file_path
 
     # otherwise we write the file
+    get_cache_dir().mkdir(parents=True, exist_ok=True)
     shutil.copy(filepath, new_file_path)
     if clear_old:
         filepath.unlink()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -354,3 +354,280 @@ class TestAllocateBindings:
                 b.free()
         finally:
             destroy_stream(stream)
+
+
+# ---------------------------------------------------------------------------
+# Helper for FLAGS mocking
+# ---------------------------------------------------------------------------
+def _mock_flags(*, trt_10: bool):
+    """Create a FLAGS mock with a specific TRT_10 value."""
+    from trtutils._flags import FLAGS as REAL_FLAGS
+
+    mock = MagicMock()
+    for attr in dir(REAL_FLAGS):
+        if not attr.startswith("_"):
+            setattr(mock, attr, getattr(REAL_FLAGS, attr))
+    mock.TRT_10 = trt_10
+    mock.NVTX_ENABLED = False
+    return mock
+
+
+# ---------------------------------------------------------------------------
+# allocate_bindings -- dynamic shape handling (TRT 10 + legacy paths)
+# ---------------------------------------------------------------------------
+@pytest.mark.gpu
+class TestAllocateBindingsDynamicShapes:
+    """Tests for allocate_bindings() dynamic batch dimension handling."""
+
+    def test_trt10_dynamic_batch_resolves_max_profile(self) -> None:
+        """TRT 10: dynamic batch resolves to max profile shape."""
+        from trtutils.compat._libs import trt
+        from trtutils.core._bindings import allocate_bindings
+
+        mock_engine = MagicMock()
+        mock_context = MagicMock()
+
+        mock_engine.num_io_tensors = 2
+        mock_engine.get_tensor_name.side_effect = ["input_0", "output_0"]
+        mock_engine.get_tensor_mode.side_effect = [
+            trt.TensorIOMode.INPUT,
+            trt.TensorIOMode.OUTPUT,
+        ]
+        mock_engine.get_tensor_dtype.return_value = trt.DataType.FLOAT
+        mock_engine.get_tensor_format.return_value = trt.TensorFormat.LINEAR
+        mock_engine.num_optimization_profiles = 1
+
+        max_shape = (8, 3, 8, 8)
+        mock_engine.get_tensor_profile_shape.return_value = [
+            (1, 3, 8, 8),
+            (4, 3, 8, 8),
+            max_shape,
+        ]
+
+        mock_context.get_tensor_shape.side_effect = [
+            (-1, 3, 8, 8),  # input initial (dynamic)
+            max_shape,  # input after set_input_shape
+            (8, 3, 8, 8),  # output
+        ]
+
+        flags_mock = _mock_flags(trt_10=True)
+        with patch("trtutils.core._bindings.FLAGS", flags_mock):
+            inputs, outputs, allocations = allocate_bindings(mock_engine, mock_context)
+
+        try:
+            assert len(inputs) == 1
+            assert len(outputs) == 1
+            assert len(allocations) == 2
+            assert inputs[0].shape == list(max_shape)
+            mock_context.set_input_shape.assert_called_once_with("input_0", max_shape)
+        finally:
+            for b in inputs + outputs:
+                b.free()
+
+    def test_trt10_dynamic_batch_no_profiles_raises(self) -> None:
+        """TRT 10: dynamic batch with no profiles raises RuntimeError."""
+        from trtutils.compat._libs import trt
+        from trtutils.core._bindings import allocate_bindings
+
+        mock_engine = MagicMock()
+        mock_context = MagicMock()
+
+        mock_engine.num_io_tensors = 1
+        mock_engine.get_tensor_name.return_value = "input_0"
+        mock_engine.get_tensor_mode.return_value = trt.TensorIOMode.INPUT
+        mock_engine.get_tensor_dtype.return_value = trt.DataType.FLOAT
+        mock_engine.get_tensor_format.return_value = trt.TensorFormat.LINEAR
+        mock_engine.num_optimization_profiles = 0
+
+        mock_context.get_tensor_shape.return_value = (-1, 3, 8, 8)
+
+        flags_mock = _mock_flags(trt_10=True)
+        with patch("trtutils.core._bindings.FLAGS", flags_mock):
+            with pytest.raises(RuntimeError, match="No optimization profiles found"):
+                allocate_bindings(mock_engine, mock_context)
+
+    def test_trt10_dynamic_batch_invalid_profile_length_raises(self) -> None:
+        """TRT 10: profile shape with wrong length raises RuntimeError."""
+        from trtutils.compat._libs import trt
+        from trtutils.core._bindings import allocate_bindings
+
+        mock_engine = MagicMock()
+        mock_context = MagicMock()
+
+        mock_engine.num_io_tensors = 1
+        mock_engine.get_tensor_name.return_value = "input_0"
+        mock_engine.get_tensor_mode.return_value = trt.TensorIOMode.INPUT
+        mock_engine.get_tensor_dtype.return_value = trt.DataType.FLOAT
+        mock_engine.get_tensor_format.return_value = trt.TensorFormat.LINEAR
+        mock_engine.num_optimization_profiles = 1
+        # Only 2 elements instead of required 3
+        mock_engine.get_tensor_profile_shape.return_value = [
+            (1, 3, 8, 8),
+            (4, 3, 8, 8),
+        ]
+
+        mock_context.get_tensor_shape.return_value = (-1, 3, 8, 8)
+
+        flags_mock = _mock_flags(trt_10=True)
+        with patch("trtutils.core._bindings.FLAGS", flags_mock):
+            with pytest.raises(RuntimeError, match="has 2 elements, expected 3"):
+                allocate_bindings(mock_engine, mock_context)
+
+    def test_legacy_dynamic_batch_resolves_max_profile(self) -> None:
+        """Legacy (<TRT 10): dynamic batch resolves to max profile shape."""
+        from trtutils.compat._libs import trt
+        from trtutils.core._bindings import allocate_bindings
+
+        mock_engine = MagicMock()
+        mock_context = MagicMock()
+
+        mock_engine.num_bindings = 2
+        mock_engine.binding_is_input.side_effect = [True, False]
+        mock_engine.get_binding_name.side_effect = ["input_0", "output_0"]
+        mock_engine.get_binding_dtype.return_value = trt.DataType.FLOAT
+        mock_engine.get_binding_format.return_value = trt.TensorFormat.LINEAR
+        mock_engine.num_optimization_profiles = 1
+
+        max_shape = (8, 3, 8, 8)
+        mock_engine.get_profile_shape.return_value = [
+            (1, 3, 8, 8),
+            (4, 3, 8, 8),
+            max_shape,
+        ]
+
+        mock_context.get_binding_shape.side_effect = [
+            (-1, 3, 8, 8),  # input initial (dynamic)
+            max_shape,  # input after set_binding_shape
+            (8, 3, 8, 8),  # output
+        ]
+
+        flags_mock = _mock_flags(trt_10=False)
+        with patch("trtutils.core._bindings.FLAGS", flags_mock):
+            inputs, outputs, allocations = allocate_bindings(mock_engine, mock_context)
+
+        try:
+            assert len(inputs) == 1
+            assert len(outputs) == 1
+            assert len(allocations) == 2
+            assert inputs[0].shape == list(max_shape)
+            mock_context.set_binding_shape.assert_called_once_with(0, max_shape)
+        finally:
+            for b in inputs + outputs:
+                b.free()
+
+    def test_legacy_dynamic_batch_no_profiles_raises(self) -> None:
+        """Legacy: dynamic batch with no profiles raises RuntimeError."""
+        from trtutils.compat._libs import trt
+        from trtutils.core._bindings import allocate_bindings
+
+        mock_engine = MagicMock()
+        mock_context = MagicMock()
+
+        mock_engine.num_bindings = 1
+        mock_engine.binding_is_input.return_value = True
+        mock_engine.get_binding_name.return_value = "input_0"
+        mock_engine.get_binding_dtype.return_value = trt.DataType.FLOAT
+        mock_engine.get_binding_format.return_value = trt.TensorFormat.LINEAR
+        mock_engine.num_optimization_profiles = 0
+
+        mock_context.get_binding_shape.return_value = (-1, 3, 8, 8)
+
+        flags_mock = _mock_flags(trt_10=False)
+        with patch("trtutils.core._bindings.FLAGS", flags_mock):
+            with pytest.raises(RuntimeError, match="No optimization profiles found"):
+                allocate_bindings(mock_engine, mock_context)
+
+    def test_legacy_dynamic_batch_invalid_profile_length_raises(self) -> None:
+        """Legacy: profile shape with wrong length raises RuntimeError."""
+        from trtutils.compat._libs import trt
+        from trtutils.core._bindings import allocate_bindings
+
+        mock_engine = MagicMock()
+        mock_context = MagicMock()
+
+        mock_engine.num_bindings = 1
+        mock_engine.binding_is_input.return_value = True
+        mock_engine.get_binding_name.return_value = "input_0"
+        mock_engine.get_binding_dtype.return_value = trt.DataType.FLOAT
+        mock_engine.get_binding_format.return_value = trt.TensorFormat.LINEAR
+        mock_engine.num_optimization_profiles = 1
+        # Only 1 element instead of required 3
+        mock_engine.get_profile_shape.return_value = [
+            (1, 3, 8, 8),
+        ]
+
+        mock_context.get_binding_shape.return_value = (-1, 3, 8, 8)
+
+        flags_mock = _mock_flags(trt_10=False)
+        with patch("trtutils.core._bindings.FLAGS", flags_mock):
+            with pytest.raises(RuntimeError, match="has 1 elements, expected 3"):
+                allocate_bindings(mock_engine, mock_context)
+
+
+# ---------------------------------------------------------------------------
+# allocate_bindings -- input/output validation error paths
+# ---------------------------------------------------------------------------
+@pytest.mark.gpu
+class TestAllocateBindingsValidation:
+    """Tests for allocate_bindings() empty input/output error paths."""
+
+    def test_no_input_tensors_raises(self) -> None:
+        """Engine with only outputs raises ValueError for missing inputs."""
+        from trtutils.compat._libs import trt
+        from trtutils.core._bindings import allocate_bindings
+
+        mock_engine = MagicMock()
+        mock_context = MagicMock()
+
+        # Single tensor, classified as output
+        mock_engine.num_io_tensors = 1
+        mock_engine.get_tensor_name.return_value = "output_0"
+        mock_engine.get_tensor_mode.return_value = trt.TensorIOMode.OUTPUT
+        mock_engine.get_tensor_dtype.return_value = trt.DataType.FLOAT
+        mock_engine.get_tensor_format.return_value = trt.TensorFormat.LINEAR
+        mock_context.get_tensor_shape.return_value = (1, 3, 8, 8)
+
+        flags_mock = _mock_flags(trt_10=True)
+        mock_binding = MagicMock()
+        with patch("trtutils.core._bindings.FLAGS", flags_mock), patch(
+            "trtutils.core._bindings.create_binding", return_value=mock_binding
+        ):
+            with pytest.raises(ValueError, match="No input tensors found"):
+                allocate_bindings(mock_engine, mock_context)
+
+    def test_no_output_tensors_raises(self) -> None:
+        """Engine with only inputs raises ValueError for missing outputs."""
+        from trtutils.compat._libs import trt
+        from trtutils.core._bindings import allocate_bindings
+
+        mock_engine = MagicMock()
+        mock_context = MagicMock()
+
+        # Single tensor, classified as input
+        mock_engine.num_io_tensors = 1
+        mock_engine.get_tensor_name.return_value = "input_0"
+        mock_engine.get_tensor_mode.return_value = trt.TensorIOMode.INPUT
+        mock_engine.get_tensor_dtype.return_value = trt.DataType.FLOAT
+        mock_engine.get_tensor_format.return_value = trt.TensorFormat.LINEAR
+        mock_context.get_tensor_shape.return_value = (1, 3, 8, 8)
+
+        flags_mock = _mock_flags(trt_10=True)
+        mock_binding = MagicMock()
+        with patch("trtutils.core._bindings.FLAGS", flags_mock), patch(
+            "trtutils.core._bindings.create_binding", return_value=mock_binding
+        ):
+            with pytest.raises(ValueError, match="No output tensors found"):
+                allocate_bindings(mock_engine, mock_context)
+
+    def test_no_tensors_raises_no_inputs(self) -> None:
+        """Engine with zero tensors raises ValueError for missing inputs."""
+        from trtutils.core._bindings import allocate_bindings
+
+        mock_engine = MagicMock()
+        mock_context = MagicMock()
+        mock_engine.num_io_tensors = 0
+
+        flags_mock = _mock_flags(trt_10=True)
+        with patch("trtutils.core._bindings.FLAGS", flags_mock):
+            with pytest.raises(ValueError, match="No input tensors found"):
+                allocate_bindings(mock_engine, mock_context)

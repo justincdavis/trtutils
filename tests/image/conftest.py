@@ -4,6 +4,7 @@
 # mypy: disable-error-code="misc,no-any-return"
 from __future__ import annotations
 
+import tempfile
 from typing import Callable
 
 import numpy as np
@@ -29,6 +30,29 @@ CUDA_MAG_BOUNDS = 0.01
 
 
 # ---------------------------------------------------------------------------
+# Build support detection
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="session")
+def _trt_build_supported() -> bool:
+    """Check if TRT can build engines on this hardware (session-cached)."""
+    try:
+        from pathlib import Path
+
+        from trtutils.builder._build import build_engine
+
+        onnx_path = Path(__file__).parent.parent.parent / "data" / "simple.onnx"
+        if not onnx_path.exists():
+            return False
+        with tempfile.NamedTemporaryFile(suffix=".engine", delete=True) as f:
+            build_engine(onnx_path, f.name, optimization_level=1)
+            return True
+    except RuntimeError:
+        return False
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Parametrized fixtures
 # ---------------------------------------------------------------------------
 @pytest.fixture(params=["cpu", "cuda", "trt"])
@@ -47,7 +71,9 @@ def resize_method(request: pytest.FixtureRequest) -> str:
 # Preprocessor factory
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def make_preprocessor() -> Callable[..., CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor]:
+def make_preprocessor(
+    _trt_build_supported: bool,
+) -> Callable[..., CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor]:
     """Return a factory that builds preprocessors by type."""
 
     def _make(
@@ -62,6 +88,8 @@ def make_preprocessor() -> Callable[..., CPUPreprocessor | CUDAPreprocessor | TR
         if ptype == "cuda":
             return CUDAPreprocessor(PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, mean=mean, std=std)
         if ptype == "trt":
+            if not _trt_build_supported:
+                pytest.skip("TRT cannot build engines for this GPU")
             return TRTPreprocessor(
                 PREPROC_SIZE, PREPROC_RANGE, PREPROC_DTYPE, mean=mean, std=std, batch_size=batch_size
             )

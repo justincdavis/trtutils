@@ -31,11 +31,11 @@ class TestGetCacheDir:
 
         assert get_cache_dir() == get_cache_dir()
 
-    def test_directory_exists(self) -> None:
-        """The cache directory should already exist in the source tree."""
+    def test_directory_parent_exists(self) -> None:
+        """The cache directory's parent (the package directory) should exist."""
         from trtutils.core.cache import get_cache_dir
 
-        assert get_cache_dir().exists()
+        assert get_cache_dir().parent.exists()
 
 
 @pytest.mark.cpu

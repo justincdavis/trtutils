@@ -1,5 +1,5 @@
 .PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test test-legacy test-new test-cpu test-cov test-cov-html release \
-       test-cu11 test-cu12 test-cu13 ci-cu11 ci-cu12 ci-cu13 dockers
+       test-cu11 test-cu12 test-cu13 ci-cu11 ci-cu12 ci-cu13 test-cov-cu11 test-cov-cu12 test-cov-cu13 dockers
 
 help:
 	@echo "Please use \`make <target>' where <target> is one of"
@@ -24,6 +24,9 @@ help:
 	@echo "  ci-cu11             to run full CI in CUDA 11 Docker container"
 	@echo "  ci-cu12             to run full CI in CUDA 12 Docker container"
 	@echo "  ci-cu13             to run full CI in CUDA 13 Docker container"
+	@echo "  test-cov-cu11       to run coverage in CUDA 11 Docker container"
+	@echo "  test-cov-cu12       to run coverage in CUDA 12 Docker container"
+	@echo "  test-cov-cu13       to run coverage in CUDA 13 Docker container"
 
 clean:
 	rm -rf build
@@ -90,6 +93,15 @@ ci-cu12:
 
 ci-cu13:
 	./ci/test_cuda.sh 13 --all
+
+test-cov-cu11:
+	./ci/test_cuda.sh 11 --coverage
+
+test-cov-cu12:
+	./ci/test_cuda.sh 12 --coverage
+
+test-cov-cu13:
+	./ci/test_cuda.sh 13 --coverage
 
 dockers:
 	./docker/build.sh --all

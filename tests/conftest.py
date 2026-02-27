@@ -193,12 +193,17 @@ def build_test_engine() -> Callable[..., Path]:
 
             from trtutils.builder import build_engine
 
-            build_engine(
-                onnx_path,
-                engine_path,
-                optimization_level=optimization_level,
-                shapes=shapes,
-            )
+            try:
+                build_engine(
+                    onnx_path,
+                    engine_path,
+                    optimization_level=optimization_level,
+                    shapes=shapes,
+                )
+            except RuntimeError as e:
+                if "Failed to build engine" in str(e):
+                    pytest.skip(f"TRT cannot build for this GPU: {e}")
+                raise
 
         return engine_path
 

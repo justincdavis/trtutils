@@ -13,6 +13,25 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
+def get_compute_capability(device: int = 0) -> tuple[int, int]:
+    """
+    Get the compute capability (SM version) of a CUDA device.
+
+    Parameters
+    ----------
+    device : int, optional
+        The CUDA device index. Default is 0.
+
+    Returns
+    -------
+    tuple[int, int]
+        A tuple of (major, minor) compute capability version.
+
+    """
+    props = cuda_call(cudart.cudaGetDeviceProperties(device))
+    return (props.major, props.minor)
+
+
 def get_device() -> int:
     """
     Get the current CUDA device.

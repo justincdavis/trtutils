@@ -82,7 +82,11 @@ def cuda_graph_instantiate(
         The instantiated graph executable.
 
     """
-    return cuda_call(cudart.cudaGraphInstantiate(graph, flags))
+    try:
+        return cuda_call(cudart.cudaGraphInstantiate(graph, flags))
+    except TypeError:
+        # cuda-python < 12: cudaGraphInstantiate(graph, errNode, bufferSize)
+        return cuda_call(cudart.cudaGraphInstantiate(graph, b"", 0))
 
 
 def cuda_graph_launch(

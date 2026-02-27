@@ -202,6 +202,327 @@ class TestBuildDlaEngine:
         assert output_engine_path.exists()
 
 
+class TestBuildDlaEngineMixedAssignment:
+    """
+    Tests for build_dla_engine() mixed DLA/GPU layer assignment (lines 287-363).
+
+    These lines are unreachable on desktop GPUs (no DLA hardware),
+    so we mock can_run_on_dla and read_onnx to simulate mixed DLA/GPU scenarios.
+    """
+
+    def _make_batcher(self):
+        """Create a SyntheticBatcher for DLA tests."""
+        from trtutils.builder._batcher import SyntheticBatcher
+
+        return SyntheticBatcher(
+            shape=(3, 8, 8),
+            dtype=np.dtype(np.float32),
+            batch_size=1,
+            num_batches=2,
+            order="NCHW",
+        )
+
+    @staticmethod
+    def _make_mock_network(
+        num_layers: int, *, constant_indices=None, shuffle_indices=None, tile_name_indices=None
+    ):
+        """Create a mock network with controllable layer types."""
+        from trtutils.compat._libs import trt
+
+        mock_network = MagicMock()
+        mock_network.num_layers = num_layers
+        layers = {}
+        for i in range(num_layers):
+            layer = MagicMock()
+            layer.name = f"layer_{i}"
+            if constant_indices and i in constant_indices:
+                layer.type = trt.LayerType.CONSTANT
+            elif shuffle_indices and i in shuffle_indices:
+                layer.type = trt.LayerType.SHUFFLE
+            elif tile_name_indices and i in tile_name_indices:
+                layer.type = trt.LayerType.CONVOLUTION
+                layer.name = f"tile_op_{i}"
+            else:
+                layer.type = trt.LayerType.CONVOLUTION
+            layers[i] = layer
+        mock_network.get_layer.side_effect = lambda idx: layers[idx]
+        return mock_network
+
+    @patch("trtutils.builder._dla.build_engine")
+    @patch("trtutils.builder._dla.can_run_on_dla")
+    @patch("trtutils.builder._dla.read_onnx")
+    def test_mixed_layer_precision_assignment(
+        self,
+        mock_read_onnx,
+        mock_can_run,
+        mock_build,
+    ) -> None:
+        """Mixed path assigns FP16 to GPU layers, INT8 to DLA layers."""
+        from trtutils.builder._dla import build_dla_engine
+        from trtutils.compat._libs import trt
+
+        mock_network = self._make_mock_network(10)
+        mock_config = MagicMock()
+        mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+
+        # 2 chunks: layers 0-4 on GPU, layers 5-9 on DLA
+        gpu_layers = [MagicMock() for _ in range(5)]
+        dla_layers = [MagicMock() for _ in range(5)]
+        chunks = [
+            (gpu_layers, 0, 4, False),
+            (dla_layers, 5, 9, True),
+        ]
+        mock_can_run.return_value = (False, chunks)
+
+        batcher = self._make_batcher()
+        build_dla_engine("fake.onnx", "out.engine", batcher, dla_core=0, min_layers=0)
+
+        mock_build.assert_called_once()
+        call_kwargs = mock_build.call_args.kwargs
+        layer_precision = call_kwargs["layer_precision"]
+        layer_device = call_kwargs["layer_device"]
+
+        # GPU layers 0-4: FP16, GPU
+        for i in range(5):
+            assert layer_precision[i] == (i, trt.DataType.HALF)
+            assert layer_device[i] == (i, trt.DeviceType.GPU)
+
+        # DLA layers 5-9: INT8, DLA
+        for i in range(5, 10):
+            assert layer_precision[i] == (i, trt.DataType.INT8)
+            assert layer_device[i] == (i, trt.DeviceType.DLA)
+
+    @patch("trtutils.builder._dla.build_engine")
+    @patch("trtutils.builder._dla.can_run_on_dla")
+    @patch("trtutils.builder._dla.read_onnx")
+    def test_constant_shuffle_tile_skip_precision(
+        self,
+        mock_read_onnx,
+        mock_can_run,
+        mock_build,
+    ) -> None:
+        """Constant, Shuffle, and Tile layers get None precision (skipped)."""
+        from trtutils.builder._dla import build_dla_engine
+        from trtutils.compat._libs import trt
+
+        # Layer 0: Constant, 1: Shuffle, 2: tile (name), 3: normal conv
+        mock_network = self._make_mock_network(
+            4,
+            constant_indices={0},
+            shuffle_indices={1},
+            tile_name_indices={2},
+        )
+        mock_config = MagicMock()
+        mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+
+        # GPU chunk (layers 0-2), small DLA chunk (layer 3)
+        gpu_layers = [MagicMock() for _ in range(3)]
+        dla_layers = [MagicMock()]
+        chunks = [
+            (gpu_layers, 0, 2, False),
+            (dla_layers, 3, 3, True),
+        ]
+        mock_can_run.return_value = (False, chunks)
+
+        batcher = self._make_batcher()
+        build_dla_engine(
+            "fake.onnx",
+            "out.engine",
+            batcher,
+            dla_core=0,
+            min_layers=0,
+            max_chunks=0,
+        )
+
+        call_kwargs = mock_build.call_args.kwargs
+        layer_precision = call_kwargs["layer_precision"]
+
+        # Constant, Shuffle, Tile → None precision (skipped for GPU default)
+        assert layer_precision[0] == (0, None)
+        assert layer_precision[1] == (1, None)
+        assert layer_precision[2] == (2, None)
+        # Normal conv in DLA chunk → overridden to INT8
+        assert layer_precision[3] == (3, trt.DataType.INT8)
+
+    @patch("trtutils.builder._dla.build_engine")
+    @patch("trtutils.builder._dla.can_run_on_dla")
+    @patch("trtutils.builder._dla.read_onnx")
+    def test_max_chunks_limits_dla_assignment(
+        self,
+        mock_read_onnx,
+        mock_can_run,
+        mock_build,
+    ) -> None:
+        """max_chunks=1 only assigns the largest DLA chunk."""
+        from trtutils.builder._dla import build_dla_engine
+        from trtutils.compat._libs import trt
+
+        mock_network = self._make_mock_network(20)
+        mock_config = MagicMock()
+        mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+
+        # 3 chunks: DLA(5 layers), GPU(5 layers), DLA(10 layers)
+        dla_small = [MagicMock() for _ in range(5)]
+        gpu_mid = [MagicMock() for _ in range(5)]
+        dla_large = [MagicMock() for _ in range(10)]
+        chunks = [
+            (dla_small, 0, 4, True),
+            (gpu_mid, 5, 9, False),
+            (dla_large, 10, 19, True),
+        ]
+        mock_can_run.return_value = (False, chunks)
+
+        batcher = self._make_batcher()
+        build_dla_engine(
+            "fake.onnx",
+            "out.engine",
+            batcher,
+            dla_core=0,
+            max_chunks=1,
+            min_layers=0,
+        )
+
+        call_kwargs = mock_build.call_args.kwargs
+        layer_device = call_kwargs["layer_device"]
+
+        # Only the LARGEST DLA chunk (layers 10-19) should be assigned to DLA
+        # (sorted by len descending, max_chunks=1)
+        for i in range(5):
+            assert layer_device[i] == (i, trt.DeviceType.GPU), f"Layer {i} should be GPU"
+        for i in range(5, 10):
+            assert layer_device[i] == (i, trt.DeviceType.GPU), f"Layer {i} should be GPU"
+        for i in range(10, 20):
+            assert layer_device[i] == (i, trt.DeviceType.DLA), f"Layer {i} should be DLA"
+
+    @patch("trtutils.builder._dla.build_engine")
+    @patch("trtutils.builder._dla.can_run_on_dla")
+    @patch("trtutils.builder._dla.read_onnx")
+    def test_min_layers_filters_small_chunks(
+        self,
+        mock_read_onnx,
+        mock_can_run,
+        mock_build,
+    ) -> None:
+        """min_layers filters out DLA chunks smaller than the threshold."""
+        from trtutils.builder._dla import build_dla_engine
+        from trtutils.compat._libs import trt
+
+        mock_network = self._make_mock_network(10)
+        mock_config = MagicMock()
+        mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+
+        # One small DLA chunk (3 layers) that should be filtered
+        gpu_layers = [MagicMock() for _ in range(7)]
+        dla_small = [MagicMock() for _ in range(3)]
+        chunks = [
+            (gpu_layers, 0, 6, False),
+            (dla_small, 7, 9, True),
+        ]
+        mock_can_run.return_value = (False, chunks)
+
+        batcher = self._make_batcher()
+        build_dla_engine(
+            "fake.onnx",
+            "out.engine",
+            batcher,
+            dla_core=0,
+            min_layers=5,  # chunk has only 3 layers, should be skipped
+        )
+
+        call_kwargs = mock_build.call_args.kwargs
+        layer_device = call_kwargs["layer_device"]
+
+        # ALL layers should remain GPU since the DLA chunk is too small
+        for i in range(10):
+            assert layer_device[i] == (i, trt.DeviceType.GPU), f"Layer {i} should be GPU"
+
+    @patch("trtutils.builder._dla.build_engine")
+    @patch("trtutils.builder._dla.can_run_on_dla")
+    @patch("trtutils.builder._dla.read_onnx")
+    def test_verbose_mixed_assignment_logging(
+        self,
+        mock_read_onnx,
+        mock_can_run,
+        mock_build,
+    ) -> None:
+        """verbose=True logs chunk counts and per-layer assignments."""
+        from trtutils.builder._dla import build_dla_engine
+
+        mock_network = self._make_mock_network(4)
+        mock_config = MagicMock()
+        mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+
+        gpu_layers = [MagicMock() for _ in range(2)]
+        dla_layers = [MagicMock() for _ in range(2)]
+        chunks = [
+            (gpu_layers, 0, 1, False),
+            (dla_layers, 2, 3, True),
+        ]
+        mock_can_run.return_value = (False, chunks)
+
+        batcher = self._make_batcher()
+        with patch("trtutils.builder._dla.LOG") as mock_log:
+            build_dla_engine(
+                "fake.onnx",
+                "out.engine",
+                batcher,
+                dla_core=0,
+                min_layers=0,
+                verbose=True,
+            )
+            # Should have logged chunk info + per-layer assignments
+            assert mock_log.info.call_count >= 4  # chunk info + 4 layers
+
+    @patch("trtutils.builder._dla.build_engine")
+    @patch("trtutils.builder._dla.can_run_on_dla")
+    @patch("trtutils.builder._dla.read_onnx")
+    def test_max_chunks_zero_assigns_all(
+        self,
+        mock_read_onnx,
+        mock_can_run,
+        mock_build,
+    ) -> None:
+        """max_chunks=0 assigns ALL qualifying DLA chunks."""
+        from trtutils.builder._dla import build_dla_engine
+        from trtutils.compat._libs import trt
+
+        mock_network = self._make_mock_network(15)
+        mock_config = MagicMock()
+        mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+
+        # 3 chunks: DLA(5), GPU(5), DLA(5)
+        dla1 = [MagicMock() for _ in range(5)]
+        gpu = [MagicMock() for _ in range(5)]
+        dla2 = [MagicMock() for _ in range(5)]
+        chunks = [
+            (dla1, 0, 4, True),
+            (gpu, 5, 9, False),
+            (dla2, 10, 14, True),
+        ]
+        mock_can_run.return_value = (False, chunks)
+
+        batcher = self._make_batcher()
+        build_dla_engine(
+            "fake.onnx",
+            "out.engine",
+            batcher,
+            dla_core=0,
+            max_chunks=0,
+            min_layers=0,
+        )
+
+        call_kwargs = mock_build.call_args.kwargs
+        layer_device = call_kwargs["layer_device"]
+
+        # BOTH DLA chunks should be assigned to DLA
+        for i in range(5):
+            assert layer_device[i] == (i, trt.DeviceType.DLA), f"Layer {i} should be DLA"
+        for i in range(5, 10):
+            assert layer_device[i] == (i, trt.DeviceType.GPU), f"Layer {i} should be GPU"
+        for i in range(10, 15):
+            assert layer_device[i] == (i, trt.DeviceType.DLA), f"Layer {i} should be DLA"
+
+
 @pytest.mark.gpu
 class TestGetCheckDla:
     """Tests for get_check_dla() utility function."""

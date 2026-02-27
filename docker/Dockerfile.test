@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace/trtutils
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml pytest.ini README.md ./
 COPY src/ src/
 COPY docker/requirements_cu11.txt docker/requirements_cu12.txt docker/requirements_cu13.txt /tmp/
 

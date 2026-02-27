@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 
@@ -214,3 +216,143 @@ class TestCUDAGraphFunctions:
         graph_exec = cuda_graph_instantiate(graph)
         cuda_graph_exec_destroy(graph_exec)  # Should not raise
         cuda_graph_destroy(graph)  # Should not raise
+
+
+# ---------------------------------------------------------------------------
+# CUDAGraph capture failure tests (mocked -- no GPU required)
+# ---------------------------------------------------------------------------
+class TestCUDAGraphCaptureFailure:
+    """Tests for CUDAGraph.stop() failure paths (lines 194-207)."""
+
+    def _make_graph(self) -> tuple:
+        """Create a CUDAGraph with a mock stream."""
+        from trtutils.core._graph import CUDAGraph
+
+        mock_stream = MagicMock()
+        graph = CUDAGraph(mock_stream)
+        return graph, mock_stream
+
+    @patch("trtutils.core._graph.cuda_stream_end_capture")
+    @patch("trtutils.core._graph.cuda_stream_begin_capture")
+    def test_stop_stream_capture_error_returns_false(
+        self,
+        mock_begin,
+        mock_end,
+    ) -> None:
+        """stop() returns False when cuda_stream_end_capture raises StreamCapture error."""
+        mock_end.side_effect = RuntimeError("cudaErrorStreamCapture: operation failed")
+        graph, _ = self._make_graph()
+        graph.start()
+        result = graph.stop()
+        assert result is False
+        assert graph.is_captured is False
+
+    @patch("trtutils.core._graph.cuda_stream_end_capture")
+    @patch("trtutils.core._graph.cuda_stream_begin_capture")
+    def test_stop_stream_capture_variant_returns_false(
+        self,
+        mock_begin,
+        mock_end,
+    ) -> None:
+        """stop() returns False for 'StreamCapture' variant in error message."""
+        mock_end.side_effect = RuntimeError("StreamCapture error in driver")
+        graph, _ = self._make_graph()
+        graph.start()
+        result = graph.stop()
+        assert result is False
+
+    @patch("trtutils.core._graph.cuda_stream_end_capture")
+    @patch("trtutils.core._graph.cuda_stream_begin_capture")
+    def test_stop_generic_runtime_error_returns_false(
+        self,
+        mock_begin,
+        mock_end,
+    ) -> None:
+        """stop() returns False for a generic RuntimeError (non-StreamCapture)."""
+        mock_end.side_effect = RuntimeError("some other CUDA error")
+        graph, _ = self._make_graph()
+        graph.start()
+        result = graph.stop()
+        assert result is False
+        assert graph.is_captured is False
+
+    @patch("trtutils.core._graph.cuda_graph_destroy")
+    @patch("trtutils.core._graph.cuda_graph_exec_destroy")
+    @patch("trtutils.core._graph.cuda_stream_end_capture")
+    @patch("trtutils.core._graph.cuda_stream_begin_capture")
+    def test_stop_failure_calls_invalidate(
+        self,
+        mock_begin,
+        mock_end,
+        mock_exec_destroy,
+        mock_graph_destroy,
+    ) -> None:
+        """stop() calls invalidate() on capture failure, clearing any partial state."""
+        mock_end.side_effect = RuntimeError("capture failed")
+        graph, _ = self._make_graph()
+        # Simulate partial state that invalidate should clear
+        graph._graph = MagicMock()
+        graph._graph_exec = MagicMock()
+        graph.start()
+        graph.stop()
+        assert graph._graph is None
+        assert graph._graph_exec is None
+
+    @patch("trtutils.core._graph.cuda_graph_destroy")
+    @patch("trtutils.core._graph.cuda_graph_exec_destroy")
+    @patch("trtutils.core._graph.cuda_graph_instantiate")
+    @patch("trtutils.core._graph.cuda_stream_end_capture")
+    @patch("trtutils.core._graph.cuda_stream_begin_capture")
+    def test_stop_failure_during_instantiate(
+        self,
+        mock_begin,
+        mock_end,
+        mock_instantiate,
+        mock_exec_destroy,
+        mock_graph_destroy,
+    ) -> None:
+        """stop() handles RuntimeError from cuda_graph_instantiate."""
+        mock_end.return_value = MagicMock()  # end_capture succeeds
+        mock_instantiate.side_effect = RuntimeError("instantiation failed")
+        graph, _ = self._make_graph()
+        graph.start()
+        result = graph.stop()
+        assert result is False
+        assert graph.is_captured is False
+
+    @patch("trtutils.core._graph.LOG")
+    @patch("trtutils.core._graph.cuda_stream_end_capture")
+    @patch("trtutils.core._graph.cuda_stream_begin_capture")
+    def test_stop_stream_capture_error_logs_specific_warning(
+        self,
+        mock_begin,
+        mock_end,
+        mock_log,
+    ) -> None:
+        """StreamCapture errors produce a specific warning about graph support."""
+        mock_end.side_effect = RuntimeError("cudaErrorStreamCapture: not supported")
+        graph, _ = self._make_graph()
+        graph.start()
+        graph.stop()
+        mock_log.warning.assert_called_once()
+        msg = mock_log.warning.call_args[0][0]
+        assert "engine may not support graphs" in msg
+
+    @patch("trtutils.core._graph.LOG")
+    @patch("trtutils.core._graph.cuda_stream_end_capture")
+    @patch("trtutils.core._graph.cuda_stream_begin_capture")
+    def test_stop_generic_error_logs_generic_warning(
+        self,
+        mock_begin,
+        mock_end,
+        mock_log,
+    ) -> None:
+        """Non-StreamCapture errors produce a generic capture failure warning."""
+        mock_end.side_effect = RuntimeError("unknown error")
+        graph, _ = self._make_graph()
+        graph.start()
+        graph.stop()
+        mock_log.warning.assert_called_once()
+        msg = mock_log.warning.call_args[0][0]
+        assert "CUDA graph capture failed:" in msg
+        assert "engine may not support graphs" not in msg
