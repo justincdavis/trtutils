@@ -17,8 +17,11 @@ x-service-common: &service-common
     - ../tests:/workspace/trtutils/tests
     - ../data:/workspace/trtutils/data
     - ../ci:/workspace/trtutils/ci
+    - ../pytest.ini:/workspace/trtutils/pytest.ini
     - ../demos:/workspace/trtutils/demos
     - ../examples:/workspace/trtutils/examples
+    - ../.coverage-threshold.json:/workspace/trtutils/.coverage-threshold.json
+    - ../.coverage.json:/workspace/trtutils/.coverage.json
   working_dir: /workspace/trtutils
 
 services:

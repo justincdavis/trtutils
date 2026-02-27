@@ -25,6 +25,12 @@ def _import_or_attr(module_name: str, fallback_name: str, attr_name: str | None 
         return importlib.import_module(module_name)
     except (ImportError, ModuleNotFoundError):
         if attr_name is not None:
+            # cuda-python <12 uses cuda.cudart, cuda.cuda, cuda.nvrtc
+            # cuda-python >=12 uses cuda.bindings.runtime, cuda.bindings.driver, etc.
+            try:
+                return importlib.import_module(f"cuda.{attr_name}")
+            except (ImportError, ModuleNotFoundError):
+                pass
             try:
                 base = importlib.import_module("cuda")
                 return getattr(base, attr_name)
