@@ -168,9 +168,6 @@ exclude_lines = [
     "@abstractmethod",
 ]
 
-[tool.coverage.html]
-directory = "htmlcov"
-
 [tool.setuptools.packages.find]
 where = ["src"]
 
