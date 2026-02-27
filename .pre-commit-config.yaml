@@ -25,6 +25,14 @@ repos:
         pass_filenames: false
         always_run: false
 
+      # Copyright header check
+      - id: copyright-check
+        name: Copyright header check
+        entry: ci/check_copyright.sh
+        language: system
+        types: [python]
+        pass_filenames: false
+
       # Coverage threshold check (manual stage — run with: pre-commit run --hook-stage manual coverage-check)
       - id: coverage-check
         name: Coverage threshold check
