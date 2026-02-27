@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 
 # Run ruff (lint or format) on all configured directories.
 set -euo pipefail
