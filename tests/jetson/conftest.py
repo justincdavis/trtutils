@@ -1,4 +1,4 @@
-# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """Jetson test fixtures -- built engines for Jetson benchmark/profiling tests."""

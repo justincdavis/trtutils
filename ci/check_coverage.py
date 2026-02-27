@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """Coverage ratcheting script -- validates coverage against thresholds.
