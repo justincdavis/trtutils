@@ -20,7 +20,7 @@ from tests.legacy.models.common import (
     detector_swapping_preproc_results,
 )
 
-pytestmark = [pytest.mark.gpu, pytest.mark.dla]
+pytestmark = [pytest.mark.gpu, pytest.mark.jetson]
 
 DETECTOR_MODELS = list(DETECTOR_CONFIG.keys())
 PREPROCESSORS = ["cpu", "cuda", "trt"]

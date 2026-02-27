@@ -261,3 +261,63 @@ class TestCUDAGraphEdgeCases:
 
         eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
         del eng  # Should not crash
+
+
+# ============================================================================
+# Alternative execution paths bypass graph capture
+# ============================================================================
+
+
+class TestCUDAGraphBypass:
+    """Tests that direct_exec and raw_exec bypass CUDA graph capture."""
+
+    def test_direct_exec_bypasses_graph_capture(self, engine_path: Path) -> None:
+        """direct_exec() does not trigger CUDA graph capture."""
+        from trtutils import TRTEngine
+        from trtutils.core import allocate_to_device, free_device_ptrs
+
+        eng = TRTEngine(engine_path, warmup=False, cuda_graph=True)
+        if eng._cuda_graph is None:
+            del eng
+            pytest.skip("CUDA graph not enabled")
+        assert eng._cuda_graph.is_captured is False
+
+        rand_input = eng.get_random_input()
+        device_ptrs = allocate_to_device(rand_input)
+
+        eng.direct_exec(device_ptrs, no_warn=True)
+        # direct_exec should not trigger graph capture
+        assert eng._cuda_graph.is_captured is False
+
+        free_device_ptrs(device_ptrs)
+
+        # Regular execute triggers graph capture
+        eng.execute(eng.get_random_input())
+        assert eng._cuda_graph.is_captured is True
+        del eng
+
+    def test_raw_exec_bypasses_graph_capture(self, engine_path: Path) -> None:
+        """raw_exec() does not trigger CUDA graph capture."""
+        from trtutils import TRTEngine
+        from trtutils.core import allocate_to_device, free_device_ptrs
+
+        eng = TRTEngine(engine_path, warmup=False, cuda_graph=True)
+        if eng._cuda_graph is None:
+            del eng
+            pytest.skip("CUDA graph not enabled")
+        assert eng._cuda_graph.is_captured is False
+
+        rand_input = eng.get_random_input()
+        device_ptrs = allocate_to_device(rand_input)
+
+        output_ptrs = eng.raw_exec(device_ptrs, no_warn=True)
+        assert output_ptrs is not None
+        # raw_exec should not trigger graph capture
+        assert eng._cuda_graph.is_captured is False
+
+        free_device_ptrs(device_ptrs)
+
+        # Regular execute triggers graph capture
+        eng.execute(eng.get_random_input())
+        assert eng._cuda_graph.is_captured is True
+        del eng

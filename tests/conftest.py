@@ -68,14 +68,14 @@ def _skip_gpu_tests(request: pytest.FixtureRequest, gpu_available: bool) -> None
 
 
 @pytest.fixture(autouse=True)
-def _skip_dla_tests(request: pytest.FixtureRequest) -> None:
-    """Auto-skip tests marked @pytest.mark.dla when not on Jetson."""
-    if request.node.get_closest_marker("dla"):
+def _skip_jetson_tests(request: pytest.FixtureRequest) -> None:
+    """Auto-skip tests marked @pytest.mark.jetson when not on Jetson."""
+    if request.node.get_closest_marker("jetson"):
         try:
             from trtutils._flags import FLAGS
 
             if not FLAGS.IS_JETSON:
-                pytest.skip("DLA tests require Jetson hardware")
+                pytest.skip("Jetson tests require Jetson hardware")
         except Exception:
             pytest.skip("Cannot determine Jetson status")
 

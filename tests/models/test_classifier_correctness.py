@@ -10,6 +10,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from .conftest import (
+    CLASSIFIER_EXPECTED,
+    CLASSIFIER_MODELS,
+    _resolve_model_class,
+    build_model_engine,
+)
+
 BASE_DIR = Path(__file__).parent.parent.parent
 DATA_DIR = BASE_DIR / "data"
 SIMPLE_ONNX = DATA_DIR / "simple.onnx"
@@ -234,3 +241,177 @@ class TestClassifierEnd2End:
         for entry in result:
             assert isinstance(entry, tuple)
             assert len(entry) == 2
+
+
+# ---------------------------------------------------------------------------
+# Data-driven multi-model classifier correctness tests
+# ---------------------------------------------------------------------------
+_CLASSIFIER_MODEL_IDS = list(CLASSIFIER_MODELS.keys())
+
+
+def _make_cls_expected_ids() -> list[str]:
+    """Create human-readable IDs for CLASSIFIER_EXPECTED entries."""
+    return [Path(e["image"]).stem for e in CLASSIFIER_EXPECTED]
+
+
+_CLS_EXPECTED_IDS = _make_cls_expected_ids()
+
+
+@pytest.mark.gpu
+@pytest.mark.correctness
+@pytest.mark.download
+class TestClassifierImageCorrectness:
+    """Data-driven correctness: classifiers must find expected classes."""
+
+    @pytest.mark.parametrize(
+        "expected_entry",
+        CLASSIFIER_EXPECTED,
+        ids=_CLS_EXPECTED_IDS,
+    )
+    @pytest.mark.parametrize("model_id", _CLASSIFIER_MODEL_IDS)
+    def test_image_correctness(
+        self,
+        expected_entry: dict,
+        model_id: str,
+    ) -> None:
+        """At least one expected class appears in top-k predictions."""
+        import cv2
+
+        cls_name, model_name, imgsz = CLASSIFIER_MODELS[model_id]
+        engine_path = build_model_engine(cls_name, model_name, imgsz)
+
+        model_class = _resolve_model_class(cls_name)
+        classifier = model_class(
+            engine_path,
+            warmup=False,
+            no_warn=True,
+        )
+
+        image_path = str(BASE_DIR / expected_entry["image"])
+        image = cv2.imread(image_path)
+        if image is None:
+            pytest.skip(f"Image not found: {image_path}")
+
+        top_k = expected_entry["top_k"]
+        predictions = classifier.end2end(image, top_k=top_k)
+
+        predicted_classes = [int(cls_id) for cls_id, _score in predictions]
+        has_match = any(c in expected_entry["expected_top_k_classes"] for c in predicted_classes)
+        assert has_match, (
+            f"{model_id}: none of {predicted_classes} match "
+            f"expected {expected_entry['expected_top_k_classes']}"
+        )
+
+        del classifier
+
+
+@pytest.mark.gpu
+@pytest.mark.correctness
+@pytest.mark.download
+class TestClassifierOutputFormat:
+    """Validate classifier output format across all models."""
+
+    @pytest.mark.parametrize(
+        "expected_entry",
+        CLASSIFIER_EXPECTED,
+        ids=_CLS_EXPECTED_IDS,
+    )
+    @pytest.mark.parametrize("model_id", _CLASSIFIER_MODEL_IDS)
+    def test_output_format(
+        self,
+        expected_entry: dict,
+        model_id: str,
+    ) -> None:
+        """Output is list[tuple[int, float]], scores in [0,1], descending."""
+        import cv2
+
+        cls_name, model_name, imgsz = CLASSIFIER_MODELS[model_id]
+        engine_path = build_model_engine(cls_name, model_name, imgsz)
+
+        model_class = _resolve_model_class(cls_name)
+        classifier = model_class(
+            engine_path,
+            warmup=False,
+            no_warn=True,
+        )
+
+        image_path = str(BASE_DIR / expected_entry["image"])
+        image = cv2.imread(image_path)
+        if image is None:
+            pytest.skip(f"Image not found: {image_path}")
+
+        top_k = expected_entry["top_k"]
+        predictions = classifier.end2end(image, top_k=top_k)
+
+        # Must be a list
+        assert isinstance(predictions, list)
+
+        # Each entry is (int, float)
+        for entry in predictions:
+            assert isinstance(entry, tuple), f"Expected tuple, got {type(entry)}"
+            assert len(entry) == 2
+            cls_id, score = entry
+            assert isinstance(cls_id, (int, np.integer))
+            assert isinstance(score, (float, np.floating))
+            assert 0.0 <= float(score) <= 1.0, f"{model_id}: score {score} out of [0, 1]"
+
+        # Scores in descending order
+        if len(predictions) > 1:
+            scores = [float(s) for _, s in predictions]
+            for i in range(len(scores) - 1):
+                assert scores[i] >= scores[i + 1] - 1e-6, (
+                    f"{model_id}: scores not descending at index {i}: {scores[i]} < {scores[i + 1]}"
+                )
+
+        del classifier
+
+
+@pytest.mark.gpu
+@pytest.mark.correctness
+@pytest.mark.download
+class TestClassifierPreprocessorConsistency:
+    """Verify cpu/cuda/trt preprocessors agree on top-1 class."""
+
+    @pytest.mark.parametrize(
+        "expected_entry",
+        CLASSIFIER_EXPECTED,
+        ids=_CLS_EXPECTED_IDS,
+    )
+    @pytest.mark.parametrize("model_id", _CLASSIFIER_MODEL_IDS)
+    def test_preprocessor_consistency(
+        self,
+        expected_entry: dict,
+        model_id: str,
+    ) -> None:
+        """All preprocessors produce the same top-1 class."""
+        import cv2
+
+        cls_name, model_name, imgsz = CLASSIFIER_MODELS[model_id]
+        engine_path = build_model_engine(cls_name, model_name, imgsz)
+
+        model_class = _resolve_model_class(cls_name)
+
+        image_path = str(BASE_DIR / expected_entry["image"])
+        image = cv2.imread(image_path)
+        if image is None:
+            pytest.skip(f"Image not found: {image_path}")
+
+        preprocessors = ["cpu", "cuda", "trt"]
+        top1_classes: dict[str, int] = {}
+
+        for preproc in preprocessors:
+            classifier = model_class(
+                engine_path,
+                preprocessor=preproc,
+                warmup=False,
+                no_warn=True,
+            )
+            predictions = classifier.end2end(image, top_k=1)
+            if predictions:
+                top1_classes[preproc] = int(predictions[0][0])
+            del classifier
+
+        unique_classes = set(top1_classes.values())
+        assert len(unique_classes) == 1, (
+            f"{model_id}: preprocessors disagree on top-1: {top1_classes}"
+        )
