@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from trtutils.compat._libs import trt
@@ -17,6 +18,12 @@ class Flags:
 
     Attributes
     ----------
+    CUDA_PYTHON_12 : bool
+        Whether cuda-python >= 12 is installed. cuda-python 12+ changed the
+        cudaGraphInstantiate signature from 3-arg to 2-arg.
+    CUDA_PYTHON_13 : bool
+        Whether cuda-python >= 13 is installed. cuda-python 13+ changed the
+        cuCtxCreate signature to require a CUctxCreateParams first argument.
     TRT_10 : bool
         Whether or not TensorRT is version 10 or greater.
     TRT_HAS_UINT8 : bool
@@ -53,7 +60,11 @@ class Flags:
 
     """
 
-    # TensorRT and CUDA flags
+    # CUDA flags
+    CUDA_PYTHON_12: bool = False
+    CUDA_PYTHON_13: bool = False
+
+    # TensorRT flags
     TRT_10: bool = False
     TRT_HAS_UINT8: bool = False
     TRT_HAS_INT64: bool = False
@@ -75,7 +86,18 @@ class Flags:
     NVTX_ENABLED: bool = False
 
 
+def _cuda_python_version() -> tuple[int, ...]:
+    """Return the cuda-python package version as a tuple of ints."""
+    try:
+        return tuple(int(x) for x in version("cuda-python").split("."))
+    except (PackageNotFoundError, ValueError):
+        return (0,)
+
+
 FLAGS = Flags()
+_cpv = _cuda_python_version()
+FLAGS.CUDA_PYTHON_12 = _cpv >= (12,)
+FLAGS.CUDA_PYTHON_13 = _cpv >= (13,)
 FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
 FLAGS.TRT_HAS_UINT8 = hasattr(trt.DataType, "UINT8")
 FLAGS.TRT_HAS_INT64 = hasattr(trt.DataType, "INT64")
