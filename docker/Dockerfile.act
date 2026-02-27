@@ -25,6 +25,10 @@ RUN apt-get update && \
 # Set python3 as default `python`
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
+# Install latest uv for CI tooling parity
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh
+RUN uv --version
+
 # Create a non-root user similar to GitHub Actions runner
 RUN useradd -ms /bin/bash runner && echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
