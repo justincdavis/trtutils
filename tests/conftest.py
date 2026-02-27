@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 """Root conftest.py — shared fixtures for the trtutils test suite."""
 
 from __future__ import annotations

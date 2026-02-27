@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 """Core test fixtures -- CUDA streams, temp engine files, etc."""
 
 from __future__ import annotations

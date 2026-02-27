@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 """Tests for src/trtutils/builder/onnx/_subgraph.py -- ONNX subgraph extraction."""
 
 from __future__ import annotations

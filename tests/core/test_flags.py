@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 """Tests for src/trtutils/_flags.py -- FLAGS dataclass and version detection."""
 
 from __future__ import annotations

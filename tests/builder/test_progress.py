@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 """Tests for ProgressBar -- TRT build progress monitoring."""
 
 from __future__ import annotations

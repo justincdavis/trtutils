@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 """Builder test fixtures -- ONNX files, temp dirs, test images."""
 
 from __future__ import annotations

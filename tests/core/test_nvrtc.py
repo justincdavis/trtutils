@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 """Tests for src/trtutils/core/_nvrtc.py -- NVRTC compilation and loading."""
 
 from __future__ import annotations

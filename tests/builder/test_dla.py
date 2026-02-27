@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 """Tests for DLA analysis -- can_run_on_dla(), build_dla_engine(), get_check_dla()."""
 
 from __future__ import annotations
