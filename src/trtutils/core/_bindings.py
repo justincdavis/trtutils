@@ -41,7 +41,11 @@ class Binding:
         """Free the memory of the binding."""
         if self.pagelocked_mem:
             cuda_call(cudart.cudaFreeHost(self.host_allocation))
-        # else:
+            # unified pagelocked memory maps a host allocation to a device-visible alias pointer;
+            # only the host allocation should be freed.
+            if not self.unified_mem:
+                cuda_call(cudart.cudaFree(self.allocation))
+            return
         cuda_call(cudart.cudaFree(self.allocation))
 
     def __del__(self: Self) -> None:

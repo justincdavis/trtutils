@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 
 # Ensure .venv-ci exists
 if [ ! -d ".venv-ci" ]; then
@@ -47,7 +50,7 @@ EXIT_CODE=0
 # Run format check
 if [ "$DO_FORMAT" = true ]; then
     echo "Running ruff format..."
-    if ./ci/run_format.sh --check --diff; then
+    if ./ci/run_ruff.sh --format --check --diff; then
         echo "✓ Format check passed"
     else
         echo "✗ Format check failed"
@@ -58,7 +61,7 @@ fi
 # Run lint check
 if [ "$DO_LINT" = true ]; then
     echo "Running ruff lint..."
-    if ./ci/run_lint.sh --no-fix; then
+    if ./ci/run_ruff.sh --lint --no-fix; then
         echo "✓ Lint check passed"
     else
         echo "✗ Lint check failed"

@@ -97,8 +97,8 @@ compat = [
     "trtutils[sahi]",
 ]
 ci = [
-    "ruff==0.15.2",
-    "ty==0.0.18",
+    "ruff==0.15.4",
+    "ty==0.0.19",
 ]
 docs = [
     "sphinx>=7.0.0",
@@ -108,7 +108,11 @@ docs = [
     "matplotlib>=3.0.0",
 ]
 test = [
+    "trtutils[onnx]",
     "pytest>=6.2.0,<8.5",
+    "pytest-cov>=4.0",
+    "pytest-xdist>=3.0",
+    "pytest-timeout>=2.0",
 ]
 torch = [
     "torch>=2.0.0",
@@ -147,6 +151,23 @@ push            = false
 "pyproject.toml" = ['current_version = "{version}"', 'version = "{version}"']
 "src/trtutils/__init__.py" = ["{version}"]
 "docs/conf.py" = ["{version}"]
+
+[tool.coverage.run]
+source = ["src/trtutils"]
+branch = true
+omit = [
+    "src/trtutils/compat/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ ==",
+    "@overload",
+    "@abstractmethod",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

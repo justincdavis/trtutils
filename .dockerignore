@@ -1,0 +1,36 @@
+.git
+.github
+.cursor
+.claude
+.venv
+venv
+env
+
+# Python specifics
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Common build artifacts
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
+htmlcov/
+.coverage*
+
+# Large local artifacts not needed in image builds
+benchmark/
+plans/
+scripts/data/
+*.nsys-rep
+*.sqlite
+*.log
+
+# Keep only top-level files in data/
+data/**/

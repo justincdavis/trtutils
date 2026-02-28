@@ -1,0 +1,57 @@
+x-test-common: &test-common
+  dockerfile: docker/Dockerfile.test
+  context: ..
+
+x-service-common: &service-common
+  environment:
+    - NVIDIA_VISIBLE_DEVICES=all
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+  volumes:
+    - ../src:/workspace/trtutils/src
+    - ../tests:/workspace/trtutils/tests
+    - ../data:/workspace/trtutils/data
+    - ../ci:/workspace/trtutils/ci
+    - ../pytest.ini:/workspace/trtutils/pytest.ini
+    - ../demos:/workspace/trtutils/demos
+    - ../examples:/workspace/trtutils/examples
+    - ../.coverage-threshold.json:/workspace/trtutils/.coverage-threshold.json
+    - ../.coverage.json:/workspace/trtutils/.coverage.json
+  working_dir: /workspace/trtutils
+
+services:
+  test-cu11:
+    build:
+      <<: *test-common
+      args:
+        BASE_IMAGE: nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
+        CUDA_VERSION: "11"
+        CUDA_REQUIREMENTS_FILE: requirements_cu11.txt
+    image: trtutils-test:cu11
+    <<: *service-common
+
+  test-cu12:
+    build:
+      <<: *test-common
+      args:
+        BASE_IMAGE: nvidia/cuda:12.6.0-cudnn-devel-ubuntu22.04
+        CUDA_VERSION: "12"
+        CUDA_REQUIREMENTS_FILE: requirements_cu12.txt
+    image: trtutils-test:cu12
+    <<: *service-common
+
+  test-cu13:
+    build:
+      <<: *test-common
+      args:
+        BASE_IMAGE: nvidia/cuda:13.0.0-cudnn-devel-ubuntu24.04
+        PIP_EXTRA_FLAGS: --break-system-packages
+        CUDA_VERSION: "13"
+        CUDA_REQUIREMENTS_FILE: requirements_cu13.txt
+    image: trtutils-test:cu13
+    <<: *service-common
