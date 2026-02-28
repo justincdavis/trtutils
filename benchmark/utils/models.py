@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
+#
 # MIT License
 """Utility functions for managing benchmark models."""
 
@@ -7,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-REPO_DIR = Path(__file__).parent.parent
+from .config import REPO_DIR
 
 
 def _get_model_class(model_name: str) -> Any:
@@ -80,21 +81,21 @@ def ensure_model_available(
     if model_name not in model_to_dir:
         err_msg = f"Unknown model: {model_name}. Not found in model directory mapping."
         raise ValueError(err_msg)
-    
+
     model_dir = REPO_DIR / "data" / model_to_dir[model_name]
     model_path = model_dir / f"{model_name}_{imgsz}.onnx"
-    
+
     if model_path.exists():
         return model_path
-    
+
     if not auto_download:
         err_msg = f"Model not found: {model_path}"
         raise FileNotFoundError(err_msg)
-    
+
     # Auto-download
     print(f"Downloading {model_name} @ {imgsz}x{imgsz}...")
     model_dir.mkdir(parents=True, exist_ok=True)
-    
+
     download(
         model=model_name,
         output=model_path,
