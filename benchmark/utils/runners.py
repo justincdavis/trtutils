@@ -42,7 +42,6 @@ def _export_batch_onnx(
     batch_size: int,
     output_dir: Path,
 ) -> Path:
-    """Export an ONNX model with a specific batch size using the yolo CLI."""
     onnx_path = output_dir / f"{model_name}_{imgsz}_b{batch_size}.onnx"
     if onnx_path.exists():
         return onnx_path
@@ -82,7 +81,6 @@ def _engine_path_for_batch(
     imgsz: int,
     batch_size: int,
 ) -> Path:
-    """Get the engine path for a batch-specific model."""
     model_name = onnx_path.stem.rsplit("_", 1)[0]
     return onnx_path.parent / f"{model_name}_{imgsz}_b{batch_size}.engine"
 
@@ -100,19 +98,6 @@ def _run_benchmarks(
     *,
     overwrite: bool = False,
 ) -> None:
-    """
-    Shared benchmark wrapper.
-
-    Parameters
-    ----------
-    modes : list[tuple[str, Any]]
-        [(framework_name, flag), ...] where flag is passed to runner_factory.
-    runner_factory : Callable
-        (flag, imgsz, bs) -> ContextManager yielding exec_fn.
-    loop_warmup : int
-        Warmup iterations passed to benchmark_loop (not the engine warmup).
-
-    """
     data = get_data(device, data_subdir, frameworks)
 
     for framework, flag in modes:
@@ -131,7 +116,10 @@ def _run_benchmarks(
             try:
                 with runner_factory(flag, imgsz, bs) as exec_fn:
                     timings = benchmark_loop(
-                        exec_fn, loop_warmup, bench_iters, f"{framework} {data_key}",
+                        exec_fn,
+                        loop_warmup,
+                        bench_iters,
+                        f"{framework} {data_key}",
                     )
 
                 results = compute_results(timings, batch_size=bs)
@@ -165,9 +153,15 @@ def benchmark_trtutils(
     image = cv2.imread(IMAGE_PATH)
 
     @contextlib.contextmanager
-    def _runner(cuda_graph, imgsz, bs):
+    def _runner(mode, imgsz, bs):
+        cuda_graph = mode in ("detector_graph", "raw_graph")
+        is_raw = mode in ("raw", "raw_graph")
+
         onnx_path = ensure_model_available(
-            model_name, imgsz, MODEL_TO_DIR, auto_download=True,
+            model_name,
+            imgsz,
+            MODEL_TO_DIR,
+            auto_download=True,
         )
         if bs > 1:
             batch_onnx = _export_batch_onnx(model_name, imgsz, bs, onnx_path.parent)
@@ -178,8 +172,11 @@ def benchmark_trtutils(
         if not engine_path.exists():
             print(f"\tBuilding engine for {imgsz}x{bs}...")
             build_model(
-                onnx=batch_onnx, output=engine_path,
-                imgsz=imgsz, batch_size=bs, model_name=model_name,
+                onnx=batch_onnx,
+                output=engine_path,
+                imgsz=imgsz,
+                batch_size=bs,
+                model_name=model_name,
             )
         detector = Detector(
             engine_path=engine_path,
@@ -190,67 +187,39 @@ def benchmark_trtutils(
             cuda_graph=cuda_graph,
             verbose=False,
         )
-        images = [image] * bs
+        if is_raw:
+            engine = detector.engine
+            if cuda_graph:
+                exec_fn = lambda: engine.graph_exec(debug=True)
+            else:
+                input_ptrs = [b.allocation for b in engine.input_bindings]
+                exec_fn = lambda: engine.raw_exec(input_ptrs, debug=True, no_warn=True)
+        else:
+            images = [image] * bs
+            exec_fn = lambda: detector.end2end(images)
+
         try:
-            yield lambda: detector.end2end(images)
+            yield exec_fn
         finally:
             del detector
 
     _run_benchmarks(
-        device, model_name, configs, bench_iters, data_subdir, frameworks,
-        modes=[("trtutils", False), ("trtutils(graph)", True)],
+        device,
+        model_name,
+        configs,
+        bench_iters,
+        data_subdir,
+        frameworks,
+        modes=[
+            ("trtutils", "detector"),
+            ("trtutils(graph)", "detector_graph"),
+            ("tensorrt", "raw"),
+            ("tensorrt(graph)", "raw_graph"),
+        ],
         runner_factory=_runner,
         overwrite=overwrite,
     )
 
-
-def benchmark_raw_tensorrt(
-    device: str,
-    model_name: str,
-    configs: list[tuple[str, int, int]],
-    warmup_iters: int,
-    bench_iters: int,
-    data_subdir: str,
-    frameworks: list[str],
-    *,
-    overwrite: bool = False,
-) -> None:
-    """Benchmark raw TensorRT engine inference across configs."""
-    from trtutils import TRTEngine
-
-    @contextlib.contextmanager
-    def _runner(cuda_graph, imgsz, bs):
-        onnx_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR)
-        engine_path = onnx_path.with_suffix(".engine")
-        if not engine_path.exists():
-            print("\tBuilding engine...")
-            build_model(onnx=onnx_path, output=engine_path, imgsz=imgsz)
-            if not engine_path.exists():
-                err_msg = f"Engine build failed: {engine_path}"
-                raise FileNotFoundError(err_msg)
-        engine = TRTEngine(
-            engine_path=engine_path,
-            warmup_iterations=warmup_iters,
-            warmup=True,
-            cuda_graph=cuda_graph,
-            verbose=True,
-        )
-        input_ptrs = [b.allocation for b in engine.input_bindings]
-        if cuda_graph:
-            exec_fn = lambda: engine.graph_exec(debug=True)
-        else:
-            exec_fn = lambda: engine.raw_exec(input_ptrs, debug=True, no_warn=True)
-        try:
-            yield exec_fn
-        finally:
-            del engine
-
-    _run_benchmarks(
-        device, model_name, configs, bench_iters, data_subdir, frameworks,
-        modes=[("tensorrt", False), ("tensorrt(graph)", True)],
-        runner_factory=_runner,
-        overwrite=overwrite,
-    )
 
 
 def benchmark_ultralytics(
@@ -283,8 +252,11 @@ def benchmark_ultralytics(
             if not engine_path.exists():
                 print(f"\tBuilding ultralytics TRT engine for {imgsz}x{bs}...")
                 export_cmd = [
-                    "yolo", "export", f"model={pt_path}",
-                    "format=engine", f"imgsz={imgsz}",
+                    "yolo",
+                    "export",
+                    f"model={pt_path}",
+                    "format=engine",
+                    f"imgsz={imgsz}",
                 ]
                 if bs > 1:
                     export_cmd.append(f"batch={bs}")
@@ -305,7 +277,12 @@ def benchmark_ultralytics(
             del yolo
 
     _run_benchmarks(
-        device, model_name, configs, bench_iters, data_subdir, frameworks,
+        device,
+        model_name,
+        configs,
+        bench_iters,
+        data_subdir,
+        frameworks,
         modes=[("ultralytics(torch)", False), ("ultralytics(trt)", True)],
         runner_factory=_runner,
         loop_warmup=warmup_iters,

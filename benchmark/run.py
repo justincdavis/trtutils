@@ -22,7 +22,6 @@ from utils.config import (
 def cmd_models(args: argparse.Namespace) -> None:
     """Run single-image model benchmarks."""
     from utils.runners import (
-        benchmark_raw_tensorrt,
         benchmark_trtutils,
         benchmark_ultralytics,
     )
@@ -55,16 +54,7 @@ def cmd_models(args: argparse.Namespace) -> None:
                     MODEL_FRAMEWORKS,
                     overwrite=args.overwrite,
                 )
-                benchmark_raw_tensorrt(
-                    args.device,
-                    model,
-                    configs,
-                    args.warmup,
-                    args.iterations,
-                    "models",
-                    MODEL_FRAMEWORKS,
-                    overwrite=args.overwrite,
-                )
+
             except Exception as e:
                 warnings.warn(f"Failed {model} with trtutils: {e}")
 
