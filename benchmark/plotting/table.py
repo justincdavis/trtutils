@@ -42,15 +42,17 @@ def _get_device_rows(
             continue
         for modelname, m_data in f_data.items():
             for input_size, metrics in m_data.items():
-                rows.append([
-                    framework,
-                    modelname,
-                    input_size,
-                    format_value(metrics.get("mean", "N/A")),
-                    format_value(metrics.get("median", "N/A")),
-                    format_value(metrics.get("min", "N/A")),
-                    format_value(metrics.get("max", "N/A")),
-                ])
+                rows.append(
+                    [
+                        framework,
+                        modelname,
+                        input_size,
+                        format_value(metrics.get("mean", "N/A")),
+                        format_value(metrics.get("median", "N/A")),
+                        format_value(metrics.get("min", "N/A")),
+                        format_value(metrics.get("max", "N/A")),
+                    ]
+                )
     return rows
 
 
@@ -64,8 +66,14 @@ def _make_all_table(
             rows.append([device, *r])
 
     headers = [
-        "Device", "Framework", "Model", "Input Size",
-        "Mean (ms)", "Median (ms)", "Min (ms)", "Max (ms)",
+        "Device",
+        "Framework",
+        "Model",
+        "Input Size",
+        "Mean (ms)",
+        "Median (ms)",
+        "Min (ms)",
+        "Max (ms)",
     ]
     return _make_rst_table(rows, headers)
 
@@ -76,8 +84,13 @@ def _make_device_table(
     """Create an RST table for a single device."""
     rows = _get_device_rows(data)
     headers = [
-        "Framework", "Model", "Input Size",
-        "Mean (ms)", "Median (ms)", "Min (ms)", "Max (ms)",
+        "Framework",
+        "Model",
+        "Input Size",
+        "Mean (ms)",
+        "Median (ms)",
+        "Min (ms)",
+        "Max (ms)",
     ]
     return _make_rst_table(rows, headers)
 

@@ -11,10 +11,10 @@ from collections import defaultdict
 from pathlib import Path
 
 import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
 
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
 from utils.config import DATA_DIR, IMAGE_SIZES, MODEL_FAMILIES, MODEL_FRAMEWORKS
 
 _PLOT_DIR = Path(__file__).resolve().parent.parent / "plots"
@@ -25,14 +25,10 @@ FAMILY_COLORS = {fm: plt.cm.tab10(idx) for idx, fm in enumerate(MODEL_FAMILIES)}
 EPSILON = 1e-9
 
 
-def load_all_device_data() -> (
-    list[tuple[str, dict[str, dict[str, dict[str, dict[str, float]]]]]]
-):
+def load_all_device_data() -> list[tuple[str, dict[str, dict[str, dict[str, dict[str, float]]]]]]:
     """Load benchmark data for all devices."""
     data_dir = DATA_DIR / "models"
-    device_data: list[
-        tuple[str, dict[str, dict[str, dict[str, dict[str, float]]]]]
-    ] = []
+    device_data: list[tuple[str, dict[str, dict[str, dict[str, dict[str, float]]]]]] = []
 
     for file in data_dir.iterdir():
         if file.is_dir() or file.suffix != ".json":
@@ -72,7 +68,8 @@ def get_model_family(model_name: str) -> str:
 
 
 def compute_pareto_frontier(points: list[tuple[float, float]]) -> list[bool]:
-    """Compute Pareto frontier mask for (cost, accuracy) pairs.
+    """
+    Compute Pareto frontier mask for (cost, accuracy) pairs.
 
     Returns a boolean list where True indicates a Pareto-optimal point.
     """
@@ -151,7 +148,8 @@ def plot_device(
                 xytext=(0, 3),
                 rotation=90,
                 textcoords="offset points",
-                ha="center", va="bottom",
+                ha="center",
+                va="bottom",
                 fontsize=annotation_fontsize,
             )
 
@@ -185,8 +183,10 @@ def plot_device(
             max_latency = max(max_latency, max(latencies) if latencies else 0)
 
             rects = ax.bar(
-                x + i * bar_width, latencies,
-                width=bar_width, label=framework,
+                x + i * bar_width,
+                latencies,
+                width=bar_width,
+                label=framework,
                 color=COLORS[framework],
             )
             autolabel(rects, ax)
@@ -196,12 +196,14 @@ def plot_device(
         plt.ylabel("Latency (ms)", fontsize=label_fontsize)
         plt.suptitle(
             f"{name} - Input Size and Latency Comparison for {model}",
-            y=0.95, fontsize=title_fontsize,
+            y=0.95,
+            fontsize=title_fontsize,
         )
         plt.title("Batch 1, end-to-end latency", fontsize=subtitle_fontsize)
         plt.xticks(
             x + bar_width * (n_fw - 1) / 2,
-            IMAGE_SIZES, fontsize=tick_fontsize,
+            IMAGE_SIZES,
+            fontsize=tick_fontsize,
         )
         plt.yticks(fontsize=tick_fontsize)
         plt.legend(
@@ -290,71 +292,101 @@ def plot_pareto(
 
         # Connecting lines
         all_pts = sorted(
-            [(c, a, m) for c, a, m, _ in family_points], key=lambda x: x[0],
+            [(c, a, m) for c, a, m, _ in family_points],
+            key=lambda x: x[0],
         )
         if len(all_pts) > 1:
             costs, accs, _ = zip(*all_pts)
             ax.plot(
-                costs, accs, color=color,
-                alpha=0.25, linewidth=2.0, linestyle="-", zorder=1,
+                costs,
+                accs,
+                color=color,
+                alpha=0.25,
+                linewidth=2.0,
+                linestyle="-",
+                zorder=1,
             )
 
         # Non-optimal points
         if non_optimal:
             costs, accs, _ = zip(*non_optimal)
             ax.scatter(
-                costs, accs, color=color, alpha=0.4, s=200,
-                marker="o", edgecolors="none", zorder=2,
+                costs,
+                accs,
+                color=color,
+                alpha=0.4,
+                s=200,
+                marker="o",
+                edgecolors="none",
+                zorder=2,
             )
             for cost, acc, model in non_optimal:
                 ax.annotate(
-                    model, xy=(cost, acc), xytext=(6, 6),
+                    model,
+                    xy=(cost, acc),
+                    xytext=(6, 6),
                     textcoords="offset points",
-                    fontsize=fontsize - 2, alpha=0.5,
+                    fontsize=fontsize - 2,
+                    alpha=0.5,
                 )
 
         # Optimal points
         if optimal:
             costs, accs, _ = zip(*optimal)
             ax.scatter(
-                costs, accs, color=color, alpha=1.0, s=300,
-                marker="o", label=family,
-                edgecolors="black", linewidths=2.5, zorder=3,
+                costs,
+                accs,
+                color=color,
+                alpha=1.0,
+                s=300,
+                marker="o",
+                label=family,
+                edgecolors="black",
+                linewidths=2.5,
+                zorder=3,
             )
             for cost, acc, model in optimal:
                 ax.annotate(
-                    model, xy=(cost, acc), xytext=(6, 6),
+                    model,
+                    xy=(cost, acc),
+                    xytext=(6, 6),
                     textcoords="offset points",
-                    fontsize=fontsize, fontweight="bold",
+                    fontsize=fontsize,
+                    fontweight="bold",
                 )
 
     # Pareto frontier line
     pareto_pts = sorted(
-        [
-            (cost, acc)
-            for (cost, acc, _, _), is_pareto in zip(points_data, pareto_mask)
-            if is_pareto
-        ],
+        [(cost, acc) for (cost, acc, _, _), is_pareto in zip(points_data, pareto_mask) if is_pareto],
         key=lambda x: x[0],
     )
     if pareto_pts:
         costs, accs = zip(*pareto_pts)
         ax.plot(
-            costs, accs, "k--",
-            alpha=0.4, linewidth=2.5, label="Pareto Frontier",
+            costs,
+            accs,
+            "k--",
+            alpha=0.4,
+            linewidth=2.5,
+            label="Pareto Frontier",
         )
 
     ax.set_xlabel("Latency (ms)", fontsize=label_fontsize, fontweight="bold")
     ax.set_ylabel("COCO mAP@50", fontsize=label_fontsize, fontweight="bold")
     ax.set_title(
         f"{name} - Accuracy vs. Latency - {framework}",
-        fontsize=title_fontsize, fontweight="bold", pad=20,
+        fontsize=title_fontsize,
+        fontweight="bold",
+        pad=20,
     )
     ax.tick_params(axis="both", labelsize=tick_fontsize, width=1.5, length=6)
     ax.grid(True, alpha=0.3, linestyle="--", linewidth=1.2)
     ax.legend(
-        fontsize=legend_fontsize, loc="best",
-        framealpha=0.9, edgecolor="black", fancybox=True,
+        fontsize=legend_fontsize,
+        loc="best",
+        framealpha=0.9,
+        edgecolor="black",
+        fancybox=True,
     )
 
     plt.tight_layout()

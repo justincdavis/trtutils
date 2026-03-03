@@ -15,7 +15,8 @@ def get_data(
     data_subdir: str,
     frameworks: list[str],
 ) -> dict[str, dict[str, dict[str, dict[str, float]]]]:
-    """Load benchmark data for a device.
+    """
+    Load benchmark data for a device.
 
     Parameters
     ----------
@@ -52,7 +53,8 @@ def write_data(
     data_subdir: str,
     data: dict[str, dict[str, dict[str, dict[str, float]]]],
 ) -> None:
-    """Write benchmark data for a device.
+    """
+    Write benchmark data for a device.
 
     Parameters
     ----------

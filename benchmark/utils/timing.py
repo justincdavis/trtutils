@@ -23,7 +23,8 @@ def benchmark_loop(
     bench_iters: int,
     desc: str = "",
 ) -> list[float]:
-    """Run warmup iterations, then time bench_iters calls to fn.
+    """
+    Run warmup iterations, then time bench_iters calls to fn.
 
     Parameters
     ----------
@@ -58,7 +59,8 @@ def compute_results(
     timings: list[float],
     batch_size: int = 1,
 ) -> dict[str, float]:
-    """Compute statistics from raw timings using trtutils.Metric.
+    """
+    Compute statistics from raw timings using trtutils.Metric.
 
     Parameters
     ----------

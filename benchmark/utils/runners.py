@@ -2,7 +2,7 @@
 #
 # MIT License
 # ruff: noqa: S603, S607, T201
-"""Benchmark runner functions for model, batch, SAHI, and optimization benchmarks."""
+"""Benchmark runner functions."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ import subprocess
 import time
 import warnings
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 from tqdm import tqdm
 
 from .config import (
-    BATCH_FRAMEWORKS,
     DATA_DIR,
     IMAGE_PATH,
     MODEL_FRAMEWORKS,
@@ -31,167 +31,286 @@ from .data import get_data, write_data
 from .models import build_model, ensure_model_available
 from .timing import benchmark_loop, compute_results
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
 
-# ---------------------------------------------------------------------------
-# Model comparison benchmarks (from run.py)
-# ---------------------------------------------------------------------------
+
+def _export_batch_onnx(
+    model_name: str,
+    imgsz: int,
+    batch_size: int,
+    output_dir: Path,
+) -> Path:
+    """Export an ONNX model with a specific batch size using the yolo CLI."""
+    onnx_path = output_dir / f"{model_name}_{imgsz}_b{batch_size}.onnx"
+    if onnx_path.exists():
+        return onnx_path
+
+    print(f"Exporting {model_name} ONNX with batch={batch_size}...")
+
+    pt_dir = REPO_DIR / "data" / "ultralytics"
+    pt_dir.mkdir(parents=True, exist_ok=True)
+    pt_path = pt_dir / f"{model_name}.pt"
+
+    subprocess.run(
+        [
+            "yolo",
+            "export",
+            f"model={pt_path}",
+            "format=onnx",
+            f"imgsz={imgsz}",
+            f"batch={batch_size}",
+            "opset=17",
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    exported_path = pt_path.with_suffix(".onnx")
+    if not exported_path.exists():
+        err_msg = f"ONNX export failed, file not found: {exported_path}"
+        raise FileNotFoundError(err_msg)
+
+    shutil.move(str(exported_path), str(onnx_path))
+    print(f"Exported batch ONNX: {onnx_path.name}")
+    return onnx_path
 
 
-def benchmark_trtutils_models(
+def _engine_path_for_batch(
+    onnx_path: Path,
+    imgsz: int,
+    batch_size: int,
+) -> Path:
+    """Get the engine path for a batch-specific model."""
+    model_name = onnx_path.stem.rsplit("_", 1)[0]
+    return onnx_path.parent / f"{model_name}_{imgsz}_b{batch_size}.engine"
+
+
+def _run_benchmarks(
     device: str,
     model_name: str,
-    image_sizes: list[int],
-    warmup_iters: int,
+    configs: list[tuple[str, int, int]],
     bench_iters: int,
+    data_subdir: str,
+    frameworks: list[str],
+    modes: list[tuple[str, Any]],
+    runner_factory: Callable,
+    loop_warmup: int = 0,
     *,
     overwrite: bool = False,
 ) -> None:
-    """Benchmark trtutils Detector and raw TensorRT inference across image sizes."""
-    from trtutils import TRTEngine
+    """
+    Shared benchmark wrapper.
+
+    Parameters
+    ----------
+    modes : list[tuple[str, Any]]
+        [(framework_name, flag), ...] where flag is passed to runner_factory.
+    runner_factory : Callable
+        (flag, imgsz, bs) -> ContextManager yielding exec_fn.
+    loop_warmup : int
+        Warmup iterations passed to benchmark_loop (not the engine warmup).
+
+    """
+    data = get_data(device, data_subdir, frameworks)
+
+    for framework, flag in modes:
+        if framework not in frameworks:
+            continue
+        data[framework].setdefault(model_name, {})
+
+        for data_key, imgsz, bs in configs:
+            with contextlib.suppress(KeyError):
+                if data[framework][model_name][data_key] is not None and not overwrite:
+                    print(f"Skipping {framework} {data_key} (already exists)")
+                    continue
+
+            print(f"Benchmarking {framework} {model_name} imgsz={imgsz} batch={bs}...")
+
+            try:
+                with runner_factory(flag, imgsz, bs) as exec_fn:
+                    timings = benchmark_loop(
+                        exec_fn, loop_warmup, bench_iters, f"{framework} {data_key}",
+                    )
+
+                results = compute_results(timings, batch_size=bs)
+                data[framework][model_name][data_key] = results
+                write_data(device, data_subdir, data)
+
+                print(
+                    f"\t{framework} {data_key}: "
+                    f"{results['mean']:.2f}ms ±{results['ci95']:.2f}, "
+                    f"{results['throughput']:.1f} img/s",
+                )
+            except Exception as e:
+                warnings.warn(f"Failed {framework} {data_key}: {e}")
+                continue
+
+
+def benchmark_trtutils(
+    device: str,
+    model_name: str,
+    configs: list[tuple[str, int, int]],
+    warmup_iters: int,
+    bench_iters: int,
+    data_subdir: str,
+    frameworks: list[str],
+    *,
+    overwrite: bool = False,
+) -> None:
+    """Benchmark trtutils Detector across configs."""
     from trtutils.image import Detector
 
     image = cv2.imread(IMAGE_PATH)
-    data = get_data(device, "models", MODEL_FRAMEWORKS)
 
-    modes: list[tuple[str, bool]] = [
-        ("trtutils", False),
-        ("trtutils(graph)", True),
-        ("tensorrt", False),
-        ("tensorrt(graph)", True),
-    ]
-
-    for framework, cuda_graph in modes:
-        for imgsz in image_sizes:
-            with contextlib.suppress(KeyError):
-                if data[framework][model_name][str(imgsz)] is not None and not overwrite:
-                    continue
-
-            try:
-                onnx_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR)
-            except Exception as e:
-                warnings.warn(f"Could not get {model_name} @ {imgsz}: {e}")
-                continue
-
+    @contextlib.contextmanager
+    def _runner(cuda_graph, imgsz, bs):
+        onnx_path = ensure_model_available(
+            model_name, imgsz, MODEL_TO_DIR, auto_download=True,
+        )
+        if bs > 1:
+            batch_onnx = _export_batch_onnx(model_name, imgsz, bs, onnx_path.parent)
+            engine_path = _engine_path_for_batch(onnx_path, imgsz, bs)
+        else:
+            batch_onnx = onnx_path
             engine_path = onnx_path.with_suffix(".engine")
-            if not engine_path.exists():
-                print(f"\tBuilding engine...")
-                build_model(onnx=onnx_path, output=engine_path, imgsz=imgsz)
-                if not engine_path.exists():
-                    err_msg = f"Engine build failed: {engine_path}"
-                    raise FileNotFoundError(err_msg)
+        if not engine_path.exists():
+            print(f"\tBuilding engine for {imgsz}x{bs}...")
+            build_model(
+                onnx=batch_onnx, output=engine_path,
+                imgsz=imgsz, batch_size=bs, model_name=model_name,
+            )
+        detector = Detector(
+            engine_path=engine_path,
+            warmup_iterations=warmup_iters,
+            warmup=True,
+            preprocessor="cuda",
+            pagelocked_mem=True,
+            cuda_graph=cuda_graph,
+            verbose=False,
+        )
+        images = [image] * bs
+        try:
+            yield lambda: detector.end2end(images)
+        finally:
+            del detector
 
-            print(f"Benchmarking {framework} {model_name} @ {imgsz}...")
-
-            if framework.startswith("trtutils"):
-                detector = Detector(
-                    engine_path=engine_path,
-                    warmup_iterations=warmup_iters,
-                    warmup=True,
-                    preprocessor="cuda",
-                    pagelocked_mem=True,
-                    cuda_graph=cuda_graph,
-                    verbose=True,
-                )
-                timings = benchmark_loop(
-                    lambda: detector.end2end(image),
-                    warmup_iters=0,
-                    bench_iters=bench_iters,
-                    desc=f"{framework} {imgsz}",
-                )
-                del detector
-            else:
-                engine = TRTEngine(
-                    engine_path=engine_path,
-                    warmup_iterations=warmup_iters,
-                    warmup=True,
-                    cuda_graph=cuda_graph,
-                    verbose=True,
-                )
-                input_ptrs = [b.allocation for b in engine.input_bindings]
-                if cuda_graph:
-                    exec_fn = lambda: engine.graph_exec(debug=True)
-                else:
-                    exec_fn = lambda: engine.raw_exec(
-                        input_ptrs, debug=True, no_warn=True,
-                    )
-                timings = benchmark_loop(
-                    exec_fn, 0, bench_iters, f"{framework} {imgsz}",
-                )
-                del engine
-
-            results = compute_results(timings)
-            data[framework].setdefault(model_name, {})[str(imgsz)] = results
-            write_data(device, "models", data)
+    _run_benchmarks(
+        device, model_name, configs, bench_iters, data_subdir, frameworks,
+        modes=[("trtutils", False), ("trtutils(graph)", True)],
+        runner_factory=_runner,
+        overwrite=overwrite,
+    )
 
 
-def benchmark_ultralytics_models(
+def benchmark_raw_tensorrt(
     device: str,
     model_name: str,
-    image_sizes: list[int],
+    configs: list[tuple[str, int, int]],
     warmup_iters: int,
     bench_iters: int,
+    data_subdir: str,
+    frameworks: list[str],
     *,
     overwrite: bool = False,
 ) -> None:
-    """Benchmark ultralytics YOLO (torch and TRT) across image sizes."""
+    """Benchmark raw TensorRT engine inference across configs."""
+    from trtutils import TRTEngine
+
+    @contextlib.contextmanager
+    def _runner(cuda_graph, imgsz, bs):
+        onnx_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR)
+        engine_path = onnx_path.with_suffix(".engine")
+        if not engine_path.exists():
+            print("\tBuilding engine...")
+            build_model(onnx=onnx_path, output=engine_path, imgsz=imgsz)
+            if not engine_path.exists():
+                err_msg = f"Engine build failed: {engine_path}"
+                raise FileNotFoundError(err_msg)
+        engine = TRTEngine(
+            engine_path=engine_path,
+            warmup_iterations=warmup_iters,
+            warmup=True,
+            cuda_graph=cuda_graph,
+            verbose=True,
+        )
+        input_ptrs = [b.allocation for b in engine.input_bindings]
+        if cuda_graph:
+            exec_fn = lambda: engine.graph_exec(debug=True)
+        else:
+            exec_fn = lambda: engine.raw_exec(input_ptrs, debug=True, no_warn=True)
+        try:
+            yield exec_fn
+        finally:
+            del engine
+
+    _run_benchmarks(
+        device, model_name, configs, bench_iters, data_subdir, frameworks,
+        modes=[("tensorrt", False), ("tensorrt(graph)", True)],
+        runner_factory=_runner,
+        overwrite=overwrite,
+    )
+
+
+def benchmark_ultralytics(
+    device: str,
+    model_name: str,
+    configs: list[tuple[str, int, int]],
+    warmup_iters: int,
+    bench_iters: int,
+    data_subdir: str,
+    frameworks: list[str],
+    *,
+    overwrite: bool = False,
+) -> None:
+    """Benchmark ultralytics YOLO across configs."""
     from ultralytics import YOLO
 
     image = cv2.imread(IMAGE_PATH)
-    data = get_data(device, "models", MODEL_FRAMEWORKS)
-
     ultralytics_dir = REPO_DIR / "data" / "ultralytics"
+    ultralytics_dir.mkdir(parents=True, exist_ok=True)
     pt_path = (ultralytics_dir / f"{model_name}.pt").resolve()
 
-    methods: list[tuple[str, Path, bool]] = [
-        ("ultralytics(torch)", pt_path, False),
-        ("ultralytics(trt)", pt_path, True),
-    ]
-
-    for framework, weight_path, compile_engine in methods:
-        for imgsz in image_sizes:
-            with contextlib.suppress(KeyError):
-                if data[framework][model_name][str(imgsz)] is not None and not overwrite:
-                    continue
-
-            if compile_engine:
-                engine_path = ultralytics_dir / f"{model_name}_{imgsz}.engine"
-                if not engine_path.exists():
-                    print(f"\tBuilding ultralytics TRT engine for {imgsz}...")
-                    base_engine = pt_path.with_suffix(".engine")
-                    subprocess.run(
-                        [
-                            "yolo", "export", f"model={pt_path}",
-                            "format=engine", f"imgsz={imgsz}", "half",
-                        ],
-                        check=True,
-                        capture_output=True,
-                    )
-                    if not base_engine.exists():
-                        err_msg = f"Ultralytics TRT engine not found: {base_engine}"
-                        raise FileNotFoundError(err_msg)
-                    base_engine.rename(engine_path)
-                model_path = engine_path
+    @contextlib.contextmanager
+    def _runner(compile_engine, imgsz, bs):
+        if compile_engine:
+            if bs > 1:
+                engine_path = ultralytics_dir / f"{model_name}_{imgsz}_b{bs}.engine"
             else:
-                model_path = weight_path
-
-            print(f"Benchmarking {framework} {model_name} @ {imgsz}...")
-            yolo = YOLO(model=model_path, task="detect", verbose=False)
-            timings = benchmark_loop(
-                lambda: yolo(image, imgsz=imgsz, verbose=False),
-                warmup_iters=warmup_iters,
-                bench_iters=bench_iters,
-                desc=f"{framework} {imgsz}",
-            )
+                engine_path = ultralytics_dir / f"{model_name}_{imgsz}.engine"
+            base_engine = pt_path.with_suffix(".engine")
+            if not engine_path.exists():
+                print(f"\tBuilding ultralytics TRT engine for {imgsz}x{bs}...")
+                export_cmd = [
+                    "yolo", "export", f"model={pt_path}",
+                    "format=engine", f"imgsz={imgsz}",
+                ]
+                if bs > 1:
+                    export_cmd.append(f"batch={bs}")
+                export_cmd.append("half")
+                subprocess.run(export_cmd, check=True, capture_output=True)
+                if not base_engine.exists():
+                    err_msg = f"Ultralytics TRT engine not found: {base_engine}"
+                    raise FileNotFoundError(err_msg)
+                base_engine.rename(engine_path)
+            model_path = engine_path
+        else:
+            model_path = pt_path
+        yolo = YOLO(model=model_path, task="detect", verbose=False)
+        images = [image] * bs
+        try:
+            yield lambda: yolo(images, imgsz=imgsz, verbose=False)
+        finally:
             del yolo
 
-            results = compute_results(timings)
-            data[framework].setdefault(model_name, {})[str(imgsz)] = results
-            write_data(device, "models", data)
-
-
-# ---------------------------------------------------------------------------
-# SAHI comparison benchmarks (from run.py)
-# ---------------------------------------------------------------------------
+    _run_benchmarks(
+        device, model_name, configs, bench_iters, data_subdir, frameworks,
+        modes=[("ultralytics(torch)", False), ("ultralytics(trt)", True)],
+        runner_factory=_runner,
+        loop_warmup=warmup_iters,
+        overwrite=overwrite,
+    )
 
 
 def benchmark_sahi(
@@ -205,6 +324,7 @@ def benchmark_sahi(
     """Benchmark trtutils SAHI against the official SAHI package."""
     from sahi import AutoDetectionModel
     from sahi.predict import get_sliced_prediction
+
     from trtutils.compat.sahi import TRTDetectionModel
     from trtutils.image import SAHI, Detector
 
@@ -220,7 +340,6 @@ def benchmark_sahi(
     if sahi_key not in data:
         data[sahi_key] = {}
 
-    # Resolve model paths
     try:
         trt_weight_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR)
     except Exception as e:
@@ -236,13 +355,9 @@ def benchmark_sahi(
     pt_path = (ultralytics_dir / f"{model_name}.pt").resolve()
     utrt_path = ultralytics_dir / f"{model_name}_{imgsz}.engine"
     if not utrt_path.exists():
-        err_msg = (
-            f"Ultralytics engine not found: {utrt_path}. "
-            "Run ultralytics benchmark first."
-        )
+        err_msg = f"Ultralytics engine not found: {utrt_path}. Run ultralytics benchmark first."
         raise FileNotFoundError(err_msg)
 
-    # --- trtutils SAHI ---
     if "trtutils" not in data[sahi_key] or overwrite:
         print("\tBenchmarking trtutils SAHI...")
         detector = Detector(
@@ -264,7 +379,9 @@ def benchmark_sahi(
         for _ in tqdm(range(bench_iters)):
             t0 = time.perf_counter()
             detections = sahi_obj.end2end(
-                image, conf_thres=conf_thres, verbose=False,
+                image,
+                conf_thres=conf_thres,
+                verbose=False,
             )
             timings.append(time.perf_counter() - t0)
             detection_counts.append(len(detections))
@@ -278,12 +395,10 @@ def benchmark_sahi(
             "detections": avg_detections,
         }
         print(
-            f"\t\tTRTUtils SAHI: {results['mean']:.2f}ms, "
-            f"{avg_detections} detections",
+            f"\t\tTRTUtils SAHI: {results['mean']:.2f}ms, {avg_detections} detections",
         )
         write_data(device, "models", data)
 
-    # --- Official SAHI backends ---
     sahi_backends = [
         ("sahi(ultralytics)(torch)", "ultralytics_torch"),
         ("sahi(ultralytics)(trt)", "ultralytics_trt"),
@@ -349,280 +464,9 @@ def benchmark_sahi(
             "detections": avg_detections,
         }
         print(
-            f"\t\t{sahi_type_key}: {results['mean']:.2f}ms, "
-            f"{avg_detections} detections",
+            f"\t\t{sahi_type_key}: {results['mean']:.2f}ms, {avg_detections} detections",
         )
         write_data(device, "models", data)
-
-
-# ---------------------------------------------------------------------------
-# Batch throughput benchmarks (from batch.py)
-# ---------------------------------------------------------------------------
-
-
-def _export_batch_onnx(
-    model_name: str,
-    imgsz: int,
-    batch_size: int,
-    output_dir: Path,
-) -> Path:
-    """Export an ONNX model with a specific batch size using the yolo CLI."""
-    onnx_path = output_dir / f"{model_name}_{imgsz}_b{batch_size}.onnx"
-    if onnx_path.exists():
-        return onnx_path
-
-    print(f"Exporting {model_name} ONNX with batch={batch_size}...")
-
-    pt_dir = REPO_DIR / "data" / "ultralytics"
-    pt_dir.mkdir(parents=True, exist_ok=True)
-    pt_path = pt_dir / f"{model_name}.pt"
-
-    subprocess.run(
-        [
-            "yolo", "export", f"model={pt_path}",
-            "format=onnx", f"imgsz={imgsz}",
-            f"batch={batch_size}", "opset=17",
-        ],
-        check=True,
-        capture_output=True,
-    )
-
-    exported_path = pt_path.with_suffix(".onnx")
-    if not exported_path.exists():
-        err_msg = f"ONNX export failed, file not found: {exported_path}"
-        raise FileNotFoundError(err_msg)
-
-    shutil.move(str(exported_path), str(onnx_path))
-    print(f"Exported batch ONNX: {onnx_path.name}")
-    return onnx_path
-
-
-def _engine_path_for_batch(
-    onnx_path: Path,
-    imgsz: int,
-    batch_size: int,
-) -> Path:
-    """Get the engine path for a batch-specific model."""
-    model_name = onnx_path.stem.rsplit("_", 1)[0]
-    return onnx_path.parent / f"{model_name}_{imgsz}_b{batch_size}.engine"
-
-
-def benchmark_trtutils_batch(
-    device: str,
-    model_name: str,
-    imgsz: int,
-    batch_sizes: list[int],
-    warmup_iters: int,
-    bench_iters: int,
-    *,
-    overwrite: bool = False,
-) -> None:
-    """Benchmark trtutils Detector throughput across batch sizes."""
-    import nvtx
-    from trtutils.image import Detector
-
-    image = cv2.imread(IMAGE_PATH)
-    data = get_data(device, "batch", BATCH_FRAMEWORKS)
-
-    try:
-        onnx_path = ensure_model_available(
-            model_name, imgsz, MODEL_TO_DIR, auto_download=True,
-        )
-    except Exception as e:
-        warnings.warn(f"Could not get {model_name} @ {imgsz}: {e}")
-        return
-
-    onnx_dir = onnx_path.parent
-
-    modes: list[tuple[str, bool]] = [
-        ("trtutils", False),
-        ("trtutils(graph)", True),
-    ]
-
-    for framework, cuda_graph in modes:
-        data[framework].setdefault(model_name, {})
-
-        for bs in batch_sizes:
-            bs_key = str(bs)
-
-            with contextlib.suppress(KeyError):
-                if data[framework][model_name][bs_key] is not None and not overwrite:
-                    print(f"Skipping {framework} batch={bs} (already exists)")
-                    continue
-
-            print(f"Benchmarking {framework} batch={bs}...")
-
-            batch_onnx = (
-                onnx_path if bs == 1
-                else _export_batch_onnx(model_name, imgsz, bs, onnx_dir)
-            )
-            engine_path = _engine_path_for_batch(onnx_path, imgsz, bs)
-            if not engine_path.exists():
-                print(f"\tBuilding engine for batch={bs}...")
-                build_model(
-                    onnx=batch_onnx,
-                    output=engine_path,
-                    imgsz=imgsz,
-                    batch_size=bs,
-                    model_name=model_name,
-                )
-
-            try:
-                detector = Detector(
-                    engine_path=engine_path,
-                    warmup_iterations=warmup_iters,
-                    warmup=True,
-                    preprocessor="cuda",
-                    pagelocked_mem=True,
-                    cuda_graph=cuda_graph,
-                    verbose=False,
-                )
-                images = [image] * bs
-
-                with nvtx.annotate(f"{framework} batch={bs}", color="blue"):
-                    timings = benchmark_loop(
-                        lambda: detector.end2end(images),
-                        0, bench_iters, f"{framework} b={bs}",
-                    )
-
-                del detector
-
-                results = compute_results(timings, batch_size=bs)
-                data[framework][model_name][bs_key] = results
-                write_data(device, "batch", data)
-
-                print(
-                    f"\t{framework} batch={bs}: "
-                    f"{results['mean']:.2f}ms ±{results['ci95']:.2f}, "
-                    f"{results['throughput']:.1f} img/s",
-                )
-            except Exception as e:
-                warnings.warn(f"Failed {framework} batch={bs}: {e}")
-                continue
-
-
-def benchmark_ultralytics_batch(
-    device: str,
-    model_name: str,
-    imgsz: int,
-    batch_sizes: list[int],
-    warmup_iters: int,
-    bench_iters: int,
-    *,
-    overwrite: bool = False,
-) -> None:
-    """Benchmark ultralytics YOLO throughput across batch sizes."""
-    import nvtx
-    from ultralytics import YOLO
-
-    image = cv2.imread(IMAGE_PATH)
-    data = get_data(device, "batch", BATCH_FRAMEWORKS)
-
-    ultralytics_dir = REPO_DIR / "data" / "ultralytics"
-    ultralytics_dir.mkdir(parents=True, exist_ok=True)
-    pt_path = (ultralytics_dir / f"{model_name}.pt").resolve()
-
-    # --- ultralytics(torch) ---
-    framework = "ultralytics(torch)"
-    data[framework].setdefault(model_name, {})
-
-    for bs in batch_sizes:
-        bs_key = str(bs)
-
-        with contextlib.suppress(KeyError):
-            if data[framework][model_name][bs_key] is not None and not overwrite:
-                print(f"Skipping {framework} batch={bs} (already exists)")
-                continue
-
-        print(f"Benchmarking {framework} batch={bs}...")
-
-        try:
-            yolo = YOLO(model=pt_path, task="detect", verbose=False)
-            images = [image] * bs
-
-            with nvtx.annotate(f"{framework} batch={bs}", color="green"):
-                timings = benchmark_loop(
-                    lambda: yolo(images, imgsz=imgsz, verbose=False),
-                    warmup_iters, bench_iters, f"{framework} b={bs}",
-                )
-
-            del yolo
-
-            results = compute_results(timings, batch_size=bs)
-            data[framework][model_name][bs_key] = results
-            write_data(device, "batch", data)
-
-            print(
-                f"\t{framework} batch={bs}: "
-                f"{results['mean']:.2f}ms ±{results['ci95']:.2f}, "
-                f"{results['throughput']:.1f} img/s",
-            )
-        except Exception as e:
-            warnings.warn(f"Failed {framework} batch={bs}: {e}")
-            continue
-
-    # --- ultralytics(trt) ---
-    framework = "ultralytics(trt)"
-    data[framework].setdefault(model_name, {})
-
-    for bs in batch_sizes:
-        bs_key = str(bs)
-
-        with contextlib.suppress(KeyError):
-            if data[framework][model_name][bs_key] is not None and not overwrite:
-                print(f"Skipping {framework} batch={bs} (already exists)")
-                continue
-
-        print(f"Benchmarking {framework} batch={bs}...")
-
-        engine_path = ultralytics_dir / f"{model_name}_{imgsz}_b{bs}.engine"
-        base_engine_path = pt_path.with_suffix(".engine")
-
-        if not engine_path.exists():
-            print(f"\tBuilding ultralytics TRT engine for batch={bs}...")
-            subprocess.run(
-                [
-                    "yolo", "export", f"model={pt_path}",
-                    "format=engine", f"imgsz={imgsz}",
-                    f"batch={bs}", "half",
-                ],
-                check=True,
-                capture_output=True,
-            )
-            if not base_engine_path.exists():
-                err_msg = f"Ultralytics TRT engine not found: {base_engine_path}"
-                raise FileNotFoundError(err_msg)
-            base_engine_path.rename(engine_path)
-
-        try:
-            yolo = YOLO(model=engine_path, task="detect", verbose=False)
-            images = [image] * bs
-
-            with nvtx.annotate(f"{framework} batch={bs}", color="orange"):
-                timings = benchmark_loop(
-                    lambda: yolo(images, imgsz=imgsz, verbose=False),
-                    warmup_iters, bench_iters, f"{framework} b={bs}",
-                )
-
-            del yolo
-
-            results = compute_results(timings, batch_size=bs)
-            data[framework][model_name][bs_key] = results
-            write_data(device, "batch", data)
-
-            print(
-                f"\t{framework} batch={bs}: "
-                f"{results['mean']:.2f}ms ±{results['ci95']:.2f}, "
-                f"{results['throughput']:.1f} img/s",
-            )
-        except Exception as e:
-            warnings.warn(f"Failed {framework} batch={bs}: {e}")
-            continue
-
-
-# ---------------------------------------------------------------------------
-# Optimization grid benchmarks (from optimizations.py)
-# ---------------------------------------------------------------------------
 
 
 def benchmark_optimizations(
@@ -643,7 +487,6 @@ def benchmark_optimizations(
         print(f"Building engine: {engine_path}")
         build_model(onnx_path, engine_path, imgsz, opt_level=1)
 
-    # Generate config grid (skip invalid pagelocked+unified combo)
     configs: list[dict] = []
     for prep in ["cpu", "cuda", "trt"]:
         for cuda_graph in [False, True]:
@@ -651,12 +494,14 @@ def benchmark_optimizations(
                 for unified in [False, True]:
                     if pagelocked and unified:
                         continue
-                    configs.append({
-                        "preprocessor": prep,
-                        "cuda_graph": cuda_graph,
-                        "pagelocked_mem": pagelocked,
-                        "unified_mem": unified,
-                    })
+                    configs.append(
+                        {
+                            "preprocessor": prep,
+                            "cuda_graph": cuda_graph,
+                            "pagelocked_mem": pagelocked,
+                            "unified_mem": unified,
+                        }
+                    )
 
     results: list[dict] = []
     print(f"\nBenchmarking {model_name} @ {imgsz}x{imgsz}")
@@ -679,7 +524,10 @@ def benchmark_optimizations(
                 verbose=False,
             )
             timings = benchmark_loop(
-                lambda: detector.end2end(image), 0, bench_iters, desc,
+                lambda: detector.end2end(image),
+                0,
+                bench_iters,
+                desc,
             )
             del detector
 
@@ -689,7 +537,6 @@ def benchmark_optimizations(
             print(f"FAILED: {desc} - {e}")
             continue
 
-    # Print results table sorted by mean latency
     results.sort(key=lambda x: x["mean"])
 
     print("\n" + "=" * 90)
@@ -701,16 +548,13 @@ def benchmark_optimizations(
 
     for r in results:
         print(
-            f"{r['preprocessor']:<12} {str(r['cuda_graph']):<10} "
-            f"{str(r['pagelocked_mem']):<10} {str(r['unified_mem']):<10} "
+            f"{r['preprocessor']:<12} {r['cuda_graph']!s:<10} "
+            f"{r['pagelocked_mem']!s:<10} {r['unified_mem']!s:<10} "
             f"{r['mean']:<10.3f} {r['std']:<10.3f} {r['min']:<10.3f}",
         )
 
     if len(results) >= 2:
-        speedup = (
-            results[-1]["mean"] / results[0]["mean"]
-            if results[0]["mean"] > 0 else 0
-        )
+        speedup = results[-1]["mean"] / results[0]["mean"] if results[0]["mean"] > 0 else 0
         print("=" * 90)
         print(
             f"Fastest: {results[0]['preprocessor']}, "
@@ -720,7 +564,6 @@ def benchmark_optimizations(
         )
         print(f"Max speedup: {speedup:.2f}x")
 
-    # Write results
     out_dir = DATA_DIR / "optimizations"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{device}.json"
@@ -737,16 +580,9 @@ def benchmark_optimizations(
     print(f"\nWrote {out_path}")
 
 
-# ---------------------------------------------------------------------------
-# Model bootstrap (from run.py)
-# ---------------------------------------------------------------------------
-
-
 def bootstrap_models(models: list[str]) -> None:
     """Download all models for their configured image sizes."""
-    total_downloads = sum(
-        len(MODEL_TO_IMGSIZES.get(model, [])) for model in models
-    )
+    total_downloads = sum(len(MODEL_TO_IMGSIZES.get(model, [])) for model in models)
 
     print(f"\nBootstrapping models: {', '.join(models)}")
     print(f"Total downloads: {total_downloads}\n")
@@ -761,7 +597,10 @@ def bootstrap_models(models: list[str]) -> None:
         for imgsz in model_sizes:
             try:
                 ensure_model_available(
-                    model, imgsz, MODEL_TO_DIR, auto_download=True,
+                    model,
+                    imgsz,
+                    MODEL_TO_DIR,
+                    auto_download=True,
                 )
                 print(f"SUCCESS - {model} @ {imgsz}")
             except Exception as e:

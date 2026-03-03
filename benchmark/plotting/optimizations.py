@@ -10,10 +10,10 @@ import json
 from pathlib import Path
 
 import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
 
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
 from utils.config import DATA_DIR
 
 _PLOT_DIR = Path(__file__).resolve().parent.parent / "plots"
@@ -50,7 +50,8 @@ def _find_result(
 
 
 def load_optimization_data(device: str) -> list[float] | None:
-    """Load optimization data and return speedups relative to CPU baseline.
+    """
+    Load optimization data and return speedups relative to CPU baseline.
 
     Returns None if data is missing or invalid.
     """

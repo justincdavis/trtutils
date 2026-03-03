@@ -10,9 +10,9 @@ import json
 from pathlib import Path
 
 import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
 
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from utils.config import BATCH_FRAMEWORKS, DATA_DIR
 
 _PLOT_DIR = Path(__file__).resolve().parent.parent / "plots"
@@ -53,14 +53,21 @@ def plot_batch_throughput(
             throughputs = [model_data[str(bs)]["throughput"] for bs in batch_sizes]
 
             ax.plot(
-                batch_sizes, throughputs,
-                marker="o", linewidth=2, markersize=8,
-                label=fw, color=BATCH_COLORS[fw],
+                batch_sizes,
+                throughputs,
+                marker="o",
+                linewidth=2,
+                markersize=8,
+                label=fw,
+                color=BATCH_COLORS[fw],
             )
             for bs, tp in zip(batch_sizes, throughputs):
                 ax.annotate(
-                    f"{tp:.0f}", xy=(bs, tp), xytext=(0, 8),
-                    textcoords="offset points", ha="center",
+                    f"{tp:.0f}",
+                    xy=(bs, tp),
+                    xytext=(0, 8),
+                    textcoords="offset points",
+                    ha="center",
                     fontsize=fontsize - 3,
                 )
 
@@ -68,7 +75,8 @@ def plot_batch_throughput(
     ax.set_ylabel("Throughput (images/sec)", fontsize=fontsize)
     ax.set_title(
         f"{device} - Batch Size vs Throughput",
-        fontsize=fontsize + 4, fontweight="bold",
+        fontsize=fontsize + 4,
+        fontweight="bold",
     )
     ax.set_xscale("log", base=2)
     ax.tick_params(axis="both", labelsize=fontsize)
@@ -104,14 +112,21 @@ def plot_batch_latency(
             latencies = [model_data[str(bs)]["mean"] for bs in batch_sizes]
 
             ax.plot(
-                batch_sizes, latencies,
-                marker="o", linewidth=2, markersize=8,
-                label=fw, color=BATCH_COLORS[fw],
+                batch_sizes,
+                latencies,
+                marker="o",
+                linewidth=2,
+                markersize=8,
+                label=fw,
+                color=BATCH_COLORS[fw],
             )
             for bs, lat in zip(batch_sizes, latencies):
                 ax.annotate(
-                    f"{lat:.1f}", xy=(bs, lat), xytext=(0, 8),
-                    textcoords="offset points", ha="center",
+                    f"{lat:.1f}",
+                    xy=(bs, lat),
+                    xytext=(0, 8),
+                    textcoords="offset points",
+                    ha="center",
                     fontsize=fontsize - 3,
                 )
 
@@ -119,7 +134,8 @@ def plot_batch_latency(
     ax.set_ylabel("Latency (ms)", fontsize=fontsize)
     ax.set_title(
         f"{device} - Batch Size vs Latency",
-        fontsize=fontsize + 4, fontweight="bold",
+        fontsize=fontsize + 4,
+        fontweight="bold",
     )
     ax.set_xscale("log", base=2)
     ax.tick_params(axis="both", labelsize=fontsize)
@@ -138,7 +154,8 @@ def plot_batch_scaling(
     *,
     overwrite: bool,
 ) -> None:
-    """Line plot: batch size vs scaling efficiency.
+    """
+    Line plot: batch size vs scaling efficiency.
 
     efficiency(N) = throughput_at_N / (N * throughput_at_1)
     1.0 = perfect linear scaling.
@@ -163,32 +180,41 @@ def plot_batch_scaling(
             if tp_at_1 <= 0:
                 continue
 
-            efficiencies = [
-                model_data[str(bs)]["throughput"] / (bs * tp_at_1)
-                for bs in batch_sizes
-            ]
+            efficiencies = [model_data[str(bs)]["throughput"] / (bs * tp_at_1) for bs in batch_sizes]
 
             ax.plot(
-                batch_sizes, efficiencies,
-                marker="o", linewidth=2, markersize=8,
-                label=fw, color=BATCH_COLORS[fw],
+                batch_sizes,
+                efficiencies,
+                marker="o",
+                linewidth=2,
+                markersize=8,
+                label=fw,
+                color=BATCH_COLORS[fw],
             )
             for bs, eff in zip(batch_sizes, efficiencies):
                 ax.annotate(
-                    f"{eff:.2f}", xy=(bs, eff), xytext=(0, 8),
-                    textcoords="offset points", ha="center",
+                    f"{eff:.2f}",
+                    xy=(bs, eff),
+                    xytext=(0, 8),
+                    textcoords="offset points",
+                    ha="center",
                     fontsize=fontsize - 3,
                 )
 
     ax.axhline(
-        y=1.0, color="gray", linestyle="--", linewidth=1.5,
-        alpha=0.7, label="Perfect scaling",
+        y=1.0,
+        color="gray",
+        linestyle="--",
+        linewidth=1.5,
+        alpha=0.7,
+        label="Perfect scaling",
     )
     ax.set_xlabel("Batch Size", fontsize=fontsize)
     ax.set_ylabel("Scaling Efficiency", fontsize=fontsize)
     ax.set_title(
         f"{device} - Batch Scaling Efficiency",
-        fontsize=fontsize + 4, fontweight="bold",
+        fontsize=fontsize + 4,
+        fontweight="bold",
     )
     ax.set_xscale("log", base=2)
     ax.set_ylim(0, 1.3)

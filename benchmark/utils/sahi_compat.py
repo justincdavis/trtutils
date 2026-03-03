@@ -31,11 +31,11 @@ class UltralyticsTRTDetector(DetectionModel):
                 self.category_mapping = {str(k): v for k, v in names.items()}
             else:
                 num_classes = getattr(
-                    getattr(self.model, "model", None), "nc", 1000,
+                    getattr(self.model, "model", None),
+                    "nc",
+                    1000,
                 )
-                self.category_mapping = {
-                    str(i): str(i) for i in range(num_classes)
-                }
+                self.category_mapping = {str(i): str(i) for i in range(num_classes)}
 
     @property
     def has_mask(self: Self) -> bool:
@@ -50,7 +50,9 @@ class UltralyticsTRTDetector(DetectionModel):
         image_size: int | None = None,
     ) -> None:
         self._original_predictions = self.model.predict(
-            image, conf=self.confidence_threshold, verbose=False,
+            image,
+            conf=self.confidence_threshold,
+            verbose=False,
         )
 
     def _create_object_prediction_list_from_original_predictions(
@@ -100,7 +102,8 @@ class UltralyticsTRTDetector(DetectionModel):
                 continue
 
             category_name = self.category_mapping.get(
-                str(int(class_id)), str(int(class_id)),
+                str(int(class_id)),
+                str(int(class_id)),
             )
             predictions.append(
                 ObjectPrediction(

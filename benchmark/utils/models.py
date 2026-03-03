@@ -18,6 +18,10 @@ def _get_model_class(model_name: str) -> Any:
         DFINE,
         RFDETR,
         YOLOX,
+        DEIMv2,
+        RTDETRv1,
+        RTDETRv2,
+        RTDETRv3,
         YOLOv3,
         YOLOv5,
         YOLOv7,
@@ -27,15 +31,13 @@ def _get_model_class(model_name: str) -> Any:
         YOLOv11,
         YOLOv12,
         YOLOv13,
-        DEIMv2,
-        RTDETRv1,
-        RTDETRv2,
-        RTDETRv3,
+        YOLOv26,
     )
 
     # Map model name prefixes to classes
     # Order matters - more specific matches first
     model_mapping: list[tuple[str, Any]] = [
+        ("yolov26", YOLOv26),
         ("yolov13", YOLOv13),
         ("yolov12", YOLOv12),
         ("yolov11", YOLOv11),

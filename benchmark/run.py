@@ -11,6 +11,7 @@ import warnings
 
 from utils.config import (
     BATCH_FRAMEWORKS,
+    MODEL_FRAMEWORKS,
     MODEL_NAMES,
     MODEL_TO_DIR,
     MODEL_TO_IMGSIZES,
@@ -20,7 +21,11 @@ from utils.config import (
 
 def cmd_models(args: argparse.Namespace) -> None:
     """Run single-image model benchmarks."""
-    from utils.runners import benchmark_trtutils_models, benchmark_ultralytics_models
+    from utils.runners import (
+        benchmark_raw_tensorrt,
+        benchmark_trtutils,
+        benchmark_ultralytics,
+    )
 
     models = MODEL_NAMES if args.model == "all" else [args.model]
 
@@ -36,11 +41,29 @@ def cmd_models(args: argparse.Namespace) -> None:
             warnings.warn(f"No image sizes configured for {model}")
             continue
 
+        configs = [(str(sz), sz, 1) for sz in image_sizes]
+
         if args.trtutils:
             try:
-                benchmark_trtutils_models(
-                    args.device, model, image_sizes,
-                    args.warmup, args.iterations, overwrite=args.overwrite,
+                benchmark_trtutils(
+                    args.device,
+                    model,
+                    configs,
+                    args.warmup,
+                    args.iterations,
+                    "models",
+                    MODEL_FRAMEWORKS,
+                    overwrite=args.overwrite,
+                )
+                benchmark_raw_tensorrt(
+                    args.device,
+                    model,
+                    configs,
+                    args.warmup,
+                    args.iterations,
+                    "models",
+                    MODEL_FRAMEWORKS,
+                    overwrite=args.overwrite,
                 )
             except Exception as e:
                 warnings.warn(f"Failed {model} with trtutils: {e}")
@@ -50,9 +73,15 @@ def cmd_models(args: argparse.Namespace) -> None:
                 warnings.warn(f"{model} is not a supported ultralytics model")
             else:
                 try:
-                    benchmark_ultralytics_models(
-                        args.device, model, image_sizes,
-                        args.warmup, args.iterations, overwrite=args.overwrite,
+                    benchmark_ultralytics(
+                        args.device,
+                        model,
+                        configs,
+                        args.warmup,
+                        args.iterations,
+                        "models",
+                        MODEL_FRAMEWORKS,
+                        overwrite=args.overwrite,
                     )
                 except Exception as e:
                     warnings.warn(f"Failed {model} with ultralytics: {e}")
@@ -61,10 +90,11 @@ def cmd_models(args: argparse.Namespace) -> None:
 def cmd_batch(args: argparse.Namespace) -> None:
     """Run batch throughput benchmarks."""
     from utils.data import get_data
-    from utils.runners import benchmark_trtutils_batch, benchmark_ultralytics_batch
+    from utils.runners import benchmark_trtutils, benchmark_ultralytics
 
     if args.nvtx:
         from trtutils import enable_nvtx
+
         enable_nvtx()
 
     if args.model not in MODEL_TO_DIR:
@@ -75,19 +105,33 @@ def cmd_batch(args: argparse.Namespace) -> None:
     print(f"Batch sizes: {args.batch_sizes}")
     print(f"Warmup: {args.warmup}, Iterations: {args.iterations}\n")
 
+    configs = [(str(bs), args.imgsz, bs) for bs in args.batch_sizes]
+
     if args.trtutils:
-        benchmark_trtutils_batch(
-            args.device, args.model, args.imgsz, args.batch_sizes,
-            args.warmup, args.iterations, overwrite=args.overwrite,
+        benchmark_trtutils(
+            args.device,
+            args.model,
+            configs,
+            args.warmup,
+            args.iterations,
+            "batch",
+            BATCH_FRAMEWORKS,
+            overwrite=args.overwrite,
         )
 
     if args.ultralytics:
         if args.model not in ULTRALYTICS_MODELS:
             warnings.warn(f"{args.model} is not a supported ultralytics model")
         else:
-            benchmark_ultralytics_batch(
-                args.device, args.model, args.imgsz, args.batch_sizes,
-                args.warmup, args.iterations, overwrite=args.overwrite,
+            benchmark_ultralytics(
+                args.device,
+                args.model,
+                configs,
+                args.warmup,
+                args.iterations,
+                "batch",
+                BATCH_FRAMEWORKS,
+                overwrite=args.overwrite,
             )
 
     # Print summary
@@ -117,8 +161,11 @@ def cmd_optimize(args: argparse.Namespace) -> None:
     from utils.runners import benchmark_optimizations
 
     benchmark_optimizations(
-        args.device, args.model, args.imgsz,
-        args.warmup, args.iterations,
+        args.device,
+        args.model,
+        args.imgsz,
+        args.warmup,
+        args.iterations,
     )
 
 
@@ -131,8 +178,11 @@ def cmd_sahi(args: argparse.Namespace) -> None:
         return
 
     benchmark_sahi(
-        args.device, args.model,
-        args.warmup, args.iterations, overwrite=args.overwrite,
+        args.device,
+        args.model,
+        args.warmup,
+        args.iterations,
+        overwrite=args.overwrite,
     )
 
 
@@ -142,9 +192,7 @@ def cmd_plot(args: argparse.Namespace) -> None:
 
     skip_devices: set[str] = set()
     if args.skip_devices:
-        skip_devices = {
-            d.strip() for d in args.skip_devices.split(",") if d.strip()
-        }
+        skip_devices = {d.strip() for d in args.skip_devices.split(",") if d.strip()}
 
     if args.batch:
         from plotting.batch import plot_batch
@@ -153,10 +201,7 @@ def cmd_plot(args: argparse.Namespace) -> None:
         if not batch_dir.exists():
             print("Warning: data/batch/ not found, nothing to plot.")
             return
-        devices = [
-            f.stem for f in batch_dir.iterdir()
-            if f.is_file() and f.suffix == ".json"
-        ]
+        devices = [f.stem for f in batch_dir.iterdir() if f.is_file() and f.suffix == ".json"]
         if args.device:
             devices = [d for d in devices if d == args.device]
         for device in devices:
@@ -173,10 +218,7 @@ def cmd_plot(args: argparse.Namespace) -> None:
         if not opt_dir.exists():
             print("Warning: data/optimizations/ not found, nothing to plot.")
             return
-        devices = [
-            f.stem for f in opt_dir.iterdir()
-            if f.is_file() and f.suffix == ".json"
-        ]
+        devices = [f.stem for f in opt_dir.iterdir() if f.is_file() and f.suffix == ".json"]
         if args.device:
             devices = [d for d in devices if d == args.device]
         for device in devices:
@@ -205,7 +247,10 @@ def cmd_plot(args: argparse.Namespace) -> None:
                     plot_device(name, data, overwrite=args.overwrite)
                 if args.pareto:
                     plot_pareto(
-                        name, data, model_info, args.framework,
+                        name,
+                        data,
+                        model_info,
+                        args.framework,
                         overwrite=args.overwrite,
                     )
             except Exception as e:
