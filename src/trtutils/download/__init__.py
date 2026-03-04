@@ -16,8 +16,7 @@ Functions
 Note:
 ----
 All models downloaded through this module may have license restrictions.
-Users must accept the license terms before downloading by using the accept parameter
-or by responding to the interactive prompt.
+Users must ensure they comply with the model's license terms.
 
 """
 

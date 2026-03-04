@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # ruff: noqa: T201
@@ -22,16 +22,16 @@ from trtutils.models import (
     RTDETRv1,
     RTDETRv2,
     RTDETRv3,
-    YOLO3,
-    YOLO5,
-    YOLO7,
-    YOLO8,
-    YOLO9,
-    YOLO10,
-    YOLO11,
-    YOLO12,
-    YOLO13,
     YOLOX,
+    YOLOv3,
+    YOLOv5,
+    YOLOv7,
+    YOLOv8,
+    YOLOv9,
+    YOLOv10,
+    YOLOv11,
+    YOLOv12,
+    YOLOv13,
 )
 
 REPO_DIR = Path(__file__).parent.parent
@@ -40,15 +40,15 @@ IMAGE_PATH = REPO_DIR / "data" / "horse.jpg"
 
 MODELS: list[tuple[type, str, int]] = [
     (YOLOX, "yoloxn", 640),
-    (YOLO3, "yolov3tu", 640),
-    (YOLO5, "yolov5nu", 640),
-    (YOLO7, "yolov7t", 640),
-    (YOLO8, "yolov8n", 640),
-    (YOLO9, "yolov9t", 640),
-    (YOLO10, "yolov10n", 640),
-    (YOLO11, "yolov11n", 640),
-    (YOLO12, "yolov12n", 640),
-    (YOLO13, "yolov13n", 640),
+    (YOLOv3, "yolov3tu", 640),
+    (YOLOv5, "yolov5nu", 640),
+    (YOLOv7, "yolov7t", 640),
+    (YOLOv8, "yolov8n", 640),
+    (YOLOv9, "yolov9t", 640),
+    (YOLOv10, "yolov10n", 640),
+    (YOLOv11, "yolov11n", 640),
+    (YOLOv12, "yolov12n", 640),
+    (YOLOv13, "yolov13n", 640),
     (RTDETRv1, "rtdetrv1_r18", 640),
     (RTDETRv2, "rtdetrv2_r18", 640),
     (RTDETRv3, "rtdetrv3_r18", 640),

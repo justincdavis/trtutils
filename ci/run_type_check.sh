@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 
 # Run ty typecheck on all configured directories
 set -e
@@ -15,7 +18,7 @@ else
     exit 1
 fi
 
-DIRS=("examples" "tests" "src")
+DIRS=("examples" "demos" "src")
 
 for dir in "${DIRS[@]}"; do
     echo "Type checking $dir..."

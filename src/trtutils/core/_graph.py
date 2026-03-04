@@ -82,6 +82,8 @@ def cuda_graph_instantiate(
         The instantiated graph executable.
 
     """
+    if FLAGS.CUDA_11:
+        return cuda_call(cudart.cudaGraphInstantiate(graph, b"", 0))
     return cuda_call(cudart.cudaGraphInstantiate(graph, flags))
 
 

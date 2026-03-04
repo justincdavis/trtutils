@@ -78,7 +78,7 @@ def _download_onnx(
         print(f"ONNX model already exists: {onnx_path}")
         return
     print(f"Downloading {model_name} ONNX model...")
-    download(model=model_name, output=onnx_path, imgsz=imgsz, accept=True, verbose=verbose)
+    download(model=model_name, output=onnx_path, imgsz=imgsz, verbose=verbose)
     print(f"Saved ONNX model to: {onnx_path}")
 
 

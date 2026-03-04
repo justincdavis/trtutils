@@ -44,7 +44,6 @@ def download_model_internal(
     *,
     simplify: Sequence[str] | bool | None = None,
     no_cache: bool | None = None,
-    accept: bool | None = None,
     verbose: bool | None = None,
 ) -> None:
     """
@@ -68,8 +67,6 @@ def download_model_internal(
         Whether to simplify the ONNX model after export.
     no_cache : bool, optional
         Disable caching of downloaded weights and repos.
-    accept : bool, optional
-        Whether to accept the license terms for the model.
     verbose : bool, optional
         Print verbose output.
 
@@ -80,7 +77,7 @@ def download_model_internal(
 
     """
     if model not in get_valid_models(model_type):
-        err_msg = f"Model {model} is not a valid {friendly_name} model."
+        err_msg = f"Model {model} not supported for {friendly_name}."
         raise ValueError(err_msg)
     _download(
         model=model,
@@ -89,6 +86,5 @@ def download_model_internal(
         opset=opset,
         simplify=simplify,
         no_cache=no_cache,
-        accept=accept,
         verbose=verbose,
     )

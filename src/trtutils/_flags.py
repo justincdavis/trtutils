@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from trtutils.compat._libs import trt
@@ -17,6 +18,14 @@ class Flags:
 
     Attributes
     ----------
+    CUDA_VERSION : tuple[int, int]
+        The CUDA major and minor version as a tuple.
+    CUDA_11 : bool
+        Whether cuda-python major version is 11.
+    CUDA_12 : bool
+        Whether cuda-python major version is 12.
+    CUDA_13 : bool
+        Whether cuda-python major version is 13.
     TRT_10 : bool
         Whether or not TensorRT is version 10 or greater.
     TRT_HAS_UINT8 : bool
@@ -39,6 +48,8 @@ class Flags:
         Whether or not execute_v2 is available.
     EXEC_V1 : bool
         Whether or not execute_v1 is available.
+    TRT_VERSION : tuple[int, int]
+        The TensorRT major and minor version as a tuple.
     IS_JETSON : bool
         Whether or not the system is a Jetson system
     JIT : bool
@@ -53,7 +64,14 @@ class Flags:
 
     """
 
-    # TensorRT and CUDA flags
+    # CUDA flags
+    CUDA_VERSION: tuple[int, int] = (0, 0)
+    CUDA_11: bool = False
+    CUDA_12: bool = False
+    CUDA_13: bool = False
+
+    # TensorRT flags
+    TRT_VERSION: tuple[int, int] = (0, 0)
     TRT_10: bool = False
     TRT_HAS_UINT8: bool = False
     TRT_HAS_INT64: bool = False
@@ -66,6 +84,8 @@ class Flags:
     EXEC_ASYNC_V1: bool = False
     EXEC_V2: bool = False
     EXEC_V1: bool = False
+
+    # System flags
     IS_JETSON: bool = False
 
     # Internal flags
@@ -75,7 +95,24 @@ class Flags:
     NVTX_ENABLED: bool = False
 
 
+def _get_version(package: str) -> tuple[int, int]:
+    try:
+        major, minor = [int(x) for x in version(package).split(".")[:2]]
+    except PackageNotFoundError:
+        major, minor = 0, 0
+    return (major, minor)
+
+
 FLAGS = Flags()
+
+# Set CUDA flags
+FLAGS.CUDA_VERSION = _get_version("cuda-python")
+FLAGS.CUDA_11 = FLAGS.CUDA_VERSION[0] == 11  # noqa: PLR2004
+FLAGS.CUDA_12 = FLAGS.CUDA_VERSION[0] == 12  # noqa: PLR2004
+FLAGS.CUDA_13 = FLAGS.CUDA_VERSION[0] == 13  # noqa: PLR2004
+
+# Set TensorRT flags
+FLAGS.TRT_VERSION = _get_version(f"tensorrt_cu{FLAGS.CUDA_VERSION[0]}")
 FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
 FLAGS.TRT_HAS_UINT8 = hasattr(trt.DataType, "UINT8")
 FLAGS.TRT_HAS_INT64 = hasattr(trt.DataType, "INT64")
@@ -88,4 +125,6 @@ FLAGS.EXEC_ASYNC_V2 = hasattr(trt.IExecutionContext, "execute_async_v2")
 FLAGS.EXEC_ASYNC_V1 = hasattr(trt.IExecutionContext, "execute_async")
 FLAGS.EXEC_V2 = hasattr(trt.IExecutionContext, "execute_v2")
 FLAGS.EXEC_V1 = hasattr(trt.IExecutionContext, "execute")
+
+# Set system flags
 FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()

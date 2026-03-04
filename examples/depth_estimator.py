@@ -24,7 +24,7 @@ def main() -> None:
 
     if not onnx_path.exists():
         print("Downloading DepthAnythingV2 small ONNX model...")
-        download("depth_anything_v2_small", onnx_path, imgsz=518, simplify=True, accept=True)
+        download("depth_anything_v2_small", onnx_path, imgsz=518, simplify=True)
 
     if not engine_path.exists():
         build_engine(onnx_path, engine_path, fp16=True, shapes=[("input", (1, 3, 518, 518))])

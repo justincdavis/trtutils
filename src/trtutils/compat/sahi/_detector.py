@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class TRTDetectionModel(DetectionModel):
-    def check_dependencies(self: Self) -> None:
+    def check_dependencies(self: Self, packages: list[str] | None = None) -> None:
         pass
 
     def load_model(self: Self) -> None:
@@ -53,39 +53,48 @@ class TRTDetectionModel(DetectionModel):
 
     def _create_object_prediction_list_from_original_predictions(
         self,
-        shift_amount_list: list[list[int]] | None = [[0, 0]],
-        full_shape_list: list[list[int]] | None = None,
+        shift_amount_list: list[list[int]] | list[int] | None = [[0, 0]],
+        full_shape_list: list[list[int]] | list[int] | None = None,
     ) -> None:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range("compat::sahi::trt_detection_model::create_predictions")
+        shift_amount: list[int]
         if shift_amount_list is None:
-            shift_amount_list = [[0, 0]]
-
-        # Type narrowing: extract list[int] from list[list[int]] or use list[int] directly
-        if isinstance(shift_amount_list[0], (list, tuple)) and len(shift_amount_list[0]) == 2:  # noqa: PLR2004
-            shift_amount: list[int] = list(shift_amount_list[0])
+            shift_amount = [0, 0]
         elif (
-            isinstance(shift_amount_list, list)
-            and len(shift_amount_list) == 2  # noqa: PLR2004
+            len(shift_amount_list) == 2  # noqa: PLR2004
             and isinstance(shift_amount_list[0], int)
+            and isinstance(shift_amount_list[1], int)
         ):
-            shift_amount = shift_amount_list
+            shift_amount = [shift_amount_list[0], shift_amount_list[1]]
+        elif (
+            len(shift_amount_list) > 0
+            and isinstance(shift_amount_list[0], list)
+            and len(shift_amount_list[0]) == 2  # noqa: PLR2004
+            and all(isinstance(v, int) for v in shift_amount_list[0])
+        ):
+            shift_amount = [int(v) for v in shift_amount_list[0]]
         else:
             shift_amount = [0, 0]
 
+        full_shape: list[int] | None
         if full_shape_list is None:
-            full_shape: list[int] | None = None
+            full_shape = None
+        elif (
+            len(full_shape_list) == 2  # noqa: PLR2004
+            and isinstance(full_shape_list[0], int)
+            and isinstance(full_shape_list[1], int)
+        ):
+            full_shape = [full_shape_list[0], full_shape_list[1]]
+        elif (
+            len(full_shape_list) > 0
+            and isinstance(full_shape_list[0], list)
+            and len(full_shape_list[0]) == 2  # noqa: PLR2004
+            and all(isinstance(v, int) for v in full_shape_list[0])
+        ):
+            full_shape = [int(v) for v in full_shape_list[0]]
         else:
-            if isinstance(full_shape_list[0], (list, tuple)) and len(full_shape_list[0]) == 2:  # noqa: PLR2004
-                full_shape = list(full_shape_list[0])
-            elif (
-                isinstance(full_shape_list, list)
-                and len(full_shape_list) == 2  # noqa: PLR2004
-                and isinstance(full_shape_list[0], int)
-            ):
-                full_shape = full_shape_list
-            else:
-                full_shape = None
+            full_shape = None
 
         predictions: list[ObjectPrediction] = []
 
@@ -110,8 +119,8 @@ class TRTDetectionModel(DetectionModel):
             x1_i, y1_i, x2_i, y2_i = int(x1), int(y1), int(x2), int(y2)
 
             if full_shape is not None:
-                h: int = full_shape[0]  # type: ignore[assignment]
-                w: int = full_shape[1]  # type: ignore[assignment]
+                h = full_shape[0]
+                w = full_shape[1]
                 x1_i = max(0, x1_i)
                 x2_i = min(w, x2_i)
                 y1_i = max(0, y1_i)

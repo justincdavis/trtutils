@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -418,11 +418,11 @@ def allocate_managed_memory(
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::allocate_managed_memory")
     with MEM_ALLOC_LOCK:
-        device_ptr: int = cuda_call(cudart.cudaMallocManaged(nbytes))
+        device_ptr: int = cuda_call(cudart.cudaMallocManaged(nbytes, cudart.cudaMemAttachGlobal))
 
     # if a stream is provided, we should attach the memory
     if stream is not None:
-        cuda_call(cudart.cudaStreamAttachMemAsync(stream, device_ptr))
+        cuda_call(cudart.cudaStreamAttachMemAsync(stream, device_ptr, 0, cudart.cudaMemAttachGlobal))
 
     LOG.debug(f"Allocated-managed, device_ptr: {device_ptr}, size: {nbytes}")
     if FLAGS.NVTX_ENABLED:

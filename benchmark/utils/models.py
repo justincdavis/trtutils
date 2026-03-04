@@ -1,0 +1,134 @@
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
+"""Utility functions for managing benchmark models."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from .config import REPO_DIR
+
+
+def _get_model_class(model_name: str) -> Any:
+    """Get the model class for a given model name."""
+    from trtutils.models import (
+        DEIM,
+        DFINE,
+        RFDETR,
+        YOLOX,
+        DEIMv2,
+        RTDETRv1,
+        RTDETRv2,
+        RTDETRv3,
+        YOLOv3,
+        YOLOv5,
+        YOLOv7,
+        YOLOv8,
+        YOLOv9,
+        YOLOv10,
+        YOLOv11,
+        YOLOv12,
+        YOLOv13,
+        YOLOv26,
+    )
+
+    # Map model name prefixes to classes
+    # Order matters - more specific matches first
+    model_mapping: list[tuple[str, Any]] = [
+        ("yolov26", YOLOv26),
+        ("yolov13", YOLOv13),
+        ("yolov12", YOLOv12),
+        ("yolov11", YOLOv11),
+        ("yolov10", YOLOv10),
+        ("yolov9", YOLOv9),
+        ("yolov8", YOLOv8),
+        ("yolov7", YOLOv7),
+        ("yolov5", YOLOv5),
+        ("yolov3", YOLOv3),
+        ("yolox", YOLOX),
+        ("rtdetrv3", RTDETRv3),
+        ("rtdetrv2", RTDETRv2),
+        ("rtdetrv1", RTDETRv1),
+        ("dfine", DFINE),
+        ("deimv2", DEIMv2),
+        # deim_ prefix models (e.g., deim_dfine_n, deim_rtdetrv2_r18)
+        # are DEIM variants and should use DEIM build settings
+        ("deim_", DEIM),
+        ("deim", DEIM),
+        ("rfdetr", RFDETR),
+    ]
+
+    model_lower = model_name.lower()
+    for prefix, model_class in model_mapping:
+        if model_lower.startswith(prefix):
+            return model_class
+
+    err_msg = f"Unknown model type: {model_name}"
+    raise ValueError(err_msg)
+
+
+def ensure_model_available(
+    model_name: str,
+    imgsz: int,
+    model_to_dir: dict[str, str],
+    opset: int = 17,
+    *,
+    auto_download: bool = True,
+) -> Path:
+    """Ensure a model is available, downloading it if necessary."""
+    from trtutils.download import download
+
+    if model_name not in model_to_dir:
+        err_msg = f"Unknown model: {model_name}. Not found in model directory mapping."
+        raise ValueError(err_msg)
+
+    model_dir = REPO_DIR / "data" / model_to_dir[model_name]
+    model_path = model_dir / f"{model_name}_{imgsz}.onnx"
+
+    if model_path.exists():
+        return model_path
+
+    if not auto_download:
+        err_msg = f"Model not found: {model_path}"
+        raise FileNotFoundError(err_msg)
+
+    # Auto-download
+    print(f"Downloading {model_name} @ {imgsz}x{imgsz}...")
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    download(
+        model=model_name,
+        output=model_path,
+        opset=opset,
+        imgsz=imgsz,
+        verbose=False,
+    )
+    return model_path
+
+
+def build_model(
+    onnx: Path,
+    output: Path,
+    imgsz: int,
+    batch_size: int = 1,
+    opt_level: int = 3,
+    model_name: str | None = None,
+    **kwargs: Any,  # noqa: ANN401
+) -> None:
+    """Build a model from an ONNX file using the appropriate model class."""
+    # Extract model name from the onnx filename (e.g., "yolov10n_640" -> "yolov10n")
+    if model_name is None:
+        model_name = onnx.stem.rsplit("_", 1)[0]
+
+    # Get the appropriate model class and call its build method
+    model_class = _get_model_class(model_name)
+    model_class.build(
+        onnx=onnx,
+        output=output,
+        imgsz=imgsz,
+        batch_size=batch_size,
+        opt_level=opt_level,
+        **kwargs,
+    )
