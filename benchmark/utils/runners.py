@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import time
 import warnings
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -136,170 +137,114 @@ def _run_benchmarks(
                 continue
 
 
-def benchmark_trtutils(
-    device: str,
-    model_name: str,
-    configs: list[tuple[str, int, int]],
-    warmup_iters: int,
-    bench_iters: int,
-    data_subdir: str,
-    frameworks: list[str],
-    *,
-    overwrite: bool = False,
-) -> None:
-    """Benchmark trtutils Detector across configs."""
+@contextlib.contextmanager
+def _runner_trtutils(mode, imgsz, bs, *, model_name, warmup_iters, image):
     from trtutils.image import Detector
 
-    image = cv2.imread(IMAGE_PATH)
+    cuda_graph = mode in ("detector_graph", "raw_graph")
+    is_raw = mode in ("raw", "raw_graph")
 
-    @contextlib.contextmanager
-    def _runner(mode, imgsz, bs):
-        cuda_graph = mode in ("detector_graph", "raw_graph")
-        is_raw = mode in ("raw", "raw_graph")
-
-        onnx_path = ensure_model_available(
-            model_name,
-            imgsz,
-            MODEL_TO_DIR,
-            auto_download=True,
-        )
-        if bs > 1:
-            batch_onnx = _export_batch_onnx(model_name, imgsz, bs, onnx_path.parent)
-            engine_path = _engine_path_for_batch(onnx_path, imgsz, bs)
-        else:
-            batch_onnx = onnx_path
-            engine_path = onnx_path.with_suffix(".engine")
-        if not engine_path.exists():
-            print(f"\tBuilding engine for {imgsz}x{bs}...")
-            build_model(
-                onnx=batch_onnx,
-                output=engine_path,
-                imgsz=imgsz,
-                batch_size=bs,
-                model_name=model_name,
-            )
-        detector = Detector(
-            engine_path=engine_path,
-            warmup_iterations=warmup_iters,
-            warmup=True,
-            preprocessor="cuda",
-            pagelocked_mem=True,
-            cuda_graph=cuda_graph,
-            verbose=False,
-        )
-        if is_raw:
-            engine = detector.engine
-            if cuda_graph:
-                exec_fn = lambda: engine.graph_exec(debug=True)
-            else:
-                input_ptrs = [b.allocation for b in engine.input_bindings]
-                exec_fn = lambda: engine.raw_exec(input_ptrs, debug=True, no_warn=True)
-        else:
-            images = [image] * bs
-            exec_fn = lambda: detector.end2end(images)
-
-        try:
-            yield exec_fn
-        finally:
-            del detector
-
-    _run_benchmarks(
-        device,
+    onnx_path = ensure_model_available(
         model_name,
-        configs,
-        bench_iters,
-        data_subdir,
-        frameworks,
-        modes=[
-            ("trtutils", "detector"),
-            ("trtutils(graph)", "detector_graph"),
-            ("tensorrt", "raw"),
-            ("tensorrt(graph)", "raw_graph"),
-        ],
-        runner_factory=_runner,
-        overwrite=overwrite,
+        imgsz,
+        MODEL_TO_DIR,
+        auto_download=True,
     )
+    if bs > 1:
+        batch_onnx = _export_batch_onnx(model_name, imgsz, bs, onnx_path.parent)
+        engine_path = _engine_path_for_batch(onnx_path, imgsz, bs)
+    else:
+        batch_onnx = onnx_path
+        engine_path = onnx_path.with_suffix(".engine")
+    if not engine_path.exists():
+        print(f"\tBuilding engine for {imgsz}x{bs}...")
+        build_model(
+            onnx=batch_onnx,
+            output=engine_path,
+            imgsz=imgsz,
+            batch_size=bs,
+            model_name=model_name,
+        )
+    detector = Detector(
+        engine_path=engine_path,
+        warmup_iterations=warmup_iters,
+        warmup=True,
+        preprocessor="cuda",
+        pagelocked_mem=True,
+        cuda_graph=cuda_graph,
+        verbose=False,
+    )
+    if is_raw:
+        engine = detector.engine
+        if cuda_graph:
+            exec_fn = lambda: engine.graph_exec(debug=True)
+        else:
+            input_ptrs = [b.allocation for b in engine.input_bindings]
+            exec_fn = lambda: engine.raw_exec(input_ptrs, debug=True, no_warn=True)
+    else:
+        images = [image] * bs
+        exec_fn = lambda: detector.end2end(images)
+
+    try:
+        yield exec_fn
+    finally:
+        del detector
 
 
-
-def benchmark_ultralytics(
-    device: str,
-    model_name: str,
-    configs: list[tuple[str, int, int]],
-    warmup_iters: int,
-    bench_iters: int,
-    data_subdir: str,
-    frameworks: list[str],
-    *,
-    overwrite: bool = False,
-) -> None:
-    """Benchmark ultralytics YOLO across configs."""
+@contextlib.contextmanager
+def _runner_ultralytics(compile_engine, imgsz, bs, *, model_name, image):
     from ultralytics import YOLO
 
-    image = cv2.imread(IMAGE_PATH)
     ultralytics_dir = REPO_DIR / "data" / "ultralytics"
     ultralytics_dir.mkdir(parents=True, exist_ok=True)
     pt_path = (ultralytics_dir / f"{model_name}.pt").resolve()
 
-    @contextlib.contextmanager
-    def _runner(compile_engine, imgsz, bs):
-        if compile_engine:
-            if bs > 1:
-                engine_path = ultralytics_dir / f"{model_name}_{imgsz}_b{bs}.engine"
-            else:
-                engine_path = ultralytics_dir / f"{model_name}_{imgsz}.engine"
-            base_engine = pt_path.with_suffix(".engine")
-            if not engine_path.exists():
-                print(f"\tBuilding ultralytics TRT engine for {imgsz}x{bs}...")
-                export_cmd = [
-                    "yolo",
-                    "export",
-                    f"model={pt_path}",
-                    "format=engine",
-                    f"imgsz={imgsz}",
-                ]
-                if bs > 1:
-                    export_cmd.append(f"batch={bs}")
-                export_cmd.append("half")
-                subprocess.run(export_cmd, check=True, capture_output=True)
-                if not base_engine.exists():
-                    err_msg = f"Ultralytics TRT engine not found: {base_engine}"
-                    raise FileNotFoundError(err_msg)
-                base_engine.rename(engine_path)
-            model_path = engine_path
+    if compile_engine:
+        if bs > 1:
+            engine_path = ultralytics_dir / f"{model_name}_{imgsz}_b{bs}.engine"
         else:
-            model_path = pt_path
-        yolo = YOLO(model=model_path, task="detect", verbose=False)
-        images = [image] * bs
-        try:
-            yield lambda: yolo(images, imgsz=imgsz, verbose=False)
-        finally:
-            del yolo
+            engine_path = ultralytics_dir / f"{model_name}_{imgsz}.engine"
+        base_engine = pt_path.with_suffix(".engine")
+        if not engine_path.exists():
+            print(f"\tBuilding ultralytics TRT engine for {imgsz}x{bs}...")
+            export_cmd = [
+                "yolo",
+                "export",
+                f"model={pt_path}",
+                "format=engine",
+                f"imgsz={imgsz}",
+            ]
+            if bs > 1:
+                export_cmd.append(f"batch={bs}")
+            export_cmd.append("half")
+            subprocess.run(export_cmd, check=True, capture_output=True)
+            if not base_engine.exists():
+                err_msg = f"Ultralytics TRT engine not found: {base_engine}"
+                raise FileNotFoundError(err_msg)
+            base_engine.rename(engine_path)
+        model_path = engine_path
+    else:
+        model_path = pt_path
+    yolo = YOLO(model=model_path, task="detect", verbose=False)
+    images = [image] * bs
+    try:
+        yield lambda: yolo(images, imgsz=imgsz, verbose=False)
+    finally:
+        del yolo
 
-    _run_benchmarks(
-        device,
-        model_name,
-        configs,
-        bench_iters,
-        data_subdir,
-        frameworks,
-        modes=[("ultralytics(torch)", False), ("ultralytics(trt)", True)],
-        runner_factory=_runner,
-        loop_warmup=warmup_iters,
-        overwrite=overwrite,
-    )
 
-
-def benchmark_sahi(
-    device: str,
-    model_name: str,
-    warmup_iters: int,
-    bench_iters: int,
+@contextlib.contextmanager
+def _runner_sahi(
+    backend_tag,
     *,
-    overwrite: bool = False,
-) -> None:
-    """Benchmark trtutils SAHI against the official SAHI package."""
-    from sahi import AutoDetectionModel
+    trt_path,
+    utrt_path,
+    image,
+    imgsz,
+    overlap,
+    conf_thres,
+    warmup_iters,
+):
     from sahi.predict import get_sliced_prediction
 
     from trtutils.compat.sahi import TRTDetectionModel
@@ -307,36 +252,7 @@ def benchmark_sahi(
 
     from .sahi_compat import UltralyticsTRTDetector
 
-    image = cv2.imread(SAHI_IMAGE_PATH)
-    imgsz = 640
-    overlap = 0.2
-    conf_thres = 0.25
-
-    data = get_data(device, "models", MODEL_FRAMEWORKS)
-    sahi_key = f"sahi_{model_name}"
-    if sahi_key not in data:
-        data[sahi_key] = {}
-
-    try:
-        trt_weight_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR)
-    except Exception as e:
-        err_msg = f"Could not get {model_name} @ {imgsz}: {e}"
-        raise FileNotFoundError(err_msg) from e
-
-    trt_path = trt_weight_path.with_suffix(".engine")
-    if not trt_path.exists():
-        err_msg = f"Engine not found: {trt_path}. Run model benchmark first."
-        raise FileNotFoundError(err_msg)
-
-    ultralytics_dir = REPO_DIR / "data" / "ultralytics"
-    pt_path = (ultralytics_dir / f"{model_name}.pt").resolve()
-    utrt_path = ultralytics_dir / f"{model_name}_{imgsz}.engine"
-    if not utrt_path.exists():
-        err_msg = f"Ultralytics engine not found: {utrt_path}. Run ultralytics benchmark first."
-        raise FileNotFoundError(err_msg)
-
-    if "trtutils" not in data[sahi_key] or overwrite:
-        print("\tBenchmarking trtutils SAHI...")
+    if backend_tag == "native":
         detector = Detector(
             trt_path,
             warmup=True,
@@ -350,63 +266,24 @@ def benchmark_sahi(
             slice_overlap=(overlap, overlap),
             verbose=False,
         )
-
-        timings: list[float] = []
-        detection_counts: list[int] = []
-        for _ in tqdm(range(bench_iters)):
-            t0 = time.perf_counter()
-            detections = sahi_obj.end2end(
-                image,
-                conf_thres=conf_thres,
-                verbose=False,
+        try:
+            yield lambda: len(
+                sahi_obj.end2end(image, conf_thres=conf_thres, verbose=False),
             )
-            timings.append(time.perf_counter() - t0)
-            detection_counts.append(len(detections))
-
-        del sahi_obj, detector
-
-        results = compute_results(timings)
-        avg_detections = sum(detection_counts) // len(detection_counts)
-        data[sahi_key]["trtutils"] = {
-            "timing": results,
-            "detections": avg_detections,
-        }
-        print(
-            f"\t\tTRTUtils SAHI: {results['mean']:.2f}ms, {avg_detections} detections",
-        )
-        write_data(device, "models", data)
-
-    sahi_backends = [
-        ("sahi(ultralytics)(torch)", "ultralytics_torch"),
-        ("sahi(ultralytics)(trt)", "ultralytics_trt"),
-        ("sahi(trtutils)", "trtutils_sahi"),
-    ]
-
-    for sahi_type_key, backend_tag in sahi_backends:
-        if sahi_type_key in data[sahi_key] and not overwrite:
-            continue
-
-        print(f"\tBenchmarking {sahi_type_key}...")
-
-        if backend_tag == "ultralytics_torch":
-            detection_model = AutoDetectionModel.from_pretrained(
-                model_type="ultralytics",
-                model_path=str(pt_path),
+        finally:
+            del sahi_obj, detector
+    elif backend_tag in ("trtutils_sahi", "ultralytics_trt"):
+        if backend_tag == "trtutils_sahi":
+            detection_model = TRTDetectionModel(
+                model_path=str(trt_path),
                 confidence_threshold=conf_thres,
-                device="cuda",
             )
-        elif backend_tag == "ultralytics_trt":
+        else:
             detection_model = UltralyticsTRTDetector(
                 model_path=str(utrt_path),
                 confidence_threshold=conf_thres,
                 device="cuda",
             )
-        else:
-            detection_model = TRTDetectionModel(
-                model_path=str(trt_path),
-                confidence_threshold=conf_thres,
-            )
-
         for _ in range(warmup_iters):
             get_sliced_prediction(
                 SAHI_IMAGE_PATH,
@@ -417,33 +294,149 @@ def benchmark_sahi(
                 overlap_width_ratio=overlap,
                 verbose=0,
             )
-
-        timings = []
-        detection_counts = []
-        for _ in tqdm(range(bench_iters)):
-            t0 = time.perf_counter()
-            result = get_sliced_prediction(
-                SAHI_IMAGE_PATH,
-                detection_model,
-                slice_height=imgsz,
-                slice_width=imgsz,
-                overlap_height_ratio=overlap,
-                overlap_width_ratio=overlap,
-                verbose=0,
+        try:
+            yield lambda: len(
+                get_sliced_prediction(
+                    SAHI_IMAGE_PATH,
+                    detection_model,
+                    slice_height=imgsz,
+                    slice_width=imgsz,
+                    overlap_height_ratio=overlap,
+                    overlap_width_ratio=overlap,
+                    verbose=0,
+                ).object_prediction_list,
             )
-            timings.append(time.perf_counter() - t0)
-            detection_counts.append(len(result.object_prediction_list))
+        finally:
+            del detection_model
+    else:
+        err_msg = f"Unknown SAHI backend: {backend_tag}"
+        raise ValueError(err_msg)
 
-        results = compute_results(timings)
-        avg_detections = sum(detection_counts) // len(detection_counts)
-        data[sahi_key][sahi_type_key] = {
-            "timing": results,
-            "detections": avg_detections,
-        }
-        print(
-            f"\t\t{sahi_type_key}: {results['mean']:.2f}ms, {avg_detections} detections",
+
+def run_benchmark(
+    kind: str,
+    device: str,
+    model_name: str,
+    warmup_iters: int,
+    bench_iters: int,
+    *,
+    configs: list[tuple[str, int, int]] | None = None,
+    data_subdir: str = "models",
+    frameworks: list[str] | None = None,
+    overwrite: bool = False,
+) -> None:
+    if kind == "trtutils" or kind == "ultralytics":
+        image = cv2.imread(IMAGE_PATH)
+        if kind == "trtutils":
+            runner = partial(
+                _runner_trtutils,
+                model_name=model_name,
+                warmup_iters=warmup_iters,
+                image=image,
+            )
+            modes = modes=[
+                ("trtutils", "detector"),
+                ("trtutils(graph)", "detector_graph"),
+                ("tensorrt", "raw"),
+                ("tensorrt(graph)", "raw_graph"),
+            ]
+        else:
+            runner = partial(
+                _runner_ultralytics,
+                model_name=model_name,
+                image=image,
+            )
+            modes=[("ultralytics(torch)", False), ("ultralytics(trt)", True)],
+        _run_benchmarks(
+            device,
+            model_name,
+            configs,
+            bench_iters,
+            data_subdir,
+            frameworks,
+            modes,
+            runner_factory=runner,
+            loop_warmup=warmup_iters,
+            overwrite=overwrite,
         )
-        write_data(device, "models", data)
+    elif kind == "sahi":
+        image = cv2.imread(SAHI_IMAGE_PATH)
+        imgsz = 640
+        overlap = 0.2
+        conf_thres = 0.25
+
+        data = get_data(device, "models", MODEL_FRAMEWORKS)
+        sahi_key = f"sahi_{model_name}"
+        if sahi_key not in data:
+            data[sahi_key] = {}
+
+        try:
+            trt_weight_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR)
+        except Exception as e:
+            err_msg = f"Could not get {model_name} @ {imgsz}: {e}"
+            raise FileNotFoundError(err_msg) from e
+
+        trt_path = trt_weight_path.with_suffix(".engine")
+        if not trt_path.exists():
+            err_msg = f"Engine not found: {trt_path}. Run model benchmark first."
+            raise FileNotFoundError(err_msg)
+
+        ultralytics_dir = REPO_DIR / "data" / "ultralytics"
+        utrt_path = ultralytics_dir / f"{model_name}_{imgsz}.engine"
+        if not utrt_path.exists():
+            err_msg = f"Ultralytics engine not found: {utrt_path}. Run ultralytics benchmark first."
+            raise FileNotFoundError(err_msg)
+
+        runner = partial(
+            _runner_sahi,
+            trt_path=trt_path,
+            utrt_path=utrt_path,
+            image=image,
+            imgsz=imgsz,
+            overlap=overlap,
+            conf_thres=conf_thres,
+            warmup_iters=warmup_iters,
+        )
+
+        modes = [
+            ("trtutils", "native"),
+            ("sahi(trtutils)", "trtutils_sahi"),
+            ("sahi(ultralytics)(trt)", "ultralytics_trt"),
+        ]
+
+        for mode_key, backend_tag in modes:
+            if mode_key in data[sahi_key] and not overwrite:
+                print(f"Skipping {mode_key} (already exists)")
+                continue
+
+            print(f"\tBenchmarking {mode_key}...")
+
+            try:
+                with runner(backend_tag) as exec_fn:
+                    timings: list[float] = []
+                    detection_counts: list[int] = []
+                    for _ in tqdm(range(bench_iters)):
+                        t0 = time.perf_counter()
+                        count = exec_fn()
+                        timings.append(time.perf_counter() - t0)
+                        detection_counts.append(count)
+
+                results = compute_results(timings)
+                avg_detections = sum(detection_counts) // len(detection_counts)
+                data[sahi_key][mode_key] = {
+                    "timing": results,
+                    "detections": avg_detections,
+                }
+                print(
+                    f"\t\t{mode_key}: {results['mean']:.2f}ms, {avg_detections} detections",
+                )
+                write_data(device, "models", data)
+            except Exception as e:
+                warnings.warn(f"Failed {mode_key}: {e}")
+                continue
+    else:
+        err_msg = f"Unknown benchmark kind: {kind}"
+        raise ValueError(err_msg)
 
 
 def benchmark_optimizations(

@@ -21,10 +21,7 @@ from utils.config import (
 
 def cmd_models(args: argparse.Namespace) -> None:
     """Run single-image model benchmarks."""
-    from utils.runners import (
-        benchmark_trtutils,
-        benchmark_ultralytics,
-    )
+    from utils.runners import run_benchmark
 
     models = MODEL_NAMES if args.model == "all" else [args.model]
 
@@ -44,17 +41,17 @@ def cmd_models(args: argparse.Namespace) -> None:
 
         if args.trtutils:
             try:
-                benchmark_trtutils(
+                run_benchmark(
+                    "trtutils",
                     args.device,
                     model,
-                    configs,
                     args.warmup,
                     args.iterations,
-                    "models",
-                    MODEL_FRAMEWORKS,
+                    configs=configs,
+                    data_subdir="models",
+                    frameworks=MODEL_FRAMEWORKS,
                     overwrite=args.overwrite,
                 )
-
             except Exception as e:
                 warnings.warn(f"Failed {model} with trtutils: {e}")
 
@@ -63,14 +60,15 @@ def cmd_models(args: argparse.Namespace) -> None:
                 warnings.warn(f"{model} is not a supported ultralytics model")
             else:
                 try:
-                    benchmark_ultralytics(
+                    run_benchmark(
+                        "ultralytics",
                         args.device,
                         model,
-                        configs,
                         args.warmup,
                         args.iterations,
-                        "models",
-                        MODEL_FRAMEWORKS,
+                        configs=configs,
+                        data_subdir="models",
+                        frameworks=MODEL_FRAMEWORKS,
                         overwrite=args.overwrite,
                     )
                 except Exception as e:
@@ -80,12 +78,7 @@ def cmd_models(args: argparse.Namespace) -> None:
 def cmd_batch(args: argparse.Namespace) -> None:
     """Run batch throughput benchmarks."""
     from utils.data import get_data
-    from utils.runners import benchmark_trtutils, benchmark_ultralytics
-
-    if args.nvtx:
-        from trtutils import enable_nvtx
-
-        enable_nvtx()
+    from utils.runners import run_benchmark
 
     if args.model not in MODEL_TO_DIR:
         err_msg = f"Unknown model: {args.model}. Supported: {list(MODEL_TO_DIR.keys())}"
@@ -97,32 +90,23 @@ def cmd_batch(args: argparse.Namespace) -> None:
 
     configs = [(str(bs), args.imgsz, bs) for bs in args.batch_sizes]
 
-    if args.trtutils:
-        benchmark_trtutils(
+    for name, enabled in [("trtutils", args.trtutils), ("ultralytics", args.ultralytics)]:
+        if not enabled:
+            continue
+        if name == "ultralytics" and args.model not in ULTRALYTICS_MODELS:
+            warnings.warn(f"{args.model} is not a supported ultralytics model")
+            continue
+        run_benchmark(
+            name,
             args.device,
             args.model,
-            configs,
             args.warmup,
             args.iterations,
-            "batch",
-            BATCH_FRAMEWORKS,
+            configs=configs,
+            data_subdir="batch",
+            frameworks=BATCH_FRAMEWORKS,
             overwrite=args.overwrite,
         )
-
-    if args.ultralytics:
-        if args.model not in ULTRALYTICS_MODELS:
-            warnings.warn(f"{args.model} is not a supported ultralytics model")
-        else:
-            benchmark_ultralytics(
-                args.device,
-                args.model,
-                configs,
-                args.warmup,
-                args.iterations,
-                "batch",
-                BATCH_FRAMEWORKS,
-                overwrite=args.overwrite,
-            )
 
     # Print summary
     data = get_data(args.device, "batch", BATCH_FRAMEWORKS)
@@ -161,13 +145,14 @@ def cmd_optimize(args: argparse.Namespace) -> None:
 
 def cmd_sahi(args: argparse.Namespace) -> None:
     """Run SAHI comparison benchmarks."""
-    from utils.runners import benchmark_sahi
+    from utils.runners import run_benchmark
 
     if args.model not in ULTRALYTICS_MODELS:
         warnings.warn(f"SAHI only supports ultralytics models, got: {args.model}")
         return
 
-    benchmark_sahi(
+    run_benchmark(
+        "sahi",
         args.device,
         args.model,
         args.warmup,
@@ -280,6 +265,7 @@ def main() -> None:
     p.add_argument("--trtutils", action="store_true")
     p.add_argument("--ultralytics", action="store_true")
     p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--nvtx", action="store_true")
     p.set_defaults(func=cmd_models)
 
     # --- batch ---
@@ -303,6 +289,7 @@ def main() -> None:
     p.add_argument("--imgsz", type=int, default=640)
     p.add_argument("--warmup", type=int, default=50)
     p.add_argument("--iterations", type=int, default=200)
+    p.add_argument("--nvtx", action="store_true")
     p.set_defaults(func=cmd_optimize)
 
     # --- sahi ---
@@ -312,6 +299,7 @@ def main() -> None:
     p.add_argument("--warmup", type=int, default=100)
     p.add_argument("--iterations", type=int, default=1000)
     p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--nvtx", action="store_true")
     p.set_defaults(func=cmd_sahi)
 
     # --- plot ---
@@ -338,6 +326,10 @@ def main() -> None:
     p.set_defaults(func=cmd_bootstrap)
 
     args = parser.parse_args()
+    if getattr(args, "nvtx", False):
+        from trtutils import enable_nvtx
+
+        enable_nvtx()
     args.func(args)
 
 

@@ -32,6 +32,9 @@ BATCH_FRAMEWORKS = [
 ]
 
 ULTRALYTICS_MODELS = [
+    "yolov26n",
+    "yolov26s",
+    "yolov26m",
     "yolov13n",
     "yolov13s",
     "yolov13m",
@@ -56,6 +59,7 @@ ULTRALYTICS_MODELS = [
 IMAGE_SIZES = [160, 320, 480, 640, 800, 960, 1120, 1280]
 
 MODEL_FAMILIES = [
+    "yolov26",
     "yolov13",
     "yolov12",
     "yolov11",
