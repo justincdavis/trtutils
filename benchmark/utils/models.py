@@ -103,7 +103,6 @@ def ensure_model_available(
         output=model_path,
         opset=opset,
         imgsz=imgsz,
-        accept=True,
         verbose=False,
     )
     return model_path
