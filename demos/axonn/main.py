@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -14,7 +15,7 @@ import numpy as np
 import onnx
 import tensorrt as trt
 
-from trtutils import build_engine
+from trtutils import FLAGS, build_engine
 from trtutils.builder import SyntheticBatcher
 from trtutils.download import download, get_supported_models
 from trtutils.jetson import benchmark_engine
@@ -26,8 +27,7 @@ if TYPE_CHECKING:
 _DATA_DIR = Path(__file__).parent / "data"
 
 
-def _get_onnx_input(onnx_path: Path) -> tuple[str, tuple[int, ...]]:
-    """Read the first input tensor name and shape from an ONNX model."""
+def _get_input_info(onnx_path: Path) -> tuple[str, tuple[int, ...]]:
     model = onnx.load(str(onnx_path))
     inp = model.graph.input[0]
     name = inp.name
@@ -35,27 +35,7 @@ def _get_onnx_input(onnx_path: Path) -> tuple[str, tuple[int, ...]]:
     return name, dims
 
 
-def _make_onnx_static(onnx_path: Path) -> None:
-    """
-    Set any dynamic dimensions in the ONNX model to 1 (batch size).
-
-    DLA requires static shapes. The AxoNN profiler builds engines internally
-    without forwarding explicit shapes, so the ONNX itself must be static.
-    """
-    model = onnx.load(str(onnx_path))
-    changed = False
-    for inp in model.graph.input:
-        for dim in inp.type.tensor_type.shape.dim:
-            if dim.dim_value <= 0:
-                dim.ClearField("dim_param")
-                dim.dim_value = 1
-                changed = True
-    if changed:
-        onnx.save(model, str(onnx_path))
-        print(f"Fixed dynamic dimensions in {onnx_path}")
-
-
-def _make_batcher(imgsz: int) -> SyntheticBatcher:
+def _get_batcher(imgsz: int) -> SyntheticBatcher:
     return SyntheticBatcher(
         shape=(imgsz, imgsz, 3),
         dtype=np.float32,
@@ -64,111 +44,6 @@ def _make_batcher(imgsz: int) -> SyntheticBatcher:
         data_range=(0.0, 1.0),
         order="NCHW",
     )
-
-
-def _download_onnx(
-    model_name: str,
-    onnx_path: Path,
-    *,
-    imgsz: int | None,
-    rebuild: bool,
-    verbose: bool,
-) -> None:
-    if onnx_path.exists() and not rebuild:
-        print(f"ONNX model already exists: {onnx_path}")
-        return
-    print(f"Downloading {model_name} ONNX model...")
-    download(model=model_name, output=onnx_path, imgsz=imgsz, verbose=verbose)
-    print(f"Saved ONNX model to: {onnx_path}")
-
-
-def _build_gpu_engine(
-    onnx_path: Path,
-    engine_path: Path,
-    shapes: list[tuple[str, tuple[int, ...]]],
-    *,
-    rebuild: bool,
-    verbose: bool,
-) -> None:
-    if engine_path.exists() and not rebuild:
-        print(f"GPU engine already exists: {engine_path}")
-        return
-    print("Building GPU-only engine (FP16)...")
-    build_engine(
-        onnx=onnx_path,
-        output=engine_path,
-        fp16=True,
-        shapes=shapes,
-        profiling_verbosity=trt.ProfilingVerbosity.DETAILED,
-        verbose=verbose,
-    )
-    print(f"Saved GPU engine to: {engine_path}")
-
-
-def _build_dla_engine(
-    onnx_path: Path,
-    engine_path: Path,
-    shapes: list[tuple[str, tuple[int, ...]]],
-    imgsz: int,
-    *,
-    dla_core: int,
-    rebuild: bool,
-    verbose: bool,
-) -> None:
-    if engine_path.exists() and not rebuild:
-        print(f"DLA engine already exists: {engine_path}")
-        return
-    print(f"Building DLA engine (INT8+FP16, DLA core {dla_core}, GPU fallback)...")
-    build_engine(
-        onnx=onnx_path,
-        output=engine_path,
-        default_device=trt.DeviceType.DLA,
-        gpu_fallback=True,
-        fp16=True,
-        int8=True,
-        data_batcher=_make_batcher(imgsz),
-        dla_core=dla_core,
-        shapes=shapes,
-        profiling_verbosity=trt.ProfilingVerbosity.DETAILED,
-        verbose=verbose,
-    )
-    print(f"Saved DLA engine to: {engine_path}")
-
-
-def _build_axonn_engine(
-    onnx_path: Path,
-    engine_path: Path,
-    shapes: list[tuple[str, tuple[int, ...]]],
-    imgsz: int,
-    *,
-    energy_ratio: float,
-    max_transitions: int,
-    profile_iterations: int,
-    warmup_iterations: int,
-    dla_core: int,
-    rebuild: bool,
-    verbose: bool,
-) -> tuple[float, float, int, int, int]:
-    if engine_path.exists() and not rebuild:
-        print(f"AxoNN engine already exists: {engine_path}")
-        return (0.0, 0.0, 0, 0, 0)
-    print(
-        f"Building AxoNN engine (energy_ratio={energy_ratio}, max_transitions={max_transitions})..."
-    )
-    result = axonn_build_engine(
-        onnx=onnx_path,
-        output=engine_path,
-        calibration_batcher=_make_batcher(imgsz),
-        energy_ratio=energy_ratio,
-        max_transitions=max_transitions,
-        profile_iterations=profile_iterations,
-        warmup_iterations=warmup_iterations,
-        dla_core=dla_core,
-        shapes=shapes,
-        verbose=verbose,
-    )
-    print(f"Saved AxoNN engine to: {engine_path}")
-    return result
 
 
 def _print_results(
@@ -321,11 +196,14 @@ def _main() -> None:
     )
     args = parser.parse_args()
 
+    if not FLAGS.IS_JETSON:
+        sys.stderr.write("This demo is only supported on Jetson systems.\n")
+        sys.exit(1)
+
     model_name: str = args.model
     if model_name not in supported:
         parser.error(f"Unknown model '{model_name}'. Supported: {', '.join(sorted(supported))}")
 
-    # Paths derived from model name
     data_dir = _DATA_DIR / model_name
     data_dir.mkdir(parents=True, exist_ok=True)
     onnx_path = data_dir / f"{model_name}.onnx"
@@ -333,90 +211,83 @@ def _main() -> None:
     engine_dla = data_dir / f"{model_name}_dla.engine"
     engine_axonn = data_dir / f"{model_name}_axonn.engine"
 
-    # Step 1: Download ONNX
-    _download_onnx(
-        model_name, onnx_path, imgsz=args.imgsz, rebuild=args.rebuild, verbose=args.verbose
+    # download the ONNX model
+    download(
+        model=model_name,
+        output=onnx_path,
+        imgsz=args.imgsz,
+        simplify=True,
+        make_static=True,
+        verbose=args.verbose,
     )
-
-    # Fix dynamic dims (DLA and AxoNN profiler require static shapes)
-    _make_onnx_static(onnx_path)
-
-    # Read input tensor info from the ONNX
-    input_name, input_dims = _get_onnx_input(onnx_path)
-    # Derive imgsz from ONNX shape (last spatial dim)
+    input_name, input_dims = _get_input_info(onnx_path)
     imgsz = input_dims[-1]
     shapes = [(input_name, input_dims)]
-    print(f"ONNX input: name={input_name!r}, shape={input_dims}")
 
-    # Step 2: Build GPU engine
-    _build_gpu_engine(onnx_path, engine_gpu, shapes, rebuild=args.rebuild, verbose=args.verbose)
+    # build the GPU engine
+    if not engine_gpu.exists() or args.rebuild:
+        build_engine(
+            onnx=onnx_path,
+            output=engine_gpu,
+            fp16=True,
+            shapes=shapes,
+            profiling_verbosity=trt.ProfilingVerbosity.DETAILED,
+            verbose=args.verbose,
+        )
 
-    # Step 3: Build DLA engine
-    _build_dla_engine(
-        onnx_path,
-        engine_dla,
-        shapes,
-        imgsz,
-        dla_core=args.dla_core,
-        rebuild=args.rebuild,
-        verbose=args.verbose,
-    )
+    # build the DLA engine
+    if not engine_dla.exists() or args.rebuild:
+        build_engine(
+            onnx=onnx_path,
+            output=engine_dla,
+            default_device=trt.DeviceType.DLA,
+            gpu_fallback=True,
+            fp16=True,
+            int8=True,
+            data_batcher=_get_batcher(imgsz),
+            dla_core=args.dla_core,
+            shapes=shapes,
+            profiling_verbosity=trt.ProfilingVerbosity.DETAILED,
+            verbose=args.verbose,
+        )
 
-    # Step 4: Build AxoNN engine
-    axonn_build = _build_axonn_engine(
-        onnx_path,
-        engine_axonn,
-        shapes,
-        imgsz,
-        energy_ratio=args.energy_ratio,
-        max_transitions=args.max_transitions,
-        profile_iterations=args.profile_iterations,
-        warmup_iterations=args.warmup_iterations,
-        dla_core=args.dla_core,
-        rebuild=args.rebuild,
-        verbose=args.verbose,
-    )
+    # build the AxoNN engine
+    if engine_axonn.exists() and not args.rebuild:
+        axonn_build = (0.0, 0.0, 0, 0, 0)
+    else:
+        axonn_build = axonn_build_engine(
+            onnx=onnx_path,
+            output=engine_axonn,
+            calibration_batcher=_get_batcher(imgsz),
+            energy_ratio=args.energy_ratio,
+            max_transitions=args.max_transitions,
+            profile_iterations=args.profile_iterations,
+            warmup_iterations=args.warmup_iterations,
+            dla_core=args.dla_core,
+            shapes=shapes,
+            verbose=args.verbose,
+        )
 
-    # Step 5: Benchmark each engine
-    # gc.collect() between runs to free DLA contexts
-    print("\nBenchmarking GPU-only engine...")
-    gpu_result = benchmark_engine(
-        engine_gpu,
-        iterations=args.iterations,
-        warmup_iterations=args.warmup_iterations,
-        cuda_graph=args.cuda_graph or None,
-        verbose=args.verbose,
-    )
-    gc.collect()
+    # benchmark each engine
+    results = {}
+    for engine, tag in [(engine_gpu, "gpu"), (engine_dla, "dla"), (engine_axonn, "axonn")]:
+        use_cuda_graph = args.cuda_graph or None if tag == "gpu" else False
+        results[tag] = benchmark_engine(
+            engine,
+            iterations=args.iterations,
+            warmup_iterations=args.warmup_iterations,
+            cuda_graph=use_cuda_graph,
+            verbose=args.verbose,
+        )
+        gc.collect()
 
-    print("Benchmarking DLA-only engine...")
-    dla_result = benchmark_engine(
-        engine_dla,
-        iterations=args.iterations,
-        warmup_iterations=args.warmup_iterations,
-        dla_core=args.dla_core,
-        cuda_graph=False,
-        verbose=args.verbose,
-    )
-    gc.collect()
-
-    print("Benchmarking AxoNN engine...")
-    axonn_result = benchmark_engine(
-        engine_axonn,
-        iterations=args.iterations,
-        warmup_iterations=args.warmup_iterations,
-        cuda_graph=False,
-        verbose=args.verbose,
-    )
-    gc.collect()
-
-    # Step 6: Print results
+    # print the results
     _print_results(
         model_name,
         imgsz,
-        gpu_result,
-        dla_result,
-        axonn_result,
+        results["gpu"],
+        results["dla"],
+        results["axonn"],
         axonn_build,
         iterations=args.iterations,
         energy_ratio=args.energy_ratio,
