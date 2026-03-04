@@ -27,6 +27,7 @@ from .config import (
     MODEL_TO_IMGSIZES,
     REPO_DIR,
     SAHI_IMAGE_PATH,
+    get_timing_cache_path,
 )
 from .data import get_data, write_data
 from .models import build_model, ensure_model_available
@@ -156,7 +157,8 @@ def _runner_trtutils(mode, imgsz, bs, *, model_name, warmup_iters, image):
     else:
         batch_onnx = onnx_path
         engine_path = onnx_path.with_suffix(".engine")
-    if not engine_path.exists():
+
+    def build_engine():
         print(f"\tBuilding engine for {imgsz}x{bs}...")
         build_model(
             onnx=batch_onnx,
@@ -164,16 +166,33 @@ def _runner_trtutils(mode, imgsz, bs, *, model_name, warmup_iters, image):
             imgsz=imgsz,
             batch_size=bs,
             model_name=model_name,
+            timing_cache=get_timing_cache_path(),
         )
-    detector = Detector(
-        engine_path=engine_path,
-        warmup_iterations=warmup_iters,
-        warmup=True,
-        preprocessor="cuda",
-        pagelocked_mem=True,
-        cuda_graph=cuda_graph,
-        verbose=False,
-    )
+
+    def create_detector() -> Detector:
+        return Detector(
+            engine_path=engine_path,
+            warmup_iterations=warmup_iters,
+            warmup=True,
+            preprocessor="cuda",
+            pagelocked_mem=True,
+            cuda_graph=cuda_graph,
+            verbose=False,
+        )
+
+    if not engine_path.exists():
+        build_engine()
+
+    try:
+        detector = create_detector()
+    except RuntimeError as e:
+        if "Failed to deserialize" not in str(e):
+            raise
+        print(f"\tEngine incompatible, rebuilding: {engine_path}")
+        engine_path.unlink(missing_ok=True)
+        build_engine()
+        detector = create_detector()
+
     if is_raw:
         engine = detector.engine
         if cuda_graph:
@@ -199,33 +218,51 @@ def _runner_ultralytics(compile_engine, imgsz, bs, *, model_name, image):
     ultralytics_dir.mkdir(parents=True, exist_ok=True)
     pt_path = (ultralytics_dir / f"{model_name}.pt").resolve()
 
-    if compile_engine:
+    if bs > 1:
+        engine_path = ultralytics_dir / f"{model_name}_{imgsz}_b{bs}.engine"
+    else:
+        engine_path = ultralytics_dir / f"{model_name}_{imgsz}.engine"
+    base_engine = pt_path.with_suffix(".engine")
+
+    def build_engine():
+        print(f"\tBuilding ultralytics TRT engine for {imgsz}x{bs}...")
+        export_cmd = [
+            "yolo",
+            "export",
+            f"model={pt_path}",
+            "format=engine",
+            f"imgsz={imgsz}",
+            "half=True",
+        ]
         if bs > 1:
-            engine_path = ultralytics_dir / f"{model_name}_{imgsz}_b{bs}.engine"
-        else:
-            engine_path = ultralytics_dir / f"{model_name}_{imgsz}.engine"
-        base_engine = pt_path.with_suffix(".engine")
-        if not engine_path.exists():
-            print(f"\tBuilding ultralytics TRT engine for {imgsz}x{bs}...")
-            export_cmd = [
-                "yolo",
-                "export",
-                f"model={pt_path}",
-                "format=engine",
-                f"imgsz={imgsz}",
-            ]
-            if bs > 1:
-                export_cmd.append(f"batch={bs}")
-            export_cmd.append("half")
-            subprocess.run(export_cmd, check=True, capture_output=True)
-            if not base_engine.exists():
-                err_msg = f"Ultralytics TRT engine not found: {base_engine}"
-                raise FileNotFoundError(err_msg)
-            base_engine.rename(engine_path)
+            export_cmd.append(f"batch={bs}")
+        subprocess.run(export_cmd, check=True, capture_output=True)
+        if not base_engine.exists():
+            err_msg = f"Ultralytics TRT engine not found: {base_engine}"
+            raise FileNotFoundError(err_msg)
+        base_engine.rename(engine_path)
+
+    def create_yolo() -> YOLO:
+        return YOLO(model=model_path, task="detect", verbose=False)
+
+    if compile_engine:
         model_path = engine_path
     else:
         model_path = pt_path
-    yolo = YOLO(model=model_path, task="detect", verbose=False)
+
+    if not engine_path.exists():
+        build_engine()
+
+    try:
+        yolo = create_yolo()
+    except Exception as e:
+        if "Failed to deserialize" not in str(e):
+            raise
+        print(f"\tEngine incompatible, rebuilding: {engine_path}")
+        engine_path.unlink(missing_ok=True)
+        build_engine()
+        yolo = create_yolo()
+
     images = [image] * bs
     try:
         yield lambda: yolo(images, imgsz=imgsz, verbose=False)
@@ -455,7 +492,7 @@ def benchmark_optimizations(
     engine_path = onnx_path.with_suffix(".engine")
     if not engine_path.exists():
         print(f"Building engine: {engine_path}")
-        build_model(onnx_path, engine_path, imgsz, opt_level=1)
+        build_model(onnx_path, engine_path, imgsz, opt_level=1, timing_cache=get_timing_cache_path())
 
     configs: list[dict] = []
     for prep in ["cpu", "cuda", "trt"]:

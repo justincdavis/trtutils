@@ -116,6 +116,7 @@ def build_model(
     batch_size: int = 1,
     opt_level: int = 3,
     model_name: str | None = None,
+    **kwargs: Any,  # noqa: ANN401
 ) -> None:
     """Build a model from an ONNX file using the appropriate model class."""
     # Extract model name from the onnx filename (e.g., "yolov10n_640" -> "yolov10n")
@@ -130,4 +131,5 @@ def build_model(
         imgsz=imgsz,
         batch_size=batch_size,
         opt_level=opt_level,
+        **kwargs,
     )
