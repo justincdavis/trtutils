@@ -106,3 +106,13 @@ def _load_model_imgsizes() -> dict[str, list[int]]:
 
 MODEL_DIRS, MODEL_NAMES, MODEL_TO_DIR = _load_model_info()
 MODEL_TO_IMGSIZES = _load_model_imgsizes()
+
+
+def get_timing_cache_path() -> Path:
+    """Get the shared timing cache path, organized by TensorRT version."""
+    from trtutils._flags import FLAGS
+
+    major, minor = FLAGS.TRT_VERSION
+    cache_dir = Path(__file__).resolve().parent.parent / ".cache" / f"trt{major}.{minor}"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / "timing.cache"
