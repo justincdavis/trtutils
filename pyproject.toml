@@ -78,14 +78,14 @@ cu13 = [
 ]
 onnx = [
     "onnx>=1.17.0,<2.0.0",
-    "onnxslim>=0.1.72,<1.0.0",
-    "onnxsim>=0.4.36,<1.0.0",
-    "polygraphy>=0.49.26,<1.0.0",
     "onnx-graphsurgeon>=0.5.8,<1.0.0",
-    "nvidia-modelopt[onnx]>=0.21.1,<1.0.0",
 ]
 jit = [
     "numba>=0.58.0,<1.0.0",
+]
+axonn = [
+    "trtutils[onnx]",
+    "z3-solver>=4.12.0,<5.0.0",
 ]
 # buildtime/offline dependencies
 benchmark = [
@@ -125,6 +125,7 @@ sahi = [
 dev = [
     "trtutils[cpu]",
     "trtutils[jit]",
+    "trtutils[axonn]",
     "trtutils[benchmark]",
     "trtutils[compat]",
     "trtutils[ci]",

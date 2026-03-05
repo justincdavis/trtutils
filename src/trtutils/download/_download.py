@@ -12,7 +12,7 @@ from typing import Sequence
 
 from trtutils._log import LOG
 
-from . import _simplify
+from . import _make_static, _simplify
 from ._models import (
     export_deim,
     export_deimv2,
@@ -80,6 +80,7 @@ def download_model(
     requirements_export: Path | None = None,
     *,
     simplify: Sequence[str] | bool | None = None,
+    make_static: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -107,6 +108,10 @@ def download_model(
         If a sequence of tool names, runs those tools in the given order.
         Valid tool names: "polygraphy", "onnxslim", "onnxsim".
         If False or None, no simplification is performed.
+    make_static : bool, optional
+        Set any dynamic dimensions in the ONNX model to fixed values (e.g. batch size to 1).
+        If True, all dynamic or symbolic dimensions are replaced with a static value of 1.
+        If False or None, no modification is performed.
     no_cache : bool, optional
         Whether to disable caching of downloaded weights and repos.
     no_uv_cache : bool, optional
@@ -216,6 +221,15 @@ def download_model(
             verbose=verbose,
         )
 
+    if make_static:
+        _make_static.make_static(
+            model_path,
+            directory=directory,
+            bin_path=bin_path,
+            no_uv_cache=no_uv_cache,
+            verbose=verbose,
+        )
+
     return model_path.with_name(model + model_path.suffix)
 
 
@@ -227,6 +241,7 @@ def download(
     requirements_export: Path | None = None,
     *,
     simplify: Sequence[str] | bool | None = None,
+    make_static: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -254,6 +269,10 @@ def download(
         If a sequence of tool names, runs those tools in the given order.
         Valid tool names: "polygraphy", "onnxslim", "onnxsim".
         If False or None, no simplification is performed.
+    make_static : bool, optional
+        Set any dynamic dimensions in the ONNX model to fixed values (e.g. batch size to 1).
+        If True, all dynamic or symbolic dimensions are replaced with a static value of 1.
+        If False or None, no modification is performed.
     no_cache : bool, optional
         Whether to disable caching of downloaded weights and repos.
     no_uv_cache : bool, optional
@@ -274,6 +293,7 @@ def download(
             imgsz,
             requirements_export=requirements_export,
             simplify=simplify,
+            make_static=make_static,
             no_cache=no_cache,
             no_uv_cache=no_uv_cache,
             no_warn=no_warn,
