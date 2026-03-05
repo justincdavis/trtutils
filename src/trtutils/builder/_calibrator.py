@@ -1,9 +1,10 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -35,11 +36,15 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         """
         super().__init__()
 
-        self._cache_path: Path = (
-            Path(calibration_cache).resolve()
-            if calibration_cache is not None
-            else Path("calibration.cache").resolve()
-        )
+        if calibration_cache is not None:
+            self._cache_path: Path = Path(calibration_cache).resolve()
+        else:
+            with tempfile.NamedTemporaryFile(suffix=".cache", delete=False) as tmp:
+                self._cache_path = Path(tmp.name)
+            LOG.warning(
+                "No calibration cache path provided, using a temporary file."
+                " Calibration data will not persist across runs."
+            )
         self._batcher: AbstractBatcher | None = None
 
     def set_batcher(self: Self, batcher: AbstractBatcher) -> None:

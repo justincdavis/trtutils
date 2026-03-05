@@ -3,12 +3,38 @@
 # MIT License
 from __future__ import annotations
 
+import re
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+
+@lru_cache(maxsize=1)
+def _myl_suffix_pattern() -> re.Pattern[str]:
+    return re.compile(r"_myl\d+_\d+$")
+
+
+@lru_cache(maxsize=200)
+def strip_myelin_suffix(layer_name: str) -> str:
+    """
+    Strip TRT 10+ Myelin ``_myl<N>_<N>`` suffix from a profiled layer name.
+
+    Parameters
+    ----------
+    layer_name : str
+        A TRT profiled layer name, e.g. ``"/model.0/conv/Conv_myl0_4"``.
+
+    Returns
+    -------
+    str
+        The base name without suffix, or the original name if no suffix found.
+
+    """
+    return _myl_suffix_pattern().sub("", layer_name)
 
 
 def build_fused_layer_map(
@@ -42,22 +68,21 @@ def build_fused_layer_map(
     """
     fused_map: dict[str, tuple[str, int]] = {}
     for fused_name in profiled_layer_names:
-        # GPU fusion: "LayerA + LayerB + LayerC"
+        # case 1: GPU fusion: "LayerA + LayerB + LayerC"
         parts = [p.strip() for p in fused_name.split(" + ")]
         if len(parts) > 1:
             for part in parts:
                 fused_map[part] = (fused_name, len(parts))
             continue
 
-        # DLA ForeignNode: "{ForeignNode[/first/Layer.../last/Layer]}"
+        # case 2: DLA ForeignNode: "{ForeignNode[/first/Layer.../last/Layer]}"
         if fused_name.startswith("{ForeignNode[") and fused_name.endswith("]}"):
             inner = fused_name[len("{ForeignNode[") : -len("]}") :]
-            # Split on "..." to get first and last layer names
             range_parts = inner.split("...")
             name_length = 2
+            # case 2.a: range of layers (ForeignNode[first...last])
             if len(range_parts) == name_length and onnx_layer_names is not None:
                 first_name, last_name = range_parts[0].strip(), range_parts[1].strip()
-                # Find the index range in the ONNX layer list
                 try:
                     first_idx = onnx_layer_names.index(first_name)
                     last_idx = onnx_layer_names.index(last_name)
@@ -66,11 +91,18 @@ def build_fused_layer_map(
                         fused_map[name] = (fused_name, len(covered))
                 except ValueError:
                     pass
+            # case 2.b: single layer (ForeignNode[/layer/Name])
             elif len(range_parts) == 1 and onnx_layer_names is not None:
-                # Single layer ForeignNode: {ForeignNode[/layer/Name]}
                 single_name = range_parts[0].strip()
                 if single_name in onnx_layer_names:
                     fused_map[single_name] = (fused_name, 1)
+            continue
+
+        # case 3: TRT 10+ Myelin suffix: "/model.0/conv/Conv_myl0_4" -> "/model.0/conv/Conv"
+        if onnx_layer_names is not None:
+            base_name = strip_myelin_suffix(fused_name)
+            if base_name != fused_name and base_name in onnx_layer_names:
+                fused_map[base_name] = (fused_name, 1)
 
     return fused_map
 
@@ -112,17 +144,22 @@ def resolve_fused_layer_value(
         The resolved value, or ``None`` if no data found.
 
     """
-    # 1. Exact match
+    # case 1: exact match
     if layer_name in layer_values:
         return layer_values[layer_name]
 
-    # 2. Fused layer match — split value evenly
+    # case 2: fused layer match, split value evenly
     if layer_name in fused_map:
         fused_name, num_parts = fused_map[layer_name]
         if fused_name in layer_values:
             return layer_values[fused_name] / num_parts
 
-    # 3. No data
+    # case 3: substring match, TRT 10+ appends suffixes like _myl0_N
+    for profiled_name, value in layer_values.items():
+        if layer_name in profiled_name:
+            return value
+
+    # case 4: no data
     if verbose:
         LOG.warning(f"Layer {layer_name} not found in {label} profile")
     return None

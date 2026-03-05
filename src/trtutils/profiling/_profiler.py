@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -224,6 +224,7 @@ def profile_engine(
             engine,
             dla_core=dla_core,
             device=device,
+            cuda_graph=False,
             warmup=False,
             verbose=verbose,
         )
@@ -247,7 +248,7 @@ def profile_engine(
     if warmup:
         for _ in range(warmup_iterations):
             engine.mock_execute(verbose=False)
-    # report_layer_time is called by the context, so reset after warmup
+    # reset profiler after warmup passes
     profiler.reset()
 
     if verbose:

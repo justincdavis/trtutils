@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -11,9 +11,8 @@ from typing import Protocol
 from trtutils._log import LOG
 from trtutils.builder._build import build_engine
 from trtutils.compat._libs import trt
-from trtutils.inspect._onnx import inspect_onnx_layers
 
-from ._fusion import build_fused_layer_map, resolve_fused_layer_value
+from ._fusion import strip_myelin_suffix
 from ._profiler import ProfilerResult, profile_engine
 
 
@@ -26,6 +25,51 @@ class BuildFunc(Protocol):
         fp16: bool | None = None,
         int8: bool | None = None,
     ) -> None: ...
+
+
+def _build_chunk_map(
+    layers: list[tuple[str, float]],
+) -> tuple[list[str], dict[str, float]]:
+    """
+    Split profiled layers into chunks keyed by anchor names.
+
+    An "anchor" is a profiled layer whose name (after stripping the TRT suffix)
+    starts with ``/`` — i.e. it originated from an ONNX node. All layers between
+    consecutive anchors are grouped into the preceding anchor's chunk.
+
+    Layers before the first anchor are grouped into a ``"__prologue__"`` chunk.
+
+    Parameters
+    ----------
+    layers : list[tuple[str, float]]
+        Ordered list of ``(profiled_name, mean_time)`` pairs.
+
+    Returns
+    -------
+    tuple[list[str], dict[str, float]]
+        ``(ordered_keys, chunk_times)`` where ``ordered_keys`` preserves
+        insertion order and ``chunk_times`` maps each key to its total time.
+
+    """
+    ordered_keys: list[str] = []
+    chunk_times: dict[str, float] = {}
+    current_key = "__prologue__"
+
+    for name, time_ms in layers:
+        base = strip_myelin_suffix(name)
+        if base.startswith("/"):
+            # anchor layer, start new chunk
+            current_key = base
+            if current_key not in chunk_times:
+                ordered_keys.append(current_key)
+                chunk_times[current_key] = 0.0
+        elif current_key not in chunk_times:
+            ordered_keys.append(current_key)
+            chunk_times[current_key] = 0.0
+
+        chunk_times[current_key] += time_ms
+
+    return ordered_keys, chunk_times
 
 
 def identify_quantize_speedups_by_layer(
@@ -45,9 +89,11 @@ def identify_quantize_speedups_by_layer(
     user-provided build function or :func:`trtutils.builder.build_engine`), profiles
     them layer-by-layer, and computes the speedup percentage for each layer.
 
-    When TensorRT fuses layers differently at FP16 vs INT8, ONNX layer names are used
-    as a common reference and fused layer costs are split evenly among their
-    constituents.
+    Profiled layers are grouped into chunks anchored by layers whose names
+    correspond to ONNX nodes. Fused TRT-internal layers (e.g. ``__myl_Silu``)
+    between anchors are included in the preceding anchor's chunk. When FP16
+    and INT8 fuse differently, chunks that appear in both profiles are compared
+    directly.
 
     Parameters
     ----------
@@ -86,7 +132,7 @@ def identify_quantize_speedups_by_layer(
         A tuple containing:
         - FP16 profiling results
         - INT8 profiling results
-        - List of (layer_name, speedup_percent) tuples in ONNX layer order.
+        - List of (layer_name, speedup_percent) tuples in execution order.
           Positive values indicate INT8 is faster, negative values indicate INT8 is slower.
 
     Raises
@@ -96,6 +142,11 @@ def identify_quantize_speedups_by_layer(
 
     """
     if build_func is None:
+        with tempfile.NamedTemporaryFile(
+            suffix=".timingcache",
+            delete=False,
+        ) as timing_cache_file:
+            timing_cache_path = Path(timing_cache_file.name)
 
         def build_func(
             onnx_path: Path | str,
@@ -110,17 +161,12 @@ def identify_quantize_speedups_by_layer(
                 workspace=workspace,
                 fp16=fp16,
                 int8=int8,
+                timing_cache=timing_cache_path,
                 profiling_verbosity=trt.ProfilingVerbosity.DETAILED,
                 verbose=verbose,
             )
 
     onnx_path = Path(onnx)
-
-    # Get ONNX layer names as common reference
-    onnx_layers = inspect_onnx_layers(onnx_path, verbose=False)
-    onnx_layer_names = [layer.name for layer in onnx_layers]
-
-    # Create temporary files for engines
     with tempfile.NamedTemporaryFile(
         suffix=".engine", delete=False
     ) as fp16_file, tempfile.NamedTemporaryFile(suffix=".engine", delete=False) as int8_file:
@@ -141,7 +187,7 @@ def identify_quantize_speedups_by_layer(
         build_func(
             onnx_path=onnx_path,
             output_path=int8_path,
-            fp16=False,
+            fp16=True,
             int8=True,
         )
 
@@ -163,41 +209,30 @@ def identify_quantize_speedups_by_layer(
             verbose=verbose,
         )
 
-        # Build fusion maps from profiled layer names
-        fp16_layer_names = [layer.name for layer in fp16_results.layers]
-        int8_layer_names = [layer.name for layer in int8_results.layers]
+        fp16_layers = [(layer.name, layer.mean) for layer in fp16_results.layers]
+        fp16_keys, fp16_chunks = _build_chunk_map(fp16_layers)
+        int8_layers = [(layer.name, layer.mean) for layer in int8_results.layers]
+        int8_keys, int8_chunks = _build_chunk_map(int8_layers)
 
-        fp16_fused_map = build_fused_layer_map(fp16_layer_names, onnx_layer_names)
-        int8_fused_map = build_fused_layer_map(int8_layer_names, onnx_layer_names)
-
-        # Build value dicts keyed by profiled layer name
-        fp16_values: dict[str, float] = {layer.name: layer.mean for layer in fp16_results.layers}
-        int8_values: dict[str, float] = {layer.name: layer.mean for layer in int8_results.layers}
-
-        # Resolve per-ONNX-layer timing through fusion maps
         layer_deltas: list[tuple[str, float]] = []
-
-        for layer_name in onnx_layer_names:
-            fp16_time = resolve_fused_layer_value(
-                layer_name,
-                fp16_values,
-                fp16_fused_map,
-            )
-            int8_time = resolve_fused_layer_value(
-                layer_name,
-                int8_values,
-                int8_fused_map,
-            )
-
-            if fp16_time is None or int8_time is None:
+        for key in fp16_keys:
+            if key not in int8_chunks:
                 if ignore_mismatch_layers:
                     continue
-                err_msg = f"Layer {layer_name} could not be resolved in both FP16 and INT8 profiles"
+                err_msg = f"Layer {key} found in FP16 but not INT8 profile"
                 raise ValueError(err_msg)
 
-            # Positive = INT8 is faster, negative = INT8 is slower
-            speedup_percent = ((fp16_time - int8_time) / fp16_time) * 100.0 if fp16_time > 0 else 0.0
+            fp16_time = fp16_chunks[key]
+            int8_time = int8_chunks[key]
 
-            layer_deltas.append((layer_name, speedup_percent))
+            speedup_percent = ((fp16_time - int8_time) / fp16_time) * 100.0 if fp16_time > 0 else 0.0
+            layer_deltas.append((key, speedup_percent))
+
+        # check missing int8 chunks
+        if not ignore_mismatch_layers:
+            for key in int8_keys:
+                if key not in fp16_chunks:
+                    err_msg = f"Layer {key} found in INT8 but not FP16 profile"
+                    raise ValueError(err_msg)
 
         return fp16_results, int8_results, layer_deltas
