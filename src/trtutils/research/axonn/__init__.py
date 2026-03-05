@@ -42,7 +42,7 @@ Example:
 
 from __future__ import annotations
 
-from ._build import build_engine
+from ._axonn import build_engine
 
 __all__ = [
     "build_engine",
