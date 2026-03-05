@@ -23,8 +23,12 @@ if TYPE_CHECKING:
 
     from . import axonn as axonn
 
-_SUBMODULES = ["axonn"]
-_LAZY_SUBMODULES = {"axonn"}
+_SUBMODULES = [
+    "axonn",
+]
+_LAZY_SUBMODULES = {
+    "axonn",
+}
 
 __all__ = [
     "axonn",
@@ -45,7 +49,15 @@ def __dir__() -> list[str]:
 
 
 def discover_submodules() -> list[str]:
-    """Return a list of importable research submodule names."""
+    """
+    Return a list of importable research submodule names.
+
+    Returns
+    -------
+    list[str]
+        A list of importable research submodule names.
+
+    """
     available: list[str] = []
     for name in _SUBMODULES:
         with contextlib.suppress(ImportError):
@@ -58,7 +70,17 @@ def register_cli(
     subparsers: argparse._SubParsersAction,
     parents: list[argparse.ArgumentParser],
 ) -> None:
-    """Register CLI subcommands for all available research submodules."""
+    """
+    Register CLI subcommands for all available research submodules.
+
+    Parameters
+    ----------
+    subparsers : argparse._SubParsersAction
+        The subparsers action to register the CLI commands under.
+    parents : list[argparse.ArgumentParser]
+        The parent parsers to use for the CLI commands.
+
+    """
     for name in discover_submodules():
         with contextlib.suppress(ImportError):
             mod = __import__(f"trtutils.research.{name}._cli", fromlist=["register_cli"])

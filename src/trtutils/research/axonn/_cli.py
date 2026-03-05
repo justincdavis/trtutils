@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-import onnx
 
 from trtutils.__main__ import _parse_shapes_arg
 from trtutils._log import LOG
 from trtutils.builder import ImageBatcher, SyntheticBatcher
+from trtutils.builder.onnx import get_onnx_input, make_onnx_static
 from trtutils.research.axonn import build_engine as axonn_build_engine
 
 if TYPE_CHECKING:
@@ -21,65 +21,106 @@ if TYPE_CHECKING:
     from types import SimpleNamespace
 
 
-def _get_onnx_input(onnx_path: Path) -> tuple[str, tuple[int, ...]]:
-    """Read the first input tensor name and shape from an ONNX model."""
-    model = onnx.load(str(onnx_path))
-    inp = model.graph.input[0]
-    name = inp.name
-    dims = tuple(d.dim_value if d.dim_value > 0 else 1 for d in inp.type.tensor_type.shape.dim)
-    return name, dims
-
-
-def _make_onnx_static(onnx_path: Path) -> None:
-    """Set any dynamic dimensions in the ONNX model to 1 (batch size)."""
-    model = onnx.load(str(onnx_path))
-    changed = False
-    for inp in model.graph.input:
-        for dim in inp.type.tensor_type.shape.dim:
-            if dim.dim_value <= 0:
-                dim.ClearField("dim_param")
-                dim.dim_value = 1
-                changed = True
-    if changed:
-        onnx.save(model, str(onnx_path))
-        LOG.info(f"Fixed dynamic dimensions in {onnx_path}")
-
-
-def _make_batcher(
-    imgsz: int,
-    batch_size: int = 8,
-    num_batches: int = 10,
-) -> SyntheticBatcher:
-    """Create a SyntheticBatcher for calibration."""
-    return SyntheticBatcher(
-        shape=(imgsz, imgsz, 3),
-        dtype=np.dtype(np.float32),
-        batch_size=batch_size,
-        num_batches=num_batches,
-        data_range=(0.0, 1.0),
-        order="NCHW",
-    )
-
-
 def _axonn_build(args: SimpleNamespace) -> None:
-    """Build an AxoNN-optimized engine from an ONNX file."""
+    """
+    Build an AxoNN-optimized engine from an ONNX file.
+
+    Fixes dynamic dimensions, profiles per-layer latency and energy on GPU and DLA,
+    then solves for an energy-optimal GPU/DLA schedule using the AxoNN ILP.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+
+        General (inherited):
+        - log_level : str
+            Logging level. Default is "INFO".
+        - verbose : bool
+            Enable verbose output.
+        - nvtx : bool
+            Enable NVTX markers for Nsight Systems profiling.
+
+        Build common (inherited):
+        - onnx : str
+            Path to the ONNX model file.
+        - output : str
+            Path to save the TensorRT engine file.
+        - timing_cache : str | None
+            Path for timing cache data, or 'global'. Default is None.
+        - calibration_cache : str | None
+            Path for calibration cache data. Default is None.
+        - workspace : float
+            Workspace size in GB. Default is 4.0.
+        - optimization_level : int
+            TensorRT builder optimization level (0-5). Default is 3.
+        - shape : list[str] | None
+            Input binding shapes as NAME:dim1,dim2,... Default is None.
+        - direct_io : bool
+            Use direct IO for the engine.
+        - prefer_precision_constraints : bool
+            Prefer precision constraints.
+        - reject_empty_algorithms : bool
+            Reject empty algorithms.
+        - ignore_timing_mismatch : bool
+            Allow different CUDA device timing caches.
+        - cache : bool
+            Cache the engine in the trtutils engine cache.
+
+        DLA (inherited):
+        - dla_core : int | None
+            DLA core to use. Defaults to 0 for AxoNN.
+
+        Calibration (inherited):
+        - calibration_dir : str | None
+            Directory containing images for INT8 calibration.
+        - input_shape : list[int] | None
+            Input shape in HWC format.
+        - input_dtype : str | None
+            Input data type (float32, float16, int8).
+        - batch_size : int
+            Batch size for calibration. Default is 8.
+        - data_order : str
+            Data ordering (NCHW or NHWC). Default is "NCHW".
+        - max_images : int | None
+            Maximum calibration images.
+        - resize_method : str
+            Image resize method (letterbox or linear). Default is "letterbox".
+        - input_scale : list[float]
+            Input value range. Default is [0.0, 1.0].
+
+        AxoNN-specific:
+        - energy_target : float | None
+            Explicit ECT in millijoules per inference. Overrides energy_ratio.
+        - energy_ratio : float
+            Fraction of GPU-only energy to use as ECT (0.0-1.0). Default is 0.8.
+        - max_transitions : int
+            Maximum GPU<->DLA transitions. Default is 1.
+        - profile_iterations : int
+            Number of profiling iterations. Default is 1000.
+        - warmup_iterations : int
+            Number of warmup iterations. Default is 50.
+        - num_batches : int
+            Number of synthetic calibration batches. Default is 10.
+
+    """
     onnx_path = Path(args.onnx)
     output_path = Path(args.output)
 
-    # Fix dynamic dims for DLA compatibility
-    _make_onnx_static(onnx_path)
+    # make dynamic dims static for DLA compatibility
+    make_onnx_static(onnx_path)
 
-    # Shapes: use --shape if provided, else derive from ONNX
+    # use --shape if provided, else derive from ONNX
     shapes = _parse_shapes_arg(getattr(args, "shape", None))
     if shapes is None:
-        input_name, input_dims = _get_onnx_input(onnx_path)
+        input_name, input_dims = get_onnx_input(onnx_path)
         shapes = [(input_name, input_dims)]
         imgsz = input_dims[-1]
     else:
         imgsz = shapes[0][1][-1]
     LOG.info(f"Input shapes: {shapes}")
 
-    # Create batcher: use real images if calibration_dir provided, else synthetic
+    # create batcher
     if args.calibration_dir is not None:
         batcher: ImageBatcher | SyntheticBatcher = ImageBatcher(
             image_dir=args.calibration_dir,
@@ -93,7 +134,15 @@ def _axonn_build(args: SimpleNamespace) -> None:
             verbose=args.verbose,
         )
     else:
-        batcher = _make_batcher(imgsz, args.batch_size, args.num_batches)
+        batcher = SyntheticBatcher(
+            shape=(imgsz, imgsz, 3),
+            dtype=np.dtype(np.float32),
+            batch_size=args.batch_size,
+            num_batches=args.num_batches,
+            data_range=(0.0, 1.0),
+            order="NCHW",
+            verbose=args.verbose,
+        )
 
     # DLA core defaults to 0 for AxoNN
     dla_core = args.dla_core if args.dla_core is not None else 0
@@ -136,7 +185,17 @@ def register_cli(
     subparsers: argparse._SubParsersAction,
     parents: list[argparse.ArgumentParser],
 ) -> None:
-    """Register AxoNN CLI subcommands under the research parser."""
+    """
+    Register AxoNN CLI subcommands under the research parser.
+
+    Parameters
+    ----------
+    subparsers : argparse._SubParsersAction
+        The subparsers action from the research CLI parser.
+    parents : list[argparse.ArgumentParser]
+        Parent parsers providing general, DLA, build common, and calibration args.
+
+    """
     axonn_parser = subparsers.add_parser(
         "axonn",
         help="AxoNN: Energy-aware multi-accelerator neural network inference.",
@@ -148,7 +207,7 @@ def register_cli(
     )
     axonn_parser.set_defaults(func=lambda _args: axonn_parser.print_help())
 
-    # -- build subcommand --
+    # build command
     build_parser = axonn_subparsers.add_parser(
         "build",
         help="Build an AxoNN-optimized engine from an ONNX file.",
