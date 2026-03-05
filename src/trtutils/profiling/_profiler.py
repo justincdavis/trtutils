@@ -248,7 +248,7 @@ def profile_engine(
     if warmup:
         for _ in range(warmup_iterations):
             engine.mock_execute(verbose=False)
-    # reset profiler after warmup passes
+    # report_layer_time is called by the context, so reset after warmup
     profiler.reset()
 
     if verbose:
@@ -256,6 +256,7 @@ def profile_engine(
 
     for idx in range(iterations):
         engine.mock_execute(verbose=False)
+        # only need to call finalize_iteration, since report_to_profiler is handled by context
         profiler.finalize_iteration()
 
         if verbose and (idx + 1) % 10 == 0:
