@@ -5,45 +5,40 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import ANY, patch
+
+import pytest
+
+from trtutils._flags import FLAGS
+from trtutils.compat._libs import cuda
+from trtutils.core import _context
+from trtutils.core._context import create_context, destroy_context
 
 
 class TestCreateContext:
     """Tests for create_context()."""
 
-    def test_create_context_default_device(self) -> None:
-        """create_context() returns a valid CUcontext for device 0."""
-        from trtutils.core._context import create_context, destroy_context
-
-        ctx = create_context()
-        assert ctx is not None
-        destroy_context(ctx)
-
-    def test_create_context_explicit_device_0(self) -> None:
-        """create_context(0) returns a valid CUcontext."""
-        from trtutils.core._context import create_context, destroy_context
-
-        ctx = create_context(device=0)
+    @pytest.mark.parametrize(
+        "device",
+        [
+            pytest.param(None, id="default_device"),
+            pytest.param(0, id="explicit_device_0"),
+        ],
+    )
+    def test_create_context_with_device(self, device: int | None) -> None:
+        """create_context() returns a valid CUcontext for the given device arg."""
+        ctx = create_context() if device is None else create_context(device=device)
         assert ctx is not None
         destroy_context(ctx)
 
     def test_create_context_returns_context_type(self) -> None:
         """create_context() return type should be cuda.CUcontext."""
-        from trtutils.compat._libs import cuda
-        from trtutils.core._context import create_context, destroy_context
-
         ctx = create_context()
         assert isinstance(ctx, cuda.CUcontext)
         destroy_context(ctx)
 
     def test_create_context_calls_cu_ctx_create(self) -> None:
         """create_context() calls cuCtxCreate with the correct arguments."""
-        from unittest.mock import ANY
-
-        from trtutils._flags import FLAGS
-        from trtutils.compat._libs import cuda
-        from trtutils.core import _context
-
         fake_device = object()
         fake_context = object()
         with patch.object(
@@ -70,17 +65,8 @@ class TestCreateContext:
 class TestDestroyContext:
     """Tests for destroy_context()."""
 
-    def test_destroy_context_valid(self) -> None:
-        """destroy_context() on a valid context should not raise."""
-        from trtutils.core._context import create_context, destroy_context
-
-        ctx = create_context()
-        destroy_context(ctx)  # Should not raise
-
     def test_create_destroy_lifecycle(self) -> None:
         """Full lifecycle: create then destroy without error."""
-        from trtutils.core._context import create_context, destroy_context
-
         ctx = create_context()
         assert ctx is not None
         destroy_context(ctx)

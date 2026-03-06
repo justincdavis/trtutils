@@ -9,6 +9,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from trtutils.compat._libs import cudart
+from trtutils.core._graph import (
+    CUDAGraph,
+    cuda_graph_destroy,
+    cuda_graph_exec_destroy,
+    cuda_graph_instantiate,
+    cuda_graph_launch,
+    cuda_stream_begin_capture,
+    cuda_stream_end_capture,
+)
+from trtutils.core._stream import stream_synchronize
+
 
 # ---------------------------------------------------------------------------
 # CUDAGraph class lifecycle tests
@@ -18,15 +30,11 @@ class TestCUDAGraphLifecycle:
 
     def test_init_not_captured(self, cuda_stream) -> None:
         """After init, is_captured should be False."""
-        from trtutils.core._graph import CUDAGraph
-
         graph = CUDAGraph(cuda_stream)
         assert graph.is_captured is False
 
     def test_context_manager_capture(self, cuda_stream) -> None:
         """Context manager start/stop marks graph as captured."""
-        from trtutils.core._graph import CUDAGraph
-
         graph = CUDAGraph(cuda_stream)
         with graph:
             pass  # Empty capture -- captures an empty graph
@@ -35,8 +43,6 @@ class TestCUDAGraphLifecycle:
 
     def test_start_stop_capture(self, cuda_stream) -> None:
         """Manual start() and stop() marks graph as captured."""
-        from trtutils.core._graph import CUDAGraph
-
         graph = CUDAGraph(cuda_stream)
         graph.start()
         success = graph.stop()
@@ -46,9 +52,6 @@ class TestCUDAGraphLifecycle:
 
     def test_launch_after_capture(self, cuda_stream) -> None:
         """launch() succeeds after a successful capture."""
-        from trtutils.core._graph import CUDAGraph
-        from trtutils.core._stream import stream_synchronize
-
         graph = CUDAGraph(cuda_stream)
         with graph:
             pass  # Empty capture
@@ -58,8 +61,6 @@ class TestCUDAGraphLifecycle:
 
     def test_invalidate_clears_state(self, cuda_stream) -> None:
         """invalidate() sets is_captured back to False."""
-        from trtutils.core._graph import CUDAGraph
-
         graph = CUDAGraph(cuda_stream)
         with graph:
             pass
@@ -69,23 +70,17 @@ class TestCUDAGraphLifecycle:
 
     def test_launch_without_capture_raises(self, cuda_stream) -> None:
         """launch() without capture raises RuntimeError."""
-        from trtutils.core._graph import CUDAGraph
-
         graph = CUDAGraph(cuda_stream)
         with pytest.raises(RuntimeError, match="no graph has been captured"):
             graph.launch()
 
     def test_invalidate_without_capture(self, cuda_stream) -> None:
         """invalidate() on a fresh graph does not raise."""
-        from trtutils.core._graph import CUDAGraph
-
         graph = CUDAGraph(cuda_stream)
         graph.invalidate()  # Should not raise
 
     def test_invalidate_idempotent(self, cuda_stream) -> None:
         """invalidate() can be called multiple times safely."""
-        from trtutils.core._graph import CUDAGraph
-
         graph = CUDAGraph(cuda_stream)
         with graph:
             pass
@@ -94,8 +89,6 @@ class TestCUDAGraphLifecycle:
 
     def test_del_calls_invalidate(self, cuda_stream) -> None:
         """__del__ cleans up graph resources without error."""
-        from trtutils.core._graph import CUDAGraph
-
         graph = CUDAGraph(cuda_stream)
         with graph:
             pass
@@ -104,8 +97,6 @@ class TestCUDAGraphLifecycle:
 
     def test_context_manager_returns_self(self, cuda_stream) -> None:
         """__enter__ returns the CUDAGraph instance itself."""
-        from trtutils.core._graph import CUDAGraph
-
         graph = CUDAGraph(cuda_stream)
         with graph as g:
             assert g is graph
@@ -113,8 +104,6 @@ class TestCUDAGraphLifecycle:
 
     def test_multiple_capture_cycles(self, cuda_stream) -> None:
         """A graph can be invalidated and recaptured."""
-        from trtutils.core._graph import CUDAGraph
-
         graph = CUDAGraph(cuda_stream)
 
         # First capture
@@ -137,44 +126,26 @@ class TestCUDAGraphLifecycle:
 class TestCUDAGraphFunctions:
     """Tests for the low-level CUDA graph functions."""
 
-    def test_begin_end_capture(self, cuda_stream) -> None:
+    @pytest.mark.parametrize(
+        "mode",
+        [
+            pytest.param(None, id="default_mode"),
+            pytest.param("thread_local", id="explicit_mode"),
+        ],
+    )
+    def test_begin_end_capture(self, cuda_stream, mode) -> None:
         """cuda_stream_begin_capture and end_capture work together."""
-        from trtutils.core._graph import (
-            cuda_graph_destroy,
-            cuda_stream_begin_capture,
-            cuda_stream_end_capture,
-        )
-
-        cuda_stream_begin_capture(cuda_stream)
-        graph = cuda_stream_end_capture(cuda_stream)
-        assert graph is not None
-        cuda_graph_destroy(graph)
-
-    def test_begin_capture_with_explicit_mode(self, cuda_stream) -> None:
-        """cuda_stream_begin_capture with explicit mode argument."""
-        from trtutils.compat._libs import cudart
-        from trtutils.core._graph import (
-            cuda_graph_destroy,
-            cuda_stream_begin_capture,
-            cuda_stream_end_capture,
-        )
-
-        mode = cudart.cudaStreamCaptureMode.cudaStreamCaptureModeThreadLocal
-        cuda_stream_begin_capture(cuda_stream, mode=mode)
+        if mode == "thread_local":
+            mode_val = cudart.cudaStreamCaptureMode.cudaStreamCaptureModeThreadLocal
+            cuda_stream_begin_capture(cuda_stream, mode=mode_val)
+        else:
+            cuda_stream_begin_capture(cuda_stream)
         graph = cuda_stream_end_capture(cuda_stream)
         assert graph is not None
         cuda_graph_destroy(graph)
 
     def test_instantiate_graph(self, cuda_stream) -> None:
         """cuda_graph_instantiate creates an executable from a graph."""
-        from trtutils.core._graph import (
-            cuda_graph_destroy,
-            cuda_graph_exec_destroy,
-            cuda_graph_instantiate,
-            cuda_stream_begin_capture,
-            cuda_stream_end_capture,
-        )
-
         cuda_stream_begin_capture(cuda_stream)
         graph = cuda_stream_end_capture(cuda_stream)
         graph_exec = cuda_graph_instantiate(graph)
@@ -184,16 +155,6 @@ class TestCUDAGraphFunctions:
 
     def test_graph_launch(self, cuda_stream) -> None:
         """cuda_graph_launch executes a graph without error."""
-        from trtutils.core._graph import (
-            cuda_graph_destroy,
-            cuda_graph_exec_destroy,
-            cuda_graph_instantiate,
-            cuda_graph_launch,
-            cuda_stream_begin_capture,
-            cuda_stream_end_capture,
-        )
-        from trtutils.core._stream import stream_synchronize
-
         cuda_stream_begin_capture(cuda_stream)
         graph = cuda_stream_end_capture(cuda_stream)
         graph_exec = cuda_graph_instantiate(graph)
@@ -204,14 +165,6 @@ class TestCUDAGraphFunctions:
 
     def test_graph_destroy_cleanup(self, cuda_stream) -> None:
         """cuda_graph_destroy and cuda_graph_exec_destroy do not error."""
-        from trtutils.core._graph import (
-            cuda_graph_destroy,
-            cuda_graph_exec_destroy,
-            cuda_graph_instantiate,
-            cuda_stream_begin_capture,
-            cuda_stream_end_capture,
-        )
-
         cuda_stream_begin_capture(cuda_stream)
         graph = cuda_stream_end_capture(cuda_stream)
         graph_exec = cuda_graph_instantiate(graph)
@@ -227,50 +180,23 @@ class TestCUDAGraphCaptureFailure:
 
     def _make_graph(self) -> tuple:
         """Create a CUDAGraph with a mock stream."""
-        from trtutils.core._graph import CUDAGraph
-
         mock_stream = MagicMock()
         graph = CUDAGraph(mock_stream)
         return graph, mock_stream
 
+    @pytest.mark.parametrize(
+        "error_msg",
+        [
+            pytest.param("cudaErrorStreamCapture: operation failed", id="stream_capture"),
+            pytest.param("StreamCapture error in driver", id="stream_capture_variant"),
+            pytest.param("some other CUDA error", id="generic"),
+        ],
+    )
     @patch("trtutils.core._graph.cuda_stream_end_capture")
     @patch("trtutils.core._graph.cuda_stream_begin_capture")
-    def test_stop_stream_capture_error_returns_false(
-        self,
-        mock_begin,
-        mock_end,
-    ) -> None:
-        """stop() returns False when cuda_stream_end_capture raises StreamCapture error."""
-        mock_end.side_effect = RuntimeError("cudaErrorStreamCapture: operation failed")
-        graph, _ = self._make_graph()
-        graph.start()
-        result = graph.stop()
-        assert result is False
-        assert graph.is_captured is False
-
-    @patch("trtutils.core._graph.cuda_stream_end_capture")
-    @patch("trtutils.core._graph.cuda_stream_begin_capture")
-    def test_stop_stream_capture_variant_returns_false(
-        self,
-        mock_begin,
-        mock_end,
-    ) -> None:
-        """stop() returns False for 'StreamCapture' variant in error message."""
-        mock_end.side_effect = RuntimeError("StreamCapture error in driver")
-        graph, _ = self._make_graph()
-        graph.start()
-        result = graph.stop()
-        assert result is False
-
-    @patch("trtutils.core._graph.cuda_stream_end_capture")
-    @patch("trtutils.core._graph.cuda_stream_begin_capture")
-    def test_stop_generic_runtime_error_returns_false(
-        self,
-        mock_begin,
-        mock_end,
-    ) -> None:
-        """stop() returns False for a generic RuntimeError (non-StreamCapture)."""
-        mock_end.side_effect = RuntimeError("some other CUDA error")
+    def test_stop_returns_false_on_error(self, mock_begin, mock_end, error_msg) -> None:
+        """stop() returns False when cuda_stream_end_capture raises."""
+        mock_end.side_effect = RuntimeError(error_msg)
         graph, _ = self._make_graph()
         graph.start()
         result = graph.stop()
@@ -321,39 +247,36 @@ class TestCUDAGraphCaptureFailure:
         assert result is False
         assert graph.is_captured is False
 
+    @pytest.mark.parametrize(
+        ("error_msg", "expected_fragment", "excluded_fragment"),
+        [
+            pytest.param(
+                "cudaErrorStreamCapture: not supported",
+                "engine may not support graphs",
+                None,
+                id="stream_capture_warning",
+            ),
+            pytest.param(
+                "unknown error",
+                "CUDA graph capture failed:",
+                "engine may not support graphs",
+                id="generic_warning",
+            ),
+        ],
+    )
     @patch("trtutils.core._graph.LOG")
     @patch("trtutils.core._graph.cuda_stream_end_capture")
     @patch("trtutils.core._graph.cuda_stream_begin_capture")
-    def test_stop_stream_capture_error_logs_specific_warning(
-        self,
-        mock_begin,
-        mock_end,
-        mock_log,
+    def test_stop_logs_warning(
+        self, mock_begin, mock_end, mock_log, error_msg, expected_fragment, excluded_fragment
     ) -> None:
-        """StreamCapture errors produce a specific warning about graph support."""
-        mock_end.side_effect = RuntimeError("cudaErrorStreamCapture: not supported")
+        """stop() logs appropriate warning based on error type."""
+        mock_end.side_effect = RuntimeError(error_msg)
         graph, _ = self._make_graph()
         graph.start()
         graph.stop()
         mock_log.warning.assert_called_once()
         msg = mock_log.warning.call_args[0][0]
-        assert "engine may not support graphs" in msg
-
-    @patch("trtutils.core._graph.LOG")
-    @patch("trtutils.core._graph.cuda_stream_end_capture")
-    @patch("trtutils.core._graph.cuda_stream_begin_capture")
-    def test_stop_generic_error_logs_generic_warning(
-        self,
-        mock_begin,
-        mock_end,
-        mock_log,
-    ) -> None:
-        """Non-StreamCapture errors produce a generic capture failure warning."""
-        mock_end.side_effect = RuntimeError("unknown error")
-        graph, _ = self._make_graph()
-        graph.start()
-        graph.stop()
-        mock_log.warning.assert_called_once()
-        msg = mock_log.warning.call_args[0][0]
-        assert "CUDA graph capture failed:" in msg
-        assert "engine may not support graphs" not in msg
+        assert expected_fragment in msg
+        if excluded_fragment is not None:
+            assert excluded_fragment not in msg
