@@ -16,12 +16,19 @@ import tensorrt as trt
 from trtutils._flags import FLAGS
 from trtutils.builder import build_engine as _build_engine
 from trtutils.core import get_compute_capability
+from trtutils.core._cuda import init_cuda
 from trtutils.core._engine import create_engine
 from trtutils.core._stream import destroy_stream
 
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 ENGINES_DIR = DATA_DIR / "engines"
+
+
+# when testing, we should run cuInit to setup everything
+# it may be the case that an engine is not created prior to other calls
+# since creating an engine implicitly calls cuInit, we should call it here
+init_cuda()
 
 
 @dataclass(frozen=True)
