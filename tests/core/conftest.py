@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import pytest
 
-from trtutils.core import create_stream, cuda_free, cuda_malloc, destroy_stream
+from trtutils.core import cache, create_stream, cuda_free, cuda_malloc, destroy_stream
+from trtutils.core._kernels import Kernel
+from trtutils.core._nvrtc import find_cuda_include_dir
 
 
 @pytest.fixture
@@ -27,21 +29,8 @@ def device_ptr():
 
 
 @pytest.fixture
-def simple_engine(simple_engine_path):
-    """Load simple test engine, destroy stream after test."""
-    from trtutils.core._engine import create_engine
-    from trtutils.core._stream import destroy_stream
-
-    engine, context, _logger, stream = create_engine(simple_engine_path)
-    yield engine, context, stream
-    destroy_stream(stream)
-
-
-@pytest.fixture
 def patched_cache_dir(tmp_path, monkeypatch):
     """Provide a temporary cache directory with get_cache_dir patched."""
-    from trtutils.core import cache
-
     cache_dir = tmp_path / "_engine_cache"
     cache_dir.mkdir()
     monkeypatch.setattr(cache, "get_cache_dir", lambda: cache_dir)
@@ -51,8 +40,6 @@ def patched_cache_dir(tmp_path, monkeypatch):
 @pytest.fixture
 def trivial_kernel(tmp_path):
     """Compile and return a trivial CUDA Kernel, freed after test."""
-    from trtutils.core._kernels import Kernel
-
     code = """\
 extern "C" __global__ void trivial_kernel(float *out, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -74,8 +61,6 @@ def _nvrtc_cache_clear(request):
     if "nvrtc" not in request.node.nodeid:
         yield
         return
-    from trtutils.core._nvrtc import find_cuda_include_dir
-
     find_cuda_include_dir.cache_clear()
     yield
     find_cuda_include_dir.cache_clear()
