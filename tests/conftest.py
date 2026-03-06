@@ -165,3 +165,15 @@ def build_test_engine() -> Callable[..., Path]:
         return engine_path
 
     return _build
+
+
+@pytest.fixture(scope="session")
+def simple_onnx_path() -> Path:
+    """Path to a minimal ONNX model for core tests."""
+    return Path(__file__).parent.parent / "data" / "simple.onnx"
+
+
+@pytest.fixture(scope="session")
+def simple_engine_path(build_test_engine, simple_onnx_path) -> Path:
+    """Build and return path to a simple test engine."""
+    return build_test_engine(simple_onnx_path)
