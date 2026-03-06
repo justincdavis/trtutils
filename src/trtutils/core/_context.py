@@ -27,7 +27,7 @@ def create_context(device: int = 0) -> cuda.CUcontext:
     """
     cu_device = cuda_call(cuda.cuDeviceGet(device))
     if FLAGS.CUDA_13:
-        return cuda_call(cuda.cuCtxCreate(cuda_call(cuda.CUctxCreateParams()), 0, cu_device))
+        return cuda_call(cuda.cuCtxCreate(cuda.CUctxCreateParams(), 0, cu_device))
     return cuda_call(cuda.cuCtxCreate(0, cu_device))
 
 
