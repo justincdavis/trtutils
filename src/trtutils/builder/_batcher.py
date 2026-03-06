@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -52,7 +52,7 @@ class ImageBatcher(AbstractBatcher):
         self: Self,
         image_dir: Path | str,
         shape: tuple[int, int, int],
-        dtype: np.dtype,
+        dtype: np.dtype | type[np.generic],
         batch_size: int = 8,
         order: str = "NCHW",
         max_images: int | None = None,
@@ -311,7 +311,7 @@ class SyntheticBatcher(AbstractBatcher):
     def __init__(
         self: Self,
         shape: tuple[int, int, int],
-        dtype: np.dtype,
+        dtype: np.dtype | type[np.generic],
         batch_size: int = 8,
         num_batches: int = 10,
         data_range: tuple[float, float] = (0.0, 1.0),
