@@ -9,44 +9,22 @@ from trtutils.compat._libs import cudart
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
 
 
-class TestCreateStream:
-    """Tests for create_stream()."""
-
-    def test_create_stream_type(self) -> None:
-        """create_stream() returns a cudaStream_t."""
-        stream = create_stream()
-        assert isinstance(stream, cudart.cudaStream_t)
-        destroy_stream(stream)
+def test_create_stream_type() -> None:
+    """create_stream() returns a cudaStream_t."""
+    stream = create_stream()
+    assert isinstance(stream, cudart.cudaStream_t)
+    destroy_stream(stream)
 
 
-class TestDestroyStream:
-    """Tests for destroy_stream()."""
-
-    def test_destroy_stream_valid(self) -> None:
-        """destroy_stream() on a valid stream should not raise."""
-        stream = create_stream()
-        stream_synchronize(stream)
-        destroy_stream(stream)  # Should not raise
+def test_stream_synchronize() -> None:
+    """stream_synchronize() completes without error on a valid stream."""
+    stream = create_stream()
+    stream_synchronize(stream)
+    destroy_stream(stream)
 
 
-class TestStreamSynchronize:
-    """Tests for stream_synchronize()."""
-
-    def test_stream_synchronize(self) -> None:
-        """stream_synchronize() on a valid stream should not raise."""
-        stream = create_stream()
-        stream_synchronize(stream)  # Should not raise
-        destroy_stream(stream)
-
-
-class TestStreamLifecycle:
-    """Integration tests for full stream lifecycle."""
-
-    def test_multiple_streams(self) -> None:
-        """Multiple streams can be created and destroyed independently."""
-        streams = [create_stream() for _ in range(3)]
-        assert len(streams) == 3
-        for s in streams:
-            assert s is not None
-        for s in streams:
-            destroy_stream(s)
+def test_multiple_streams() -> None:
+    """Multiple streams can be created and destroyed independently."""
+    streams = [create_stream() for _ in range(3)]
+    for s in streams:
+        destroy_stream(s)

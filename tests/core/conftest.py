@@ -8,8 +8,17 @@ from __future__ import annotations
 import pytest
 
 from trtutils.core import cache, create_stream, cuda_free, cuda_malloc, destroy_stream
+from trtutils.core._context import create_context, destroy_context
 from trtutils.core._kernels import Kernel
 from trtutils.core._nvrtc import find_cuda_include_dir
+
+
+@pytest.fixture
+def cuda_context():
+    """Create and push a CUDA context, destroy after test."""
+    ctx = create_context()
+    yield ctx
+    destroy_context(ctx)
 
 
 @pytest.fixture
@@ -38,7 +47,7 @@ def patched_cache_dir(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def trivial_kernel(tmp_path):
+def trivial_kernel(tmp_path, cuda_context):
     """Compile and return a trivial CUDA Kernel, freed after test."""
     code = """\
 extern "C" __global__ void trivial_kernel(float *out, int n) {

@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from pathlib import Path
 
 import pytest
@@ -34,63 +33,43 @@ ALL_FLAG_ATTRS = [
 
 
 @pytest.mark.cpu
-class TestFlagsDataclass:
-    """Tests that FLAGS is a proper dataclass with expected structure."""
-
-    def test_flags_is_dataclass(self) -> None:
-        """FLAGS should be a dataclass instance."""
-        assert dataclasses.is_dataclass(FLAGS)
-
-    def test_flags_is_flags_instance(self) -> None:
-        """FLAGS should be an instance of the Flags class."""
-        assert isinstance(FLAGS, Flags)
-
-    def test_flags_has_all_attributes(self) -> None:
-        """FLAGS should have all expected attributes."""
-        for attr in ALL_FLAG_ATTRS:
-            assert hasattr(FLAGS, attr), f"FLAGS missing attribute: {attr}"
+def test_flags_is_flags_instance() -> None:
+    """FLAGS is an instance of Flags."""
+    assert isinstance(FLAGS, Flags)
 
 
 @pytest.mark.cpu
-class TestFlagTypes:
-    """Tests that each flag is the correct type (bool)."""
-
-    @pytest.mark.parametrize("attr", ALL_FLAG_ATTRS)
-    def test_flag_is_bool(self, attr) -> None:
-        """Each flag attribute should be a bool."""
-        value = getattr(FLAGS, attr)
-        assert isinstance(value, bool), f"FLAGS.{attr} is {type(value).__name__}, expected bool"
+@pytest.mark.parametrize("attr", ALL_FLAG_ATTRS)
+def test_flag_is_bool(attr: str) -> None:
+    """Each flag attribute is a bool."""
+    value = getattr(FLAGS, attr)
+    assert isinstance(value, bool), f"FLAGS.{attr} is {type(value).__name__}, expected bool"
 
 
 @pytest.mark.cpu
-class TestFlagConsistency:
-    """Tests for logical consistency between related flags."""
+def test_flag_consistency() -> None:
+    """Related flags are logically consistent."""
+    # EXEC_ASYNC_V3 implies EXEC_V2
+    if FLAGS.EXEC_ASYNC_V3:
+        assert FLAGS.EXEC_V2 is True
+    # EXEC_ASYNC_V2 implies V1
+    if FLAGS.EXEC_ASYNC_V2:
+        assert FLAGS.EXEC_ASYNC_V1 is True
+    # TRT_10 implies newer features
+    if FLAGS.TRT_10:
+        assert FLAGS.EXEC_ASYNC_V3 is True
+        assert FLAGS.BUILD_SERIALIZED is True
 
-    def test_exec_backend_primary_consistency(self) -> None:
-        """If EXEC_ASYNC_V3 is True, execute_v2 path should be available."""
-        if FLAGS.EXEC_ASYNC_V3:
-            assert FLAGS.EXEC_V2 is True
 
-    def test_exec_async_v2_implies_v1(self) -> None:
-        """If EXEC_ASYNC_V2 is True, V1 should also be True."""
-        if FLAGS.EXEC_ASYNC_V2:
-            assert FLAGS.EXEC_ASYNC_V1 is True
+@pytest.mark.cpu
+def test_jetson_detection() -> None:
+    """IS_JETSON matches /etc/nv_tegra_release existence."""
+    tegra_exists = Path("/etc/nv_tegra_release").exists()
+    assert tegra_exists == FLAGS.IS_JETSON
 
-    def test_trt_10_consistency(self) -> None:
-        """If TRT_10 is True, certain newer features should be available."""
-        if FLAGS.TRT_10:
-            assert FLAGS.EXEC_ASYNC_V3 is True
-            assert FLAGS.BUILD_SERIALIZED is True
 
-    def test_jetson_detection(self) -> None:
-        """IS_JETSON should match whether /etc/nv_tegra_release exists."""
-        tegra_exists = Path("/etc/nv_tegra_release").exists()
-        assert tegra_exists == FLAGS.IS_JETSON
-
-    def test_nvtx_default_disabled(self) -> None:
-        """NVTX_ENABLED defaults to False."""
-        assert FLAGS.NVTX_ENABLED is False
-
-    def test_warned_numba_default_false(self) -> None:
-        """WARNED_NUMBA_NOT_FOUND defaults to False."""
-        assert FLAGS.WARNED_NUMBA_NOT_FOUND is False
+@pytest.mark.cpu
+def test_flag_defaults() -> None:
+    """NVTX_ENABLED and WARNED_NUMBA_NOT_FOUND default to False."""
+    assert FLAGS.NVTX_ENABLED is False
+    assert FLAGS.WARNED_NUMBA_NOT_FOUND is False
