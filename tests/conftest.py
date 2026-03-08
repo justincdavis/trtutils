@@ -16,10 +16,19 @@ import tensorrt as trt
 from trtutils._flags import FLAGS
 from trtutils.builder import build_engine as _build_engine
 from trtutils.core import get_compute_capability
+from trtutils.core._cuda import init_cuda
+from trtutils.core._engine import create_engine
+from trtutils.core._stream import destroy_stream
 
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 ENGINES_DIR = DATA_DIR / "engines"
+
+
+# when testing, we should run cuInit to setup everything
+# it may be the case that an engine is not created prior to other calls
+# since creating an engine implicitly calls cuInit, we should call it here
+init_cuda()
 
 
 @dataclass(frozen=True)
@@ -165,3 +174,23 @@ def build_test_engine() -> Callable[..., Path]:
         return engine_path
 
     return _build
+
+
+@pytest.fixture(scope="session")
+def simple_onnx_path() -> Path:
+    """Path to a minimal ONNX model for core tests."""
+    return Path(__file__).parent.parent / "data" / "simple.onnx"
+
+
+@pytest.fixture(scope="session")
+def simple_engine_path(build_test_engine, simple_onnx_path) -> Path:
+    """Build and return path to a simple test engine."""
+    return build_test_engine(simple_onnx_path)
+
+
+@pytest.fixture
+def simple_engine(simple_engine_path):
+    """Load simple test engine, destroy stream after test."""
+    engine, context, _logger, stream = create_engine(simple_engine_path)
+    yield engine, context, stream
+    destroy_stream(stream)
