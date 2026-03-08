@@ -10,6 +10,8 @@ Submodules
     Submodule containing hooks for building TensorRT engines.
 :mod:`onnx`
     Submodule containing tools for working with ONNX models.
+:mod:`quantize`
+    Submodule for ONNX post-training quantization using NVIDIA modelopt.
 
 Classes
 -------
@@ -50,6 +52,7 @@ from ._onnx import read_onnx
 
 if TYPE_CHECKING:
     from . import onnx as onnx
+    from . import quantize as quantize
 
 __all__ = [
     "EngineCalibrator",
@@ -60,6 +63,7 @@ __all__ = [
     "can_run_on_dla",
     "hooks",
     "onnx",
+    "quantize",
     "read_onnx",
 ]
 
@@ -68,7 +72,7 @@ with contextlib.suppress(AttributeError):
 
     __all__ += ["ProgressBar"]
 
-_LAZY_SUBMODULES = {"onnx"}
+_LAZY_SUBMODULES = {"onnx", "quantize"}
 
 
 def __getattr__(name: str) -> object:
