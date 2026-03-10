@@ -78,11 +78,6 @@ def quantize_onnx(
         err_msg = f"Calibration data not found: {calib_file}"
         raise FileNotFoundError(err_msg)
 
-    if quantize_mode == "fp8":
-        LOG.warning(
-            "FP8 quantization requires compute capability >= 8.9 (Ada Lovelace / Hopper or newer)."
-        )
-
     output = Path(output_path).resolve()
 
     if verbose:
@@ -101,6 +96,7 @@ def quantize_onnx(
         calibrate_per_node=calibrate_per_node,
     )
 
-    LOG.info(f"Quantized model saved to {output}")
+    if verbose:
+        LOG.debug(f"Quantized model saved to {output}")
 
     return output
