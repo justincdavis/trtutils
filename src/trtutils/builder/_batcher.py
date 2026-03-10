@@ -44,6 +44,63 @@ class AbstractBatcher(ABC):
     def get_next_batch(self: Self) -> np.ndarray | None:
         """Get the batch of data."""
 
+    def save_calibration_data(
+        self: Self,
+        output_path: Path | str,
+        *,
+        verbose: bool | None = None,
+    ) -> Path:
+        """
+        Drain all batches and save concatenated calibration data to a .npy file.
+
+        Parameters
+        ----------
+        output_path : Path, str
+            The path to save the calibration data to.
+        verbose : bool, optional
+            Whether to print verbose output, by default None.
+
+        Returns
+        -------
+        Path
+            The resolved path to the saved calibration data.
+
+        Raises
+        ------
+        ValueError
+            If no batches could be retrieved from the batcher.
+
+        """
+        batches: list[np.ndarray] = []
+        batch_idx = 0
+
+        while True:
+            batch = self.get_next_batch()
+            if batch is None:
+                break
+            batches.append(batch)
+            batch_idx += 1
+            if verbose:
+                LOG.debug(f"Collected calibration batch {batch_idx}")
+
+        if len(batches) == 0:
+            err_msg = "No batches could be retrieved from the batcher."
+            raise ValueError(err_msg)
+
+        calibration_data = np.concatenate(batches, axis=0)
+
+        if verbose:
+            LOG.debug(
+                f"Calibration data shape: {calibration_data.shape}, dtype: {calibration_data.dtype}"
+            )
+
+        output = Path(output_path).resolve()
+        np.save(output, calibration_data)
+
+        LOG.info(f"Saved calibration data to {output}")
+
+        return output
+
 
 class ImageBatcher(AbstractBatcher):
     """Creates image batches for calibrating TensorRT engines."""

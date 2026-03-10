@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """
@@ -10,9 +10,13 @@ Submodules
     Submodule containing hooks for building TensorRT engines.
 :mod:`onnx`
     Submodule containing tools for working with ONNX models.
+:mod:`quantize`
+    Submodule for ONNX post-training quantization using NVIDIA modelopt.
 
 Classes
 -------
+:class:`AbstractBatcher`
+    Abstract base class for data batching classes.
 :class:`EngineCalibrator`
     Calibrates an engine during quantization.
 :class:`ImageBatcher`
@@ -42,16 +46,17 @@ import importlib
 from typing import TYPE_CHECKING
 
 from . import hooks
-from ._batcher import ImageBatcher, SyntheticBatcher
+from ._batcher import AbstractBatcher, ImageBatcher, SyntheticBatcher
 from ._build import build_engine
 from ._calibrator import EngineCalibrator
 from ._dla import build_dla_engine, can_run_on_dla
 from ._onnx import read_onnx
 
 if TYPE_CHECKING:
-    from . import onnx as onnx
+    from . import onnx, quantize
 
 __all__ = [
+    "AbstractBatcher",
     "EngineCalibrator",
     "ImageBatcher",
     "SyntheticBatcher",
@@ -60,6 +65,7 @@ __all__ = [
     "can_run_on_dla",
     "hooks",
     "onnx",
+    "quantize",
     "read_onnx",
 ]
 
@@ -68,7 +74,7 @@ with contextlib.suppress(AttributeError):
 
     __all__ += ["ProgressBar"]
 
-_LAZY_SUBMODULES = {"onnx"}
+_LAZY_SUBMODULES = {"onnx", "quantize"}
 
 
 def __getattr__(name: str) -> object:

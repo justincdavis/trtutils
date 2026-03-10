@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -60,6 +60,7 @@ def build_engine(
     reject_empty_algorithms: bool = False,
     ignore_timing_mismatch: bool = False,
     fp16: bool | None = None,
+    fp8: bool | None = None,
     int8: bool | None = None,
     cache: bool | None = None,
     verbose: bool | None = None,
@@ -79,7 +80,7 @@ def build_engine(
 
     5. Configure tensor formats if specified
 
-    6. Configure precision (FP16, INT8)
+    6. Configure precision (FP16, FP8, INT8)
 
     7. Set default device and DLA core
 
@@ -179,6 +180,9 @@ def build_engine(
         By default, False
     fp16 : bool, optional
         If True, quantize the engine to FP16 precision.
+    fp8 : bool, optional
+        If True, enable FP8 precision for the engine.
+        Requires compute capability >= 8.9 (Ada Lovelace / Hopper or newer).
     int8 : bool, optional
         If True, quantize the engine to INT8 precision.
     cache : bool, optional
@@ -332,11 +336,13 @@ def build_engine(
                 LOG.warning(f"Output tensor '{tensor_name}' not found in network")
 
     # setup the precision sets
-    if fp16 or int8:
-        # want to enable fp16 for both int8 and fp16 since fp16 may be faster
+    if fp16 or fp8 or int8:
+        # want to enable fp16 for int8, fp8, and fp16 since fp16 may be faster
         if not builder.platform_has_fast_fp16:
             LOG.warning("Platform does not have native fast FP16.")
         config.set_flag(trt.BuilderFlag.FP16)
+    if fp8:
+        config.set_flag(trt.BuilderFlag.FP8)
     if int8:
         if not builder.platform_has_fast_int8:
             LOG.warning("Platform does not have native fast INT8.")
