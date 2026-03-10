@@ -63,8 +63,7 @@ def generate_calibration_data(
 
     if verbose:
         LOG.debug(
-            f"Calibration data shape: {calibration_data.shape}, "
-            f"dtype: {calibration_data.dtype}"
+            f"Calibration data shape: {calibration_data.shape}, dtype: {calibration_data.dtype}"
         )
 
     output = Path(output_path).resolve()

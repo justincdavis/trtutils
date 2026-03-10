@@ -58,10 +58,7 @@ def quantize_onnx(
     valid_calibration_methods = ("max", "entropy", "percentile", "mse")
 
     if quantize_mode not in valid_quantize_modes:
-        err_msg = (
-            f"Invalid quantize_mode: {quantize_mode!r}, "
-            f"options are: {valid_quantize_modes}"
-        )
+        err_msg = f"Invalid quantize_mode: {quantize_mode!r}, options are: {valid_quantize_modes}"
         raise ValueError(err_msg)
 
     if calibration_method not in valid_calibration_methods:
@@ -83,16 +80,14 @@ def quantize_onnx(
 
     if quantize_mode == "fp8":
         LOG.warning(
-            "FP8 quantization requires compute capability >= 8.9 "
-            "(Ada Lovelace / Hopper or newer)."
+            "FP8 quantization requires compute capability >= 8.9 (Ada Lovelace / Hopper or newer)."
         )
 
     output = Path(output_path).resolve()
 
     if verbose:
         LOG.debug(
-            f"Quantizing {onnx_file} with mode={quantize_mode!r}, "
-            f"method={calibration_method!r}"
+            f"Quantizing {onnx_file} with mode={quantize_mode!r}, method={calibration_method!r}"
         )
 
     calib_array = np.load(str(calib_file))
