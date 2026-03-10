@@ -53,8 +53,7 @@ from ._dla import build_dla_engine, can_run_on_dla
 from ._onnx import read_onnx
 
 if TYPE_CHECKING:
-    from . import onnx as onnx
-    from . import quantize as quantize
+    from . import onnx, quantize
 
 __all__ = [
     "AbstractBatcher",
