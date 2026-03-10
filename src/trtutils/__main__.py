@@ -601,6 +601,7 @@ def _build_dla(args: SimpleNamespace) -> None:
         prefer_precision_constraints=args.prefer_precision_constraints,
         reject_empty_algorithms=args.reject_empty_algorithms,
         ignore_timing_mismatch=args.ignore_timing_mismatch,
+        fp8=args.fp8,
         cache=args.cache,
         verbose=args.verbose,
     )
@@ -1737,6 +1738,11 @@ def _main() -> None:
         type=int,
         default=20,
         help="Minimum number of layers in a chunk to be assigned to DLA. Default is 20.",
+    )
+    build_dla_parser.add_argument(
+        "--fp8",
+        action="store_true",
+        help="Enable FP8 precision for GPU layers. Requires compute capability >= 8.9.",
     )
     build_dla_parser.set_defaults(func=_build_dla)
 
