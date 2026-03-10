@@ -976,6 +976,7 @@ def _profile(args: SimpleNamespace) -> None:
         "median": result.total_time.median,
         "min": result.total_time.min,
         "max": result.total_time.max,
+        "raw": [],
     }
     if args.save_raw:
         total_time_dict["raw"] = result.total_time.raw
@@ -988,6 +989,7 @@ def _profile(args: SimpleNamespace) -> None:
             "median": layer.median,
             "min": layer.min,
             "max": layer.max,
+            "raw": [],
         }
         if args.save_raw:
             layer_dict["raw"] = layer.raw
