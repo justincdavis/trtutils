@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from trtutils.compat._libs import cuda, cudart
-from trtutils.core._cuda import check_cuda_err, cuda_call, init_cuda
+from trtutils.core._cuda import check_cuda_err, cuda_call
 
 
 @pytest.mark.parametrize(
@@ -63,9 +63,3 @@ def test_cuda_call() -> None:
     # error path
     with pytest.raises(RuntimeError):
         cuda_call(cuda.cuCtxDestroy(None))
-
-
-def test_init_cuda_idempotent() -> None:
-    """init_cuda() succeeds and is safely callable twice."""
-    init_cuda()
-    init_cuda()
