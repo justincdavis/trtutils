@@ -14,10 +14,17 @@ from trtutils.core._engine import create_engine, get_engine_names
 from trtutils.core._stream import destroy_stream
 
 
-def test_create_engine(simple_engine_path) -> None:
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param("simple_engine_path", id="Path"),
+        pytest.param("simple_engine_path_str", id="str"),
+    ],
+)
+def test_create_engine(path, request) -> None:
     """create_engine returns a valid 4-tuple, accepts str and Path."""
-    # Path input
-    result = create_engine(simple_engine_path)
+    engine_path = request.getfixturevalue(path)
+    result = create_engine(engine_path)
     assert isinstance(result, tuple)
     assert len(result) == 4
     engine, context, logger, stream = result
@@ -25,10 +32,6 @@ def test_create_engine(simple_engine_path) -> None:
     assert context is not None
     assert logger is not None
     assert stream is not None
-    destroy_stream(stream)
-    # str input
-    engine, _context, _logger, stream = create_engine(str(simple_engine_path))
-    assert engine is not None
     destroy_stream(stream)
 
 

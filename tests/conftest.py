@@ -188,6 +188,12 @@ def simple_engine_path(build_test_engine, simple_onnx_path) -> Path:
     return build_test_engine(simple_onnx_path)
 
 
+@pytest.fixture(scope="session")
+def simple_engine_path_str(simple_engine_path) -> str:
+    """Simple test engine path as a string."""
+    return str(simple_engine_path)
+
+
 @pytest.fixture
 def simple_engine(simple_engine_path):
     """Load simple test engine, destroy stream after test."""
