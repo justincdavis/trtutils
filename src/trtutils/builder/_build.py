@@ -448,4 +448,4 @@ def build_engine(
         f.write(engine_bytes)
 
     if cache:
-        caching_tools.store(output_path, overwrite=False, clear_old=False)
+        caching_tools.store(output_path, overwrite=False, delete_source=False)

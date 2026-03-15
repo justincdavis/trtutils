@@ -155,7 +155,7 @@ def store_file(
     cache_filename: str | None = None,
     *,
     overwrite: bool = False,
-    clear_old: bool = False,
+    delete_source: bool = False,
 ) -> Path:
     """
     Store a file in the trtutils cache.
@@ -170,9 +170,9 @@ def store_file(
     overwrite : bool, optional
         Whether or not to overwrite an existing file with the same name.
         By default False, will keep the older version.
-    clear_old : bool, optional
-        Whether or not to automatically clear the original file.
-        By default, False, will not remove original (old) file.
+    delete_source : bool, optional
+        Whether or not to delete the source file after storing.
+        By default, False.
 
     Returns
     -------
@@ -187,19 +187,19 @@ def store_file(
     exists = new_file_path.exists()
 
     if not overwrite and exists:
-        if clear_old:
+        if delete_source:
             filepath.unlink()
         return new_file_path
 
     # otherwise we write the file
     get_cache_dir().mkdir(parents=True, exist_ok=True)
     shutil.copy(filepath, new_file_path)
-    if clear_old:
+    if delete_source:
         filepath.unlink()
     return new_file_path
 
 
-def store(filepath: Path, *, overwrite: bool = False, clear_old: bool = False) -> Path:
+def store(filepath: Path, *, overwrite: bool = False, delete_source: bool = False) -> Path:
     """
     Store an engine file in the trtutils engine cache.
 
@@ -210,9 +210,9 @@ def store(filepath: Path, *, overwrite: bool = False, clear_old: bool = False) -
     overwrite : bool, optional
         Whether or not to overwrite an existing file with the same name.
         By default False, will keep the older version.
-    clear_old : bool, optional
-        Whether or not to automatically clear the original file.
-        By default, False, will not remove original (old) file.
+    delete_source : bool, optional
+        Whether or not to delete the source file after storing.
+        By default, False.
 
     Returns
     -------
@@ -220,7 +220,7 @@ def store(filepath: Path, *, overwrite: bool = False, clear_old: bool = False) -
         The new path of the file in the cache.
 
     """
-    return store_file(filepath, overwrite=overwrite, clear_old=clear_old)
+    return store_file(filepath, overwrite=overwrite, delete_source=delete_source)
 
 
 def remove_file(filename: str, extension: str = "engine") -> None:
@@ -275,7 +275,9 @@ def query_timing_cache() -> tuple[bool, Path]:
     return query_file("global", extension="cache")
 
 
-def store_timing_cache(filepath: Path, *, overwrite: bool = False, clear_old: bool = False) -> Path:
+def store_timing_cache(
+    filepath: Path, *, overwrite: bool = False, delete_source: bool = False
+) -> Path:
     """
     Store the global timing cache in the cache directory.
 
@@ -286,9 +288,9 @@ def store_timing_cache(filepath: Path, *, overwrite: bool = False, clear_old: bo
     overwrite : bool, optional
         Whether or not to overwrite an existing global timing cache.
         By default False, will keep the older version.
-    clear_old : bool, optional
-        Whether or not to automatically clear the original file.
-        By default, False, will not remove original (old) file.
+    delete_source : bool, optional
+        Whether or not to delete the source file after storing.
+        By default, False.
 
     Returns
     -------
@@ -297,7 +299,7 @@ def store_timing_cache(filepath: Path, *, overwrite: bool = False, clear_old: bo
 
     """
     return store_file(
-        filepath, cache_filename="global.cache", overwrite=overwrite, clear_old=clear_old
+        filepath, cache_filename="global.cache", overwrite=overwrite, delete_source=delete_source
     )
 
 
@@ -325,4 +327,4 @@ def save_timing_cache_to_global(timing_cache_obj: _TimingCache, *, overwrite: bo
     with tempfile.NamedTemporaryFile(delete=False, suffix=".cache") as tmp_file:
         tmp_path = Path(tmp_file.name)
         tmp_path.write_bytes(serialized_cache)
-        return store_timing_cache(tmp_path, overwrite=overwrite, clear_old=True)
+        return store_timing_cache(tmp_path, overwrite=overwrite, delete_source=True)

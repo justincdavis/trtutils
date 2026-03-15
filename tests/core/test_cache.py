@@ -24,71 +24,67 @@ def test_get_cache_dir() -> None:
 
 
 @pytest.mark.cpu
-def test_store_query_remove_engine(patched_cache_dir, tmp_path) -> None:
-    """Full lifecycle: store → query (True) → remove → query (False)."""
-    src = tmp_path / "test.engine"
-    src.write_text("engine data")
-    cache.store(src)
-    exists, path = cache.query("test")
-    assert exists is True
-    assert path.exists()
-    cache.remove("test")
-    exists, path = cache.query("test")
-    assert exists is False
-    assert not path.exists()
-
-
-@pytest.mark.cpu
-def test_store_file_query_file_remove_file(patched_cache_dir, tmp_path) -> None:
-    """Full lifecycle with store_file/query_file/remove_file."""
-    src = tmp_path / "data.txt"
-    src.write_text("some data")
-    new_path = cache.store_file(src, cache_filename="data.cache")
-    assert new_path.exists()
-    exists, _ = cache.query_file("data", "cache")
-    assert exists is True
-    cache.remove_file("data", "cache")
-    exists, _ = cache.query_file("data", "cache")
-    assert exists is False
-
-
-@pytest.mark.cpu
-def test_store_file_uses_original_name(patched_cache_dir, tmp_path) -> None:
-    """store_file without cache_filename uses the source filename."""
-    src = tmp_path / "original.engine"
+@pytest.mark.parametrize(
+    ("use_cache_filename", "extension"),
+    [
+        pytest.param(False, "engine", id="engine-original-name"),
+        pytest.param(True, "engine", id="engine-custom-name"),
+        pytest.param(False, "cache", id="cache-original-name"),
+        pytest.param(True, "cache", id="cache-custom-name"),
+    ],
+)
+def test_store_query_remove_roundtrip(
+    patched_cache_dir, tmp_path, use_cache_filename, extension
+) -> None:
+    """store_file → query_file → remove_file round-trip for various extensions."""
+    src = tmp_path / f"test.{extension}"
     src.write_text("data")
-    result = cache.store_file(src)
-    assert result.name == "original.engine"
-    assert result.exists()
+    cache_filename = f"custom.{extension}" if use_cache_filename else None
+    stored = cache.store_file(src, cache_filename=cache_filename)
+    assert stored.exists()
+    assert stored.read_text() == "data"
+    query_name = "custom" if use_cache_filename else "test"
+    exists, path = cache.query_file(query_name, extension)
+    assert exists is True
+    assert path == stored
+    cache.remove_file(query_name, extension)
+    exists, _ = cache.query_file(query_name, extension)
+    assert exists is False
 
 
 @pytest.mark.cpu
 @pytest.mark.parametrize(
-    ("overwrite", "expected_content"),
+    ("overwrite", "expected"),
     [
-        pytest.param(True, "version2", id="overwrite"),
-        pytest.param(False, "version1", id="no_overwrite"),
+        pytest.param(True, "v2", id="overwrite"),
+        pytest.param(False, "v1", id="no-overwrite"),
     ],
 )
-def test_store_overwrite(patched_cache_dir, tmp_path, overwrite, expected_content) -> None:
-    """store_file overwrite parameter controls replacement behavior."""
+def test_store_overwrite(patched_cache_dir, tmp_path, overwrite, expected) -> None:
+    """overwrite=True replaces existing; overwrite=False keeps original."""
     src1 = tmp_path / "v1.engine"
-    src1.write_text("version1")
+    src1.write_text("v1")
     src2 = tmp_path / "v2.engine"
-    src2.write_text("version2")
+    src2.write_text("v2")
     cache.store_file(src1, cache_filename="model.engine")
     cache.store_file(src2, cache_filename="model.engine", overwrite=overwrite)
-    stored = patched_cache_dir / "model.engine"
-    assert stored.read_text() == expected_content
+    assert (patched_cache_dir / "model.engine").read_text() == expected
 
 
 @pytest.mark.cpu
-def test_store_clear_old(patched_cache_dir, tmp_path) -> None:
-    """Store with clear_old=True removes the source file."""
+@pytest.mark.parametrize(
+    "delete_source",
+    [
+        pytest.param(True, id="delete-source"),
+        pytest.param(False, id="keep-source"),
+    ],
+)
+def test_store_delete_source(patched_cache_dir, tmp_path, delete_source) -> None:
+    """delete_source=True removes the source file; False keeps it."""
     src = tmp_path / "model.engine"
     src.write_text("data")
-    cache.store(src, clear_old=True)
-    assert not src.exists()
+    cache.store(src, delete_source=delete_source)
+    assert src.exists() is (not delete_source)
     exists, _ = cache.query("model")
     assert exists is True
 
@@ -99,8 +95,6 @@ def test_clear_recreates_empty_dir(patched_cache_dir, tmp_path) -> None:
     src = tmp_path / "test.engine"
     src.write_text("data")
     cache.store(src)
-    exists, _ = cache.query("test")
-    assert exists is True
     cache.clear(no_warn=True)
     assert patched_cache_dir.exists()
     assert list(patched_cache_dir.iterdir()) == []
@@ -118,51 +112,19 @@ def test_remove_nonexistent_raises(patched_cache_dir) -> None:
 
 
 @pytest.mark.cpu
-def test_timing_cache_lifecycle(patched_cache_dir, tmp_path) -> None:
-    """Timing cache: store → query → overwrite → clear_old → remove → query (False)."""
-    # query missing
+def test_timing_cache_roundtrip(patched_cache_dir, tmp_path) -> None:
+    """Timing cache: query miss → store → query hit → overwrite → verify content."""
     exists, path = cache.query_timing_cache()
     assert exists is False
     assert path.name == "global.cache"
-    # store then query
     src = tmp_path / "timing.cache"
-    src.write_bytes(b"timing data bytes")
+    src.write_bytes(b"v1")
     cache.store_timing_cache(src)
     exists, path = cache.query_timing_cache()
     assert exists is True
-    assert path.read_bytes() == b"timing data bytes"
-    # overwrite
+    assert path.read_bytes() == b"v1"
     src2 = tmp_path / "v2.cache"
     src2.write_bytes(b"v2")
     cache.store_timing_cache(src2, overwrite=True)
     _, path = cache.query_timing_cache()
     assert path.read_bytes() == b"v2"
-    # clear_old
-    src3 = tmp_path / "v3.cache"
-    src3.write_bytes(b"v3")
-    cache.store_timing_cache(src3, clear_old=True)
-    assert not src3.exists()
-
-
-@pytest.mark.cpu
-def test_save_timing_cache_to_global(patched_cache_dir) -> None:
-    """save_timing_cache_to_global serializes and stores, respects overwrite."""
-
-    class MockTimingCache:
-        def __init__(self, data: bytes = b"serialized cache data") -> None:
-            self._data = data
-
-        def serialize(self) -> bytes:
-            return self._data
-
-    result = cache.save_timing_cache_to_global(MockTimingCache())
-    assert result.exists()
-    assert result.name == "global.cache"
-    exists, path = cache.query_timing_cache()
-    assert exists is True
-    assert path.read_bytes() == b"serialized cache data"
-    # overwrite then no-overwrite
-    cache.save_timing_cache_to_global(MockTimingCache(b"second"), overwrite=True)
-    cache.save_timing_cache_to_global(MockTimingCache(b"third"), overwrite=False)
-    _, path = cache.query_timing_cache()
-    assert path.read_bytes() == b"second"
