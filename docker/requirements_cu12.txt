@@ -1,2 +1,2 @@
-cuda-python==12.9.5
+cuda-python==13.0.3
 tensorrt_cu12==10.15.1.29
