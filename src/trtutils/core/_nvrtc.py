@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -19,7 +19,6 @@ with contextlib.suppress(Exception):
 from trtutils._log import LOG
 
 from ._cuda import cuda_call
-from ._lock import MEM_ALLOC_LOCK, NVRTC_LOCK
 
 
 @lru_cache(maxsize=1)
@@ -170,10 +169,9 @@ def compile_kernel(
 
     # compile the kernel
     try:
-        with MEM_ALLOC_LOCK, NVRTC_LOCK:
-            prog = nvrtc_call(
-                nvrtc.nvrtcCreateProgram(kernel_bytes, kernel_name_bytes, 0, [], []),
-            )
+        prog = nvrtc_call(
+            nvrtc.nvrtcCreateProgram(kernel_bytes, kernel_name_bytes, 0, [], []),
+        )
     except RuntimeError as err:
         if "Failed to dlopen libnvrtc" in str(err):
             err_msg = str(err)
@@ -188,12 +186,9 @@ def compile_kernel(
         for opt in opts:
             opts_with_cuda_include_dir.append(opt.encode())
 
-    with MEM_ALLOC_LOCK, NVRTC_LOCK:
-        nvrtc_call(
-            nvrtc.nvrtcCompileProgram(
-                prog, len(opts_with_cuda_include_dir), opts_with_cuda_include_dir
-            )
-        )
+    nvrtc_call(
+        nvrtc.nvrtcCompileProgram(prog, len(opts_with_cuda_include_dir), opts_with_cuda_include_dir)
+    )
 
     # generate the actual kernel ptx
     ptx_size = nvrtc_call(nvrtc.nvrtcGetPTXSize(prog))
