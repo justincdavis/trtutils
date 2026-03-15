@@ -209,6 +209,8 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
             Enable INT8 quantization.
         - fp16 : bool
             Enable FP16 precision.
+        - fp8 : bool
+            Enable FP8 precision.
         - calibration_dir : str or None
             Directory with calibration images for INT8.
         - input_shape : tuple[int, int, int] or None
@@ -319,6 +321,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
         reject_empty_algorithms=args.reject_empty_algorithms,
         ignore_timing_mismatch=args.ignore_timing_mismatch,
         fp16=args.fp16,
+        fp8=args.fp8,
         int8=args.int8,
         hooks=hooks,
         cache=args.cache,
@@ -352,6 +355,100 @@ def _build_yolo(args: SimpleNamespace) -> None:
 
     """
     _build(args, add_yolo_hook=True)
+
+
+def _quantize_onnx(args: SimpleNamespace) -> None:
+    """
+    Quantize an ONNX model using NVIDIA modelopt.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - onnx : str
+            Path to the ONNX model file.
+        - output : str
+            Path to save the quantized ONNX model.
+        - calibration_data : str
+            Path to the calibration .npy file.
+        - quantize_mode : str
+            Quantization mode (int4, int8, fp8).
+        - calibration_method : str
+            Calibration method (max, entropy, percentile, mse).
+        - calibrate_per_node : bool
+            Whether to calibrate per node.
+        - verbose : bool
+            Enable verbose output.
+
+    """
+    trtutils.builder.quantize.quantize_onnx(
+        onnx_path=args.onnx,
+        output_path=args.output,
+        calibration_data=args.calibration_data,
+        quantize_mode=args.quantize_mode,
+        calibration_method=args.calibration_method,
+        calibrate_per_node=args.calibrate_per_node,
+        verbose=args.verbose,
+    )
+
+
+def _generate_calibration(args: SimpleNamespace) -> None:
+    """
+    Generate calibration data from images and save to a .npy file.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - calibration_dir : str
+            Directory containing calibration images.
+        - input_shape : tuple[int, int, int]
+            Input shape in HWC format.
+        - input_dtype : str
+            Input data type.
+        - batch_size : int
+            Batch size for calibration.
+        - data_order : str
+            Data ordering (NCHW or NHWC).
+        - max_images : int or None
+            Maximum images to use.
+        - resize_method : str
+            Image resize method.
+        - input_scale : list[float]
+            Input value range scaling.
+        - output : str
+            Path to save the calibration .npy file.
+        - verbose : bool
+            Enable verbose output.
+
+    Raises
+    ------
+    ValueError
+        If required calibration parameters are missing.
+
+    """
+    if args.calibration_dir is None:
+        err_msg = "Calibration directory (--calibration_dir) is required."
+        raise ValueError(err_msg)
+    if args.input_shape is None:
+        err_msg = "Input shape (--input_shape) is required."
+        raise ValueError(err_msg)
+    if args.input_dtype is None:
+        err_msg = "Input dtype (--input_dtype) is required."
+        raise ValueError(err_msg)
+
+    batcher = trtutils.builder.ImageBatcher(
+        image_dir=args.calibration_dir,
+        shape=args.input_shape,
+        dtype=np.dtype(args.input_dtype).type,
+        batch_size=args.batch_size,
+        order=args.data_order,
+        max_images=args.max_images,
+        resize_method=args.resize_method,
+        input_scale=tuple(args.input_scale) if args.input_scale is not None else None,  # type: ignore[arg-type]
+        verbose=args.verbose,
+    )
+    batcher.save_calibration_data(args.output, verbose=args.verbose)
 
 
 def _can_run_on_dla(args: SimpleNamespace) -> None:
@@ -504,6 +601,7 @@ def _build_dla(args: SimpleNamespace) -> None:
         prefer_precision_constraints=args.prefer_precision_constraints,
         reject_empty_algorithms=args.reject_empty_algorithms,
         ignore_timing_mismatch=args.ignore_timing_mismatch,
+        fp8=args.fp8,
         cache=args.cache,
         verbose=args.verbose,
     )
@@ -976,6 +1074,7 @@ def _profile(args: SimpleNamespace) -> None:
         "median": result.total_time.median,
         "min": result.total_time.min,
         "max": result.total_time.max,
+        "raw": [],
     }
     if args.save_raw:
         total_time_dict["raw"] = result.total_time.raw
@@ -988,6 +1087,7 @@ def _profile(args: SimpleNamespace) -> None:
             "median": layer.median,
             "min": layer.min,
             "max": layer.max,
+            "raw": [],
         }
         if args.save_raw:
             layer_dict["raw"] = layer.raw
@@ -1164,6 +1264,10 @@ def _main() -> None:
         Build a TensorRT engine from an ONNX model.
     build_yolo
         Build a TensorRT engine with YOLO NMS injection.
+    quantize
+        Quantize an ONNX model using NVIDIA modelopt.
+    generate_calibration
+        Generate calibration data from images and save to .npy.
     can_run_on_dla
         Evaluate DLA compatibility of a model.
     build_dla
@@ -1407,6 +1511,11 @@ def _main() -> None:
         help="Quantize the engine to FP16 precision.",
     )
     build_device_parser.add_argument(
+        "--fp8",
+        action="store_true",
+        help="Enable FP8 precision. Requires compute capability >= 8.9.",
+    )
+    build_device_parser.add_argument(
         "--int8",
         action="store_true",
         help="Quantize the engine to INT8 precision.",
@@ -1529,6 +1638,65 @@ def _main() -> None:
     )
     build_yolo_parser.set_defaults(func=_build_yolo)
 
+    # quantize parser
+    quantize_parser = subparsers.add_parser(
+        "quantize",
+        help="Quantize an ONNX model using NVIDIA modelopt.",
+        parents=[general_parser],
+    )
+    quantize_parser.add_argument(
+        "--onnx",
+        "-o",
+        required=True,
+        help="Path to the ONNX model file.",
+    )
+    quantize_parser.add_argument(
+        "--output",
+        "-out",
+        required=True,
+        help="Path to save the quantized ONNX model.",
+    )
+    quantize_parser.add_argument(
+        "--calibration_data",
+        "-cf",
+        required=True,
+        help="Path to the calibration .npy file.",
+    )
+    quantize_parser.add_argument(
+        "--quantize_mode",
+        "-qm",
+        choices=["int4", "int8", "fp8"],
+        default="int8",
+        help="Quantization mode. Default is int8.",
+    )
+    quantize_parser.add_argument(
+        "--calibration_method",
+        "-cm",
+        choices=["max", "entropy", "percentile", "mse"],
+        default="max",
+        help="Calibration method. Default is max.",
+    )
+    quantize_parser.add_argument(
+        "--calibrate_per_node",
+        action="store_true",
+        help="Calibrate per node instead of per tensor.",
+    )
+    quantize_parser.set_defaults(func=_quantize_onnx)
+
+    # generate_calibration parser
+    generate_calibration_parser = subparsers.add_parser(
+        "generate_calibration",
+        help="Generate calibration data from images and save to .npy.",
+        parents=[general_parser, calibration_parser],
+    )
+    generate_calibration_parser.add_argument(
+        "--output",
+        "-out",
+        required=True,
+        help="Path to save the calibration .npy file.",
+    )
+    generate_calibration_parser.set_defaults(func=_generate_calibration)
+
     # can_run_on_dla parser
     can_run_on_dla_parser = subparsers.add_parser(
         "can_run_on_dla",
@@ -1570,6 +1738,11 @@ def _main() -> None:
         type=int,
         default=20,
         help="Minimum number of layers in a chunk to be assigned to DLA. Default is 20.",
+    )
+    build_dla_parser.add_argument(
+        "--fp8",
+        action="store_true",
+        help="Enable FP8 precision for GPU layers. Requires compute capability >= 8.9.",
     )
     build_dla_parser.set_defaults(func=_build_dla)
 
