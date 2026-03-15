@@ -1,7 +1,8 @@
 version: 2
 updates:
   - package-ecosystem: "pip"
-    directories:
-      - "/"
+    directory: "/"
     schedule:
       interval: "daily"
+    exclude-paths:
+      - "**/requirements*.txt"
