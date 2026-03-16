@@ -17,7 +17,6 @@ from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
 from trtutils.core._memory import (
-    memcpy_device_to_device_async,
     memcpy_device_to_host_async,
     memcpy_host_to_device_async,
 )
@@ -339,6 +338,13 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 "validate_input": f"preproc::validate_input [{self._tag}]",
                 "reallocate_input": f"preproc::reallocate_input [{self._tag}]",
                 "allocate_imagenet_buffers": f"preproc::allocate_imagenet_buffers [{self._tag}]",
+                "resize_single": f"preproc::resize_single_image [{self._tag}]",
+                "resize_homogeneous": f"preproc::resize_homogeneous_batch [{self._tag}]",
+                "resize_heterogeneous": f"preproc::resize_heterogeneous_batch [{self._tag}]",
+                "reallocate_batch_input": f"preproc::reallocate_batch_input [{self._tag}]",
+                "pack_batch_buffer": f"preproc::pack_batch_buffer [{self._tag}]",
+                "stream_sync": f"preproc::stream_sync [{self._tag}]",
+                "copy_output": f"preproc::copy_output [{self._tag}]",
             }
         )
 
@@ -409,23 +415,24 @@ class GPUImagePreprocessor(ImagePreprocessor):
         # Track current batch size for buffer reallocation
         self._current_batch_size: int = 1
 
-        # Single-image resize output buffer (used before D2D copy to batch buffer)
-        dummy_resize_output: np.ndarray = np.zeros(
-            (self._o_shape[1], self._o_shape[0], 3),
+        # Cache for _create_resize_args: avoid repacking kernel args for same resolution
+        self._cached_resize_key: tuple[int, int, str] | None = None
+        self._cached_resize_result: (
+            tuple[Kernel, tuple[float, float], tuple[float, float], tuple[int, ...]] | None
+        ) = None
+
+        # Homogeneous-batch staging buffer: one contiguous H2D for same-sized images.
+        self._allocated_batch_input_shape: tuple[int, int, int, int] = (1, 1080, 1920, 3)
+        dummy_batch_input: np.ndarray = np.zeros(
+            self._allocated_batch_input_shape,
             dtype=np.uint8,
         )
-        self._resize_output_binding = create_binding(
-            dummy_resize_output,
+        self._batch_input_binding = create_binding(
+            dummy_batch_input,
             is_input=True,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
-
-        # Cache for _create_resize_args: avoid repacking kernel args for same resolution
-        self._cached_resize_key: tuple[int, int, str] | None = None
-        self._cached_resize_result: (
-            tuple[Kernel, np.ndarray, tuple[float, float], tuple[float, float]] | None
-        ) = None
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # gpu_init
@@ -442,7 +449,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         with contextlib.suppress(AttributeError):
             del self._input_binding
         with contextlib.suppress(AttributeError):
-            del self._resize_output_binding
+            del self._batch_input_binding
 
     def warmup(self: Self) -> None:
         """
@@ -634,6 +641,24 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         return resize
 
+    def _reallocate_batch_input(
+        self: Self,
+        batch_size: int,
+        height: int,
+        width: int,
+    ) -> None:
+        """Reallocate homogeneous batch staging buffer when shape changes."""
+        requested_shape = (batch_size, height, width, _COLOR_CHANNELS)
+        if requested_shape == self._allocated_batch_input_shape:
+            return
+        self._allocated_batch_input_shape = requested_shape
+        self._batch_input_binding = create_binding(
+            np.zeros(requested_shape, dtype=np.uint8),
+            is_input=True,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+        )
+
     @abstractmethod
     def direct_preproc(
         self: Self,
@@ -770,15 +795,23 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 self._stream,
             )
 
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["stream_sync"])
         stream_synchronize(self._stream)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # stream_sync
 
         if no_copy:
             result = (output_binding.host_allocation[:batch_size], ratios_list, padding_list)
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # gpu_preprocess
             return result
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["copy_output"])
         result = (output_binding.host_allocation[:batch_size].copy(), ratios_list, padding_list)
         if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # copy_output
             nvtx.pop_range()  # gpu_preprocess
         return result
 
@@ -864,7 +897,11 @@ class GPUImagePreprocessor(ImagePreprocessor):
         height: int,
         width: int,
         method: str,
+        input_ptr: int,
+        output_ptr: int,
         *,
+        input_stride: int = 0,
+        output_stride: int = 0,
         verbose: bool | None = None,
     ) -> tuple[Kernel, np.ndarray, tuple[float, float], tuple[float, float]]:
         """
@@ -878,6 +915,14 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Input image width.
         method : str
             Resize method ('letterbox' or 'linear').
+        input_ptr : int
+            Device pointer to source image data.
+        output_ptr : int
+            Device pointer to destination image data.
+        input_stride : int, optional
+            Bytes between batch elements in source buffer. 0 means single image.
+        output_stride : int, optional
+            Bytes between batch elements in destination buffer. 0 means single image.
         verbose : bool, optional
             Enable verbose logging.
 
@@ -890,73 +935,225 @@ class GPUImagePreprocessor(ImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["create_resize_args"])
 
-        # Check cache: for constant-resolution input, args are identical every frame
+        # Check cache: for constant-resolution input, geometry is identical every frame.
         cache_key = (height, width, method)
         if cache_key == self._cached_resize_key and self._cached_resize_result is not None:
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # create_resize_args
-            return self._cached_resize_result
-
-        if verbose:
-            LOG.debug(f"{self._tag}: create_resize_args")
-
-        o_width, o_height = self._o_shape
-        scale_x = o_width / width
-        scale_y = o_height / height
-
-        if method == "letterbox":
-            if verbose:
-                LOG.debug(f"{self._tag}: Making letterbox args")
-
-            scale = min(scale_x, scale_y)
-            new_width = int(width * scale)
-            new_height = int(height * scale)
-            padding_x = int((o_width - new_width) / 2)
-            padding_y = int((o_height - new_height) / 2)
-            ratios = (scale, scale)
-            padding = (padding_x, padding_y)
-
-            resize_kernel = self._letterbox_kernel
-            resize_args = resize_kernel.create_args(
-                self._input_binding.allocation,
-                self._resize_output_binding.allocation,
-                width,
-                height,
-                o_width,
-                o_height,
-                padding_x,
-                padding_y,
-                new_width,
-                new_height,
-                verbose=verbose,
-            )
+            resize_kernel, ratios, padding, geometry_args = self._cached_resize_result
         else:
             if verbose:
-                LOG.debug(f"{self._tag}: Making linear args")
+                LOG.debug(f"{self._tag}: create_resize_args")
 
-            ratios = (scale_x, scale_y)
-            padding = (0, 0)
+            o_width, o_height = self._o_shape
+            scale_x = o_width / width
+            scale_y = o_height / height
 
-            resize_kernel = self._linear_kernel
-            resize_args = resize_kernel.create_args(
-                self._input_binding.allocation,
-                self._resize_output_binding.allocation,
-                width,
-                height,
-                o_width,
-                o_height,
-                verbose=verbose,
-            )
+            if method == "letterbox":
+                if verbose:
+                    LOG.debug(f"{self._tag}: Making letterbox args")
 
-        # Store in cache
-        result = (resize_kernel, resize_args, ratios, padding)
-        self._cached_resize_key = cache_key
-        self._cached_resize_result = result
+                scale = min(scale_x, scale_y)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                padding_x = int((o_width - new_width) / 2)
+                padding_y = int((o_height - new_height) / 2)
+                ratios = (scale, scale)
+                padding = (padding_x, padding_y)
+                resize_kernel = self._letterbox_kernel
+                geometry_args = (
+                    width,
+                    height,
+                    o_width,
+                    o_height,
+                    padding_x,
+                    padding_y,
+                    new_width,
+                    new_height,
+                )
+            else:
+                if verbose:
+                    LOG.debug(f"{self._tag}: Making linear args")
+
+                ratios = (scale_x, scale_y)
+                padding = (0, 0)
+                resize_kernel = self._linear_kernel
+                geometry_args = (
+                    width,
+                    height,
+                    o_width,
+                    o_height,
+                )
+
+            self._cached_resize_key = cache_key
+            self._cached_resize_result = (resize_kernel, ratios, padding, geometry_args)
+
+        resize_args = resize_kernel.create_args(
+            input_ptr,
+            output_ptr,
+            *geometry_args,
+            input_stride,
+            output_stride,
+            verbose=verbose,
+        )
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # create_resize_args
 
-        return result
+        return resize_kernel, resize_args, ratios, padding
+
+    def _resize_single_image_to_batch(
+        self: Self,
+        image: np.ndarray,
+        batch_buffer_ptr: int,
+        resize_method: str,
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[tuple[float, float], tuple[float, float]]:
+        """Resize a single image directly into the batch destination."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["resize_single"])
+
+        height, width = image.shape[:2]
+        resize_kernel, resize_args, ratios, padding = self._create_resize_args(
+            height,
+            width,
+            resize_method,
+            self._input_binding.allocation,
+            batch_buffer_ptr,
+            verbose=verbose,
+        )
+        self._update_extra_buffers(height, width, ratios)
+        if self._pagelocked_mem and self._unified_mem:
+            np.copyto(self._input_binding.host_allocation, image)
+        else:
+            memcpy_host_to_device_async(
+                self._input_binding.allocation,
+                image,
+                self._stream,
+            )
+        resize_kernel.call(
+            self._num_blocks,
+            self._num_threads,
+            self._stream,
+            resize_args,
+        )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # resize_single
+
+        return ratios, padding
+
+    def _resize_homogeneous_batch(
+        self: Self,
+        images: list[np.ndarray],
+        batch_buffer_ptr: int,
+        resize_method: str,
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        """Resize same-sized images with one H2D copy and one kernel launch."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["resize_homogeneous"])
+
+        batch_size = len(images)
+        height, width = images[0].shape[:2]
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["reallocate_batch_input"])
+        self._reallocate_batch_input(batch_size, height, width)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # reallocate_batch_input
+            nvtx.push_range(self._nvtx_tags["pack_batch_buffer"])
+
+        # Pack host batch buffer once; avoid np.stack allocation in hot path.
+        for i, image in enumerate(images):
+            np.copyto(self._batch_input_binding.host_allocation[i], image)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # pack_batch_buffer
+
+        if not (self._pagelocked_mem and self._unified_mem):
+            memcpy_host_to_device_async(
+                self._batch_input_binding.allocation,
+                self._batch_input_binding.host_allocation,
+                self._stream,
+            )
+
+        o_width, o_height = self._o_shape
+        in_stride = height * width * _COLOR_CHANNELS
+        out_stride = o_height * o_width * _COLOR_CHANNELS
+        resize_kernel, resize_args, ratios, padding = self._create_resize_args(
+            height,
+            width,
+            resize_method,
+            self._batch_input_binding.allocation,
+            batch_buffer_ptr,
+            input_stride=in_stride,
+            output_stride=out_stride,
+            verbose=verbose,
+        )
+        self._update_extra_buffers(height, width, ratios)
+        resize_kernel.call(
+            (self._num_blocks[0], self._num_blocks[1], batch_size),
+            self._num_threads,
+            self._stream,
+            resize_args,
+        )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # resize_homogeneous
+
+        return [ratios] * batch_size, [padding] * batch_size
+
+    def _resize_heterogeneous_batch(
+        self: Self,
+        images: list[np.ndarray],
+        batch_buffer_ptr: int,
+        resize_method: str,
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        """Resize mixed-size images with direct writes to batch output."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["resize_heterogeneous"])
+
+        ratios_list: list[tuple[float, float]] = []
+        padding_list: list[tuple[float, float]] = []
+        o_width, o_height = self._o_shape
+        single_image_bytes = o_height * o_width * _COLOR_CHANNELS
+
+        for i, image in enumerate(images):
+            self._validate_input(image, resize_method, verbose=verbose)
+            height, width = image.shape[:2]
+            resize_kernel, resize_args, ratios, padding = self._create_resize_args(
+                height,
+                width,
+                resize_method,
+                self._input_binding.allocation,
+                batch_buffer_ptr + (i * single_image_bytes),
+                verbose=verbose,
+            )
+            if i == 0:
+                self._update_extra_buffers(height, width, ratios)
+            if self._pagelocked_mem and self._unified_mem:
+                np.copyto(self._input_binding.host_allocation, image)
+            else:
+                memcpy_host_to_device_async(
+                    self._input_binding.allocation,
+                    image,
+                    self._stream,
+                )
+            resize_kernel.call(
+                self._num_blocks,
+                self._num_threads,
+                self._stream,
+                resize_args,
+            )
+            ratios_list.append(ratios)
+            padding_list.append(padding)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # resize_heterogeneous
+
+        return ratios_list, padding_list
 
     def _resize_images_to_batch(
         self: Self,
@@ -989,60 +1186,47 @@ class GPUImagePreprocessor(ImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["resize_images_to_batch"])
 
-        ratios_list: list[tuple[float, float]] = []
-        padding_list: list[tuple[float, float]] = []
+        if len(images) == 0:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # resize_images_to_batch
+            return [], []
 
-        o_width, o_height = self._o_shape
-        single_image_bytes = o_height * o_width * 3  # uint8
-
-        for i, image in enumerate(images):
-            # Validate input and get resize method
-            resize_method = self._validate_input(image, resize, verbose=verbose)
-
-            # Create resize arguments
-            height, width = image.shape[:2]
-            resize_kernel, resize_args, ratios, padding = self._create_resize_args(
-                height,
-                width,
+        resize_method = self._validate_input(images[0], resize, verbose=verbose)
+        if len(images) == 1:
+            ratios, padding = self._resize_single_image_to_batch(
+                images[0],
+                batch_buffer_ptr,
                 resize_method,
                 verbose=verbose,
             )
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # resize_images_to_batch
+            return [ratios], [padding]
 
-            if verbose:
-                LOG.debug(f"Image {i}: Ratios: {ratios}, Padding: {padding}")
+        first_height, first_width = images[0].shape[:2]
+        homogeneous = True
+        for image in images[1:]:
+            if image.ndim != _IMAGE_DIMENSIONS or image.shape[2] != _COLOR_CHANNELS:
+                err_msg = f"{self._tag}: Image must be (height, width, channels=3)"
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # resize_images_to_batch
+                raise ValueError(err_msg)
+            if image.shape[:2] != (first_height, first_width):
+                homogeneous = False
 
-            ratios_list.append(ratios)
-            padding_list.append(padding)
-
-            # Update extra GPU buffers for input schemas (use first image's values)
-            if i == 0:
-                self._update_extra_buffers(height, width, ratios)
-
-            # Copy image to input binding
-            if self._pagelocked_mem and self._unified_mem:
-                np.copyto(self._input_binding.host_allocation, image)
-            else:
-                memcpy_host_to_device_async(
-                    self._input_binding.allocation,
-                    image,
-                    self._stream,
-                )
-
-            # Run resize kernel (outputs to single-image resize_output_binding)
-            resize_kernel.call(
-                self._num_blocks,
-                self._num_threads,
-                self._stream,
-                resize_args,
+        if homogeneous:
+            ratios_list, padding_list = self._resize_homogeneous_batch(
+                images,
+                batch_buffer_ptr,
+                resize_method,
+                verbose=verbose,
             )
-
-            # D2D copy resized image to batch buffer at correct offset
-            offset_bytes = i * single_image_bytes
-            memcpy_device_to_device_async(
-                batch_buffer_ptr + offset_bytes,
-                self._resize_output_binding.allocation,
-                single_image_bytes,
-                self._stream,
+        else:
+            ratios_list, padding_list = self._resize_heterogeneous_batch(
+                images,
+                batch_buffer_ptr,
+                resize_method,
+                verbose=verbose,
             )
 
         if FLAGS.NVTX_ENABLED:
