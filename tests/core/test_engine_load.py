@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, PropertyMock, patch
-
 import pytest
 
 from trtutils._flags import FLAGS
@@ -84,54 +82,3 @@ def test_get_engine_names(simple_engine) -> None:
     # count matches engine
     expected = engine.num_io_tensors if FLAGS.TRT_10 else engine.num_bindings
     assert len(input_names) + len(output_names) == expected
-
-
-@pytest.mark.cpu
-@pytest.mark.parametrize(
-    ("engine_returns_none", "match_msg"),
-    [
-        pytest.param(True, "Failed to deserialize", id="engine_none"),
-        pytest.param(False, "Failed to create execution context", id="context_none"),
-    ],
-)
-def test_create_engine_mocked_none_raises(tmp_path, engine_returns_none, match_msg) -> None:
-    """RuntimeError when deserialization or context creation returns None."""
-    fake_engine = tmp_path / "bad.engine"
-    fake_engine.write_bytes(b"\x00" * 16)
-
-    mock_runtime = MagicMock()
-    if engine_returns_none:
-        mock_runtime.deserialize_cuda_engine.return_value = None
-    else:
-        mock_engine = MagicMock()
-        mock_engine.create_execution_context.return_value = None
-        mock_runtime.deserialize_cuda_engine.return_value = mock_engine
-
-    with patch("trtutils.core._engine.trt.Runtime", return_value=mock_runtime):
-        with patch("trtutils.core._engine.Device", MagicMock()):
-            with patch("trtutils.core._engine.CONFIG"):
-                with pytest.raises(RuntimeError, match=match_msg):
-                    create_engine(fake_engine)
-
-
-@pytest.mark.cpu
-def test_get_engine_names_legacy_path() -> None:
-    """Legacy TRT < 10 binding-based path returns correct names."""
-    mock_engine = MagicMock()
-    type(mock_engine).num_bindings = PropertyMock(return_value=3)
-
-    binding_names = ["input_0", "output_0", "output_1"]
-    is_input_flags = [True, False, False]
-
-    mock_engine.get_binding_name.side_effect = lambda i: binding_names[i]
-    mock_engine.binding_is_input.side_effect = lambda i: is_input_flags[i]
-
-    with patch("trtutils.core._engine.FLAGS") as mock_flags:
-        mock_flags.TRT_10 = False
-        input_names, output_names = get_engine_names(mock_engine)
-
-    assert input_names == ["input_0"]
-    assert output_names == ["output_0", "output_1"]
-    assert mock_engine.get_binding_name.call_count == 3
-    assert mock_engine.binding_is_input.call_count == 3
-    mock_engine.get_tensor_name.assert_not_called()

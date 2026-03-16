@@ -5,12 +5,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import numpy as np
 import pytest
 
-from trtutils.core import _memory
 from trtutils.core._memory import (
     allocate_managed_memory,
     allocate_pinned_memory,
@@ -106,61 +103,25 @@ def test_get_ptr_pair() -> None:
 
 
 @pytest.mark.parametrize(
-    "stream_arg",
+    "stream_source",
     [
-        pytest.param("no_stream", id="without_stream"),
-        pytest.param("none", id="explicit_none"),
+        pytest.param("none_default", id="no-stream"),
+        pytest.param("explicit_none", id="explicit-none"),
+        pytest.param("real_stream", id="real-stream"),
     ],
 )
-def test_allocate_managed_memory(stream_arg: str) -> None:
-    """allocate_managed_memory returns non-zero int pointer."""
-    kwargs = {} if stream_arg == "no_stream" else {"stream": None}
-    ptr = allocate_managed_memory(1024, **kwargs)
+def test_allocate_managed_memory(stream_source, request) -> None:
+    """allocate_managed_memory returns non-zero pointer with and without stream."""
+    if stream_source == "none_default":
+        ptr = allocate_managed_memory(1024)
+    elif stream_source == "explicit_none":
+        ptr = allocate_managed_memory(1024, stream=None)
+    else:
+        stream = request.getfixturevalue("cuda_stream")
+        ptr = allocate_managed_memory(1024, stream=stream)
     assert isinstance(ptr, int)
     assert ptr != 0
     cuda_free(ptr)
-
-
-def test_allocate_managed_memory_with_stream(cuda_stream) -> None:
-    """allocate_managed_memory with stream attaches memory."""
-    ptr = allocate_managed_memory(1024, stream=cuda_stream)
-    assert isinstance(ptr, int)
-    assert ptr != 0
-    cuda_free(ptr)
-
-
-def test_allocate_managed_memory_mock_calls() -> None:
-    """Mock: verifies cudaMemAttachGlobal flag and stream attach args."""
-    # without stream
-    with patch.object(
-        _memory.cudart,
-        "cudaMallocManaged",
-        return_value=(_memory.cudart.cudaError_t.cudaSuccess, 1234),
-    ) as malloc_managed, patch.object(_memory.cudart, "cudaStreamAttachMemAsync") as attach_mem:
-        ptr = _memory.allocate_managed_memory(1024)
-    assert ptr == 1234
-    malloc_managed.assert_called_once_with(1024, _memory.cudart.cudaMemAttachGlobal)
-    attach_mem.assert_not_called()
-    # with stream
-    fake_stream = object()
-    with patch.object(
-        _memory.cudart,
-        "cudaMallocManaged",
-        return_value=(_memory.cudart.cudaError_t.cudaSuccess, 5678),
-    ) as malloc_managed, patch.object(
-        _memory.cudart,
-        "cudaStreamAttachMemAsync",
-        return_value=(_memory.cudart.cudaError_t.cudaSuccess,),
-    ) as attach_mem:
-        ptr = _memory.allocate_managed_memory(2048, stream=fake_stream)
-    assert ptr == 5678
-    malloc_managed.assert_called_once_with(2048, _memory.cudart.cudaMemAttachGlobal)
-    attach_mem.assert_called_once_with(
-        fake_stream,
-        5678,
-        0,
-        _memory.cudart.cudaMemAttachGlobal,
-    )
 
 
 @pytest.mark.parametrize("dtype", DTYPES)

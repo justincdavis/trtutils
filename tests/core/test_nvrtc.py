@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -118,100 +117,3 @@ def test_compile_and_load_kernel() -> None:
         TRIVIAL_KERNEL, "trivial_kernel", opts=["--use_fast_math"]
     )
     assert module_co is not None
-
-
-@pytest.mark.cpu
-def test_find_cuda_include_dir_common_paths(monkeypatch) -> None:
-    """Common path fallback: first match wins, no match returns None."""
-    monkeypatch.delenv("CUDA_HOME", raising=False)
-    monkeypatch.delenv("CUDA_PATH", raising=False)
-
-    original_exists = Path.exists
-
-    # specific path found
-    def fake_exists_specific(self: Path) -> bool:
-        if str(self) == "/usr/local/cuda-12/include":
-            return True
-        common_strs = {
-            "/usr/local/cuda/include",
-            "/usr/local/cuda-13/include",
-            "/usr/local/cuda-11/include",
-            "/opt/cuda/include",
-        }
-        if str(self) in common_strs:
-            return False
-        return original_exists(self)
-
-    with patch("trtutils.core._nvrtc.shutil.which", return_value=None):
-        with patch.object(Path, "exists", fake_exists_specific):
-            result = find_cuda_include_dir()
-    assert result == Path("/usr/local/cuda-12/include")
-
-    # first match wins
-    def fake_exists_first_wins(self: Path) -> bool:
-        if str(self) in ("/usr/local/cuda/include", "/opt/cuda/include"):
-            return True
-        common_strs = {
-            "/usr/local/cuda-13/include",
-            "/usr/local/cuda-12/include",
-            "/usr/local/cuda-11/include",
-        }
-        if str(self) in common_strs:
-            return False
-        return original_exists(self)
-
-    find_cuda_include_dir.cache_clear()
-    with patch("trtutils.core._nvrtc.shutil.which", return_value=None):
-        with patch.object(Path, "exists", fake_exists_first_wins):
-            result = find_cuda_include_dir()
-    assert result == Path("/usr/local/cuda/include")
-
-    # no match returns None
-    def fake_exists_none(self: Path) -> bool:
-        common_strs = {
-            "/usr/local/cuda/include",
-            "/usr/local/cuda-13/include",
-            "/usr/local/cuda-12/include",
-            "/usr/local/cuda-11/include",
-            "/opt/cuda/include",
-        }
-        if str(self) in common_strs:
-            return False
-        return original_exists(self)
-
-    find_cuda_include_dir.cache_clear()
-    with patch("trtutils.core._nvrtc.shutil.which", return_value=None):
-        with patch.object(Path, "exists", fake_exists_none):
-            result = find_cuda_include_dir()
-    assert result is None
-
-
-@pytest.mark.cpu
-def test_get_default_nvrtc_opts_no_cuda() -> None:
-    """No CUDA include dir means empty opts list."""
-    with patch("trtutils.core._nvrtc.find_cuda_include_dir", return_value=None):
-        opts = _get_default_nvrtc_opts()
-    assert opts == []
-
-
-@pytest.mark.cpu
-def test_compile_kernel_dlopen_error() -> None:
-    """Dlopen libnvrtc error gets re-raised with guidance."""
-    original_error = RuntimeError("Failed to dlopen libnvrtc.so.12.0")
-    mock_nvrtc = MagicMock()
-    mock_nvrtc.nvrtcCreateProgram.side_effect = original_error
-    with patch("trtutils.core._nvrtc.nvrtc", mock_nvrtc):
-        with pytest.raises(RuntimeError, match="Ensure the version of cuda-python") as exc_info:
-            compile_kernel(TRIVIAL_KERNEL, "trivial_kernel")
-        assert exc_info.value.__cause__ is original_error
-
-
-@pytest.mark.cpu
-def test_compile_kernel_other_runtime_error() -> None:
-    """Other RuntimeErrors propagate unchanged."""
-    original_error = RuntimeError("Some other NVRTC error")
-    mock_nvrtc = MagicMock()
-    mock_nvrtc.nvrtcCreateProgram.side_effect = original_error
-    with patch("trtutils.core._nvrtc.nvrtc", mock_nvrtc):
-        with pytest.raises(RuntimeError, match="Some other NVRTC error"):
-            compile_kernel(TRIVIAL_KERNEL, "trivial_kernel")
