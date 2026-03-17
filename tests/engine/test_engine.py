@@ -39,6 +39,7 @@ def test_init_warmup(engine_path, warmup, expected) -> None:
     del eng
 
 
+@pytest.mark.cuda_graph
 @pytest.mark.parametrize(
     ("backend", "cuda_graph", "expect_enabled"),
     [
@@ -133,6 +134,7 @@ def test_del_no_error(engine_path) -> None:
     del eng
 
 
+@pytest.mark.cuda_graph
 def test_del_with_cuda_graph(engine_path) -> None:
     """Deleting an engine with a captured CUDA graph does not crash."""
     if not FLAGS.EXEC_ASYNC_V3:
