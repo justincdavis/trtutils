@@ -38,7 +38,7 @@ def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
     cuda_call(
         cudart.cudaMemcpy(
             device_ptr,
-            host_arr,
+            host_arr.ctypes.data,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
         ),
@@ -65,7 +65,7 @@ def memcpy_device_to_host(host_arr: np.ndarray, device_ptr: int) -> None:
     # LOG.debug(f"MemcpyDtoH: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpy(
-            host_arr,
+            host_arr.ctypes.data,
             device_ptr,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
@@ -100,7 +100,7 @@ def memcpy_host_to_device_async(
     cuda_call(
         cudart.cudaMemcpyAsync(
             device_ptr,
-            host_arr,
+            host_arr.ctypes.data,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
             stream,
@@ -134,7 +134,7 @@ def memcpy_device_to_host_async(
     # LOG.debug(f"MemcpyDtoH_Async: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpyAsync(
-            host_arr,
+            host_arr.ctypes.data,
             device_ptr,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
@@ -237,7 +237,7 @@ def memcpy_host_to_device_offset(
     cuda_call(
         cudart.cudaMemcpy(
             device_ptr + offset_bytes,
-            host_arr,
+            host_arr.ctypes.data,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
         ),
@@ -273,7 +273,7 @@ def memcpy_host_to_device_offset_async(
     cuda_call(
         cudart.cudaMemcpyAsync(
             device_ptr + offset_bytes,
-            host_arr,
+            host_arr.ctypes.data,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
             stream,
