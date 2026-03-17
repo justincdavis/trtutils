@@ -41,7 +41,7 @@ unfixable = []
 per-file-ignores = {
     "demos/**/*.py" = ["INP001", "T201"],
     "examples/**/*.py" = ["INP001", "T201", "D103"],
-    "tests/**/*.py" = ["S101", "D100", "D104", "PLR2004", "T201", "PLC0415", "BLE001", "FBT001", "TRY300", "D401", "SLF001", "D102", "ANN001", "ANN201", "ANN202", "ARG002", "N806", "SIM117"],
+    "tests/**/*.py" = ["S101", "D100", "D104", "PLR2004", "T201", "PLC0415", "BLE001", "FBT001", "TRY300", "D401", "SLF001", "D102", "ANN001", "ANN201", "ANN202", "ARG001", "ARG002", "N806", "SIM117"],
     "tests/core/test_cuda.py" = ["N802"],
     "ci/**/*.py" = ["INP001", "T201", "S603", "S607", "PLR2004"],
 }
