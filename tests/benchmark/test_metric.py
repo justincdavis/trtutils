@@ -5,175 +5,112 @@
 
 from __future__ import annotations
 
+import dataclasses
+import math
+from statistics import stdev
+
 import pytest
 
-
-@pytest.mark.cpu
-class TestMetricInit:
-    """Test Metric construction and basic data handling."""
-
-    def test_basic_construction(self) -> None:
-        """Metric can be constructed from a list of floats."""
-        from trtutils._benchmark import Metric
-
-        data = [1.0, 2.0, 3.0, 4.0, 5.0]
-        metric = Metric(data)
-        assert metric is not None
-
-    def test_single_element(self) -> None:
-        """Metric works with a single-element list."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([42.0])
-        assert metric.mean == 42.0
-        assert metric.median == 42.0
-        assert metric.min == 42.0
-        assert metric.max == 42.0
-
-    def test_integer_data(self) -> None:
-        """Metric accepts integer data."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([1, 2, 3])
-        assert metric.mean == 2.0
-        assert metric.min == 1
-        assert metric.max == 3
-
-    def test_empty_raises_value_error(self) -> None:
-        """Metric raises ValueError when given an empty list."""
-        from trtutils._benchmark import Metric
-
-        with pytest.raises(ValueError, match="Raw data cannot be empty"):
-            Metric([])
-
-    def test_negative_values(self) -> None:
-        """Metric handles negative values correctly."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([-3.0, -1.0, -2.0])
-        assert metric.min == -3.0
-        assert metric.max == -1.0
-
-    def test_raw_preserves_input_data(self) -> None:
-        """The raw field preserves the original input data."""
-        from trtutils._benchmark import Metric
-
-        data = [10.0, 20.0, 30.0]
-        metric = Metric(data)
-        assert metric.raw == data
-
-    def test_two_elements(self) -> None:
-        """Metric works with exactly two elements."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([1.0, 3.0])
-        assert metric.mean == 2.0
-        assert metric.min == 1.0
-        assert metric.max == 3.0
+from trtutils._benchmark import Metric
 
 
 @pytest.mark.cpu
-class TestMetricStatistics:
-    """Test computed statistics on Metric."""
-
-    def test_mean(self) -> None:
-        """Mean is computed correctly."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([1.0, 2.0, 3.0, 4.0, 5.0])
-        assert metric.mean == 3.0
-
-    def test_median_odd_count(self) -> None:
-        """Median is the middle element for odd-length data."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([5.0, 1.0, 3.0])
-        assert metric.median == 3.0
-
-    def test_median_even_count(self) -> None:
-        """Median is the average of two middle elements for even-length data."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([1.0, 2.0, 3.0, 4.0])
-        assert metric.median == 2.5
-
-    def test_min_max(self) -> None:
-        """Min and max are computed correctly."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([7.0, 2.0, 9.0, 1.0, 5.0])
-        assert metric.min == 1.0
-        assert metric.max == 9.0
+def test_metric_statistics() -> None:
+    """Metric computes mean, median, min, max, std, ci95 correctly."""
+    data = [1.0, 2.0, 3.0, 4.0, 5.0]
+    metric = Metric(data)
+    assert metric.mean == 3.0
+    assert metric.median == 3.0
+    assert metric.min == 1.0
+    assert metric.max == 5.0
+    expected_std = stdev(data)
+    assert math.isclose(metric.std, expected_std)
+    expected_ci95 = 1.96 * expected_std / math.sqrt(len(data))
+    assert math.isclose(metric.ci95, expected_ci95)
+    s = str(metric)
+    assert "std=" in s
+    assert "ci95=" in s
+    r = repr(metric)
+    assert "std=" in r
+    assert "ci95=" in r
 
 
 @pytest.mark.cpu
-class TestMetricStringRepresentation:
-    """Test __str__ and __repr__ of Metric."""
-
-    def test_str_format(self) -> None:
-        """__str__ includes formatted mean, median, min, max."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([1.0, 2.0, 3.0, 4.0, 5.0])
-        s = str(metric)
-        assert "mean=3.000" in s
-        assert "median=3.000" in s
-        assert "min=1.000" in s
-        assert "max=5.000" in s
-
-    def test_repr_format(self) -> None:
-        """__repr__ includes mean, median, min, max."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([1.0, 2.0, 3.0, 4.0, 5.0])
-        r = repr(metric)
-        assert "mean=3.0" in r
-        assert "median=3.0" in r
-
-    def test_str_starts_with_metric(self) -> None:
-        """__str__ starts with 'Metric('."""
-        from trtutils._benchmark import Metric
-
-        metric = Metric([1.0, 2.0])
-        assert str(metric).startswith("Metric(")
-
-    def test_raw_not_in_str(self) -> None:
-        """Raw data list is not exposed in __str__ or __repr__."""
-        from trtutils._benchmark import Metric
-
-        data = [1.0, 2.0, 3.0, 4.0, 5.0]
-        metric = Metric(data)
-        assert "[1.0, 2.0, 3.0, 4.0, 5.0]" not in str(metric)
-        assert "[1.0, 2.0, 3.0, 4.0, 5.0]" not in repr(metric)
+def test_metric_median_even() -> None:
+    """Median is the average of two middle elements for even-length data."""
+    metric = Metric([1.0, 2.0, 3.0, 4.0])
+    assert metric.median == 2.5
 
 
 @pytest.mark.cpu
-class TestMetricIsDataclass:
-    """Test that Metric is a proper dataclass."""
+def test_metric_single_element() -> None:
+    """Single-element list sets all stats to that value, std=0, ci95=0."""
+    metric = Metric([42.0])
+    assert metric.mean == 42.0
+    assert metric.median == 42.0
+    assert metric.min == 42.0
+    assert metric.max == 42.0
+    assert metric.std == 0.0
+    assert metric.ci95 == 0.0
 
-    def test_is_dataclass(self) -> None:
-        """Metric should be a dataclass instance."""
-        import dataclasses
 
-        from trtutils._benchmark import Metric
+@pytest.mark.cpu
+def test_metric_two_elements() -> None:
+    """Metric works with exactly two elements and computes std/ci95."""
+    data = [1.0, 3.0]
+    metric = Metric(data)
+    assert metric.mean == 2.0
+    assert metric.min == 1.0
+    assert metric.max == 3.0
+    expected_std = stdev(data)
+    assert math.isclose(metric.std, expected_std)
+    expected_ci95 = 1.96 * expected_std / math.sqrt(len(data))
+    assert math.isclose(metric.ci95, expected_ci95)
 
-        metric = Metric([1.0])
-        assert dataclasses.is_dataclass(metric)
 
-    def test_has_expected_fields(self) -> None:
-        """Metric dataclass has all expected field names."""
-        import dataclasses
+@pytest.mark.cpu
+def test_metric_integer_data() -> None:
+    """Metric accepts integer data."""
+    metric = Metric([1, 2, 3])
+    assert metric.mean == 2.0
 
-        from trtutils._benchmark import Metric
 
-        field_names = {f.name for f in dataclasses.fields(Metric)}
-        expected = {"raw", "mean", "median", "min", "max"}
-        assert expected == field_names
+@pytest.mark.cpu
+def test_metric_negative_values() -> None:
+    """Metric handles negative values correctly."""
+    metric = Metric([-3.0, -1.0, -2.0])
+    assert metric.min == -3.0
+    assert metric.max == -1.0
 
-    def test_raw_preserves_data(self) -> None:
-        """The raw field contains the exact input data."""
-        from trtutils._benchmark import Metric
 
-        data = [0.1, 0.2, 0.3]
-        metric = Metric(data)
-        assert metric.raw is data
+@pytest.mark.cpu
+def test_metric_empty_raises() -> None:
+    """Metric raises ValueError when given an empty list."""
+    with pytest.raises(ValueError, match="Raw data cannot be empty"):
+        Metric([])
+
+
+@pytest.mark.cpu
+def test_metric_raw_identity() -> None:
+    """The raw field is the exact same object passed in."""
+    data = [10.0, 20.0, 30.0]
+    metric = Metric(data)
+    assert metric.raw is data
+
+
+@pytest.mark.cpu
+def test_metric_fields() -> None:
+    """Metric dataclass has all expected field names."""
+    field_names = {f.name for f in dataclasses.fields(Metric)}
+    assert field_names == {"raw", "mean", "median", "min", "max", "std", "ci95"}
+
+
+@pytest.mark.cpu
+def test_metric_str_repr() -> None:
+    """str/repr start with 'Metric(' and don't expose raw list."""
+    data = [1.0, 2.0, 3.0, 4.0, 5.0]
+    metric = Metric(data)
+    assert str(metric).startswith("Metric(")
+    assert repr(metric).startswith("Metric(")
+    assert "[1.0, 2.0, 3.0, 4.0, 5.0]" not in str(metric)
+    assert "[1.0, 2.0, 3.0, 4.0, 5.0]" not in repr(metric)
