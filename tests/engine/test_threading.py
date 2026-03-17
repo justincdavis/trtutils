@@ -6,15 +6,12 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-pytestmark = [pytest.mark.gpu]
+from trtutils import TRTEngine
+from trtutils._flags import FLAGS
 
 NUM_ENGINES = 4
 NUM_ITERS = 1_000
@@ -28,10 +25,8 @@ NUM_ITERS = 1_000
 class TestSingleEngineThread:
     """Test creating and running an engine entirely inside a child thread."""
 
-    def test_engine_run_in_thread(self, engine_path: Path) -> None:
+    def test_engine_run_in_thread(self, engine_path) -> None:
         """Create a TRTEngine in a child thread, run mock_execute, verify output."""
-        from trtutils import TRTEngine
-
         result: list[bool] = [False]
 
         def run(res: list[bool]) -> None:
@@ -56,10 +51,8 @@ class TestSingleEngineThread:
 class TestMultipleEnginesCoexistence:
     """Test multiple TRTEngine instances coexisting in a single thread."""
 
-    def test_multiple_engines_same_thread(self, engine_path: Path) -> None:
+    def test_multiple_engines_same_thread(self, engine_path) -> None:
         """Create NUM_ENGINES engines, run mock_execute on each, verify outputs."""
-        from trtutils import TRTEngine
-
         engines = [TRTEngine(engine_path, warmup=False) for _ in range(NUM_ENGINES)]
 
         outputs = [engine.mock_execute() for engine in engines]
@@ -82,10 +75,8 @@ class TestMultipleEnginesCoexistence:
 class TestMultipleEnginesInThreads:
     """Test engines running concurrently in separate threads."""
 
-    def test_engines_in_separate_threads(self, engine_path: Path) -> None:
+    def test_engines_in_separate_threads(self, engine_path) -> None:
         """NUM_ENGINES threads each create an engine and run NUM_ITERS iterations."""
-        from trtutils import TRTEngine
-
         result: list[int] = [0] * NUM_ENGINES
 
         def run(threadid: int, res: list[int], iters: int) -> None:
@@ -114,10 +105,8 @@ class TestMultipleEnginesInThreads:
         for r in result:
             assert r == NUM_ITERS
 
-    def test_threads_produce_valid_outputs(self, engine_path: Path) -> None:
+    def test_threads_produce_valid_outputs(self, engine_path) -> None:
         """Lighter variant (10 iters) verifying output structure from each thread."""
-        from trtutils import TRTEngine
-
         num_iters = 10
         results: dict[int, list[list[np.ndarray]]] = {}
 
@@ -166,17 +155,8 @@ class TestMultipleEnginesInThreads:
 class TestCUDAGraphThreadSafety:
     """Test CUDA graph independence across threads."""
 
-    def test_independent_graphs_in_threads(self, engine_path: Path) -> None:
-        """
-        Each thread creates engine with cuda_graph=True, replays NUM_ITERS times.
-
-        Asserts:
-        - Each thread's graph_exec id stays stable (no recapture).
-        - All threads' graph_exec ids are distinct.
-        - All threads succeed.
-        """
-        from trtutils import FLAGS, TRTEngine
-
+    def test_independent_graphs_in_threads(self, engine_path) -> None:
+        """Each thread creates engine with cuda_graph=True, replays NUM_ITERS times."""
         if not FLAGS.EXEC_ASYNC_V3:
             pytest.skip("async_v3 required for CUDA graph")
 
@@ -228,15 +208,8 @@ class TestCUDAGraphThreadSafety:
         graph_ids = [results[i]["graph_exec_id"] for i in range(NUM_ENGINES)]
         assert len(set(graph_ids)) == NUM_ENGINES, "Threads should have independent CUDA graphs"
 
-    def test_lazy_graph_capture_in_thread(self, engine_path: Path) -> None:
-        """
-        A child thread can lazily capture a CUDA graph on first execute.
-
-        Creates engine with warmup=False so graph is NOT captured at init.
-        First mock_execute triggers capture inside the child thread.
-        """
-        from trtutils import FLAGS, TRTEngine
-
+    def test_lazy_graph_capture_in_thread(self, engine_path) -> None:
+        """A child thread can lazily capture a CUDA graph on first execute."""
         if not FLAGS.EXEC_ASYNC_V3:
             pytest.skip("async_v3 required for CUDA graph")
 

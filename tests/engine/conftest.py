@@ -9,56 +9,52 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+import tensorrt as trt
+
+from trtutils import TRTEngine
+from trtutils.builder import build_engine
 
 if TYPE_CHECKING:
     from typing import Callable, Generator
 
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
+ENGINES_DIR = DATA_DIR / "engines"
 
-# tests/engine/conftest.py -> tests/engine -> tests -> project_root -> data/
-ONNX_PATH = Path(__file__).parent.parent.parent / "data" / "simple.onnx"
+
+def _build_test_engine(onnx_name: str) -> Path:
+    """Build and cache an engine from an ONNX file in DATA_DIR."""
+    onnx_path = DATA_DIR / f"{onnx_name}.onnx"
+    engine_path = ENGINES_DIR / f"{onnx_name}_b1_{trt.__version__}.engine"
+    if not engine_path.exists():
+        ENGINES_DIR.mkdir(parents=True, exist_ok=True)
+        build_engine(onnx_path, engine_path, optimization_level=1)
+    return engine_path
+
+
+SIMPLE_ENGINE_PATH = _build_test_engine("simple")
+
+ENGINE_PATHS = [
+    pytest.param(SIMPLE_ENGINE_PATH, id="simple"),
+]
 
 
 @pytest.fixture(scope="session")
 def engine_path(build_test_engine: Callable[..., Path]) -> Path:
     """Session-scoped built engine for general engine tests."""
-    return build_test_engine(ONNX_PATH)
+    return SIMPLE_ENGINE_PATH
 
 
 @pytest.fixture
-def engine(engine_path: Path) -> Generator:
+def engine(engine_path) -> Generator:
     """Create a fresh TRTEngine instance per test (no warmup)."""
-    from trtutils import TRTEngine
-
     eng = TRTEngine(engine_path, warmup=False)
     yield eng
     del eng
 
 
 @pytest.fixture
-def engine_with_warmup(engine_path: Path) -> Generator:
-    """TRTEngine with warmup enabled."""
-    from trtutils import TRTEngine
-
-    eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
-    yield eng
-    del eng
-
-
-@pytest.fixture
-def engine_verbose(engine_path: Path) -> Generator:
-    """TRTEngine with verbose=True."""
-    from trtutils import TRTEngine
-
-    eng = TRTEngine(engine_path, warmup=False, verbose=True)
-    yield eng
-    del eng
-
-
-@pytest.fixture
-def engine_no_pagelocked(engine_path: Path) -> Generator:
+def engine_no_pagelocked(engine_path) -> Generator:
     """TRTEngine with pagelocked_mem=False."""
-    from trtutils import TRTEngine
-
     eng = TRTEngine(engine_path, warmup=False, pagelocked_mem=False)
     yield eng
     del eng
@@ -67,4 +63,4 @@ def engine_no_pagelocked(engine_path: Path) -> Generator:
 @pytest.fixture
 def random_input(engine) -> list:
     """Generate random input matching engine spec."""
-    return engine.get_random_input()  # type: ignore[union-attr]
+    return engine.get_random_input()
