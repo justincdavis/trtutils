@@ -5,20 +5,18 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 import tensorrt as trt
 
+from tests.conftest import DATA_DIR, ENGINES_DIR
 from trtutils import TRTEngine
 from trtutils.builder import build_engine
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from typing import Callable, Generator
-
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
-ENGINES_DIR = DATA_DIR / "engines"
 
 
 def _build_test_engine(onnx_name: str) -> Path:
