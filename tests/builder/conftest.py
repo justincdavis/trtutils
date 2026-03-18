@@ -5,61 +5,28 @@
 
 from __future__ import annotations
 
+import os
 import struct
-import tempfile
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 import pytest
 
-try:
-    from trtutils.builder._build import build_engine
-except ImportError:
-    build_engine = None
+if TYPE_CHECKING:
+    from pathlib import Path
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
-ONNX_PATH = DATA_DIR / "simple.onnx"
-
-
-@pytest.fixture(scope="session")
-def onnx_path() -> Path:
-    """Path to the test ONNX model."""
-    if not ONNX_PATH.exists():
-        pytest.skip("Test ONNX model not found")
-    return ONNX_PATH
-
-
-@pytest.fixture(scope="session")
-def _can_build_engine(onnx_path: Path) -> bool:
-    """Check if TRT can build engines on this hardware (session-cached)."""
-    if build_engine is None:
-        return False
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".engine", delete=True) as f:
-            build_engine(onnx_path, f.name, optimization_level=1)
-            return True
-    except RuntimeError:
-        return False
-    except Exception:
-        return False
-
-
-@pytest.fixture(autouse=True)
-def _skip_if_cannot_build(request: pytest.FixtureRequest, _can_build_engine: bool) -> None:
-    """Skip builder tests requiring GPU if TRT cannot build engines."""
-    if not request.node.get_closest_marker("cpu") and not _can_build_engine:
-        pytest.skip("TRT does not support this GPU's compute capability")
+_CPU_ONLY = os.environ.get("TRTUTILS_IGNORE_MISSING_CUDA", "0") == "1"
 
 
 @pytest.fixture
-def output_engine_path(tmp_path: Path) -> Path:
+def output_engine_path(tmp_path) -> Path:
     """Temporary path for built engine output."""
     return tmp_path / "test_output.engine"
 
 
 @pytest.fixture
-def test_image_dir(tmp_path: Path) -> Path:
+def test_image_dir(tmp_path) -> Path:
     """Create a temp directory with synthetic test images."""
     img_dir = tmp_path / "images"
     img_dir.mkdir()
@@ -71,7 +38,7 @@ def test_image_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def small_image_dir(tmp_path: Path) -> Path:
+def small_image_dir(tmp_path) -> Path:
     """Create a temp directory with fewer images (for batch boundary testing)."""
     img_dir = tmp_path / "small_images"
     img_dir.mkdir()
@@ -83,7 +50,7 @@ def small_image_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def single_image_dir(tmp_path: Path) -> Path:
+def single_image_dir(tmp_path) -> Path:
     """Create a temp directory with exactly one image."""
     img_dir = tmp_path / "single_image"
     img_dir.mkdir()
@@ -94,7 +61,7 @@ def single_image_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def empty_dir(tmp_path: Path) -> Path:
+def empty_dir(tmp_path) -> Path:
     """Empty directory (no images)."""
     d = tmp_path / "empty"
     d.mkdir()
@@ -102,10 +69,9 @@ def empty_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def invalid_onnx_file(tmp_path: Path) -> Path:
+def invalid_onnx_file(tmp_path) -> Path:
     """Create a file with .onnx extension but invalid binary content."""
     p = tmp_path / "invalid.onnx"
-    # Binary junk that triggers protobuf parse failure
     p.write_bytes(
         struct.pack(
             ">IIIIII",
@@ -121,7 +87,7 @@ def invalid_onnx_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def non_onnx_file(tmp_path: Path) -> Path:
+def non_onnx_file(tmp_path) -> Path:
     """Create a file with wrong extension."""
     p = tmp_path / "model.txt"
     p.write_text("not an onnx file")
@@ -129,20 +95,24 @@ def non_onnx_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def calibration_cache_path(tmp_path: Path) -> Path:
+def calibration_cache_path(tmp_path) -> Path:
     """Temporary path for calibration cache."""
     return tmp_path / "calibration.cache"
 
 
 @pytest.fixture
-def timing_cache_path(tmp_path: Path) -> Path:
+def timing_cache_path(tmp_path) -> Path:
     """Temporary path for timing cache."""
     return tmp_path / "timing.cache"
 
 
 @pytest.fixture
-def cache_dir(tmp_path: Path) -> Path:
+def cache_dir(tmp_path) -> Path:
     """Temporary directory for engine caching."""
     d = tmp_path / "cache"
     d.mkdir()
     return d
+
+
+if not _CPU_ONLY:
+    from tests.builder._gpu_fixtures import *  # noqa: F403
