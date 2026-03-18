@@ -12,7 +12,6 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Benchmark iteration constants (kept small for fast test runs)
 ITERS = 10
 WARMUP_ITERS = 2
 

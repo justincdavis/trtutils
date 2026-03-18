@@ -12,13 +12,29 @@ from trtutils import BenchmarkResult, Metric, TRTEngine, benchmark_engine
 from .conftest import ITERS, WARMUP_ITERS
 
 
-def test_benchmark_engine_path(engine_path) -> None:
-    """benchmark_engine with a Path returns valid BenchmarkResult with correct stats."""
+@pytest.mark.parametrize(
+    "input_source",
+    [
+        pytest.param("path", id="path"),
+        pytest.param("string", id="string-path"),
+        pytest.param("engine", id="trt-engine"),
+    ],
+)
+def test_benchmark_engine(engine_path, input_source) -> None:
+    """benchmark_engine returns valid BenchmarkResult for Path, str, and TRTEngine inputs."""
+    if input_source == "path":
+        target = engine_path
+    elif input_source == "string":
+        target = str(engine_path)
+    else:
+        target = TRTEngine(engine_path, warmup=False)
     result = benchmark_engine(
-        engine_path,
+        target,
         iterations=ITERS,
         warmup_iterations=WARMUP_ITERS,
     )
+    if input_source == "engine":
+        del target
     assert isinstance(result, BenchmarkResult)
     assert isinstance(result.latency, Metric)
     assert len(result.latency.raw) == ITERS
@@ -29,37 +45,10 @@ def test_benchmark_engine_path(engine_path) -> None:
     assert result.latency.max > 0
 
 
-def test_benchmark_engine_string_path(engine_path) -> None:
-    """benchmark_engine accepts a string path."""
-    result = benchmark_engine(
-        str(engine_path),
-        iterations=ITERS,
-        warmup_iterations=WARMUP_ITERS,
-    )
-    assert isinstance(result, BenchmarkResult)
-
-
-def test_benchmark_engine_object(engine_path) -> None:
-    """benchmark_engine accepts a TRTEngine instance directly."""
-    eng = TRTEngine(engine_path, warmup=False)
-    result = benchmark_engine(eng, iterations=ITERS)
-    assert isinstance(result, BenchmarkResult)
-    assert len(result.latency.raw) == ITERS
-    del eng
-
-
-def test_benchmark_engine_warmup_disabled(engine_path) -> None:
-    """benchmark_engine works with warmup disabled."""
-    result = benchmark_engine(
-        engine_path,
-        iterations=ITERS,
-        warmup_iterations=0,
-        warmup=False,
-    )
-    assert isinstance(result, BenchmarkResult)
-
-
-@pytest.mark.parametrize("iterations", [1, 5])
+@pytest.mark.parametrize(
+    "iterations",
+    [pytest.param(1, id="1-iter"), pytest.param(5, id="5-iter")],
+)
 def test_benchmark_engine_iterations(engine_path, iterations) -> None:
     """benchmark_engine respects custom iteration counts."""
     result = benchmark_engine(engine_path, iterations=iterations, warmup=False)
