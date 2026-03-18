@@ -1,4 +1,5 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
+#
 # MIT License
 """Utility functions for managing benchmark models."""
 
@@ -7,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-REPO_DIR = Path(__file__).parent.parent
+from .config import REPO_DIR
 
 
 def _get_model_class(model_name: str) -> Any:
@@ -17,6 +18,10 @@ def _get_model_class(model_name: str) -> Any:
         DFINE,
         RFDETR,
         YOLOX,
+        DEIMv2,
+        RTDETRv1,
+        RTDETRv2,
+        RTDETRv3,
         YOLOv3,
         YOLOv5,
         YOLOv7,
@@ -26,15 +31,13 @@ def _get_model_class(model_name: str) -> Any:
         YOLOv11,
         YOLOv12,
         YOLOv13,
-        DEIMv2,
-        RTDETRv1,
-        RTDETRv2,
-        RTDETRv3,
+        YOLOv26,
     )
 
     # Map model name prefixes to classes
     # Order matters - more specific matches first
     model_mapping: list[tuple[str, Any]] = [
+        ("yolov26", YOLOv26),
         ("yolov13", YOLOv13),
         ("yolov12", YOLOv12),
         ("yolov11", YOLOv11),
@@ -80,27 +83,26 @@ def ensure_model_available(
     if model_name not in model_to_dir:
         err_msg = f"Unknown model: {model_name}. Not found in model directory mapping."
         raise ValueError(err_msg)
-    
+
     model_dir = REPO_DIR / "data" / model_to_dir[model_name]
     model_path = model_dir / f"{model_name}_{imgsz}.onnx"
-    
+
     if model_path.exists():
         return model_path
-    
+
     if not auto_download:
         err_msg = f"Model not found: {model_path}"
         raise FileNotFoundError(err_msg)
-    
+
     # Auto-download
     print(f"Downloading {model_name} @ {imgsz}x{imgsz}...")
     model_dir.mkdir(parents=True, exist_ok=True)
-    
+
     download(
         model=model_name,
         output=model_path,
         opset=opset,
         imgsz=imgsz,
-        accept=True,
         verbose=False,
     )
     return model_path
@@ -110,11 +112,15 @@ def build_model(
     onnx: Path,
     output: Path,
     imgsz: int,
+    batch_size: int = 1,
     opt_level: int = 3,
+    model_name: str | None = None,
+    **kwargs: Any,  # noqa: ANN401
 ) -> None:
     """Build a model from an ONNX file using the appropriate model class."""
     # Extract model name from the onnx filename (e.g., "yolov10n_640" -> "yolov10n")
-    model_name = onnx.stem.rsplit("_", 1)[0]
+    if model_name is None:
+        model_name = onnx.stem.rsplit("_", 1)[0]
 
     # Get the appropriate model class and call its build method
     model_class = _get_model_class(model_name)
@@ -122,5 +128,7 @@ def build_model(
         onnx=onnx,
         output=output,
         imgsz=imgsz,
+        batch_size=batch_size,
         opt_level=opt_level,
+        **kwargs,
     )
