@@ -5,16 +5,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 if TYPE_CHECKING:
-    from typing import Callable
-
-# tests/benchmark/conftest.py -> tests/benchmark -> tests -> project_root -> data/
-ONNX_PATH = Path(__file__).parent.parent.parent / "data" / "simple.onnx"
+    from pathlib import Path
 
 # Benchmark iteration constants (kept small for fast test runs)
 ITERS = 10
@@ -22,6 +18,6 @@ WARMUP_ITERS = 2
 
 
 @pytest.fixture(scope="session")
-def engine_path(build_test_engine: Callable[..., Path]) -> Path:
-    """Session-scoped built engine for benchmark tests."""
-    return build_test_engine(ONNX_PATH)
+def engine_path(simple_engine_path) -> Path:
+    """Session-scoped built engine for benchmark tests (delegates to global fixture)."""
+    return simple_engine_path
