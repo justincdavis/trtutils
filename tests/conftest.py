@@ -3,200 +3,241 @@
 # MIT License
 from __future__ import annotations
 
+import os
+import sys
+import types
+
+# ---------------------------------------------------------------------------
+# CPU-only stub injection
+# When TRTUTILS_IGNORE_MISSING_CUDA=1, inject lightweight stub modules for
+# tensorrt and cuda so that trtutils can be imported without GPU hardware.
+# This MUST run before any trtutils imports.
+# ---------------------------------------------------------------------------
+_CPU_ONLY = os.environ.get("TRTUTILS_IGNORE_MISSING_CUDA", "0") == "1"
+
+if _CPU_ONLY:
+    if "tensorrt" not in sys.modules:
+        _trt = types.ModuleType("tensorrt")
+        _trt.__version__ = "0.0.0"
+        # base classes used in class inheritance at module level
+        _trt.ILogger = type(
+            "ILogger",
+            (),
+            {
+                "Severity": type(
+                    "Severity",
+                    (),
+                    {
+                        "INTERNAL_ERROR": 0,
+                        "ERROR": 1,
+                        "WARNING": 2,
+                        "INFO": 3,
+                        "VERBOSE": 4,
+                    },
+                ),
+            },
+        )
+        _trt.IProgressMonitor = type("IProgressMonitor", (), {})
+        _trt.IProfiler = type("IProfiler", (), {})
+        _trt.IInt8EntropyCalibrator2 = type("IInt8EntropyCalibrator2", (), {})
+        # classes accessed via hasattr in _flags.py
+        _trt.ICudaEngine = type("ICudaEngine", (), {})
+        _trt.DataType = type("DataType", (), {})
+        _trt.IBuilderConfig = type("IBuilderConfig", (), {})
+        _trt.Builder = type("Builder", (), {})
+        _trt.IExecutionContext = type("IExecutionContext", (), {})
+        # classes with attrs used as default parameter values
+        _trt.TensorFormat = type("TensorFormat", (), {"LINEAR": 0})
+        _trt.DeviceType = type("DeviceType", (), {"GPU": 0, "DLA": 1})
+        sys.modules["tensorrt"] = _trt
+    if "cuda" not in sys.modules:
+        sys.modules["cuda"] = types.ModuleType("cuda")
+
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-import cv2
 import numpy as np
-import onnx
 import pytest
-import tensorrt as trt
-
-from trtutils._flags import FLAGS
-from trtutils.builder import build_engine as _build_engine
-from trtutils.core import get_compute_capability
-from trtutils.core._cuda import init_cuda
-from trtutils.core._engine import create_engine
-from trtutils.core._stream import destroy_stream
 
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 ENGINES_DIR = DATA_DIR / "engines"
 
 
-# when testing, we should run cuInit to setup everything
-# it may be the case that an engine is not created prior to other calls
-# since creating an engine implicitly calls cuInit, we should call it here
-init_cuda()
+if not _CPU_ONLY:
+    import cv2
+    import onnx
+    import tensorrt as trt
 
+    from trtutils._flags import FLAGS
+    from trtutils.builder import build_engine as _build_engine
+    from trtutils.core import get_compute_capability
+    from trtutils.core._cuda import init_cuda
+    from trtutils.core._engine import create_engine
+    from trtutils.core._stream import destroy_stream
 
-@dataclass(frozen=True)
-class TestImage:
-    """A test image with its path, pixel data, and ground truth."""
+    # when testing, we should run cuInit to setup everything
+    # it may be the case that an engine is not created prior to other calls
+    # since creating an engine implicitly calls cuInit, we should call it here
+    init_cuda()
 
-    path: Path
-    array: np.ndarray
-    gt_det_classes: list[int] = field(default_factory=list)
-    gt_det_min: int = 0
-    gt_det_max: int = 0
-    gt_cls_id: int | None = None
+    TRT_VERSION = trt.__version__
 
+    def version_engine_path(path: Path) -> Path:
+        """Insert TRT version into engine filename for caching."""
+        return path.with_name(f"{path.stem}_{TRT_VERSION}{path.suffix}")
 
-TRT_VERSION = trt.__version__
+    @dataclass(frozen=True)
+    class TestImage:
+        """A test image with its path, pixel data, and ground truth."""
 
+        path: Path
+        array: np.ndarray
+        gt_det_classes: list[int] = field(default_factory=list)
+        gt_det_min: int = 0
+        gt_det_max: int = 0
+        gt_cls_id: int | None = None
 
-def version_engine_path(path: Path) -> Path:
-    """Insert TRT version into engine filename for caching."""
-    return path.with_name(f"{path.stem}_{TRT_VERSION}{path.suffix}")
+    @pytest.fixture(autouse=True)
+    def _skip_jetson_tests(request: pytest.FixtureRequest) -> None:
+        if request.node.get_closest_marker("jetson") and not FLAGS.IS_JETSON:
+            pytest.skip("Jetson tests require Jetson hardware")
 
+    @pytest.fixture(scope="session")
+    def images() -> dict[str, TestImage]:
+        """Keyed test images with ground truth. Access via images["horse"], images["people"]."""
+        result: dict[str, TestImage] = {}
 
-@pytest.fixture(autouse=True)
-def _skip_jetson_tests(request: pytest.FixtureRequest) -> None:
-    if request.node.get_closest_marker("jetson") and not FLAGS.IS_JETSON:
-        pytest.skip("Jetson tests require Jetson hardware")
+        horse_path = DATA_DIR / "horse.jpg"
+        img = cv2.imread(str(horse_path))
+        if img is not None:
+            result["horse"] = TestImage(
+                path=horse_path,
+                array=img,
+                gt_det_classes=[17],
+                gt_det_min=1,
+                gt_det_max=2,
+                gt_cls_id=603,
+            )
 
+        people_path = DATA_DIR / "people.jpeg"
+        img = cv2.imread(str(people_path))
+        if img is not None:
+            result["people"] = TestImage(
+                path=people_path,
+                array=img,
+                gt_det_classes=[0],
+                gt_det_min=3,
+                gt_det_max=5,
+            )
 
-@pytest.fixture(scope="session")
-def images() -> dict[str, TestImage]:
-    """Keyed test images with ground truth. Access via images["horse"], images["people"]."""
-    result: dict[str, TestImage] = {}
+        return result
 
-    horse_path = DATA_DIR / "horse.jpg"
-    img = cv2.imread(str(horse_path))
-    if img is not None:
-        result["horse"] = TestImage(
-            path=horse_path,
-            array=img,
-            gt_det_classes=[17],
-            gt_det_min=1,
-            gt_det_max=2,
-            gt_cls_id=603,
-        )
+    @pytest.fixture(params=[1, 2, 4], ids=["batch1", "batch2", "batch4"])
+    def batch_size(request: pytest.FixtureRequest) -> int:
+        """Parametrized batch sizes."""
+        return request.param
 
-    people_path = DATA_DIR / "people.jpeg"
-    img = cv2.imread(str(people_path))
-    if img is not None:
-        result["people"] = TestImage(
-            path=people_path,
-            array=img,
-            gt_det_classes=[0],
-            gt_det_min=3,
-            gt_det_max=5,
-        )
+    @pytest.fixture(scope="session")
+    def random_images() -> Callable[..., list[np.ndarray]]:
+        """
+        Generate random images.
 
-    return result
+        Factory: random_images(count=4, height=480, width=640).
+        """
+        rng = np.random.default_rng(42)
 
+        def _make(
+            count: int = 1,
+            height: int = 480,
+            width: int = 640,
+            channels: int = 3,
+        ) -> list[np.ndarray]:
+            return [
+                rng.integers(0, 255, (height, width, channels), dtype=np.uint8) for _ in range(count)
+            ]
 
-@pytest.fixture(params=[1, 2, 4], ids=["batch1", "batch2", "batch4"])
-def batch_size(request: pytest.FixtureRequest) -> int:
-    """Parametrized batch sizes."""
-    return request.param
+        return _make
 
+    @pytest.fixture(scope="session")
+    def build_test_engine() -> Callable[..., Path]:
+        """
+        Build and cache a TRT engine from an ONNX file.
 
-@pytest.fixture(scope="session")
-def random_images() -> Callable[..., list[np.ndarray]]:
-    """
-    Generate random images.
+        Factory: build_test_engine(onnx_path, engine_dir=None, optimization_level=1, batch_size=1).
+        """
 
-    Factory: random_images(count=4, height=480, width=640).
-    """
-    rng = np.random.default_rng(42)
+        def _build(
+            onnx_path: Path,
+            engine_dir: Path | None = None,
+            optimization_level: int = 1,
+            batch_size: int = 1,
+        ) -> Path:
+            if engine_dir is None:
+                engine_dir = ENGINES_DIR
+            engine_dir.mkdir(parents=True, exist_ok=True)
 
-    def _make(
-        count: int = 1,
-        height: int = 480,
-        width: int = 640,
-        channels: int = 3,
-    ) -> list[np.ndarray]:
-        return [
-            rng.integers(0, 255, (height, width, channels), dtype=np.uint8) for _ in range(count)
-        ]
+            engine_path = version_engine_path(engine_dir / f"{onnx_path.stem}_b{batch_size}.engine")
 
-    return _make
+            if not engine_path.exists():
+                shapes = None
+                if batch_size > 1:
+                    model = onnx.load(str(onnx_path))
+                    shapes = []
+                    for tensor in model.graph.input:
+                        dims = []
+                        for dim in tensor.type.tensor_type.shape.dim:
+                            if dim.dim_param:
+                                dims.append(1)
+                            elif dim.dim_value:
+                                dims.append(int(dim.dim_value))
+                        if not dims:
+                            continue
+                        if len(dims) >= 1:
+                            if dims[0] not in (0, 1, batch_size):
+                                err_msg = f"Model {onnx_path.name} has fixed batch {dims[0]} and cannot use {batch_size}"
+                                raise ValueError(err_msg)
+                            dims[0] = batch_size
+                        shapes.append((tensor.name, tuple(dims)))
 
+                try:
+                    _build_engine(
+                        onnx_path,
+                        engine_path,
+                        optimization_level=optimization_level,
+                        shapes=shapes,
+                    )
+                except RuntimeError:
+                    if not FLAGS.TRT_10:
+                        sm = get_compute_capability()
+                        if sm >= (8, 9):
+                            pytest.skip(f"TRT <10 does not support SM {sm[0]}.{sm[1]}")
+                    raise
 
-@pytest.fixture(scope="session")
-def build_test_engine() -> Callable[..., Path]:
-    """
-    Build and cache a TRT engine from an ONNX file.
+            return engine_path
 
-    Factory: build_test_engine(onnx_path, engine_dir=None, optimization_level=1, batch_size=1).
-    """
+        return _build
 
-    def _build(
-        onnx_path: Path,
-        engine_dir: Path | None = None,
-        optimization_level: int = 1,
-        batch_size: int = 1,
-    ) -> Path:
-        if engine_dir is None:
-            engine_dir = ENGINES_DIR
-        engine_dir.mkdir(parents=True, exist_ok=True)
+    @pytest.fixture(scope="session")
+    def simple_onnx_path() -> Path:
+        """Path to a minimal ONNX model for core tests."""
+        return Path(__file__).parent.parent / "data" / "simple.onnx"
 
-        engine_path = version_engine_path(engine_dir / f"{onnx_path.stem}_b{batch_size}.engine")
+    @pytest.fixture(scope="session")
+    def engine_path(build_test_engine, simple_onnx_path) -> Path:
+        """Build and return path to a simple test engine."""
+        return build_test_engine(simple_onnx_path)
 
-        if not engine_path.exists():
-            shapes = None
-            if batch_size > 1:
-                model = onnx.load(str(onnx_path))
-                shapes = []
-                for tensor in model.graph.input:
-                    dims = []
-                    for dim in tensor.type.tensor_type.shape.dim:
-                        if dim.dim_param:
-                            dims.append(1)
-                        elif dim.dim_value:
-                            dims.append(int(dim.dim_value))
-                    if not dims:
-                        continue
-                    if len(dims) >= 1:
-                        if dims[0] not in (0, 1, batch_size):
-                            err_msg = f"Model {onnx_path.name} has fixed batch {dims[0]} and cannot use {batch_size}"
-                            raise ValueError(err_msg)
-                        dims[0] = batch_size
-                    shapes.append((tensor.name, tuple(dims)))
+    @pytest.fixture(scope="session")
+    def engine_path_str(engine_path) -> str:
+        """Simple test engine path as a string."""
+        return str(engine_path)
 
-            try:
-                _build_engine(
-                    onnx_path,
-                    engine_path,
-                    optimization_level=optimization_level,
-                    shapes=shapes,
-                )
-            except RuntimeError:
-                if not FLAGS.TRT_10:
-                    sm = get_compute_capability()
-                    if sm >= (8, 9):
-                        pytest.skip(f"TRT <10 does not support SM {sm[0]}.{sm[1]}")
-                raise
-
-        return engine_path
-
-    return _build
-
-
-@pytest.fixture(scope="session")
-def simple_onnx_path() -> Path:
-    """Path to a minimal ONNX model for core tests."""
-    return Path(__file__).parent.parent / "data" / "simple.onnx"
-
-
-@pytest.fixture(scope="session")
-def engine_path(build_test_engine, simple_onnx_path) -> Path:
-    """Build and return path to a simple test engine."""
-    return build_test_engine(simple_onnx_path)
-
-
-@pytest.fixture(scope="session")
-def engine_path_str(engine_path) -> str:
-    """Simple test engine path as a string."""
-    return str(engine_path)
-
-
-@pytest.fixture
-def simple_engine(engine_path):
-    """Load simple test engine, destroy stream after test."""
-    engine, context, _logger, stream = create_engine(engine_path)
-    yield engine, context, stream
-    destroy_stream(stream)
+    @pytest.fixture
+    def simple_engine(engine_path):
+        """Load simple test engine, destroy stream after test."""
+        engine, context, _logger, stream = create_engine(engine_path)
+        yield engine, context, stream
+        destroy_stream(stream)
