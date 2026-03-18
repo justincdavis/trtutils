@@ -1,0 +1,26 @@
+name: Test CPU
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    name: Python ${{ matrix.python-version }}
+    env:
+      VIRTUAL_ENV: .venv-${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        run: |
+          uv venv $VIRTUAL_ENV --python ${{ matrix.python-version }}
+          echo "$PWD/$VIRTUAL_ENV/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv pip install -e ".[pytest]"
+      - name: Run CPU tests
+        run: ./ci/run_cpu_tests.sh
