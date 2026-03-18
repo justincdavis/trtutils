@@ -20,14 +20,14 @@ from .conftest import ITERS, WARMUP_ITERS
         pytest.param("engine", id="trt-engine"),
     ],
 )
-def test_benchmark_engine(engine_path, input_source) -> None:
+def test_benchmark_engine(simple_engine_path, input_source) -> None:
     """benchmark_engine returns valid BenchmarkResult for Path, str, and TRTEngine inputs."""
     if input_source == "path":
-        target = engine_path
+        target = simple_engine_path
     elif input_source == "string":
-        target = str(engine_path)
+        target = str(simple_engine_path)
     else:
-        target = TRTEngine(engine_path, warmup=False)
+        target = TRTEngine(simple_engine_path, warmup=False)
     result = benchmark_engine(
         target,
         iterations=ITERS,
@@ -49,7 +49,7 @@ def test_benchmark_engine(engine_path, input_source) -> None:
     "iterations",
     [pytest.param(1, id="1-iter"), pytest.param(5, id="5-iter")],
 )
-def test_benchmark_engine_iterations(engine_path, iterations) -> None:
+def test_benchmark_engine_iterations(simple_engine_path, iterations) -> None:
     """benchmark_engine respects custom iteration counts."""
-    result = benchmark_engine(engine_path, iterations=iterations, warmup=False)
+    result = benchmark_engine(simple_engine_path, iterations=iterations, warmup=False)
     assert len(result.latency.raw) == iterations

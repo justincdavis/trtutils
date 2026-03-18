@@ -16,10 +16,10 @@ from .conftest import ITERS, WARMUP_ITERS
     "count",
     [pytest.param(1, id="single"), pytest.param(2, id="multiple")],
 )
-def test_benchmark_engines_sequential(engine_path, count) -> None:
+def test_benchmark_engines_sequential(simple_engine_path, count) -> None:
     """Sequential benchmark_engines returns correct count of valid BenchmarkResults."""
     results = benchmark_engines(
-        [engine_path] * count,
+        [simple_engine_path] * count,
         iterations=ITERS,
         warmup_iterations=WARMUP_ITERS,
     )
@@ -30,10 +30,10 @@ def test_benchmark_engines_sequential(engine_path, count) -> None:
         assert len(result.latency.raw) == ITERS
 
 
-def test_benchmark_engines_parallel(engine_path) -> None:
+def test_benchmark_engines_parallel(simple_engine_path) -> None:
     """Parallel mode returns valid BenchmarkResults with positive latencies."""
     results = benchmark_engines(
-        [engine_path],
+        [simple_engine_path],
         iterations=ITERS,
         warmup_iterations=WARMUP_ITERS,
         parallel=True,
@@ -51,10 +51,10 @@ def test_benchmark_engines_parallel(engine_path) -> None:
         pytest.param(lambda p: (str(p), None), id="string-tuple"),
     ],
 )
-def test_benchmark_engines_tuple_input(engine_path, entry_factory) -> None:
+def test_benchmark_engines_tuple_input(simple_engine_path, entry_factory) -> None:
     """benchmark_engines accepts (path, dla_core) tuple entries."""
     results = benchmark_engines(
-        [entry_factory(engine_path)],
+        [entry_factory(simple_engine_path)],
         iterations=ITERS,
         warmup_iterations=WARMUP_ITERS,
     )

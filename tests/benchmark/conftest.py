@@ -5,18 +5,5 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import pytest
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
 ITERS = 10
 WARMUP_ITERS = 2
-
-
-@pytest.fixture(scope="session")
-def engine_path(simple_engine_path) -> Path:
-    """Session-scoped built engine for benchmark tests (delegates to global fixture)."""
-    return simple_engine_path
