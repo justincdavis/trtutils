@@ -15,8 +15,8 @@ from trtutils import TRTEngine
 from trtutils.builder import build_engine
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from pathlib import Path
-    from typing import Callable, Generator
 
 
 def _build_test_engine(onnx_name: str) -> Path:
@@ -34,12 +34,6 @@ SIMPLE_ENGINE_PATH = _build_test_engine("simple")
 ENGINE_PATHS = [
     pytest.param(SIMPLE_ENGINE_PATH, id="simple"),
 ]
-
-
-@pytest.fixture(scope="session")
-def engine_path(build_test_engine: Callable[..., Path]) -> Path:
-    """Session-scoped built engine for general engine tests."""
-    return SIMPLE_ENGINE_PATH
 
 
 @pytest.fixture

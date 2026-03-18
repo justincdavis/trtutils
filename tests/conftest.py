@@ -183,20 +183,20 @@ def simple_onnx_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def simple_engine_path(build_test_engine, simple_onnx_path) -> Path:
+def engine_path(build_test_engine, simple_onnx_path) -> Path:
     """Build and return path to a simple test engine."""
     return build_test_engine(simple_onnx_path)
 
 
 @pytest.fixture(scope="session")
-def simple_engine_path_str(simple_engine_path) -> str:
+def engine_path_str(engine_path) -> str:
     """Simple test engine path as a string."""
-    return str(simple_engine_path)
+    return str(engine_path)
 
 
 @pytest.fixture
-def simple_engine(simple_engine_path):
+def simple_engine(engine_path):
     """Load simple test engine, destroy stream after test."""
-    engine, context, _logger, stream = create_engine(simple_engine_path)
+    engine, context, _logger, stream = create_engine(engine_path)
     yield engine, context, stream
     destroy_stream(stream)
