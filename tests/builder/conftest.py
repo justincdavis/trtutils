@@ -5,13 +5,19 @@
 
 from __future__ import annotations
 
+import struct
 import tempfile
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 
-# tests/builder/conftest.py -> tests/builder -> tests -> project_root -> data/
+try:
+    from trtutils.builder._build import build_engine
+except ImportError:
+    build_engine = None
+
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 ONNX_PATH = DATA_DIR / "simple.onnx"
 
@@ -27,9 +33,9 @@ def onnx_path() -> Path:
 @pytest.fixture(scope="session")
 def _can_build_engine(onnx_path: Path) -> bool:
     """Check if TRT can build engines on this hardware (session-cached)."""
+    if build_engine is None:
+        return False
     try:
-        from trtutils.builder._build import build_engine
-
         with tempfile.NamedTemporaryFile(suffix=".engine", delete=True) as f:
             build_engine(onnx_path, f.name, optimization_level=1)
             return True
@@ -55,8 +61,6 @@ def output_engine_path(tmp_path: Path) -> Path:
 @pytest.fixture
 def test_image_dir(tmp_path: Path) -> Path:
     """Create a temp directory with synthetic test images."""
-    import cv2
-
     img_dir = tmp_path / "images"
     img_dir.mkdir()
     rng = np.random.default_rng(42)
@@ -69,8 +73,6 @@ def test_image_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def small_image_dir(tmp_path: Path) -> Path:
     """Create a temp directory with fewer images (for batch boundary testing)."""
-    import cv2
-
     img_dir = tmp_path / "small_images"
     img_dir.mkdir()
     rng = np.random.default_rng(99)
@@ -83,8 +85,6 @@ def small_image_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def single_image_dir(tmp_path: Path) -> Path:
     """Create a temp directory with exactly one image."""
-    import cv2
-
     img_dir = tmp_path / "single_image"
     img_dir.mkdir()
     rng = np.random.default_rng(7)
@@ -104,8 +104,6 @@ def empty_dir(tmp_path: Path) -> Path:
 @pytest.fixture
 def invalid_onnx_file(tmp_path: Path) -> Path:
     """Create a file with .onnx extension but invalid binary content."""
-    import struct
-
     p = tmp_path / "invalid.onnx"
     # Binary junk that triggers protobuf parse failure
     p.write_bytes(
