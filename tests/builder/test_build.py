@@ -81,34 +81,32 @@ def test_build_cache_hit_skips_build(onnx_path, output_engine_path) -> None:
     assert output_engine_path.exists()
 
 
-@pytest.mark.parametrize("timing_cache_val", [True, "global"], ids=["bool_true", "global_str"])
-def test_timing_cache_global_modes(onnx_path, output_engine_path, timing_cache_val: object) -> None:
-    """Build with global timing cache (True or 'global')."""
+@pytest.mark.parametrize(
+    "timing_cache_val",
+    [
+        pytest.param(True, id="bool-true"),
+        pytest.param("global", id="global-str"),
+        pytest.param("local", id="local-file"),
+    ],
+)
+def test_timing_cache_modes(
+    onnx_path, output_engine_path, timing_cache_path, timing_cache_val
+) -> None:
+    """Build succeeds with all valid timing_cache values."""
+    tc = timing_cache_path if timing_cache_val == "local" else timing_cache_val
     build_engine(
         onnx_path,
         output_engine_path,
-        timing_cache=timing_cache_val,
+        timing_cache=tc,
         optimization_level=1,
     )
     assert output_engine_path.exists()
+    if timing_cache_val == "local":
+        assert timing_cache_path.exists()
 
 
-def test_timing_cache_local_file(onnx_path, output_engine_path, timing_cache_path) -> None:
-    """Build with a local timing cache file path."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        timing_cache=timing_cache_path,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-    # Timing cache file should be written
-    assert timing_cache_path.exists()
-
-
-def test_timing_cache_local_existing(onnx_path, output_engine_path, timing_cache_path) -> None:
-    """Build reads an existing local timing cache file."""
-    # First build creates timing cache
+def test_timing_cache_roundtrip(onnx_path, output_engine_path, timing_cache_path) -> None:
+    """Build creates timing cache, second build reads it."""
     build_engine(
         onnx_path,
         output_engine_path,
@@ -117,7 +115,6 @@ def test_timing_cache_local_existing(onnx_path, output_engine_path, timing_cache
     )
     assert timing_cache_path.stat().st_size > 0
 
-    # Second build reads existing timing cache
     out2 = output_engine_path.parent / "test2.engine"
     build_engine(
         onnx_path,
