@@ -15,8 +15,8 @@ from trtutils.core._stream import destroy_stream
 @pytest.mark.parametrize(
     "path",
     [
-        pytest.param("simple_engine_path", id="Path"),
-        pytest.param("simple_engine_path_str", id="str"),
+        pytest.param("engine_path", id="Path"),
+        pytest.param("engine_path_str", id="str"),
     ],
 )
 def test_create_engine(path, request) -> None:
@@ -33,9 +33,9 @@ def test_create_engine(path, request) -> None:
     destroy_stream(stream)
 
 
-def test_create_engine_external_stream(simple_engine_path, cuda_stream) -> None:
+def test_create_engine_external_stream(engine_path, cuda_stream) -> None:
     """create_engine reuses the provided stream."""
-    _engine, _context, _logger, stream = create_engine(simple_engine_path, stream=cuda_stream)
+    _engine, _context, _logger, stream = create_engine(engine_path, stream=cuda_stream)
     assert _engine is not None
     assert stream is cuda_stream
 
@@ -54,12 +54,12 @@ def test_create_engine_invalid_path_raises(tmp_path) -> None:
         pytest.param(False, 0, id="dla_core"),
     ],
 )
-def test_create_engine_options(simple_engine_path, no_warn, dla_core) -> None:
+def test_create_engine_options(engine_path, no_warn, dla_core) -> None:
     """create_engine with no_warn and dla_core options."""
     kwargs = {"no_warn": no_warn}
     if dla_core is not None:
         kwargs["dla_core"] = dla_core
-    engine, _context, _logger, stream = create_engine(simple_engine_path, **kwargs)
+    engine, _context, _logger, stream = create_engine(engine_path, **kwargs)
     assert engine is not None
     destroy_stream(stream)
 
