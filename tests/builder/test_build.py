@@ -18,17 +18,59 @@ from trtutils.compat._libs import trt
 
 
 @pytest.mark.parametrize(
-    ("fp16", "int8"),
+    ("fp16", "int8", "fp8"),
     [
-        pytest.param(False, False, id="default"),
-        pytest.param(True, False, id="fp16"),
-        pytest.param(False, True, id="int8"),
+        pytest.param(False, False, False, id="default"),
+        pytest.param(True, False, False, id="fp16"),
+        pytest.param(False, True, False, id="int8"),
+        pytest.param(False, False, True, id="fp8"),
+        pytest.param(True, True, False, id="fp16-int8"),
+        pytest.param(True, False, True, id="fp16-fp8"),
+        pytest.param(False, True, True, id="int8-fp8"),
+        pytest.param(True, True, True, id="all"),
     ],
 )
-def test_build_precision(onnx_path, output_engine_path, fp16: bool, int8: bool) -> None:
-    """Build succeeds with default, fp16, and int8 precision."""
-    kwargs: dict = {"fp16": fp16, "int8": int8, "optimization_level": 1}
-    if int8:
+def test_build_precision(
+    onnx_path,
+    output_engine_path,
+    fp16: bool,
+    int8: bool,
+    fp8: bool,
+) -> None:
+    """Build succeeds with all precision flag combinations."""
+    build_engine(
+        onnx_path,
+        output_engine_path,
+        fp16=fp16,
+        int8=int8,
+        fp8=fp8,
+        optimization_level=1,
+    )
+    assert output_engine_path.exists()
+    assert output_engine_path.stat().st_size > 0
+
+
+@pytest.mark.parametrize(
+    ("precision", "calibration"),
+    [
+        pytest.param("int8", "none", id="int8-no-calibration"),
+        pytest.param("int8", "batcher", id="int8-batcher"),
+        pytest.param("int8", "cache", id="int8-cache"),
+        pytest.param("fp8", "none", id="fp8-no-calibration"),
+        pytest.param("fp8", "batcher", id="fp8-batcher"),
+        pytest.param("fp8", "cache", id="fp8-cache"),
+    ],
+)
+def test_build_precision_calibration(
+    onnx_path,
+    output_engine_path,
+    calibration_cache_path,
+    precision: str,
+    calibration: str,
+) -> None:
+    """Build succeeds with int8/fp8 using no calibration, batcher, or calibration cache."""
+    kwargs: dict = {precision: True, "optimization_level": 1}
+    if calibration == "batcher":
         kwargs["data_batcher"] = SyntheticBatcher(
             shape=(3, 8, 8),
             dtype=np.dtype(np.float32),
@@ -36,20 +78,11 @@ def test_build_precision(onnx_path, output_engine_path, fp16: bool, int8: bool) 
             num_batches=2,
             order="NCHW",
         )
+    elif calibration == "cache":
+        kwargs["calibration_cache"] = calibration_cache_path
     build_engine(onnx_path, output_engine_path, **kwargs)
     assert output_engine_path.exists()
     assert output_engine_path.stat().st_size > 0
-
-
-def test_build_int8_no_calibrator_warning(onnx_path, output_engine_path) -> None:
-    """Build with int8=True but no batcher/cache logs a warning."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        int8=True,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
 
 
 def test_build_with_cache_stores(onnx_path, output_engine_path) -> None:
