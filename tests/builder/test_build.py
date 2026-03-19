@@ -17,36 +17,28 @@ from trtutils.builder._build import build_engine
 from trtutils.compat._libs import trt
 
 
-def test_build_minimal(onnx_path, output_engine_path) -> None:
-    """Minimal args: onnx path + output path produces a file."""
-    build_engine(onnx_path, output_engine_path, optimization_level=1)
+@pytest.mark.parametrize(
+    ("fp16", "int8"),
+    [
+        pytest.param(False, False, id="default"),
+        pytest.param(True, False, id="fp16"),
+        pytest.param(False, True, id="int8"),
+    ],
+)
+def test_build_precision(onnx_path, output_engine_path, fp16: bool, int8: bool) -> None:
+    """Build succeeds with default, fp16, and int8 precision."""
+    kwargs: dict = {"fp16": fp16, "int8": int8, "optimization_level": 1}
+    if int8:
+        kwargs["data_batcher"] = SyntheticBatcher(
+            shape=(3, 8, 8),
+            dtype=np.dtype(np.float32),
+            batch_size=1,
+            num_batches=2,
+            order="NCHW",
+        )
+    build_engine(onnx_path, output_engine_path, **kwargs)
     assert output_engine_path.exists()
     assert output_engine_path.stat().st_size > 0
-
-
-def test_build_fp16(onnx_path, output_engine_path) -> None:
-    """Build with fp16=True succeeds."""
-    build_engine(onnx_path, output_engine_path, fp16=True, optimization_level=1)
-    assert output_engine_path.exists()
-
-
-def test_build_int8_with_synthetic_batcher(onnx_path, output_engine_path) -> None:
-    """Build with int8=True and SyntheticBatcher succeeds."""
-    batcher = SyntheticBatcher(
-        shape=(3, 8, 8),
-        dtype=np.dtype(np.float32),
-        batch_size=1,
-        num_batches=2,
-        order="NCHW",
-    )
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        int8=True,
-        data_batcher=batcher,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
 
 
 def test_build_int8_no_calibrator_warning(onnx_path, output_engine_path) -> None:
@@ -137,28 +129,47 @@ def test_timing_cache_invalid_raises(onnx_path, output_engine_path) -> None:
 
 
 @pytest.mark.parametrize(
-    "device_str",
-    ["gpu", "GPU", "dla", "DLA"],
-    ids=["gpu_lower", "gpu_upper", "dla_lower", "dla_upper"],
+    "device",
+    [
+        pytest.param("gpu", id="gpu-str-lower"),
+        pytest.param("GPU", id="gpu-str-upper"),
+        pytest.param(trt.DeviceType.GPU, id="gpu-enum"),
+        pytest.param(
+            "dla",
+            id="dla-str-lower",
+            marks=pytest.mark.skipif(
+                not REAL_FLAGS.IS_JETSON,
+                reason="DLA requires Jetson",
+            ),
+        ),
+        pytest.param(
+            "DLA",
+            id="dla-str-upper",
+            marks=pytest.mark.skipif(
+                not REAL_FLAGS.IS_JETSON,
+                reason="DLA requires Jetson",
+            ),
+        ),
+        pytest.param(
+            trt.DeviceType.DLA,
+            id="dla-enum",
+            marks=pytest.mark.skipif(
+                not REAL_FLAGS.IS_JETSON,
+                reason="DLA requires Jetson",
+            ),
+        ),
+    ],
 )
-def test_device_string_variants(onnx_path, output_engine_path, device_str: str) -> None:
-    """GPU and DLA device string variants work."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        default_device=device_str,
-        gpu_fallback=True,
-        optimization_level=1,
+def test_device_variants(onnx_path, output_engine_path, device) -> None:
+    """All device string and enum variants work."""
+    is_dla = (isinstance(device, str) and device.lower() == "dla") or (
+        not isinstance(device, str) and device == trt.DeviceType.DLA
     )
-    assert output_engine_path.exists()
-
-
-def test_device_enum_gpu(onnx_path, output_engine_path) -> None:
-    """trt.DeviceType.GPU enum works."""
     build_engine(
         onnx_path,
         output_engine_path,
-        default_device=trt.DeviceType.GPU,
+        default_device=device,
+        gpu_fallback=is_dla,
         optimization_level=1,
     )
     assert output_engine_path.exists()
