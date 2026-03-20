@@ -15,6 +15,7 @@ from trtutils._flags import FLAGS as REAL_FLAGS
 from trtutils.builder._batcher import SyntheticBatcher
 from trtutils.builder._build import build_engine
 from trtutils.compat._libs import trt
+from trtutils.core import cache as caching_tools
 
 
 @pytest.mark.parametrize(
@@ -85,24 +86,21 @@ def test_build_precision_calibration(
     assert output_engine_path.stat().st_size > 0
 
 
-def test_build_with_cache_stores(onnx_path, output_engine_path) -> None:
-    """Build with cache=True stores engine in cache."""
-    build_engine(onnx_path, output_engine_path, cache=True, optimization_level=1)
-    assert output_engine_path.exists()
-
-
-def test_build_cache_hit_skips_build(onnx_path, output_engine_path) -> None:
-    """Second build with cache=True uses cached copy (skips actual build)."""
-    # First build: store in cache
+def test_build_cache(onnx_path, output_engine_path) -> None:
+    """Build with cache=True stores engine in cache; second call hits cache without invoking TRT."""
+    # first build: engine is built and stored in the cache
     build_engine(onnx_path, output_engine_path, cache=True, optimization_level=1)
     assert output_engine_path.stat().st_size > 0
 
-    # Remove output file but cache should still have it
-    output_engine_path.unlink()
-    assert not output_engine_path.exists()
+    cached_exists, cached_path = caching_tools.query(output_engine_path.stem)
+    assert cached_exists
+    assert cached_path.stat().st_size > 0
 
-    # Second build: should come from cache
-    build_engine(onnx_path, output_engine_path, cache=True, optimization_level=1)
+    # second build: cache hit should copy from cache without parsing the ONNX at all
+    output_engine_path.unlink()
+    with patch("trtutils.builder._build.read_onnx") as mock_read:
+        build_engine(onnx_path, output_engine_path, cache=True, optimization_level=1)
+        mock_read.assert_not_called()
     assert output_engine_path.exists()
 
 
@@ -231,35 +229,23 @@ def test_invalid_device_enum_raises(onnx_path, output_engine_path) -> None:
         )
 
 
-@pytest.mark.parametrize("level", [0, 1, 2, 3, 4, 5], ids=[f"opt{i}" for i in range(6)])
-def test_valid_optimization_levels(onnx_path, output_engine_path, level: int) -> None:
-    """All valid optimization levels (0-5) work."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        optimization_level=level,
-    )
-    assert output_engine_path.exists()
-
-
-def test_invalid_optimization_level_too_high(onnx_path, output_engine_path) -> None:
-    """optimization_level=6 raises ValueError."""
-    with pytest.raises(ValueError, match="Builder optimization level must be between 0 and 5"):
-        build_engine(
-            onnx_path,
-            output_engine_path,
-            optimization_level=6,
-        )
-
-
-def test_invalid_optimization_level_negative(onnx_path, output_engine_path) -> None:
-    """optimization_level=-1 raises ValueError."""
-    with pytest.raises(ValueError, match="Builder optimization level must be between 0 and 5"):
-        build_engine(
-            onnx_path,
-            output_engine_path,
-            optimization_level=-1,
-        )
+@pytest.mark.parametrize(
+    ("level", "valid"),
+    [
+        pytest.param(0, True, id="min"),
+        pytest.param(5, True, id="max"),
+        pytest.param(-1, False, id="negative"),
+        pytest.param(6, False, id="too-high"),
+    ],
+)
+def test_optimization_level(onnx_path, output_engine_path, level: int, valid: bool) -> None:
+    """Boundary optimization levels succeed; out-of-range levels raise ValueError."""
+    if valid:
+        build_engine(onnx_path, output_engine_path, optimization_level=level)
+        assert output_engine_path.exists()
+    else:
+        with pytest.raises(ValueError, match="Builder optimization level must be between 0 and 5"):
+            build_engine(onnx_path, output_engine_path, optimization_level=level)
 
 
 def test_manual_shapes(onnx_path, output_engine_path) -> None:
