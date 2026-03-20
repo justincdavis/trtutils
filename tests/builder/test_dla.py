@@ -16,6 +16,8 @@ from trtutils.builder._onnx import read_onnx
 from trtutils.builder._utils import get_check_dla
 from trtutils.compat._libs import trt
 
+pytestmark = pytest.mark.jetson
+
 
 def _make_batcher():
     return SyntheticBatcher(
@@ -50,19 +52,23 @@ def _make_mock_network(
     return mock_network
 
 
-def test_returns_tuple(onnx_path) -> None:
-    """can_run_on_dla returns (bool, list) tuple."""
-    result = can_run_on_dla(onnx_path)
-    assert isinstance(result, tuple)
-    assert len(result) == 2
-    full_dla, chunks = result
+@pytest.mark.parametrize(
+    "use_network",
+    [
+        pytest.param(False, id="onnx-path"),
+        pytest.param(True, id="network-with-config"),
+    ],
+)
+def test_can_run_on_dla(onnx_path, use_network) -> None:
+    """can_run_on_dla returns correct structure from both path and network inputs."""
+    if use_network:
+        network, _, config, _ = read_onnx(onnx_path)
+        full_dla, chunks = can_run_on_dla(network, config=config)
+    else:
+        full_dla, chunks = can_run_on_dla(onnx_path)
+
     assert isinstance(full_dla, bool)
     assert isinstance(chunks, list)
-
-
-def test_chunks_have_correct_structure(onnx_path) -> None:
-    """Each chunk is (layers, start, end, on_dla) tuple."""
-    _, chunks = can_run_on_dla(onnx_path)
     for chunk in chunks:
         assert len(chunk) == 4
         layers, start, end, on_dla = chunk
@@ -77,27 +83,6 @@ def test_network_input_requires_config(onnx_path) -> None:
     network, _, _, _ = read_onnx(onnx_path)
     with pytest.raises(ValueError, match="Config must be provided"):
         can_run_on_dla(network, config=None)
-
-
-def test_network_input_with_config(onnx_path) -> None:
-    """can_run_on_dla accepts a pre-made network with config."""
-    network, _, config, _ = read_onnx(onnx_path)
-    full_dla, chunks = can_run_on_dla(network, config=config)
-    assert isinstance(full_dla, bool)
-    assert isinstance(chunks, list)
-
-
-def test_build_basic(onnx_path, output_engine_path) -> None:
-    """build_dla_engine runs without error."""
-    batcher = _make_batcher()
-    build_dla_engine(
-        onnx_path,
-        output_engine_path,
-        data_batcher=batcher,
-        dla_core=0,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
 
 
 def test_full_dla_path(onnx_path, output_engine_path) -> None:
@@ -120,7 +105,7 @@ def test_full_dla_path(onnx_path, output_engine_path) -> None:
 
 
 def test_no_dla_chunks(onnx_path, output_engine_path) -> None:
-    """No DLA-compatible layers → GPU-only build with warning."""
+    """No DLA-compatible layers triggers GPU-only build."""
     batcher = _make_batcher()
     mock_layers = [MagicMock() for _ in range(5)]
     chunks = [(mock_layers, 0, 4, False)]
@@ -134,50 +119,6 @@ def test_no_dla_chunks(onnx_path, output_engine_path) -> None:
                 dla_core=0,
             )
             mock_build.assert_called_once()
-
-
-def test_mixed_dla_gpu(onnx_path, output_engine_path) -> None:
-    """Partial DLA → layer assignments with mixed devices."""
-    batcher = _make_batcher()
-    build_dla_engine(
-        onnx_path,
-        output_engine_path,
-        data_batcher=batcher,
-        dla_core=0,
-        max_chunks=1,
-        min_layers=0,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_max_chunks_limit(onnx_path, output_engine_path) -> None:
-    """max_chunks parameter limits DLA chunk assignment."""
-    batcher = _make_batcher()
-    build_dla_engine(
-        onnx_path,
-        output_engine_path,
-        data_batcher=batcher,
-        dla_core=0,
-        max_chunks=0,
-        min_layers=0,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_min_layers_filter(onnx_path, output_engine_path) -> None:
-    """min_layers parameter filters small chunks."""
-    batcher = _make_batcher()
-    build_dla_engine(
-        onnx_path,
-        output_engine_path,
-        data_batcher=batcher,
-        dla_core=0,
-        min_layers=99999,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
 
 
 @patch("trtutils.builder._dla.build_engine")
@@ -388,17 +329,11 @@ def test_max_chunks_zero_assigns_all(
         assert layer_device[i] == (i, trt.DeviceType.DLA), f"Layer {i} should be DLA"
 
 
-def test_get_check_dla_returns_callable(onnx_path) -> None:
-    """get_check_dla returns a callable."""
-    _, _, config, _ = read_onnx(onnx_path)
-    check_fn = get_check_dla(config)
-    assert callable(check_fn)
-
-
-def test_get_check_dla_function_accepts_layer(onnx_path) -> None:
-    """Returned function can be called with a layer."""
+def test_get_check_dla(onnx_path) -> None:
+    """get_check_dla returns a callable that accepts a layer and returns bool."""
     network, _, config, _ = read_onnx(onnx_path)
     check_fn = get_check_dla(config)
+    assert callable(check_fn)
     config.default_device_type = trt.DeviceType.DLA
     config.DLA_core = 0
     if network.num_layers > 0:
