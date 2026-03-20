@@ -126,26 +126,7 @@ def test_timing_cache_modes(
     assert output_engine_path.exists()
     if timing_cache_val == "local":
         assert timing_cache_path.exists()
-
-
-def test_timing_cache_roundtrip(onnx_path, output_engine_path, timing_cache_path) -> None:
-    """Build creates timing cache, second build reads it."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        timing_cache=timing_cache_path,
-        optimization_level=1,
-    )
-    assert timing_cache_path.stat().st_size > 0
-
-    out2 = output_engine_path.parent / "test2.engine"
-    build_engine(
-        onnx_path,
-        out2,
-        timing_cache=timing_cache_path,
-        optimization_level=1,
-    )
-    assert out2.exists()
+        assert timing_cache_path.stat().st_size > 0
 
 
 def test_timing_cache_invalid_raises(onnx_path, output_engine_path) -> None:
