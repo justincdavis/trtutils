@@ -329,42 +329,28 @@ def test_layer_settings(
     assert output_engine_path.exists()
 
 
-def test_invalid_onnx_raises(invalid_onnx_file, output_engine_path) -> None:
-    """Invalid ONNX file raises RuntimeError."""
-    with pytest.raises(RuntimeError, match="Cannot parse ONNX file"):
-        build_engine(invalid_onnx_file, output_engine_path, optimization_level=1)
-
-
-def test_nonexistent_onnx_raises(output_engine_path, tmp_path) -> None:
-    """Nonexistent ONNX path raises FileNotFoundError."""
-    with pytest.raises(FileNotFoundError):
-        build_engine(
-            tmp_path / "nonexistent.onnx",
-            output_engine_path,
-            optimization_level=1,
-        )
+@pytest.mark.parametrize(
+    ("onnx_fixture", "exc"),
+    [
+        pytest.param("invalid_onnx_file", RuntimeError, id="invalid-content"),
+        pytest.param(None, FileNotFoundError, id="nonexistent"),
+    ],
+)
+def test_bad_onnx_raises(request, output_engine_path, tmp_path, onnx_fixture, exc) -> None:
+    """Invalid or missing ONNX path raises the expected exception."""
+    path = request.getfixturevalue(onnx_fixture) if onnx_fixture else tmp_path / "nonexistent.onnx"
+    with pytest.raises(exc):
+        build_engine(path, output_engine_path, optimization_level=1)
 
 
 def test_build_failure_raises(onnx_path, output_engine_path) -> None:
     """Engine build returning None raises RuntimeError."""
-    # Mock the builder to return None for engine_bytes
-    with patch("trtutils.builder._build.FLAGS") as mock_flags:
-        # Copy real flags but force BUILD_SERIALIZED to True so we mock the right path
-        for attr in dir(REAL_FLAGS):
-            if not attr.startswith("_"):
-                setattr(mock_flags, attr, getattr(REAL_FLAGS, attr))
-        mock_flags.BUILD_SERIALIZED = True
-        mock_flags.BUILD_PROGRESS = False
+    with patch("trtutils.builder._build.read_onnx") as mock_read:
+        mock_builder = MagicMock()
+        mock_read.return_value = (MagicMock(), mock_builder, MagicMock(), MagicMock())
+        mock_builder.build_serialized_network.return_value = None
+        mock_builder.build_engine.return_value = None
+        mock_builder.create_optimization_profile.return_value = MagicMock()
 
-        # Now mock the builder.build_serialized_network to return None
-        with patch("trtutils.builder._build.read_onnx") as mock_read:
-            mock_network = MagicMock()
-            mock_builder = MagicMock()
-            mock_config = MagicMock()
-            mock_parser = MagicMock()
-            mock_read.return_value = (mock_network, mock_builder, mock_config, mock_parser)
-            mock_builder.build_serialized_network.return_value = None
-            mock_builder.create_optimization_profile.return_value = MagicMock()
-
-            with pytest.raises(RuntimeError, match="Failed to build engine"):
-                build_engine(onnx_path, output_engine_path, optimization_level=1)
+        with pytest.raises(RuntimeError, match="Failed to build engine"):
+            build_engine(onnx_path, output_engine_path, optimization_level=1)
