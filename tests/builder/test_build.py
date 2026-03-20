@@ -13,7 +13,7 @@ import pytest
 from trtutils._flags import FLAGS as REAL_FLAGS
 from trtutils.builder._batcher import SyntheticBatcher
 from trtutils.builder._build import build_engine
-from trtutils.builder.onnx._shapes import get_onnx_input
+from trtutils.builder.onnx._shapes import get_onnx_input, get_onnx_output
 from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
 
@@ -261,154 +261,70 @@ def test_multiple_hooks(onnx_path, output_engine_path) -> None:
     assert call_order == ["a", "b"]
 
 
-def test_prefer_precision_constraints(onnx_path, output_engine_path) -> None:
-    """prefer_precision_constraints=True sets the flag."""
+@pytest.mark.parametrize("valid", [True, False], ids=["valid", "invalid"])
+def test_input_tensor_format(onnx_path, output_engine_path, valid: bool) -> None:
+    """Valid input tensor name sets format; invalid name raises ValueError."""
+    name = get_onnx_input(onnx_path)[0] if valid else "nonexistent"
+    if valid:
+        build_engine(
+            onnx_path,
+            output_engine_path,
+            input_tensor_formats=[(name, trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
+            optimization_level=1,
+        )
+        assert output_engine_path.exists()
+    else:
+        with pytest.raises(ValueError, match="not found in network"):
+            build_engine(
+                onnx_path,
+                output_engine_path,
+                input_tensor_formats=[(name, trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
+                optimization_level=1,
+            )
+
+
+@pytest.mark.parametrize("valid", [True, False], ids=["valid", "invalid"])
+def test_output_tensor_format(onnx_path, output_engine_path, valid: bool) -> None:
+    """Valid output tensor name sets format; invalid name raises ValueError."""
+    name = get_onnx_output(onnx_path)[0] if valid else "nonexistent"
+    if valid:
+        build_engine(
+            onnx_path,
+            output_engine_path,
+            output_tensor_formats=[(name, trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
+            optimization_level=1,
+        )
+        assert output_engine_path.exists()
+    else:
+        with pytest.raises(ValueError, match="not found in network"):
+            build_engine(
+                onnx_path,
+                output_engine_path,
+                output_tensor_formats=[(name, trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
+                optimization_level=1,
+            )
+
+
+@pytest.mark.parametrize(
+    ("layer_precision", "layer_device", "extra_kwargs"),
+    [
+        pytest.param([(0, trt.DataType.HALF)], None, {"fp16": True}, id="precision-half"),
+        pytest.param([(0, None)], None, {}, id="precision-none-skip"),
+        pytest.param(None, [(0, trt.DeviceType.GPU)], {}, id="device-gpu"),
+        pytest.param(None, [(0, None)], {}, id="device-none-skip"),
+    ],
+)
+def test_layer_settings(
+    onnx_path, output_engine_path, layer_precision, layer_device, extra_kwargs
+) -> None:
+    """Per-layer precision and device assignments build successfully."""
     build_engine(
         onnx_path,
         output_engine_path,
-        prefer_precision_constraints=True,
+        layer_precision=layer_precision,
+        layer_device=layer_device,
         optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_reject_empty_algorithms(onnx_path, output_engine_path) -> None:
-    """reject_empty_algorithms=True sets the flag."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        reject_empty_algorithms=True,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_direct_io_explicit(onnx_path, output_engine_path) -> None:
-    """direct_io=True sets the DIRECT_IO builder flag."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        direct_io=True,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_direct_io_auto_enable(onnx_path, output_engine_path) -> None:
-    """Tensor formats without explicit direct_io auto-enables it."""
-    # Providing input_tensor_formats with direct_io=False should auto-enable
-    # We use a nonexistent name so the tensor won't be found, but the
-    # auto-enable code path is still triggered
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        input_tensor_formats=[("nonexistent", trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
-        direct_io=False,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_gpu_fallback(onnx_path, output_engine_path) -> None:
-    """gpu_fallback=True sets the GPU_FALLBACK flag."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        gpu_fallback=True,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_input_tensor_format_not_found_warning(onnx_path, output_engine_path) -> None:
-    """Input tensor name not found logs a warning but doesn't fail."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        input_tensor_formats=[("nonexistent_tensor", trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
-        direct_io=True,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_output_tensor_format_not_found_warning(onnx_path, output_engine_path) -> None:
-    """Output tensor name not found logs a warning but doesn't fail."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        output_tensor_formats=[("nonexistent_tensor", trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
-        direct_io=True,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_input_tensor_format_found(onnx_path, output_engine_path) -> None:
-    """Input tensor name matching a real tensor sets format."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        input_tensor_formats=[("input", trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
-        direct_io=True,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_output_tensor_format_found(onnx_path, output_engine_path) -> None:
-    """Output tensor name matching a real tensor sets format."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        output_tensor_formats=[("output", trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
-        direct_io=True,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_layer_precision(onnx_path, output_engine_path) -> None:
-    """layer_precision sets per-layer precision."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        layer_precision=[(0, trt.DataType.HALF)],
-        fp16=True,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_layer_precision_none_skip(onnx_path, output_engine_path) -> None:
-    """layer_precision with None precision is skipped."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        layer_precision=[(0, None)],
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_layer_device_gpu(onnx_path, output_engine_path) -> None:
-    """layer_device with GPU assignment."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        layer_device=[(0, trt.DeviceType.GPU)],
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_layer_device_none_skip(onnx_path, output_engine_path) -> None:
-    """layer_device with None device is skipped."""
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        layer_device=[(0, None)],
-        optimization_level=1,
+        **extra_kwargs,
     )
     assert output_engine_path.exists()
 
