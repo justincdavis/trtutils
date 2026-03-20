@@ -105,39 +105,38 @@ def test_build_cache(onnx_path, output_engine_path) -> None:
 
 
 @pytest.mark.parametrize(
-    "timing_cache_val",
+    ("timing_cache_val", "valid"),
     [
-        pytest.param(True, id="bool-true"),
-        pytest.param("global", id="global-str"),
-        pytest.param("local", id="local-file"),
+        pytest.param(True, True, id="bool-true"),
+        pytest.param("global", True, id="global-str"),
+        pytest.param("local", True, id="local-file"),
+        pytest.param(42, False, id="invalid-int"),
     ],
 )
 def test_timing_cache_modes(
-    onnx_path, output_engine_path, timing_cache_path, timing_cache_val
+    onnx_path, output_engine_path, timing_cache_path, timing_cache_val, valid: bool
 ) -> None:
-    """Build succeeds with all valid timing_cache values."""
+    """Valid timing_cache values succeed; invalid types raise ValueError."""
     tc = timing_cache_path if timing_cache_val == "local" else timing_cache_val
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        timing_cache=tc,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-    if timing_cache_val == "local":
-        assert timing_cache_path.exists()
-        assert timing_cache_path.stat().st_size > 0
-
-
-def test_timing_cache_invalid_raises(onnx_path, output_engine_path) -> None:
-    """Invalid timing_cache type raises ValueError."""
-    with pytest.raises(ValueError, match="Invalid timing_cache value"):
+    if valid:
         build_engine(
             onnx_path,
             output_engine_path,
-            timing_cache=42,  # type: ignore[arg-type]
+            timing_cache=tc,
             optimization_level=1,
         )
+        assert output_engine_path.exists()
+        if timing_cache_val == "local":
+            assert timing_cache_path.exists()
+            assert timing_cache_path.stat().st_size > 0
+    else:
+        with pytest.raises(ValueError, match="Invalid timing_cache value"):
+            build_engine(
+                onnx_path,
+                output_engine_path,
+                timing_cache=tc,  # type: ignore[arg-type]
+                optimization_level=1,
+            )
 
 
 @pytest.mark.parametrize(
