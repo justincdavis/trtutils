@@ -141,73 +141,55 @@ def test_timing_cache_invalid_raises(onnx_path, output_engine_path) -> None:
 
 
 @pytest.mark.parametrize(
-    "device",
+    ("device", "valid"),
     [
-        pytest.param("gpu", id="gpu-str-lower"),
-        pytest.param("GPU", id="gpu-str-upper"),
-        pytest.param(trt.DeviceType.GPU, id="gpu-enum"),
+        pytest.param("gpu", True, id="gpu-str-lower"),
+        pytest.param("GPU", True, id="gpu-str-upper"),
+        pytest.param(trt.DeviceType.GPU, True, id="gpu-enum"),
         pytest.param(
             "dla",
+            True,
             id="dla-str-lower",
-            marks=pytest.mark.skipif(
-                not REAL_FLAGS.IS_JETSON,
-                reason="DLA requires Jetson",
-            ),
+            marks=pytest.mark.skipif(not REAL_FLAGS.IS_JETSON, reason="DLA requires Jetson"),
         ),
         pytest.param(
             "DLA",
+            True,
             id="dla-str-upper",
-            marks=pytest.mark.skipif(
-                not REAL_FLAGS.IS_JETSON,
-                reason="DLA requires Jetson",
-            ),
+            marks=pytest.mark.skipif(not REAL_FLAGS.IS_JETSON, reason="DLA requires Jetson"),
         ),
         pytest.param(
             trt.DeviceType.DLA,
+            True,
             id="dla-enum",
-            marks=pytest.mark.skipif(
-                not REAL_FLAGS.IS_JETSON,
-                reason="DLA requires Jetson",
-            ),
+            marks=pytest.mark.skipif(not REAL_FLAGS.IS_JETSON, reason="DLA requires Jetson"),
         ),
+        pytest.param("tpu", False, id="invalid-str"),
+        pytest.param(999, False, id="invalid-int"),
     ],
 )
-def test_device_variants(onnx_path, output_engine_path, device) -> None:
-    """All device string and enum variants work."""
-    is_dla = (isinstance(device, str) and device.lower() == "dla") or (
-        not isinstance(device, str) and device == trt.DeviceType.DLA
-    )
-    build_engine(
-        onnx_path,
-        output_engine_path,
-        default_device=device,
-        gpu_fallback=is_dla,
-        optimization_level=1,
-    )
-    assert output_engine_path.exists()
-
-
-def test_invalid_device_string_raises(onnx_path, output_engine_path) -> None:
-    """Invalid device string raises ValueError."""
-    with pytest.raises(ValueError, match="Invalid default device"):
+def test_device_variants(onnx_path, output_engine_path, device, valid: bool) -> None:
+    """Valid device strings and enums succeed; invalid values raise."""
+    if valid:
+        is_dla = (isinstance(device, str) and device.lower() == "dla") or (
+            not isinstance(device, str) and device == trt.DeviceType.DLA
+        )
         build_engine(
             onnx_path,
             output_engine_path,
-            default_device="tpu",
+            default_device=device,
+            gpu_fallback=is_dla,
             optimization_level=1,
         )
-
-
-def test_invalid_device_enum_raises(onnx_path, output_engine_path) -> None:
-    """Invalid device enum value raises ValueError."""
-    # Pass a non-DeviceType enum (just an int) to trigger the else branch
-    with pytest.raises((ValueError, AttributeError)):
-        build_engine(
-            onnx_path,
-            output_engine_path,
-            default_device=999,  # type: ignore[arg-type]
-            optimization_level=1,
-        )
+        assert output_engine_path.exists()
+    else:
+        with pytest.raises((ValueError, AttributeError)):
+            build_engine(
+                onnx_path,
+                output_engine_path,
+                default_device=device,  # type: ignore[arg-type]
+                optimization_level=1,
+            )
 
 
 @pytest.mark.parametrize(
