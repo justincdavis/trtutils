@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -14,6 +13,7 @@ import pytest
 from trtutils._flags import FLAGS as REAL_FLAGS
 from trtutils.builder._batcher import SyntheticBatcher
 from trtutils.builder._build import build_engine
+from trtutils.builder.onnx._shapes import get_onnx_input
 from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
 
@@ -211,16 +211,15 @@ def test_optimization_level(onnx_path, output_engine_path, level: int, valid: bo
 
 
 def test_manual_shapes(onnx_path, output_engine_path) -> None:
-    """Passing shapes sets min/opt/max profile for specified input."""
-    # The simple.onnx model's input name may vary; build should still succeed
-    # or raise a runtime error if names don't match (which is expected)
-    with contextlib.suppress(RuntimeError):
-        build_engine(
-            onnx_path,
-            output_engine_path,
-            shapes=[("input", (1, 3, 8, 8))],
-            optimization_level=1,
-        )
+    """Passing shapes sets min/opt/max profile for the model's actual input."""
+    input_name, input_shape = get_onnx_input(onnx_path)
+    build_engine(
+        onnx_path,
+        output_engine_path,
+        shapes=[(input_name, input_shape)],
+        optimization_level=1,
+    )
+    assert output_engine_path.exists()
 
 
 def test_single_hook(onnx_path, output_engine_path) -> None:
