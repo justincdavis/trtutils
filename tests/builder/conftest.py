@@ -19,45 +19,33 @@ if TYPE_CHECKING:
 _CPU_ONLY = os.environ.get("TRTUTILS_IGNORE_MISSING_CUDA", "0") == "1"
 
 
+def _make_image_dir(base: Path, name: str, count: int, seed: int) -> Path:
+    """Create a temp directory with synthetic test images."""
+    img_dir = base / name
+    img_dir.mkdir()
+    rng = np.random.default_rng(seed)
+    for i in range(count):
+        img = rng.integers(0, 255, (48, 64, 3), dtype=np.uint8)
+        cv2.imwrite(str(img_dir / f"img_{i:03d}.jpg"), img)
+    return img_dir
+
+
 @pytest.fixture
 def output_engine_path(tmp_path) -> Path:
     """Temporary path for built engine output."""
     return tmp_path / "test_output.engine"
 
 
-@pytest.fixture
-def test_image_dir(tmp_path) -> Path:
-    """Create a temp directory with synthetic test images."""
-    img_dir = tmp_path / "images"
-    img_dir.mkdir()
-    rng = np.random.default_rng(42)
-    for i in range(8):
-        img = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
-        cv2.imwrite(str(img_dir / f"test_{i:03d}.jpg"), img)
-    return img_dir
+@pytest.fixture(scope="session")
+def test_image_dir(tmp_path_factory) -> Path:
+    """Directory with 8 synthetic test images."""
+    return _make_image_dir(tmp_path_factory.mktemp("images"), "imgs", 8, 42)
 
 
-@pytest.fixture
-def small_image_dir(tmp_path) -> Path:
-    """Create a temp directory with fewer images (for batch boundary testing)."""
-    img_dir = tmp_path / "small_images"
-    img_dir.mkdir()
-    rng = np.random.default_rng(99)
-    for i in range(3):
-        img = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
-        cv2.imwrite(str(img_dir / f"img_{i:03d}.jpg"), img)
-    return img_dir
-
-
-@pytest.fixture
-def single_image_dir(tmp_path) -> Path:
-    """Create a temp directory with exactly one image."""
-    img_dir = tmp_path / "single_image"
-    img_dir.mkdir()
-    rng = np.random.default_rng(7)
-    img = rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
-    cv2.imwrite(str(img_dir / "only.jpg"), img)
-    return img_dir
+@pytest.fixture(scope="session")
+def single_image_dir(tmp_path_factory) -> Path:
+    """Directory with exactly one image."""
+    return _make_image_dir(tmp_path_factory.mktemp("single"), "imgs", 1, 7)
 
 
 @pytest.fixture

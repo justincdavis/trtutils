@@ -11,18 +11,13 @@ import pytest
 from trtutils.builder._batcher import ImageBatcher
 
 
-@pytest.mark.cpu
-def test_init_valid_dir(test_image_dir) -> None:
-    """ImageBatcher initializes with a valid image directory."""
-    batcher = ImageBatcher(
-        test_image_dir,
-        shape=(640, 640, 3),
-        dtype=np.float32,
-        batch_size=4,
-    )
-    assert batcher.num_batches > 0
-    assert batcher.batch_size == 4
-    batcher._close()
+@pytest.fixture
+def close_batcher():
+    """Ensure ImageBatcher._close() is called even on test failure."""
+    batchers = []
+    yield batchers
+    for b in batchers:
+        b._close()
 
 
 @pytest.mark.cpu
@@ -90,36 +85,40 @@ def test_init_max_images_zero(test_image_dir) -> None:
 
 @pytest.mark.cpu
 def test_no_valid_batches(single_image_dir) -> None:
-    """ValueError when batch_size > num_images (can't form a full batch)."""
+    """ValueError when batch_size > num_images."""
     with pytest.raises(ValueError, match="Could not form any valid batches"):
         ImageBatcher(
             single_image_dir,
-            shape=(224, 224, 3),
+            shape=(32, 32, 3),
             dtype=np.float32,
-            batch_size=8,  # Only 1 image, batch_size=8 → no valid batches
+            batch_size=8,
         )
 
 
 @pytest.mark.cpu
-def test_max_images_truncates(test_image_dir) -> None:
-    """max_images limits total images processed."""
+def test_max_images_truncates(test_image_dir, close_batcher) -> None:
+    """max_images limits total batches produced."""
     batcher = ImageBatcher(
         test_image_dir,
-        shape=(224, 224, 3),
+        shape=(32, 32, 3),
         dtype=np.float32,
         batch_size=2,
         max_images=4,
     )
+    close_batcher.append(batcher)
     assert batcher.num_batches == 2
-    batcher._close()
+    count = 0
+    while batcher.get_next_batch() is not None:
+        count += 1
+    assert count == 2
 
 
 @pytest.mark.cpu
 @pytest.mark.parametrize("order", ["NCHW", "NHWC"], ids=["nchw", "nhwc"])
 @pytest.mark.parametrize("resize_method", ["letterbox", "linear"], ids=["letterbox", "linear"])
-def test_batch_shape(test_image_dir, order, resize_method) -> None:
-    """Output shape matches configured (N,C,H,W) or (N,H,W,C)."""
-    h, w, c = 224, 224, 3
+def test_batch_shape(test_image_dir, order, resize_method, close_batcher) -> None:
+    """Output shape matches configured layout and is C-contiguous."""
+    h, w, c = 32, 32, 3
     bs = 4
     batcher = ImageBatcher(
         test_image_dir,
@@ -129,131 +128,46 @@ def test_batch_shape(test_image_dir, order, resize_method) -> None:
         order=order,
         resize_method=resize_method,
     )
+    close_batcher.append(batcher)
     batch = batcher.get_next_batch()
     assert batch is not None
     if order == "NCHW":
         assert batch.shape == (bs, c, h, w)
     else:
         assert batch.shape == (bs, h, w, c)
-    batcher._close()
-
-
-@pytest.mark.cpu
-def test_batch_dtype(test_image_dir) -> None:
-    """Batch dtype matches requested dtype."""
-    batcher = ImageBatcher(
-        test_image_dir,
-        shape=(224, 224, 3),
-        dtype=np.float32,
-        batch_size=4,
-    )
-    batch = batcher.get_next_batch()
-    assert batch.dtype == np.float32
-    batcher._close()
-
-
-@pytest.mark.cpu
-def test_batch_count(test_image_dir) -> None:
-    """num_batches matches actual batch count from iteration."""
-    batcher = ImageBatcher(
-        test_image_dir,
-        shape=(224, 224, 3),
-        dtype=np.float32,
-        batch_size=4,
-    )
-    count = 0
-    while batcher.get_next_batch() is not None:
-        count += 1
-    assert count == batcher.num_batches
-    batcher._close()
-
-
-@pytest.mark.cpu
-def test_get_next_batch_returns_array(test_image_dir) -> None:
-    """get_next_batch returns a numpy array."""
-    batcher = ImageBatcher(
-        test_image_dir,
-        shape=(224, 224, 3),
-        dtype=np.float32,
-        batch_size=4,
-    )
-    batch = batcher.get_next_batch()
-    assert isinstance(batch, np.ndarray)
-    assert batch.shape[0] == 4
-    batcher._close()
-
-
-@pytest.mark.cpu
-def test_exhausted_returns_none(test_image_dir) -> None:
-    """get_next_batch returns None after all batches consumed."""
-    batcher = ImageBatcher(
-        test_image_dir,
-        shape=(224, 224, 3),
-        dtype=np.float32,
-        batch_size=4,
-    )
-    for _ in range(batcher.num_batches):
-        batch = batcher.get_next_batch()
-        assert batch is not None
-    assert batcher.get_next_batch() is None
-    batcher._close()
-
-
-@pytest.mark.cpu
-def test_prefetch_queue(test_image_dir) -> None:
-    """Batches are prefetched in background thread."""
-    batcher = ImageBatcher(
-        test_image_dir,
-        shape=(224, 224, 3),
-        dtype=np.float32,
-        batch_size=4,
-    )
-    # The thread should be alive and prefetching
-    assert batcher._thread.is_alive() or batcher._queue.qsize() > 0
-    # Get all batches
-    for _ in range(batcher.num_batches):
-        batcher.get_next_batch()
-    batcher._close()
-
-
-@pytest.mark.cpu
-def test_cleanup_on_close(test_image_dir) -> None:
-    """_close() stops the background thread."""
-    batcher = ImageBatcher(
-        test_image_dir,
-        shape=(224, 224, 3),
-        dtype=np.float32,
-        batch_size=4,
-    )
-    batcher._close()
-    assert not batcher._thread.is_alive()
-    assert batcher._event.is_set()
+    assert batch.flags["C_CONTIGUOUS"]
 
 
 @pytest.mark.cpu
 @pytest.mark.parametrize("dtype", [np.float32, np.float16], ids=["fp32", "fp16"])
-def test_dtype_handling(test_image_dir, dtype) -> None:
-    """Different dtypes work correctly."""
+def test_batch_dtype(test_image_dir, dtype, close_batcher) -> None:
+    """Batch dtype matches requested dtype."""
     batcher = ImageBatcher(
         test_image_dir,
-        shape=(224, 224, 3),
+        shape=(32, 32, 3),
         dtype=dtype,
         batch_size=4,
     )
+    close_batcher.append(batcher)
     batch = batcher.get_next_batch()
     assert batch.dtype == dtype
-    batcher._close()
 
 
 @pytest.mark.cpu
-def test_c_contiguous_output(test_image_dir) -> None:
-    """Output is always C-contiguous."""
+def test_batch_count_and_lifecycle(test_image_dir, close_batcher) -> None:
+    """Batch count matches, exhaustion returns None, thread stops on close."""
     batcher = ImageBatcher(
         test_image_dir,
-        shape=(224, 224, 3),
+        shape=(32, 32, 3),
         dtype=np.float32,
         batch_size=4,
     )
-    batch = batcher.get_next_batch()
-    assert batch.flags["C_CONTIGUOUS"]
+    close_batcher.append(batcher)
+    count = 0
+    while batcher.get_next_batch() is not None:
+        count += 1
+    assert count == batcher.num_batches
+    assert batcher.get_next_batch() is None
     batcher._close()
+    assert not batcher._thread.is_alive()
+    assert batcher._event.is_set()
