@@ -101,14 +101,19 @@ class Flags:
     # Internal flags
     JIT: bool = False
 
-    def _init_device_flags(self) -> None:
+    def init_device_flags(self) -> None:
         """Initialize device-specific flags. Called after core is imported."""
-        from trtutils.core._device import get_compute_capability, get_device_name, get_sm_arch  # noqa: E402
+        from trtutils.core._device import (  # noqa: PLC0415
+            get_compute_capability,
+            get_device_name,
+            get_sm_arch,
+        )
 
         _sm = get_compute_capability()
         self.SM_VERSION = _sm[0] * 10 + _sm[1]
         self.SM_ARCH = get_sm_arch(*_sm)
         self.DEVICE_NAME = get_device_name()
+
     FOUND_NUMBA: bool = False
     WARNED_NUMBA_NOT_FOUND: bool = False
     NVTX_ENABLED: bool = False

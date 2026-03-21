@@ -123,7 +123,7 @@ import contextlib
 
 from . import builder, compat, core, download, image, inspect, models, parallel, research, trtexec
 
-FLAGS._init_device_flags()
+FLAGS.init_device_flags()
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
 from ._engine import TRTEngine
 from ._profile import profile_engine
