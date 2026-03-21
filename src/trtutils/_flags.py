@@ -52,6 +52,13 @@ class Flags:
         The TensorRT major and minor version as a tuple.
     IS_JETSON : bool
         Whether or not the system is a Jetson system
+    SM_VERSION : int
+        The SM (compute capability) version as an integer.
+        E.g. SM 7.5 -> 75, SM 10.0 -> 100.
+    SM_ARCH : str
+        The GPU architecture name. E.g. "turing", "blackwell".
+    DEVICE_NAME : str
+        The name of the GPU device. E.g. "NVIDIA GeForce RTX 5080".
     JIT : bool
         Whether or not to use jit.
     FOUND_NUMBA : bool
@@ -87,9 +94,26 @@ class Flags:
 
     # System flags
     IS_JETSON: bool = False
+    SM_VERSION: int = 0
+    SM_ARCH: str = "unknown"
+    DEVICE_NAME: str = "unknown"
 
     # Internal flags
     JIT: bool = False
+
+    def init_device_flags(self) -> None:
+        """Initialize device-specific flags. Called after core is imported."""
+        from trtutils.core._device import (  # noqa: PLC0415
+            get_compute_capability,
+            get_device_name,
+            get_sm_arch,
+        )
+
+        _sm = get_compute_capability()
+        self.SM_VERSION = _sm[0] * 10 + _sm[1]
+        self.SM_ARCH = get_sm_arch(*_sm)
+        self.DEVICE_NAME = get_device_name()
+
     FOUND_NUMBA: bool = False
     WARNED_NUMBA_NOT_FOUND: bool = False
     NVTX_ENABLED: bool = False

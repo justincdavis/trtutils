@@ -13,6 +13,66 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 
+_SM_ARCH_MAP: dict[int, str | dict[int, str]] = {
+    3: "kepler",
+    5: "maxwell",
+    6: "pascal",
+    7: {0: "volta", 1: "volta", 2: "volta", 5: "turing"},
+    8: {0: "ampere", 6: "ampere", 7: "ampere", 9: "ada"},
+    9: "hopper",
+    10: "blackwell",
+    12: "blackwell",
+}
+
+
+def get_sm_arch(major: int, minor: int) -> str:
+    """
+    Get the GPU architecture name from a compute capability version.
+
+    Parameters
+    ----------
+    major : int
+        The major compute capability version.
+    minor : int
+        The minor compute capability version.
+
+    Returns
+    -------
+    str
+        The architecture name (e.g. "turing", "blackwell").
+        Returns "unknown" if the compute capability is not recognized.
+
+    """
+    if major == 0:
+        return "unknown"
+    entry = _SM_ARCH_MAP.get(major)
+    if entry is None:
+        return "unknown"
+    if isinstance(entry, str):
+        return entry
+    return entry.get(minor, "unknown")
+
+
+def get_device_name(device: int = 0) -> str:
+    """
+    Get the name of a CUDA device.
+
+    Parameters
+    ----------
+    device : int, optional
+        The CUDA device index. Default is 0.
+
+    Returns
+    -------
+    str
+        The device name (e.g. "NVIDIA GeForce RTX 5080").
+
+    """
+    props = cuda_call(cudart.cudaGetDeviceProperties(device))
+    name = props.name
+    return name.decode() if isinstance(name, bytes) else name
+
+
 def get_compute_capability(device: int = 0) -> tuple[int, int]:
     """
     Get the compute capability (SM version) of a CUDA device.
