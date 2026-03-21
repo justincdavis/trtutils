@@ -4,7 +4,6 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-from contextlib import suppress
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -101,6 +100,15 @@ class Flags:
 
     # Internal flags
     JIT: bool = False
+
+    def _init_device_flags(self) -> None:
+        """Initialize device-specific flags. Called after core is imported."""
+        from trtutils.core._device import get_compute_capability, get_device_name, get_sm_arch  # noqa: E402
+
+        _sm = get_compute_capability()
+        self.SM_VERSION = _sm[0] * 10 + _sm[1]
+        self.SM_ARCH = get_sm_arch(*_sm)
+        self.DEVICE_NAME = get_device_name()
     FOUND_NUMBA: bool = False
     WARNED_NUMBA_NOT_FOUND: bool = False
     NVTX_ENABLED: bool = False
@@ -139,10 +147,3 @@ FLAGS.EXEC_V1 = hasattr(trt.IExecutionContext, "execute")
 
 # Set system flags
 FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()
-with suppress(ImportError, RuntimeError):
-    from trtutils.core._device import get_compute_capability, get_device_name, get_sm_arch
-
-    _sm = get_compute_capability()
-    FLAGS.SM_VERSION = _sm[0] * 10 + _sm[1]
-    FLAGS.SM_ARCH = get_sm_arch(*_sm)
-    FLAGS.DEVICE_NAME = get_device_name()
