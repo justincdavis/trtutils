@@ -52,6 +52,10 @@ class Flags:
         The TensorRT major and minor version as a tuple.
     IS_JETSON : bool
         Whether or not the system is a Jetson system
+    HAS_DLA : bool
+        Whether or not DLA hardware is available on the system.
+    NUM_DLA_CORES : int
+        The number of DLA cores available on the system. 0 if none.
     JIT : bool
         Whether or not to use jit.
     FOUND_NUMBA : bool
@@ -87,6 +91,8 @@ class Flags:
 
     # System flags
     IS_JETSON: bool = False
+    HAS_DLA: bool = False
+    NUM_DLA_CORES: int = 0
 
     # Internal flags
     JIT: bool = False
@@ -101,6 +107,16 @@ def _get_version(package: str) -> tuple[int, int]:
     except PackageNotFoundError:
         major, minor = 0, 0
     return (major, minor)
+
+
+def _detect_dla_cores() -> int:
+    try:
+        logger = trt.Logger(trt.Logger.WARNING)
+        runtime = trt.Runtime(logger)
+    except (AttributeError, RuntimeError):
+        return 0
+    else:
+        return runtime.num_DLA_cores
 
 
 FLAGS = Flags()
@@ -128,3 +144,7 @@ FLAGS.EXEC_V1 = hasattr(trt.IExecutionContext, "execute")
 
 # Set system flags
 FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()
+
+# Set DLA flags
+FLAGS.NUM_DLA_CORES = _detect_dla_cores()
+FLAGS.HAS_DLA = FLAGS.NUM_DLA_CORES > 0
