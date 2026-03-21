@@ -98,6 +98,10 @@ Functions
     Get the current CUDA device.
 :func:`get_device_count`
     Get the number of CUDA devices available.
+:func:`get_device_name`
+    Get the name of a CUDA device.
+:func:`get_sm_arch`
+    Get the GPU architecture name from a compute capability version.
 :func:`set_device`
     Set the current CUDA device.
 :func:`init_cuda`
@@ -123,7 +127,15 @@ from ._bindings import (
 )
 from ._context import create_context, destroy_context
 from ._cuda import cuda_call, init_cuda
-from ._device import Device, get_compute_capability, get_device, get_device_count, set_device
+from ._device import (
+    Device,
+    get_compute_capability,
+    get_device,
+    get_device_count,
+    get_device_name,
+    get_sm_arch,
+    set_device,
+)
 from ._engine import create_engine, get_engine_names
 from ._graph import (
     CUDAGraph,
@@ -190,7 +202,9 @@ __all__ = [
     "get_compute_capability",
     "get_device",
     "get_device_count",
+    "get_device_name",
     "get_engine_names",
+    "get_sm_arch",
     "init_cuda",
     "launch_kernel",
     "load_kernel",

@@ -4,6 +4,7 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -52,6 +53,13 @@ class Flags:
         The TensorRT major and minor version as a tuple.
     IS_JETSON : bool
         Whether or not the system is a Jetson system
+    SM_VERSION : int
+        The SM (compute capability) version as an integer.
+        E.g. SM 7.5 -> 75, SM 10.0 -> 100.
+    SM_ARCH : str
+        The GPU architecture name. E.g. "turing", "blackwell".
+    DEVICE_NAME : str
+        The name of the GPU device. E.g. "NVIDIA GeForce RTX 5080".
     JIT : bool
         Whether or not to use jit.
     FOUND_NUMBA : bool
@@ -87,6 +95,9 @@ class Flags:
 
     # System flags
     IS_JETSON: bool = False
+    SM_VERSION: int = 0
+    SM_ARCH: str = "unknown"
+    DEVICE_NAME: str = "unknown"
 
     # Internal flags
     JIT: bool = False
@@ -128,3 +139,10 @@ FLAGS.EXEC_V1 = hasattr(trt.IExecutionContext, "execute")
 
 # Set system flags
 FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()
+with suppress(ImportError, RuntimeError):
+    from trtutils.core._device import get_compute_capability, get_device_name, get_sm_arch
+
+    _sm = get_compute_capability()
+    FLAGS.SM_VERSION = _sm[0] * 10 + _sm[1]
+    FLAGS.SM_ARCH = get_sm_arch(*_sm)
+    FLAGS.DEVICE_NAME = get_device_name()
