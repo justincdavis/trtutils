@@ -55,12 +55,9 @@ extern "C" __global__ void trivial_kernel(float *out, int n) {
     kernel.free()
 
 
-@pytest.fixture(autouse=True)
-def _nvrtc_cache_clear(request):
+@pytest.fixture
+def _nvrtc_cache_clear():
     """Clear find_cuda_include_dir lru_cache around nvrtc tests."""
-    if "nvrtc" not in request.node.nodeid:
-        yield
-        return
     find_cuda_include_dir.cache_clear()
     yield
     find_cuda_include_dir.cache_clear()

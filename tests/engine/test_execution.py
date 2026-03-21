@@ -10,7 +10,6 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from trtutils import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils.core import allocate_to_device, free_device_ptrs
 
@@ -77,71 +76,56 @@ class TestExecute:
         assert outputs is not None
         assert len(outputs) >= 1
 
-    def test_execute_unified_mem(self, engine_path) -> None:
+    def test_execute_unified_mem(self, make_engine) -> None:
         """Unified memory mode produces correct outputs."""
-        eng = TRTEngine(
-            engine_path,
-            warmup=False,
-            pagelocked_mem=True,
-            unified_mem=True,
-        )
+        eng = make_engine(pagelocked_mem=True, unified_mem=True)
         rand_input = eng.get_random_input()
         outputs = eng.execute(rand_input)
         assert outputs is not None
         assert len(outputs) >= 1
-        del eng
 
-    def test_execute_parity_pagelocked_vs_not(self, engine_path) -> None:
+    def test_execute_parity_pagelocked_vs_not(self, make_engine) -> None:
         """Pagelocked vs non-pagelocked produce equivalent outputs."""
-        eng_pl = TRTEngine(engine_path, warmup=False, pagelocked_mem=True)
-        eng_no_pl = TRTEngine(engine_path, warmup=False, pagelocked_mem=False)
+        eng_pl = make_engine(pagelocked_mem=True)
+        eng_no_pl = make_engine(pagelocked_mem=False)
         rand_input = eng_pl.get_random_input()
         out_pl = eng_pl.execute(rand_input)
         out_no_pl = eng_no_pl.execute(rand_input)
         for o1, o2 in zip(out_pl, out_no_pl):
             assert np.allclose(o1, o2)
-        del eng_pl, eng_no_pl
 
-    def test_execute_parity_unified_vs_default(self, engine_path) -> None:
+    def test_execute_parity_unified_vs_default(self, make_engine) -> None:
         """Unified memory vs default produce equivalent outputs."""
-        eng_default = TRTEngine(engine_path, warmup=False)
-        eng_unified = TRTEngine(
-            engine_path,
-            warmup=False,
-            pagelocked_mem=True,
-            unified_mem=True,
-        )
+        eng_default = make_engine()
+        eng_unified = make_engine(pagelocked_mem=True, unified_mem=True)
         rand_input = eng_default.get_random_input()
         out_default = eng_default.execute(rand_input)
         out_unified = eng_unified.execute(rand_input)
         for o1, o2 in zip(out_default, out_unified):
             assert np.allclose(o1, o2)
-        del eng_default, eng_unified
 
-    def test_execute_async_v2_backend(self, engine_path) -> None:
+    def test_execute_async_v2_backend(self, make_engine) -> None:
         """Execute succeeds with explicit async_v2 backend."""
         if not FLAGS.EXEC_ASYNC_V2:
             pytest.skip("async_v2 not available in this TensorRT version")
-        eng = TRTEngine(engine_path, warmup=False, backend="async_v2")
+        eng = make_engine(backend="async_v2")
         assert eng._async_v3 is False
         rand_input = eng.get_random_input()
         outputs = eng.execute(rand_input)
         assert isinstance(outputs, list)
         assert len(outputs) >= 1
-        del eng
 
-    def test_execute_async_v2_parity(self, engine_path) -> None:
+    def test_execute_async_v2_parity(self, make_engine) -> None:
         """async_v2 and auto backends produce equivalent outputs."""
         if not FLAGS.EXEC_ASYNC_V2:
             pytest.skip("async_v2 not available in this TensorRT version")
-        eng_auto = TRTEngine(engine_path, warmup=False, backend="auto", cuda_graph=False)
-        eng_v2 = TRTEngine(engine_path, warmup=False, backend="async_v2")
+        eng_auto = make_engine(backend="auto", cuda_graph=False)
+        eng_v2 = make_engine(backend="async_v2")
         rand_input = eng_auto.get_random_input()
         out_auto = eng_auto.execute(rand_input)
         out_v2 = eng_v2.execute(rand_input)
         for o1, o2 in zip(out_auto, out_v2):
             assert np.allclose(o1, o2)
-        del eng_auto, eng_v2
 
     def test_no_copy_true_returns_same_buffer(self, engine, random_input) -> None:
         """no_copy=True returns the internal host allocation buffers."""
@@ -177,9 +161,9 @@ class TestExecute:
 class TestDirectExec:
     """Tests for TRTEngine.direct_exec()."""
 
-    def test_direct_exec_matches_execute(self, engine_path) -> None:
+    def test_direct_exec_matches_execute(self, make_engine) -> None:
         """direct_exec and execute produce same results for same input."""
-        eng = TRTEngine(engine_path, warmup=False)
+        eng = make_engine()
         rand_input = eng.get_random_input()
         device_ptrs = allocate_to_device(rand_input)
 
@@ -192,7 +176,6 @@ class TestDirectExec:
             np.testing.assert_array_equal(od, oe)
 
         free_device_ptrs(device_ptrs)
-        del eng
 
     @pytest.mark.parametrize(
         "set_pointers",
@@ -201,9 +184,9 @@ class TestDirectExec:
             pytest.param(False, id="set-pointers-false"),
         ],
     )
-    def test_set_pointers_flag(self, engine_path, set_pointers) -> None:
+    def test_set_pointers_flag(self, make_engine, set_pointers) -> None:
         """Both set_pointers=True and set_pointers=False paths work."""
-        eng = TRTEngine(engine_path, warmup=False)
+        eng = make_engine()
         rand_input = eng.get_random_input()
         device_ptrs = allocate_to_device(rand_input)
 
@@ -220,7 +203,6 @@ class TestDirectExec:
         assert len(outputs) >= 1
 
         free_device_ptrs(device_ptrs)
-        del eng
 
     @pytest.mark.parametrize(
         "no_warn",
@@ -230,9 +212,9 @@ class TestDirectExec:
             pytest.param(None, id="no-warn-none"),
         ],
     )
-    def test_no_warn_flag(self, engine_path, no_warn) -> None:
+    def test_no_warn_flag(self, make_engine, no_warn) -> None:
         """Warning suppression flag works for all values."""
-        eng = TRTEngine(engine_path, warmup=False)
+        eng = make_engine()
         rand_input = eng.get_random_input()
         device_ptrs = allocate_to_device(rand_input)
 
@@ -240,14 +222,13 @@ class TestDirectExec:
         assert outputs is not None
 
         free_device_ptrs(device_ptrs)
-        del eng
 
-    def test_direct_exec_sets_using_engine_false(self, engine_path) -> None:
+    def test_direct_exec_sets_using_engine_false(self, make_engine) -> None:
         """direct_exec() with set_pointers marks _using_engine_tensors=False."""
         if not FLAGS.EXEC_ASYNC_V3:
             pytest.skip("Only relevant for async_v3 backend")
 
-        eng = TRTEngine(engine_path, warmup=False, backend="async_v3")
+        eng = make_engine(backend="async_v3")
         assert eng._using_engine_tensors is True
 
         rand_input = eng.get_random_input()
@@ -257,7 +238,6 @@ class TestDirectExec:
         assert eng._using_engine_tensors is False
 
         free_device_ptrs(device_ptrs)
-        del eng
 
     @pytest.mark.parametrize(
         ("pagelocked_mem", "unified_mem"),
@@ -267,14 +247,9 @@ class TestDirectExec:
             pytest.param(True, True, id="unified"),
         ],
     )
-    def test_direct_exec_memory_mode(self, engine_path, pagelocked_mem, unified_mem) -> None:
+    def test_direct_exec_memory_mode(self, make_engine, pagelocked_mem, unified_mem) -> None:
         """direct_exec() output copy path works for all memory modes."""
-        eng = TRTEngine(
-            engine_path,
-            warmup=False,
-            pagelocked_mem=pagelocked_mem,
-            unified_mem=unified_mem,
-        )
+        eng = make_engine(pagelocked_mem=pagelocked_mem, unified_mem=unified_mem)
         rand_input = eng.get_random_input()
         device_ptrs = allocate_to_device(rand_input)
 
@@ -283,11 +258,10 @@ class TestDirectExec:
         assert len(outputs) >= 1
 
         free_device_ptrs(device_ptrs)
-        del eng
 
-    def test_binding_reset(self, engine_path) -> None:
+    def test_binding_reset(self, make_engine) -> None:
         """execute() after direct_exec() resets tensor addresses."""
-        eng = TRTEngine(engine_path, warmup=False)
+        eng = make_engine()
         rand_input = eng.get_random_input()
         device_ptrs = allocate_to_device(rand_input)
 
@@ -298,7 +272,6 @@ class TestDirectExec:
         assert eng._using_engine_tensors is True
 
         free_device_ptrs(device_ptrs)
-        del eng
 
 
 class TestRawExec:
@@ -350,9 +323,9 @@ class TestRawExec:
         ptrs = [b.allocation for b in engine.input_bindings]
         engine.raw_exec(ptrs, no_warn=no_warn)
 
-    def test_binding_reset(self, engine_path) -> None:
+    def test_binding_reset(self, make_engine) -> None:
         """execute() after raw_exec() resets tensor addresses."""
-        eng = TRTEngine(engine_path, warmup=False)
+        eng = make_engine()
         rand_input = eng.get_random_input()
         device_ptrs = allocate_to_device(rand_input)
 
@@ -363,7 +336,6 @@ class TestRawExec:
         assert eng._using_engine_tensors is True
 
         free_device_ptrs(device_ptrs)
-        del eng
 
 
 class TestMockExecute:
@@ -435,47 +407,41 @@ class TestMockExecute:
 class TestGraphExec:
     """Tests for CUDA graph capture, replay, edge cases, and bypass."""
 
-    def test_first_execute_captures_graph(self, engine_path) -> None:
+    def test_first_execute_captures_graph(self, make_engine) -> None:
         """cuda_graph=True + first execute() triggers graph capture."""
-        eng = TRTEngine(engine_path, warmup=False, cuda_graph=True)
+        eng = make_engine(cuda_graph=True)
         data = eng.get_random_input()
         eng.execute(data)
         if eng._cuda_graph is not None:
             assert eng._cuda_graph.is_captured
-        del eng
 
-    def test_graph_exec_after_capture(self, engine_path) -> None:
+    def test_graph_exec_after_capture(self, make_engine) -> None:
         """After warmup with cuda_graph=True, graph_exec succeeds."""
-        eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
+        eng = make_engine(warmup=True, warmup_iterations=2)
         if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
             eng.graph_exec()
-        del eng
 
-    def test_graph_exec_without_capture_raises(self, engine_path) -> None:
+    def test_graph_exec_without_capture_raises(self, make_engine) -> None:
         """graph_exec raises RuntimeError when no graph is captured."""
-        eng = TRTEngine(engine_path, warmup=False, cuda_graph=False)
+        eng = make_engine(cuda_graph=False)
         with pytest.raises(RuntimeError, match="No CUDA graph captured"):
             eng.graph_exec()
-        del eng
 
-    def test_graph_exec_deterministic(self, engine_path) -> None:
+    def test_graph_exec_deterministic(self, make_engine) -> None:
         """Graph replay produces consistent output."""
-        eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
+        eng = make_engine(warmup=True, warmup_iterations=2)
         if eng._cuda_graph is None or not eng._cuda_graph.is_captured:
-            del eng
             pytest.skip("CUDA graph not captured")
         data = eng.get_random_input()
         out1 = eng.execute(data)
         out2 = eng.execute(data)
         for o1, o2 in zip(out1, out2):
             np.testing.assert_array_equal(o1, o2)
-        del eng
 
-    def test_graph_invalidate_and_recapture(self, engine_path) -> None:
+    def test_graph_invalidate_and_recapture(self, make_engine) -> None:
         """Invalidating graph allows recapture on next execute."""
-        eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
+        eng = make_engine(warmup=True, warmup_iterations=2)
         if eng._cuda_graph is None or not eng._cuda_graph.is_captured:
-            del eng
             pytest.skip("CUDA graph not captured")
         eng._cuda_graph.invalidate()
         assert not eng._cuda_graph.is_captured
@@ -483,26 +449,23 @@ class TestGraphExec:
         result = eng.execute(data)
         assert isinstance(result, list)
         assert eng._cuda_graph.is_captured
-        del eng
 
-    def test_graph_exec_debug(self, engine_path) -> None:
+    def test_graph_exec_debug(self, make_engine) -> None:
         """graph_exec(debug=True) synchronizes the stream."""
-        eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
+        eng = make_engine(warmup=True, warmup_iterations=2)
         if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
             eng.graph_exec(debug=True)
-        del eng
 
-    def test_graph_invalidation_on_set_input(self, engine_path) -> None:
+    def test_graph_invalidation_on_set_input(self, make_engine) -> None:
         """Setting input bindings invalidates the captured graph."""
-        eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
+        eng = make_engine(warmup=True, warmup_iterations=2)
         if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
             eng._set_input_bindings()
             assert not eng._cuda_graph.is_captured
-        del eng
 
-    def test_execute_with_cuda_graph_full_flow(self, engine_path) -> None:
+    def test_execute_with_cuda_graph_full_flow(self, make_engine) -> None:
         """Full flow: init -> execute (capture) -> execute (replay)."""
-        eng = TRTEngine(engine_path, warmup=False, cuda_graph=True)
+        eng = make_engine(cuda_graph=True)
         data = eng.get_random_input()
         out1 = eng.execute(data)
         assert isinstance(out1, list)
@@ -510,77 +473,66 @@ class TestGraphExec:
         assert isinstance(out2, list)
         for o1, o2 in zip(out1, out2):
             np.testing.assert_array_equal(o1, o2)
-        del eng
 
-    def test_execute_second_call_replays_graph(self, engine_path) -> None:
+    def test_execute_second_call_replays_graph(self, make_engine) -> None:
         """Second execute() replays the captured graph."""
-        eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
+        eng = make_engine(warmup=True, warmup_iterations=2)
         data = eng.get_random_input()
         result = eng.execute(data)
         assert isinstance(result, list)
-        del eng
 
-    def test_execute_no_copy_with_graph(self, engine_path) -> None:
+    def test_execute_no_copy_with_graph(self, make_engine) -> None:
         """no_copy=True works correctly with CUDA graph path."""
-        eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
+        eng = make_engine(warmup=True, warmup_iterations=2)
         if eng._cuda_graph is None or not eng._cuda_graph.is_captured:
-            del eng
             pytest.skip("CUDA graph not captured")
         data = eng.get_random_input()
         outputs = eng.execute(data, no_copy=True)
         for out, binding in zip(outputs, eng.output_bindings):
             assert out is binding.host_allocation
-        del eng
 
-    def test_graph_exec_no_default_sync(self, engine_path) -> None:
+    def test_graph_exec_no_default_sync(self, make_engine) -> None:
         """graph_exec() without debug does not add extra sync."""
-        eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
+        eng = make_engine(warmup=True, warmup_iterations=2)
         if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
             eng.graph_exec()
-        del eng
 
-    def test_cuda_graph_disabled(self, engine_path) -> None:
+    def test_cuda_graph_disabled(self, make_engine) -> None:
         """cuda_graph=False disables graph capture entirely."""
-        eng = TRTEngine(engine_path, warmup=False, cuda_graph=False)
+        eng = make_engine(cuda_graph=False)
         assert eng._cuda_graph is None
         data = eng.get_random_input()
         result = eng.execute(data)
         assert isinstance(result, list)
-        del eng
 
-    def test_cuda_graph_with_async_v2(self, engine_path) -> None:
+    def test_cuda_graph_with_async_v2(self, make_engine) -> None:
         """cuda_graph=True + async_v2 backend disables graph."""
-        eng = TRTEngine(engine_path, warmup=False, backend="async_v2", cuda_graph=True)
+        eng = make_engine(backend="async_v2", cuda_graph=True)
         assert not eng._cuda_graph_enabled
         assert eng._cuda_graph is None
-        del eng
 
-    def test_capture_recursion_guard(self, engine_path) -> None:
+    def test_capture_recursion_guard(self, make_engine) -> None:
         """_capturing_graph=True causes _capture_cuda_graph to return early."""
-        eng = TRTEngine(engine_path, warmup=False, cuda_graph=True)
+        eng = make_engine(cuda_graph=True)
         if eng._cuda_graph is None:
-            del eng
             pytest.skip("CUDA graph not enabled")
         eng._capturing_graph = True
         eng._capture_cuda_graph()
         eng._capturing_graph = False
-        del eng
 
-    def test_capture_cuda_graph_none_raises(self, engine_path) -> None:
+    def test_capture_cuda_graph_none_raises(self, make_engine) -> None:
         """_capture_cuda_graph raises RuntimeError when _cuda_graph is None."""
-        eng = TRTEngine(engine_path, warmup=False, cuda_graph=True)
+        eng = make_engine(cuda_graph=True)
         saved = eng._cuda_graph
         eng._cuda_graph = None
         with pytest.raises(RuntimeError, match="CUDA graph is not enabled"):
             eng._capture_cuda_graph()
         eng._cuda_graph = saved
-        del eng
 
-    def test_capture_warmup_failure_invalidates_graph(self, engine_path) -> None:
+    def test_capture_warmup_failure_invalidates_graph(self, make_engine) -> None:
         """RuntimeError during warmup invalidates graph and raises."""
-        eng = TRTEngine(engine_path, warmup=False, cuda_graph=True)
+        eng = make_engine(cuda_graph=True)
         if eng._cuda_graph is None:
-            del eng
             pytest.skip("CUDA graph not enabled")
         with patch.object(
             eng, "warmup", side_effect=RuntimeError("mock warmup failure")
@@ -590,26 +542,18 @@ class TestGraphExec:
         ):
             eng._capture_cuda_graph()
         assert eng._cuda_graph is None
-        del eng
 
-    def test_binding_change_invalidates_graph(self, engine_path) -> None:
+    def test_binding_change_invalidates_graph(self, make_engine) -> None:
         """Changing output bindings invalidates captured graph."""
-        eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
+        eng = make_engine(warmup=True, warmup_iterations=2)
         if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
             eng._set_output_bindings()
             assert not eng._cuda_graph.is_captured
-        del eng
 
-    def test_delete_engine_with_graph(self, engine_path) -> None:
-        """Deleting engine with active CUDA graph does not crash."""
-        eng = TRTEngine(engine_path, warmup=True, warmup_iterations=2)
-        del eng
-
-    def test_direct_exec_bypasses_graph_capture(self, engine_path) -> None:
+    def test_direct_exec_bypasses_graph_capture(self, make_engine) -> None:
         """direct_exec() does not trigger CUDA graph capture."""
-        eng = TRTEngine(engine_path, warmup=False, cuda_graph=True)
+        eng = make_engine(cuda_graph=True)
         if eng._cuda_graph is None:
-            del eng
             pytest.skip("CUDA graph not enabled")
         assert eng._cuda_graph.is_captured is False
 
@@ -623,13 +567,11 @@ class TestGraphExec:
 
         eng.execute(eng.get_random_input())
         assert eng._cuda_graph.is_captured is True
-        del eng
 
-    def test_raw_exec_bypasses_graph_capture(self, engine_path) -> None:
+    def test_raw_exec_bypasses_graph_capture(self, make_engine) -> None:
         """raw_exec() does not trigger CUDA graph capture."""
-        eng = TRTEngine(engine_path, warmup=False, cuda_graph=True)
+        eng = make_engine(cuda_graph=True)
         if eng._cuda_graph is None:
-            del eng
             pytest.skip("CUDA graph not enabled")
         assert eng._cuda_graph.is_captured is False
 
@@ -644,4 +586,3 @@ class TestGraphExec:
 
         eng.execute(eng.get_random_input())
         assert eng._cuda_graph.is_captured is True
-        del eng

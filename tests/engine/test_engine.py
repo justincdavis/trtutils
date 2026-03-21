@@ -32,11 +32,10 @@ def test_init_default_args(engine_path) -> None:
         pytest.param(None, None, id="warmup-none"),
     ],
 )
-def test_init_warmup(engine_path, warmup, expected) -> None:
+def test_init_warmup(make_engine, warmup, expected) -> None:
     """_warmup attribute matches the constructor argument."""
-    eng = TRTEngine(engine_path, warmup=warmup, warmup_iterations=3)
+    eng = make_engine(warmup=warmup, warmup_iterations=3)
     assert eng._warmup is expected
-    del eng
 
 
 @pytest.mark.cuda_graph
@@ -49,13 +48,13 @@ def test_init_warmup(engine_path, warmup, expected) -> None:
         pytest.param("auto", None, None, id="auto-graph-none"),
     ],
 )
-def test_cuda_graph_init(engine_path, backend, cuda_graph, expect_enabled) -> None:
+def test_cuda_graph_init(make_engine, backend, cuda_graph, expect_enabled) -> None:
     """cuda_graph enablement depends on backend and explicit setting."""
     if backend == "async_v3" and not FLAGS.EXEC_ASYNC_V3:
         pytest.skip("async_v3 not available")
     if backend == "async_v2" and not FLAGS.EXEC_ASYNC_V2:
         pytest.skip("async_v2 not available")
-    eng = TRTEngine(engine_path, warmup=False, backend=backend, cuda_graph=cuda_graph)
+    eng = make_engine(backend=backend, cuda_graph=cuda_graph)
     if expect_enabled is None:
         if FLAGS.EXEC_ASYNC_V3:
             assert eng._cuda_graph_enabled is True
@@ -66,7 +65,6 @@ def test_cuda_graph_init(engine_path, backend, cuda_graph, expect_enabled) -> No
         assert eng._cuda_graph is not None
     else:
         assert eng._cuda_graph_enabled is False
-    del eng
 
 
 @pytest.mark.parametrize(
@@ -76,14 +74,13 @@ def test_cuda_graph_init(engine_path, backend, cuda_graph, expect_enabled) -> No
         pytest.param(True, True, id="unified-true"),
     ],
 )
-def test_unified_mem(engine_path, unified_mem, expected) -> None:
+def test_unified_mem(make_engine, unified_mem, expected) -> None:
     """unified_mem parameter is stored correctly."""
-    eng = TRTEngine(engine_path, warmup=False, unified_mem=unified_mem)
+    eng = make_engine(unified_mem=unified_mem)
     if expected is None:
         assert eng.unified_mem is FLAGS.IS_JETSON
     else:
         assert eng.unified_mem is expected
-    del eng
 
 
 @pytest.mark.parametrize(
@@ -94,15 +91,14 @@ def test_unified_mem(engine_path, unified_mem, expected) -> None:
         pytest.param("async_v2", id="backend-v2"),
     ],
 )
-def test_backend_selection(engine_path, backend) -> None:
+def test_backend_selection(make_engine, backend) -> None:
     """Engine initializes with a given backend string."""
     if backend == "async_v3" and not FLAGS.EXEC_ASYNC_V3:
         pytest.skip("async_v3 not available")
     if backend == "async_v2" and not FLAGS.EXEC_ASYNC_V2:
         pytest.skip("async_v2 not available")
-    eng = TRTEngine(engine_path, warmup=False, backend=backend)
+    eng = make_engine(backend=backend)
     assert eng is not None
-    del eng
 
 
 @pytest.mark.parametrize(
@@ -113,34 +109,30 @@ def test_backend_selection(engine_path, backend) -> None:
         pytest.param(None, True, id="pagelocked-default"),
     ],
 )
-def test_pagelocked_mem(engine_path, pagelocked, expected) -> None:
+def test_pagelocked_mem(make_engine, pagelocked, expected) -> None:
     """Pagelocked memory setting is stored correctly."""
-    eng = TRTEngine(engine_path, warmup=False, pagelocked_mem=pagelocked)
+    eng = make_engine(pagelocked_mem=pagelocked)
     assert eng.pagelocked_mem is expected
-    del eng
 
 
-def test_memsize(engine_path) -> None:
+def test_memsize(make_engine) -> None:
     """Memsize returns a non-negative integer."""
-    eng = TRTEngine(engine_path, warmup=False)
+    eng = make_engine()
     assert isinstance(eng.memsize, int)
     assert eng.memsize >= 0
-    del eng
 
 
-def test_del_no_error(engine_path) -> None:
+def test_del_no_error(make_engine) -> None:
     """Deleting an engine does not raise an exception."""
-    eng = TRTEngine(engine_path, warmup=False)
-    del eng
+    make_engine()
 
 
 @pytest.mark.cuda_graph
-def test_del_with_cuda_graph(engine_path) -> None:
+def test_del_with_cuda_graph(make_engine) -> None:
     """Deleting an engine with a captured CUDA graph does not crash."""
     if not FLAGS.EXEC_ASYNC_V3:
         pytest.skip("async_v3 required for CUDA graph")
-    eng = TRTEngine(
-        engine_path,
+    eng = make_engine(
         warmup=True,
         warmup_iterations=2,
         backend="async_v3",
@@ -148,14 +140,21 @@ def test_del_with_cuda_graph(engine_path) -> None:
     )
     assert eng._cuda_graph is not None
     assert eng._cuda_graph.is_captured is True
-    del eng
 
 
-def test_double_del_no_error(engine_path) -> None:
+def test_double_del_no_error(make_engine) -> None:
     """Calling __del__ twice does not raise."""
-    eng = TRTEngine(engine_path, warmup=False)
+    eng = make_engine()
     eng.__del__()
     eng.__del__()
+
+
+def test_del_deletes_context_engine(make_engine) -> None:
+    """__del__ removes _context and _engine attributes."""
+    eng = make_engine()
+    eng.__del__()
+    assert not hasattr(eng, "_context")
+    assert not hasattr(eng, "_engine")
 
 
 def test_using_engine_tensors_flag_default(engine) -> None:
@@ -163,33 +162,31 @@ def test_using_engine_tensors_flag_default(engine) -> None:
     assert engine._using_engine_tensors is True
 
 
-def test_async_v2_backend_init(engine_path) -> None:
+def test_async_v2_backend_init(make_engine) -> None:
     """backend='async_v2' sets _async_v3=False and disables CUDA graph."""
-    eng = TRTEngine(engine_path, warmup=False, backend="async_v2")
+    eng = make_engine(backend="async_v2")
     assert eng._async_v3 is False
     assert eng._cuda_graph is None
-    del eng
 
 
-def test_async_v2_backend_execute(engine_path) -> None:
+def test_async_v2_backend_execute(make_engine) -> None:
     """Execute with backend='async_v2' exercises execute_async_v2 path."""
     if not FLAGS.EXEC_ASYNC_V2:
         pytest.skip("async_v2 not available")
-    eng = TRTEngine(engine_path, warmup=False, backend="async_v2")
+    eng = make_engine(backend="async_v2")
     data = eng.get_random_input()
     outputs = eng.execute(data)
     assert isinstance(outputs, list)
     assert len(outputs) > 0
-    del eng
 
 
 @pytest.mark.cuda_graph
-def test_graph_capture_failure_falls_through(engine_path) -> None:
+def test_graph_capture_failure_falls_through(make_engine) -> None:
     """When graph capture fails, engine falls back to direct execution."""
     if not FLAGS.EXEC_ASYNC_V3:
         pytest.skip("async_v3 required for CUDA graph")
 
-    eng = TRTEngine(engine_path, warmup=False, backend="async_v3", cuda_graph=True)
+    eng = make_engine(backend="async_v3", cuda_graph=True)
 
     original_stop = eng._cuda_graph.stop
     cuda_graph_ref = eng._cuda_graph
@@ -204,7 +201,6 @@ def test_graph_capture_failure_falls_through(engine_path) -> None:
         data = eng.get_random_input()
         with pytest.raises(RuntimeError, match="graph capture failed"):
             eng.execute(data)
-    del eng
 
 
 @pytest.mark.parametrize("engine_path", ENGINE_PATHS)
