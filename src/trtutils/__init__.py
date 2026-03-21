@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # ruff: noqa: E402
@@ -125,6 +125,9 @@ from . import core
 
 with contextlib.suppress(AttributeError, RuntimeError):
     FLAGS.init_device_flags()
+
+with contextlib.suppress(AttributeError, RuntimeError):
+    FLAGS.init_jetson_flags()
 
 from . import builder, compat, download, image, inspect, models, parallel, research, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines

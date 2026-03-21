@@ -57,6 +57,12 @@ def _skip_jetson_tests(request: pytest.FixtureRequest) -> None:
         pytest.skip("Jetson tests require Jetson hardware")
 
 
+@pytest.fixture(autouse=True)
+def _skip_dla_tests(request: pytest.FixtureRequest) -> None:
+    if request.node.get_closest_marker("dla") and not FLAGS.HAS_DLA:
+        pytest.skip("DLA tests require DLA hardware")
+
+
 @pytest.fixture(scope="session")
 def images() -> dict[str, TestImage]:
     """Keyed test images with ground truth. Access via images["horse"], images["people"]."""

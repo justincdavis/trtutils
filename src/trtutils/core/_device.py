@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from trtutils.compat._libs import cudart
+from trtutils._log import LOG
+from trtutils.compat._libs import cudart, trt
 
 from ._cuda import cuda_call
 
@@ -116,6 +117,20 @@ def set_device(device: int) -> None:
 
     """
     cuda_call(cudart.cudaSetDevice(device))
+
+
+def get_num_dla_cores() -> int:
+    """
+    Get the number of DLA cores available via TensorRT Runtime.
+
+    Returns
+    -------
+    int
+        Number of DLA cores available on the system.
+
+    """
+    runtime = trt.Runtime(LOG)
+    return runtime.num_DLA_cores
 
 
 def get_device_count() -> int:

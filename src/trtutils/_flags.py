@@ -59,6 +59,10 @@ class Flags:
         The GPU architecture name. E.g. "turing", "blackwell".
     DEVICE_NAME : str
         The name of the GPU device. E.g. "NVIDIA GeForce RTX 5080".
+    HAS_DLA : bool
+        Whether or not DLA hardware is available on the system.
+    NUM_DLA_CORES : int
+        The number of DLA cores available on the system. 0 if none.
     JIT : bool
         Whether or not to use jit.
     FOUND_NUMBA : bool
@@ -97,6 +101,8 @@ class Flags:
     SM_VERSION: int = 0
     SM_ARCH: str = "unknown"
     DEVICE_NAME: str = "unknown"
+    HAS_DLA: bool = False
+    NUM_DLA_CORES: int = 0
 
     # Internal flags
     JIT: bool = False
@@ -113,6 +119,13 @@ class Flags:
         self.SM_VERSION = _sm[0] * 10 + _sm[1]
         self.SM_ARCH = get_sm_arch(*_sm)
         self.DEVICE_NAME = get_device_name()
+
+    def init_jetson_flags(self) -> None:
+        """Initialize Jetson-specific flags. Called after core is imported."""
+        from trtutils.core._device import get_num_dla_cores  # noqa: PLC0415
+
+        self.NUM_DLA_CORES = get_num_dla_cores()
+        self.HAS_DLA = self.NUM_DLA_CORES > 0
 
     FOUND_NUMBA: bool = False
     WARNED_NUMBA_NOT_FOUND: bool = False

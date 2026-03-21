@@ -100,6 +100,8 @@ Functions
     Get the number of CUDA devices available.
 :func:`get_device_name`
     Get the name of a CUDA device.
+:func:`get_num_dla_cores`
+    Get the number of DLA cores available.
 :func:`get_sm_arch`
     Get the GPU architecture name from a compute capability version.
 :func:`set_device`
@@ -133,6 +135,7 @@ from ._device import (
     get_device,
     get_device_count,
     get_device_name,
+    get_num_dla_cores,
     get_sm_arch,
     set_device,
 )
@@ -204,6 +207,7 @@ __all__ = [
     "get_device_count",
     "get_device_name",
     "get_engine_names",
+    "get_num_dla_cores",
     "get_sm_arch",
     "init_cuda",
     "launch_kernel",
