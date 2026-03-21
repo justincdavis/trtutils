@@ -123,7 +123,8 @@ import contextlib
 
 from . import core
 
-FLAGS.init_device_flags()
+with contextlib.suppress(AttributeError, RuntimeError):
+    FLAGS.init_device_flags()
 
 from . import builder, compat, download, image, inspect, models, parallel, research, trtexec
 from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_engines
