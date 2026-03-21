@@ -52,6 +52,13 @@ class Flags:
         The TensorRT major and minor version as a tuple.
     IS_JETSON : bool
         Whether or not the system is a Jetson system
+    SM_VERSION : int
+        The SM (compute capability) version as an integer.
+        E.g. SM 7.5 -> 75, SM 10.0 -> 100.
+    SM_ARCH : str
+        The GPU architecture name. E.g. "turing", "blackwell".
+    DEVICE_NAME : str
+        The name of the GPU device. E.g. "NVIDIA GeForce RTX 5080".
     HAS_DLA : bool
         Whether or not DLA hardware is available on the system.
     NUM_DLA_CORES : int
@@ -91,11 +98,35 @@ class Flags:
 
     # System flags
     IS_JETSON: bool = False
+    SM_VERSION: int = 0
+    SM_ARCH: str = "unknown"
+    DEVICE_NAME: str = "unknown"
     HAS_DLA: bool = False
     NUM_DLA_CORES: int = 0
 
     # Internal flags
     JIT: bool = False
+
+    def init_device_flags(self) -> None:
+        """Initialize device-specific flags. Called after core is imported."""
+        from trtutils.core._device import (  # noqa: PLC0415
+            get_compute_capability,
+            get_device_name,
+            get_sm_arch,
+        )
+
+        _sm = get_compute_capability()
+        self.SM_VERSION = _sm[0] * 10 + _sm[1]
+        self.SM_ARCH = get_sm_arch(*_sm)
+        self.DEVICE_NAME = get_device_name()
+
+    def init_jetson_flags(self) -> None:
+        """Initialize Jetson-specific flags. Called after core is imported."""
+        from trtutils.core._device import get_num_dla_cores  # noqa: PLC0415
+
+        self.NUM_DLA_CORES = get_num_dla_cores()
+        self.HAS_DLA = self.NUM_DLA_CORES > 0
+
     FOUND_NUMBA: bool = False
     WARNED_NUMBA_NOT_FOUND: bool = False
     NVTX_ENABLED: bool = False
@@ -107,16 +138,6 @@ def _get_version(package: str) -> tuple[int, int]:
     except PackageNotFoundError:
         major, minor = 0, 0
     return (major, minor)
-
-
-def _detect_dla_cores() -> int:
-    try:
-        logger = trt.Logger(trt.Logger.WARNING)
-        runtime = trt.Runtime(logger)
-    except (AttributeError, RuntimeError):
-        return 0
-    else:
-        return runtime.num_DLA_cores
 
 
 FLAGS = Flags()
@@ -144,7 +165,3 @@ FLAGS.EXEC_V1 = hasattr(trt.IExecutionContext, "execute")
 
 # Set system flags
 FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()
-
-# Set DLA flags
-FLAGS.NUM_DLA_CORES = _detect_dla_cores()
-FLAGS.HAS_DLA = FLAGS.NUM_DLA_CORES > 0
