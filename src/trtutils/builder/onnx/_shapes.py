@@ -37,6 +37,28 @@ def get_onnx_input(onnx_path: Path) -> tuple[str, tuple[int, ...]]:
     return name, dims
 
 
+def get_onnx_output(onnx_path: Path) -> tuple[str, tuple[int, ...]]:
+    """
+    Read the first output tensor name and shape from an ONNX model.
+
+    Parameters
+    ----------
+    onnx_path : Path
+        Path to the ONNX model file.
+
+    Returns
+    -------
+    tuple[str, tuple[int, ...]]
+        The output tensor name and its shape. Dynamic dimensions are replaced with 1.
+
+    """
+    model = onnx.load(str(onnx_path))
+    out = model.graph.output[0]
+    name = out.name
+    dims = tuple(d.dim_value if d.dim_value > 0 else 1 for d in out.type.tensor_type.shape.dim)
+    return name, dims
+
+
 def make_onnx_static(onnx_path: Path) -> None:
     """
     Set any dynamic dimensions in the ONNX model to 1 (batch size).

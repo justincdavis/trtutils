@@ -19,6 +19,14 @@ if TYPE_CHECKING:
 _CPU_ONLY = os.environ.get("TRTUTILS_IGNORE_MISSING_CUDA", "0") == "1"
 
 
+def drain_batches(batcher) -> int:
+    """Consume all batches from a batcher and return the count."""
+    count = 0
+    while batcher.get_next_batch() is not None:
+        count += 1
+    return count
+
+
 def _make_image_dir(base: Path, name: str, count: int, seed: int) -> Path:
     """Create a temp directory with synthetic test images."""
     img_dir = base / name

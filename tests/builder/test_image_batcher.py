@@ -8,6 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from tests.builder.conftest import drain_batches
 from trtutils.builder._batcher import ImageBatcher
 
 
@@ -107,10 +108,7 @@ def test_max_images_truncates(test_image_dir, close_batcher) -> None:
     )
     close_batcher.append(batcher)
     assert batcher.num_batches == 2
-    count = 0
-    while batcher.get_next_batch() is not None:
-        count += 1
-    assert count == 2
+    assert drain_batches(batcher) == 2
 
 
 @pytest.mark.cpu
@@ -163,10 +161,7 @@ def test_batch_count_and_lifecycle(test_image_dir, close_batcher) -> None:
         batch_size=4,
     )
     close_batcher.append(batcher)
-    count = 0
-    while batcher.get_next_batch() is not None:
-        count += 1
-    assert count == batcher.num_batches
+    assert drain_batches(batcher) == batcher.num_batches
     assert batcher.get_next_batch() is None
     batcher._close()
     assert not batcher._thread.is_alive()

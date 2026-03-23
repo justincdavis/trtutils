@@ -8,6 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from tests.builder.conftest import drain_batches
 from trtutils.builder._batcher import SyntheticBatcher
 
 
@@ -89,8 +90,5 @@ def test_correct_batch_count(num_batches) -> None:
         dtype=np.float32,
         num_batches=num_batches,
     )
-    count = 0
-    while batcher.get_next_batch() is not None:
-        count += 1
-    assert count == num_batches
+    assert drain_batches(batcher) == num_batches
     assert batcher.get_next_batch() is None

@@ -35,13 +35,13 @@ _skip_unhashable = pytest.mark.skipif(
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def simple_onnx_model(onnx_path) -> onnx.ModelProto:
     """Load the test ONNX model."""
     return onnx.load(str(onnx_path))
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def simple_gs_graph(simple_onnx_model: onnx.ModelProto) -> gs.Graph:
     """Create a GraphSurgeon graph from the test model."""
     graph = gs.import_onnx(simple_onnx_model)
