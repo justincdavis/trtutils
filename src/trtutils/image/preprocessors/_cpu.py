@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -209,7 +209,7 @@ class CPUPreprocessor(ImagePreprocessor):
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
-            images = [images]  # type: ignore[list-item]
+            images = [images]  # type: ignore[invalid-assignment]
 
         resize = resize if resize is not None else self._resize
         mean = self._mean
@@ -227,7 +227,7 @@ class CPUPreprocessor(ImagePreprocessor):
                 std.reshape(-1) if std.size == _COLOR_CHANNELS else std.flatten()[:_COLOR_CHANNELS]
             )
         result = preprocess(
-            images,  # type: ignore[arg-type]
+            images,  # type: ignore[invalid-argument-type]
             self._o_shape,
             self._o_dtype,
             self._o_range,

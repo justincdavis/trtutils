@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -388,7 +388,7 @@ class Classifier(ImageModel, ClassifierInterface):
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
-            images = [images]  # type: ignore[list-item]
+            images = [images]  # type: ignore[invalid-assignment]
 
         # assign flags
         if preprocessed is None:
@@ -512,13 +512,13 @@ class Classifier(ImageModel, ClassifierInterface):
 
         if is_single:
             # Wrap single image outputs for batch processing
-            batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[list-item]
+            batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[invalid-assignment]
             result = get_classifications(batch_outputs, top_k=top_k, verbose=verbose)
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # get_classifications
             return result[0]  # Unwrap
 
-        result_batch = get_classifications(outputs, top_k=top_k, verbose=verbose)  # type: ignore[arg-type]
+        result_batch = get_classifications(outputs, top_k=top_k, verbose=verbose)  # type: ignore[invalid-argument-type]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # get_classifications
@@ -592,18 +592,18 @@ class Classifier(ImageModel, ClassifierInterface):
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
-            images = [images]  # type: ignore[list-item]
+            images = [images]  # type: ignore[invalid-assignment]
 
         # Dispatch based on graph flag
         if self._e2e_graph_enabled:
             result = self._end2end_graph(
-                images,  # type: ignore[arg-type]
+                images,  # type: ignore[invalid-argument-type]
                 top_k=top_k,
                 verbose=verbose,
             )
         else:
             result = self._end2end(
-                images,  # type: ignore[arg-type]
+                images,  # type: ignore[invalid-argument-type]
                 top_k=top_k,
                 verbose=verbose,
             )

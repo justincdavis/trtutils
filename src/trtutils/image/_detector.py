@@ -400,7 +400,7 @@ class Detector(ImageModel, DetectorInterface):
             returns list[np.ndarray]. For batch, returns batch results.
 
         """
-        return self.run(  # type: ignore[call-overload]
+        return self.run(  # type: ignore[no-matching-overload]
             images,
             ratios,
             padding,
@@ -571,7 +571,7 @@ class Detector(ImageModel, DetectorInterface):
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
-            images = [images]  # type: ignore[list-item]
+            images = [images]  # type: ignore[invalid-assignment]
             # Wrap single ratios/padding to lists
             if (
                 ratios is not None
@@ -673,8 +673,8 @@ class Detector(ImageModel, DetectorInterface):
                 raise RuntimeError(err_msg)
             postprocessed_outputs = self.postprocess(
                 outputs,
-                ratios,  # type: ignore[arg-type]
-                padding,  # type: ignore[arg-type]
+                ratios,  # type: ignore[invalid-argument-type]
+                padding,  # type: ignore[invalid-argument-type]
                 conf_thres,
                 no_copy=no_copy_post,
             )
@@ -783,7 +783,7 @@ class Detector(ImageModel, DetectorInterface):
 
         if is_single:
             # Wrap single image outputs for batch processing
-            batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[list-item]
+            batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[invalid-assignment]
             result = self._get_detections_fn(
                 batch_outputs,
                 conf_thres=conf_thres,
@@ -797,7 +797,7 @@ class Detector(ImageModel, DetectorInterface):
             return result[0]  # Unwrap
 
         result_batch = self._get_detections_fn(
-            outputs,  # type: ignore[arg-type]
+            outputs,  # type: ignore[invalid-argument-type]
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou,
             extra_nms=use_nms,
@@ -904,12 +904,12 @@ class Detector(ImageModel, DetectorInterface):
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
-            images = [images]  # type: ignore[list-item]
+            images = [images]  # type: ignore[invalid-assignment]
 
         # Dispatch based on graph flag
         if self._e2e_graph_enabled:
             result = self._end2end_graph(
-                images,  # type: ignore[arg-type]
+                images,  # type: ignore[invalid-argument-type]
                 conf_thres=conf_thres,
                 nms_iou_thres=nms_iou_thres,
                 extra_nms=extra_nms,
@@ -918,7 +918,7 @@ class Detector(ImageModel, DetectorInterface):
             )
         else:
             result = self._end2end(
-                images,  # type: ignore[arg-type]
+                images,  # type: ignore[invalid-argument-type]
                 conf_thres=conf_thres,
                 nms_iou_thres=nms_iou_thres,
                 extra_nms=extra_nms,
@@ -1059,7 +1059,7 @@ class Detector(ImageModel, DetectorInterface):
 
         input_ptrs: list[int] = []
         if self._use_image_size:
-            orig_size_ptr, valid = self._preprocessor.orig_size_allocation  # type: ignore[union-attr]
+            orig_size_ptr, valid = self._preprocessor.orig_size_allocation  # type: ignore[unresolved-attribute]
             if not valid:
                 err_msg = "orig_image_size buffer not valid"
                 if FLAGS.NVTX_ENABLED:
@@ -1067,7 +1067,7 @@ class Detector(ImageModel, DetectorInterface):
                 raise RuntimeError(err_msg)
             input_ptrs.append(orig_size_ptr)
         if self._use_scale_factor:
-            scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation  # type: ignore[union-attr]
+            scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation  # type: ignore[unresolved-attribute]
             if not scale_valid:
                 err_msg = "scale_factor buffer not valid"
                 if FLAGS.NVTX_ENABLED:
