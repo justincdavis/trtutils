@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -525,7 +525,7 @@ class ImageModel:
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
-            images = [images]  # type: ignore[list-item]
+            images = [images]  # type: ignore[invalid-assignment]
 
         resize = resize if resize is not None else self._resize_method
         if verbose:

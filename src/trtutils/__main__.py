@@ -284,7 +284,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
             order=args.data_order,
             max_images=args.max_images,
             resize_method=args.resize_method,
-            input_scale=tuple(args.input_scale) if args.input_scale is not None else None,  # type: ignore[arg-type]
+            input_scale=tuple(args.input_scale) if args.input_scale is not None else None,  # type: ignore[invalid-argument-type]
             verbose=args.verbose,
         )
 
@@ -445,7 +445,7 @@ def _generate_calibration(args: SimpleNamespace) -> None:
         order=args.data_order,
         max_images=args.max_images,
         resize_method=args.resize_method,
-        input_scale=tuple(args.input_scale) if args.input_scale is not None else None,  # type: ignore[arg-type]
+        input_scale=tuple(args.input_scale) if args.input_scale is not None else None,  # type: ignore[invalid-argument-type]
         verbose=args.verbose,
     )
     batcher.save_calibration_data(args.output, verbose=args.verbose)
@@ -579,7 +579,7 @@ def _build_dla(args: SimpleNamespace) -> None:
         order=args.data_order,
         max_images=args.max_images,
         resize_method=args.resize_method,
-        input_scale=tuple(args.input_scale) if args.input_scale is not None else None,  # type: ignore[arg-type]
+        input_scale=tuple(args.input_scale) if args.input_scale is not None else None,  # type: ignore[invalid-argument-type]
         verbose=args.verbose,
     )
 
@@ -672,7 +672,7 @@ def _detect(args: SimpleNamespace) -> None:
     detector = trtutils.image.Detector(
         engine_path=args.engine,
         warmup_iterations=args.warmup_iterations,
-        input_range=tuple(args.input_range) if args.input_range is not None else None,  # type: ignore[arg-type]
+        input_range=tuple(args.input_range) if args.input_range is not None else None,  # type: ignore[invalid-argument-type]
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
         conf_thres=args.conf_thres,
@@ -871,7 +871,7 @@ def _classify(args: SimpleNamespace) -> None:
     classifier = trtutils.image.Classifier(
         engine_path=args.engine,
         warmup_iterations=args.warmup_iterations,
-        input_range=tuple(args.input_range) if args.input_range is not None else None,  # type: ignore[arg-type]
+        input_range=tuple(args.input_range) if args.input_range is not None else None,  # type: ignore[invalid-argument-type]
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
         dla_core=args.dla_core,

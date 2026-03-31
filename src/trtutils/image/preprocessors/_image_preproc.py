@@ -618,7 +618,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             raise ValueError(err_msg)
 
         # verified ndim is 3 above, so we can ignore the type checker
-        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
+        img_shape: tuple[int, int, int] = image.shape  # type: ignore[invalid-assignment]
 
         if verbose:
             LOG.debug(
@@ -776,10 +776,10 @@ class GPUImagePreprocessor(ImagePreprocessor):
         # Handle single-image input
         is_single = _is_single_image(images)
         if is_single:
-            images = [images]  # type: ignore[list-item]
+            images = [images]  # type: ignore[invalid-assignment]
 
         _, ratios_list, padding_list = self.direct_preproc(
-            images,  # type: ignore[arg-type]
+            images,  # type: ignore[invalid-argument-type]
             resize=resize,
             no_warn=True,
             verbose=verbose,
