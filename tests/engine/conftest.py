@@ -37,6 +37,22 @@ ENGINE_PATHS = [
 
 
 @pytest.fixture
+def make_engine(engine_path):
+    """Factory fixture that creates TRTEngine instances with automatic cleanup."""
+    engines = []
+
+    def _factory(**kwargs):  # noqa: ANN003
+        kwargs.setdefault("warmup", False)
+        eng = TRTEngine(engine_path, **kwargs)
+        engines.append(eng)
+        return eng
+
+    yield _factory
+    for eng in engines:
+        del eng
+
+
+@pytest.fixture
 def engine(engine_path) -> Generator:
     """Create a fresh TRTEngine instance per test (no warmup)."""
     eng = TRTEngine(engine_path, warmup=False)

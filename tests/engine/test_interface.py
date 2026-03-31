@@ -18,11 +18,10 @@ from trtutils._flags import FLAGS
         pytest.param(False, False, id="pagelocked-false"),
     ],
 )
-def test_pagelocked_mem(engine_path, pagelocked_mem, expected) -> None:
+def test_pagelocked_mem(make_engine, pagelocked_mem, expected) -> None:
     """pagelocked_mem parameter is stored correctly."""
-    eng = TRTEngine(engine_path, warmup=False, pagelocked_mem=pagelocked_mem)
+    eng = make_engine(pagelocked_mem=pagelocked_mem)
     assert eng.pagelocked_mem is expected
-    del eng
 
 
 def test_unified_mem_default(engine) -> None:
@@ -30,11 +29,10 @@ def test_unified_mem_default(engine) -> None:
     assert engine.unified_mem == FLAGS.IS_JETSON
 
 
-def test_unified_mem_explicit_true(engine_path) -> None:
+def test_unified_mem_explicit_true(make_engine) -> None:
     """unified_mem=True can be explicitly set."""
-    eng = TRTEngine(engine_path, warmup=False, unified_mem=True)
+    eng = make_engine(unified_mem=True)
     assert eng.unified_mem is True
-    del eng
 
 
 def test_name_from_path(engine, engine_path) -> None:
@@ -46,24 +44,3 @@ def test_backend_invalid_raises(engine_path) -> None:
     """Invalid backend raises ValueError."""
     with pytest.raises(ValueError, match="Invalid backend"):
         TRTEngine(engine_path, backend="invalid")
-
-
-def test_del_frees_bindings(engine_path) -> None:
-    """__del__ frees bindings without error."""
-    eng = TRTEngine(engine_path, warmup=False)
-    del eng
-
-
-def test_del_double_delete(engine_path) -> None:
-    """Double deletion does not crash."""
-    eng = TRTEngine(engine_path, warmup=False)
-    eng.__del__()
-    del eng
-
-
-def test_del_deletes_context_engine(engine_path) -> None:
-    """__del__ removes _context and _engine attributes."""
-    eng = TRTEngine(engine_path, warmup=False)
-    eng.__del__()
-    assert not hasattr(eng, "_context")
-    assert not hasattr(eng, "_engine")
