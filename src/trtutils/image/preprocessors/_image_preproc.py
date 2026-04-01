@@ -617,8 +617,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 nvtx.pop_range()  # validate_input
             raise ValueError(err_msg)
 
-        # verified ndim is 3 above, so we can ignore the type checker
-        img_shape: tuple[int, int, int] = image.shape  # type: ignore[invalid-assignment]
+        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
 
         if verbose:
             LOG.debug(

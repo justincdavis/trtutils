@@ -325,7 +325,7 @@ class ImageBatcher(AbstractBatcher):
             # keep trying to put images into the queue
             while not self._event.is_set():
                 try:
-                    self._queue.put(data, timeout=0.1)
+                    self._queue.put(data, timeout=0.1)  # type: ignore[arg-type]
 
                     if self._verbose:
                         LOG.debug(f"ImageBatcher put batch: {idx} / {len(self._batches)}")

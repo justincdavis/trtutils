@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import onnx
-import tensorrt as trt
 
 from trtutils import FLAGS, build_engine
 from trtutils.builder import SyntheticBatcher
+from trtutils.compat._libs import trt
 from trtutils.download import download, get_supported_models
 from trtutils.jetson import benchmark_engine
 from trtutils.research.axonn import build_engine as axonn_build_engine
