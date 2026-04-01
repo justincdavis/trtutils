@@ -17,7 +17,6 @@ from ._image_model import ImageModel
 from .interfaces import ClassifierInterface
 from .postprocessors import get_classifications, postprocess_classifications
 from .preprocessors import CUDAPreprocessor, TRTPreprocessor
-from .preprocessors._image_preproc import _is_single_image
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -386,9 +385,12 @@ class Classifier(ImageModel, ClassifierInterface):
             LOG.debug(f"{self._tag}: run")
 
         # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[invalid-assignment]
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+            is_single = True
+        else:
+            batch_images = images
+            is_single = False
 
         # assign flags
         if preprocessed is None:
@@ -417,15 +419,15 @@ class Classifier(ImageModel, ClassifierInterface):
         if not preprocessed:
             if verbose:
                 LOG.debug("Preprocessing inputs")
-            tensor, _, _ = self.preprocess(images, no_copy=no_copy_pre)
+            tensor, _, _ = self.preprocess(batch_images, no_copy=no_copy_pre)
         else:
             # images is already preprocessed tensor when preprocessed=True
-            if len(images) != 1:
+            if len(batch_images) != 1:
                 err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # run
                 raise ValueError(err_msg)
-            tensor = images[0]
+            tensor = batch_images[0]
 
         # execute
         t0 = time.perf_counter()
@@ -512,13 +514,17 @@ class Classifier(ImageModel, ClassifierInterface):
 
         if is_single:
             # Wrap single image outputs for batch processing
-            batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[invalid-assignment]
+            batch_outputs: list[list[np.ndarray]] = [outputs]  # ty: ignore[invalid-assignment]
             result = get_classifications(batch_outputs, top_k=top_k, verbose=verbose)
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # get_classifications
             return result[0]  # Unwrap
 
-        result_batch = get_classifications(outputs, top_k=top_k, verbose=verbose)  # type: ignore[invalid-argument-type]
+        result_batch = get_classifications(
+            outputs,  # ty: ignore[invalid-argument-type]
+            top_k=top_k,
+            verbose=verbose,
+        )
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # get_classifications
@@ -590,20 +596,23 @@ class Classifier(ImageModel, ClassifierInterface):
             LOG.debug(f"{self._tag}: end2end")
 
         # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[invalid-assignment]
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+            is_single = True
+        else:
+            batch_images = images
+            is_single = False
 
         # Dispatch based on graph flag
         if self._e2e_graph_enabled:
             result = self._end2end_graph(
-                images,  # type: ignore[invalid-argument-type]
+                batch_images,
                 top_k=top_k,
                 verbose=verbose,
             )
         else:
             result = self._end2end(
-                images,  # type: ignore[invalid-argument-type]
+                batch_images,
                 top_k=top_k,
                 verbose=verbose,
             )

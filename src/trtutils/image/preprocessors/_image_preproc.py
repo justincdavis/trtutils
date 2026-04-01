@@ -35,19 +35,6 @@ _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
 
 
-def _is_single_image(images: np.ndarray | list[np.ndarray]) -> bool:
-    """
-    Check if input is a single HWC image vs a batch.
-
-    Returns
-    -------
-    bool
-        True if images is a single HWC ndarray (ndim == 3), False otherwise.
-
-    """
-    return isinstance(images, np.ndarray) and images.ndim == _IMAGE_DIMENSIONS
-
-
 class ImagePreprocessor(ABC):
     """Abstract base class for image preprocessors."""
 
@@ -617,7 +604,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 nvtx.pop_range()  # validate_input
             raise ValueError(err_msg)
 
-        img_shape: tuple[int, int, int] = image.shape  # type: ignore[assignment]
+        img_shape: tuple[int, int, int] = image.shape
 
         if verbose:
             LOG.debug(
@@ -773,18 +760,19 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.push_range(self._nvtx_tags["gpu_preprocess"])
 
         # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[invalid-assignment]
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+        else:
+            batch_images = images
 
         _, ratios_list, padding_list = self.direct_preproc(
-            images,  # type: ignore[invalid-argument-type]
+            batch_images,
             resize=resize,
             no_warn=True,
             verbose=verbose,
         )
 
-        batch_size = len(images)
+        batch_size = len(batch_images)
         output_binding = self.output_binding
 
         if not self._unified_mem:
