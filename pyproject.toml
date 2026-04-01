@@ -47,7 +47,7 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "Typing :: Typed",
 ]
-requires-python=">=3.8, <=3.14"
+requires-python=">=3.8, <3.15"
 dependencies = [
     "cv2ext>=0.1.0",
     "opencv-python>=4.8.0,<5.0.0",
