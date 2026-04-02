@@ -102,7 +102,7 @@ compat = [
     "trtutils[sahi]",
 ]
 ci = [
-    "ruff==0.15.8",
+    "ruff==0.15.9",
     "ty==0.0.27",
 ]
 docs = [
