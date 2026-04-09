@@ -11,7 +11,7 @@ import nvtx
 
 from trtutils._flags import FLAGS
 
-from ._image_preproc import ImagePreprocessor, _is_single_image
+from ._image_preproc import ImagePreprocessor
 from ._process import preprocess
 
 if TYPE_CHECKING:
@@ -207,9 +207,10 @@ class CPUPreprocessor(ImagePreprocessor):
             nvtx.push_range(self._nvtx_tags["cpu_preprocess"])
 
         # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[invalid-assignment]
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+        else:
+            batch_images = images
 
         resize = resize if resize is not None else self._resize
         mean = self._mean
@@ -227,7 +228,7 @@ class CPUPreprocessor(ImagePreprocessor):
                 std.reshape(-1) if std.size == _COLOR_CHANNELS else std.flatten()[:_COLOR_CHANNELS]
             )
         result = preprocess(
-            images,  # type: ignore[invalid-argument-type]
+            batch_images,
             self._o_shape,
             self._o_dtype,
             self._o_range,

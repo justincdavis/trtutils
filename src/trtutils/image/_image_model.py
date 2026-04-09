@@ -19,7 +19,6 @@ from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_de
 from trtutils.core._stream import stream_synchronize
 
 from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
-from .preprocessors._image_preproc import _is_single_image
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -523,14 +522,15 @@ class ImageModel:
             nvtx.push_range(self._nvtx_tags["preprocess"])
 
         # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[invalid-assignment]
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+        else:
+            batch_images = images
 
         resize = resize if resize is not None else self._resize_method
         if verbose:
             LOG.debug(
-                f"{self._tag}: Running preprocess, batch_size: {len(images)}, with method: {resize}",
+                f"{self._tag}: Running preprocess, batch_size: {len(batch_images)}, with method: {resize}",
             )
             LOG.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self._preprocessor
@@ -551,11 +551,11 @@ class ImageModel:
                 preprocessor = self._preproc_trt
         if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             t0 = time.perf_counter()
-            data = preprocessor(images, resize=resize, no_copy=no_copy, verbose=verbose)
+            data = preprocessor(batch_images, resize=resize, no_copy=no_copy, verbose=verbose)
             t1 = time.perf_counter()
         else:
             t0 = time.perf_counter()
-            data = preprocessor(images, resize=resize, verbose=verbose)
+            data = preprocessor(batch_images, resize=resize, verbose=verbose)
             t1 = time.perf_counter()
         self._pre_profile = (t0, t1)
 

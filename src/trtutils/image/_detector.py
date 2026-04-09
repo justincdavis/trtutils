@@ -27,7 +27,6 @@ from .postprocessors import (
     postprocess_yolov10,
 )
 from .preprocessors import CUDAPreprocessor, TRTPreprocessor
-from .preprocessors._image_preproc import _is_single_image
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -39,9 +38,6 @@ def _is_postprocessed_outputs(
     outputs: list[np.ndarray] | list[list[np.ndarray]],
 ) -> TypeGuard[list[list[np.ndarray]]]:
     return not outputs or isinstance(outputs[0], list)
-
-
-_TUPLE_PAIR_LEN = 2  # (ratio_x, ratio_y) or (pad_x, pad_y) tuples
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -400,7 +396,7 @@ class Detector(ImageModel, DetectorInterface):
             returns list[np.ndarray]. For batch, returns batch results.
 
         """
-        return self.run(  # type: ignore[no-matching-overload]
+        return self.run(  # ty: ignore[no-matching-overload]
             images,
             ratios,
             padding,
@@ -569,24 +565,32 @@ class Detector(ImageModel, DetectorInterface):
             LOG.debug(f"{self._tag}: run")
 
         # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[invalid-assignment]
-            # Wrap single ratios/padding to lists
-            if (
-                ratios is not None
-                and isinstance(ratios, tuple)
-                and len(ratios) == _TUPLE_PAIR_LEN
-                and isinstance(ratios[0], float)
-            ):
-                ratios = [ratios]
-            if (
-                padding is not None
-                and isinstance(padding, tuple)
-                and len(padding) == _TUPLE_PAIR_LEN
-                and isinstance(padding[0], (int, float))
-            ):
-                padding = [padding]
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+            is_single = True
+        else:
+            batch_images = images
+            is_single = False
+
+        # Normalize ratios/padding to list form
+        batch_ratios: list[tuple[float, float]] | None
+        batch_padding: list[tuple[float, float]] | None
+        if ratios is not None and isinstance(ratios, tuple) and isinstance(ratios[0], float):
+            batch_ratios = [ratios]
+        elif isinstance(ratios, list):
+            batch_ratios = ratios
+        else:
+            batch_ratios = ratios  # ty: ignore[invalid-assignment]
+        if (
+            padding is not None
+            and isinstance(padding, tuple)
+            and isinstance(padding[0], (int, float))
+        ):
+            batch_padding = [padding]
+        elif isinstance(padding, list):
+            batch_padding = padding
+        else:
+            batch_padding = padding  # ty: ignore[invalid-assignment]
 
         # assign flags
         if preprocessed is None:
@@ -615,17 +619,17 @@ class Detector(ImageModel, DetectorInterface):
         if not preprocessed:
             if verbose:
                 LOG.debug("Preprocessing inputs")
-            tensor, ratios, padding = self.preprocess(images, no_copy=no_copy_pre)
+            tensor, batch_ratios, batch_padding = self.preprocess(batch_images, no_copy=no_copy_pre)
         else:
             # images is already preprocessed tensor when preprocessed=True
-            if len(images) != 1:
+            if len(batch_images) != 1:
                 err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # run
                 raise ValueError(err_msg)
-            tensor = images[0]
+            tensor = batch_images[0]
 
-        batch_size = len(images) if not preprocessed else tensor.shape[0]
+        batch_size = len(batch_images) if not preprocessed else tensor.shape[0]
 
         # build input list based on schema
         # RT_DETR_V3 expects (im_shape, image, scale_factor) order
@@ -633,20 +637,20 @@ class Detector(ImageModel, DetectorInterface):
         if self._input_schema == InputSchema.RT_DETR_V3:
             # Build im_shape: (batch, 2) with (height, width) per image
             im_shape = np.array(
-                [img.shape[:2] for img in images]
+                [img.shape[:2] for img in batch_images]
                 if not preprocessed
                 else [(self._input_size[1], self._input_size[0])] * batch_size,
                 dtype=np.float32,
             )
             # Build scale_factor: (batch, 2) from ratios list
-            scale_factors = np.array(ratios, dtype=np.float32)
+            scale_factors = np.array(batch_ratios, dtype=np.float32)
             engine_inputs = [im_shape, tensor, scale_factors]
         else:
             engine_inputs = [tensor]
             if self._use_image_size:
                 # Build batched orig_target_sizes: (batch, 2) with (height, width) per image
                 orig_sizes = np.array(
-                    [img.shape[:2] for img in images]
+                    [img.shape[:2] for img in batch_images]
                     if not preprocessed
                     else [(self._input_size[1], self._input_size[0])] * batch_size,
                     dtype=np.int32,
@@ -654,7 +658,7 @@ class Detector(ImageModel, DetectorInterface):
                 engine_inputs.append(orig_sizes)
             if self._use_scale_factor:
                 # Build batched scale_factor: (batch, 2) from ratios list
-                scale_factors = np.array(ratios, dtype=np.float32)
+                scale_factors = np.array(batch_ratios, dtype=np.float32)
                 engine_inputs.append(scale_factors)
 
         # execute
@@ -666,15 +670,15 @@ class Detector(ImageModel, DetectorInterface):
         if postprocess:
             if verbose:
                 LOG.debug("Postprocessing outputs")
-            if ratios is None or padding is None:
+            if batch_ratios is None or batch_padding is None:
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # run
                 raise RuntimeError(err_msg)
             postprocessed_outputs = self.postprocess(
                 outputs,
-                ratios,  # type: ignore[invalid-argument-type]
-                padding,  # type: ignore[invalid-argument-type]
+                batch_ratios,
+                batch_padding,
                 conf_thres,
                 no_copy=no_copy_post,
             )
@@ -783,7 +787,7 @@ class Detector(ImageModel, DetectorInterface):
 
         if is_single:
             # Wrap single image outputs for batch processing
-            batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[invalid-assignment]
+            batch_outputs: list[list[np.ndarray]] = [outputs]  # ty: ignore[invalid-assignment]
             result = self._get_detections_fn(
                 batch_outputs,
                 conf_thres=conf_thres,
@@ -797,7 +801,7 @@ class Detector(ImageModel, DetectorInterface):
             return result[0]  # Unwrap
 
         result_batch = self._get_detections_fn(
-            outputs,  # type: ignore[invalid-argument-type]
+            outputs,  # ty: ignore[invalid-argument-type]
             conf_thres=conf_thres,
             nms_iou_thres=nms_iou,
             extra_nms=use_nms,
@@ -902,14 +906,17 @@ class Detector(ImageModel, DetectorInterface):
             LOG.debug(f"{self._tag}: end2end")
 
         # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[invalid-assignment]
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+            is_single = True
+        else:
+            batch_images = images
+            is_single = False
 
         # Dispatch based on graph flag
         if self._e2e_graph_enabled:
             result = self._end2end_graph(
-                images,  # type: ignore[invalid-argument-type]
+                batch_images,
                 conf_thres=conf_thres,
                 nms_iou_thres=nms_iou_thres,
                 extra_nms=extra_nms,
@@ -918,7 +925,7 @@ class Detector(ImageModel, DetectorInterface):
             )
         else:
             result = self._end2end(
-                images,  # type: ignore[invalid-argument-type]
+                batch_images,
                 conf_thres=conf_thres,
                 nms_iou_thres=nms_iou_thres,
                 extra_nms=extra_nms,
@@ -1059,7 +1066,7 @@ class Detector(ImageModel, DetectorInterface):
 
         input_ptrs: list[int] = []
         if self._use_image_size:
-            orig_size_ptr, valid = self._preprocessor.orig_size_allocation  # type: ignore[unresolved-attribute]
+            orig_size_ptr, valid = self._preprocessor.orig_size_allocation  # ty: ignore[unresolved-attribute]
             if not valid:
                 err_msg = "orig_image_size buffer not valid"
                 if FLAGS.NVTX_ENABLED:
@@ -1067,7 +1074,7 @@ class Detector(ImageModel, DetectorInterface):
                 raise RuntimeError(err_msg)
             input_ptrs.append(orig_size_ptr)
         if self._use_scale_factor:
-            scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation  # type: ignore[unresolved-attribute]
+            scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation  # ty: ignore[unresolved-attribute]
             if not scale_valid:
                 err_msg = "scale_factor buffer not valid"
                 if FLAGS.NVTX_ENABLED:

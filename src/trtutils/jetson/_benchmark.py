@@ -215,12 +215,12 @@ def benchmark_engines(
     for engine_info in engines:
         dla_core: int | None = None
         if isinstance(engine_info, tuple):
-            engine, dla_core = engine_info  # type: ignore[invalid-assignment]
+            engine, dla_core = engine_info  # ty: ignore[invalid-assignment]
         else:
             engine = engine_info
         if isinstance(engine, str):
             engine = Path(engine)
-        temp_engines.append(engine)  # type: ignore[invalid-argument-type]
+        temp_engines.append(engine)  # ty: ignore[invalid-argument-type]
         dla_assignments.append(dla_core)
 
     if not parallel:

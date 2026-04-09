@@ -11,12 +11,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: "3.14"
 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install ".[all]" ".[ci]" ".[test]"
+          pip install ".[ci]" ".[test]"
 
       - name: Type Check
         run: ./ci/run_type_check.sh
