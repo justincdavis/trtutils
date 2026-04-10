@@ -91,6 +91,15 @@ def non_onnx_file(tmp_path) -> Path:
 
 
 @pytest.fixture
+def close_batcher():
+    """Ensure ImageBatcher._close() is called even on test failure."""
+    batchers = []
+    yield batchers
+    for b in batchers:
+        b._close()
+
+
+@pytest.fixture
 def calibration_cache_path(tmp_path) -> Path:
     """Temporary path for calibration cache."""
     return tmp_path / "calibration.cache"
