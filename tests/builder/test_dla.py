@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for DLA analysis -- can_run_on_dla(), build_dla_engine(), get_check_dla()."""
+"""Tests for src/trtutils/builder/_dla.py -- can_run_on_dla, build_dla_engine, get_check_dla."""
 
 from __future__ import annotations
 
@@ -15,29 +15,6 @@ from trtutils.builder._utils import get_check_dla
 from trtutils.compat._libs import trt
 
 pytestmark = pytest.mark.jetson
-
-
-def _make_mock_network(
-    num_layers, *, constant_indices=None, shuffle_indices=None, tile_name_indices=None
-):
-    mock_network = MagicMock()
-    mock_network.num_layers = num_layers
-    layers = {}
-    for i in range(num_layers):
-        layer = MagicMock()
-        layer.name = f"layer_{i}"
-        if constant_indices and i in constant_indices:
-            layer.type = trt.LayerType.CONSTANT
-        elif shuffle_indices and i in shuffle_indices:
-            layer.type = trt.LayerType.SHUFFLE
-        elif tile_name_indices and i in tile_name_indices:
-            layer.type = trt.LayerType.CONVOLUTION
-            layer.name = f"tile_op_{i}"
-        else:
-            layer.type = trt.LayerType.CONVOLUTION
-        layers[i] = layer
-    mock_network.get_layer.side_effect = lambda idx: layers[idx]
-    return mock_network
 
 
 @pytest.mark.parametrize(
@@ -67,256 +44,229 @@ def test_can_run_on_dla(onnx_path, use_network) -> None:
 
 
 def test_network_input_requires_config(onnx_path) -> None:
-    """ValueError when passing network without config."""
+    """can_run_on_dla raises ValueError when passing a network without a config."""
     network, _, _, _ = read_onnx(onnx_path)
     with pytest.raises(ValueError, match="Config must be provided"):
         can_run_on_dla(network, config=None)
 
 
-def test_full_dla_path(onnx_path, output_engine_path, synthetic_batcher) -> None:
-    """When full_dla is True, build_engine is called with DLA default_device."""
-    with patch("trtutils.builder._dla.can_run_on_dla") as mock_check:
-        mock_check.return_value = (True, [])
-        with patch("trtutils.builder._dla.build_engine") as mock_build:
-            build_dla_engine(
-                onnx_path,
-                output_engine_path,
-                data_batcher=synthetic_batcher,
-                dla_core=0,
-            )
-            mock_build.assert_called_once()
-            call_kwargs = mock_build.call_args
-
-            assert call_kwargs.kwargs.get("fp16") is True
-            assert call_kwargs.kwargs.get("int8") is True
+def test_get_check_dla(onnx_path) -> None:
+    """get_check_dla returns a callable that accepts a layer and returns bool."""
+    network, _, config, _ = read_onnx(onnx_path)
+    config.default_device_type = trt.DeviceType.DLA
+    config.DLA_core = 0
+    check_fn = get_check_dla(config)
+    assert callable(check_fn)
+    assert network.num_layers > 0
+    assert isinstance(check_fn(network.get_layer(0)), bool)
 
 
-def test_no_dla_chunks(onnx_path, output_engine_path, synthetic_batcher) -> None:
-    """No DLA-compatible layers triggers GPU-only build."""
-    mock_layers = [MagicMock() for _ in range(5)]
-    chunks = [(mock_layers, 0, 4, False)]
-    with patch("trtutils.builder._dla.can_run_on_dla") as mock_check:
-        mock_check.return_value = (False, chunks)
-        with patch("trtutils.builder._dla.build_engine") as mock_build:
-            build_dla_engine(
-                onnx_path,
-                output_engine_path,
-                data_batcher=synthetic_batcher,
-                dla_core=0,
-            )
-            mock_build.assert_called_once()
+@pytest.mark.parametrize(
+    ("max_chunks", "min_layers"),
+    [
+        pytest.param(0, 0, id="full-dla-all-chunks"),
+        pytest.param(1, 0, id="largest-chunk-only"),
+        pytest.param(1, 20, id="default"),
+        pytest.param(1, 10_000, id="no-dla-chunks"),
+    ],
+)
+def test_build_dla_engine(
+    onnx_path,
+    output_engine_path,
+    synthetic_batcher,
+    max_chunks: int,
+    min_layers: int,
+) -> None:
+    """build_dla_engine produces a valid engine across full-DLA, no-DLA, and mixed branches."""
+    build_dla_engine(
+        onnx_path,
+        output_engine_path,
+        data_batcher=synthetic_batcher,
+        dla_core=0,
+        max_chunks=max_chunks,
+        min_layers=min_layers,
+        optimization_level=1,
+    )
+    assert output_engine_path.exists()
+    assert output_engine_path.stat().st_size > 0
 
 
+def test_bad_onnx_raises(invalid_onnx_file, output_engine_path, synthetic_batcher) -> None:
+    """Invalid ONNX content raises RuntimeError when passed to build_dla_engine."""
+    with pytest.raises(RuntimeError):
+        build_dla_engine(
+            invalid_onnx_file,
+            output_engine_path,
+            data_batcher=synthetic_batcher,
+            dla_core=0,
+            optimization_level=1,
+        )
+
+
+def _make_mock_network(
+    num_layers: int,
+    *,
+    constant_indices: set[int] | None = None,
+    shuffle_indices: set[int] | None = None,
+    tile_name_indices: set[int] | None = None,
+):
+    """Build a MagicMock network that reports num_layers and per-layer types/names."""
+    mock_network = MagicMock()
+    mock_network.num_layers = num_layers
+    layers = {}
+    for i in range(num_layers):
+        layer = MagicMock()
+        layer.name = f"layer_{i}"
+        if constant_indices and i in constant_indices:
+            layer.type = trt.LayerType.CONSTANT
+        elif shuffle_indices and i in shuffle_indices:
+            layer.type = trt.LayerType.SHUFFLE
+        elif tile_name_indices and i in tile_name_indices:
+            layer.type = trt.LayerType.CONVOLUTION
+            layer.name = f"tile_op_{i}"
+        else:
+            layer.type = trt.LayerType.CONVOLUTION
+        layers[i] = layer
+    mock_network.get_layer.side_effect = lambda idx: layers[idx]
+    return mock_network
+
+
+@pytest.mark.parametrize(
+    (
+        "num_layers",
+        "constant_idx",
+        "shuffle_idx",
+        "tile_idx",
+        "chunks",
+        "max_chunks",
+        "min_layers",
+        "expected_dla",
+        "expected_none",
+    ),
+    [
+        pytest.param(
+            10,
+            set(),
+            set(),
+            set(),
+            [(0, 4, False), (5, 9, True)],
+            1,
+            0,
+            range(5, 10),
+            set(),
+            id="mixed-gpu-dla",
+        ),
+        pytest.param(
+            4,
+            {0},
+            {1},
+            {2},
+            [(0, 2, False), (3, 3, True)],
+            1,
+            0,
+            range(3, 4),
+            {0, 1, 2},
+            id="constant-shuffle-tile-skipped",
+        ),
+        pytest.param(
+            20,
+            set(),
+            set(),
+            set(),
+            [(0, 4, True), (5, 9, False), (10, 19, True)],
+            1,
+            0,
+            range(10, 20),
+            set(),
+            id="max-chunks-picks-largest",
+        ),
+        pytest.param(
+            10,
+            set(),
+            set(),
+            set(),
+            [(0, 6, False), (7, 9, True)],
+            1,
+            5,
+            range(0),
+            set(),
+            id="min-layers-excludes-all",
+        ),
+        pytest.param(
+            15,
+            set(),
+            set(),
+            set(),
+            [(0, 4, True), (5, 9, False), (10, 14, True)],
+            0,
+            0,
+            None,
+            set(),
+            id="max-chunks-zero-all-dla",
+        ),
+    ],
+)
 @patch("trtutils.builder._dla.build_engine")
 @patch("trtutils.builder._dla.can_run_on_dla")
 @patch("trtutils.builder._dla.read_onnx")
-def test_mixed_layer_precision_assignment(
+def test_layer_assignment_mapping(
     mock_read_onnx,
     mock_can_run,
     mock_build,
     synthetic_batcher,
+    num_layers: int,
+    constant_idx: set[int],
+    shuffle_idx: set[int],
+    tile_idx: set[int],
+    chunks: list[tuple[int, int, bool]],
+    max_chunks: int,
+    min_layers: int,
+    expected_dla,
+    expected_none: set[int],
 ) -> None:
-    """Mixed path assigns FP16 to GPU layers, INT8 to DLA layers."""
-    mock_network = _make_mock_network(10)
-    mock_read_onnx.return_value = (mock_network, MagicMock(), MagicMock(), MagicMock())
+    """build_dla_engine maps Constant/Shuffle/Tile to None, DLA chunks to INT8+DLA, GPU chunks to HALF+GPU."""
+    network = _make_mock_network(
+        num_layers,
+        constant_indices=constant_idx,
+        shuffle_indices=shuffle_idx,
+        tile_name_indices=tile_idx,
+    )
+    mock_read_onnx.return_value = (network, MagicMock(), MagicMock(), MagicMock())
 
-    gpu_layers = [MagicMock() for _ in range(5)]
-    dla_layers = [MagicMock() for _ in range(5)]
-    chunks = [
-        (gpu_layers, 0, 4, False),
-        (dla_layers, 5, 9, True),
+    chunk_payload = [
+        ([MagicMock() for _ in range(end - start + 1)], start, end, on_dla)
+        for start, end, on_dla in chunks
     ]
-    mock_can_run.return_value = (False, chunks)
+    mock_can_run.return_value = (False, chunk_payload)
 
-    build_dla_engine("fake.onnx", "out.engine", synthetic_batcher, dla_core=0, min_layers=0)
+    build_dla_engine(
+        "fake.onnx",
+        "out.engine",
+        synthetic_batcher,
+        dla_core=0,
+        max_chunks=max_chunks,
+        min_layers=min_layers,
+    )
 
     mock_build.assert_called_once()
     call_kwargs = mock_build.call_args.kwargs
     layer_precision = call_kwargs["layer_precision"]
     layer_device = call_kwargs["layer_device"]
 
-    for i in range(5):
-        assert layer_precision[i] == (i, trt.DataType.HALF)
-        assert layer_device[i] == (i, trt.DeviceType.GPU)
+    dla_indices = set()
+    if expected_dla is None:
+        for start, end, on_dla in chunks:
+            if on_dla:
+                dla_indices.update(range(start, end + 1))
+    else:
+        dla_indices = set(expected_dla)
 
-    for i in range(5, 10):
-        assert layer_precision[i] == (i, trt.DataType.INT8)
-        assert layer_device[i] == (i, trt.DeviceType.DLA)
-
-
-@patch("trtutils.builder._dla.build_engine")
-@patch("trtutils.builder._dla.can_run_on_dla")
-@patch("trtutils.builder._dla.read_onnx")
-def test_constant_shuffle_tile_skip_precision(
-    mock_read_onnx,
-    mock_can_run,
-    mock_build,
-    synthetic_batcher,
-) -> None:
-    """Constant, Shuffle, and Tile layers get None precision (skipped)."""
-    mock_network = _make_mock_network(
-        4,
-        constant_indices={0},
-        shuffle_indices={1},
-        tile_name_indices={2},
-    )
-    mock_read_onnx.return_value = (mock_network, MagicMock(), MagicMock(), MagicMock())
-
-    gpu_layers = [MagicMock() for _ in range(3)]
-    dla_layers = [MagicMock()]
-    chunks = [
-        (gpu_layers, 0, 2, False),
-        (dla_layers, 3, 3, True),
-    ]
-    mock_can_run.return_value = (False, chunks)
-
-    build_dla_engine(
-        "fake.onnx",
-        "out.engine",
-        synthetic_batcher,
-        dla_core=0,
-        min_layers=0,
-        max_chunks=0,
-    )
-
-    call_kwargs = mock_build.call_args.kwargs
-    layer_precision = call_kwargs["layer_precision"]
-
-    assert layer_precision[0] == (0, None)
-    assert layer_precision[1] == (1, None)
-    assert layer_precision[2] == (2, None)
-    assert layer_precision[3] == (3, trt.DataType.INT8)
-
-
-@patch("trtutils.builder._dla.build_engine")
-@patch("trtutils.builder._dla.can_run_on_dla")
-@patch("trtutils.builder._dla.read_onnx")
-def test_max_chunks_limits_dla_assignment(
-    mock_read_onnx,
-    mock_can_run,
-    mock_build,
-    synthetic_batcher,
-) -> None:
-    """max_chunks=1 only assigns the largest DLA chunk."""
-    mock_network = _make_mock_network(20)
-    mock_read_onnx.return_value = (mock_network, MagicMock(), MagicMock(), MagicMock())
-
-    dla_small = [MagicMock() for _ in range(5)]
-    gpu_mid = [MagicMock() for _ in range(5)]
-    dla_large = [MagicMock() for _ in range(10)]
-    chunks = [
-        (dla_small, 0, 4, True),
-        (gpu_mid, 5, 9, False),
-        (dla_large, 10, 19, True),
-    ]
-    mock_can_run.return_value = (False, chunks)
-
-    build_dla_engine(
-        "fake.onnx",
-        "out.engine",
-        synthetic_batcher,
-        dla_core=0,
-        max_chunks=1,
-        min_layers=0,
-    )
-
-    call_kwargs = mock_build.call_args.kwargs
-    layer_device = call_kwargs["layer_device"]
-
-    for i in range(5):
-        assert layer_device[i] == (i, trt.DeviceType.GPU), f"Layer {i} should be GPU"
-    for i in range(5, 10):
-        assert layer_device[i] == (i, trt.DeviceType.GPU), f"Layer {i} should be GPU"
-    for i in range(10, 20):
-        assert layer_device[i] == (i, trt.DeviceType.DLA), f"Layer {i} should be DLA"
-
-
-@patch("trtutils.builder._dla.build_engine")
-@patch("trtutils.builder._dla.can_run_on_dla")
-@patch("trtutils.builder._dla.read_onnx")
-def test_min_layers_filters_small_chunks(
-    mock_read_onnx,
-    mock_can_run,
-    mock_build,
-    synthetic_batcher,
-) -> None:
-    """min_layers filters out DLA chunks smaller than the threshold."""
-    mock_network = _make_mock_network(10)
-    mock_read_onnx.return_value = (mock_network, MagicMock(), MagicMock(), MagicMock())
-
-    gpu_layers = [MagicMock() for _ in range(7)]
-    dla_small = [MagicMock() for _ in range(3)]
-    chunks = [
-        (gpu_layers, 0, 6, False),
-        (dla_small, 7, 9, True),
-    ]
-    mock_can_run.return_value = (False, chunks)
-
-    build_dla_engine(
-        "fake.onnx",
-        "out.engine",
-        synthetic_batcher,
-        dla_core=0,
-        min_layers=5,
-    )
-
-    call_kwargs = mock_build.call_args.kwargs
-    layer_device = call_kwargs["layer_device"]
-
-    for i in range(10):
-        assert layer_device[i] == (i, trt.DeviceType.GPU), f"Layer {i} should be GPU"
-
-
-@patch("trtutils.builder._dla.build_engine")
-@patch("trtutils.builder._dla.can_run_on_dla")
-@patch("trtutils.builder._dla.read_onnx")
-def test_max_chunks_zero_assigns_all(
-    mock_read_onnx,
-    mock_can_run,
-    mock_build,
-    synthetic_batcher,
-) -> None:
-    """max_chunks=0 assigns ALL qualifying DLA chunks."""
-    mock_network = _make_mock_network(15)
-    mock_read_onnx.return_value = (mock_network, MagicMock(), MagicMock(), MagicMock())
-
-    dla1 = [MagicMock() for _ in range(5)]
-    gpu = [MagicMock() for _ in range(5)]
-    dla2 = [MagicMock() for _ in range(5)]
-    chunks = [
-        (dla1, 0, 4, True),
-        (gpu, 5, 9, False),
-        (dla2, 10, 14, True),
-    ]
-    mock_can_run.return_value = (False, chunks)
-
-    build_dla_engine(
-        "fake.onnx",
-        "out.engine",
-        synthetic_batcher,
-        dla_core=0,
-        max_chunks=0,
-        min_layers=0,
-    )
-
-    call_kwargs = mock_build.call_args.kwargs
-    layer_device = call_kwargs["layer_device"]
-
-    for i in range(5):
-        assert layer_device[i] == (i, trt.DeviceType.DLA), f"Layer {i} should be DLA"
-    for i in range(5, 10):
-        assert layer_device[i] == (i, trt.DeviceType.GPU), f"Layer {i} should be GPU"
-    for i in range(10, 15):
-        assert layer_device[i] == (i, trt.DeviceType.DLA), f"Layer {i} should be DLA"
-
-
-def test_get_check_dla(onnx_path) -> None:
-    """get_check_dla returns a callable that accepts a layer and returns bool."""
-    network, _, config, _ = read_onnx(onnx_path)
-    check_fn = get_check_dla(config)
-    assert callable(check_fn)
-    config.default_device_type = trt.DeviceType.DLA
-    config.DLA_core = 0
-    assert network.num_layers > 0
-    result = check_fn(network.get_layer(0))
-    assert isinstance(result, bool)
+    for i in range(num_layers):
+        if i in expected_none:
+            assert layer_precision[i] == (i, None)
+        elif i in dla_indices:
+            assert layer_precision[i] == (i, trt.DataType.INT8)
+            assert layer_device[i] == (i, trt.DeviceType.DLA)
+        else:
+            assert layer_precision[i] == (i, trt.DataType.HALF)
+            assert layer_device[i] == (i, trt.DeviceType.GPU)
