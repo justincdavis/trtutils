@@ -5,44 +5,30 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from trtutils.builder._onnx import read_onnx
 from trtutils.compat._libs import trt
 
 
-def test_valid_onnx(onnx_path) -> None:
-    """Returns a 4-tuple (network, builder, config, parser) for valid ONNX."""
-    result = read_onnx(onnx_path)
-    assert isinstance(result, tuple)
-    assert len(result) == 4
-
-
-def test_returns_correct_types(onnx_path) -> None:
-    """Returned objects are the expected TensorRT types."""
-    network, builder, config, parser = read_onnx(onnx_path)
+@pytest.mark.parametrize(
+    "converter",
+    [
+        pytest.param(Path, id="path"),
+        pytest.param(str, id="str"),
+    ],
+)
+def test_returns_correct_types(onnx_path, converter) -> None:
+    """Returned objects are the expected TensorRT types and network has I/O."""
+    network, builder, config, parser = read_onnx(converter(onnx_path))
     assert isinstance(network, trt.INetworkDefinition)
     assert isinstance(builder, trt.Builder)
     assert isinstance(config, trt.IBuilderConfig)
     assert isinstance(parser, trt.OnnxParser)
-
-
-def test_network_has_inputs(onnx_path) -> None:
-    """Network has at least one input tensor."""
-    network, _, _, _ = read_onnx(onnx_path)
     assert network.num_inputs > 0
-
-
-def test_network_has_outputs(onnx_path) -> None:
-    """Network has at least one output tensor."""
-    network, _, _, _ = read_onnx(onnx_path)
     assert network.num_outputs > 0
-
-
-def test_string_path(onnx_path) -> None:
-    """Accepts string path in addition to Path object."""
-    network, _builder, _config, _parser = read_onnx(str(onnx_path))
-    assert network.num_inputs > 0
 
 
 def test_workspace_memory_set(onnx_path) -> None:

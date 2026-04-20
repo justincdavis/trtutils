@@ -17,20 +17,20 @@ from trtutils.builder.onnx._subgraph import (  # noqa: E402
     split_model_from_file,
 )
 
-# onnx_graphsurgeon.Variable is unhashable in recent versions, which causes
-# extract_subgraph() to fail on set comprehensions. Mark happy-path tests
-# as skip so we still cover the validation logic.
-_GS_VARIABLE_UNHASHABLE = True
-try:
-    g = gs.Graph()
-    v = gs.Variable("test")
-    {v}  # noqa: B018
-    _GS_VARIABLE_UNHASHABLE = False
-except TypeError:
-    pass
+pytestmark = pytest.mark.cpu
+
+
+def _gs_variable_is_hashable() -> bool:
+    """Check whether gs.Variable supports hashing (needed by extract_subgraph)."""
+    try:
+        hash(gs.Variable("probe"))
+    except TypeError:
+        return False
+    return True
+
 
 _skip_unhashable = pytest.mark.skipif(
-    _GS_VARIABLE_UNHASHABLE,
+    not _gs_variable_is_hashable(),
     reason="onnx_graphsurgeon Variable is unhashable in this version",
 )
 
@@ -55,22 +55,14 @@ def test_invalid_start_idx_negative(simple_onnx_model) -> None:
         extract_subgraph(simple_onnx_model, -1, 0)
 
 
-def test_invalid_end_idx_too_large(simple_onnx_model) -> None:
+def test_invalid_end_idx_too_large(simple_onnx_model, simple_gs_graph) -> None:
     """end_idx >= num_nodes raises ValueError."""
-    graph = gs.import_onnx(simple_onnx_model)
-    graph.cleanup().toposort()
     with pytest.raises(ValueError, match="end_idx must be less than"):
-        extract_subgraph(simple_onnx_model, 0, len(graph.nodes))
+        extract_subgraph(simple_onnx_model, 0, len(simple_gs_graph.nodes))
 
 
 def test_invalid_start_greater_than_end(simple_onnx_model) -> None:
     """start_idx > end_idx raises ValueError."""
-    graph = gs.import_onnx(simple_onnx_model)
-    graph.cleanup().toposort()
-    num_nodes = len(graph.nodes)
-    if num_nodes < 2:
-        pytest.skip("Model has fewer than 2 nodes for this test")
-    # end_idx=0 is valid, start_idx=1 > 0
     with pytest.raises(ValueError, match="start_idx must be less than end_idx"):
         extract_subgraph(simple_onnx_model, 1, 0)
 
@@ -78,12 +70,6 @@ def test_invalid_start_greater_than_end(simple_onnx_model) -> None:
 @_skip_unhashable
 def test_extract_from_model_proto(simple_onnx_model) -> None:
     """extract_subgraph accepts an onnx.ModelProto and returns a submodel."""
-    graph = gs.import_onnx(simple_onnx_model)
-    graph.cleanup().toposort()
-    num_nodes = len(graph.nodes)
-    if num_nodes < 2:
-        pytest.skip("Model has fewer than 2 nodes")
-
     sub = extract_subgraph(simple_onnx_model, 0, 0)
     assert isinstance(sub, onnx.ModelProto)
     assert len(sub.graph.node) > 0
@@ -92,10 +78,6 @@ def test_extract_from_model_proto(simple_onnx_model) -> None:
 @_skip_unhashable
 def test_extract_from_gs_graph(simple_gs_graph) -> None:
     """extract_subgraph accepts a gs.Graph directly."""
-    num_nodes = len(simple_gs_graph.nodes)
-    if num_nodes < 2:
-        pytest.skip("Model has fewer than 2 nodes")
-
     sub = extract_subgraph(simple_gs_graph, 0, 0)
     assert isinstance(sub, onnx.ModelProto)
 
@@ -103,12 +85,6 @@ def test_extract_from_gs_graph(simple_gs_graph) -> None:
 @_skip_unhashable
 def test_split_into_two(simple_onnx_model) -> None:
     """Splitting at one index produces two subgraphs."""
-    graph = gs.import_onnx(simple_onnx_model)
-    graph.cleanup().toposort()
-    num_nodes = len(graph.nodes)
-    if num_nodes < 2:
-        pytest.skip("Model has fewer than 2 nodes")
-
     parts = split_model(simple_onnx_model, [0])
     assert len(parts) == 2
     for part in parts:
@@ -127,12 +103,10 @@ def test_split_negative_index_raises(simple_onnx_model) -> None:
         split_model(simple_onnx_model, [-1])
 
 
-def test_split_index_too_large_raises(simple_onnx_model) -> None:
+def test_split_index_too_large_raises(simple_onnx_model, simple_gs_graph) -> None:
     """Split index >= num_nodes raises ValueError."""
-    graph = gs.import_onnx(simple_onnx_model)
-    graph.cleanup().toposort()
     with pytest.raises(ValueError, match="less than the number of nodes"):
-        split_model(simple_onnx_model, [len(graph.nodes)])
+        split_model(simple_onnx_model, [len(simple_gs_graph.nodes)])
 
 
 @_skip_unhashable
