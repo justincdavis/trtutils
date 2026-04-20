@@ -13,6 +13,8 @@ import cv2
 import numpy as np
 import pytest
 
+from trtutils.builder._batcher import SyntheticBatcher
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -97,6 +99,18 @@ def close_batcher():
     yield batchers
     for b in batchers:
         b._close()
+
+
+@pytest.fixture
+def synthetic_batcher() -> SyntheticBatcher:
+    """Small NCHW SyntheticBatcher for calibration in build tests."""
+    return SyntheticBatcher(
+        shape=(3, 8, 8),
+        dtype=np.dtype(np.float32),
+        batch_size=1,
+        num_batches=2,
+        order="NCHW",
+    )
 
 
 @pytest.fixture

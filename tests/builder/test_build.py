@@ -7,11 +7,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 
 from trtutils._flags import FLAGS as REAL_FLAGS
-from trtutils.builder._batcher import SyntheticBatcher
 from trtutils.builder._build import build_engine
 from trtutils.builder.onnx._shapes import get_onnx_input, get_onnx_output
 from trtutils.compat._libs import trt
@@ -66,19 +64,14 @@ def test_build_precision_calibration(
     onnx_path,
     output_engine_path,
     calibration_cache_path,
+    synthetic_batcher,
     precision: str,
     calibration: str,
 ) -> None:
     """Build succeeds with int8/fp8 using no calibration, batcher, or calibration cache."""
     kwargs: dict = {precision: True, "optimization_level": 1}
     if calibration == "batcher":
-        kwargs["data_batcher"] = SyntheticBatcher(
-            shape=(3, 8, 8),
-            dtype=np.dtype(np.float32),
-            batch_size=1,
-            num_batches=2,
-            order="NCHW",
-        )
+        kwargs["data_batcher"] = synthetic_batcher
     elif calibration == "cache":
         kwargs["calibration_cache"] = calibration_cache_path
     build_engine(onnx_path, output_engine_path, **kwargs)

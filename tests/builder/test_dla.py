@@ -7,26 +7,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 
-from trtutils.builder._batcher import SyntheticBatcher
 from trtutils.builder._dla import build_dla_engine, can_run_on_dla
 from trtutils.builder._onnx import read_onnx
 from trtutils.builder._utils import get_check_dla
 from trtutils.compat._libs import trt
 
 pytestmark = pytest.mark.jetson
-
-
-def _make_batcher():
-    return SyntheticBatcher(
-        shape=(3, 8, 8),
-        dtype=np.dtype(np.float32),
-        batch_size=1,
-        num_batches=2,
-        order="NCHW",
-    )
 
 
 def _make_mock_network(
@@ -85,16 +73,15 @@ def test_network_input_requires_config(onnx_path) -> None:
         can_run_on_dla(network, config=None)
 
 
-def test_full_dla_path(onnx_path, output_engine_path) -> None:
+def test_full_dla_path(onnx_path, output_engine_path, synthetic_batcher) -> None:
     """When full_dla is True, build_engine is called with DLA default_device."""
-    batcher = _make_batcher()
     with patch("trtutils.builder._dla.can_run_on_dla") as mock_check:
         mock_check.return_value = (True, [])
         with patch("trtutils.builder._dla.build_engine") as mock_build:
             build_dla_engine(
                 onnx_path,
                 output_engine_path,
-                data_batcher=batcher,
+                data_batcher=synthetic_batcher,
                 dla_core=0,
             )
             mock_build.assert_called_once()
@@ -104,9 +91,8 @@ def test_full_dla_path(onnx_path, output_engine_path) -> None:
             assert call_kwargs.kwargs.get("int8") is True
 
 
-def test_no_dla_chunks(onnx_path, output_engine_path) -> None:
+def test_no_dla_chunks(onnx_path, output_engine_path, synthetic_batcher) -> None:
     """No DLA-compatible layers triggers GPU-only build."""
-    batcher = _make_batcher()
     mock_layers = [MagicMock() for _ in range(5)]
     chunks = [(mock_layers, 0, 4, False)]
     with patch("trtutils.builder._dla.can_run_on_dla") as mock_check:
@@ -115,7 +101,7 @@ def test_no_dla_chunks(onnx_path, output_engine_path) -> None:
             build_dla_engine(
                 onnx_path,
                 output_engine_path,
-                data_batcher=batcher,
+                data_batcher=synthetic_batcher,
                 dla_core=0,
             )
             mock_build.assert_called_once()
@@ -128,6 +114,7 @@ def test_mixed_layer_precision_assignment(
     mock_read_onnx,
     mock_can_run,
     mock_build,
+    synthetic_batcher,
 ) -> None:
     """Mixed path assigns FP16 to GPU layers, INT8 to DLA layers."""
     mock_network = _make_mock_network(10)
@@ -141,8 +128,7 @@ def test_mixed_layer_precision_assignment(
     ]
     mock_can_run.return_value = (False, chunks)
 
-    batcher = _make_batcher()
-    build_dla_engine("fake.onnx", "out.engine", batcher, dla_core=0, min_layers=0)
+    build_dla_engine("fake.onnx", "out.engine", synthetic_batcher, dla_core=0, min_layers=0)
 
     mock_build.assert_called_once()
     call_kwargs = mock_build.call_args.kwargs
@@ -165,6 +151,7 @@ def test_constant_shuffle_tile_skip_precision(
     mock_read_onnx,
     mock_can_run,
     mock_build,
+    synthetic_batcher,
 ) -> None:
     """Constant, Shuffle, and Tile layers get None precision (skipped)."""
     mock_network = _make_mock_network(
@@ -183,11 +170,10 @@ def test_constant_shuffle_tile_skip_precision(
     ]
     mock_can_run.return_value = (False, chunks)
 
-    batcher = _make_batcher()
     build_dla_engine(
         "fake.onnx",
         "out.engine",
-        batcher,
+        synthetic_batcher,
         dla_core=0,
         min_layers=0,
         max_chunks=0,
@@ -209,6 +195,7 @@ def test_max_chunks_limits_dla_assignment(
     mock_read_onnx,
     mock_can_run,
     mock_build,
+    synthetic_batcher,
 ) -> None:
     """max_chunks=1 only assigns the largest DLA chunk."""
     mock_network = _make_mock_network(20)
@@ -224,11 +211,10 @@ def test_max_chunks_limits_dla_assignment(
     ]
     mock_can_run.return_value = (False, chunks)
 
-    batcher = _make_batcher()
     build_dla_engine(
         "fake.onnx",
         "out.engine",
-        batcher,
+        synthetic_batcher,
         dla_core=0,
         max_chunks=1,
         min_layers=0,
@@ -252,6 +238,7 @@ def test_min_layers_filters_small_chunks(
     mock_read_onnx,
     mock_can_run,
     mock_build,
+    synthetic_batcher,
 ) -> None:
     """min_layers filters out DLA chunks smaller than the threshold."""
     mock_network = _make_mock_network(10)
@@ -265,11 +252,10 @@ def test_min_layers_filters_small_chunks(
     ]
     mock_can_run.return_value = (False, chunks)
 
-    batcher = _make_batcher()
     build_dla_engine(
         "fake.onnx",
         "out.engine",
-        batcher,
+        synthetic_batcher,
         dla_core=0,
         min_layers=5,
     )
@@ -288,6 +274,7 @@ def test_max_chunks_zero_assigns_all(
     mock_read_onnx,
     mock_can_run,
     mock_build,
+    synthetic_batcher,
 ) -> None:
     """max_chunks=0 assigns ALL qualifying DLA chunks."""
     mock_network = _make_mock_network(15)
@@ -303,11 +290,10 @@ def test_max_chunks_zero_assigns_all(
     ]
     mock_can_run.return_value = (False, chunks)
 
-    batcher = _make_batcher()
     build_dla_engine(
         "fake.onnx",
         "out.engine",
-        batcher,
+        synthetic_batcher,
         dla_core=0,
         max_chunks=0,
         min_layers=0,
