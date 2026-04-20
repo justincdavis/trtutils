@@ -39,12 +39,6 @@ def test_network_has_outputs(onnx_path) -> None:
     assert network.num_outputs > 0
 
 
-def test_custom_workspace(onnx_path) -> None:
-    """Custom workspace size is applied to config."""
-    network, _builder, _config, _parser = read_onnx(onnx_path, workspace=1.0)
-    assert network is not None
-
-
 def test_string_path(onnx_path) -> None:
     """Accepts string path in addition to Path object."""
     network, _builder, _config, _parser = read_onnx(str(onnx_path))

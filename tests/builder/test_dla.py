@@ -131,8 +131,7 @@ def test_mixed_layer_precision_assignment(
 ) -> None:
     """Mixed path assigns FP16 to GPU layers, INT8 to DLA layers."""
     mock_network = _make_mock_network(10)
-    mock_config = MagicMock()
-    mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+    mock_read_onnx.return_value = (mock_network, MagicMock(), MagicMock(), MagicMock())
 
     gpu_layers = [MagicMock() for _ in range(5)]
     dla_layers = [MagicMock() for _ in range(5)]
@@ -174,8 +173,7 @@ def test_constant_shuffle_tile_skip_precision(
         shuffle_indices={1},
         tile_name_indices={2},
     )
-    mock_config = MagicMock()
-    mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+    mock_read_onnx.return_value = (mock_network, MagicMock(), MagicMock(), MagicMock())
 
     gpu_layers = [MagicMock() for _ in range(3)]
     dla_layers = [MagicMock()]
@@ -214,8 +212,7 @@ def test_max_chunks_limits_dla_assignment(
 ) -> None:
     """max_chunks=1 only assigns the largest DLA chunk."""
     mock_network = _make_mock_network(20)
-    mock_config = MagicMock()
-    mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+    mock_read_onnx.return_value = (mock_network, MagicMock(), MagicMock(), MagicMock())
 
     dla_small = [MagicMock() for _ in range(5)]
     gpu_mid = [MagicMock() for _ in range(5)]
@@ -258,8 +255,7 @@ def test_min_layers_filters_small_chunks(
 ) -> None:
     """min_layers filters out DLA chunks smaller than the threshold."""
     mock_network = _make_mock_network(10)
-    mock_config = MagicMock()
-    mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+    mock_read_onnx.return_value = (mock_network, MagicMock(), MagicMock(), MagicMock())
 
     gpu_layers = [MagicMock() for _ in range(7)]
     dla_small = [MagicMock() for _ in range(3)]
@@ -295,8 +291,7 @@ def test_max_chunks_zero_assigns_all(
 ) -> None:
     """max_chunks=0 assigns ALL qualifying DLA chunks."""
     mock_network = _make_mock_network(15)
-    mock_config = MagicMock()
-    mock_read_onnx.return_value = (mock_network, MagicMock(), mock_config, MagicMock())
+    mock_read_onnx.return_value = (mock_network, MagicMock(), MagicMock(), MagicMock())
 
     dla1 = [MagicMock() for _ in range(5)]
     gpu = [MagicMock() for _ in range(5)]
@@ -336,7 +331,6 @@ def test_get_check_dla(onnx_path) -> None:
     assert callable(check_fn)
     config.default_device_type = trt.DeviceType.DLA
     config.DLA_core = 0
-    if network.num_layers > 0:
-        layer = network.get_layer(0)
-        result = check_fn(layer)
-        assert isinstance(result, bool)
+    assert network.num_layers > 0
+    result = check_fn(network.get_layer(0))
+    assert isinstance(result, bool)
