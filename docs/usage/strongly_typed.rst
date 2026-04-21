@@ -160,6 +160,56 @@ the underlying tools directly:
 For FP16-only models, exporting via PyTorch with ``model.half()`` before
 ``torch.onnx.export(...)`` is sufficient — no Q/DQ needed.
 
+DLA + strongly-typed (Jetson Orin)
+----------------------------------
+
+Jetson Orin (SM 87, Ampere) has DLA cores but no FP8 hardware. On
+**JetPack 6.1+** (TRT 10.1+) the ``STRONGLY_TYPED`` flag is available, which
+makes modelopt-quantized INT8 ONNX the cleanest path for DLA deployment.
+Pass ``strongly_typed=True`` to :py:func:`trtutils.builder.build_dla_engine`
+or the ``build_dla`` CLI and the builder will:
+
+* Skip the weakly-typed INT8 calibration step entirely — the Q/DQ nodes in
+  the ONNX define the scales.
+* Still auto-assign DLA-compatible layer chunks to DLA via ``layer_device``.
+  Per-layer ``layer_precision`` overrides are **not** applied; precision
+  comes from the graph, so your Q/DQ quantization must be placed on the
+  DLA-bound subgraph for the INT8 hardware to be exercised.
+
+**Python API**
+
+.. code-block:: python
+
+    from trtutils.builder import build_dla_engine
+
+    build_dla_engine(
+        "model_qdq.onnx",
+        "model_dla.engine",
+        dla_core=0,
+        strongly_typed=True,
+    )
+
+**CLI**
+
+.. code-block:: bash
+
+    python -m trtutils build_dla \
+        --onnx model_qdq.onnx \
+        --output model_dla.engine \
+        --dla_core 0 \
+        --strongly_typed
+
+Under strongly-typed, ``build_dla_engine`` rejects ``data_batcher``,
+``calibration_cache``, and ``fp8`` — those are weakly-typed artifacts. Omit
+them; precision lives in the graph.
+
+.. note::
+
+   Thor (Blackwell, JetPack 7) drops DLA hardware, so Orin is the last
+   Jetson generation where this DLA + strongly-typed workflow applies. On
+   Thor you'll use the GPU path (:py:func:`trtutils.builder.build_engine`
+   with ``strongly_typed=True``) covered earlier in this page.
+
 Common errors
 -------------
 

@@ -563,35 +563,38 @@ def _build_dla(args: SimpleNamespace) -> None:
         If required DLA build parameters are missing.
 
     """
-    # require calibration data for dla builds
-    if args.calibration_dir is None:
-        err_msg = "Calibration directory is required for DLA builds"
-        raise ValueError(err_msg)
-    if args.input_shape is None:
-        err_msg = "Input shape is required for DLA builds"
-        raise ValueError(err_msg)
-    if args.input_dtype is None:
-        err_msg = "Input dtype is required for DLA builds"
-        raise ValueError(err_msg)
+    # strongly_typed skips calibration entirely; precision is in the ONNX graph
+    batcher = None
+    if not args.strongly_typed:
+        # require calibration data for weakly-typed dla builds
+        if args.calibration_dir is None:
+            err_msg = "Calibration directory is required for DLA builds"
+            raise ValueError(err_msg)
+        if args.input_shape is None:
+            err_msg = "Input shape is required for DLA builds"
+            raise ValueError(err_msg)
+        if args.input_dtype is None:
+            err_msg = "Input dtype is required for DLA builds"
+            raise ValueError(err_msg)
 
-    input_shape = args.input_shape
-    input_dtype = args.input_dtype
+        input_shape = args.input_shape
+        input_dtype = args.input_dtype
+
+        batcher = trtutils.builder.ImageBatcher(
+            image_dir=args.calibration_dir,
+            shape=input_shape,
+            dtype=np.dtype(input_dtype).type,
+            batch_size=args.batch_size,
+            order=args.data_order,
+            max_images=args.max_images,
+            resize_method=args.resize_method,
+            input_scale=_to_float_pair(args.input_scale),
+            verbose=args.verbose,
+        )
 
     # Set default dla_core to 0 if not provided
     if args.dla_core is None:
         args.dla_core = 0
-
-    batcher = trtutils.builder.ImageBatcher(
-        image_dir=args.calibration_dir,
-        shape=input_shape,
-        dtype=np.dtype(input_dtype).type,
-        batch_size=args.batch_size,
-        order=args.data_order,
-        max_images=args.max_images,
-        resize_method=args.resize_method,
-        input_scale=_to_float_pair(args.input_scale),
-        verbose=args.verbose,
-    )
 
     shapes = _parse_shapes_arg(getattr(args, "shape", None))
 
@@ -612,6 +615,7 @@ def _build_dla(args: SimpleNamespace) -> None:
         reject_empty_algorithms=args.reject_empty_algorithms,
         ignore_timing_mismatch=args.ignore_timing_mismatch,
         fp8=args.fp8,
+        strongly_typed=args.strongly_typed,
         cache=args.cache,
         verbose=args.verbose,
     )
@@ -1763,6 +1767,15 @@ def _main() -> None:
         "--fp8",
         action="store_true",
         help="Enable FP8 precision for GPU layers. Requires compute capability >= 8.9.",
+    )
+    build_dla_parser.add_argument(
+        "--strongly_typed",
+        action="store_true",
+        help=(
+            "Build a strongly-typed DLA engine from a pre-quantized ONNX "
+            "(Q/DQ nodes). Skips calibration and precision flags -- precision "
+            "is derived from the ONNX graph. Target: Jetson Orin + JetPack 6.1+."
+        ),
     )
     build_dla_parser.set_defaults(func=_build_dla)
 
