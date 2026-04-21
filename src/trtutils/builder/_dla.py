@@ -35,7 +35,7 @@ def can_run_on_dla(
     onnx : Path, str, or trt.INetworkDefinition
         The path to the onnx file or a pre-made TensorRT network.
     config : trt.IBuilderConfig, optional
-        The TensorRT builder config. Required if onnx is a network.
+        The TensorRT builder config. Required if onnx is a trt.INetworkDefinition.
     verbose_layers : bool, optional
         Whether to print verbose output for individual layers, by default None
     verbose_chunks : bool, optional

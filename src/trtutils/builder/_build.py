@@ -321,7 +321,8 @@ def build_engine(
                     found = True
                     break
             if not found:
-                LOG.warning(f"Input tensor '{tensor_name}' not found in network")
+                err_msg = f"Input tensor '{tensor_name}' not found in network"
+                raise ValueError(err_msg)
     if output_tensor_formats is not None:
         for tensor_name, tensor_dtype, tensor_format in output_tensor_formats:
             found = False
@@ -333,7 +334,8 @@ def build_engine(
                     found = True
                     break
             if not found:
-                LOG.warning(f"Output tensor '{tensor_name}' not found in network")
+                err_msg = f"Output tensor '{tensor_name}' not found in network"
+                raise ValueError(err_msg)
 
     # setup the precision sets
     if fp16 or fp8 or int8:
