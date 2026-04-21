@@ -332,6 +332,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
         fp16=args.fp16,
         fp8=args.fp8,
         int8=args.int8,
+        strongly_typed=args.strongly_typed,
         hooks=hooks,
         cache=args.cache,
         verbose=args.verbose,
@@ -1528,6 +1529,16 @@ def _main() -> None:
         "--int8",
         action="store_true",
         help="Quantize the engine to INT8 precision.",
+    )
+    build_device_parser.add_argument(
+        "--strongly_typed",
+        action="store_true",
+        help=(
+            "Build a strongly-typed network whose precision is determined by "
+            "the ONNX graph (Q/DQ nodes, explicit dtypes). Required on "
+            "Blackwell (SM 10.0+) for mixed INT8+FP8. Mutually exclusive with "
+            "--fp16/--int8/--fp8 and calibration arguments."
+        ),
     )
 
     # main parser
