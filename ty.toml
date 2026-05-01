@@ -4,3 +4,4 @@ python-version = "3.8"
 
 [rules]
 unresolved-import = "ignore"
+unused-type-ignore-comment = "ignore"

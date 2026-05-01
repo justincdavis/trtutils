@@ -5,7 +5,9 @@
 
 set -e
 
-echo "Creating .venv-ci environment..."
-uv venv .venv-ci --clear --python 3.8
+PYTHON_VERSION="${1:-3.14}"
+
+echo "Creating .venv-ci environment with Python ${PYTHON_VERSION}..."
+uv venv .venv-ci --clear --python "$PYTHON_VERSION"
 . .venv-ci/bin/activate && \
-uv pip install -e ".[all]" ".[ci]" ".[test]"
+uv pip install -e ".[ci]" ".[test]"

@@ -17,7 +17,6 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._cuda import cuda_call
-from ._lock import MEM_ALLOC_LOCK
 
 
 def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
@@ -39,7 +38,7 @@ def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
     cuda_call(
         cudart.cudaMemcpy(
             device_ptr,
-            host_arr,
+            host_arr.ctypes.data,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
         ),
@@ -66,7 +65,7 @@ def memcpy_device_to_host(host_arr: np.ndarray, device_ptr: int) -> None:
     # LOG.debug(f"MemcpyDtoH: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpy(
-            host_arr,
+            host_arr.ctypes.data,
             device_ptr,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
@@ -101,7 +100,7 @@ def memcpy_host_to_device_async(
     cuda_call(
         cudart.cudaMemcpyAsync(
             device_ptr,
-            host_arr,
+            host_arr.ctypes.data,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
             stream,
@@ -135,7 +134,7 @@ def memcpy_device_to_host_async(
     # LOG.debug(f"MemcpyDtoH_Async: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpyAsync(
-            host_arr,
+            host_arr.ctypes.data,
             device_ptr,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
@@ -238,7 +237,7 @@ def memcpy_host_to_device_offset(
     cuda_call(
         cudart.cudaMemcpy(
             device_ptr + offset_bytes,
-            host_arr,
+            host_arr.ctypes.data,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
         ),
@@ -274,7 +273,7 @@ def memcpy_host_to_device_offset_async(
     cuda_call(
         cudart.cudaMemcpyAsync(
             device_ptr + offset_bytes,
-            host_arr,
+            host_arr.ctypes.data,
             nbytes,
             cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
             stream,
@@ -303,8 +302,7 @@ def cuda_malloc(
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::cuda_malloc")
-    with MEM_ALLOC_LOCK:
-        device_ptr: int = cuda_call(cudart.cudaMalloc(nbytes))
+    device_ptr: int = cuda_call(cudart.cudaMalloc(nbytes))
     LOG.debug(f"Allocated, device_ptr: {device_ptr}, size: {nbytes}")
     if FLAGS.NVTX_ENABLED:
         nvtx.pop_range()
@@ -347,8 +345,7 @@ def allocate_pinned_memory(
         nvtx.push_range("core::allocate_pinned_memory")
     flags = cudart.cudaHostAllocMapped if unified_mem else cudart.cudaHostAllocDefault
     # allocate pinned memory and get a pointer to it directly
-    with MEM_ALLOC_LOCK:
-        host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, flags))
+    host_ptr = cuda_call(cudart.cudaHostAlloc(nbytes, flags))
 
     # create the numpy array
     array_type = ctypes.c_byte * nbytes
@@ -385,8 +382,7 @@ def get_ptr_pair(host_array: np.ndarray) -> tuple[int, int]:
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::get_ptr_pair")
     host_ptr = host_array.ctypes.data
-    with MEM_ALLOC_LOCK:
-        device_ptr = cuda_call(cudart.cudaHostGetDevicePointer(host_ptr, 0))
+    device_ptr = cuda_call(cudart.cudaHostGetDevicePointer(host_ptr, 0))
 
     LOG.debug(f"Acquired pointers: (host: {host_ptr}, device: {device_ptr}) from ndarray")
 
@@ -417,8 +413,7 @@ def allocate_managed_memory(
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::allocate_managed_memory")
-    with MEM_ALLOC_LOCK:
-        device_ptr: int = cuda_call(cudart.cudaMallocManaged(nbytes, cudart.cudaMemAttachGlobal))
+    device_ptr: int = cuda_call(cudart.cudaMallocManaged(nbytes, cudart.cudaMemAttachGlobal))
 
     # if a stream is provided, we should attach the memory
     if stream is not None:

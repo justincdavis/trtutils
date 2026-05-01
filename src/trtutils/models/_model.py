@@ -235,7 +235,8 @@ class Model:
         verbose : bool | None
             Enable verbose builder output.
         **kwargs : Any
-            Additional keyword arguments forwarded to build hooks.
+            Additional keyword arguments. Consumed first by build hooks,
+            then remaining kwargs are forwarded to ``build_engine()``.
 
         """
         if imgsz is None:
@@ -257,11 +258,8 @@ class Model:
                 else:
                     build_overrides[key] = val
 
-        # Reject unknown kwargs (typo protection)
-        unknown = set(kwargs) - consumed_keys
-        if unknown:
-            err_msg = f"{cls.__name__}.build() got unexpected keyword arguments: {unknown}"
-            raise TypeError(err_msg)
+        # Forward unconsumed kwargs to build_engine for validation
+        remaining_kwargs = {k: v for k, v in kwargs.items() if k not in consumed_keys}
 
         build_engine(
             onnx=onnx,
@@ -272,4 +270,5 @@ class Model:
             optimization_level=opt_level,
             verbose=verbose,
             **build_overrides,
+            **remaining_kwargs,
         )
