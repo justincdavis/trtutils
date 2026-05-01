@@ -5,33 +5,30 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import pytest
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-
-@pytest.fixture
-def download_tmp_dir(tmp_path: Path) -> Path:
-    """Temporary directory for download operations."""
-    d = tmp_path / "downloads"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+from trtutils.download import get_supported_models, load_model_configs
 
 
 @pytest.fixture(scope="session")
-def model_configs() -> dict:
-    """Load model configurations once per session."""
-    from trtutils.download import load_model_configs
-
+def model_configs():
+    """All model configurations loaded from JSON files."""
     return load_model_configs()
 
 
 @pytest.fixture(scope="session")
-def supported_models() -> list:
-    """Get all supported model names once per session."""
-    from trtutils.download import get_supported_models
-
+def supported_models():
+    """All supported model names."""
     return get_supported_models()
+
+
+@pytest.fixture
+def fake_venv(tmp_path):
+    """Fake venv layout: touched python binary, bin dir, and a placeholder ONNX file."""
+    fake_python = tmp_path / ".venv" / "bin" / "python"
+    fake_bin = tmp_path / ".venv" / "bin"
+    fake_python.parent.mkdir(parents=True, exist_ok=True)
+    fake_python.touch()
+    fake_output = tmp_path / "model.onnx"
+    fake_output.touch()
+    return fake_python, fake_bin, fake_output
