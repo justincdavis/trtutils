@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -61,11 +61,11 @@ class ParallelTRTEngines:
             dla_core: int | None = None
             device: int | None = None
             if isinstance(engine_info, tuple):
-                engine, dla_core = engine_info  # type: ignore[assignment]
+                engine, dla_core = engine_info  # ty: ignore[invalid-assignment]
             else:
                 engine = engine_info
             q_engine = QueuedTRTEngine(
-                engine=engine,  # type: ignore[arg-type]
+                engine=engine,  # ty: ignore[invalid-argument-type]
                 warmup_iterations=warmup_iterations,
                 warmup=warmup,
                 dla_core=dla_core,

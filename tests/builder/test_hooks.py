@@ -1,0 +1,142 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
+"""Tests for build hooks -- YOLO NMS hook and common utilities."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, PropertyMock, patch
+
+import pytest
+
+from trtutils.builder.hooks._common import make_plugin_field
+from trtutils.builder.hooks._yolo import yolo_efficient_nms_hook
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        pytest.param("test_int", 42, id="int"),
+        pytest.param("test_float", 0.5, id="float"),
+        pytest.param("test_list", [1, 2, 3], id="list_int"),
+        pytest.param("test_list_f", [1.0, 2.0], id="list_float"),
+    ],
+)
+def test_make_plugin_field(name, value) -> None:
+    """Plugin field is created with correct name for each value type."""
+    field = make_plugin_field(name, value)
+    assert field.name == name
+
+
+def _setup_yolo_network(*, output_shape, num_outputs=1):
+    """Create a mock network for YOLO hook testing."""
+    mock_network = MagicMock()
+    mock_output = MagicMock()
+    mock_output.shape = output_shape
+
+    type(mock_network).num_outputs = PropertyMock(return_value=num_outputs)
+    mock_network.get_output.return_value = mock_output
+
+    for method_name in [
+        "add_shuffle",
+        "add_shape",
+        "add_constant",
+        "add_gather",
+        "add_concatenation",
+        "add_slice",
+        "add_elementwise",
+    ]:
+        mock_layer = MagicMock()
+        mock_layer.get_output.return_value = MagicMock()
+        getattr(mock_network, method_name).return_value = mock_layer
+
+    mock_plugin_layer = MagicMock()
+    mock_nms_outputs = [MagicMock() for _ in range(4)]
+    mock_plugin_layer.get_output.side_effect = mock_nms_outputs
+    mock_network.add_plugin_v2.return_value = mock_plugin_layer
+
+    return mock_network
+
+
+def _patch_trt_for_hook():
+    """Create common TRT mock patches for hook tests."""
+    mock_shape_layer = MagicMock()
+    mock_shape_tensor = MagicMock()
+    mock_shape_tensor.dtype = MagicMock()
+    mock_shape_layer.get_output.return_value = mock_shape_tensor
+
+    mock_creator = MagicMock()
+    mock_plugin = MagicMock()
+    mock_creator.create_plugin.return_value = mock_plugin
+
+    mock_registry = MagicMock()
+    mock_registry.get_plugin_creator.return_value = mock_creator
+
+    return mock_shape_layer, mock_registry
+
+
+@pytest.mark.cpu
+class TestYOLOEfficientNMS:
+    """Tests for yolo_efficient_nms_hook public behavior."""
+
+    def test_yolov10_passthrough(self) -> None:
+        """YOLOv10-style (1,300,6) output passes through unmodified."""
+        hook = yolo_efficient_nms_hook(num_classes=80)
+        mock_network = MagicMock()
+        mock_output = MagicMock()
+        mock_output.shape = (1, 300, 6)
+        mock_network.get_output.return_value = mock_output
+        result = hook(mock_network)
+        assert result is mock_network
+
+    def test_yolov8_modification(self) -> None:
+        """YOLOv8-style (N, channels, boxes) adds NMS plugin with 4 outputs."""
+        hook = yolo_efficient_nms_hook(num_classes=80)
+        mock_network = _setup_yolo_network(output_shape=(1, 84, 8400))
+        mock_shape_layer, mock_registry = _patch_trt_for_hook()
+
+        with patch("trtutils.builder.hooks._yolo.trt") as mock_trt, patch(
+            "trtutils.builder.hooks._yolo.FLAGS"
+        ) as mock_flags:
+            mock_flags.TRT_HAS_INT64 = False
+            mock_trt.TensorIOMode = MagicMock()
+            mock_network.add_shape.return_value = mock_shape_layer
+            mock_trt.get_plugin_registry.return_value = mock_registry
+            mock_trt.PluginFieldCollection = MagicMock()
+            mock_trt.PluginFieldType.INT32 = 0
+            mock_trt.PluginFieldType.FLOAT32 = 1
+            mock_trt.PluginField = MagicMock()
+            mock_trt.ElementWiseOperation.PROD = MagicMock()
+            mock_trt.DataType.INT64 = MagicMock()
+
+            result = hook(mock_network)
+
+        assert result is mock_network
+        mock_network.unmark_output.assert_called()
+        assert mock_network.mark_output.call_count == 4
+
+    def test_yolox_modification(self) -> None:
+        """YOLOX-style (N, boxes, classes+5) uses objectness multiply, marks 4 outputs."""
+        hook = yolo_efficient_nms_hook(num_classes=80)
+        mock_network = _setup_yolo_network(output_shape=(1, 8400, 85))
+        mock_shape_layer, mock_registry = _patch_trt_for_hook()
+
+        with patch("trtutils.builder.hooks._yolo.trt") as mock_trt, patch(
+            "trtutils.builder.hooks._yolo.FLAGS"
+        ) as mock_flags:
+            mock_flags.TRT_HAS_INT64 = False
+            mock_network.add_shape.return_value = mock_shape_layer
+            mock_trt.get_plugin_registry.return_value = mock_registry
+            mock_trt.PluginFieldCollection = MagicMock()
+            mock_trt.PluginFieldType.INT32 = 0
+            mock_trt.PluginFieldType.FLOAT32 = 1
+            mock_trt.PluginField = MagicMock()
+            mock_trt.ElementWiseOperation.PROD = MagicMock()
+            mock_trt.DataType.INT64 = MagicMock()
+
+            result = hook(mock_network)
+
+        assert result is mock_network
+        mock_network.add_elementwise.assert_called_once()
+        assert mock_network.mark_output.call_count == 4

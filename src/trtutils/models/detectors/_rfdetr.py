@@ -36,10 +36,10 @@ def rfdetr_precision_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]
     """
     layer_info = inspect_onnx_layers(onnx, verbose=False)
     layer_precision = []
-    for idx, name, _, _ in layer_info:
-        lower_name = name.lower()
+    for info in layer_info:
+        lower_name = info.name.lower()
         if "reducemean" in lower_name or "downsample" in lower_name:
-            layer_precision.append((idx, trt.DataType.FLOAT))
+            layer_precision.append((info.index, trt.DataType.FLOAT))
     return {"layer_precision": layer_precision or None}
 
 

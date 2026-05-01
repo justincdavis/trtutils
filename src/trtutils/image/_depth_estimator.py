@@ -17,7 +17,6 @@ from ._image_model import ImageModel
 from .interfaces import DepthEstimatorInterface
 from .postprocessors import get_depth_maps, postprocess_depth
 from .preprocessors import CUDAPreprocessor, TRTPreprocessor
-from .preprocessors._image_preproc import _is_single_image
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -388,9 +387,12 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             LOG.debug(f"{self._tag}: run")
 
         # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[list-item]
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+            is_single = True
+        else:
+            batch_images = images
+            is_single = False
 
         # assign flags
         if preprocessed is None:
@@ -419,15 +421,15 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
         if not preprocessed:
             if verbose:
                 LOG.debug("Preprocessing inputs")
-            tensor, _, _ = self.preprocess(images, no_copy=no_copy_pre)
+            tensor, _, _ = self.preprocess(batch_images, no_copy=no_copy_pre)
         else:
             # images is already preprocessed tensor when preprocessed=True
-            if len(images) != 1:
+            if len(batch_images) != 1:
                 err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # run
                 raise ValueError(err_msg)
-            tensor = images[0]
+            tensor = batch_images[0]
 
         # execute
         t0 = time.perf_counter()
@@ -509,13 +511,13 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
 
         if is_single:
             # Wrap single image outputs for batch processing
-            batch_outputs: list[list[np.ndarray]] = [outputs]  # type: ignore[list-item]
+            batch_outputs: list[list[np.ndarray]] = [outputs]  # ty: ignore[invalid-assignment]
             result = get_depth_maps(batch_outputs, verbose=verbose)
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # get_depth_maps
             return result[0]  # Unwrap
 
-        result_batch = get_depth_maps(outputs, verbose=verbose)  # type: ignore[arg-type]
+        result_batch = get_depth_maps(outputs, verbose=verbose)  # ty: ignore[invalid-argument-type]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # get_depth_maps
@@ -582,19 +584,22 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             LOG.debug(f"{self._tag}: end2end")
 
         # Handle single-image input
-        is_single = _is_single_image(images)
-        if is_single:
-            images = [images]  # type: ignore[list-item]
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+            is_single = True
+        else:
+            batch_images = images
+            is_single = False
 
         # Dispatch based on graph flag
         if self._e2e_graph_enabled:
             result = self._end2end_graph(
-                images,  # type: ignore[arg-type]
+                batch_images,
                 verbose=verbose,
             )
         else:
             result = self._end2end(
-                images,  # type: ignore[arg-type]
+                batch_images,
                 verbose=verbose,
             )
 
