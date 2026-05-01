@@ -13,11 +13,23 @@ Submodules
 
 from __future__ import annotations
 
-import contextlib
+import importlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import sahi as sahi
+
+_LAZY_SUBMODULES = {"sahi"}
 
 __all__ = ["sahi"]
 
-with contextlib.suppress(ImportError):
-    from . import sahi
 
-    __all__ += ["sahi"]
+def __getattr__(name: str) -> object:
+    if name in _LAZY_SUBMODULES:
+        return importlib.import_module(f".{name}", __name__)
+    err_msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(err_msg)
+
+
+def __dir__() -> list[str]:
+    return list(__all__)

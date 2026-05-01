@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -35,7 +35,7 @@ def can_run_on_dla(
     onnx : Path, str, or trt.INetworkDefinition
         The path to the onnx file or a pre-made TensorRT network.
     config : trt.IBuilderConfig, optional
-        The TensorRT builder config. Required if onnx is a network.
+        The TensorRT builder config. Required if onnx is a trt.INetworkDefinition.
     verbose_layers : bool, optional
         Whether to print verbose output for individual layers, by default None
     verbose_chunks : bool, optional
@@ -131,6 +131,7 @@ def build_dla_engine(
     prefer_precision_constraints: bool = False,
     reject_empty_algorithms: bool = False,
     ignore_timing_mismatch: bool = False,
+    fp8: bool | None = None,
     cache: bool | None = None,
     verbose: bool | None = None,
 ) -> None:
@@ -203,6 +204,10 @@ def build_dla_engine(
         Whether or not to allow different CUDA device generated timing
         caches to be used in the building of engines.
         By default, False
+    fp8 : bool, optional
+        If True, enable FP8 precision for GPU layers.
+        Requires compute capability >= 8.9 (Ada Lovelace / Hopper or newer).
+        DLA layers will still use INT8 precision.
     cache : bool, optional
         Whether or not to cache the engine in the trtutils engine cache.
         If an existing version is found will use that.
@@ -250,6 +255,7 @@ def build_dla_engine(
             ignore_timing_mismatch=ignore_timing_mismatch,
             cache=cache,
             fp16=True,
+            fp8=fp8,
             int8=True,
             verbose=verbose,
         )
@@ -277,6 +283,7 @@ def build_dla_engine(
             reject_empty_algorithms=reject_empty_algorithms,
             ignore_timing_mismatch=ignore_timing_mismatch,
             fp16=True,
+            fp8=fp8,
             int8=True,
             cache=cache,
             verbose=verbose,
@@ -357,6 +364,7 @@ def build_dla_engine(
         reject_empty_algorithms=reject_empty_algorithms,
         ignore_timing_mismatch=ignore_timing_mismatch,
         fp16=True,
+        fp8=fp8,
         int8=True,
         cache=cache,
         verbose=verbose,

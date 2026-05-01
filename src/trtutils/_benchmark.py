@@ -1,12 +1,13 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from statistics import mean, median
+from statistics import mean, median, stdev
 from typing import TYPE_CHECKING
 
 from ._engine import TRTEngine
@@ -28,6 +29,8 @@ class Metric:
     median: float | int = -1.0
     min: float | int = -1.0
     max: float | int = -1.0
+    std: float = 0.0
+    ci95: float = 0.0
 
     def __post_init__(self: Self) -> None:
         if not self.raw:
@@ -38,12 +41,22 @@ class Metric:
         self.median = median(self.raw)
         self.max = max(self.raw)
         self.mean = mean(self.raw)
+        self.std = stdev(self.raw) if len(self.raw) > 1 else 0.0
+        self.ci95 = 1.96 * self.std / math.sqrt(len(self.raw)) if len(self.raw) > 1 else 0.0
 
     def __str__(self: Self) -> str:
-        return f"Metric(mean={self.mean:.3f}, median={self.median:.3f}, min={self.min:.3f}, max={self.max:.3f})"
+        return (
+            f"Metric(mean={self.mean:.3f}, median={self.median:.3f}, "
+            f"min={self.min:.3f}, max={self.max:.3f}, "
+            f"std={self.std:.3f}, ci95={self.ci95:.3f})"
+        )
 
     def __repr__(self: Self) -> str:
-        return f"Metric(mean={self.mean},median={self.median},min={self.min},max={self.max})"
+        return (
+            f"Metric(mean={self.mean},median={self.median},"
+            f"min={self.min},max={self.max},"
+            f"std={self.std},ci95={self.ci95})"
+        )
 
 
 @dataclass
@@ -199,12 +212,12 @@ def benchmark_engines(
         dla_core: int | None = None
         device: int | None = None
         if isinstance(engine_info, tuple):
-            engine, dla_core = engine_info  # type: ignore[assignment]
+            engine, dla_core = engine_info  # ty: ignore[invalid-assignment]
         else:
             engine = engine_info
         if isinstance(engine, str):
             engine = Path(engine)
-        temp_engines.append(engine)  # type: ignore[arg-type]
+        temp_engines.append(engine)  # ty: ignore[invalid-argument-type]
         dla_assignments.append(dla_core)
         device_assignments.append(device)
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -44,6 +44,63 @@ class AbstractBatcher(ABC):
     def get_next_batch(self: Self) -> np.ndarray | None:
         """Get the batch of data."""
 
+    def save_calibration_data(
+        self: Self,
+        output_path: Path | str,
+        *,
+        verbose: bool | None = None,
+    ) -> Path:
+        """
+        Drain all batches and save concatenated calibration data to a .npy file.
+
+        Parameters
+        ----------
+        output_path : Path, str
+            The path to save the calibration data to.
+        verbose : bool, optional
+            Whether to print verbose output, by default None.
+
+        Returns
+        -------
+        Path
+            The resolved path to the saved calibration data.
+
+        Raises
+        ------
+        ValueError
+            If no batches could be retrieved from the batcher.
+
+        """
+        batches: list[np.ndarray] = []
+        batch_idx = 0
+
+        while True:
+            batch = self.get_next_batch()
+            if batch is None:
+                break
+            batches.append(batch)
+            batch_idx += 1
+            if verbose:
+                LOG.debug(f"Collected calibration batch {batch_idx}")
+
+        if len(batches) == 0:
+            err_msg = "No batches could be retrieved from the batcher."
+            raise ValueError(err_msg)
+
+        calibration_data = np.concatenate(batches, axis=0)
+
+        if verbose:
+            LOG.debug(
+                f"Calibration data shape: {calibration_data.shape}, dtype: {calibration_data.dtype}"
+            )
+
+        output = Path(output_path).resolve()
+        np.save(output, calibration_data)
+
+        LOG.info(f"Saved calibration data to {output}")
+
+        return output
+
 
 class ImageBatcher(AbstractBatcher):
     """Creates image batches for calibrating TensorRT engines."""
@@ -52,7 +109,7 @@ class ImageBatcher(AbstractBatcher):
         self: Self,
         image_dir: Path | str,
         shape: tuple[int, int, int],
-        dtype: np.dtype,
+        dtype: np.dtype | type[np.generic],
         batch_size: int = 8,
         order: str = "NCHW",
         max_images: int | None = None,
@@ -268,7 +325,7 @@ class ImageBatcher(AbstractBatcher):
             # keep trying to put images into the queue
             while not self._event.is_set():
                 try:
-                    self._queue.put(data, timeout=0.1)
+                    self._queue.put(data, timeout=0.1)  # ty: ignore[invalid-argument-type]
 
                     if self._verbose:
                         LOG.debug(f"ImageBatcher put batch: {idx} / {len(self._batches)}")
@@ -311,7 +368,7 @@ class SyntheticBatcher(AbstractBatcher):
     def __init__(
         self: Self,
         shape: tuple[int, int, int],
-        dtype: np.dtype,
+        dtype: np.dtype | type[np.generic],
         batch_size: int = 8,
         num_batches: int = 10,
         data_range: tuple[float, float] = (0.0, 1.0),
