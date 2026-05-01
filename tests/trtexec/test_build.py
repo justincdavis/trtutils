@@ -5,13 +5,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from trtutils.trtexec._build import build_engine
 
-ONNX_PATH = Path(__file__).parent.parent.parent / "data" / "simple.onnx"
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_validation_case(kind: str, tmp_path: Path) -> tuple[Path, dict]:
@@ -72,10 +73,10 @@ def test_build_engine_validation(
 
 
 @pytest.mark.jetson
-def test_build_from_onnx(tmp_path: Path) -> None:
+def test_build_from_onnx(tmp_path, simple_onnx_path) -> None:
     """build_engine produces a non-empty engine file from a real ONNX model."""
     output = tmp_path / "test_output.engine"
-    success = build_engine(ONNX_PATH, output)
+    success = build_engine(simple_onnx_path, output)
     assert success is True
     assert output.exists()
     assert output.stat().st_size > 0
