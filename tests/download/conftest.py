@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from trtutils.download import get_supported_models, load_model_configs
@@ -32,3 +34,17 @@ def fake_venv(tmp_path):
     fake_output = tmp_path / "model.onnx"
     fake_output.touch()
     return fake_python, fake_bin, fake_output
+
+
+@pytest.fixture
+def patched_yolov10_export(fake_venv):
+    """Patch make_venv and export_yolov10 so download_model('yolov10n', ...) is a no-op pipeline."""
+    fake_python, fake_bin, fake_output = fake_venv
+    with patch(
+        "trtutils.download._download.make_venv",
+        return_value=(fake_python, fake_bin),
+    ), patch(
+        "trtutils.download._download.export_yolov10",
+        return_value=fake_output,
+    ):
+        yield fake_output

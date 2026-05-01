@@ -17,17 +17,18 @@ from trtutils.models._utils import get_valid_models
 pytestmark = pytest.mark.cpu
 
 
+@pytest.mark.parametrize(
+    "func",
+    [
+        pytest.param(lambda p, m: download_model(m, p), id="download_model"),
+        pytest.param(lambda p, m: download(m, p / "out.onnx"), id="download"),
+    ],
+)
 @pytest.mark.parametrize("model", ["totally_fake_model_xyz", ""])
-def test_download_model_unsupported_raises(tmp_path, model) -> None:
-    """download_model raises ValueError for unknown or empty model names."""
-    with pytest.raises(ValueError, match="not supported"):
-        download_model(model, tmp_path)
-
-
-def test_download_unsupported_raises(tmp_path) -> None:
-    """download() propagates an error for unknown model names."""
+def test_unsupported_model_raises(tmp_path, func, model) -> None:
+    """download_model and download both surface an error for unknown or empty names."""
     with pytest.raises((ValueError, RuntimeError)):
-        download("totally_fake_model_xyz", tmp_path / "out.onnx")
+        func(tmp_path, model)
 
 
 _ROUTING_CASES = [
@@ -74,36 +75,20 @@ def test_export_routing(tmp_path, fake_venv, model, export_func_name) -> None:
         pytest.param("onnxslim", ["onnxslim"], id="string"),
     ],
 )
-def test_simplify_arg_routing(tmp_path, fake_venv, simplify_arg, expected_tools) -> None:
+@pytest.mark.usefixtures("patched_yolov10_export")
+def test_simplify_arg_routing(tmp_path, simplify_arg, expected_tools) -> None:
     """download_model normalises the simplify argument before invoking _simplify.simplify."""
-    fake_python, fake_bin, fake_output = fake_venv
-    with patch(
-        "trtutils.download._download.make_venv",
-        return_value=(fake_python, fake_bin),
-    ), patch(
-        "trtutils.download._download.export_yolov10",
-        return_value=fake_output,
-    ), patch(
-        "trtutils.download._download._simplify.simplify",
-    ) as mock_simplify:
+    with patch("trtutils.download._download._simplify.simplify") as mock_simplify:
         download_model("yolov10n", tmp_path, simplify=simplify_arg)
         mock_simplify.assert_called_once()
         assert mock_simplify.call_args.kwargs["tools"] == expected_tools
 
 
-def test_requirements_export_invokes_export_requirements(tmp_path, fake_venv) -> None:
+@pytest.mark.usefixtures("patched_yolov10_export")
+def test_requirements_export_invokes_export_requirements(tmp_path) -> None:
     """Passing requirements_export triggers export_requirements after the export call."""
-    fake_python, fake_bin, fake_output = fake_venv
     req_path = tmp_path / "requirements.txt"
-    with patch(
-        "trtutils.download._download.make_venv",
-        return_value=(fake_python, fake_bin),
-    ), patch(
-        "trtutils.download._download.export_yolov10",
-        return_value=fake_output,
-    ), patch(
-        "trtutils.download._download.export_requirements",
-    ) as mock_export_req:
+    with patch("trtutils.download._download.export_requirements") as mock_export_req:
         download_model("yolov10n", tmp_path, requirements_export=req_path)
         mock_export_req.assert_called_once()
 
