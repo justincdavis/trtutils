@@ -1,3 +1,14 @@
+Unreleased
+----------
+
+Added
+^^^^^
+* ``models.DepthAnythingV1`` and ``models.DepthAnythingV3`` aliases for the
+  ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``
+* Download configs and ONNX export functions for Depth-Anything-V1
+  (small / base / large) and Depth-Anything-V3 (mono-large, metric-large)
+
+
 0.6.1 (2025-06-17)
 ------------------
 
@@ -139,7 +150,7 @@ Added
 
 Added
 ^^^^^
-* Variations of ``impls.yolo.YOLO``: YOLO7, YOLO8, YOLO9, YOLO10, and YOLOX
+* Variations of ``impls.yolo.YOLO``: YOLOv7, YOLOv8, YOLOv9, YOLOv10, and YOLOX
 
 Changed
 ^^^^^^^
