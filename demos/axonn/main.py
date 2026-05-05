@@ -271,7 +271,7 @@ def _main() -> None:
     # benchmark each engine
     results = {}
     for engine, tag in [(engine_gpu, "gpu"), (engine_dla, "dla"), (engine_axonn, "axonn")]:
-        use_cuda_graph = bool(args.cuda_graph) if tag == "gpu" else False
+        use_cuda_graph = args.cuda_graph or None if tag == "gpu" else False
         results[tag] = benchmark_engine(
             engine,
             iterations=args.iterations,
