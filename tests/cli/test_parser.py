@@ -95,6 +95,7 @@ def test_missing_required_args_exit_2(argv) -> None:
                 "jetson": False,
                 "tegra_interval": 5,
                 "dla_core": None,
+                "cuda_graph": False,
                 "verbose": False,
             },
             id="benchmark",

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -31,6 +31,7 @@ class QueuedTRTEngine:
         device: int | None = None,
         *,
         warmup: bool | None = None,
+        cuda_graph: bool | None = None,
     ) -> None:
         """
         Create a QueuedTRTEngine.
@@ -50,6 +51,10 @@ class QueuedTRTEngine:
             which uses the current device.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
+        cuda_graph : bool, optional
+            Whether to enable CUDA graph capture for the underlying TRTEngine.
+            Forwarded to TRTEngine; only used when constructing a new engine
+            from a path. By default None, which lets TRTEngine decide.
 
         """
         self._stopped = False  # flag for if user stopped thread
@@ -63,6 +68,7 @@ class QueuedTRTEngine:
                 warmup=warmup,
                 dla_core=dla_core,
                 device=device,
+                cuda_graph=cuda_graph,
             )
         self._nvtx_tags = {
             "init": f"queued_engine::init [{self._engine.name}]",

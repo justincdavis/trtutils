@@ -38,6 +38,7 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "tegra_interval": 5,
         "dla_core": None,
         "warmup": True,
+        "cuda_graph": False,
         "verbose": False,
     },
     "build": {

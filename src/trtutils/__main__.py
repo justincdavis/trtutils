@@ -69,6 +69,8 @@ def _benchmark(args: SimpleNamespace) -> None:
             DLA core to use, if any.
         - warmup : bool
             Whether to perform warmup.
+        - cuda_graph : bool
+            Whether to enable CUDA graph capture for the engine. Off by default.
         - verbose : bool
             Enable verbose output.
 
@@ -94,6 +96,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             tegra_interval=args.tegra_interval,
             dla_core=args.dla_core,
             warmup=True,
+            cuda_graph=args.cuda_graph,
             verbose=args.verbose,
         )
         latency = jresult.latency
@@ -106,6 +109,7 @@ def _benchmark(args: SimpleNamespace) -> None:
             warmup_iterations=args.warmup_iterations,
             dla_core=args.dla_core,
             warmup=True,
+            cuda_graph=args.cuda_graph,
             verbose=args.verbose,
         )
         latency = result.latency
@@ -1573,6 +1577,11 @@ def _main() -> None:
         type=int,
         default=5,
         help="Milliseconds between each tegrastats sampling for Jetson benchmarking. Default is 5.",
+    )
+    benchmark_parser.add_argument(
+        "--cuda_graph",
+        action="store_true",
+        help="Enable CUDA graph capture for the engine. False by default for benchmarks.",
     )
     benchmark_parser.set_defaults(func=_benchmark)
 

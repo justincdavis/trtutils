@@ -80,6 +80,7 @@ def benchmark_engine(
     device: int | None = None,
     *,
     warmup: bool | None = None,
+    cuda_graph: bool = False,
     verbose: bool | None = None,
 ) -> BenchmarkResult:
     """
@@ -103,6 +104,10 @@ def benchmark_engine(
     warmup : bool, optional
         Whether to do warmup iterations, by default None
         If None, warmup will be set to True.
+    cuda_graph : bool, optional
+        Whether to enable CUDA graph capture for the underlying TRTEngine.
+        Default is False. Only applies when constructing a new engine from
+        a path; ignored when an existing TRTEngine instance is passed in.
     verbose : bool, optional
         Whether ot not to output additional information to stdout.
         Default None/False.
@@ -123,6 +128,7 @@ def benchmark_engine(
             dla_core=dla_core,
             device=device,
             warmup=warmup,
+            cuda_graph=cuda_graph,
             verbose=verbose,
         )
     else:
@@ -171,6 +177,7 @@ def benchmark_engines(
     warmup_iterations: int = 50,
     *,
     warmup: bool | None = None,
+    cuda_graph: bool = False,
     parallel: bool | None = None,
     verbose: bool | None = None,
 ) -> list[BenchmarkResult]:
@@ -189,6 +196,10 @@ def benchmark_engines(
     warmup : bool, optional
         Whether to do warmup iterations, by default None
         If None, warmup will be set to True.
+    cuda_graph : bool, optional
+        Whether to enable CUDA graph capture for the underlying TRTEngines.
+        Default is False. Only applies when an engine is constructed from
+        a path; ignored when an existing TRTEngine instance is passed in.
     parallel : bool, optional
         Whether or not to process the engines in parallel.
         Useful for assessing concurrent execution performance.
@@ -230,6 +241,7 @@ def benchmark_engines(
                 dla_core=dla_core,
                 device=device,
                 warmup=warmup,
+                cuda_graph=cuda_graph,
                 verbose=verbose,
             )
             for engine, dla_core, device in zip(temp_engines, dla_assignments, device_assignments)
@@ -240,6 +252,7 @@ def benchmark_engines(
         [(ep, dc) if dc is not None else ep for ep, dc in zip(temp_engines, dla_assignments)],
         warmup_iterations=warmup_iterations,
         warmup=warmup,
+        cuda_graph=cuda_graph,
     )
 
     # list of metrics
