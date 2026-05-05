@@ -139,14 +139,19 @@ def _args(subcommand: str, **overrides: object) -> SimpleNamespace:
         pytest.param(True, "trtutils.__main__.trtutils.jetson.benchmark_engine", id="jetson"),
     ],
 )
-def test_benchmark_dispatches_by_jetson_flag(jetson, mock_target) -> None:
-    """The jetson flag selects between standard and jetson benchmark backends."""
+@pytest.mark.parametrize(
+    "cuda_graph",
+    [pytest.param(False, id="no-cuda-graph"), pytest.param(True, id="cuda-graph")],
+)
+def test_benchmark_dispatches_by_jetson_flag(jetson, mock_target, cuda_graph) -> None:
+    """The jetson flag selects the backend; --cuda_graph is forwarded to it."""
     metric = MagicMock(mean=0.01, median=0.01, min=0.005, max=0.02)
     with patch(mock_target) as mock_bench:
         mock_bench.return_value = MagicMock(latency=metric, energy=metric, power_draw=metric)
         with patch.object(Path, "exists", return_value=True):
-            _benchmark(_args("benchmark", jetson=jetson))
+            _benchmark(_args("benchmark", jetson=jetson, cuda_graph=cuda_graph))
         mock_bench.assert_called_once()
+        assert mock_bench.call_args.kwargs["cuda_graph"] is cuda_graph
 
 
 def test_build_int8_calibration_dir_without_input_shape_raises() -> None:

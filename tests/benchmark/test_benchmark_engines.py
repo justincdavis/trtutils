@@ -16,12 +16,20 @@ from .conftest import ITERS, WARMUP_ITERS
     "count",
     [pytest.param(1, id="single"), pytest.param(2, id="multiple")],
 )
-def test_benchmark_engines_sequential(engine_path, count) -> None:
+@pytest.mark.parametrize(
+    "cuda_graph",
+    [
+        pytest.param(False, id="no-cuda-graph"),
+        pytest.param(True, id="cuda-graph", marks=pytest.mark.cuda_graph),
+    ],
+)
+def test_benchmark_engines_sequential(engine_path, count, cuda_graph) -> None:
     """Sequential benchmark_engines returns correct count of valid BenchmarkResults."""
     results = benchmark_engines(
         [engine_path] * count,
         iterations=ITERS,
         warmup_iterations=WARMUP_ITERS,
+        cuda_graph=cuda_graph,
     )
     assert isinstance(results, list)
     assert len(results) == count
@@ -30,13 +38,21 @@ def test_benchmark_engines_sequential(engine_path, count) -> None:
         assert len(result.latency.raw) == ITERS
 
 
-def test_benchmark_engines_parallel(engine_path) -> None:
+@pytest.mark.parametrize(
+    "cuda_graph",
+    [
+        pytest.param(False, id="no-cuda-graph"),
+        pytest.param(True, id="cuda-graph", marks=pytest.mark.cuda_graph),
+    ],
+)
+def test_benchmark_engines_parallel(engine_path, cuda_graph) -> None:
     """Parallel mode returns valid BenchmarkResults with positive latencies."""
     results = benchmark_engines(
         [engine_path],
         iterations=ITERS,
         warmup_iterations=WARMUP_ITERS,
         parallel=True,
+        cuda_graph=cuda_graph,
     )
     assert len(results) == 1
     assert isinstance(results[0], BenchmarkResult)

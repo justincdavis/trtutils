@@ -51,7 +51,14 @@ def test_jetson_benchmark_result() -> None:
     "as_string",
     [pytest.param(False, id="path"), pytest.param(True, id="string-path")],
 )
-def test_benchmark_engine(engine_path: Path, as_string: bool) -> None:
+@pytest.mark.parametrize(
+    "cuda_graph",
+    [
+        pytest.param(False, id="no-cuda-graph"),
+        pytest.param(True, id="cuda-graph", marks=pytest.mark.cuda_graph),
+    ],
+)
+def test_benchmark_engine(engine_path: Path, as_string: bool, cuda_graph: bool) -> None:
     """benchmark_engine returns a JetsonBenchmarkResult with valid metrics for Path and str inputs."""
     target = str(engine_path) if as_string else engine_path
     result = benchmark_engine(
@@ -59,6 +66,7 @@ def test_benchmark_engine(engine_path: Path, as_string: bool) -> None:
         iterations=ITERS,
         warmup_iterations=WARMUP_ITERS,
         tegra_interval=1,
+        cuda_graph=cuda_graph,
     )
     assert isinstance(result, JetsonBenchmarkResult)
     assert isinstance(result.latency, Metric)
@@ -76,7 +84,19 @@ def test_benchmark_engine(engine_path: Path, as_string: bool) -> None:
         pytest.param(True, 1, id="parallel"),
     ],
 )
-def test_benchmark_engines(engine_path: Path, parallel: bool, expected_count: int) -> None:
+@pytest.mark.parametrize(
+    "cuda_graph",
+    [
+        pytest.param(False, id="no-cuda-graph"),
+        pytest.param(True, id="cuda-graph", marks=pytest.mark.cuda_graph),
+    ],
+)
+def test_benchmark_engines(
+    engine_path: Path,
+    parallel: bool,
+    expected_count: int,
+    cuda_graph: bool,
+) -> None:
     """benchmark_engines returns one result per engine sequentially, or one combined result in parallel."""
     results = benchmark_engines(
         [engine_path, engine_path],
@@ -84,6 +104,7 @@ def test_benchmark_engines(engine_path: Path, parallel: bool, expected_count: in
         warmup_iterations=WARMUP_ITERS,
         tegra_interval=1,
         parallel=parallel,
+        cuda_graph=cuda_graph,
     )
     assert len(results) == expected_count
     for result in results:
