@@ -106,9 +106,8 @@ def benchmark_engine(
         If None, warmup will be set to True.
     cuda_graph : bool, optional
         Whether to enable CUDA graph capture for the underlying TRTEngine.
-        Default is False (opt-in). Only applies when constructing a new
-        engine from a path; ignored when an existing TRTEngine instance is
-        passed in.
+        Default is False. Only applies when constructing a new engine from
+        a path; ignored when an existing TRTEngine instance is passed in.
     verbose : bool, optional
         Whether ot not to output additional information to stdout.
         Default None/False.
@@ -199,8 +198,8 @@ def benchmark_engines(
         If None, warmup will be set to True.
     cuda_graph : bool, optional
         Whether to enable CUDA graph capture for the underlying TRTEngines.
-        Default is False (opt-in). Only applies when an engine is constructed
-        from a path; ignored when an existing TRTEngine instance is passed in.
+        Default is False. Only applies when an engine is constructed from
+        a path; ignored when an existing TRTEngine instance is passed in.
     parallel : bool, optional
         Whether or not to process the engines in parallel.
         Useful for assessing concurrent execution performance.

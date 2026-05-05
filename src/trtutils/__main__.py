@@ -1581,7 +1581,7 @@ def _main() -> None:
     benchmark_parser.add_argument(
         "--cuda_graph",
         action="store_true",
-        help="Enable CUDA graph capture for the engine. Off by default for benchmarks (opt-in).",
+        help="Enable CUDA graph capture for the engine. False by default for benchmarks.",
     )
     benchmark_parser.set_defaults(func=_benchmark)
 
