@@ -36,6 +36,7 @@ class ParallelTRTEngines:
         warmup_iterations: int = 5,
         *,
         warmup: bool | None = None,
+        cuda_graph: bool | None = None,
     ) -> None:
         """
         Create a ParallelTRTEngines instance.
@@ -52,6 +53,11 @@ class ParallelTRTEngines:
             By default 5
         warmup : bool, optional
             Whether or not to run warmup iterations on the engines.
+        cuda_graph : bool, optional
+            Whether to enable CUDA graph capture on the underlying TRTEngines.
+            Forwarded to each QueuedTRTEngine; only applies when an engine is
+            constructed from a path. By default None, which lets TRTEngine
+            decide.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -70,6 +76,7 @@ class ParallelTRTEngines:
                 warmup=warmup,
                 dla_core=dla_core,
                 device=device,
+                cuda_graph=cuda_graph,
             )
             self._engines.append(q_engine)
         if FLAGS.NVTX_ENABLED:
