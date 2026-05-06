@@ -65,39 +65,73 @@ dependencies = [
 
 [project.optional-dependencies]
 # runtime/library dependencies
+# Jetpack 5 uses CUDA 11, but provides TensorRT
+# repeat pattern for each Jetpack/CUDA version
+# Jetpack 5 / CUDA 11
 cu11 = [
     "cuda-python==11.*",
     "tensorrt_cu11>=8.0.0",
 ]
+jp5 = [
+    "cuda-python==11.*",
+]
+# Jetpack 6 / CUDA 12
 cu12 = [
     "cuda-python==12.*",
     "tensorrt_cu12>=10.0.0",
 ]
+jp6 = [
+    "cuda-python==12.*",
+]
+# Jetpack 7 / CUDA 13
 cu13 = [
     "cuda-python==13.*",
     "tensorrt_cu13>=10.13.0",
 ]
+jp7 = [
+    "cuda-python==13.*",
+]
+# ONNX support
 onnx = [
     "onnx>=1.17.0,<2.0.0",
     "onnx-graphsurgeon>=0.5.8,<1.0.0",
 ]
+# Numba JIT
 jit = [
     "numba>=0.58.0,<1.0.0",
 ]
+# Quantize CLI/API tools
 quantize = [
     "trtutils[onnx]",
     "nvidia-modelopt[onnx]>=0.17.0",
 ]
+# Compatibility integrations via trtutils.compat module
+# SAHI/PyTorch
+torch = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+]
+sahi = [
+    "trtutils[torch]",
+    "ultralytics>=8.3.100",
+    "sahi>=0.11.31",
+]
+# Meta compat module deps
+compat = [
+    "trtutils[torch]",
+    "trtutils[sahi]",
+]
+# Research packages
+# AxoNN
 axonn = [
     "trtutils[onnx]",
     "z3-solver>=4.12.0,<5.0.0",
 ]
-# buildtime/offline dependencies
+# Buildtime/Offline deps
+# Mainly used for internal tools like the benchmark folder
+# OR
+# Deps for compatiblity integrations in the trtutils.compat module
 benchmark = [
-    "trtutils[torch]",
-    "trtutils[sahi]",
-]
-compat = [
     "trtutils[torch]",
     "trtutils[sahi]",
 ]
@@ -121,14 +155,6 @@ pytest = [
 test = [
     "trtutils[onnx]",
     "trtutils[pytest]",
-]
-torch = [
-    "torch>=2.0.0",
-    "torchvision>=0.15.0",
-]
-sahi = [
-    "ultralytics>=8.3.100",
-    "sahi>=0.11.31",
 ]
 dev = [
     "trtutils[cpu]",
