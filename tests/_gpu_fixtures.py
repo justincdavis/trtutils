@@ -52,13 +52,14 @@ class TestImage:
 
 
 @pytest.fixture(autouse=True)
-def _skip_jetson_tests(request: pytest.FixtureRequest) -> None:
+def skip_jetson_tests(request: pytest.FixtureRequest) -> None:
+    # underscore-prefixed names are dropped by `from tests._gpu_fixtures import *`
     if request.node.get_closest_marker("jetson") and not FLAGS.IS_JETSON:
         pytest.skip("Jetson tests require Jetson hardware")
 
 
 @pytest.fixture(autouse=True)
-def _skip_dla_tests(request: pytest.FixtureRequest) -> None:
+def skip_dla_tests(request: pytest.FixtureRequest) -> None:
     if request.node.get_closest_marker("dla") and not FLAGS.HAS_DLA:
         pytest.skip("DLA tests require DLA hardware")
 
