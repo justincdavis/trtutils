@@ -46,6 +46,7 @@ def inject() -> None:
         trt.IBuilderConfig = type("IBuilderConfig", (), {})
         trt.Builder = type("Builder", (), {})
         trt.IExecutionContext = type("IExecutionContext", (), {})
+        trt.NetworkDefinitionCreationFlag = type("NetworkDefinitionCreationFlag", (), {})
         # classes with attrs used as default parameter values
         trt.TensorFormat = type("TensorFormat", (), {"LINEAR": 0})
         trt.DeviceType = type("DeviceType", (), {"GPU": 0, "DLA": 1})
