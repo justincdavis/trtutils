@@ -15,12 +15,12 @@ from trtutils.image import Classifier
 
 
 def main() -> None:
-    engine_dir = Path(__file__).parent.parent / "data" / "engines"
+    engine_dir = Path(__file__).resolve().parent.parent.parent / "data" / "engines"
     engines = [
         engine_dir / "resnet18.engine",
     ]
 
-    img_path = str(Path(__file__).parent.parent / "data" / "horse.jpg")
+    img_path = str(Path(__file__).resolve().parent.parent.parent / "data" / "horse.jpg")
     img = cv2.imread(img_path)
     if img is None:
         err_msg = f"Failed to load image from {img_path}"

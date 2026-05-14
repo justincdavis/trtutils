@@ -15,7 +15,7 @@ from trtutils.builder import build_engine
 from trtutils.download import download
 from trtutils.image import DepthEstimator
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
 
 def main() -> None:
