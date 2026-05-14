@@ -15,18 +15,47 @@ from trtutils.builder.onnx._shapes import get_onnx_input, get_onnx_output
 from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
 
+_BLACKWELL_WEAK_FAIL_REASON = (
+    "Weakly-typed INT8/FP8 mixes require strongly_typed=True on Blackwell "
+    "(SM 10.0+); see test_build_strongly_typed_from_qdq for the replacement path."
+)
+
 
 @pytest.mark.parametrize(
     ("fp16", "int8", "fp8"),
     [
         pytest.param(False, False, False, id="default"),
         pytest.param(True, False, False, id="fp16"),
-        pytest.param(False, True, False, id="int8"),
+        pytest.param(
+            False,
+            True,
+            False,
+            id="int8",
+            marks=pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+        ),
         pytest.param(False, False, True, id="fp8"),
-        pytest.param(True, True, False, id="fp16-int8"),
+        pytest.param(
+            True,
+            True,
+            False,
+            id="fp16-int8",
+            marks=pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+        ),
         pytest.param(True, False, True, id="fp16-fp8"),
-        pytest.param(False, True, True, id="int8-fp8"),
-        pytest.param(True, True, True, id="all"),
+        pytest.param(
+            False,
+            True,
+            True,
+            id="int8-fp8",
+            marks=pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+        ),
+        pytest.param(
+            True,
+            True,
+            True,
+            id="all",
+            marks=pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+        ),
     ],
 )
 def test_build_precision(
@@ -49,6 +78,10 @@ def test_build_precision(
     assert output_engine_path.stat().st_size > 0
 
 
+@pytest.mark.skipif(
+    REAL_FLAGS.IS_BLACKWELL,
+    reason="Runtime INT8/FP8 calibration is a weakly-typed concept; see test_build_strongly_typed_from_qdq.",
+)
 @pytest.mark.parametrize(
     ("precision", "calibration"),
     [
@@ -347,3 +380,79 @@ def test_build_failure_raises(onnx_path, output_engine_path) -> None:
 
         with pytest.raises(RuntimeError, match="Failed to build engine"):
             build_engine(onnx_path, output_engine_path, optimization_level=1)
+
+
+def test_build_strongly_typed_from_qdq(quantized_onnx_path, output_engine_path) -> None:
+    """Build from a pre-quantized Q/DQ ONNX with strongly_typed=True produces an engine."""
+    build_engine(
+        quantized_onnx_path,
+        output_engine_path,
+        strongly_typed=True,
+        optimization_level=1,
+    )
+    assert output_engine_path.exists()
+    assert output_engine_path.stat().st_size > 0
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"fp16": True}, id="with-fp16"),
+        pytest.param({"int8": True}, id="with-int8"),
+        pytest.param({"fp8": True}, id="with-fp8"),
+        pytest.param({"layer_precision": [(0, trt.DataType.HALF)]}, id="with-layer-precision"),
+    ],
+)
+def test_build_strongly_typed_rejects_weak_args(
+    quantized_onnx_path, output_engine_path, kwargs
+) -> None:
+    """strongly_typed=True combined with precision or per-layer overrides raises ValueError."""
+    with pytest.raises(ValueError, match="strongly_typed"):
+        build_engine(
+            quantized_onnx_path,
+            output_engine_path,
+            strongly_typed=True,
+            optimization_level=1,
+            **kwargs,
+        )
+
+
+def test_build_strongly_typed_rejects_calibration_args(
+    quantized_onnx_path,
+    output_engine_path,
+    calibration_cache_path,
+    synthetic_batcher,
+) -> None:
+    """strongly_typed=True with calibration_cache or data_batcher raises ValueError."""
+    with pytest.raises(ValueError, match="runtime calibration"):
+        build_engine(
+            quantized_onnx_path,
+            output_engine_path,
+            strongly_typed=True,
+            calibration_cache=calibration_cache_path,
+            optimization_level=1,
+        )
+    with pytest.raises(ValueError, match="runtime calibration"):
+        build_engine(
+            quantized_onnx_path,
+            output_engine_path,
+            strongly_typed=True,
+            data_batcher=synthetic_batcher,
+            optimization_level=1,
+        )
+
+
+@pytest.mark.skipif(
+    not REAL_FLAGS.IS_BLACKWELL,
+    reason="Blackwell-only helpful-error check",
+)
+def test_build_blackwell_int8_fp8_rejects_weakly_typed(onnx_path, output_engine_path) -> None:
+    """On Blackwell, int8+fp8 without strongly_typed=True raises with a docs pointer."""
+    with pytest.raises(ValueError, match=r"strongly_typed=True.*strongly_typed\.rst"):
+        build_engine(
+            onnx_path,
+            output_engine_path,
+            int8=True,
+            fp8=True,
+            optimization_level=1,
+        )

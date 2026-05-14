@@ -20,6 +20,14 @@ For detailed tutorials on using these components, see:
 - :ref:`Advanced Usage Tutorial <tutorials_advanced>`
 - :ref:`YOLO Tutorials <tutorials_yolo>`
 
+Guides
+------
+
+.. toctree::
+   :maxdepth: 1
+
+   Strongly-Typed Networks <strongly_typed>
+
 API Reference
 -------------
 

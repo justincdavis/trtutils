@@ -55,6 +55,11 @@ class Flags:
     SM_VERSION : int
         The SM (compute capability) version as an integer.
         E.g. SM 7.5 -> 75, SM 10.0 -> 100.
+    IS_BLACKWELL : bool
+        Whether the detected GPU is Blackwell (SM 10.0) or newer.
+    STRONGLY_TYPED_SUPPORTED : bool
+        Whether the installed TensorRT exposes
+        trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED.
     SM_ARCH : str
         The GPU architecture name. E.g. "turing", "blackwell".
     DEVICE_NAME : str
@@ -84,6 +89,7 @@ class Flags:
     # TensorRT flags
     TRT_VERSION: tuple[int, int] = (0, 0)
     TRT_10: bool = False
+    STRONGLY_TYPED_SUPPORTED: bool = False
     TRT_HAS_UINT8: bool = False
     TRT_HAS_INT64: bool = False
     NEW_CAN_RUN_ON_DLA: bool = False
@@ -99,6 +105,7 @@ class Flags:
     # System flags
     IS_JETSON: bool = False
     SM_VERSION: int = 0
+    IS_BLACKWELL: bool = False
     SM_ARCH: str = "unknown"
     DEVICE_NAME: str = "unknown"
     HAS_DLA: bool = False
@@ -117,6 +124,7 @@ class Flags:
 
         _sm = get_compute_capability()
         self.SM_VERSION = _sm[0] * 10 + _sm[1]
+        self.IS_BLACKWELL = self.SM_VERSION >= 100  # noqa: PLR2004
         self.SM_ARCH = get_sm_arch(*_sm)
         self.DEVICE_NAME = get_device_name()
 
@@ -162,6 +170,10 @@ FLAGS.EXEC_ASYNC_V2 = hasattr(trt.IExecutionContext, "execute_async_v2")
 FLAGS.EXEC_ASYNC_V1 = hasattr(trt.IExecutionContext, "execute_async")
 FLAGS.EXEC_V2 = hasattr(trt.IExecutionContext, "execute_v2")
 FLAGS.EXEC_V1 = hasattr(trt.IExecutionContext, "execute")
+FLAGS.STRONGLY_TYPED_SUPPORTED = hasattr(
+    trt.NetworkDefinitionCreationFlag,
+    "STRONGLY_TYPED",
+)
 
 # Set system flags
 FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()

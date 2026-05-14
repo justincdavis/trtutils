@@ -62,6 +62,7 @@ def build_engine(
     fp16: bool | None = None,
     fp8: bool | None = None,
     int8: bool | None = None,
+    strongly_typed: bool = False,
     cache: bool | None = None,
     verbose: bool | None = None,
 ) -> None:
@@ -185,6 +186,15 @@ def build_engine(
         Requires compute capability >= 8.9 (Ada Lovelace / Hopper or newer).
     int8 : bool, optional
         If True, quantize the engine to INT8 precision.
+    strongly_typed : bool, optional
+        If True, build a strongly-typed network whose precision is entirely
+        determined by the ONNX graph (Q/DQ nodes, explicit dtypes). Required
+        on Blackwell (SM 10.0+) when mixing INT8 and FP8. Mutually exclusive
+        with fp16/int8/fp8 builder flags and with calibration_cache,
+        data_batcher, and layer_precision. Tensor-format dtype overrides are
+        also ignored when enabled. By default, False.
+        See ``docs/usage/strongly_typed.rst`` for guidance on generating a
+        Q/DQ ONNX.
     cache : bool, optional
         Whether or not to cache the engine in the trtutils engine cache.
         If an existing version is found will use that.
@@ -255,10 +265,46 @@ def build_engine(
             trt.DeviceType.GPU if default_device == trt.DeviceType.GPU else trt.DeviceType.DLA
         )
 
+    # validate strongly_typed vs. incompatible args
+    if strongly_typed:
+        if calibration_cache is not None or data_batcher is not None:
+            err_msg = (
+                "strongly_typed=True does not support runtime calibration. "
+                "Re-export the ONNX with explicit Q/DQ nodes and omit "
+                "calibration_cache / data_batcher. "
+                "See docs/usage/strongly_typed.rst."
+            )
+            raise ValueError(err_msg)
+        if layer_precision is not None:
+            err_msg = (
+                "strongly_typed=True ignores per-layer precision overrides. "
+                "Bake precision into the ONNX graph instead."
+            )
+            raise ValueError(err_msg)
+        if fp16 or int8 or fp8:
+            err_msg = (
+                "strongly_typed=True derives precision from the ONNX graph; "
+                "remove fp16/int8/fp8 builder flags."
+            )
+            raise ValueError(err_msg)
+        if input_tensor_formats is not None or output_tensor_formats is not None:
+            LOG.warning(
+                "strongly_typed=True ignores tensor dtype overrides; "
+                "only the format portion of input/output_tensor_formats will apply.",
+            )
+    elif FLAGS.IS_BLACKWELL and int8 and fp8:
+        err_msg = (
+            "INT8+FP8 mixed precision on Blackwell requires strongly_typed=True "
+            "with a pre-quantized ONNX (explicit Q/DQ nodes). "
+            "See docs/usage/strongly_typed.rst."
+        )
+        raise ValueError(err_msg)
+
     # read the onnx model
     network, builder, config, _ = read_onnx(
         onnx,
         workspace,
+        strongly_typed=strongly_typed,
     )
 
     # handle all hooks to start
@@ -316,7 +362,8 @@ def build_engine(
             for idx in range(network.num_inputs):
                 inp = network.get_input(idx)
                 if inp.name == tensor_name:
-                    inp.dtype = tensor_dtype
+                    if not strongly_typed:
+                        inp.dtype = tensor_dtype
                     inp.allowed_formats = 1 << int(tensor_format)
                     found = True
                     break
@@ -329,7 +376,8 @@ def build_engine(
             for idx in range(network.num_outputs):
                 out = network.get_output(idx)
                 if out.name == tensor_name:
-                    out.dtype = tensor_dtype
+                    if not strongly_typed:
+                        out.dtype = tensor_dtype
                     out.allowed_formats = 1 << int(tensor_format)
                     found = True
                     break
@@ -337,24 +385,26 @@ def build_engine(
                 err_msg = f"Output tensor '{tensor_name}' not found in network"
                 raise ValueError(err_msg)
 
-    # setup the precision sets
-    if fp16 or fp8 or int8:
-        # want to enable fp16 for int8, fp8, and fp16 since fp16 may be faster
-        if not builder.platform_has_fast_fp16:
-            LOG.warning("Platform does not have native fast FP16.")
-        config.set_flag(trt.BuilderFlag.FP16)
-    if fp8:
-        config.set_flag(trt.BuilderFlag.FP8)
-    if int8:
-        if not builder.platform_has_fast_int8:
-            LOG.warning("Platform does not have native fast INT8.")
-        config.set_flag(trt.BuilderFlag.INT8)
-        if calibration_cache is None and data_batcher is None:
-            err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
-            LOG.warning(err_msg)
-        config.int8_calibrator = EngineCalibrator(calibration_cache=calibration_cache)
-        if data_batcher is not None:
-            config.int8_calibrator.set_batcher(data_batcher)
+    # setup the precision sets -- skipped under strongly_typed since the
+    # precision is carried by the ONNX graph itself
+    if not strongly_typed:
+        if fp16 or fp8 or int8:
+            # want to enable fp16 for int8, fp8, and fp16 since fp16 may be faster
+            if not builder.platform_has_fast_fp16:
+                LOG.warning("Platform does not have native fast FP16.")
+            config.set_flag(trt.BuilderFlag.FP16)
+        if fp8:
+            config.set_flag(trt.BuilderFlag.FP8)
+        if int8:
+            if not builder.platform_has_fast_int8:
+                LOG.warning("Platform does not have native fast INT8.")
+            config.set_flag(trt.BuilderFlag.INT8)
+            if calibration_cache is None and data_batcher is None:
+                err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
+                LOG.warning(err_msg)
+            config.int8_calibrator = EngineCalibrator(calibration_cache=calibration_cache)
+            if data_batcher is not None:
+                config.int8_calibrator.set_batcher(data_batcher)
 
     # assign the default device
     config.default_device_type = default_device

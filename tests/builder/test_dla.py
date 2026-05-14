@@ -270,3 +270,64 @@ def test_layer_assignment_mapping(
         else:
             assert layer_precision[i] == (i, trt.DataType.HALF)
             assert layer_device[i] == (i, trt.DeviceType.GPU)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"fp8": True}, id="with-fp8"),
+        pytest.param({"calibration_cache": "some_cache.cache"}, id="with-calibration-cache"),
+    ],
+)
+def test_build_dla_strongly_typed_rejects_weak_args(
+    quantized_onnx_path, output_engine_path, kwargs
+) -> None:
+    """strongly_typed=True combined with fp8 or calibration_cache raises ValueError."""
+    with pytest.raises(ValueError, match="strongly_typed"):
+        build_dla_engine(
+            quantized_onnx_path,
+            output_engine_path,
+            strongly_typed=True,
+            dla_core=0,
+            optimization_level=1,
+            **kwargs,
+        )
+
+
+def test_build_dla_strongly_typed_rejects_batcher(
+    quantized_onnx_path, output_engine_path, synthetic_batcher
+) -> None:
+    """strongly_typed=True combined with data_batcher raises ValueError."""
+    with pytest.raises(ValueError, match="runtime calibration"):
+        build_dla_engine(
+            quantized_onnx_path,
+            output_engine_path,
+            data_batcher=synthetic_batcher,
+            strongly_typed=True,
+            dla_core=0,
+            optimization_level=1,
+        )
+
+
+def test_build_dla_weakly_typed_requires_batcher(onnx_path, output_engine_path) -> None:
+    """Weakly-typed DLA build without data_batcher raises ValueError."""
+    with pytest.raises(ValueError, match="data_batcher is required"):
+        build_dla_engine(
+            onnx_path,
+            output_engine_path,
+            dla_core=0,
+            optimization_level=1,
+        )
+
+
+def test_build_dla_strongly_typed_from_qdq(quantized_onnx_path, output_engine_path) -> None:
+    """build_dla_engine with strongly_typed=True builds from a Q/DQ ONNX without a batcher."""
+    build_dla_engine(
+        quantized_onnx_path,
+        output_engine_path,
+        strongly_typed=True,
+        dla_core=0,
+        optimization_level=1,
+    )
+    assert output_engine_path.exists()
+    assert output_engine_path.stat().st_size > 0

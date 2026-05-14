@@ -114,8 +114,8 @@ def can_run_on_dla(
 def build_dla_engine(
     onnx: Path | str,
     output_path: Path | str,
-    data_batcher: AbstractBatcher,
-    dla_core: int,
+    data_batcher: AbstractBatcher | None = None,
+    dla_core: int = 0,
     max_chunks: int = 1,
     min_layers: int = 20,
     workspace: float = 4.0,
@@ -132,6 +132,7 @@ def build_dla_engine(
     reject_empty_algorithms: bool = False,
     ignore_timing_mismatch: bool = False,
     fp8: bool | None = None,
+    strongly_typed: bool = False,
     cache: bool | None = None,
     verbose: bool | None = None,
 ) -> None:
@@ -208,6 +209,13 @@ def build_dla_engine(
         If True, enable FP8 precision for GPU layers.
         Requires compute capability >= 8.9 (Ada Lovelace / Hopper or newer).
         DLA layers will still use INT8 precision.
+    strongly_typed : bool, optional
+        If True, build a strongly-typed network whose precision is determined
+        by the ONNX graph (Q/DQ nodes). Use with modelopt-quantized ONNX on
+        Jetson Orin + JetPack 6.1+. The builder still steers DLA-compatible
+        chunks to DLA via layer_device, but per-layer precision is dictated
+        by the graph. Mutually exclusive with data_batcher, calibration_cache,
+        and fp8. By default, False.
     cache : bool, optional
         Whether or not to cache the engine in the trtutils engine cache.
         If an existing version is found will use that.
@@ -219,8 +227,36 @@ def build_dla_engine(
         Whether to print verbose output, by default False
 
     """
+    # validate strongly_typed vs. incompatible args
+    if strongly_typed:
+        if data_batcher is not None:
+            err_msg = (
+                "strongly_typed=True does not support runtime calibration. "
+                "Re-export the ONNX with Q/DQ nodes and omit data_batcher. "
+                "See docs/usage/strongly_typed.rst."
+            )
+            raise ValueError(err_msg)
+        if calibration_cache is not None:
+            err_msg = (
+                "strongly_typed=True does not support calibration_cache. "
+                "See docs/usage/strongly_typed.rst."
+            )
+            raise ValueError(err_msg)
+        if fp8:
+            err_msg = (
+                "strongly_typed=True derives precision from the ONNX graph; "
+                "remove fp8 and bake FP8 into the ONNX instead."
+            )
+            raise ValueError(err_msg)
+    elif data_batcher is None:
+        err_msg = (
+            "data_batcher is required for weakly-typed DLA builds. "
+            "Pass an AbstractBatcher or use strongly_typed=True with a Q/DQ ONNX."
+        )
+        raise ValueError(err_msg)
+
     # read the onnx path
-    network, _, config, _ = read_onnx(onnx)
+    network, _, config, _ = read_onnx(onnx, strongly_typed=strongly_typed)
 
     # check layers for DLA compatibility and use int8 precision
     full_dla, chunks = can_run_on_dla(
@@ -236,29 +272,50 @@ def build_dla_engine(
 
     # case where the entire model can run on DLA
     if full_dla:
-        build_engine(
-            onnx,
-            output_path,
-            default_device=trt.DeviceType.DLA,
-            data_batcher=data_batcher,
-            workspace=workspace,
-            timing_cache=timing_cache,
-            calibration_cache=calibration_cache,
-            dla_core=dla_core,
-            shapes=shapes,
-            input_tensor_formats=input_tensor_formats,
-            output_tensor_formats=output_tensor_formats,
-            hooks=hooks,
-            direct_io=direct_io,
-            prefer_precision_constraints=prefer_precision_constraints,
-            reject_empty_algorithms=reject_empty_algorithms,
-            ignore_timing_mismatch=ignore_timing_mismatch,
-            cache=cache,
-            fp16=True,
-            fp8=fp8,
-            int8=True,
-            verbose=verbose,
-        )
+        if strongly_typed:
+            build_engine(
+                onnx,
+                output_path,
+                default_device=trt.DeviceType.DLA,
+                workspace=workspace,
+                timing_cache=timing_cache,
+                dla_core=dla_core,
+                shapes=shapes,
+                input_tensor_formats=input_tensor_formats,
+                output_tensor_formats=output_tensor_formats,
+                hooks=hooks,
+                direct_io=direct_io,
+                prefer_precision_constraints=prefer_precision_constraints,
+                reject_empty_algorithms=reject_empty_algorithms,
+                ignore_timing_mismatch=ignore_timing_mismatch,
+                cache=cache,
+                strongly_typed=True,
+                verbose=verbose,
+            )
+        else:
+            build_engine(
+                onnx,
+                output_path,
+                default_device=trt.DeviceType.DLA,
+                data_batcher=data_batcher,
+                workspace=workspace,
+                timing_cache=timing_cache,
+                calibration_cache=calibration_cache,
+                dla_core=dla_core,
+                shapes=shapes,
+                input_tensor_formats=input_tensor_formats,
+                output_tensor_formats=output_tensor_formats,
+                hooks=hooks,
+                direct_io=direct_io,
+                prefer_precision_constraints=prefer_precision_constraints,
+                reject_empty_algorithms=reject_empty_algorithms,
+                ignore_timing_mismatch=ignore_timing_mismatch,
+                cache=cache,
+                fp16=True,
+                fp8=fp8,
+                int8=True,
+                verbose=verbose,
+            )
         return
 
     # identify if any chunks contain DLA layers
@@ -267,27 +324,46 @@ def build_dla_engine(
     # case where no DLA layers are found
     if not dla_chunks:
         LOG.warning("No DLA-compatible layers found. Building GPU-only engine.")
-        build_engine(
-            onnx,
-            output_path,
-            workspace=workspace,
-            timing_cache=timing_cache,
-            calibration_cache=calibration_cache,
-            data_batcher=data_batcher,
-            shapes=shapes,
-            input_tensor_formats=input_tensor_formats,
-            output_tensor_formats=output_tensor_formats,
-            hooks=hooks,
-            direct_io=direct_io,
-            prefer_precision_constraints=prefer_precision_constraints,
-            reject_empty_algorithms=reject_empty_algorithms,
-            ignore_timing_mismatch=ignore_timing_mismatch,
-            fp16=True,
-            fp8=fp8,
-            int8=True,
-            cache=cache,
-            verbose=verbose,
-        )
+        if strongly_typed:
+            build_engine(
+                onnx,
+                output_path,
+                workspace=workspace,
+                timing_cache=timing_cache,
+                shapes=shapes,
+                input_tensor_formats=input_tensor_formats,
+                output_tensor_formats=output_tensor_formats,
+                hooks=hooks,
+                direct_io=direct_io,
+                prefer_precision_constraints=prefer_precision_constraints,
+                reject_empty_algorithms=reject_empty_algorithms,
+                ignore_timing_mismatch=ignore_timing_mismatch,
+                strongly_typed=True,
+                cache=cache,
+                verbose=verbose,
+            )
+        else:
+            build_engine(
+                onnx,
+                output_path,
+                workspace=workspace,
+                timing_cache=timing_cache,
+                calibration_cache=calibration_cache,
+                data_batcher=data_batcher,
+                shapes=shapes,
+                input_tensor_formats=input_tensor_formats,
+                output_tensor_formats=output_tensor_formats,
+                hooks=hooks,
+                direct_io=direct_io,
+                prefer_precision_constraints=prefer_precision_constraints,
+                reject_empty_algorithms=reject_empty_algorithms,
+                ignore_timing_mismatch=ignore_timing_mismatch,
+                fp16=True,
+                fp8=fp8,
+                int8=True,
+                cache=cache,
+                verbose=verbose,
+            )
         return
 
     # sort chunks by len and filter by min_layers or until max_chunks is reached
@@ -299,7 +375,9 @@ def build_dla_engine(
         )
 
     # define lists for storing layer assignments
-    layer_precision: list[tuple[int, trt.DataType | None]] = []
+    # under strongly_typed, precision is dictated by the ONNX Q/DQ graph so we
+    # only build a layer_device map -- layer_precision stays None
+    layer_precision: list[tuple[int, trt.DataType | None]] | None = None if strongly_typed else []
     layer_device: list[tuple[int, trt.DeviceType | None]] = []
 
     # assign default to GPU/FP16
@@ -309,12 +387,13 @@ def build_dla_engine(
         layer_name: str = layer.name
         layer_name = layer_name.lower()
         layer_device.append((idx, trt.DeviceType.GPU))
-        # intelligently assign precision level to HALF unless layer
-        # is Constant, Shuffle, or Tile
-        if layer.type in exclude_layer_types or "tile" in layer_name:
-            layer_precision.append((idx, None))
-        else:
-            layer_precision.append((idx, trt.DataType.HALF))
+        if layer_precision is not None:
+            # intelligently assign precision level to HALF unless layer
+            # is Constant, Shuffle, or Tile
+            if layer.type in exclude_layer_types or "tile" in layer_name:
+                layer_precision.append((idx, None))
+            else:
+                layer_precision.append((idx, trt.DataType.HALF))
 
     # iterate over chunks and assign to DLA
     matched_chunks = 0
@@ -327,45 +406,78 @@ def build_dla_engine(
             continue
 
         for layer_id in range(start, end + 1, 1):
-            layer_precision[layer_id] = (layer_id, trt.DataType.INT8)
             layer_device[layer_id] = (layer_id, trt.DeviceType.DLA)
+            if layer_precision is not None:
+                layer_precision[layer_id] = (layer_id, trt.DataType.INT8)
 
         matched_chunks += 1
 
     # verbose iteration
     if verbose:
-        for (idx, device), (_, datatype) in zip(layer_device, layer_precision):
-            LOG.info(
-                f"Layer {idx}: {network.get_layer(idx).name}, "
-                f"{'DLA' if device == trt.DeviceType.DLA else 'GPU'}, "
-                f"{'INT8' if datatype == trt.DataType.INT8 else 'FP16'}"
-            )
+        if layer_precision is not None:
+            for (idx, device), (_, datatype) in zip(layer_device, layer_precision):
+                LOG.info(
+                    f"Layer {idx}: {network.get_layer(idx).name}, "
+                    f"{'DLA' if device == trt.DeviceType.DLA else 'GPU'}, "
+                    f"{'INT8' if datatype == trt.DataType.INT8 else 'FP16'}"
+                )
+        else:
+            for idx, device in layer_device:
+                LOG.info(
+                    f"Layer {idx}: {network.get_layer(idx).name}, "
+                    f"{'DLA' if device == trt.DeviceType.DLA else 'GPU'}, "
+                    "precision from ONNX"
+                )
 
     # build engine with specific layer assignments
-    build_engine(
-        onnx,
-        output_path,
-        default_device=trt.DeviceType.DLA,  # default device DLA
-        timing_cache=timing_cache,
-        workspace=workspace,
-        calibration_cache=calibration_cache,
-        data_batcher=data_batcher,
-        layer_precision=layer_precision,
-        layer_device=layer_device,
-        dla_core=dla_core,  # ensure DLA core is maintained
-        shapes=shapes,
-        input_tensor_formats=input_tensor_formats,
-        output_tensor_formats=output_tensor_formats,
-        hooks=hooks,
-        optimization_level=optimization_level,
-        gpu_fallback=True,  # enable GPU fallback to account for input/copy
-        direct_io=direct_io,
-        prefer_precision_constraints=prefer_precision_constraints,
-        reject_empty_algorithms=reject_empty_algorithms,
-        ignore_timing_mismatch=ignore_timing_mismatch,
-        fp16=True,
-        fp8=fp8,
-        int8=True,
-        cache=cache,
-        verbose=verbose,
-    )
+    if strongly_typed:
+        build_engine(
+            onnx,
+            output_path,
+            default_device=trt.DeviceType.DLA,
+            timing_cache=timing_cache,
+            workspace=workspace,
+            layer_device=layer_device,
+            dla_core=dla_core,
+            shapes=shapes,
+            input_tensor_formats=input_tensor_formats,
+            output_tensor_formats=output_tensor_formats,
+            hooks=hooks,
+            optimization_level=optimization_level,
+            gpu_fallback=True,
+            direct_io=direct_io,
+            prefer_precision_constraints=prefer_precision_constraints,
+            reject_empty_algorithms=reject_empty_algorithms,
+            ignore_timing_mismatch=ignore_timing_mismatch,
+            strongly_typed=True,
+            cache=cache,
+            verbose=verbose,
+        )
+    else:
+        build_engine(
+            onnx,
+            output_path,
+            default_device=trt.DeviceType.DLA,  # default device DLA
+            timing_cache=timing_cache,
+            workspace=workspace,
+            calibration_cache=calibration_cache,
+            data_batcher=data_batcher,
+            layer_precision=layer_precision,
+            layer_device=layer_device,
+            dla_core=dla_core,  # ensure DLA core is maintained
+            shapes=shapes,
+            input_tensor_formats=input_tensor_formats,
+            output_tensor_formats=output_tensor_formats,
+            hooks=hooks,
+            optimization_level=optimization_level,
+            gpu_fallback=True,  # enable GPU fallback to account for input/copy
+            direct_io=direct_io,
+            prefer_precision_constraints=prefer_precision_constraints,
+            reject_empty_algorithms=reject_empty_algorithms,
+            ignore_timing_mismatch=ignore_timing_mismatch,
+            fp16=True,
+            fp8=fp8,
+            int8=True,
+            cache=cache,
+            verbose=verbose,
+        )
