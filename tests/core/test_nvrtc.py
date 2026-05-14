@@ -21,7 +21,7 @@ from trtutils.core._nvrtc import (
     nvrtc_call,
 )
 
-pytestmark = pytest.mark.usefixtures("_nvrtc_cache_clear")
+pytestmark = pytest.mark.usefixtures("nvrtc_cache_clear")
 
 TRIVIAL_KERNEL = """\
 extern "C" __global__ void trivial_kernel(float *out, int n) {

@@ -44,7 +44,7 @@ def benchmark_engine(
     dla_core: int | None = None,
     *,
     warmup: bool | None = None,
-    cuda_graph: bool | None = None,
+    cuda_graph: bool = False,
     verbose: bool | None = None,
 ) -> JetsonBenchmarkResult:
     """
@@ -70,9 +70,9 @@ def benchmark_engine(
         Whether to do warmup iterations, by default None
         If None, warmup will be set to True.
     cuda_graph : bool, optional
-        Whether to enable CUDA graph capture for optimized execution.
-        By default None, which enables CUDA graphs.
-        Set to False for engines with DLA layers, as DLA does not support CUDA graphs.
+        Whether to enable CUDA graph capture for the underlying TRTEngine.
+        Default is False. Leave False for engines with DLA layers, as DLA
+        does not support CUDA graphs.
     verbose : bool, optional
         Whether ot not to output additional information to stdout.
         Default None/False.
@@ -168,7 +168,7 @@ def benchmark_engines(
     tegra_interval: int = 5,
     *,
     warmup: bool | None = None,
-    cuda_graph: bool | None = None,
+    cuda_graph: bool = False,
     parallel: bool | None = None,
     verbose: bool | None = None,
 ) -> list[JetsonBenchmarkResult]:
@@ -191,9 +191,9 @@ def benchmark_engines(
         Whether to do warmup iterations, by default None
         If None, warmup will be set to True.
     cuda_graph : bool, optional
-        Whether to enable CUDA graph capture for optimized execution.
-        By default None, which enables CUDA graphs.
-        Set to False for engines with DLA layers, as DLA does not support CUDA graphs.
+        Whether to enable CUDA graph capture for the underlying TRTEngines.
+        Default is False. Leave False for engines with DLA layers, as DLA
+        does not support CUDA graphs.
     parallel : bool, optional
         Whether or not to process the engines in parallel.
         Useful for assessing concurrent execution performance.
@@ -243,6 +243,7 @@ def benchmark_engines(
         [(ep, dc) if dc is not None else ep for ep, dc in zip(temp_engines, dla_assignments)],
         warmup_iterations=warmup_iterations,
         warmup=warmup,
+        cuda_graph=cuda_graph,
     )
 
     # list of metrics

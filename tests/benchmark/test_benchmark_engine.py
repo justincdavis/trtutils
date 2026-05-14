@@ -20,7 +20,14 @@ from .conftest import ITERS, WARMUP_ITERS
         pytest.param("engine", id="trt-engine"),
     ],
 )
-def test_benchmark_engine(engine_path, input_source) -> None:
+@pytest.mark.parametrize(
+    "cuda_graph",
+    [
+        pytest.param(False, id="no-cuda-graph"),
+        pytest.param(True, id="cuda-graph", marks=pytest.mark.cuda_graph),
+    ],
+)
+def test_benchmark_engine(engine_path, input_source, cuda_graph) -> None:
     """benchmark_engine returns valid BenchmarkResult for Path, str, and TRTEngine inputs."""
     if input_source == "path":
         target = engine_path
@@ -32,6 +39,7 @@ def test_benchmark_engine(engine_path, input_source) -> None:
         target,
         iterations=ITERS,
         warmup_iterations=WARMUP_ITERS,
+        cuda_graph=cuda_graph,
     )
     if input_source == "engine":
         del target
