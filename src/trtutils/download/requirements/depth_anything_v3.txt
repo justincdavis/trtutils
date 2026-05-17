@@ -1,0 +1,17 @@
+addict
+einops
+evo
+huggingface-hub
+imageio
+numpy<2
+omegaconf
+onnx
+onnxruntime
+onnxscript
+opencv-python
+pillow
+safetensors
+torch>=2
+torchvision
+trimesh
+xformers

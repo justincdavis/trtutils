@@ -1,0 +1,8 @@
+huggingface-hub
+numpy<2
+onnx
+onnxscript
+opencv-python
+pillow
+torch
+torchvision
