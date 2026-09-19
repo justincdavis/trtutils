@@ -26,6 +26,8 @@ def read_onnx(
     """
     Open an ONNX model and generate TensorRT network, builder, config, and parser.
 
+    External data files are resolved relative to the ONNX model path.
+
     Parameters
     ----------
     onnx : Path, str
@@ -96,7 +98,7 @@ def read_onnx(
     # setup parser
     parser = trt.OnnxParser(network, LOG)
     with onnx_path.open("rb") as f:
-        if not parser.parse(f.read()):
+        if not parser.parse(f.read(), str(onnx_path)):
             for error in range(parser.num_errors):
                 LOG.error(parser.get_error(error))
             err_msg = "Cannot parse ONNX file"
