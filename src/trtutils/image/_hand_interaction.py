@@ -56,7 +56,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
         preprocessor: str = "trt",
-        resize_method: str = "linear",
+        resize_method: str = "letterbox",
         conf_thres: float = 0.3,
         pair_thres: float = 0.5,
         second_pair_thres: float | None = None,
@@ -92,7 +92,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
         resize_method : str
             The type of resize algorithm to use.
-            The options are ['letterbox', 'linear'], default is 'linear'.
+            The options are ['letterbox', 'linear'], default is 'letterbox'.
         conf_thres : float
             The confidence threshold used to filter candidate boxes and as
             the NMS score threshold. By default 0.3.
