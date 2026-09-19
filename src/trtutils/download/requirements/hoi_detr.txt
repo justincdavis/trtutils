@@ -1,0 +1,15 @@
+# CPU-only stack: mmcv's MultiScaleDeformableAttention falls back to the pure-PyTorch
+# grid_sample path on CPU, which traces to plain ONNX GridSample (no custom plugin needed).
+--find-links https://download.openmmlab.com/mmcv/dist/cpu/torch2.1.0/index.html
+torch==2.1.2
+torchvision==0.16.2
+mmcv-full==1.7.2
+timm==0.6.13
+fairscale==0.4.13
+scipy<1.13
+numpy<2
+yapf==0.40.1
+pycocotools
+opencv-python
+onnx
+onnxsim
