@@ -306,6 +306,10 @@ def download(
             verbose=verbose,
         )
         shutil.copy(model_path, output)
+        # onnx external weights (>2GB models) live in a sidecar referenced by filename
+        sidecar = model_path.with_name(model_path.name + ".data")
+        if sidecar.exists():
+            shutil.copy(sidecar, output.parent / sidecar.name)
 
     if verbose is not None:
         LOG.info(f"Model {model} downloaded and converted to ONNX.")
