@@ -66,7 +66,11 @@ def export_hands23(
         directory,
         bin_path.parent,
         None,
-        packages=[f"git+https://github.com/facebookresearch/detectron2@{_DETECTRON2_COMMIT}"],
+        # detectron2 imports torch in setup.py, so it must see the venv torch at build time
+        packages=[
+            "--no-build-isolation",
+            f"git+https://github.com/facebookresearch/detectron2@{_DETECTRON2_COMMIT}",
+        ],
         no_cache=no_uv_cache,
         verbose=verbose,
     )
