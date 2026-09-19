@@ -9,7 +9,6 @@ Subpackages
 
    trtutils.builder
    trtutils.core
-   trtutils.impls
    trtutils.inspect
    trtutils.jetson
    trtutils.trtexec
