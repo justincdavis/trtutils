@@ -13,3 +13,6 @@ pycocotools
 opencv-python
 onnx
 onnxsim
+# no build isolation for the repo install, so the venv needs setuptools/wheel itself
+setuptools<81
+wheel

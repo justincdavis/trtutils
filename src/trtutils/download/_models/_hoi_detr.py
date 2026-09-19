@@ -68,7 +68,8 @@ def export_hoi_detr(
         directory,
         bin_path.parent,
         None,
-        packages=["-e", str(repo_dir)],
+        # the vendored mmdet setup.py imports torch, so build against the venv torch
+        packages=["--no-build-isolation", "-e", str(repo_dir)],
         no_cache=no_uv_cache,
         verbose=verbose,
     )
