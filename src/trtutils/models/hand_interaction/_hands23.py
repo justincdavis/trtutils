@@ -21,7 +21,9 @@ class Hands23(HandInteractionDetector, Model):
     Normalization (BGR flip, mean/std) is baked into the exported ONNX, so
     the wrapper passes raw 0-255 RGB input straight through. A single
     conf_thres is used for all three classes, unlike the reference demo
-    which uses per-class thresholds of 0.7/0.5/0.3.
+    which uses per-class thresholds of 0.7/0.5/0.3. CUDA graphs default to
+    off: the in-graph NMS yields data-dependent shapes, which TensorRT
+    cannot capture.
     """
 
     _model_type = "hands23"
@@ -50,7 +52,7 @@ class Hands23(HandInteractionDetector, Model):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        cuda_graph: bool | None = None,
+        cuda_graph: bool | None = False,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
