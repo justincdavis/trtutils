@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import onnx
 import pytest
 
 from trtutils.builder._onnx import read_onnx
@@ -66,3 +67,18 @@ def test_invalid_onnx_content(invalid_onnx_file) -> None:
     """Invalid ONNX content raises RuntimeError."""
     with pytest.raises(RuntimeError, match="Cannot parse ONNX file"):
         read_onnx(invalid_onnx_file)
+
+
+def test_external_data(onnx_path, tmp_path) -> None:
+    """ONNX models with external weight files parse via the model path."""
+    ext_path = tmp_path / "external.onnx"
+    onnx.save_model(
+        onnx.load(str(onnx_path)),
+        str(ext_path),
+        save_as_external_data=True,
+        all_tensors_to_one_file=True,
+        location="external.onnx.data",
+        size_threshold=0,
+    )
+    network, _builder, _config, _parser = read_onnx(ext_path)
+    assert network.num_layers > 0

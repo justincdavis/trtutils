@@ -97,11 +97,16 @@ def read_onnx(
 
     # setup parser
     parser = trt.OnnxParser(network, LOG)
-    with onnx_path.open("rb") as f:
-        if not parser.parse(f.read(), str(onnx_path)):
-            for error in range(parser.num_errors):
-                LOG.error(parser.get_error(error))
-            err_msg = "Cannot parse ONNX file"
-            raise RuntimeError(err_msg)
+    model_bytes = onnx_path.read_bytes()
+    # the path lets the parser resolve external weight files (>2GB models)
+    if FLAGS.ONNX_PARSE_PATH:
+        parsed = parser.parse(model_bytes, str(onnx_path))
+    else:
+        parsed = parser.parse(model_bytes)
+    if not parsed:
+        for error in range(parser.num_errors):
+            LOG.error(parser.get_error(error))
+        err_msg = "Cannot parse ONNX file"
+        raise RuntimeError(err_msg)
 
     return network, builder, config, parser
