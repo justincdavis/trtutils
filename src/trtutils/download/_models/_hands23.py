@@ -125,8 +125,6 @@ cfg.merge_from_file("{_HANDS23_CONFIG}")
 cfg.MODEL.WEIGHTS = WEIGHTS
 cfg.MODEL.DEVICE = "cpu"
 cfg.MODEL.MASK_ON = False
-cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.05
-cfg.TEST.DETECTIONS_PER_IMAGE = K
 cfg.INPUT.MIN_SIZE_TEST = S
 cfg.INPUT.MAX_SIZE_TEST = S
 
@@ -244,18 +242,53 @@ class Wrapper(nn.Module):
 
         roi_heads = self.det_model.roi_heads
         box_in = [feats[f] for f in roi_heads.box_in_features]
-        box_feats = roi_heads.box_head(
-            roi_heads.box_pooler(box_in, [p.proposal_boxes for p in proposals])
+
+        # bypass box_predictor.inference(): its predict_boxes/predict_probs split the
+        # flat per-proposal tensors with python ints captured from the blank tracing
+        # image's proposal count ([len(p) for p in proposals]), baking a fixed-size
+        # ONNX Split that breaks on any real image with a different proposal count.
+        # do the same score/box math with plain tensor ops instead, so shapes stay
+        # runtime-dynamic all the way through.
+        props = proposals[0].proposal_boxes.tensor
+        box_feats = roi_heads.box_head(roi_heads.box_pooler(box_in, [Boxes(props)]))
+        cls_logits, deltas = roi_heads.box_predictor(box_feats)
+        probs = cls_logits.softmax(-1)[:, :-1]  # drop background (last column)
+        pred_boxes = roi_heads.box_predictor.box2box_transform.apply_deltas(deltas, props)
+
+        num_classes = probs.shape[1]  # 3, static (architectural, not data-dependent)
+        pred_boxes = pred_boxes.reshape(-1, num_classes, 4).clamp(min=0, max=S)
+
+        # flatten (proposal, class) candidates and pad so nms/topk see a constant count.
+        # classes_flat is built by broadcasting against a zeros_like(props) column
+        # instead of arange(...).repeat(props.shape[0]) -- repeat() would bake the
+        # dummy image's proposal count as a python int, same bug as the Split above
+        KC = 300
+        scores_flat = F.pad(probs.reshape(-1), (0, KC))
+        boxes_flat = F.pad(pred_boxes.reshape(-1, 4), (0, 0, 0, KC))
+        classes_flat = F.pad(
+            (
+                torch.zeros_like(props[:, :1], dtype=torch.long)
+                + torch.arange(num_classes, device=props.device)
+            ).reshape(-1),
+            (0, KC),
         )
-        predictions = roi_heads.box_predictor(box_feats)
-        pred_instances, _ = roi_heads.box_predictor.inference(predictions, proposals)
-        inst = pred_instances[0]
+        top_scores, top_idx = scores_flat.topk(KC)
+        top_boxes = boxes_flat[top_idx]
+        top_classes = classes_flat[top_idx]
+        # threshold without data-dependent filtering (score_thresh=0.05, matches the
+        # cfg value this used to set): zero out low scores, nms/topk drop them below
+        top_scores = torch.where(
+            top_scores >= 0.05, top_scores, torch.zeros_like(top_scores)
+        )
+
+        # nms_thresh=0.5, matches the config's test-time value; batched_nms uses the
+        # unscripted _nms_coordinate_trick patched in above
+        keep = torchvision.ops.batched_nms(top_boxes, top_scores, top_classes, 0.5)
 
         # pad/truncate to exactly K rows so the ONNX output shape is static
-        pad_scores = F.pad(inst.scores, (0, K))
-        scores, top_idx = pad_scores.topk(K)
-        boxes = F.pad(inst.pred_boxes.tensor, (0, 0, 0, K))[top_idx]
-        classes = F.pad(inst.pred_classes, (0, K))[top_idx]
+        scores, order = F.pad(top_scores[keep], (0, K)).topk(K)
+        boxes = F.pad(top_boxes[keep], (0, 0, 0, K))[order]
+        classes = F.pad(top_classes[keep], (0, K))[order]
 
         f = roi_heads.box_head(roi_heads.box_pooler(box_in, [Boxes(boxes)]))
         side = roi_heads.h_head(f).argmax(-1)
