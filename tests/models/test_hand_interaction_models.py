@@ -19,6 +19,18 @@ def test_output_contract_validation(build_test_engine) -> None:
         HandInteractionDetector(engine, warmup=False)
 
 
+def _assert_interactions_close(left, right) -> None:
+    # run() and end2end() preprocess on different devices, fp16 scores drift slightly
+    assert len(left) == len(right)
+    for a, b in zip(left, right):
+        for entry_a, entry_b in zip(a[:3], b[:3]):
+            assert (entry_a is None) == (entry_b is None)
+            if entry_a is not None:
+                assert entry_a[0] == pytest.approx(entry_b[0], abs=1)
+                assert entry_a[1] == pytest.approx(entry_b[1], abs=0.02)
+        assert a[3:] == b[3:]
+
+
 @pytest.mark.parametrize(
     ("model_cls", "onnx_path"),
     [
@@ -52,7 +64,7 @@ def test_hand_interaction_end2end(
 
     via_run = model.get_interactions(raw)
     via_e2e = model.end2end(img)
-    assert via_run == via_e2e
+    _assert_interactions_close(via_run, via_e2e)
 
     for hand, obj, second, side, contact in via_run:
         for bbox, _score in (b for b in (hand, obj, second) if b is not None):
