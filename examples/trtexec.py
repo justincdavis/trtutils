@@ -15,6 +15,7 @@ Exits cleanly when ``trtexec`` is not installed on the system.
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from trtutils import TRTEngine, find_trtexec, run_trtexec, set_log_level
@@ -39,8 +40,9 @@ def main() -> None:
     head = "\n".join(stdout.splitlines()[:3])
     print(f"Banner:\n{head}")
 
-    onnx_path = Path("/tmp/yolov8n.onnx")  # noqa: S108
-    engine_path = Path("/tmp/yolov8n_trtexec.engine")  # noqa: S108
+    tmp_dir = Path(tempfile.gettempdir())
+    onnx_path = tmp_dir / "yolov8n.onnx"
+    engine_path = tmp_dir / "yolov8n_trtexec.engine"
 
     if not onnx_path.exists():
         print("Downloading yolov8n ONNX model...")

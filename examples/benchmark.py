@@ -11,6 +11,7 @@ FP32 and FP16 variant of YOLOv8n and reports latency statistics for each.
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from trtutils import benchmark_engine, benchmark_engines, build_engine, set_log_level
@@ -18,9 +19,10 @@ from trtutils.download import download
 
 
 def main() -> None:
-    onnx_path = Path("/tmp/yolov8n.onnx")  # noqa: S108
-    fp32_engine = Path("/tmp/yolov8n_fp32.engine")  # noqa: S108
-    fp16_engine = Path("/tmp/yolov8n_fp16.engine")  # noqa: S108
+    tmp_dir = Path(tempfile.gettempdir())
+    onnx_path = tmp_dir / "yolov8n.onnx"
+    fp32_engine = tmp_dir / "yolov8n_fp32.engine"
+    fp16_engine = tmp_dir / "yolov8n_fp16.engine"
 
     if not onnx_path.exists():
         print("Downloading yolov8n ONNX model...")
@@ -34,19 +36,20 @@ def main() -> None:
         print("Building FP16 engine...")
         build_engine(onnx_path, fp16_engine, fp16=True, shapes=shapes)
 
+    # Metric latency is in seconds -- scale to ms for readability, same as the CLI
     print("\nSingle-engine benchmarks:")
     for label, path in [("FP32", fp32_engine), ("FP16", fp16_engine)]:
         result = benchmark_engine(path, iterations=200, warmup_iterations=20)
         m = result.latency
         print(
-            f"  {label}: mean={m.mean:.3f} ms  median={m.median:.3f} ms  "
-            f"min={m.min:.3f} ms  max={m.max:.3f} ms"
+            f"  {label}: mean={m.mean * 1000:.3f} ms  median={m.median * 1000:.3f} ms  "
+            f"min={m.min * 1000:.3f} ms  max={m.max * 1000:.3f} ms"
         )
 
     print("\nbenchmark_engines (serial):")
     serial = benchmark_engines([fp32_engine, fp16_engine], iterations=200, warmup_iterations=20)
     for label, result in zip(["FP32", "FP16"], serial):
-        print(f"  {label}: mean={result.latency.mean:.3f} ms")
+        print(f"  {label}: mean={result.latency.mean * 1000:.3f} ms")
 
     print("\nbenchmark_engines (parallel, both engines run in lockstep):")
     parallel = benchmark_engines(
@@ -55,7 +58,7 @@ def main() -> None:
         warmup_iterations=20,
         parallel=True,
     )
-    print(f"  combined: mean={parallel[0].latency.mean:.3f} ms")
+    print(f"  combined: mean={parallel[0].latency.mean * 1000:.3f} ms")
 
 
 if __name__ == "__main__":

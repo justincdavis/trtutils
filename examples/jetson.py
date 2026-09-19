@@ -15,6 +15,7 @@ required for engines with DLA layers because DLA does not support CUDA graphs.
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 import tensorrt as trt
@@ -32,8 +33,9 @@ def main() -> None:
         print("Skipping: not running on a Jetson device.")
         return
 
-    onnx_path = Path("/tmp/yolov8n.onnx")  # noqa: S108
-    engine_path = Path("/tmp/yolov8n_detailed.engine")  # noqa: S108
+    tmp_dir = Path(tempfile.gettempdir())
+    onnx_path = tmp_dir / "yolov8n.onnx"
+    engine_path = tmp_dir / "yolov8n_detailed.engine"
 
     if not onnx_path.exists():
         print("Downloading yolov8n ONNX model...")
@@ -55,7 +57,8 @@ def main() -> None:
         warmup_iterations=20,
         cuda_graph=False,
     )
-    print(f"  latency:   mean={result.latency.mean:.3f} ms")
+    # latency Metric is in seconds; power is mW and energy mJ already
+    print(f"  latency:   mean={result.latency.mean * 1000:.3f} ms")
     print(f"  power:     mean={result.power_draw.mean:.1f} mW")
     print(f"  energy:    mean={result.energy.mean:.3f} mJ/iter")
 

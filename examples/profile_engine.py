@@ -14,6 +14,7 @@ For useful per-layer names, the engine must be built with
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 import tensorrt as trt
@@ -24,8 +25,9 @@ from trtutils.profiling import identify_quantize_speedups_by_layer
 
 
 def main() -> None:
-    onnx_path = Path("/tmp/yolov8n.onnx")  # noqa: S108
-    engine_path = Path("/tmp/yolov8n_detailed.engine")  # noqa: S108
+    tmp_dir = Path(tempfile.gettempdir())
+    onnx_path = tmp_dir / "yolov8n.onnx"
+    engine_path = tmp_dir / "yolov8n_detailed.engine"
 
     if not onnx_path.exists():
         print("Downloading yolov8n ONNX model...")
@@ -52,11 +54,16 @@ def main() -> None:
         print(f"  {layer.mean:7.3f} ms  {layer.name}")
 
     print("\nScanning for INT8 quantization speedups (this builds both FP16 + INT8 engines)...")
-    _fp16, _int8, speedups = identify_quantize_speedups_by_layer(
-        onnx_path,
-        iterations=50,
-        warmup_iterations=5,
-    )
+    try:
+        _fp16, _int8, speedups = identify_quantize_speedups_by_layer(
+            onnx_path,
+            iterations=50,
+            warmup_iterations=5,
+        )
+    except RuntimeError as exc:
+        # weakly-typed INT8 builds are unsupported on Blackwell (SM 10.0+)
+        print(f"  Skipping INT8 scan -- engine build failed: {exc}")
+        return
     quantize_wins = sorted(speedups, key=lambda pair: pair[1], reverse=True)[:5]
     print("Top 5 INT8 wins (positive % means INT8 faster):")
     for name, speedup in quantize_wins:

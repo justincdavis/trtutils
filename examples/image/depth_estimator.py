@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import tempfile
 import time
 from pathlib import Path
 
@@ -19,8 +20,9 @@ DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
 
 def main() -> None:
-    onnx_path = Path("/tmp/depth_anything_v2_small.onnx")  # noqa: S108
-    engine_path = Path("/tmp/depth_anything_v2_small.engine")  # noqa: S108
+    tmp_dir = Path(tempfile.gettempdir())
+    onnx_path = tmp_dir / "depth_anything_v2_small.onnx"
+    engine_path = tmp_dir / "depth_anything_v2_small.engine"
 
     if not onnx_path.exists():
         print("Downloading DepthAnythingV2 small ONNX model...")

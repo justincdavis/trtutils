@@ -11,6 +11,7 @@ engine file. Bootstraps its own ONNX via :func:`trtutils.download.download`.
 
 from __future__ import annotations
 
+import tempfile
 import time
 from pathlib import Path
 
@@ -20,8 +21,9 @@ from trtutils.download import download
 
 
 def main() -> None:
-    onnx_path = Path("/tmp/yolov8n.onnx")  # noqa: S108
-    engine_path = Path("/tmp/yolov8n.engine")  # noqa: S108
+    tmp_dir = Path(tempfile.gettempdir())
+    onnx_path = tmp_dir / "yolov8n.onnx"
+    engine_path = tmp_dir / "yolov8n.engine"
 
     if not onnx_path.exists():
         print("Downloading yolov8n ONNX model...")

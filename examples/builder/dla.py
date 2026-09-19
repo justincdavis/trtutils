@@ -14,6 +14,7 @@ Exits cleanly when the system has no DLA hardware.
 
 from __future__ import annotations
 
+import tempfile
 import time
 from pathlib import Path
 
@@ -29,8 +30,9 @@ def main() -> None:
         print(f"Skipping: no DLA cores available (NUM_DLA_CORES={FLAGS.NUM_DLA_CORES}).")
         return
 
-    onnx_path = Path("/tmp/yolov8n.onnx")  # noqa: S108
-    engine_path = Path("/tmp/yolov8n_dla.engine")  # noqa: S108
+    tmp_dir = Path(tempfile.gettempdir())
+    onnx_path = tmp_dir / "yolov8n.onnx"
+    engine_path = tmp_dir / "yolov8n_dla.engine"
 
     if not onnx_path.exists():
         print("Downloading yolov8n ONNX model...")
