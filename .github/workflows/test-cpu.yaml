@@ -15,7 +15,7 @@ jobs:
       VIRTUAL_ENV: .venv-${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v6
       - name: Set up Python ${{ matrix.python-version }}
         run: |
           uv venv $VIRTUAL_ENV --python ${{ matrix.python-version }}

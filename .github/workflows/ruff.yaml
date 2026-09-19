@@ -4,25 +4,25 @@ jobs:
   Format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: 3.8
       - name: Install ruff
-        run: pip install --upgrade ruff
+        run: pip install "ruff==$(grep -oP 'ruff==\K[0-9.]+' pyproject.toml)"
       - name: Ruff Format Check
         run: ./ci/run_ruff.sh --format --check --diff
 
   Check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: 3.8
       - name: Install ruff
-        run: pip install --upgrade ruff
+        run: pip install "ruff==$(grep -oP 'ruff==\K[0-9.]+' pyproject.toml)"
       - name: Ruff Check
         run: ./ci/run_ruff.sh --lint --no-fix
