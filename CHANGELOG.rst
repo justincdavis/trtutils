@@ -12,6 +12,11 @@ Added
 * Download configs and ONNX export functions for Depth-Anything-V1
   (small / base / large) and Depth-Anything-V3 (mono-large, metric-large)
 
+Fixed
+^^^^^
+* ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
+  notice into the exported requirements file
+
 
 0.6.1 (2025-06-17)
 ------------------

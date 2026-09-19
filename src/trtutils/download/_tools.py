@@ -276,7 +276,7 @@ def export_requirements(
         LOG.info(f"Exporting virtual environment requirements to {output_path}")
     with output_path.open("w", encoding="utf-8") as requirements_file:
         run_cmd(
-            ["uv", "pip", "freeze", "-p", str(venv_path)],
+            ["uv", "pip", "freeze", "-q", "-p", str(venv_path)],
             stdout=requirements_file,
             stderr=subprocess.DEVNULL if not verbose else None,
         )
