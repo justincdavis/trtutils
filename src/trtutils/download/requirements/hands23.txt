@@ -8,3 +8,6 @@ numpy<2
 opencv-python
 onnx
 onnxsim
+# no build isolation for detectron2, so the venv needs setuptools/wheel itself
+setuptools<81
+wheel
