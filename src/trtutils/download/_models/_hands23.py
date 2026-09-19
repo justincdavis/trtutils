@@ -266,6 +266,47 @@ class Wrapper(nn.Module):
 wrapper = Wrapper(det_model)
 dummy = torch.zeros(1, 3, S, S)
 
+# pip tensorrt wheels ship no libnvinfer_vc_plugin, which the parser's builtin
+# RoiAlign importer requires just to report its VC library path (unused otherwise).
+# emitting ROIAlign_TRT directly routes through the plugin-registry fallback importer
+# instead, which needs no VC library. field names/values verified against TensorRT's
+# plugin/roiAlignPlugin sources (release/10.15) and onnx-tensorrt's own RoiAlign
+# importer in onnxOpImporters.cpp (main).
+from torch.onnx import register_custom_op_symbolic
+from torch.onnx.symbolic_helper import parse_args
+
+
+@parse_args("v", "v", "f", "i", "i", "i", "b")
+def _roi_align_trt(g, feats, rois, spatial_scale, out_h, out_w, sampling_ratio, aligned):
+    # rois: (K,5) [batch_idx, x1, y1, x2, y2] -> split into batch indices + xyxy boxes
+    zero, one, five = (g.op("Constant", value_t=torch.tensor([v], dtype=torch.int64)) for v in (0, 1, 5))
+    idx = g.op("Slice", rois, zero, one, one)
+    idx = g.op("Squeeze", idx, one)
+    idx = g.op("Cast", idx, to_i=6)  # INT32
+    boxes = g.op("Slice", rois, one, five, one)
+    # onnx's checker rejects an unregistered op in the default domain; the "trt" domain
+    # here is just to satisfy the checker -- the tensorrt parser looks up plugins by
+    # op_type alone and ignores the onnx node domain
+    return g.op(
+        "trt::ROIAlign_TRT",
+        feats,
+        boxes,
+        idx,
+        plugin_version_s="2",
+        plugin_namespace_s="",
+        # detectron2/torchvision roi_align is average-pooling only
+        mode_i=1,
+        # aligned=True -> half_pixel (continuous coords), aligned=False -> output_half_pixel
+        coordinate_transformation_mode_i=int(aligned),
+        output_height_i=out_h,
+        output_width_i=out_w,
+        sampling_ratio_i=sampling_ratio,
+        spatial_scale_f=spatial_scale,
+    )
+
+
+register_custom_op_symbolic("torchvision::roi_align", _roi_align_trt, {opset})
+
 torch.onnx.export(
     wrapper,
     dummy,
@@ -274,6 +315,7 @@ torch.onnx.export(
     input_names=["input"],
     output_names=["boxes", "scores", "labels", "pair_probs", "side"],
     do_constant_folding=True,
+    custom_opsets={{"trt": 1}},
 )
 
 # model is well under the 2GB protobuf limit; simplification is best-effort only
