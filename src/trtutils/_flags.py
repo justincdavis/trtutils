@@ -63,6 +63,9 @@ class Flags:
     ONNX_PARSE_PATH : bool
         Whether trt.OnnxParser.parse accepts a model path argument,
         required to resolve ONNX external weight files.
+    EXPLICIT_BATCH_FLAG : bool
+        Whether trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH exists.
+        Removed in TensorRT 11, where networks are always explicit batch.
     SM_ARCH : str
         The GPU architecture name. E.g. "turing", "blackwell".
     DEVICE_NAME : str
@@ -94,6 +97,7 @@ class Flags:
     TRT_10: bool = False
     STRONGLY_TYPED_SUPPORTED: bool = False
     ONNX_PARSE_PATH: bool = False
+    EXPLICIT_BATCH_FLAG: bool = False
     TRT_HAS_UINT8: bool = False
     TRT_HAS_INT64: bool = False
     NEW_CAN_RUN_ON_DLA: bool = False
@@ -181,6 +185,7 @@ FLAGS.STRONGLY_TYPED_SUPPORTED = hasattr(
 # pybind docstring carries the signature, cpu stubs have no OnnxParser
 _parse_doc = getattr(getattr(trt, "OnnxParser", None), "parse", None).__doc__ or ""
 FLAGS.ONNX_PARSE_PATH = "path" in _parse_doc
+FLAGS.EXPLICIT_BATCH_FLAG = hasattr(trt.NetworkDefinitionCreationFlag, "EXPLICIT_BATCH")
 
 # Set system flags
 FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()
