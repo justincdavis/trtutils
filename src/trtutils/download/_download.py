@@ -18,6 +18,7 @@ from ._models import (
     export_deimv2,
     export_depth_anything_v2,
     export_dfine,
+    export_hands23,
     export_hoi_detr,
     export_rfdetr,
     export_rtdetrv1,
@@ -185,6 +186,8 @@ def download_model(
         export_func = export_depth_anything_v2
     elif "hoi_detr" in model:
         export_func = export_hoi_detr
+    elif "hands23" in model:
+        export_func = export_hands23
 
     # Single call site
     if export_func is None:

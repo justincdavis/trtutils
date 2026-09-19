@@ -31,6 +31,7 @@ _EXPECTED_FAMILIES = [
     "torchvision_classifier",
     "depth_anything_v2",
     "hoi_detr",
+    "hands23",
 ]
 
 _EXPECTED_MODELS = [
@@ -60,6 +61,7 @@ _EXPECTED_MODELS = [
     "vgg11",
     "depth_anything_v2_small",
     "hoi_detr_vitl",
+    "hands23_x101",
 ]
 
 
