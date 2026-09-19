@@ -89,8 +89,8 @@ time_ms, energy_mj, transitions, gpu_layers, dla_layers = build_engine(
     onnx="model.onnx",
     output="model.engine",
     calibration_batcher=batcher,
-    energy_ratio=0.8,       # ECT = 80% of GPU-only energy
-    max_transitions=1,      # max GPU<->DLA switches
+    energy_ratio=0.8,  # ECT = 80% of GPU-only energy
+    max_transitions=1,  # max GPU<->DLA switches
     verbose=True,
 )
 

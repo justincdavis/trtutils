@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from trtutils._config import CONFIG
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
 
@@ -14,6 +15,8 @@ from trtutils.compat._libs import trt
 def read_onnx(
     onnx: Path | str,
     workspace: float = 4.0,
+    *,
+    strongly_typed: bool = False,
 ) -> tuple[
     trt.INetworkDefinition,
     trt.IBuilder,
@@ -30,6 +33,11 @@ def read_onnx(
     workspace : float
         The size of the workspace in gigabytes.
         Default is 4.0 GiB.
+    strongly_typed : bool, optional
+        If True, create the network with the STRONGLY_TYPED flag so that
+        precision is determined by the ONNX graph (Q/DQ nodes) rather than
+        builder flags. Required on Blackwell (SM 10.0+) for mixed INT8+FP8.
+        By default, False.
 
     Returns
     -------
@@ -45,7 +53,8 @@ def read_onnx(
     ValueError
         If the onnx model path does not have .onnx extension
     RuntimeError
-        If the ONNX model cannot be parsed
+        If the ONNX model cannot be parsed, or if strongly_typed is True
+        but the installed TensorRT does not support strongly-typed networks.
 
     """
     # load libnvinfer plugins
@@ -73,9 +82,16 @@ def read_onnx(
         config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_bytes)
 
     # make network
-    network = builder.create_network(
-        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH),
-    )
+    network_flags = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    if strongly_typed:
+        if not FLAGS.STRONGLY_TYPED_SUPPORTED:
+            err_msg = (
+                "Installed TensorRT does not support strongly-typed networks "
+                "(NetworkDefinitionCreationFlag.STRONGLY_TYPED not found)."
+            )
+            raise RuntimeError(err_msg)
+        network_flags |= 1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED)
+    network = builder.create_network(network_flags)
 
     # setup parser
     parser = trt.OnnxParser(network, LOG)
