@@ -86,8 +86,10 @@ sys.path.insert(0, r"{repo_dir}")
 
 import onnx
 import torch
+import torchvision
 from torch import nn
 from torch.nn import functional as F
+from torchvision.ops import boxes as _tv_boxes
 
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
@@ -96,6 +98,22 @@ from detectron2.structures import Boxes, ImageList
 
 # importing this package registers hoRCNNROIHeads plus the z/h/t/g relation heads
 from hodetector.modeling import roi_heads  # noqa: F401
+
+
+def _nms_coordinate_trick(boxes, scores, idxs, iou_threshold):
+    # unscripted copy of torchvision's helper: the original is @script_if_tracing,
+    # which wraps the NMS in an empty-input If subgraph that TensorRT's Myelin
+    # optimizer rejects (data-dependent shapes must be top-level, not in an If branch).
+    # some per-image class buckets are genuinely empty during tracing (dummy zero
+    # image), so pad with a zero before max() -- box coords are always >= 0, so this
+    # never changes the true max for non-empty input and avoids a python-level branch
+    max_coordinate = torch.cat([boxes.reshape(-1), boxes.new_zeros(1)]).max()
+    offsets = idxs.to(boxes) * (max_coordinate + torch.tensor(1).to(boxes))
+    boxes_for_nms = boxes + offsets[:, None]
+    return torchvision.ops.nms(boxes_for_nms, scores, iou_threshold)
+
+
+_tv_boxes._batched_nms_coordinate_trick = _nms_coordinate_trick
 
 S = {imgsz}
 K = {_TOPK}
