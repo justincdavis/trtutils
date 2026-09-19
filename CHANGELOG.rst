@@ -1,3 +1,13 @@
+Unreleased
+----------
+
+Added
+^^^^^
+* ``image.HandInteractionDetector`` for hand-object interaction models with a unified,
+  fixed-K output contract shared across model families
+* ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``
+* Download support for ``hoi_detr_vitl`` and ``hands23_x101``
+
 0.6.1 (2025-06-17)
 ------------------
 

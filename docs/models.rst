@@ -76,8 +76,19 @@ Classification
 --------------
 
 1. **Torchvision Classifiers**
-   
+
    - See: `PyTorch Vision Classification Models <https://docs.pytorch.org/vision/main/models.html#classification>`_
+
+Hand-Object Interaction
+------------------------
+
+1. **HOI-DETR**
+
+   - GitHub: `AhmadDarKhalil/HOI-DETR <https://github.com/AhmadDarKhalil/HOI-DETR>`_
+
+2. **Hands23**
+
+   - GitHub: `EvaCheng-cty/hands23_detector <https://github.com/EvaCheng-cty/hands23_detector>`_
 
 Model Download Support
 ----------------------
@@ -106,6 +117,12 @@ DETR Models
 - **DEIM**: Multiple configurations available
 - **DEIMv2**: ``deimv2_atto``, ``deimv2_femto``, ``deimv2_pico``, ``deimv2_n``, ``deimv2_s``, ``deimv2_m``, ``deimv2_l``, ``deimv2_x``
 - **RF-DETR**: Multiple configurations available
+
+Hand-Object Interaction Models
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **HOI-DETR**: ``hoi_detr_vitl``
+- **Hands23**: ``hands23_x101``
 
 Example Usage
 ~~~~~~~~~~~~~
