@@ -5,4 +5,12 @@ updates:
     schedule:
       interval: "daily"
     exclude-paths:
-      - "**/requirements*.txt"
+      # pinned download/build envs, not library deps
+      - "src/trtutils/download/requirements/**"
+      - "src/trtutils/download/requirements_tools/**"
+      - "docker/**"
+      - "demos/**"
+      - "docs/requirements.txt"
+    ignore:
+      # lower bound required for Jetpack 5 support
+      - dependency-name: "nvtx"
