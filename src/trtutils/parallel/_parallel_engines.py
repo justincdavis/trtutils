@@ -71,7 +71,7 @@ class ParallelTRTEngines:
             else:
                 engine = engine_info
             q_engine = QueuedTRTEngine(
-                engine=engine,  # ty: ignore[invalid-argument-type]
+                engine=engine,
                 warmup_iterations=warmup_iterations,
                 warmup=warmup,
                 dla_core=dla_core,

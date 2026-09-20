@@ -228,7 +228,7 @@ def benchmark_engines(
             engine = engine_info
         if isinstance(engine, str):
             engine = Path(engine)
-        temp_engines.append(engine)  # ty: ignore[invalid-argument-type]
+        temp_engines.append(engine)
         dla_assignments.append(dla_core)
         device_assignments.append(device)
 
