@@ -363,11 +363,15 @@ def run_download(
                 verbose=verbose,
             )
         else:
-            run_cmd(
-                ["wget", "-O", filename, config["url"]],
-                cwd=directory,
-                verbose=verbose,
-            )
+            wget_cmd = ["wget", "-O", filename, config["url"]]
+            if config.get("insecure"):
+                host = urlsplit(config["url"]).netloc
+                LOG.warning(
+                    f"Downloading {filename} from {host} WITHOUT certificate verification "
+                    "(host serves an invalid TLS certificate); integrity is not guaranteed."
+                )
+                wget_cmd.insert(1, "--no-check-certificate")
+            run_cmd(wget_cmd, cwd=directory, verbose=verbose)
 
         # Cache the downloaded file, removing existing version if it exists
         if cached_file.exists():
