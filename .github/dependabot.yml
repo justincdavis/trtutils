@@ -14,3 +14,6 @@ updates:
     ignore:
       # lower bound required for Jetpack 5 support
       - dependency-name: "nvtx"
+      # pinned per-extra to the CUDA major (cu11/cu12/cu13, jp5/jp6/jp7);
+      # dependabot tries to unify the four constraints into one range
+      - dependency-name: "cuda-python"
