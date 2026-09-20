@@ -543,7 +543,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         elif isinstance(padding, list):
             batch_padding = padding
         else:
-            batch_padding = padding  # ty: ignore[invalid-assignment]
+            batch_padding = padding
 
         # assign flags
         if preprocessed is None:
