@@ -86,7 +86,7 @@ jp6 = [
 # Jetpack 7 / CUDA 13
 cu13 = [
     "cuda-python==13.*",
-    "tensorrt_cu13>=10.13.0,<11",
+    "tensorrt_cu13>=10.13.0,<12",
 ]
 jp7 = [
     "cuda-python==13.*",
