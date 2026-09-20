@@ -1,22 +1,23 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Instance segmentation detector implementation."""
+"""Instance segmentation model implementation."""
 
 from __future__ import annotations
 
+import time
 from functools import partial
 from typing import TYPE_CHECKING, overload
 
 import numpy as np
 import nvtx
-from typing_extensions import TypeGuard
+from typing_extensions import Literal, TypeGuard
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
-from ._detector import Detector
-from ._schema import OutputSchema
+from ._image_model import ImageModel
+from ._schema import SegmentationOutputSchema, resolve_segmentation_schemas
 from .interfaces import SegmenterInterface
 from .postprocessors._segmentation import get_segmentations, postprocess_yolo_seg
 from .preprocessors import CUDAPreprocessor, TRTPreprocessor
@@ -36,14 +37,14 @@ def _is_postprocessed_outputs(
     return not outputs or isinstance(outputs[0], list)
 
 
-class Segmenter(Detector, SegmenterInterface):
+class Segmenter(ImageModel, SegmenterInterface):
     """
-    Implementation of instance segmentation detectors.
+    Implementation of instance segmentation models.
 
-    Wraps raw ultralytics segmentation task heads (no EfficientNMS grafted).
-    Postprocessed per-image outputs are ``[bboxes (N,4), scores (N,), class_ids
-    (N,), masks (N,H,W) uint8]``; masks are at original image resolution, so the
-    inherited :meth:`get_detections` keeps working unchanged.
+    Wraps raw YOLO-style segmentation heads (dense prediction head plus mask
+    prototypes, no EfficientNMS grafted). Postprocessed per-image outputs are
+    ``[bboxes (N,4), scores (N,), class_ids (N,), masks (N,H,W) uint8]``; masks
+    are at original image resolution.
     """
 
     def __init__(
@@ -59,6 +60,7 @@ class Segmenter(Detector, SegmenterInterface):
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
         input_schema: InputSchema | str | None = None,
+        output_schema: SegmentationOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -67,8 +69,6 @@ class Segmenter(Detector, SegmenterInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        extra_nms: bool | None = None,
-        agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -92,7 +92,7 @@ class Segmenter(Detector, SegmenterInterface):
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'letterbox'.
         conf_thres : float
-            The confidence threshold above which to generate detections.
+            The confidence threshold above which to generate segmentations.
             By default 0.1
         nms_iou_thres : float
             The IOU threshold used for the class-aware NMS operation.
@@ -110,11 +110,16 @@ class Segmenter(Detector, SegmenterInterface):
             Manually specify the input schema instead of auto-detection.
             By default None, which means the schema will be auto-detected from
             the engine's input names.
+        output_schema : SegmentationOutputSchema, str, optional
+            Manually specify the output schema instead of auto-detection.
+            Can be a SegmentationOutputSchema enum value or a string matching
+            the enum name (e.g., "YOLO"). By default None, which means the
+            schema will be auto-detected from the engine's output names.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
         device : int, optional
-            The CUDA device index to use for this detector. Default is None,
+            The CUDA device index to use for this model. Default is None,
             which uses the current device.
         backend : str
             The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
@@ -131,14 +136,6 @@ class Segmenter(Detector, SegmenterInterface):
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
             Only effective with async_v3 backend. Default is True.
-        extra_nms : bool, optional
-            Whether or not an additional CPU-side NMS operation should be
-            conducted by the inherited :meth:`get_detections`. Has no effect
-            on :meth:`get_segmentations`, whose NMS is configured via
-            ``nms_iou_thres`` above.
-        agnostic_nms : bool, optional
-            Whether or not the optional/additional NMS operation for
-            :meth:`get_detections` should perform class agnostic NMS.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -146,20 +143,26 @@ class Segmenter(Detector, SegmenterInterface):
             Whether or not to log additional information.
             Only covers the initialization phase.
 
+        Raises
+        ------
+        ValueError
+            If an input or output schema string is invalid.
+
         """
-        Detector.__init__(
-            self,
+        # store user-provided schema overrides for _configure_model to use
+        self._input_schema_override = input_schema
+        self._output_schema_override = output_schema
+
+        # parent creates engine, calls _configure_model() (which sets schemas),
+        # then creates preprocessors (which need _input_schema for dtype)
+        super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
             input_range=input_range,
             preprocessor=preprocessor,
             resize_method=resize_method,
-            conf_thres=conf_thres,
-            nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
-            input_schema=input_schema,
-            output_schema=OutputSchema.YOLO_SEG,
             dla_core=dla_core,
             device=device,
             backend=backend,
@@ -167,30 +170,486 @@ class Segmenter(Detector, SegmenterInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
             no_warn=no_warn,
             verbose=verbose,
         )
 
-        self._mask_thres = mask_thres
-        # rebind to inject nms_iou_thres/mask_thres, which Detector.postprocess's
-        # call site does not pass
-        self._postprocess_fn = partial(
-            postprocess_yolo_seg,
-            nms_iou_thres=nms_iou_thres,
-            mask_thres=mask_thres,
-        )
-
-        # prepend with 'seg_' to avoid conflicts with ImageModel/Detector._nvtx_tags
+        # prepend with 'seg_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
             {
+                "seg_init": f"segmenter::init [{self._tag}]",
+                "seg_postprocess": f"segmenter::postprocess [{self._tag}]",
+                "seg_run": f"segmenter::run [{self._tag}]",
                 "seg_get_segmentations": f"segmenter::get_segmentations [{self._tag}]",
                 "seg_end2end": f"segmenter::end2end [{self._tag}]",
                 "seg__end2end": f"segmenter::_end2end [{self._tag}]",
                 "seg__end2end_graph": f"segmenter::_end2end_graph [{self._tag}]",
             }
         )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["seg_init"])
+
+        self._conf_thres: float = conf_thres
+        self._nms_iou_thres: float = nms_iou_thres
+        self._mask_thres: float = mask_thres
+
+        if self._verbose:
+            LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
+            LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
+
+        # solve for the postprocessing function
+        if self._output_schema == SegmentationOutputSchema.YOLO:
+            self._postprocess_fn = partial(
+                postprocess_yolo_seg,
+                nms_iou_thres=nms_iou_thres,
+                mask_thres=mask_thres,
+            )
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # init
+
+    @property
+    def input_schema(self: Self) -> InputSchema:
+        """Get the input schema used by this model."""
+        return self._input_schema
+
+    @property
+    def output_schema(self: Self) -> SegmentationOutputSchema:
+        """Get the output schema used by this model."""
+        return self._output_schema
+
+    def _configure_model(self: Self) -> None:
+        """Auto-detect or apply input/output schemas from the loaded engine."""
+        self._input_schema, self._output_schema = resolve_segmentation_schemas(
+            self._engine,
+            self._input_schema_override,
+            self._output_schema_override,
+        )
+        self._use_image_size = self._input_schema.uses_image_size
+        self._use_scale_factor = self._input_schema.uses_scale_factor
+        self._orig_size_dtype = self._input_schema.orig_size_dtype
+
+    def postprocess(
+        self: Self,
+        outputs: list[np.ndarray],
+        ratios: list[tuple[float, float]],
+        padding: list[tuple[float, float]],
+        conf_thres: float | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[list[np.ndarray]]:
+        """
+        Postprocess the outputs.
+
+        Parameters
+        ----------
+        outputs : list[np.ndarray]
+            The raw outputs from the engine to postprocess.
+        ratios : list[tuple[float, float]]
+            The rescale ratios used during preprocessing for each image.
+        padding : list[tuple[float, float]]
+            The padding values used during preprocessing for each image.
+        conf_thres : float, optional
+            The confidence threshold to filter segmentations by.
+            If not passed, will use value from constructor.
+        no_copy : bool, optional
+            If True, do not copy the data from the allocated
+            memory. If the data is not copied, it WILL BE
+            OVERWRITTEN INPLACE once new data is generated.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        list[list[np.ndarray]]
+            The postprocessed outputs per image, each containing
+            [bboxes, scores, class_ids, masks].
+
+        """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["seg_postprocess"])
+
+        if verbose:
+            LOG.debug(f"{self._tag}: postprocess")
+
+        conf_thres = conf_thres if conf_thres is not None else self._conf_thres
+        t0 = time.perf_counter()
+        data = self._postprocess_fn(
+            outputs,
+            ratios=ratios,
+            padding=padding,
+            conf_thres=conf_thres,
+            input_size=self._input_size,
+            no_copy=no_copy,
+            verbose=verbose,
+        )
+        t1 = time.perf_counter()
+        self._post_profile = (t0, t1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # postprocess
+
+        return data
+
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def __call__(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    def __call__(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
+        conf_thres: float | None = None,
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """
+        Run the model on input.
+
+        Parameters
+        ----------
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to run the model on.
+        ratios : tuple[float, float] | list[tuple[float, float]], optional
+            The ratios generated during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        padding : tuple[float, float] | list[tuple[float, float]], optional
+            The padding values used during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        conf_thres : float, optional
+            Optional confidence threshold to filter segmentations
+            via during postprocessing.
+        preprocessed : bool, optional
+            Whether or not the inputs have been preprocessed.
+            If None, will preprocess inputs.
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs.
+            If None, will postprocess outputs.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE by
+            future inferences.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        list[np.ndarray] | list[list[np.ndarray]]
+            The outputs. For single image with postprocess=True,
+            returns list[np.ndarray]. For batch, returns batch results.
+
+        """
+        return self.run(  # ty: ignore[no-matching-overload]
+            images,
+            ratios,
+            padding,
+            conf_thres,
+            preprocessed=preprocessed,
+            postprocess=postprocess,
+            no_copy=no_copy,
+            verbose=verbose,
+        )
+
+    # run overloads - batch input (3 overloads)
+    @overload
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: list[np.ndarray],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    def run(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
+        conf_thres: float | None = None,
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """
+        Run the model on input.
+
+        Parameters
+        ----------
+        images : np.ndarray | list[np.ndarray]
+            A single image (HWC format) or list of images to run the model on.
+        ratios : tuple[float, float] | list[tuple[float, float]], optional
+            The ratios generated during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        padding : tuple[float, float] | list[tuple[float, float]], optional
+            The padding values used during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        conf_thres : float, optional
+            Optional confidence threshold to filter segmentations
+            via during postprocessing.
+        preprocessed : bool, optional
+            Whether or not the inputs have been preprocessed.
+            If None, will preprocess inputs.
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs.
+            If None, will postprocess outputs.
+            If postprocessing will occur and the inputs were
+            passed already preprocessed, then the ratios and
+            padding must be passed for postprocessing.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE by
+            future inferences.
+            In special case where, preprocessing and
+            postprocessing will occur during run and no_copy
+            was not passed (is None), then no_copy will be used
+            for preprocessing and inference stages.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        list[np.ndarray] | list[list[np.ndarray]]
+            For single image with postprocess=True: list[np.ndarray] (single image outputs).
+            For batch with postprocess=True: list[list[np.ndarray]] (per-image outputs).
+            For postprocess=False: list[np.ndarray] (raw outputs).
+
+        Raises
+        ------
+        RuntimeError
+            If postprocessing is running, but ratios/padding not found
+        ValueError
+            If preprocessed inputs are not a single batch tensor.
+
+        """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["seg_run"])
+
+        if verbose:
+            LOG.debug(f"{self._tag}: run")
+
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+            is_single = True
+        else:
+            batch_images = images
+            is_single = False
+
+        batch_ratios: list[tuple[float, float]] | None
+        batch_padding: list[tuple[float, float]] | None
+        if ratios is not None and isinstance(ratios, tuple) and isinstance(ratios[0], float):
+            batch_ratios = [ratios]
+        elif isinstance(ratios, list):
+            batch_ratios = ratios
+        else:
+            batch_ratios = ratios  # ty: ignore[invalid-assignment]
+        if (
+            padding is not None
+            and isinstance(padding, tuple)
+            and isinstance(padding[0], (int, float))
+        ):
+            batch_padding = [padding]
+        elif isinstance(padding, list):
+            batch_padding = padding
+        else:
+            batch_padding = padding
+
+        if preprocessed is None:
+            preprocessed = False
+        if postprocess is None:
+            postprocess = True
+
+        if no_copy is None and not preprocessed and postprocess:
+            # remove two sets of copies when doing preprocess/run/postprocess inside
+            # a single run call
+            no_copy_pre: bool | None = True
+            no_copy_run: bool | None = True
+            no_copy_post: bool | None = False
+        else:
+            no_copy_pre = no_copy
+            no_copy_run = no_copy
+            no_copy_post = no_copy
+
+        if verbose:
+            LOG.debug(
+                f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
+            )
+
+        if not preprocessed:
+            if verbose:
+                LOG.debug("Preprocessing inputs")
+            tensor, batch_ratios, batch_padding = self.preprocess(batch_images, no_copy=no_copy_pre)
+        else:
+            # images is already preprocessed tensor when preprocessed=True
+            if len(batch_images) != 1:
+                err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
+                raise ValueError(err_msg)
+            tensor = batch_images[0]
+
+        batch_size = len(batch_images) if not preprocessed else tensor.shape[0]
+
+        engine_inputs = [tensor]
+        if self._use_image_size:
+            orig_sizes = np.array(
+                [img.shape[:2] for img in batch_images]
+                if not preprocessed
+                else [(self._input_size[1], self._input_size[0])] * batch_size,
+                dtype=np.int32,
+            )
+            engine_inputs.append(orig_sizes)
+        if self._use_scale_factor:
+            scale_factors = np.array(batch_ratios, dtype=np.float32)
+            engine_inputs.append(scale_factors)
+
+        t0 = time.perf_counter()
+        outputs: list[np.ndarray] = self._engine(engine_inputs, no_copy=no_copy_run)
+        t1 = time.perf_counter()
+
+        if postprocess:
+            if verbose:
+                LOG.debug("Postprocessing outputs")
+            if batch_ratios is None or batch_padding is None:
+                err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
+                raise RuntimeError(err_msg)
+            postprocessed_outputs = self.postprocess(
+                outputs,
+                batch_ratios,
+                batch_padding,
+                conf_thres,
+                no_copy=no_copy_post,
+            )
+            self._infer_profile = (t0, t1)
+
+            if is_single:
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
+                return postprocessed_outputs[0]
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # run
+            return postprocessed_outputs
+
+        self._infer_profile = (t0, t1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # run
+
+        return outputs
 
     # get_segmentations overloads
     @overload
@@ -285,7 +744,7 @@ class Segmenter(Detector, SegmenterInterface):
         verbose: bool | None = ...,
     ) -> list[list[Segmentation]]: ...
 
-    def end2end(  # ty: ignore[invalid-method-override]
+    def end2end(
         self: Self,
         images: np.ndarray | list[np.ndarray],
         conf_thres: float | None = None,
@@ -351,7 +810,7 @@ class Segmenter(Detector, SegmenterInterface):
 
         return result
 
-    def _end2end(  # ty: ignore[invalid-method-override]
+    def _end2end(
         self: Self,
         images: list[np.ndarray],
         conf_thres: float | None = None,
@@ -377,7 +836,7 @@ class Segmenter(Detector, SegmenterInterface):
                 verbose=verbose,
             )
             if not _is_postprocessed_outputs(outputs):
-                err_msg = "Expected postprocessed detector outputs in end2end."
+                err_msg = "Expected postprocessed segmenter outputs in end2end."
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # _end2end
                 raise RuntimeError(err_msg)
@@ -409,7 +868,7 @@ class Segmenter(Detector, SegmenterInterface):
 
         return result
 
-    def _end2end_graph(  # ty: ignore[invalid-method-override]
+    def _end2end_graph(
         self: Self,
         images: list[np.ndarray],
         conf_thres: float | None = None,

@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Postprocessing for ultralytics oriented-bounding-box (OBB) detector heads."""
+"""Postprocessing for YOLO-style oriented bounding box (OBB) detector heads."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def postprocess_yolo_obb(
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
-    Postprocess ultralytics OBB engine output.
+    Postprocess YOLO-style OBB engine output.
 
     Expects a single output ``output0`` of shape ``(batch, 4 + nc + 1, N)`` where the
     last channel is the rotation angle in radians. Decodes, unletterboxes, and
@@ -40,7 +40,7 @@ def postprocess_yolo_obb(
     Parameters
     ----------
     outputs : list[np.ndarray]
-        Raw ultralytics OBB engine outputs (single tensor ``output0``).
+        Raw YOLO-style OBB engine outputs (single tensor ``output0``).
     ratios : list[tuple[float, float]]
         Preprocessing resize ratios per image.
     padding : list[tuple[float, float]]
@@ -88,8 +88,7 @@ def postprocess_yolo_obb(
     return results
 
 
-# not jitted: numba rejects axis= on max/argmax, and the manual loop it would
-# need is 26x slower than vectorized numpy on the no-numba path (JIT is opt-in)
+# not jitted: numba rejects axis= on max/argmax
 def _decode_obb_core(
     output: np.ndarray,
     ratios: tuple[float, float],
@@ -137,8 +136,7 @@ def _rotated_nms_indices(
     thres = 0.0 if conf_thres is None else conf_thres
 
     keep: list[int] = []
-    # ponytail: opencv has no NMSBoxesRotatedBatched, so loop over the classes
-    # actually present and run NMSBoxesRotated per class, then concat survivors
+    # opencv has no batched rotated NMS, so loop per class
     for cls_id in np.unique(class_ids):
         idx = np.where(class_ids == cls_id)[0]
         rects = [
@@ -204,9 +202,7 @@ def get_obb_detections(
     return all_results
 
 
-# ponytail: not jitted - the 4-element outputs list mixes two differently-shaped
-# 2D arrays (bboxes, rboxes) with two 1D arrays, which numba's reflected-list
-# typing can't unify. loop is over N detections (small), so this is not hot.
+# not jitted: numba can't type a list mixing 2D and 1D arrays
 def _get_obb_detections_core(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,

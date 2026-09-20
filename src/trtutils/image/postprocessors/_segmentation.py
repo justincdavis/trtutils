@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Postprocessing for ultralytics instance segmentation heads."""
+"""Postprocessing for YOLO-style instance segmentation heads."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def postprocess_yolo_seg(
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
-    Postprocess ultralytics segmentation engine output.
+    Postprocess YOLO-style segmentation engine output.
 
     Expects two outputs: ``output0`` of shape ``(batch, 4 + nc + nm, N)`` and
     ``output1`` (the mask prototypes) of shape ``(batch, nm, mh, mw)``. Decodes,
@@ -43,7 +43,7 @@ def postprocess_yolo_seg(
     Parameters
     ----------
     outputs : list[np.ndarray]
-        Raw ultralytics segmentation engine outputs ``[output0, output1]``.
+        Raw YOLO-style segmentation engine outputs ``[output0, output1]``.
     ratios : list[tuple[float, float]]
         Preprocessing resize ratios per image.
     padding : list[tuple[float, float]]
@@ -98,8 +98,7 @@ def postprocess_yolo_seg(
     return results
 
 
-# not jitted: numba rejects axis= on max/argmax, and the manual loop it would
-# need is 26x slower than vectorized numpy on the no-numba path (JIT is opt-in)
+# not jitted: numba rejects axis= on max/argmax
 def _decode_seg_core(
     output: np.ndarray,
     nm: int,
@@ -185,8 +184,7 @@ def _decode_masks(
     if input_size is not None:
         input_w, input_h = input_size
     else:
-        # ponytail: no input_size means we can't locate the letterbox content
-        # region in proto space, fall back to treating the whole proto as content
+        # no input_size: treat the whole proto as the content region
         input_w, input_h = mw, mh
         pad_x = pad_y = 0.0
 
@@ -213,8 +211,7 @@ def _decode_masks(
     masks = np.zeros((coeffs.shape[0], orig_h, orig_w), dtype=np.uint8)
     for idx in range(coeffs.shape[0]):
         cropped = mask_probs[idx, y0:y1, x0:x1]
-        # ponytail: per-detection cv2.resize to full image res is O(N*H*W) on CPU,
-        # upgrade path is a CUDA kernel or a proto-resolution retina_masks-style flag
+        # O(N*H*W) cpu resize per detection; upgrade to a CUDA kernel if it's slow
         resized = cv2.resize(cropped, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
         binary = (resized >= mask_thres).astype(np.uint8)
 

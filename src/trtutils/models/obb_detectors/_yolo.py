@@ -19,7 +19,7 @@ class YOLOv8OBB(OBBDetector, Model):
     """
     Alias of OBBDetector with default args for YOLOv8-OBB.
 
-    Ultralytics OBB weights are DOTA-trained (aerial imagery), not COCO.
+    These OBB weights are DOTA-trained (aerial imagery), not COCO.
     """
 
     _model_type = "yolov8_obb"
@@ -45,8 +45,6 @@ class YOLOv8OBB(OBBDetector, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        extra_nms: bool | None = None,
-        agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -67,8 +65,6 @@ class YOLOv8OBB(OBBDetector, Model):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -78,7 +74,7 @@ class YOLOv11OBB(OBBDetector, Model):
     """
     Alias of OBBDetector with default args for YOLOv11-OBB.
 
-    Ultralytics OBB weights are DOTA-trained (aerial imagery), not COCO.
+    These OBB weights are DOTA-trained (aerial imagery), not COCO.
     """
 
     _model_type = "yolov11_obb"
@@ -104,8 +100,6 @@ class YOLOv11OBB(OBBDetector, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        extra_nms: bool | None = None,
-        agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -126,8 +120,6 @@ class YOLOv11OBB(OBBDetector, Model):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -137,7 +129,7 @@ class YOLOv26OBB(OBBDetector, Model):
     """
     Alias of OBBDetector with default args for YOLOv26-OBB.
 
-    Ultralytics OBB weights are DOTA-trained (aerial imagery), not COCO.
+    These OBB weights are DOTA-trained (aerial imagery), not COCO.
     """
 
     _model_type = "yolov26_obb"
@@ -163,8 +155,6 @@ class YOLOv26OBB(OBBDetector, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        extra_nms: bool | None = None,
-        agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -185,8 +175,6 @@ class YOLOv26OBB(OBBDetector, Model):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
             no_warn=no_warn,
             verbose=verbose,
         )

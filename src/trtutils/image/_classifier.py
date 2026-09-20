@@ -107,11 +107,10 @@ class Classifier(ImageModel, ClassifierInterface):
             Only effective with async_v3 backend. Default is True.
         softmax : bool, optional
             Whether or not to apply softmax to the raw network outputs during
-            postprocessing. Default is True. Some networks (e.g. ultralytics
-            classification heads) already emit softmaxed probabilities in their
-            ONNX graph, in which case this should be False to avoid a double
-            softmax which would flatten the returned confidences. Can be
-            overridden per-call via `postprocess`.
+            postprocessing. Default is True. Some networks already apply
+            softmax inside their ONNX graph, in which case this should be False
+            to avoid a double softmax which would flatten the returned
+            confidences. Can be overridden per-call via `postprocess`.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.

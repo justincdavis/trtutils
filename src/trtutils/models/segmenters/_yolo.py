@@ -41,8 +41,6 @@ class YOLOv8Seg(Segmenter, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        extra_nms: bool | None = None,
-        agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -64,8 +62,6 @@ class YOLOv8Seg(Segmenter, Model):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -97,8 +93,6 @@ class YOLOv11Seg(Segmenter, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        extra_nms: bool | None = None,
-        agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -120,8 +114,6 @@ class YOLOv11Seg(Segmenter, Model):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -153,8 +145,6 @@ class YOLOv26Seg(Segmenter, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        extra_nms: bool | None = None,
-        agnostic_nms: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -176,8 +166,6 @@ class YOLOv26Seg(Segmenter, Model):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
-            extra_nms=extra_nms,
-            agnostic_nms=agnostic_nms,
             no_warn=no_warn,
             verbose=verbose,
         )

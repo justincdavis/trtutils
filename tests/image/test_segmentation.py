@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for the ultralytics segmentation postprocessor."""
+"""Tests for the YOLO-style segmentation postprocessor."""
 
 from __future__ import annotations
 

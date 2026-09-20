@@ -15,7 +15,7 @@ pytestmark = pytest.mark.cpu
 
 def _make_pred(boxes_cxcywh: list[list[float]], scores: list[float], kpts: np.ndarray) -> np.ndarray:
     """
-    Build a raw (1, 5 + K*3, N) ultralytics-pose output tensor.
+    Build a raw (1, 5 + K*3, N) YOLO-style pose head output tensor.
 
     Parameters
     ----------
@@ -29,7 +29,7 @@ def _make_pred(boxes_cxcywh: list[list[float]], scores: list[float], kpts: np.nd
     Returns
     -------
     np.ndarray
-        (1, 5 + K*3, N) tensor matching the ultralytics pose head layout.
+        (1, 5 + K*3, N) tensor matching the YOLO-style pose head layout.
 
     """
     n = len(boxes_cxcywh)

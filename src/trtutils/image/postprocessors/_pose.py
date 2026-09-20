@@ -2,7 +2,7 @@
 #
 # MIT License
 """
-Postprocessor for ultralytics pose estimation models.
+Postprocessor for YOLO-style pose estimation models.
 
 Functions
 ---------
@@ -41,13 +41,13 @@ def postprocess_yolo_pose(
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
-    Postprocess ultralytics YOLO-pose engine output.
+    Postprocess YOLO-style pose head engine output.
 
     Expects a single output of shape (batch, 5 + K*3, N) with rows (cx, cy, w, h,
     score, kpt_x_0, kpt_y_0, kpt_vis_0, ...); the number of keypoints K is derived
     from the output shape, never hardcoded. Boxes and keypoint x/y are remapped out
     of letterboxed network-input coordinates, filtered by confidence, and deduplicated
-    with NMS (single-class, since ultralytics pose only predicts "person").
+    with NMS (single-class, since this head only predicts one "person" class).
 
     Parameters
     ----------
@@ -225,8 +225,7 @@ def _get_poses_core(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,
 ) -> list[Pose]:
-    # not jitted: the outputs list mixes 1D/2D/3D arrays (scores, bboxes, keypoints),
-    # numba can't unify that into one reflected-list element type
+    # not jitted: mixed 1D/2D/3D arrays, numba can't unify types
     if conf_thres is None:
         conf_thres = 0.0
 
