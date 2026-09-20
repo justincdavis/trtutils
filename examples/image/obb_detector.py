@@ -1,7 +1,13 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""File showcasing the YOLOv11OBB oriented bounding box detector."""
+"""
+File showcasing the YOLOv11OBB oriented bounding box detector.
+
+The pretrained OBB weights are trained on DOTA, an aerial imagery dataset,
+so this example runs on an overhead photo. data/aerial.jpg is a public
+domain photograph by Carol M. Highsmith (Library of Congress).
+"""
 
 from __future__ import annotations
 
@@ -29,8 +35,7 @@ def main() -> None:
     if not engine_path.exists():
         YOLOv11OBB.build(onnx_path, engine_path)
 
-    # DOTA-trained weights expect aerial/overhead imagery, not typical COCO photos
-    image_path = DATA_DIR / "horse.jpg"
+    image_path = DATA_DIR / "aerial.jpg"
     image = cv2.imread(str(image_path))
     if image is None:
         msg = f"Could not read image: {image_path}"
@@ -50,7 +55,7 @@ def main() -> None:
         points = cv2.boxPoints(rect).astype(np.int32)
         cv2.polylines(image, [points], isClosed=True, color=(0, 255, 0), thickness=2)
 
-    output_path = DATA_DIR / "horse_obb.jpg"
+    output_path = DATA_DIR / "aerial_obb.jpg"
     cv2.imwrite(str(output_path), image)
     print(f"Saved annotated image to {output_path}")
 

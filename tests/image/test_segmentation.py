@@ -122,13 +122,11 @@ def test_nms_dedupes_overlapping_same_class_boxes() -> None:
 def test_batch_of_two_images_returns_two_entries() -> None:
     """A batch of 2 images produces 2 postprocessed entries with independent detections."""
     nm, mh, mw = 2, 4, 4
-    # image 0: one detection above conf_thres, one below
     cxcywh0 = np.array([[4.0, 12.0], [4.0, 12.0], [4.0, 4.0], [4.0, 4.0]], dtype=np.float32)
     cls_scores0 = np.array([[0.9, 0.05], [0.05, 0.02]], dtype=np.float32)
     coeffs0 = np.zeros((nm, 2), dtype=np.float32)
     pred0 = np.concatenate([cxcywh0, cls_scores0, coeffs0], axis=0)
 
-    # image 1: two non-overlapping detections, both above conf_thres
     cxcywh1 = np.array([[4.0, 12.0], [4.0, 12.0], [4.0, 4.0], [4.0, 4.0]], dtype=np.float32)
     cls_scores1 = np.array([[0.8, 0.1], [0.1, 0.7]], dtype=np.float32)
     coeffs1 = np.zeros((nm, 2), dtype=np.float32)

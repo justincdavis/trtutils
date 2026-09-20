@@ -145,12 +145,10 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             If an input or output schema string is invalid.
 
         """
-        # store user-provided schema overrides for _configure_model to use
         self._input_schema_override = input_schema
         self._output_schema_override = output_schema
 
-        # parent creates engine, calls _configure_model() (which sets schemas),
-        # then creates preprocessors (which need _input_schema for dtype)
+        # preprocessors need _input_schema, which _configure_model() sets mid-super().__init__
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -193,7 +191,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
 
-        # solve for the postprocessing function
         if self._output_schema == OBBOutputSchema.YOLO:
             self._postprocess_fn = partial(postprocess_yolo_obb, nms_iou_thres=nms_iou_thres)
         else:
@@ -286,7 +283,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
 
         return data
 
-    # __call__ overloads
     @overload
     def __call__(
         self: Self,
@@ -376,7 +372,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             verbose=verbose,
         )
 
-    # run overloads - batch input (3 overloads)
     @overload
     def run(
         self: Self,
@@ -419,7 +414,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         verbose: bool | None = ...,
     ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
 
-    # run overloads - single image input (3 overloads)
     @overload
     def run(
         self: Self,
@@ -533,7 +527,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         if verbose:
             LOG.debug(f"{self._tag}: run")
 
-        # Handle single-image input
         if isinstance(images, np.ndarray):
             batch_images: list[np.ndarray] = [images]
             is_single = True
@@ -541,7 +534,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             batch_images = images
             is_single = False
 
-        # Normalize ratios/padding to list form
         batch_ratios: list[tuple[float, float]] | None
         batch_padding: list[tuple[float, float]] | None
         if ratios is not None and isinstance(ratios, tuple) and isinstance(ratios[0], float):
@@ -561,16 +553,13 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         else:
             batch_padding = padding
 
-        # assign flags
         if preprocessed is None:
             preprocessed = False
         if postprocess is None:
             postprocess = True
 
-        # assign no_copy values
         if no_copy is None and not preprocessed and postprocess:
-            # remove two sets of copies when doing preprocess/run/postprocess inside
-            # a single run call
+            # elide two copies when preprocess/run/postprocess happen in one call
             no_copy_pre: bool | None = True
             no_copy_run: bool | None = True
             no_copy_post: bool | None = False
@@ -584,13 +573,11 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
                 f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
             )
 
-        # handle preprocessing
         if not preprocessed:
             if verbose:
                 LOG.debug("Preprocessing inputs")
             tensor, batch_ratios, batch_padding = self.preprocess(batch_images, no_copy=no_copy_pre)
         else:
-            # images is already preprocessed tensor when preprocessed=True
             if len(batch_images) != 1:
                 err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
                 if FLAGS.NVTX_ENABLED:
@@ -600,7 +587,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
 
         batch_size = len(batch_images) if not preprocessed else tensor.shape[0]
 
-        # build input list based on schema
         engine_inputs = [tensor]
         if self._use_image_size:
             orig_sizes = np.array(
@@ -614,12 +600,10 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             scale_factors = np.array(batch_ratios, dtype=np.float32)
             engine_inputs.append(scale_factors)
 
-        # execute
         t0 = time.perf_counter()
         outputs: list[np.ndarray] = self._engine(engine_inputs, no_copy=no_copy_run)
         t1 = time.perf_counter()
 
-        # handle postprocessing
         if postprocess:
             if verbose:
                 LOG.debug("Postprocessing outputs")
@@ -637,7 +621,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             )
             self._infer_profile = (t0, t1)
 
-            # Unwrap for single-image input
             if is_single:
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # run
@@ -653,7 +636,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
 
         return outputs
 
-    # get_obb_detections overloads
     @overload
     def get_obb_detections(
         self: Self,
@@ -727,7 +709,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
 
         return result_batch
 
-    # end2end overloads
     @overload
     def end2end(
         self: Self,

@@ -143,7 +143,6 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
             If an input or output schema string is invalid.
 
         """
-        # stored before super().__init__ for _configure_model() to consume
         self._input_schema_override = input_schema
         self._output_schema_override = output_schema
 
@@ -189,7 +188,6 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
             LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
 
-        # solve for the postprocessing function, future schema members add a branch here
         if self._output_schema == PoseOutputSchema.YOLO:
             self._postprocess_fn = partial(postprocess_yolo_pose, nms_iou_thres=nms_iou_thres)
         else:
@@ -289,7 +287,6 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
 
         return data
 
-    # __call__ overloads
     @overload
     def __call__(
         self: Self,
@@ -379,7 +376,6 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
             verbose=verbose,
         )
 
-    # run overloads - batch input (3 overloads)
     @overload
     def run(
         self: Self,
@@ -422,7 +418,6 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         verbose: bool | None = ...,
     ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
 
-    # run overloads - single image input (3 overloads)
     @overload
     def run(
         self: Self,
@@ -567,7 +562,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         if postprocess is None:
             postprocess = True
 
-        # remove two sets of copies when doing preprocess/run/postprocess inside a single run call
+        # elide two copies when preprocess/run/postprocess happen in one call
         if no_copy is None and not preprocessed and postprocess:
             no_copy_pre: bool | None = True
             no_copy_run: bool | None = True
@@ -645,7 +640,6 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
 
         return outputs
 
-    # get_poses overloads
     @overload
     def get_poses(
         self: Self,
@@ -719,7 +713,6 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
 
         return result_batch
 
-    # end2end overloads
     @overload
     def end2end(
         self: Self,

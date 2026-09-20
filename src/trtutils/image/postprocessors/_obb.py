@@ -113,8 +113,7 @@ def _decode_obb_core(
         class_ids = class_ids[keep]
         angle = angle[keep]
 
-    # letterbox uses a uniform ratio (ratio_width == ratio_height), so the angle
-    # is preserved exactly; only cx/cy/w/h need to be remapped out of network coords
+    # letterbox scales uniformly, so the angle survives unchanged
     cx = (cxcywh[:, 0] - pad_x) / ratio_width
     cy = (cxcywh[:, 1] - pad_y) / ratio_height
     w = cxcywh[:, 2] / ratio_width

@@ -1225,7 +1225,6 @@ class SegmenterInterface(ABC):
     def output_schema(self: Self) -> SegmentationOutputSchema:
         """Get the output schema used by this model."""
 
-    # preprocess overloads
     @overload
     @abstractmethod
     def preprocess(
@@ -1275,7 +1274,6 @@ class SegmenterInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Postprocess the outputs."""
 
-    # run overloads - batch input (3 overloads)
     @overload
     @abstractmethod
     def run(
@@ -1321,7 +1319,6 @@ class SegmenterInterface(ABC):
         verbose: bool | None = ...,
     ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
 
-    # run overloads - single image input (3 overloads)
     @overload
     @abstractmethod
     def run(
@@ -1382,7 +1379,6 @@ class SegmenterInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
-    # __call__ overloads
     @overload
     @abstractmethod
     def __call__(
@@ -1428,7 +1424,6 @@ class SegmenterInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
-    # get_segmentations overloads
     @overload
     @abstractmethod
     def get_segmentations(
@@ -1459,7 +1454,6 @@ class SegmenterInterface(ABC):
     ) -> list[Segmentation] | list[list[Segmentation]]:
         """Get the segmentations for each image."""
 
-    # end2end overloads
     @overload
     @abstractmethod
     def end2end(
@@ -1530,7 +1524,6 @@ class PoseEstimatorInterface(ABC):
     def output_schema(self: Self) -> PoseOutputSchema:
         """Get the output schema used by this model."""
 
-    # preprocess overloads
     @overload
     @abstractmethod
     def preprocess(
@@ -1580,7 +1573,6 @@ class PoseEstimatorInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Postprocess the outputs."""
 
-    # run overloads - batch input (3 overloads)
     @overload
     @abstractmethod
     def run(
@@ -1626,7 +1618,6 @@ class PoseEstimatorInterface(ABC):
         verbose: bool | None = ...,
     ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
 
-    # run overloads - single image input (3 overloads)
     @overload
     @abstractmethod
     def run(
@@ -1687,7 +1678,6 @@ class PoseEstimatorInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
-    # __call__ overloads
     @overload
     @abstractmethod
     def __call__(
@@ -1733,7 +1723,6 @@ class PoseEstimatorInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
-    # get_poses overloads
     @overload
     @abstractmethod
     def get_poses(
@@ -1764,7 +1753,6 @@ class PoseEstimatorInterface(ABC):
     ) -> list[Pose] | list[list[Pose]]:
         """Get the poses for each image."""
 
-    # end2end overloads
     @overload
     @abstractmethod
     def end2end(
@@ -1835,7 +1823,6 @@ class OBBDetectorInterface(ABC):
     def output_schema(self: Self) -> OBBOutputSchema:
         """Get the output schema used by this model."""
 
-    # preprocess overloads
     @overload
     @abstractmethod
     def preprocess(
@@ -1885,7 +1872,6 @@ class OBBDetectorInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Postprocess the outputs."""
 
-    # run overloads - batch input (3 overloads)
     @overload
     @abstractmethod
     def run(
@@ -1931,7 +1917,6 @@ class OBBDetectorInterface(ABC):
         verbose: bool | None = ...,
     ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
 
-    # run overloads - single image input (3 overloads)
     @overload
     @abstractmethod
     def run(
@@ -1992,7 +1977,6 @@ class OBBDetectorInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
-    # __call__ overloads
     @overload
     @abstractmethod
     def __call__(
@@ -2038,7 +2022,6 @@ class OBBDetectorInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
-    # get_obb_detections overloads
     @overload
     @abstractmethod
     def get_obb_detections(
@@ -2069,7 +2052,6 @@ class OBBDetectorInterface(ABC):
     ) -> list[OBBDetection] | list[list[OBBDetection]]:
         """Get the oriented bounding box detections for each image."""
 
-    # end2end overloads
     @overload
     @abstractmethod
     def end2end(

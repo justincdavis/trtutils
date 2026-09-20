@@ -152,7 +152,6 @@ def test_batch_of_two_images() -> None:
     kpts0 = np.array([[[50.0, 50.0, 1.0]], [[0.0, 0.0, 0.0]]], dtype=np.float32)
     kpts1 = np.array([[[30.0, 30.0, 1.0]], [[70.0, 70.0, 1.0]]], dtype=np.float32)
 
-    # image 0: one real detection + one below-threshold candidate
     pred0 = _make_pred([[50, 50, 20, 20], [200, 200, 10, 10]], [0.9, 0.1], kpts0)[0]
     pred1 = _make_pred([[30, 30, 10, 10], [70, 70, 10, 10]], [0.8, 0.7], kpts1)[0]
     batched = np.stack([pred0, pred1])

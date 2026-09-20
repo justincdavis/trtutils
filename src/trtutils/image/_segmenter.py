@@ -149,12 +149,10 @@ class Segmenter(ImageModel, SegmenterInterface):
             If an input or output schema string is invalid.
 
         """
-        # store user-provided schema overrides for _configure_model to use
         self._input_schema_override = input_schema
         self._output_schema_override = output_schema
 
-        # parent creates engine, calls _configure_model() (which sets schemas),
-        # then creates preprocessors (which need _input_schema for dtype)
+        # preprocessors need _input_schema, which _configure_model() sets mid-super().__init__
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -198,7 +196,6 @@ class Segmenter(ImageModel, SegmenterInterface):
             LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
 
-        # solve for the postprocessing function
         if self._output_schema == SegmentationOutputSchema.YOLO:
             self._postprocess_fn = partial(
                 postprocess_yolo_seg,
@@ -293,7 +290,6 @@ class Segmenter(ImageModel, SegmenterInterface):
 
         return data
 
-    # __call__ overloads
     @overload
     def __call__(
         self: Self,
@@ -383,7 +379,6 @@ class Segmenter(ImageModel, SegmenterInterface):
             verbose=verbose,
         )
 
-    # run overloads - batch input (3 overloads)
     @overload
     def run(
         self: Self,
@@ -426,7 +421,6 @@ class Segmenter(ImageModel, SegmenterInterface):
         verbose: bool | None = ...,
     ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
 
-    # run overloads - single image input (3 overloads)
     @overload
     def run(
         self: Self,
@@ -572,8 +566,7 @@ class Segmenter(ImageModel, SegmenterInterface):
             postprocess = True
 
         if no_copy is None and not preprocessed and postprocess:
-            # remove two sets of copies when doing preprocess/run/postprocess inside
-            # a single run call
+            # elide two copies when preprocess/run/postprocess happen in one call
             no_copy_pre: bool | None = True
             no_copy_run: bool | None = True
             no_copy_post: bool | None = False
@@ -592,7 +585,6 @@ class Segmenter(ImageModel, SegmenterInterface):
                 LOG.debug("Preprocessing inputs")
             tensor, batch_ratios, batch_padding = self.preprocess(batch_images, no_copy=no_copy_pre)
         else:
-            # images is already preprocessed tensor when preprocessed=True
             if len(batch_images) != 1:
                 err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
                 if FLAGS.NVTX_ENABLED:
@@ -651,7 +643,6 @@ class Segmenter(ImageModel, SegmenterInterface):
 
         return outputs
 
-    # get_segmentations overloads
     @overload
     def get_segmentations(
         self: Self,
@@ -725,7 +716,6 @@ class Segmenter(ImageModel, SegmenterInterface):
 
         return result_batch
 
-    # end2end overloads
     @overload
     def end2end(
         self: Self,

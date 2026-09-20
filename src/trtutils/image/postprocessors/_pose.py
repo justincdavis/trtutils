@@ -148,8 +148,7 @@ def _unletterbox_pose_core(
     adjusted_boxes[:, 3] = (adjusted_boxes[:, 3] - pad_y) / ratio_height
     adjusted_boxes = np.clip(adjusted_boxes, 0, None)
 
-    # keypoints are NOT clipped - an occluded keypoint can legitimately land just
-    # outside the frame, the visibility channel is what tells the caller to ignore it
+    # keypoints are not clipped, occluded ones can land outside the frame
     adjusted_kpt_xy = kpt_xy.copy()
     adjusted_kpt_xy[:, :, 0] = (adjusted_kpt_xy[:, :, 0] - pad_x) / ratio_width
     adjusted_kpt_xy[:, :, 1] = (adjusted_kpt_xy[:, :, 1] - pad_y) / ratio_height
