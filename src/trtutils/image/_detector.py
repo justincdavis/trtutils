@@ -24,6 +24,9 @@ from .postprocessors import (
     postprocess_efficient_nms,
     postprocess_rfdetr,
     postprocess_rtdetrv3,
+    postprocess_yolo_obb,
+    postprocess_yolo_pose,
+    postprocess_yolo_seg,
     postprocess_yolov10,
 )
 from .preprocessors import CUDAPreprocessor, TRTPreprocessor
@@ -212,6 +215,12 @@ class Detector(ImageModel, DetectorInterface):
         # solve for the postprocessing function
         if self._output_schema == OutputSchema.YOLO_V10:
             self._postprocess_fn = postprocess_yolov10
+        elif self._output_schema == OutputSchema.YOLO_SEG:
+            self._postprocess_fn = postprocess_yolo_seg
+        elif self._output_schema == OutputSchema.YOLO_POSE:
+            self._postprocess_fn = postprocess_yolo_pose
+        elif self._output_schema == OutputSchema.YOLO_OBB:
+            self._postprocess_fn = postprocess_yolo_obb
         elif self._output_schema == OutputSchema.RF_DETR:
             self._postprocess_fn = postprocess_rfdetr
         elif self._output_schema == OutputSchema.DETR:

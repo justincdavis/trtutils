@@ -1,0 +1,22 @@
+{
+  "yolov8n-obb": {
+    "url": "ultralytics",
+    "name": "yolov8n-obb"
+  },
+  "yolov8s-obb": {
+    "url": "ultralytics",
+    "name": "yolov8s-obb"
+  },
+  "yolov8m-obb": {
+    "url": "ultralytics",
+    "name": "yolov8m-obb"
+  },
+  "yolov8l-obb": {
+    "url": "ultralytics",
+    "name": "yolov8l-obb"
+  },
+  "yolov8x-obb": {
+    "url": "ultralytics",
+    "name": "yolov8x-obb"
+  }
+}

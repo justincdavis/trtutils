@@ -11,6 +11,17 @@ Added
   ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``
 * Download configs and ONNX export functions for Depth-Anything-V1
   (small / base / large) and Depth-Anything-V3 (mono-large, metric-large)
+* ``image.Segmenter``, ``image.PoseEstimator``, and ``image.OBBDetector`` for the
+  ultralytics instance segmentation, pose estimation, and oriented-bounding-box task heads,
+  subclassing ``Detector`` and reusing its run / CUDA-graph / end2end plumbing
+* ``models`` aliases ``YOLOv8Seg``/``YOLOv11Seg``/``YOLOv26Seg``,
+  ``YOLOv8Pose``/``YOLOv11Pose``/``YOLOv26Pose``, and
+  ``YOLOv8OBB``/``YOLOv11OBB``/``YOLOv26OBB``
+* ``models`` classification aliases ``YOLOv8Cls``/``YOLOv11Cls``/``YOLOv26Cls`` and a
+  ``softmax`` flag on ``Classifier`` (and ``postprocess_classifications``) so
+  already-softmaxed heads like ultralytics ``-cls`` are not double-softmaxed
+* Download support for the ``-seg``, ``-cls``, ``-pose``, and ``-obb`` variants of
+  YOLOv8, YOLOv11, and YOLOv26 (YOLOv12 does not publish these task heads upstream)
 
 Fixed
 ^^^^^

@@ -61,6 +61,13 @@ class OutputSchema(Enum):
     EFFICIENT_NMS_2 = ("num", "boxes", "scores", "classes")
     # YOLO-v10
     YOLO_V10 = ("output0",)
+    # raw ultralytics task heads (seg/pose/obb), no EfficientNMS grafted.
+    # pose/obb expose only "output0", so they are indistinguishable by name from
+    # YOLO_V10 and are never auto-detected - the wrappers always pass them explicitly.
+    # the "#" entries are discriminators to keep the enum members distinct, not tensor names.
+    YOLO_SEG = ("output0", "output1")
+    YOLO_POSE = ("output0", "#pose")
+    YOLO_OBB = ("output0", "#obb")
     # RF-DETR
     RF_DETR = ("dets", "labels")
     # RT-DETR v1/v2

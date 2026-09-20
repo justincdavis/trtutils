@@ -12,6 +12,7 @@ from trtutils._log import LOG
 def postprocess_classifications(
     outputs: list[np.ndarray],
     *,
+    softmax: bool = True,
     no_copy: bool | None = None,
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
@@ -22,6 +23,12 @@ def postprocess_classifications(
     ----------
     outputs : list[np.ndarray]
         The outputs from a classification network with batch dimension.
+    softmax : bool, optional
+        Whether or not to apply softmax to the outputs to convert logits to
+        probabilities. Default is True. Some networks (e.g. ultralytics
+        classification heads) already emit softmaxed probabilities in the
+        ONNX graph, in which case this should be False to avoid a double
+        softmax which flattens the returned confidences.
     no_copy : bool, optional
         If True, the outputs will not be copied out
         from the cuda allocated host memory. Instead,
@@ -44,7 +51,7 @@ def postprocess_classifications(
     results = []
     for i in range(batch_size):
         batch_outputs = [out[i : i + 1] for out in outputs]
-        result = _postprocess_classifications_core(batch_outputs, no_copy=no_copy)
+        result = _postprocess_classifications_core(batch_outputs, softmax=softmax, no_copy=no_copy)
         results.append(result)
     return results
 
@@ -53,13 +60,15 @@ def postprocess_classifications(
 def _postprocess_classifications_core(
     outputs: list[np.ndarray],
     *,
+    softmax: bool = True,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
-    # convert logits to probabilities
-    for output in outputs:
-        exp_values = np.exp(output - np.max(output, axis=-1, keepdims=True))
-        probabilities = exp_values / np.sum(exp_values, axis=-1, keepdims=True)
-        output[:] = probabilities
+    # convert logits to probabilities, unless the network already softmaxed them
+    if softmax:
+        for output in outputs:
+            exp_values = np.exp(output - np.max(output, axis=-1, keepdims=True))
+            probabilities = exp_values / np.sum(exp_values, axis=-1, keepdims=True)
+            output[:] = probabilities
 
     if no_copy:
         return outputs

@@ -12,6 +12,12 @@ DepthEstimatorInterface
     Interface for depth estimators.
 DetectorInterface
     Interface for image detectors.
+OBBDetectorInterface
+    Interface for oriented bounding box detectors.
+PoseEstimatorInterface
+    Interface for pose estimation models.
+SegmenterInterface
+    Interface for instance segmentation models.
 HandInteractionDetectorInterface
     Interface for hand-object interaction detectors.
 
@@ -31,6 +37,9 @@ if TYPE_CHECKING:
     from trtutils._engine import TRTEngine
     from trtutils.image._schema import InputSchema, OutputSchema
     from trtutils.image.postprocessors._hand_interaction import HandInteraction
+    from trtutils.image.postprocessors._obb import OBBDetection
+    from trtutils.image.postprocessors._pose import Pose
+    from trtutils.image.postprocessors._segmentation import Segmentation
 
 
 class ClassifierInterface(ABC):
@@ -1169,3 +1178,130 @@ class DetectorInterface(ABC):
         | list[list[tuple[tuple[int, int, int, int], float, int]]]
     ):
         """Perform end to end inference for a batch of images."""
+
+
+class SegmenterInterface(DetectorInterface):
+    """
+    Interface for instance segmentation models.
+
+    Extends the detector contract: postprocessed per-image outputs are
+    ``[bboxes (N,4), scores (N,), class_ids (N,), masks (N,H,W)]``, where masks
+    are ``uint8`` at original image resolution. The extra array is appended, so
+    :meth:`get_detections` continues to work unchanged.
+    """
+
+    # get_segmentations overloads
+    @overload
+    @abstractmethod
+    def get_segmentations(
+        self: Self,
+        outputs: list[np.ndarray],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[Segmentation]: ...
+
+    @overload
+    @abstractmethod
+    def get_segmentations(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[Segmentation]]: ...
+
+    @abstractmethod
+    def get_segmentations(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+        conf_thres: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[Segmentation] | list[list[Segmentation]]:
+        """Get the segmentations for each image."""
+
+
+class PoseEstimatorInterface(DetectorInterface):
+    """
+    Interface for pose estimation models.
+
+    Extends the detector contract: postprocessed per-image outputs are
+    ``[bboxes (N,4), scores (N,), class_ids (N,), keypoints (N,K,3)]``, where
+    each keypoint is ``(x, y, visibility)`` in original image coordinates. The
+    extra array is appended, so :meth:`get_detections` continues to work unchanged.
+    """
+
+    # get_poses overloads
+    @overload
+    @abstractmethod
+    def get_poses(
+        self: Self,
+        outputs: list[np.ndarray],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[Pose]: ...
+
+    @overload
+    @abstractmethod
+    def get_poses(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[Pose]]: ...
+
+    @abstractmethod
+    def get_poses(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+        conf_thres: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[Pose] | list[list[Pose]]:
+        """Get the poses for each image."""
+
+
+class OBBDetectorInterface(DetectorInterface):
+    """
+    Interface for oriented bounding box detectors.
+
+    Extends the detector contract: postprocessed per-image outputs are
+    ``[bboxes (N,4), scores (N,), class_ids (N,), rboxes (N,5)]``. ``rboxes`` is
+    the authoritative ``(cx, cy, w, h, angle)`` with angle in radians; ``bboxes``
+    is the derived enclosing axis-aligned box, so :meth:`get_detections`
+    continues to work unchanged.
+    """
+
+    # get_obb_detections overloads
+    @overload
+    @abstractmethod
+    def get_obb_detections(
+        self: Self,
+        outputs: list[np.ndarray],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[OBBDetection]: ...
+
+    @overload
+    @abstractmethod
+    def get_obb_detections(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[OBBDetection]]: ...
+
+    @abstractmethod
+    def get_obb_detections(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+        conf_thres: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[OBBDetection] | list[list[OBBDetection]]:
+        """Get the oriented bounding box detections for each image."""

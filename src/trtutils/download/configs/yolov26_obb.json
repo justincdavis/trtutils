@@ -1,0 +1,22 @@
+{
+  "yolov26n-obb": {
+    "url": "ultralytics",
+    "name": "yolo26n-obb"
+  },
+  "yolov26s-obb": {
+    "url": "ultralytics",
+    "name": "yolo26s-obb"
+  },
+  "yolov26m-obb": {
+    "url": "ultralytics",
+    "name": "yolo26m-obb"
+  },
+  "yolov26l-obb": {
+    "url": "ultralytics",
+    "name": "yolo26l-obb"
+  },
+  "yolov26x-obb": {
+    "url": "ultralytics",
+    "name": "yolo26x-obb"
+  }
+}
