@@ -69,19 +69,19 @@ dependencies = [
 # repeat pattern for each Jetpack/CUDA version
 # Jetpack 5 / CUDA 11
 cu11 = [
-    "cuda-python==11.*",
+    "cuda-python>=11,<14",
     "tensorrt_cu11>=8.0.0",
 ]
 jp5 = [
-    "cuda-python==11.*",
+    "cuda-python>=11,<14",
 ]
 # Jetpack 6 / CUDA 12
 cu12 = [
-    "cuda-python==12.*",
+    "cuda-python>=12,<14",
     "tensorrt_cu12>=10.0.0,<11",
 ]
 jp6 = [
-    "cuda-python==12.*",
+    "cuda-python>=12,<14",
 ]
 # Jetpack 7 / CUDA 13
 cu13 = [
