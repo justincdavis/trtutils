@@ -1,6 +1,6 @@
 addict==2.4.0
 antlr4-python3-runtime==4.9.3
-anyio==4.15.1
+anyio==4.14.2
 apsw==3.53.4.0
 argcomplete==3.7.2
 certifi==2026.7.22
@@ -36,7 +36,7 @@ networkx==3.4.2
 numexpr==2.14.1
 numpy==1.26.4
 omegaconf==2.3.1
-onnx==1.23.0
+onnx==1.22.0
 onnx-ir==1.0.0
 onnxruntime==1.23.2
 onnxscript==0.7.2
@@ -44,7 +44,7 @@ opencv-python==4.11.0.86
 packaging==26.3
 pandas==2.3.3
 pillow==12.3.0
-pip==26.2.1
+pip==26.2
 protobuf==7.36.2
 pygments==2.21.0
 pyparsing==3.3.2
@@ -56,11 +56,11 @@ ruamel-yaml==0.19.1
 safetensors==0.8.0
 scipy==1.15.3
 seaborn==0.13.2
-setuptools==84.0.0
+setuptools==83.0.0
 six==1.17.0
 sympy==1.14.0
 tomli==2.4.1
-torch==2.14.0+cpu
+torch==2.14.0
 torchvision==0.29.0+cpu
 tqdm==4.70.1
 trimesh==5.1.0
