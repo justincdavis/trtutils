@@ -94,9 +94,10 @@ def test_nvrtc_error_handling() -> None:
 @pytest.mark.usefixtures("cuda_context")
 def test_compile_and_load_kernel() -> None:
     """Full compile -> load -> launch lifecycle with opts and verbose."""
-    # compile returns chararray
+    # compile returns uint8 ptx buffer
     ptx = compile_kernel(TRIVIAL_KERNEL, "trivial_kernel")
-    assert isinstance(ptx, np.char.chararray)
+    assert isinstance(ptx, np.ndarray)
+    assert ptx.dtype == np.uint8
     # load returns module and kernel
     module, kernel = load_kernel(ptx, "trivial_kernel")
     assert module is not None
