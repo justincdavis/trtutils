@@ -61,6 +61,7 @@ dependencies = [
 
 [project.urls]
 "Homepage" = "https://github.com/justincdavis/trtutils"
+"Documentation" = "https://justincdavis.github.io/trtutils/"
 "Bug Tracker" = "https://github.com/justincdavis/trtutils/issues"
 
 [project.optional-dependencies]

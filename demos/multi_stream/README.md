@@ -47,7 +47,7 @@ Or they can be [downloaded here](https://drive.google.com/file/d/1tdVSulYQIlBd86
 
 ## Engine Requirements
 
-Refer to [YOLOX conversion and build tutorial page](https://trtutils.readthedocs.io/en/latest/tutorials/yolo/yolox.html) on how to convert/build YOLOX models/engines.
+Refer to [YOLOX conversion and build tutorial page](https://justincdavis.github.io/trtutils/tutorials/yolo/yolox.html) on how to convert/build YOLOX models/engines.
 
 The configuration used to get ~190 FPS (GPU + DLA0 + DLA1) on Orin AGX is as follows:
 

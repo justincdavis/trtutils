@@ -1,6 +1,0 @@
-sphinx
-sphinx_design
-furo
-myst_parser
-numpy
-trtutils[docs]

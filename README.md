@@ -110,17 +110,17 @@ python3 -m trtutils build --onnx yolov8n.onnx --output yolov8n.engine --fp16
 python3 -m trtutils benchmark --engine yolov8n.engine --iterations 1000
 ```
 
-See the [CLI reference](https://trtutils.readthedocs.io/en/latest/cli.html) for
+See the [CLI reference](https://justincdavis.github.io/trtutils/cli.html) for
 all commands (`benchmark`, `build`, `build_yolo`, `build_dla`, `quantize`,
 `detect`, `classify`, `inspect`, `profile`, `download`, `trtexec`, and more).
 
 ## Supported Models
 
-The models listed in the [documentation](https://trtutils.readthedocs.io/en/latest/models.html) are officially supported for inference, including the YOLO family (v3, v5, v7 through v13, v26, YOLOX), DETR-based detectors (RT-DETR v1/v2/v3, D-FINE, DEIM, DEIMv2, RF-DETR), torchvision classifiers, DepthAnything V1/V2/V3, and HOI-DETR/Hands23.
+The models listed in the [documentation](https://justincdavis.github.io/trtutils/models.html) are officially supported for inference, including the YOLO family (v3, v5, v7 through v13, v26, YOLOX), DETR-based detectors (RT-DETR v1/v2/v3, D-FINE, DEIM, DEIMv2, RF-DETR), torchvision classifiers, DepthAnything V1/V2/V3, and HOI-DETR/Hands23.
 
 ## Documentation
 
-For detailed documentation, including advanced usage, examples, and API reference, visit our [documentation site](https://trtutils.readthedocs.io/).
+For detailed documentation, including advanced usage, examples, and API reference, visit our [documentation site](https://justincdavis.github.io/trtutils/).
 
 ## Examples
 
