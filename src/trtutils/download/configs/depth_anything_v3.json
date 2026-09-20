@@ -1,0 +1,12 @@
+{
+    "depth_anything_v3_mono_large": {
+        "url": "huggingface_hub",
+        "name": "depth_anything_v3_mono_large",
+        "repo_id": "depth-anything/DA3MONO-LARGE"
+    },
+    "depth_anything_v3_metric_large": {
+        "url": "huggingface_hub",
+        "name": "depth_anything_v3_metric_large",
+        "repo_id": "depth-anything/DA3METRIC-LARGE"
+    }
+}

@@ -7,6 +7,16 @@ Added
   fixed-K output contract shared across model families
 * ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``
 * Download support for ``hoi_detr_vitl`` and ``hands23_x101``
+* ``models.DepthAnythingV1`` and ``models.DepthAnythingV3`` aliases for the
+  ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``
+* Download configs and ONNX export functions for Depth-Anything-V1
+  (small / base / large) and Depth-Anything-V3 (mono-large, metric-large)
+
+Fixed
+^^^^^
+* ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
+  notice into the exported requirements file
+
 
 0.6.1 (2025-06-17)
 ------------------
@@ -149,7 +159,7 @@ Added
 
 Added
 ^^^^^
-* Variations of ``impls.yolo.YOLO``: YOLO7, YOLO8, YOLO9, YOLO10, and YOLOX
+* Variations of ``impls.yolo.YOLO``: YOLOv7, YOLOv8, YOLOv9, YOLOv10, and YOLOX
 
 Changed
 ^^^^^^^

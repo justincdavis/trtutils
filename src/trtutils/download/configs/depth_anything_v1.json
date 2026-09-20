@@ -1,0 +1,17 @@
+{
+    "depth_anything_v1_small": {
+        "url": "huggingface_hub",
+        "name": "depth_anything_v1_small",
+        "encoder": "vits"
+    },
+    "depth_anything_v1_base": {
+        "url": "huggingface_hub",
+        "name": "depth_anything_v1_base",
+        "encoder": "vitb"
+    },
+    "depth_anything_v1_large": {
+        "url": "huggingface_hub",
+        "name": "depth_anything_v1_large",
+        "encoder": "vitl"
+    }
+}

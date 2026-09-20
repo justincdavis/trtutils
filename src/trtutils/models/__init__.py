@@ -88,12 +88,16 @@ Classes
     Alias for the Classifier class with args preset for ViT.
 :class:`WideResNet`
     Alias for the Classifier class with args preset for Wide ResNet.
+:class:`DepthAnythingV1`
+    Alias for the DepthEstimator class with args preset for Depth-Anything-V1.
 :class:`DepthAnythingV2`
     Alias for the DepthEstimator class with args preset for Depth-Anything-V2.
 :class:`HOIDETR`
     Alias for the HandInteractionDetector class with args preset for HOI-DETR.
 :class:`Hands23`
     Alias for the HandInteractionDetector class with args preset for Hands23.
+:class:`DepthAnythingV3`
+    Alias for the DepthEstimator class with args preset for Depth-Anything-V3.
 
 """
 
@@ -122,7 +126,7 @@ from .classifiers import (
     ViT,
     WideResNet,
 )
-from .depth_estimators import DepthAnythingV2
+from .depth_estimators import DepthAnythingV1, DepthAnythingV2, DepthAnythingV3
 from .detectors import (
     DEIM,
     DETR,
@@ -160,7 +164,9 @@ __all__ = [
     "ConvNeXt",
     "DEIMv2",
     "DenseNet",
+    "DepthAnythingV1",
     "DepthAnythingV2",
+    "DepthAnythingV3",
     "EfficientNet",
     "EfficientNetV2",
     "GoogLeNet",

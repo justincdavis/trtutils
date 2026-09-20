@@ -48,7 +48,9 @@ _ROUTING_CASES = [
     pytest.param("deimv2_atto", "export_deimv2", id="deimv2"),
     pytest.param("rfdetr_n", "export_rfdetr", id="rfdetr"),
     pytest.param("alexnet", "export_torchvision_classifier", id="torchvision"),
+    pytest.param("depth_anything_v1_small", "export_depth_anything_v1", id="depth_anything_v1"),
     pytest.param("depth_anything_v2_small", "export_depth_anything_v2", id="depth_anything"),
+    pytest.param("depth_anything_v3_mono_large", "export_depth_anything_v3", id="depth_anything_v3"),
     pytest.param("hoi_detr_vitl", "export_hoi_detr", id="hoi_detr"),
     pytest.param("hands23_x101", "export_hands23", id="hands23"),
 ]
