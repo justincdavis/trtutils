@@ -8,9 +8,9 @@ set -e
 # Ensure .venv-docs exists
 if [ ! -d ".venv-docs" ]; then
     echo "Creating .venv-docs environment..."
-    uv venv .venv-docs --clear --python 3.8
+    uv venv .venv-docs --clear
     . .venv-docs/bin/activate && \
-    uv pip install -r docs/requirements.txt
+    uv pip install -e ".[docs]"
 fi
 
 # Activate the venv
