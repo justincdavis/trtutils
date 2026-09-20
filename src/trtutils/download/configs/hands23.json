@@ -1,0 +1,8 @@
+{
+    "hands23_x101": {
+        "url": "https://fouheylab.eecs.umich.edu/~dandans/projects/hands23/model_weights/model_hands23.pth",
+        "weights": "model_hands23.pth",
+        "name": "hands23_x101",
+        "insecure": true
+    }
+}

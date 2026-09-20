@@ -90,6 +90,10 @@ Classes
     Alias for the Classifier class with args preset for Wide ResNet.
 :class:`DepthAnythingV2`
     Alias for the DepthEstimator class with args preset for Depth-Anything-V2.
+:class:`HOIDETR`
+    Alias for the HandInteractionDetector class with args preset for HOI-DETR.
+:class:`Hands23`
+    Alias for the HandInteractionDetector class with args preset for Hands23.
 
 """
 
@@ -141,11 +145,13 @@ from .detectors import (
     YOLOv13,
     YOLOv26,
 )
+from .hand_interaction import HOIDETR, Hands23
 
 __all__ = [
     "DEIM",
     "DETR",
     "DFINE",
+    "HOIDETR",
     "RFDETR",
     "VGG",
     "YOLO",
@@ -158,6 +164,7 @@ __all__ = [
     "EfficientNet",
     "EfficientNetV2",
     "GoogLeNet",
+    "Hands23",
     "Inception",
     "MNASNet",
     "MaxViT",

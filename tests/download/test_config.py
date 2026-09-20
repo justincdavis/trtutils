@@ -30,6 +30,8 @@ _EXPECTED_FAMILIES = [
     "rfdetr",
     "torchvision_classifier",
     "depth_anything_v2",
+    "hoi_detr",
+    "hands23",
 ]
 
 _EXPECTED_MODELS = [
@@ -58,6 +60,8 @@ _EXPECTED_MODELS = [
     "resnet18",
     "vgg11",
     "depth_anything_v2_small",
+    "hoi_detr_vitl",
+    "hands23_x101",
 ]
 
 

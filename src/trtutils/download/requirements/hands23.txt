@@ -1,0 +1,13 @@
+# CPU-only stack for the detectron2 Faster R-CNN Hands23 export.
+# detectron2 itself has no wheels; it is installed separately (git+commit, compiled
+# in export_hands23) since its setup.py needs torch already present to build.
+torch==2.1.2
+torchvision==0.16.2
+pillow==9.5.0
+numpy<2
+opencv-python
+onnx
+onnxsim
+# no build isolation for detectron2, so the venv needs setuptools/wheel itself
+setuptools<81
+wheel

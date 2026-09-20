@@ -18,6 +18,8 @@ from ._models import (
     export_deimv2,
     export_depth_anything_v2,
     export_dfine,
+    export_hands23,
+    export_hoi_detr,
     export_rfdetr,
     export_rtdetrv1,
     export_rtdetrv2,
@@ -182,6 +184,10 @@ def download_model(
         export_func = export_rfdetr
     elif "depth_anything_v2" in model:
         export_func = export_depth_anything_v2
+    elif "hoi_detr" in model:
+        export_func = export_hoi_detr
+    elif "hands23" in model:
+        export_func = export_hands23
 
     # Single call site
     if export_func is None:
@@ -300,6 +306,10 @@ def download(
             verbose=verbose,
         )
         shutil.copy(model_path, output)
+        # onnx external weights (>2GB models) live in a sidecar referenced by filename
+        sidecar = model_path.with_name(model_path.name + ".data")
+        if sidecar.exists():
+            shutil.copy(sidecar, output.parent / sidecar.name)
 
     if verbose is not None:
         LOG.info(f"Model {model} downloaded and converted to ONNX.")

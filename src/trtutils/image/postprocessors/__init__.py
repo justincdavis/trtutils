@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """
@@ -16,6 +16,10 @@ Functions
     Postprocess the output of a depth estimation model.
 :func:`get_detections`
     Get the detections from unified postprocessed outputs.
+:func:`get_interactions`
+    Pair hands with objects from postprocessed hand-object interaction outputs.
+:func:`postprocess_hand_interactions`
+    Postprocess the output of a hand-object interaction model.
 :func:`postprocess_yolov10`
     Postprocess the output of a YOLO-v10 model.
 :func:`postprocess_rfdetr`
@@ -44,16 +48,20 @@ from ._detection import (
     postprocess_rtdetrv3,
     postprocess_yolov10,
 )
+from ._hand_interaction import HandInteraction, get_interactions, postprocess_hand_interactions
 
 __all__ = [
+    "HandInteraction",
     "get_classifications",
     "get_depth_maps",
     "get_detections",
+    "get_interactions",
     "postprocess_classifications",
     "postprocess_depth",
     "postprocess_detr",
     "postprocess_detr_lbs",
     "postprocess_efficient_nms",
+    "postprocess_hand_interactions",
     "postprocess_rfdetr",
     "postprocess_rtdetrv3",
     "postprocess_yolov10",

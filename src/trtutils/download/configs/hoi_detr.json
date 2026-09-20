@@ -1,0 +1,7 @@
+{
+    "hoi_detr_vitl": {
+        "url": "https://huggingface.co/ahmaddarkhalil/hoi-detr/resolve/main/epoch_5.pth?download=true",
+        "weights": "epoch_5.pth",
+        "name": "hoi_detr_vitl"
+    }
+}

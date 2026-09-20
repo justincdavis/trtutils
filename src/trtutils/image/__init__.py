@@ -27,6 +27,8 @@ Classes
     Wrapper around depth estimation models.
 :class:`Detector`
     Wrapper around detection models.
+:class:`HandInteractionDetector`
+    Wrapper around hand-object interaction models.
 :class:`SAHI`
     SAHI wrapper for slicing aided inference.
 :class:`ImageModel`
@@ -47,6 +49,7 @@ from . import (
 from ._classifier import Classifier
 from ._depth_estimator import DepthEstimator
 from ._detector import Detector
+from ._hand_interaction import HandInteractionDetector
 from ._image_model import ImageModel
 from .sahi import SAHI
 
@@ -55,6 +58,7 @@ __all__ = [
     "Classifier",
     "DepthEstimator",
     "Detector",
+    "HandInteractionDetector",
     "ImageModel",
     "interfaces",
     "kernels",
