@@ -6,9 +6,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, overload
 
-import numpy as np
 import nvtx
-from typing_extensions import Literal, TypeGuard
+from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
@@ -16,18 +15,12 @@ from trtutils._log import LOG
 from ._image_model import ImageModel
 from .interfaces import ClassifierInterface
 from .postprocessors import get_classifications, postprocess_classifications
-from .preprocessors import CUDAPreprocessor, TRTPreprocessor
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import numpy as np
     from typing_extensions import Self
-
-
-def _is_postprocessed_outputs(
-    outputs: list[np.ndarray] | list[list[np.ndarray]],
-) -> TypeGuard[list[list[np.ndarray]]]:
-    return not outputs or isinstance(outputs[0], list)
 
 
 class Classifier(ImageModel, ClassifierInterface):
@@ -134,21 +127,10 @@ class Classifier(ImageModel, ClassifierInterface):
         # prepend with 'cls_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
             {
-                "cls_init": f"classifier::init [{self._tag}]",
                 "cls_postprocess": f"classifier::postprocess [{self._tag}]",
-                "cls_run": f"classifier::run [{self._tag}]",
                 "cls_get_classifications": f"classifier::get_classifications [{self._tag}]",
-                "cls_end2end": f"classifier::end2end [{self._tag}]",
-                "cls__end2end": f"classifier::_end2end [{self._tag}]",
-                "cls__end2end_graph": f"classifier::_end2end_graph [{self._tag}]",
             }
         )
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["cls_init"])
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # init
 
     def postprocess(
         self: Self,
@@ -378,84 +360,17 @@ class Classifier(ImageModel, ClassifierInterface):
             If preprocessed inputs are not a single batch tensor.
 
         """
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["cls_run"])
-
-        if verbose:
-            LOG.debug(f"{self._tag}: run")
-
-        # Handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
-            is_single = True
-        else:
-            batch_images = images
-            is_single = False
-
-        # assign flags
-        if preprocessed is None:
-            preprocessed = False
-        if postprocess is None:
-            postprocess = True
-
-        # assign no_copy values
-        if no_copy is None and not preprocessed and postprocess:
-            # remove two sets of copies when doing preprocess/run/postprocess inside
-            # a single run call
-            no_copy_pre: bool | None = True
-            no_copy_run: bool | None = True
-            no_copy_post: bool | None = False
-        else:
-            no_copy_pre = no_copy
-            no_copy_run = no_copy
-            no_copy_post = no_copy
-
-        if verbose:
-            LOG.debug(
-                f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
-            )
-
-        # handle preprocessing
-        if not preprocessed:
-            if verbose:
-                LOG.debug("Preprocessing inputs")
-            tensor, _, _ = self.preprocess(batch_images, no_copy=no_copy_pre)
-        else:
-            # images is already preprocessed tensor when preprocessed=True
-            if len(batch_images) != 1:
-                err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # run
-                raise ValueError(err_msg)
-            tensor = batch_images[0]
-
-        # execute
-        t0 = time.perf_counter()
-        outputs: list[np.ndarray] = self._engine([tensor], no_copy=no_copy_run)
-        t1 = time.perf_counter()
-
-        # handle postprocessing
-        if postprocess:
-            if verbose:
-                LOG.debug("Postprocessing outputs")
-            postprocessed_outputs = self.postprocess(outputs, no_copy=no_copy_post, verbose=verbose)
-            self._infer_profile = (t0, t1)
-
-            # Unwrap for single-image input
-            if is_single:
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # run
-                return postprocessed_outputs[0]
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # run
-            return postprocessed_outputs
-
-        self._infer_profile = (t0, t1)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # run
-
-        return outputs
+        return self._run_core(
+            images,
+            None,
+            None,
+            preprocessed=preprocessed,
+            postprocess=postprocess,
+            no_copy=no_copy,
+            verbose=verbose,
+            post=lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose),
+            needs_ratios=False,
+        )
 
     # get_classifications overloads
     @overload
@@ -509,27 +424,13 @@ class Classifier(ImageModel, ClassifierInterface):
         if verbose:
             LOG.debug(f"{self._tag}: get_classifications")
 
-        # Detect if this is single-image output (list[np.ndarray]) vs batch (list[list[np.ndarray]])
-        is_single = outputs and isinstance(outputs[0], np.ndarray)
-
-        if is_single:
-            # Wrap single image outputs for batch processing
-            batch_outputs: list[list[np.ndarray]] = [outputs]  # ty: ignore[invalid-assignment]
-            result = get_classifications(batch_outputs, top_k=top_k, verbose=verbose)
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # get_classifications
-            return result[0]  # Unwrap
-
-        result_batch = get_classifications(
-            outputs,  # ty: ignore[invalid-argument-type]
-            top_k=top_k,
-            verbose=verbose,
-        )
+        batch, single = self._as_batch(outputs)
+        result = get_classifications(batch, top_k=top_k, verbose=verbose)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # get_classifications
 
-        return result_batch
+        return result[0] if single else result
 
     # end2end overloads
     @overload
@@ -582,129 +483,15 @@ class Classifier(ImageModel, ClassifierInterface):
         Raises
         ------
         RuntimeError
-            If postprocessed outputs are not available in end2end.
-        RuntimeError
             If end2end_graph is enabled and image dimensions change after first call.
         RuntimeError
             If end2end_graph is enabled and CUDA graph capture fails.
 
         """
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["cls_end2end"])
-
-        if verbose:
-            LOG.debug(f"{self._tag}: end2end")
-
-        # Handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
-            is_single = True
-        else:
-            batch_images = images
-            is_single = False
-
-        # Dispatch based on graph flag
-        if self._e2e_graph_enabled:
-            result = self._end2end_graph(
-                batch_images,
-                top_k=top_k,
-                verbose=verbose,
-            )
-        else:
-            result = self._end2end(
-                batch_images,
-                top_k=top_k,
-                verbose=verbose,
-            )
-
-        # Unwrap for single-image input
-        if is_single:
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # end2end
-            return result[0]
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # end2end
-
-        return result
-
-    def _end2end(
-        self: Self,
-        images: list[np.ndarray],
-        top_k: int = 5,
-        *,
-        verbose: bool | None = None,
-    ) -> list[list[tuple[int, float]]]:
-        """Execute the standard end2end path without graph capture."""
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["cls__end2end"])
-
-        outputs: list[np.ndarray] | list[list[np.ndarray]]
-        # if using CPU preprocessor best you can do is remove host-to-host copies
-        if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            if verbose:
-                LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
-
-            outputs = self.run(
-                images,
-                preprocessed=False,
-                postprocess=True,
-                no_copy=True,
-                verbose=verbose,
-            )
-            if not _is_postprocessed_outputs(outputs):
-                err_msg = "Expected postprocessed classifier outputs in end2end."
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # _end2end
-                raise RuntimeError(err_msg)
-            postprocessed = outputs
-        else:
-            if verbose:
-                LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
-
-            # if using CUDA, can remove much more
-            gpu_ptr, _, _ = self._preprocessor.direct_preproc(
-                images,
-                resize=self._resize_method,
-                no_warn=True,
-                verbose=verbose,
-            )
-            raw_outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
-            postprocessed = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
-
-        # generate the classifications
-        result = get_classifications(postprocessed, top_k=top_k, verbose=verbose)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # _end2end
-
-        return result
-
-    def _end2end_graph(
-        self: Self,
-        images: list[np.ndarray],
-        top_k: int = 5,
-        *,
-        verbose: bool | None = None,
-    ) -> list[list[tuple[int, float]]]:
-        """
-        Execute graph-accelerated end2end path.
-
-        This implementation captures only TRTEngine inference in the CUDA graph.
-        Preprocessing runs outside the graph since H2D copies cannot be captured.
-        Supports CPU, CUDA, and TRT preprocessors.
-        """
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["cls__end2end_graph"])
-
-        # Use shared core graph execution
-        raw_outputs, _, _ = self._end2end_graph_core(images, verbose=verbose)
-
-        # CPU postprocessing (Classifier-specific)
-        postprocessed = self.postprocess(raw_outputs, no_copy=True, verbose=verbose)
-        result = get_classifications(postprocessed, top_k=top_k, verbose=verbose)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # _end2end_graph
-
-        return result
+        return self._end2end_core(
+            images,
+            verbose=verbose,
+            post=lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose),
+            get=lambda pp: get_classifications(pp, top_k=top_k, verbose=verbose),
+            needs_ratios=False,
+        )
