@@ -26,6 +26,8 @@ def read_onnx(
     """
     Open an ONNX model and generate TensorRT network, builder, config, and parser.
 
+    External data files are resolved relative to the ONNX model path.
+
     Parameters
     ----------
     onnx : Path, str
@@ -82,7 +84,10 @@ def read_onnx(
         config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_bytes)
 
     # make network
-    network_flags = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    # trt 11 dropped the flag, networks are always explicit batch there
+    network_flags = 0
+    if FLAGS.EXPLICIT_BATCH_FLAG:
+        network_flags |= 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
     if strongly_typed:
         if not FLAGS.STRONGLY_TYPED_SUPPORTED:
             err_msg = (
@@ -95,11 +100,16 @@ def read_onnx(
 
     # setup parser
     parser = trt.OnnxParser(network, LOG)
-    with onnx_path.open("rb") as f:
-        if not parser.parse(f.read()):
-            for error in range(parser.num_errors):
-                LOG.error(parser.get_error(error))
-            err_msg = "Cannot parse ONNX file"
-            raise RuntimeError(err_msg)
+    model_bytes = onnx_path.read_bytes()
+    # the path lets the parser resolve external weight files (>2GB models)
+    if FLAGS.ONNX_PARSE_PATH:
+        parsed = parser.parse(model_bytes, str(onnx_path))
+    else:
+        parsed = parser.parse(model_bytes)
+    if not parsed:
+        for error in range(parser.num_errors):
+            LOG.error(parser.get_error(error))
+        err_msg = "Cannot parse ONNX file"
+        raise RuntimeError(err_msg)
 
     return network, builder, config, parser

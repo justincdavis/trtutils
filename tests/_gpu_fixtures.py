@@ -144,25 +144,27 @@ def build_test_engine() -> Callable[..., Path]:
         engine_path = version_engine_path(engine_dir / f"{onnx_path.stem}_b{batch_size}.engine")
 
         if not engine_path.exists():
-            shapes = None
-            if batch_size > 1:
-                model = onnx.load(str(onnx_path))
-                shapes = []
-                for tensor in model.graph.input:
-                    dims = []
-                    for dim in tensor.type.tensor_type.shape.dim:
-                        if dim.dim_param:
-                            dims.append(1)
-                        elif dim.dim_value:
-                            dims.append(int(dim.dim_value))
-                    if not dims:
-                        continue
-                    if len(dims) >= 1:
-                        if dims[0] not in (0, 1, batch_size):
-                            err_msg = f"Model {onnx_path.name} has fixed batch {dims[0]} and cannot use {batch_size}"
-                            raise ValueError(err_msg)
-                        dims[0] = batch_size
-                    shapes.append((tensor.name, tuple(dims)))
+            # dynamic dims need an optimization profile even at batch 1
+            model = onnx.load(str(onnx_path), load_external_data=False)
+            shapes = []
+            dynamic = False
+            for tensor in model.graph.input:
+                dims = []
+                for dim in tensor.type.tensor_type.shape.dim:
+                    if dim.dim_param:
+                        dims.append(1)
+                        dynamic = True
+                    elif dim.dim_value:
+                        dims.append(int(dim.dim_value))
+                if not dims:
+                    continue
+                if dims[0] not in (0, 1, batch_size):
+                    err_msg = f"Model {onnx_path.name} has fixed batch {dims[0]} and cannot use {batch_size}"
+                    raise ValueError(err_msg)
+                dims[0] = batch_size
+                shapes.append((tensor.name, tuple(dims)))
+            if batch_size == 1 and not dynamic:
+                shapes = None
 
             try:
                 _build_engine(
