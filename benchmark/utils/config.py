@@ -26,6 +26,7 @@ MODEL_FRAMEWORKS = [
 
 BATCH_FRAMEWORKS = [
     "trtutils",
+    "trtutils(cuda pp)",
     "trtutils(graph)",
     "ultralytics(trt)",
     "ultralytics(torch)",

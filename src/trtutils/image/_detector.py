@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any, Callable, overload
 
 import numpy as np
 import nvtx
@@ -26,6 +26,7 @@ from .postprocessors import (
     postprocess_rtdetrv3,
     postprocess_yolov10,
 )
+from .postprocessors._cuda import CUDAPostprocessor
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -56,6 +57,7 @@ class Detector(ImageModel, DetectorInterface):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        postprocessor: str | None = None,
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
@@ -123,6 +125,12 @@ class Detector(ImageModel, DetectorInterface):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        postprocessor : str, optional
+            The type of postprocessor to use for end2end().
+            The options are ['cpu', 'cuda']. Default is None, which means
+            'cpu'. With 'cuda', the raw engine outputs are postprocessed on
+            the GPU and only the compacted detections are copied to the host.
+            Only effective with end2end(); run() always uses CPU postprocessing.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
             When enabled, CUDA graphs are used both at the engine level and for
@@ -170,6 +178,7 @@ class Detector(ImageModel, DetectorInterface):
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            postprocessor=postprocessor,
             cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
@@ -218,6 +227,65 @@ class Detector(ImageModel, DetectorInterface):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # init
+
+    def _create_cuda_postprocessor(self: Self) -> CUDAPostprocessor | None:
+        """Create a CUDAPostprocessor matching this detector's output schema."""
+        specs = self._engine.output_spec
+        schema = self._output_schema
+        try:
+            if schema == OutputSchema.YOLO_V10:
+                use_specs, family, k, total_dets = specs, "yolov10", specs[0][0][1], None
+            elif schema == OutputSchema.RF_DETR:
+                use_specs, family, k, total_dets = specs, "rfdetr", specs[0][0][1], None
+            elif schema in (OutputSchema.DETR, OutputSchema.DETR_LBS):
+                # LBS engine order is (labels, boxes, scores); postprocess expects (scores, labels, boxes)
+                use_specs = [specs[2], specs[0], specs[1]] if schema == OutputSchema.DETR_LBS else specs
+                family, k, total_dets = "detr", use_specs[2][0][1], None
+            elif schema == OutputSchema.RT_DETR_V3:
+                total = specs[0][0][0]
+                batch = specs[1][0][0]
+                use_specs, family, k, total_dets = specs, "rtdetrv3", total // batch, total
+            else:  # EFFICIENT_NMS (default)
+                use_specs, family, k, total_dets = specs, "efficient_nms", specs[1][0][1], None
+        except (IndexError, ValueError) as e:
+            LOG.warning(f"{self._tag}: CUDA postprocessing unavailable: {e}")
+            return None
+
+        cp = CUDAPostprocessor(
+            use_specs,
+            family,
+            k,
+            stream=self._engine.stream,
+            tag=self._tag,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+            verbose=self._verbose,
+            total_dets=total_dets,
+        )
+
+        if schema == OutputSchema.RF_DETR:
+            input_size = self._input_size
+            self._cuda_postprocess_fn = lambda b, p, r, pad, **kw: cp.postprocess_rfdetr(
+                b, p, r, pad, input_size=input_size, **kw
+            )
+        elif schema == OutputSchema.DETR_LBS:
+            self._cuda_postprocess_fn = lambda b, p, r, pad, **kw: cp.postprocess_detr(
+                b,
+                [p[2], p[0], p[1]],
+                r,
+                pad,
+                **kw,  # reorder to (scores, labels, boxes)
+            )
+        else:
+            if schema == OutputSchema.YOLO_V10:
+                self._cuda_postprocess_fn = cp.postprocess_yolov10
+            elif schema == OutputSchema.DETR:
+                self._cuda_postprocess_fn = cp.postprocess_detr
+            elif schema == OutputSchema.RT_DETR_V3:
+                self._cuda_postprocess_fn = cp.postprocess_rtdetrv3
+            else:
+                self._cuda_postprocess_fn = cp.postprocess_efficient_nms
+        return cp
 
     @property
     def input_schema(self: Self) -> InputSchema:
@@ -753,7 +821,32 @@ class Detector(ImageModel, DetectorInterface):
                 agnostic_nms=agnostic_nms,
                 verbose=verbose,
             ),
+            post_cuda=self._make_post_cuda(conf_thres, verbose=verbose),
         )
+
+    def _make_post_cuda(
+        self: Self,
+        conf_thres: float | None,
+        *,
+        verbose: bool | None,
+    ) -> (
+        Callable[[list[tuple[float, float]], list[tuple[float, float]]], list[list[np.ndarray]]]
+        | None
+    ):
+        """Build the end2end GPU-postprocess closure, or None if not enabled."""
+        if self._cuda_postproc is None:
+            return None
+        fn = self._cuda_postprocess_fn
+        if fn is None:
+            return None
+
+        def post_cuda(
+            r: list[tuple[float, float]], p: list[tuple[float, float]]
+        ) -> list[list[np.ndarray]]:
+            ptrs = [o.allocation for o in self._engine._outputs]  # noqa: SLF001
+            return fn(len(r), ptrs, r, p, conf_thres=conf_thres, verbose=verbose)
+
+        return post_cuda
 
     def _engine_inputs(
         self: Self,

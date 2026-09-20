@@ -144,6 +144,7 @@ def _runner_trtutils(mode, imgsz, bs, *, model_name, warmup_iters, image):
 
     cuda_graph = mode in ("detector_graph", "raw_graph")
     is_raw = mode in ("raw", "raw_graph")
+    cuda_postproc = "ppcuda" in mode
 
     onnx_path = ensure_model_available(
         model_name,
@@ -175,6 +176,7 @@ def _runner_trtutils(mode, imgsz, bs, *, model_name, warmup_iters, image):
             warmup_iterations=warmup_iters,
             warmup=True,
             preprocessor="cuda",
+            postprocessor="cuda" if cuda_postproc else None,
             pagelocked_mem=True,
             cuda_graph=cuda_graph,
             verbose=False,
@@ -373,6 +375,7 @@ def run_benchmark(
             )
             modes = modes=[
                 ("trtutils", "detector"),
+                ("trtutils(cuda pp)", "detector_ppcuda"),
                 ("trtutils(graph)", "detector_graph"),
                 ("tensorrt", "raw"),
                 ("tensorrt(graph)", "raw_graph"),

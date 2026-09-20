@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Callable, overload
 
+import numpy as np
 import nvtx
 from typing_extensions import Literal
 
@@ -15,11 +16,11 @@ from trtutils._log import LOG
 from ._image_model import ImageModel
 from .interfaces import HandInteractionDetectorInterface
 from .postprocessors import get_interactions, postprocess_hand_interactions
+from .postprocessors._cuda import CUDAPostprocessor
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import numpy as np
     from typing_extensions import Self
 
     from .postprocessors import HandInteraction
@@ -63,6 +64,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        postprocessor: str | None = None,
         cuda_graph: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -122,6 +124,12 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        postprocessor : str, optional
+            The type of postprocessor to use for end2end().
+            The options are ['cpu', 'cuda']. Default is None, which means
+            'cpu'. With 'cuda', the raw engine outputs are postprocessed on
+            the GPU and only the compacted results are copied to the host.
+            Only effective with end2end(); run() always uses CPU postprocessing.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
             When enabled, CUDA graphs are used both at the engine level and for
@@ -165,6 +173,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            postprocessor=postprocessor,
             cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
@@ -251,6 +260,24 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             nvtx.pop_range()  # postprocess
 
         return data
+
+    def _create_cuda_postprocessor(self: Self) -> CUDAPostprocessor | None:
+        """Create the CUDAPostprocessor for hand interaction outputs."""
+        specs = self._engine.output_spec
+        try:
+            return CUDAPostprocessor(
+                specs,
+                "hand",
+                specs[0][0][1],
+                stream=self._engine.stream,
+                tag=self._tag,
+                pagelocked_mem=self._pagelocked_mem,
+                unified_mem=self._unified_mem,
+                verbose=self._verbose,
+            )
+        except ValueError as e:
+            LOG.warning(f"{self._tag}: CUDA postprocessing unavailable: {e}")
+            return None
 
     # __call__ overloads
     @overload
@@ -648,6 +675,23 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             If end2end_graph is enabled and CUDA graph capture fails.
 
         """
+        post_cuda: (
+            Callable[[list[tuple[float, float]], list[tuple[float, float]]], list[list[np.ndarray]]]
+            | None
+        ) = None
+        if self._cuda_postproc is not None:
+            cp = self._cuda_postproc
+            batch = 1 if isinstance(images, np.ndarray) else len(images)
+            use_conf = conf_thres if conf_thres is not None else self._conf_thres
+
+            def post_cuda(
+                r: list[tuple[float, float]], p: list[tuple[float, float]]
+            ) -> list[list[np.ndarray]]:
+                ptrs = [o.allocation for o in self._engine._outputs]  # noqa: SLF001
+                return cp.postprocess_hand_interactions(
+                    batch, ptrs, r, p, use_conf, self._nms_iou_thres, verbose=verbose
+                )
+
         return self._end2end_core(
             images,
             verbose=verbose,
@@ -655,4 +699,5 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
                 o, r, p, conf_thres, no_copy=nc, verbose=verbose
             ),
             get=lambda pp: self.get_interactions(pp, pair_thres, second_pair_thres, verbose=verbose),
+            post_cuda=post_cuda,
         )

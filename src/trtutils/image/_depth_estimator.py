@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Callable, overload
 
+import numpy as np
 import nvtx
 from typing_extensions import Literal
 
@@ -15,11 +16,11 @@ from trtutils._log import LOG
 from ._image_model import ImageModel
 from .interfaces import DepthEstimatorInterface
 from .postprocessors import get_depth_maps, postprocess_depth
+from .postprocessors._cuda import CUDAPostprocessor
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import numpy as np
     from typing_extensions import Self
 
 
@@ -42,6 +43,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        postprocessor: str | None = None,
         cuda_graph: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -91,6 +93,12 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        postprocessor : str, optional
+            The type of postprocessor to use for end2end().
+            The options are ['cpu', 'cuda']. Default is None, which means
+            'cpu'. With 'cuda', the raw engine outputs are postprocessed on
+            the GPU and only the compacted results are copied to the host.
+            Only effective with end2end(); run() always uses CPU postprocessing.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
             When enabled, CUDA graphs are used both at the engine level and for
@@ -121,6 +129,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            postprocessor=postprocessor,
             cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
@@ -176,6 +185,23 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             nvtx.pop_range()  # postprocess
 
         return data
+
+    def _create_cuda_postprocessor(self: Self) -> CUDAPostprocessor | None:
+        """Create the CUDAPostprocessor for depth estimation outputs."""
+        try:
+            return CUDAPostprocessor(
+                self._engine.output_spec,
+                "depth",
+                0,
+                stream=self._engine.stream,
+                tag=self._tag,
+                pagelocked_mem=self._pagelocked_mem,
+                unified_mem=self._unified_mem,
+                verbose=self._verbose,
+            )
+        except ValueError as e:
+            LOG.warning(f"{self._tag}: CUDA postprocessing unavailable: {e}")
+            return None
 
     # __call__ overloads
     @overload
@@ -480,10 +506,25 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             If end2end_graph is enabled and CUDA graph capture fails.
 
         """
+        post_cuda: (
+            Callable[[list[tuple[float, float]], list[tuple[float, float]]], list[list[np.ndarray]]]
+            | None
+        ) = None
+        if self._cuda_postproc is not None:
+            cp = self._cuda_postproc
+            batch = 1 if isinstance(images, np.ndarray) else len(images)
+
+            def post_cuda(
+                _r: list[tuple[float, float]], _p: list[tuple[float, float]]
+            ) -> list[list[np.ndarray]]:
+                ptrs = [o.allocation for o in self._engine._outputs]  # noqa: SLF001
+                return cp.postprocess_depth(batch, ptrs, verbose=verbose)
+
         return self._end2end_core(
             images,
             verbose=verbose,
             post=lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose),
             get=lambda pp: get_depth_maps(pp, verbose=verbose),
             needs_ratios=False,
+            post_cuda=post_cuda,
         )

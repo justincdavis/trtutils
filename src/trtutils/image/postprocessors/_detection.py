@@ -254,7 +254,7 @@ def _postprocess_efficient_nms_core(
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
 
-    num_det_id = int(num_dets[0])
+    num_det_id = int(num_dets.reshape(-1)[0])
     bboxes = bboxes[0, :num_det_id]
     scores = scores[0, :num_det_id]
     class_ids = class_ids[0, :num_det_id]

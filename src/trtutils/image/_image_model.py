@@ -23,6 +23,8 @@ from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+    from .postprocessors._cuda import CUDAPostprocessor
+
 _COLOR_CHANNELS = 3
 
 # (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image
@@ -52,6 +54,7 @@ class ImageModel:
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        postprocessor: str | None = None,
         cuda_graph: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -99,6 +102,12 @@ class ImageModel:
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        postprocessor : str, optional
+            The type of postprocessor to use for end2end().
+            The options are ['cpu', 'cuda']. Default is None, which means
+            'cpu'. With 'cuda', raw engine outputs are postprocessed on the
+            GPU and only the compacted results are copied to the host.
+            Only effective for end2end(); run() always uses CPU postprocessing.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
             When enabled, CUDA graphs are used both at the engine level and for
@@ -260,6 +269,23 @@ class ImageModel:
         if warmup:
             self._preprocessor.warmup()
 
+        # set up the postprocessor (cuda postprocessing only affects end2end)
+        self._postprocessor_name: str = postprocessor if postprocessor is not None else "cpu"
+        valid_postprocessors = ["cpu", "cuda"]
+        if self._postprocessor_name not in valid_postprocessors:
+            err_msg = f"Invalid postprocessor found, options are: {valid_postprocessors}"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # init
+            raise ValueError(err_msg)
+        self._cuda_postproc: CUDAPostprocessor | None = None
+        self._cuda_postprocess_fn: Callable[..., list[list[np.ndarray]]] | None = None
+        if self._postprocessor_name == "cuda":
+            self._cuda_postproc = self._create_cuda_postprocessor()
+            if self._cuda_postproc is None:
+                LOG.warning(
+                    f"{self._tag}: CUDA postprocessing is not supported, falling back to CPU."
+                )
+
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # init
 
@@ -330,6 +356,17 @@ class ImageModel:
 
     def _configure_model(self: Self) -> None:
         """Configure model-specific state after engine load, before preprocessor creation."""
+
+    def _create_cuda_postprocessor(self: Self) -> CUDAPostprocessor | None:
+        """
+        Create the CUDA postprocessor for this model, or None if unsupported.
+
+        Called when postprocessor='cuda'. Subclasses override this to build a
+        CUDAPostprocessor matching their engine output schema. The default
+        returns None (CPU postprocessing only).
+
+        """
+        return None
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -698,8 +735,9 @@ class ImageModel:
         self: Self,
         images: list[np.ndarray],
         *,
+        copy_raw: bool = True,
         verbose: bool | None = None,
-    ) -> tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]]]:
+    ) -> tuple[list[np.ndarray] | None, list[tuple[float, float]], list[tuple[float, float]]]:
         """
         Core graph-accelerated execution shared by subclasses.
 
@@ -711,13 +749,18 @@ class ImageModel:
         ----------
         images : list[np.ndarray]
             List of images to process.
+        copy_raw : bool, optional
+            Whether to copy the raw engine outputs to the host. If False, the
+            outputs stay in device memory for a GPU postprocessor and None is
+            returned instead (no stream synchronize is performed).
         verbose : bool, optional
             Whether to log additional information.
 
         Returns
         -------
-        tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]]]
-            Raw outputs, ratios, and padding for subclass postprocessing.
+        tuple[list[np.ndarray] | None, list[tuple[float, float]], list[tuple[float, float]]]
+            Raw outputs (None if copy_raw is False), ratios, and padding
+            for subclass postprocessing.
 
         Raises
         ------
@@ -802,8 +845,12 @@ class ImageModel:
             self._e2e_graph.launch()
 
         # D2H copy of outputs + sync (outside the graph)
-        raw_outputs = self._copy_engine_outputs()
-        stream_synchronize(self._engine.stream)
+        # Skipped when a CUDA postprocessor consumes the device outputs directly
+        if copy_raw:
+            raw_outputs = self._copy_engine_outputs()
+            stream_synchronize(self._engine.stream)
+        else:
+            raw_outputs = None
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # end2end_graph_core
@@ -999,6 +1046,10 @@ class ImageModel:
         verbose: bool | None,
         post: _PostFn,
         get: Callable[[list[list[np.ndarray]]], list[T]],
+        post_cuda: Callable[
+            [list[tuple[float, float]], list[tuple[float, float]]], list[list[np.ndarray]]
+        ]
+        | None = None,
         needs_ratios: bool = True,
     ) -> T | list[T]:
         """
@@ -1019,6 +1070,10 @@ class ImageModel:
         get : Callable[[list[list[np.ndarray]]], list[T]]
             Callable extracting final per-image results from postprocessed
             outputs, e.g. ``get_detections`` or ``get_classifications``.
+        post_cuda : Callable | None, optional
+            Optional GPU postprocessor callable ``(ratios, padding) -> pp``.
+            When provided, raw engine outputs stay in device memory and are
+            postprocessed by the CUDA postprocessor instead of ``post``.
         needs_ratios : bool
             Passed through to ``_run_core`` on the CPU-preprocessor path.
 
@@ -1051,22 +1106,40 @@ class ImageModel:
         no_copy_e2e = True
         pp: list[list[np.ndarray]]
         if self._e2e_graph_enabled:
-            raw, ratios, padding = self._end2end_graph_core(batch_images, verbose=verbose)
-            pp = post(raw, ratios, padding, no_copy_e2e)
-        elif not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            if verbose:
-                LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
-            pp = self._run_core(  # ty: ignore[invalid-assignment]
-                batch_images,
-                None,
-                None,
-                preprocessed=False,
-                postprocess=True,
-                no_copy=True,
-                verbose=verbose,
-                post=post,
-                needs_ratios=needs_ratios,
+            raw, ratios, padding = self._end2end_graph_core(
+                batch_images, copy_raw=post_cuda is None, verbose=verbose
             )
+            if post_cuda is None:
+                pp = post(raw, ratios, padding, no_copy_e2e)
+            else:
+                pp = post_cuda(ratios, padding)
+        elif not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+            if post_cuda is None:
+                if verbose:
+                    LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
+                pp = self._run_core(  # ty: ignore[invalid-assignment]
+                    batch_images,
+                    None,
+                    None,
+                    preprocessed=False,
+                    postprocess=True,
+                    no_copy=True,
+                    verbose=verbose,
+                    post=post,
+                    needs_ratios=needs_ratios,
+                )
+            else:
+                # CUDA postprocessing: run the engine, then postprocess on the
+                # GPU from the device output buffers (raw D2H still happens
+                # inside engine execute(); the postprocess itself is GPU-side)
+                if verbose:
+                    LOG.debug(f"{self._tag}: end2end -> CPU preprocess + CUDA postprocess")
+                tensor, ratios, padding = self.preprocess(
+                    batch_images, no_copy=True, verbose=verbose
+                )
+                engine_inputs = self._engine_inputs(tensor, batch_images, ratios, preprocessed=True)
+                self._engine(engine_inputs, no_copy=True)
+                pp = post_cuda(ratios, padding)
         else:
             if verbose:
                 LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
@@ -1079,8 +1152,12 @@ class ImageModel:
             input_ptrs = self._build_graph_input_ptrs(
                 gpu_ptr, self._prepare_extra_engine_inputs_gpu()
             )
-            raw = self._engine.direct_exec(input_ptrs, no_warn=True)
-            pp = post(raw, ratios, padding, no_copy_e2e)
+            if post_cuda is None:
+                raw = self._engine.direct_exec(input_ptrs, no_warn=True)
+                pp = post(raw, ratios, padding, no_copy_e2e)
+            else:
+                self._engine.direct_exec(input_ptrs, no_warn=True)
+                pp = post_cuda(ratios, padding)
 
         result = get(pp)
 
