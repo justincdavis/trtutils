@@ -7,13 +7,14 @@ Features
 --------
 
 - Simple, high-level interface for TensorRT inference
-- Automatic CUDA memory management
-- Support for arbitrary TensorRT engines
+- Automatic CUDA memory management, CUDA graphs, and pagelocked/unified memory
+- Support for arbitrary TensorRT engines on CUDA 11, 12, and 13
+- Engine building from ONNX, including strongly typed, DLA, and quantized builds
 - Built-in preprocessing and postprocessing capabilities
+- End-to-end image models for detection, classification, depth estimation, and hand-object interaction
+- Model download and ONNX export for many popular architectures
 - Comprehensive type hints and documentation
-- Support for both basic engine execution and end-to-end model inference
-- Specialized support for YOLO models
-- Performance benchmarking and monitoring
+- Performance benchmarking, profiling, and monitoring
 
 Quick Start
 -----------

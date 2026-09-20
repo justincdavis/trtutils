@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
 # Configuration file for the Sphinx documentation builder.
 #
 # This file only contains a selection of the most common options. For a full
@@ -5,9 +8,9 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 import os
+import re
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
-import trtutils
 
 # -- Project information -----------------------------------------------------
 
@@ -16,7 +19,11 @@ copyright = "2024, Justin Davis"
 author = "Justin Davis"
 version = "0.7.0"
 
-assert version == trtutils.__version__  # Make sure version is consistent
+# make sure version is consistent, read as text since importing trtutils needs CUDA
+_init = os.path.join(os.path.dirname(__file__), "..", "src", "trtutils", "__init__.py")
+with open(_init) as f:
+    _pkg_version = re.search(r'__version__ = "(.*)"', f.read()).group(1)
+assert version == _pkg_version
 
 # -- General configuration ---------------------------------------------------
 
