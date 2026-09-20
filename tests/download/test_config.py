@@ -29,7 +29,9 @@ _EXPECTED_FAMILIES = [
     "deimv2",
     "rfdetr",
     "torchvision_classifier",
+    "depth_anything_v1",
     "depth_anything_v2",
+    "depth_anything_v3",
     "hoi_detr",
     "hands23",
 ]
@@ -59,7 +61,9 @@ _EXPECTED_MODELS = [
     "alexnet",
     "resnet18",
     "vgg11",
+    "depth_anything_v1_small",
     "depth_anything_v2_small",
+    "depth_anything_v3_mono_large",
     "hoi_detr_vitl",
     "hands23_x101",
 ]
