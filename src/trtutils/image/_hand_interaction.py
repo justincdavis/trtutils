@@ -6,9 +6,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, overload
 
-import numpy as np
 import nvtx
-from typing_extensions import Literal, TypeGuard
+from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
@@ -16,22 +15,16 @@ from trtutils._log import LOG
 from ._image_model import ImageModel
 from .interfaces import HandInteractionDetectorInterface
 from .postprocessors import get_interactions, postprocess_hand_interactions
-from .preprocessors import CUDAPreprocessor, TRTPreprocessor
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import numpy as np
     from typing_extensions import Self
 
     from .postprocessors import HandInteraction
 
 _EXPECTED_OUTPUT_PREFIX = ["boxes", "scores", "labels", "pair_probs"]
-
-
-def _is_postprocessed_outputs(
-    outputs: list[np.ndarray] | list[list[np.ndarray]],
-) -> TypeGuard[list[list[np.ndarray]]]:
-    return not outputs or isinstance(outputs[0], list)
 
 
 class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
@@ -180,21 +173,10 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         # prepend with 'hoi_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
             {
-                "hoi_init": f"hand_interaction_detector::init [{self._tag}]",
                 "hoi_postprocess": f"hand_interaction_detector::postprocess [{self._tag}]",
-                "hoi_run": f"hand_interaction_detector::run [{self._tag}]",
                 "hoi_get_interactions": f"hand_interaction_detector::get_interactions [{self._tag}]",
-                "hoi_end2end": f"hand_interaction_detector::end2end [{self._tag}]",
-                "hoi__end2end": f"hand_interaction_detector::_end2end [{self._tag}]",
-                "hoi__end2end_graph": f"hand_interaction_detector::_end2end_graph [{self._tag}]",
             }
         )
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["hoi_init"])
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # init
 
     def _configure_model(self: Self) -> None:
         """Validate the engine follows the unified hand-object interaction contract."""
@@ -506,124 +488,24 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         Raises
         ------
         ValueError
-            If preprocessed inputs are not a single batch tensor, or if
-            postprocessing is requested for already-preprocessed inputs
+            If preprocessed inputs are not a single batch tensor.
+        RuntimeError
+            If postprocessing is requested for already-preprocessed inputs
             without passing ratios/padding.
 
         """
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["hoi_run"])
-
-        if verbose:
-            LOG.debug(f"{self._tag}: run")
-
-        # Handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
-            is_single = True
-        else:
-            batch_images = images
-            is_single = False
-
-        # Normalize ratios/padding to list form
-        batch_ratios: list[tuple[float, float]] | None
-        batch_padding: list[tuple[float, float]] | None
-        if ratios is not None and isinstance(ratios, tuple) and isinstance(ratios[0], float):
-            batch_ratios = [ratios]
-        elif isinstance(ratios, list):
-            batch_ratios = ratios
-        else:
-            batch_ratios = ratios  # ty: ignore[invalid-assignment]
-        if (
-            padding is not None
-            and isinstance(padding, tuple)
-            and isinstance(padding[0], (int, float))
-        ):
-            batch_padding = [padding]
-        elif isinstance(padding, list):
-            batch_padding = padding
-        else:
-            batch_padding = padding
-
-        # assign flags
-        if preprocessed is None:
-            preprocessed = False
-        if postprocess is None:
-            postprocess = True
-
-        # assign no_copy values
-        if no_copy is None and not preprocessed and postprocess:
-            # remove two sets of copies when doing preprocess/run/postprocess inside
-            # a single run call
-            no_copy_pre: bool | None = True
-            no_copy_run: bool | None = True
-            no_copy_post: bool | None = False
-        else:
-            no_copy_pre = no_copy
-            no_copy_run = no_copy
-            no_copy_post = no_copy
-
-        if verbose:
-            LOG.debug(
-                f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
-            )
-
-        # handle preprocessing
-        if not preprocessed:
-            if verbose:
-                LOG.debug("Preprocessing inputs")
-            tensor, batch_ratios, batch_padding = self.preprocess(batch_images, no_copy=no_copy_pre)
-        else:
-            # images is already preprocessed tensor when preprocessed=True
-            if len(batch_images) != 1:
-                err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # run
-                raise ValueError(err_msg)
-            tensor = batch_images[0]
-
-        # execute
-        t0 = time.perf_counter()
-        outputs: list[np.ndarray] = self._engine([tensor], no_copy=no_copy_run)
-        t1 = time.perf_counter()
-
-        # handle postprocessing
-        if postprocess:
-            if verbose:
-                LOG.debug("Postprocessing outputs")
-            if batch_ratios is None or batch_padding is None:
-                err_msg = (
-                    "Must pass ratios/padding if postprocessing and passing "
-                    "already preprocessed inputs."
-                )
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # run
-                raise ValueError(err_msg)
-            postprocessed_outputs = self.postprocess(
-                outputs,
-                batch_ratios,
-                batch_padding,
-                conf_thres,
-                no_copy=no_copy_post,
-                verbose=verbose,
-            )
-            self._infer_profile = (t0, t1)
-
-            # Unwrap for single-image input
-            if is_single:
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # run
-                return postprocessed_outputs[0]
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # run
-            return postprocessed_outputs
-
-        self._infer_profile = (t0, t1)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # run
-
-        return outputs
+        return self._run_core(
+            images,
+            ratios,
+            padding,
+            preprocessed=preprocessed,
+            postprocess=postprocess,
+            no_copy=no_copy,
+            verbose=verbose,
+            post=lambda o, r, p, nc: self.postprocess(
+                o, r, p, conf_thres, no_copy=nc, verbose=verbose
+            ),
+        )
 
     # get_interactions overloads
     @overload
@@ -684,38 +566,18 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         if verbose:
             LOG.debug(f"{self._tag}: get_interactions")
 
-        # Detect if this is single-image output (list[np.ndarray]) vs batch (list[list[np.ndarray]])
-        is_single = outputs and isinstance(outputs[0], np.ndarray)
-
         pair_thres = pair_thres if pair_thres is not None else self._pair_thres
         second_thres = (
             second_pair_thres if second_pair_thres is not None else self._second_pair_thres
         )
 
-        if is_single:
-            # Wrap single image outputs for batch processing
-            batch_outputs: list[list[np.ndarray]] = [outputs]  # ty: ignore[invalid-assignment]
-            result = get_interactions(
-                batch_outputs,
-                pair_thres,
-                second_thres,
-                verbose=verbose,
-            )
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # get_interactions
-            return result[0]  # Unwrap
-
-        result_batch = get_interactions(
-            outputs,  # ty: ignore[invalid-argument-type]
-            pair_thres,
-            second_thres,
-            verbose=verbose,
-        )
+        batch, single = self._as_batch(outputs)
+        result = get_interactions(batch, pair_thres, second_thres, verbose=verbose)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # get_interactions
 
-        return result_batch
+        return result[0] if single else result
 
     # end2end overloads
     @overload
@@ -781,162 +643,16 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         Raises
         ------
         RuntimeError
-            If postprocessed outputs are not available in end2end.
-        RuntimeError
             If end2end_graph is enabled and image dimensions change after first call.
         RuntimeError
             If end2end_graph is enabled and CUDA graph capture fails.
 
         """
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["hoi_end2end"])
-
-        if verbose:
-            LOG.debug(f"{self._tag}: end2end")
-
-        # Handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
-            is_single = True
-        else:
-            batch_images = images
-            is_single = False
-
-        # Dispatch based on graph flag
-        if self._e2e_graph_enabled:
-            result = self._end2end_graph(
-                batch_images,
-                conf_thres=conf_thres,
-                pair_thres=pair_thres,
-                second_pair_thres=second_pair_thres,
-                verbose=verbose,
-            )
-        else:
-            result = self._end2end(
-                batch_images,
-                conf_thres=conf_thres,
-                pair_thres=pair_thres,
-                second_pair_thres=second_pair_thres,
-                verbose=verbose,
-            )
-
-        # Unwrap for single-image input
-        if is_single:
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # end2end
-            return result[0]
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # end2end
-
-        return result
-
-    def _end2end(
-        self: Self,
-        images: list[np.ndarray],
-        *,
-        conf_thres: float | None = None,
-        pair_thres: float | None = None,
-        second_pair_thres: float | None = None,
-        verbose: bool | None = None,
-    ) -> list[list[HandInteraction]]:
-        """Execute the standard end2end path without graph capture."""
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["hoi__end2end"])
-
-        outputs: list[np.ndarray] | list[list[np.ndarray]]
-        # if using CPU preprocessor best you can do is remove host-to-host copies
-        if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            if verbose:
-                LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
-
-            outputs = self.run(
-                images,
-                conf_thres=conf_thres,
-                preprocessed=False,
-                postprocess=True,
-                no_copy=True,
-                verbose=verbose,
-            )
-            if not _is_postprocessed_outputs(outputs):
-                err_msg = "Expected postprocessed hand interaction outputs in end2end."
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # _end2end
-                raise RuntimeError(err_msg)
-            postprocessed = outputs
-        else:
-            if verbose:
-                LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
-
-            # if using CUDA, can remove much more
-            gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
-                images,
-                resize=self._resize_method,
-                no_warn=True,
-                verbose=verbose,
-            )
-            raw_outputs = self._engine.direct_exec([gpu_ptr], no_warn=True)
-            postprocessed = self.postprocess(
-                raw_outputs,
-                ratios,
-                padding,
-                conf_thres,
-                no_copy=True,
-                verbose=verbose,
-            )
-
-        # pair hands with objects
-        result = self.get_interactions(
-            postprocessed,
-            pair_thres,
-            second_pair_thres,
+        return self._end2end_core(
+            images,
             verbose=verbose,
+            post=lambda o, r, p, nc: self.postprocess(
+                o, r, p, conf_thres, no_copy=nc, verbose=verbose
+            ),
+            get=lambda pp: self.get_interactions(pp, pair_thres, second_pair_thres, verbose=verbose),
         )
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # _end2end
-
-        return result
-
-    def _end2end_graph(
-        self: Self,
-        images: list[np.ndarray],
-        *,
-        conf_thres: float | None = None,
-        pair_thres: float | None = None,
-        second_pair_thres: float | None = None,
-        verbose: bool | None = None,
-    ) -> list[list[HandInteraction]]:
-        """
-        Execute graph-accelerated end2end path.
-
-        This implementation captures only TRTEngine inference in the CUDA graph.
-        Preprocessing runs outside the graph since H2D copies cannot be captured.
-        Supports CPU, CUDA, and TRT preprocessors.
-        """
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["hoi__end2end_graph"])
-
-        # Use shared core graph execution
-        raw_outputs, ratios, padding = self._end2end_graph_core(images, verbose=verbose)
-
-        # CPU postprocessing (HandInteractionDetector-specific)
-        postprocessed = self.postprocess(
-            raw_outputs,
-            ratios,
-            padding,
-            conf_thres,
-            no_copy=True,
-            verbose=verbose,
-        )
-        result = self.get_interactions(
-            postprocessed,
-            pair_thres,
-            second_pair_thres,
-            verbose=verbose,
-        )
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # _end2end_graph
-
-        return result

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, TypeVar, overload
 
 import numpy as np
 import nvtx
@@ -24,6 +24,13 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 _COLOR_CHANNELS = 3
+
+# (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image
+_PostFn = Callable[
+    [List[np.ndarray], List[Tuple[float, float]], List[Tuple[float, float]], Optional[bool]],
+    List[List[np.ndarray]],
+]
+T = TypeVar("T")
 
 
 class ImageModel:
@@ -121,6 +128,8 @@ class ImageModel:
             "init": f"image_model::init [{self._tag}]",
             "preprocess": f"image_model::preprocess [{self._tag}]",
             "mock_run": f"image_model::mock_run [{self._tag}]",
+            "run": f"image_model::run [{self._tag}]",
+            "end2end": f"image_model::end2end [{self._tag}]",
             "_end2end_graph_core": f"image_model::_end2end_graph_core [{self._tag}]",
             "_copy_engine_outputs": f"image_model::_copy_engine_outputs [{self._tag}]",
             "_setup_cpu_preproc": f"image_model::_setup_cpu_preproc [{self._tag}]",
@@ -626,29 +635,64 @@ class ImageModel:
 
     def _build_graph_input_ptrs(
         self: Self,
-        gpu_ptr: int,
-        extra_ptrs: list[int],
-    ) -> list[int]:
+        image: Any,  # noqa: ANN401
+        extras: list[Any],
+    ) -> list[Any]:
         """
-        Build input pointer list for CUDA graph execution.
+        Build the input list for CUDA graph execution or engine calls.
 
         Override in subclasses that need schema-specific input ordering.
-        The default puts the image first followed by extra inputs.
+        The default puts the image first followed by extra inputs. Inputs
+        are GPU device pointers (int) on the CUDA graph path, or host
+        arrays (np.ndarray) when reused to order CPU engine inputs.
 
         Parameters
         ----------
-        gpu_ptr : int
-            GPU device pointer for the main image input.
-        extra_ptrs : list[int]
-            Additional GPU device pointers for extra inputs.
+        image : Any
+            The main image input: a GPU device pointer or a host array.
+        extras : list[Any]
+            Additional inputs: GPU device pointers or host arrays.
 
         Returns
         -------
-        list[int]
-            Ordered list of GPU device pointers for engine execution.
+        list[Any]
+            Ordered list of inputs for engine execution.
 
         """
-        return [gpu_ptr, *extra_ptrs]
+        return [image, *extras]
+
+    def _engine_inputs(
+        self: Self,
+        tensor: np.ndarray,
+        images: list[np.ndarray],  # noqa: ARG002
+        ratios: list[tuple[float, float]] | None,  # noqa: ARG002
+        *,
+        preprocessed: bool,  # noqa: ARG002
+    ) -> list[np.ndarray]:
+        """
+        Build the host arrays passed to the engine call.
+
+        Override in subclasses that need schema-specific inputs, e.g.
+        Detector adds image size / scale factor arrays for DETR models.
+
+        Parameters
+        ----------
+        tensor : np.ndarray
+            The preprocessed batch tensor.
+        images : list[np.ndarray]
+            The original input images, before preprocessing.
+        ratios : list[tuple[float, float]] | None
+            The scaling ratios from preprocessing.
+        preprocessed : bool
+            Whether the inputs were already preprocessed.
+
+        Returns
+        -------
+        list[np.ndarray]
+            The host arrays to pass to the engine call.
+
+        """
+        return [tensor]
 
     def _end2end_graph_core(
         self: Self,
@@ -765,3 +809,288 @@ class ImageModel:
             nvtx.pop_range()  # end2end_graph_core
 
         return raw_outputs, ratios, padding
+
+    @staticmethod
+    def _as_batch(
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+    ) -> tuple[list[list[np.ndarray]], bool]:
+        """
+        Wrap single-image postprocessed outputs into batch form.
+
+        Parameters
+        ----------
+        outputs : list[np.ndarray] | list[list[np.ndarray]]
+            Postprocessed outputs for a single image or a batch.
+
+        Returns
+        -------
+        tuple[list[list[np.ndarray]], bool]
+            The outputs in batch form, and whether the input was single-image.
+
+        """
+        if outputs and isinstance(outputs[0], np.ndarray):
+            return [outputs], True  # ty: ignore[invalid-return-type]
+        return outputs, False  # ty: ignore[invalid-return-type]
+
+    def _run_core(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None,
+        *,
+        preprocessed: bool | None,
+        postprocess: bool | None,
+        no_copy: bool | None,
+        verbose: bool | None,
+        post: _PostFn,
+        needs_ratios: bool = True,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """
+        Shared implementation of the public ``run`` method.
+
+        Handles single/batch normalization, the preprocess-or-validate
+        split, engine execution + timing, and optional postprocessing.
+        Subclasses supply ``post`` to bridge to their own postprocess
+        signature.
+
+        Parameters
+        ----------
+        images : np.ndarray | list[np.ndarray]
+            A single image or batch of images to run inference on.
+        ratios : tuple[float, float] | list[tuple[float, float]] | None
+            Scaling ratios, required when ``preprocessed`` is True and
+            ``postprocess`` is True (unless ``needs_ratios`` is False).
+        padding : tuple[float, float] | list[tuple[float, float]] | None
+            Padding, same requirements as ``ratios``.
+        preprocessed : bool, optional
+            Whether ``images`` is already a preprocessed batch tensor.
+            By default None, treated as False.
+        postprocess : bool, optional
+            Whether to run postprocessing on the raw outputs.
+            By default None, treated as True.
+        no_copy : bool, optional
+            Whether to avoid extra copies during preprocess/run/postprocess.
+        verbose : bool, optional
+            Whether to log additional information.
+        post : _PostFn
+            Callable bridging to the subclass's postprocess signature.
+        needs_ratios : bool
+            Whether postprocessing requires ratios/padding to be known.
+            By default True; Classifier/DepthEstimator pass False since
+            their postprocess does not use ratios/padding.
+
+        Returns
+        -------
+        list[np.ndarray] | list[list[np.ndarray]]
+            Raw outputs if ``postprocess`` is False, else postprocessed
+            outputs (unwrapped for single-image input).
+
+        Raises
+        ------
+        ValueError
+            If ``preprocessed`` is True but ``images`` is not a list
+            containing a single batch tensor.
+        RuntimeError
+            If ``postprocess`` is True, ``needs_ratios`` is True, and
+            ratios/padding are not available (only possible when
+            ``preprocessed`` is True and none were passed in).
+
+        """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["run"])
+
+        if verbose:
+            LOG.debug(f"{self._tag}: run")
+
+        # handle single-image input
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+            is_single = True
+        else:
+            batch_images = images
+            is_single = False
+
+        # normalize ratios/padding to list form
+        batch_ratios: list[tuple[float, float]] | None = (
+            [ratios] if isinstance(ratios, tuple) else ratios
+        )
+        batch_padding: list[tuple[float, float]] | None = (
+            [padding] if isinstance(padding, tuple) else padding
+        )
+
+        # assign flags
+        if preprocessed is None:
+            preprocessed = False
+        if postprocess is None:
+            postprocess = True
+
+        # assign no_copy values
+        if no_copy is None and not preprocessed and postprocess:
+            # remove two sets of copies when doing preprocess/run/postprocess inside
+            # a single run call
+            no_copy_pre: bool | None = True
+            no_copy_run: bool | None = True
+            no_copy_post: bool | None = False
+        else:
+            no_copy_pre = no_copy
+            no_copy_run = no_copy
+            no_copy_post = no_copy
+
+        if verbose:
+            LOG.debug(
+                f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
+            )
+
+        # handle preprocessing
+        if not preprocessed:
+            if verbose:
+                LOG.debug("Preprocessing inputs")
+            tensor, batch_ratios, batch_padding = self.preprocess(batch_images, no_copy=no_copy_pre)
+        else:
+            # images is already preprocessed tensor when preprocessed=True
+            if len(batch_images) != 1:
+                err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
+                raise ValueError(err_msg)
+            tensor = batch_images[0]
+
+        engine_inputs = self._engine_inputs(
+            tensor, batch_images, batch_ratios, preprocessed=preprocessed
+        )
+
+        # execute
+        t0 = time.perf_counter()
+        outputs: list[np.ndarray] = self._engine(engine_inputs, no_copy=no_copy_run)
+        t1 = time.perf_counter()
+
+        # handle postprocessing
+        if postprocess:
+            if verbose:
+                LOG.debug("Postprocessing outputs")
+            if needs_ratios and (batch_ratios is None or batch_padding is None):
+                err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
+                raise RuntimeError(err_msg)
+            result = post(outputs, batch_ratios or [], batch_padding or [], no_copy_post)
+            self._infer_profile = (t0, t1)
+
+            # unwrap for single-image input
+            if is_single:
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # run
+                return result[0]
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # run
+            return result
+
+        self._infer_profile = (t0, t1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # run
+
+        return outputs
+
+    def _end2end_core(
+        self: Self,
+        images: np.ndarray | list[np.ndarray],
+        *,
+        verbose: bool | None,
+        post: _PostFn,
+        get: Callable[[list[list[np.ndarray]]], list[T]],
+        needs_ratios: bool = True,
+    ) -> T | list[T]:
+        """
+        Shared implementation of the public ``end2end`` method.
+
+        Dispatches to the CUDA-graph path, the CPU-preprocessor path
+        (via ``_run_core``), or the GPU-preprocessor direct-exec path,
+        then extracts final results with ``get``.
+
+        Parameters
+        ----------
+        images : np.ndarray | list[np.ndarray]
+            A single image or batch of images to run inference on.
+        verbose : bool, optional
+            Whether to log additional information.
+        post : _PostFn
+            Callable bridging to the subclass's postprocess signature.
+        get : Callable[[list[list[np.ndarray]]], list[T]]
+            Callable extracting final per-image results from postprocessed
+            outputs, e.g. ``get_detections`` or ``get_classifications``.
+        needs_ratios : bool
+            Passed through to ``_run_core`` on the CPU-preprocessor path.
+
+        Returns
+        -------
+        T | list[T]
+            Final results, unwrapped for single-image input.
+
+        Raises
+        ------
+        RuntimeError
+            If the CUDA-graph path is enabled and dimensions/batch size
+            change after the first call, or graph capture fails.
+
+        """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["end2end"])
+
+        if verbose:
+            LOG.debug(f"{self._tag}: end2end")
+
+        # handle single-image input
+        if isinstance(images, np.ndarray):
+            batch_images: list[np.ndarray] = [images]
+            is_single = True
+        else:
+            batch_images = images
+            is_single = False
+
+        no_copy_e2e = True
+        pp: list[list[np.ndarray]]
+        if self._e2e_graph_enabled:
+            raw, ratios, padding = self._end2end_graph_core(batch_images, verbose=verbose)
+            pp = post(raw, ratios, padding, no_copy_e2e)
+        elif not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+            if verbose:
+                LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
+            pp = self._run_core(  # ty: ignore[invalid-assignment]
+                batch_images,
+                None,
+                None,
+                preprocessed=False,
+                postprocess=True,
+                no_copy=True,
+                verbose=verbose,
+                post=post,
+                needs_ratios=needs_ratios,
+            )
+        else:
+            if verbose:
+                LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
+            gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
+                batch_images,
+                resize=self._resize_method,
+                no_warn=True,
+                verbose=verbose,
+            )
+            input_ptrs = self._build_graph_input_ptrs(
+                gpu_ptr, self._prepare_extra_engine_inputs_gpu()
+            )
+            raw = self._engine.direct_exec(input_ptrs, no_warn=True)
+            pp = post(raw, ratios, padding, no_copy_e2e)
+
+        result = get(pp)
+
+        # unwrap for single-image input
+        if is_single:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # end2end
+            return result[0]
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # end2end
+
+        return result
