@@ -125,7 +125,7 @@ compat = [
 # AxoNN
 axonn = [
     "trtutils[onnx]",
-    "z3-solver>=4.12.0,<5.0.0",
+    "z3-solver>=4.12.0,<6.0.0",
 ]
 # Buildtime/Offline deps
 # Mainly used for internal tools like the benchmark folder
