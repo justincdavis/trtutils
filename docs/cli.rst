@@ -14,9 +14,14 @@ TRTUtils provides a command-line interface with several subcommands for working 
 * ``build_dla``: Build a TensorRT engine with mixed GPU/DLA layers and precision automatically
 * ``can_run_on_dla``: Evaluate if a model can run on a DLA and specific layer/chunk compatibility.
 * ``classify``: Run image classification on an image
+* ``clear_cache``: Clear the trtutils engine cache
 * ``detect``: Run object detection on an image or video
 * ``download``: Download a model from remote source and convert to ONNX
+* ``generate_calibration``: Generate calibration data from images and save to .npy
 * ``inspect``: Inspect a TensorRT engine
+* ``profile``: Profile a TensorRT engine layer-by-layer
+* ``quantize``: Quantize an ONNX model using NVIDIA ModelOpt
+* ``research``: Research paper implementations (only present when research modules are available)
 * ``trtexec``: Run trtexec with the provided options
 
 Global Options
@@ -496,6 +501,104 @@ The inspect command will output:
 * Engine size in MB
 * Max batch size
 * Input and output tensor names, shapes, data types, and formats
+
+Profile
+~~~~~~~
+
+Profile a TensorRT engine layer-by-layer.
+
+.. code-block:: console
+
+    # Basic profiling
+    python3 -m trtutils profile --engine model.engine --output profile.json
+
+    # Jetson profiling with per-layer power and energy
+    python3 -m trtutils profile --engine model.engine --output profile.json --jetson
+
+Options
+^^^^^^^
+
+* ``--engine, -e``: Path to the engine file (required)
+* ``--output, -o``: Path to save the JSON profiling results (required)
+* ``--iterations, -i``: Number of profiling iterations (default: 100)
+* ``--save_raw``: Include raw timing values in the JSON output
+* ``--jetson``: Measure per-layer power and energy, defaults to 10000 iterations
+* ``--tegra_interval``: Milliseconds between tegrastats samples, Jetson only (default: 5)
+
+Quantize
+~~~~~~~~
+
+Quantize an ONNX model using NVIDIA ModelOpt. Requires the ``quantize`` extra.
+
+.. code-block:: console
+
+    # INT8 quantization
+    python3 -m trtutils quantize --onnx model.onnx --output model_int8.onnx \
+        --calibration_data calib.npy
+
+    # FP8 quantization with entropy calibration
+    python3 -m trtutils quantize --onnx model.onnx --output model_fp8.onnx \
+        --calibration_data calib.npy --quantize_mode fp8 --calibration_method entropy
+
+Options
+^^^^^^^
+
+* ``--onnx, -o``: Path to the ONNX model file (required)
+* ``--output, -out``: Path to save the quantized ONNX model (required)
+* ``--calibration_data, -cf``: Path to the calibration ``.npy`` file (required)
+* ``--quantize_mode, -qm``: Quantization mode (choices: int4, int8, fp8; default: int8)
+* ``--calibration_method, -cm``: Calibration method (choices: max, entropy, percentile, mse; default: max)
+* ``--calibrate_per_node``: Calibrate per node instead of per tensor
+
+Generate Calibration
+~~~~~~~~~~~~~~~~~~~~
+
+Generate a calibration ``.npy`` file from a directory of images, for use with
+``quantize`` or the INT8 build commands.
+
+.. code-block:: console
+
+    python3 -m trtutils generate_calibration --calibration_dir images/ \
+        --input_shape 640 640 3 --input_dtype float32 --output calib.npy
+
+Options
+^^^^^^^
+
+* ``--output, -out``: Path to save the calibration ``.npy`` file (required)
+* ``--calibration_dir, -cd``: Directory containing images for calibration
+* ``--input_shape, -is``: Input shape in HWC format (height, width, channels)
+* ``--input_dtype, -id``: Input data type (choices: float32, float16, int8)
+* ``--batch_size, -bs``: Batch size for calibration (default: 8)
+* ``--data_order, -do``: Data ordering expected by the network (choices: NCHW, NHWC; default: NCHW)
+* ``--max_images, -mi``: Maximum number of images to use
+* ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear; default: letterbox)
+* ``--input_scale, -sc``: Input value range (default: 0.0 1.0)
+
+Clear Cache
+~~~~~~~~~~~
+
+Clear the trtutils engine cache.
+
+.. code-block:: console
+
+    python3 -m trtutils clear_cache
+
+Options
+^^^^^^^
+
+* ``--no_warn``: Suppress the warning about clearing the cache
+
+Research
+~~~~~~~~
+
+Research paper implementations from :mod:`trtutils.research`. The subcommand is
+only registered when research modules are available, and each module provides
+its own subcommands.
+
+.. code-block:: console
+
+    # list the available research modules
+    python3 -m trtutils research
 
 TRTExec
 ~~~~~~~

@@ -123,10 +123,11 @@ import contextlib
 
 from . import core
 
-with contextlib.suppress(AttributeError, RuntimeError):
+# TypeError occurs when tensorrt/cuda are mocked, such as during doc builds
+with contextlib.suppress(AttributeError, RuntimeError, TypeError):
     FLAGS.init_device_flags()
 
-with contextlib.suppress(AttributeError, RuntimeError):
+with contextlib.suppress(AttributeError, RuntimeError, TypeError):
     FLAGS.init_jetson_flags()
 
 from . import builder, compat, download, image, inspect, models, parallel, research, trtexec
