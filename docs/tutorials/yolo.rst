@@ -63,14 +63,16 @@ Advanced Features
 Parallel Execution
 ^^^^^^^^^^^^^^^^^^
 
-You can run multiple YOLO models in parallel using the :py:class:`~trtutils.impls.yolo.ParallelYOLO` class:
+You can run multiple YOLO models in parallel using the :py:class:`~trtutils.parallel.image.ParallelDetector` class:
 
 .. code-block:: python
 
-    from trtutils.models import ParallelYOLO
+    from trtutils.parallel.image import EngineInfo, ParallelDetector
 
-    # Create a parallel YOLO instance with multiple engines
-    yolo = ParallelYOLO(["yolo1.engine", "yolo2.engine"])
+    # Create a parallel detector over multiple engines
+    yolo = ParallelDetector(
+        [EngineInfo("yolo1.engine"), EngineInfo("yolo2.engine")],
+    )
 
     # Run inference on multiple images
     images = [cv2.imread(f"image{i}.jpg") for i in range(2)]

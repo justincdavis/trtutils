@@ -30,10 +30,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    engine_dir = Path(__file__).parent.parent / "data" / "engines"
+    engine_dir = Path(__file__).resolve().parent.parent.parent / "data" / "engines"
     engine_path = engine_dir / "trt_yolov10n.engine"
 
-    img_path = str(Path(__file__).parent.parent / "data" / "cars.jpeg")
+    img_path = str(Path(__file__).resolve().parent.parent.parent / "data" / "cars.jpeg")
     img = cv2.imread(img_path)
     if img is None:
         err_msg = f"Failed to load image from {img_path}"
