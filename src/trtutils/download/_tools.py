@@ -180,13 +180,13 @@ def get_weights_cache_dir() -> Path:
 
 @lru_cache(maxsize=0)
 def get_model_requirements(model: str) -> str:
-    file_path = Path(__file__).parent / "requirements" / f"{model}.txt"
+    file_path = Path(__file__).parent / "model_deps" / f"{model}.txt"
     return str(file_path.resolve())
 
 
 @lru_cache(maxsize=0)
 def get_tool_requirements(tool: str) -> str:
-    file_path = Path(__file__).parent / "requirements_tools" / f"{tool}.txt"
+    file_path = Path(__file__).parent / "tool_deps" / f"{tool}.txt"
     return str(file_path.resolve())
 
 

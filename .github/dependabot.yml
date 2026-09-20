@@ -6,8 +6,8 @@ updates:
       interval: "daily"
     exclude-paths:
       # pinned download/build envs, not library deps
-      - "src/trtutils/download/requirements/**"
-      - "src/trtutils/download/requirements_tools/**"
+      - "src/trtutils/download/model_deps/**"
+      - "src/trtutils/download/tool_deps/**"
       - "docker/**"
       - "demos/**"
       - "docs/requirements.txt"
