@@ -22,6 +22,11 @@ Added
 * ``builder.build_engine``: ``shapes`` entries may be a ``(min_shape, opt_shape, max_shape)``
   triple to build a dynamic optimization profile for that input
 
+Changed
+^^^^^^^
+* ``image.preprocessors.TRTPreprocessor`` runs its preprocessing engine at the submitted
+  batch size instead of the configured maximum
+
 Fixed
 ^^^^^
 * ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
