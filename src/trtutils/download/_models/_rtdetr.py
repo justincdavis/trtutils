@@ -11,6 +11,8 @@ from trtutils.download._tools import (
     _640,
     get_patches_dir,
     git_clone,
+    handle_batch,
+    handle_dynamic,
     handle_imgsz,
     run_cmd,
     run_download,
@@ -27,7 +29,9 @@ def export_rtdetrv1(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -36,6 +40,8 @@ def export_rtdetrv1(
     if not no_warn:
         LOG.warning("RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "RT-DETRv1", enforce=True)
+    handle_batch(batch, "RT-DETRv1", supported=False)
+    handle_dynamic(batch, "RT-DETRv1", dynamic=dynamic, supported=False)
     git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
         directory,
@@ -88,7 +94,9 @@ def export_rtdetrv2(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -97,6 +105,8 @@ def export_rtdetrv2(
     if not no_warn:
         LOG.warning("RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "RT-DETRv2", enforce=True)
+    handle_batch(batch, "RT-DETRv2", supported=False)
+    handle_dynamic(batch, "RT-DETRv2", dynamic=dynamic, supported=False)
     git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
         directory,
@@ -150,7 +160,9 @@ def export_rtdetrv3(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -159,6 +171,8 @@ def export_rtdetrv3(
     if not no_warn:
         LOG.warning("RT-DETRv3 is a Apache-2.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "RT-DETRv3", enforce=True)
+    handle_batch(batch, "RT-DETRv3", supported=False)
+    handle_dynamic(batch, "RT-DETRv3", dynamic=dynamic, supported=False)
     paddle2onnx_max_opset = 16
     if opset > paddle2onnx_max_opset:
         LOG.warning(

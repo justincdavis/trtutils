@@ -81,8 +81,10 @@ def download_model(
     directory: Path,
     opset: int = 17,
     imgsz: int | None = None,
+    batch: int | None = None,
     requirements_export: Path | None = None,
     *,
+    dynamic: bool | None = None,
     simplify: Sequence[str] | bool | None = None,
     make_static: bool | None = None,
     no_cache: bool | None = None,
@@ -104,6 +106,15 @@ def download_model(
     imgsz : int, optional
         The image size to use for the model.
         By default, the model will use the default image size for the model.
+    batch : int, optional
+        The batch size to export the model at. By default None, which
+        exports at batch 1. Exporters whose upstream tooling cannot set a
+        batch size raise NotImplementedError for values above 1.
+    dynamic : bool, optional
+        Export with a symbolic batch dimension so one ONNX can build
+        engines for a range of batch sizes. Mutually exclusive with a
+        fixed batch above 1. Exporters that cannot honor it raise
+        NotImplementedError.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
     simplify : Sequence[str] or bool, optional
@@ -208,6 +219,8 @@ def download_model(
         model,
         opset,
         imgsz,
+        batch=batch,
+        dynamic=dynamic,
         no_cache=no_cache,
         no_uv_cache=no_uv_cache,
         no_warn=no_warn,
@@ -250,8 +263,10 @@ def download(
     output: Path,
     opset: int = 17,
     imgsz: int | None = None,
+    batch: int | None = None,
     requirements_export: Path | None = None,
     *,
+    dynamic: bool | None = None,
     simplify: Sequence[str] | bool | None = None,
     make_static: bool | None = None,
     no_cache: bool | None = None,
@@ -273,6 +288,15 @@ def download(
     imgsz : int, optional
         The image size to use for the model.
         By default, the model will use the default image size for the model.
+    batch : int, optional
+        The batch size to export the model at. By default None, which
+        exports at batch 1. Exporters whose upstream tooling cannot set a
+        batch size raise NotImplementedError for values above 1.
+    dynamic : bool, optional
+        Export with a symbolic batch dimension so one ONNX can build
+        engines for a range of batch sizes. Mutually exclusive with a
+        fixed batch above 1. Exporters that cannot honor it raise
+        NotImplementedError.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
     simplify : Sequence[str] or bool, optional
@@ -303,7 +327,9 @@ def download(
             Path(temp_dir),
             opset,
             imgsz,
+            batch,
             requirements_export=requirements_export,
+            dynamic=dynamic,
             simplify=simplify,
             make_static=make_static,
             no_cache=no_cache,

@@ -120,6 +120,8 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "list_models": False,
         "opset": 17,
         "imgsz": None,
+        "batch": None,
+        "dynamic": False,
         "requirements_export": None,
         "verbose": False,
         "no_cache": False,
@@ -190,6 +192,15 @@ def test_download_simplify_argument_translation(simplify_arg, expected) -> None:
         _download(_args("download", simplify=simplify_arg))
     mock_dl.assert_called_once()
     assert mock_dl.call_args[1]["simplify"] == expected
+
+
+def test_download_batch_and_dynamic_forwarded() -> None:
+    """The CLI's --batch and --dynamic flags reach download() as positional/kwarg."""
+    with patch("trtutils.__main__.trtutils.download.download") as mock_dl:
+        _download(_args("download", batch=8, dynamic=True))
+    mock_dl.assert_called_once()
+    assert mock_dl.call_args[0][4] == 8
+    assert mock_dl.call_args[1]["dynamic"] is True
 
 
 def test_download_list_models_skips_download() -> None:

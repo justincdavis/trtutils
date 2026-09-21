@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import warnings
 
 from utils.config import (
@@ -129,6 +130,39 @@ def cmd_batch(args: argparse.Namespace) -> None:
                 )
     print("=" * 70)
 
+    if args.stage is not None:
+        _write_stage_snapshot(
+            args.device,
+            args.stage,
+            {
+                "model": args.model,
+                "imgsz": args.imgsz,
+                "batch_sizes": args.batch_sizes,
+                "warmup": args.warmup,
+                "iterations": args.iterations,
+                "batch": data,
+            },
+        )
+
+
+def _write_stage_snapshot(device: str, stage: str, payload: dict) -> None:
+    """Write a perf-series stage snapshot, tagged with the stage name and trtutils SHA."""
+    from utils.config import DATA_DIR
+    from utils.runners import _trtutils_git_sha
+
+    out_dir = DATA_DIR / "perf-series" / device
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"stage-{stage}.json"
+    full_payload = {
+        "device": device,
+        "stage": stage,
+        "trtutils_sha": _trtutils_git_sha(),
+        **payload,
+    }
+    with out_path.open("w") as f:
+        json.dump(full_payload, f, indent=2)
+    print(f"Wrote stage snapshot: {out_path}")
+
 
 def cmd_optimize(args: argparse.Namespace) -> None:
     """Run optimization grid benchmarks."""
@@ -140,6 +174,7 @@ def cmd_optimize(args: argparse.Namespace) -> None:
         args.imgsz,
         args.warmup,
         args.iterations,
+        stage=args.stage,
     )
 
 
@@ -202,6 +237,31 @@ def cmd_plot(args: argparse.Namespace) -> None:
                     plot_optimizations(device, overwrite=args.overwrite)
                 except Exception as e:
                     print(f"Warning: Failed optimization plot for {device}: {e}")
+
+    elif args.patch_series:
+        from plotting.patch_series import plot_patch_series
+
+        series_dir = DATA_DIR / "perf-series"
+        if not series_dir.exists():
+            print("Warning: data/perf-series/ not found, nothing to plot.")
+            return
+        devices = [d.name for d in series_dir.iterdir() if d.is_dir()]
+        if args.device:
+            devices = [d for d in devices if d == args.device]
+        boundaries = [
+            (float(pos), label)
+            for pos, label in (b.split(":", 1) for b in (args.boundary or []))
+        ]
+        for device in devices:
+            if device not in skip_devices:
+                try:
+                    plot_patch_series(
+                        series_dir / device,
+                        DATA_DIR.parent / "plots" / f"patch_series_{device}.png",
+                        series_boundaries=boundaries,
+                    )
+                except Exception as e:
+                    print(f"Warning: Failed patch-series plot for {device}: {e}")
 
     else:
         from plotting.models import (
@@ -280,6 +340,12 @@ def main() -> None:
     p.add_argument("--ultralytics", action="store_true")
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--nvtx", action="store_true")
+    p.add_argument(
+        "--stage",
+        default=None,
+        help="Write results to data/perf-series/<device>/stage-<STAGE>.json "
+        "(tagged with the trtutils git SHA) instead of the normal batch data file.",
+    )
     p.set_defaults(func=cmd_batch)
 
     # --- optimize ---
@@ -290,6 +356,12 @@ def main() -> None:
     p.add_argument("--warmup", type=int, default=50)
     p.add_argument("--iterations", type=int, default=200)
     p.add_argument("--nvtx", action="store_true")
+    p.add_argument(
+        "--stage",
+        default=None,
+        help="Write results to data/perf-series/<device>/stage-<STAGE>.json "
+        "(tagged with the trtutils git SHA) instead of data/optimizations/<device>.json.",
+    )
     p.set_defaults(func=cmd_optimize)
 
     # --- sahi ---
@@ -309,6 +381,17 @@ def main() -> None:
     p.add_argument("--pareto", action="store_true")
     p.add_argument("--batch", action="store_true")
     p.add_argument("--optimizations", action="store_true")
+    p.add_argument(
+        "--patch-series",
+        action="store_true",
+        help="Plot latency/throughput across data/perf-series/<device>/stage-*.json.",
+    )
+    p.add_argument(
+        "--boundary",
+        action="append",
+        help="Patch-series boundary as 'pos:label' (stage index - 0.5, annotation text). "
+        "May be given multiple times. Only used with --patch-series.",
+    )
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--skip-devices", type=str, default="")
     p.add_argument("--framework", default="trtutils(trt)")
