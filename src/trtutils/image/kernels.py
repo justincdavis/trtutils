@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """
@@ -20,6 +20,8 @@ Attributes
     ImageNet normalization with scale/swap/transpose (float32 output)
 :attribute:`IMAGENET_SST_F16` : tuple[Path, str]
     ImageNet normalization with scale/swap/transpose (float16 output)
+:attribute:`RESCALE_DETECTIONS` : tuple[Path, str]
+    Rescales detection boxes from letterboxed-input to original-image coordinates
 
 """
 
@@ -33,6 +35,7 @@ _SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
 _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
 _SST_IMAGENET_FILE = _KERNEL_DIR / "sst_imagenet.cu"
+_RESCALE_DETS_FILE = _KERNEL_DIR / "rescale_dets.cu"
 
 SST_FAST: tuple[Path, str] = (
     _SST_FAST_FILE,
@@ -67,4 +70,9 @@ IMAGENET_SST: tuple[Path, str] = (
 IMAGENET_SST_F16: tuple[Path, str] = (
     _SST_IMAGENET_FILE,
     "scaleSwapTransposeImagenet_f16",
+)
+
+RESCALE_DETECTIONS: tuple[Path, str] = (
+    _RESCALE_DETS_FILE,
+    "rescaleDetections",
 )

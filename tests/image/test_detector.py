@@ -137,3 +137,129 @@ def test_detector_run_direct_gpu_path_no_copy(yolov10_engine, images) -> None:
 
     raw_view = model.run(horse, postprocess=False, no_copy=True)
     assert np.shares_memory(raw_view[0], engine_alloc)
+
+
+def _assert_dets_close(dets_a, dets_b) -> None:
+    """Compare two detection lists: boxes within 1 px, scores within 1e-3, classes exact."""
+    assert len(dets_a) == len(dets_b)
+    for (box_a, score_a, cls_a), (box_b, score_b, cls_b) in zip(dets_a, dets_b):
+        assert all(abs(a - b) <= 1 for a, b in zip(box_a, box_b))
+        assert abs(score_a - score_b) < 1e-3
+        assert cls_a == cls_b
+
+
+@pytest.mark.parametrize("preprocessor", ["cuda", "trt"])
+def test_detector_postprocessor_cuda_matches_cpu(yolov10_engine, images, preprocessor) -> None:
+    """postprocessor='cuda' end2end detections match postprocessor='cpu' for YOLO_V10."""
+    image = images["horse"].array
+    cpu_model = Detector(
+        yolov10_engine,
+        preprocessor=preprocessor,
+        cuda_graph=True,
+        postprocessor="cpu",
+        warmup=False,
+    )
+    cuda_model = Detector(
+        yolov10_engine,
+        preprocessor=preprocessor,
+        cuda_graph=True,
+        postprocessor="cuda",
+        warmup=False,
+    )
+    assert cuda_model._gpu_postprocess
+
+    cpu_dets = cpu_model.end2end(image)
+    cuda_dets = cuda_model.end2end(image)
+    _assert_dets_close(cpu_dets, cuda_dets)
+
+
+def test_detector_postprocessor_cuda_dynamic_batch(yolov10_dynamic_engine, images) -> None:
+    """
+    postprocessor='cuda' matches 'cpu' across a batch sweep on a dynamic engine.
+
+    Batch 4 is submitted twice with a batch-1 call in between, so the
+    identity ratios/padding staged for the graphed rescale kernel must be
+    re-uploaded on every call rather than reused from the first capture.
+    """
+    cpu_model = Detector(
+        yolov10_dynamic_engine,
+        preprocessor="cuda",
+        cuda_graph=True,
+        postprocessor="cpu",
+        warmup=False,
+    )
+    cuda_model = Detector(
+        yolov10_dynamic_engine,
+        preprocessor="cuda",
+        cuda_graph=True,
+        postprocessor="cuda",
+        warmup=False,
+    )
+    pool = [img.array for img in images.values()]
+
+    for batch_size in (4, 1, 4):
+        batch = [pool[i % len(pool)] for i in range(batch_size)]
+        cpu_dets = cpu_model.end2end(batch)
+        cuda_dets = cuda_model.end2end(batch)
+        assert len(cuda_dets) == batch_size
+        for cpu_d, cuda_d in zip(cpu_dets, cuda_dets):
+            _assert_dets_close(cpu_d, cuda_d)
+
+
+def test_detector_postprocessor_cuda_no_graph_matches_cpu(yolov10_engine, images) -> None:
+    """With cuda_graph=False the postprocess hooks never fire, so 'cuda' behaves like 'cpu'."""
+    image = images["horse"].array
+    cpu_model = Detector(
+        yolov10_engine,
+        preprocessor="cuda",
+        cuda_graph=False,
+        postprocessor="cpu",
+        warmup=False,
+    )
+    cuda_model = Detector(
+        yolov10_engine,
+        preprocessor="cuda",
+        cuda_graph=False,
+        postprocessor="cuda",
+        warmup=False,
+    )
+    # the kernel/binding are still set up; cuda_graph=False just means the
+    # hooks that would launch/stage them are never reached
+    assert cuda_model._gpu_postprocess
+
+    cpu_dets = cpu_model.end2end(image)
+    cuda_dets = cuda_model.end2end(image)
+    assert cpu_dets == cuda_dets
+
+
+def test_detector_unknown_postprocessor_raises(yolov10_engine) -> None:
+    """An unrecognized postprocessor string raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown postprocessor"):
+        Detector(yolov10_engine, postprocessor="bogus", warmup=False)
+
+
+@pytest.mark.parametrize("preprocessor", ["cuda", "trt"])
+def test_detector_postprocessor_cuda_matches_cpu_efficient_nms(
+    yolov8n_effnms_engine, images, preprocessor
+) -> None:
+    """postprocessor='cuda' matches 'cpu' end2end detections for an EfficientNMS-schema engine."""
+    image = images["horse"].array
+    cpu_model = Detector(
+        yolov8n_effnms_engine,
+        preprocessor=preprocessor,
+        cuda_graph=True,
+        postprocessor="cpu",
+        warmup=False,
+    )
+    cuda_model = Detector(
+        yolov8n_effnms_engine,
+        preprocessor=preprocessor,
+        cuda_graph=True,
+        postprocessor="cuda",
+        warmup=False,
+    )
+    assert cuda_model._gpu_postprocess
+
+    cpu_dets = cpu_model.end2end(image)
+    cuda_dets = cuda_model.end2end(image)
+    _assert_dets_close(cpu_dets, cuda_dets)

@@ -24,6 +24,9 @@ Added
   always computing and copying the full max-profile allocation
 * ``builder.build_engine``: ``shapes`` entries may be a ``(min_shape, opt_shape, max_shape)``
   triple to build a dynamic optimization profile for that input
+* ``Detector(postprocessor="cuda")`` runs the detection-box un-letterbox rescale as a
+  batched kernel recorded into the end2end CUDA graph instead of a per-image CPU affine,
+  for the ``YOLO_V10`` and ``EfficientNMS`` output schemas
 
 Changed
 ^^^^^^^

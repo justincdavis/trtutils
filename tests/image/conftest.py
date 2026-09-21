@@ -12,12 +12,14 @@ import tensorrt as trt
 
 from tests.conftest import DATA_DIR, ENGINES_DIR
 from trtutils.builder import build_engine
+from trtutils.builder.hooks import yolo_efficient_nms_hook
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 YOLOV10_ONNX = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
 YOLOV10_DYN_ONNX = DATA_DIR / "yolov10" / "yolov10n_640_dyn.onnx"
+YOLOV8_ONNX = DATA_DIR / "yolov8" / "yolov8n_640.onnx"
 
 
 @pytest.fixture(scope="session")
@@ -50,5 +52,28 @@ def yolov10_dynamic_engine() -> Path:
             engine_path,
             optimization_level=1,
             shapes=[("images", ((1, *shape), (4, *shape), (8, *shape)))],
+        )
+    return engine_path
+
+
+@pytest.fixture(scope="session")
+def yolov8n_effnms_engine() -> Path:
+    """
+    Build a YOLOv8n engine with an EfficientNMS_TRT plugin grafted on at build time.
+
+    Needs the raw (no-NMS) yolov8n ONNX export; skips if it is missing.
+    """
+    if not YOLOV8_ONNX.exists():
+        pytest.skip(f"missing {YOLOV8_ONNX}")
+
+    engine_path = ENGINES_DIR / f"yolov8n_640_effnms_{trt.__version__}.engine"
+    if not engine_path.exists():
+        ENGINES_DIR.mkdir(parents=True, exist_ok=True)
+        build_engine(
+            YOLOV8_ONNX,
+            engine_path,
+            hooks=[yolo_efficient_nms_hook(num_classes=80)],
+            optimization_level=1,
+            fp16=True,
         )
     return engine_path

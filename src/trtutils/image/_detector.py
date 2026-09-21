@@ -12,11 +12,14 @@ from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._bindings import create_binding
+from trtutils.core._kernels import Kernel
 from trtutils.core._memory import memcpy_host_to_device_async
 
 from ._image_model import ImageModel
 from ._schema import InputSchema, OutputSchema, resolve_detector_schemas
 from .interfaces import DetectorInterface
+from .kernels import RESCALE_DETECTIONS
 from .postprocessors import (
     get_detections,
     postprocess_detr,
@@ -32,6 +35,11 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from trtutils.core._bindings import Binding
+
+# detection boxes tensors are (batch, num_dets, box_stride)
+_BOXES_NDIM = 3
+
 
 class Detector(ImageModel, DetectorInterface):
     """Implementation of object detectors."""
@@ -42,6 +50,7 @@ class Detector(ImageModel, DetectorInterface):
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
         preprocessor: str = "trt",
+        postprocessor: str = "cpu",
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
@@ -78,6 +87,14 @@ class Detector(ImageModel, DetectorInterface):
         preprocessor : str
             The type of preprocessor to use.
             The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
+        postprocessor : str
+            Where to run the detection box rescale (un-letterbox) step.
+            The options are ['cpu', 'cuda'], default is 'cpu'.
+            'cuda' runs a batched rescale kernel inside the end2end CUDA
+            graph, removing the per-image CPU affine loop; it is only
+            beneficial at larger batch sizes. Supported for the YOLO_V10
+            and EfficientNMS output schemas on the end2end/direct-run
+            paths; other schemas and paths fall back to CPU.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'letterbox'.
@@ -213,6 +230,59 @@ class Detector(ImageModel, DetectorInterface):
         else:
             self._postprocess_fn = postprocess_efficient_nms
 
+        # solve for GPU postprocessing: a batched rescale kernel recorded
+        # into the end2end CUDA graph, replacing the per-image CPU affine
+        if postprocessor not in ("cpu", "cuda"):
+            err_msg = "Unknown postprocessor. Options are ['cpu', 'cuda']"
+            raise ValueError(err_msg)
+        self._gpu_postprocess: bool = False
+        self._pp_kernel: Kernel | None = None
+        self._pp_transforms_binding: Binding | None = None
+        self._pp_boxes_ptr: int = 0
+        self._pp_num_dets: int = 0
+        self._pp_box_stride: int = 0
+        if postprocessor == "cuda":
+            gpu_pp_schemas = (
+                OutputSchema.YOLO_V10,
+                OutputSchema.EFFICIENT_NMS,
+                OutputSchema.EFFICIENT_NMS_2,
+            )
+            box_stride = 6 if self._output_schema == OutputSchema.YOLO_V10 else 4
+            boxes_binding = next(
+                (
+                    o
+                    for o in self._engine._outputs  # noqa: SLF001
+                    if len(o.shape) == _BOXES_NDIM and o.shape[2] == box_stride
+                ),
+                None,
+            )
+            if self._output_schema not in gpu_pp_schemas or boxes_binding is None:
+                LOG.warning(
+                    f"{self._tag}: postprocessor='cuda' is not supported for "
+                    f"output schema {self._output_schema}, falling back to "
+                    "CPU postprocessing.",
+                )
+            else:
+                self._pp_kernel = Kernel(
+                    RESCALE_DETECTIONS[0],
+                    RESCALE_DETECTIONS[1],
+                    verbose=verbose,
+                )
+                self._pp_boxes_ptr = boxes_binding.allocation
+                self._pp_num_dets = int(boxes_binding.shape[1])
+                self._pp_box_stride = box_stride
+                # per-image (ratio_w, ratio_h, pad_x, pad_y), allocated once
+                # at the engine's max batch so the pointer baked into the
+                # graphs stays stable
+                max_batch = max(int(self._engine._inputs[0].shape[0]), 1)  # noqa: SLF001
+                self._pp_transforms_binding = create_binding(
+                    np.zeros((max_batch, 4), dtype=np.float32),
+                    is_input=True,
+                    pagelocked_mem=self._engine._pagelocked_mem,  # noqa: SLF001
+                    unified_mem=self._engine._unified_mem,  # noqa: SLF001
+                )
+                self._gpu_postprocess = True
+
         if self._verbose:
             LOG.debug(f"{self._tag}: Using image size: {self._use_image_size}")
             LOG.debug(f"{self._tag}: Using scale factor: {self._use_scale_factor}")
@@ -311,6 +381,58 @@ class Detector(ImageModel, DetectorInterface):
             nvtx.pop_range()  # postprocess
 
         return data
+
+    def _stage_graphed_postprocess(
+        self: Self,
+        batch_size: int,
+        ratios: list[tuple[float, float]],
+        padding: list[tuple[float, float]],
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Upload per-image transforms for the in-graph rescale kernel.
+
+        Runs outside the graph since the values change per call; the
+        buffer address is fixed so captured graphs stay valid. Returns
+        identity ratios/padding so the CPU postprocess affine is a
+        pass-through over already-rescaled boxes.
+        """
+        if not self._gpu_postprocess or self._pp_transforms_binding is None:
+            return ratios, padding
+        host = self._pp_transforms_binding.host_allocation
+        for i in range(batch_size):
+            host[i, 0] = ratios[i][0]
+            host[i, 1] = ratios[i][1]
+            host[i, 2] = padding[i][0]
+            host[i, 3] = padding[i][1]
+        if not (self._engine._unified_mem and self._engine._pagelocked_mem):  # noqa: SLF001
+            memcpy_host_to_device_async(
+                self._pp_transforms_binding.allocation,
+                host[:batch_size],
+                self._engine.stream,
+            )
+        identity_ratios = [(1.0, 1.0)] * batch_size
+        identity_padding = [(0.0, 0.0)] * batch_size
+        return identity_ratios, identity_padding
+
+    def _capture_graphed_postprocess(self: Self, batch_size: int) -> None:
+        """Record the batched rescale kernel into the end2end graph."""
+        if (
+            not self._gpu_postprocess
+            or self._pp_kernel is None
+            or self._pp_transforms_binding is None
+        ):
+            return
+        total = batch_size * self._pp_num_dets
+        threads = 256
+        blocks = ((total + threads - 1) // threads, 1, 1)
+        args = self._pp_kernel.create_args(
+            self._pp_boxes_ptr,
+            self._pp_transforms_binding.allocation,
+            batch_size,
+            self._pp_num_dets,
+            self._pp_box_stride,
+        )
+        self._pp_kernel.call(blocks, (threads, 1, 1), self._engine.stream, args)
 
     # __call__ overloads
     @overload
