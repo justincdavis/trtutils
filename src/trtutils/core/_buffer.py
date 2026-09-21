@@ -324,6 +324,48 @@ class Buffer:
         buffer._parent = owner
         return buffer
 
+    @classmethod
+    def from_cuda_array(cls: type[Self], obj: object) -> Self:
+        """
+        Create a non-owning device Buffer view over any CUDA-array-interface object.
+
+        Accepts CuPy / Numba / PyTorch tensors, nvImageCodec images, another
+        Buffer, or anything else exposing ``__cuda_array_interface__``. The
+        object is kept alive for the lifetime of the view.
+
+        Parameters
+        ----------
+        obj : object
+            An object exposing the CUDA Array Interface.
+
+        Returns
+        -------
+        Buffer
+            A non-owning device view of the object's memory.
+
+        Raises
+        ------
+        TypeError
+            If the object does not expose ``__cuda_array_interface__``.
+        ValueError
+            If the memory is not C-contiguous.
+
+        """
+        interface = getattr(obj, "__cuda_array_interface__", None)
+        if interface is None:
+            err_msg = f"{type(obj).__name__} does not expose __cuda_array_interface__."
+            raise TypeError(err_msg)
+        shape = tuple(int(s) for s in interface["shape"])
+        dtype = np.dtype(interface["typestr"])
+        strides = interface.get("strides")
+        if strides is not None and tuple(strides) != tuple(np.empty(shape, dtype=dtype).strides):
+            err_msg = (
+                f"Buffer views require C-contiguous memory, got strides {strides} for shape {shape}."
+            )
+            raise ValueError(err_msg)
+        ptr, _ = interface["data"]
+        return cls.from_ptr(int(ptr), shape, dtype, MemoryLocation.DEVICE, owner=obj)
+
     # ------------------------------------------------------------------
     # properties
     # ------------------------------------------------------------------

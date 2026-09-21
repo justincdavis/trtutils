@@ -234,21 +234,23 @@ class Binding:
 
     def upload(
         self: Self,
-        data: np.ndarray,
+        data: np.ndarray | Buffer,
         stream: cudart.cudaStream_t | None = None,
         shape: tuple[int, ...] | None = None,
     ) -> None:
         """
-        Copy host data into the binding, honoring the memory configuration.
+        Copy data into the binding, honoring the memory configuration.
 
-        On unified-memory bindings the data is written directly into the
+        On unified-memory bindings host data is written directly into the
         mapped host allocation. On pagelocked bindings with a stream, the
         copy is asynchronous. Otherwise, a synchronous copy is performed.
+        A device :class:`Buffer` is copied device-to-device in every mode.
 
         Parameters
         ----------
-        data : np.ndarray
-            The host data to copy into the binding.
+        data : np.ndarray | Buffer
+            The data to copy into the binding: a host array, or a Buffer in
+            either memory space.
         stream : cudart.cudaStream_t, optional
             The stream to utilize for asynchronous copies.
         shape : tuple[int, ...], optional
@@ -257,7 +259,9 @@ class Binding:
             prefix of the allocation is written.
 
         """
-        if self.pagelocked_mem and self.unified_mem:
+        on_device = isinstance(data, Buffer) and data.location == MemoryLocation.DEVICE
+        if self.pagelocked_mem and self.unified_mem and not on_device:
+            # host Buffers land here too, through Buffer.__array__
             np.copyto(self._partial(self.host, shape).array, data)
             return
         device = self._partial(self.device, shape)

@@ -20,12 +20,14 @@ from .core._interface import TRTEngineInterface
 from .core._stream import stream_synchronize
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from typing import ClassVar
 
     import numpy as np
     from typing_extensions import Self
 
     from trtutils.compat._libs import cuda
+    from trtutils.core._buffer import Buffer
 
 
 class TRTEngine(TRTEngineInterface):
@@ -212,7 +214,7 @@ class TRTEngine(TRTEngineInterface):
         if self._cuda_graph and self._cuda_graph.is_captured:
             self._cuda_graph.invalidate()
 
-    def _apply_input_shapes(self: Self, data: list[np.ndarray]) -> None:
+    def _apply_input_shapes(self: Self, data: Sequence[np.ndarray | Buffer]) -> None:
         """
         Set the context input shapes to match the submitted data.
 
@@ -224,7 +226,7 @@ class TRTEngine(TRTEngineInterface):
 
         Parameters
         ----------
-        data : list[np.ndarray]
+        data : Sequence[np.ndarray | Buffer]
             The inputs to the network.
 
         Raises
@@ -403,7 +405,7 @@ class TRTEngine(TRTEngineInterface):
 
     def execute(
         self: Self,
-        data: list[np.ndarray],
+        data: Sequence[np.ndarray | Buffer],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -414,8 +416,10 @@ class TRTEngine(TRTEngineInterface):
 
         Parameters
         ----------
-        data : list[np.ndarray]
-            The inputs to the network.
+        data : Sequence[np.ndarray | Buffer]
+            The inputs to the network. Host arrays are copied to the device
+            bindings; a device ``Buffer`` is copied device-to-device. Pass
+            ``direct_exec`` device pointers instead to run without any copy.
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,

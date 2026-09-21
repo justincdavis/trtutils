@@ -447,3 +447,47 @@ def test_array_property_device_raises() -> None:
     with pytest.raises(RuntimeError, match="Device buffers"):
         _ = buffer.array
     buffer.free()
+
+
+class _FakeCudaArray:
+    """Minimal __cuda_array_interface__ carrier backed by a device Buffer."""
+
+    def __init__(self, buffer: Buffer, strides: tuple[int, ...] | None = None) -> None:
+        self._buffer = buffer
+        self._strides = strides
+
+    @property
+    def __cuda_array_interface__(self) -> dict:
+        interface = dict(self._buffer.__cuda_array_interface__)
+        interface["strides"] = self._strides
+        return interface
+
+
+def test_from_cuda_array_view() -> None:
+    """from_cuda_array wraps the object's memory without copying and keeps it alive."""
+    arr = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+    owner = Buffer.from_array(arr, MemoryLocation.DEVICE)
+    view = Buffer.from_cuda_array(_FakeCudaArray(owner))
+    assert view.location == MemoryLocation.DEVICE
+    assert view.ptr == owner.ptr
+    assert view.shape == (2, 3, 4)
+    assert view.dtype == np.float32
+    assert view.owns_memory is False
+    np.testing.assert_array_equal(view.numpy(), arr)
+    # a Buffer is itself a CUDA-array-interface object
+    assert Buffer.from_cuda_array(owner).ptr == owner.ptr
+    owner.free()
+
+
+def test_from_cuda_array_rejects_non_contiguous() -> None:
+    """Strided (non C-contiguous) memory is refused rather than silently misread."""
+    owner = Buffer.empty((4, 4), np.dtype(np.float32), MemoryLocation.DEVICE)
+    with pytest.raises(ValueError, match="C-contiguous"):
+        Buffer.from_cuda_array(_FakeCudaArray(owner, strides=(4, 16)))
+    owner.free()
+
+
+def test_from_cuda_array_rejects_plain_objects() -> None:
+    """Objects without the interface raise TypeError."""
+    with pytest.raises(TypeError, match="__cuda_array_interface__"):
+        Buffer.from_cuda_array(np.zeros(4, dtype=np.float32))
