@@ -775,7 +775,7 @@ class ImageModel:
         (keyed per batch size and input pointer set), and D2H output copy.
         Subclasses call this and then perform their own postprocessing.
 
-        With PR 5's per-shape staging slots the preprocessor's output pointer
+        With per-shape staging slots the preprocessor's output pointer
         is stable per resolution, so image dimensions are no longer locked on
         the first call: a changed resolution is just a graph-cache hit or
         miss like any other pointer change.
