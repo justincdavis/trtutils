@@ -250,8 +250,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             sst_args = self._sst_kernel.create_args(
                 self._sst_input_binding.allocation,
                 self._output_binding.allocation,
-                self._mean_buffer.allocation,
-                self._std_buffer.allocation,
+                self._mean_buffer.ptr,
+                self._std_buffer.ptr,
                 o_height,
                 o_width,
                 batch_size,

@@ -15,9 +15,9 @@ import nvtx
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
+from trtutils.core._buffer import Buffer, MemoryLocation
 from trtutils.core._kernels import Kernel
 from trtutils.core._memory import (
-    memcpy_device_to_host_async,
     memcpy_host_to_device_async,
 )
 from trtutils.core._stream import create_stream, stream_synchronize
@@ -379,8 +379,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
         self._letterbox_kernel = Kernel(LETTERBOX_RESIZE[0], LETTERBOX_RESIZE[1])
 
         # if the imagenet mean/std are supplied, allocate the cuda buffers
-        self._mean_buffer: Binding | None = None
-        self._std_buffer: Binding | None = None
+        self._mean_buffer: Buffer | None = None
+        self._std_buffer: Buffer | None = None
         if mean is not None and std is not None:
             self._allocate_imagenet_buffers()
 
@@ -390,11 +390,11 @@ class GPUImagePreprocessor(ImagePreprocessor):
         )
         orig_size_arr: np.ndarray = np.array([1080, 1920], dtype=self._orig_size_dtype)
         self._orig_size_host = orig_size_arr
-        self._orig_size_buffer = create_binding(orig_size_arr)
+        self._orig_size_buffer = Buffer.from_array(orig_size_arr, MemoryLocation.DEVICE)
 
         scale_factor_arr: np.ndarray = np.array([1.0, 1.0], dtype=np.float32)
         self._scale_factor_host = scale_factor_arr
-        self._scale_factor_buffer = create_binding(scale_factor_arr)
+        self._scale_factor_buffer = Buffer.from_array(scale_factor_arr, MemoryLocation.DEVICE)
 
         self._buffers_valid = False
         self._last_transferred_shape: tuple[int, int] | None = None
@@ -528,18 +528,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # allocate_imagenet_buffers
             raise ValueError(err_msg)
-        self._mean_buffer = create_binding(self._mean)
-        memcpy_host_to_device_async(
-            self._mean_buffer.allocation,
-            self._mean,
-            self._stream,
-        )
-        self._std_buffer = create_binding(self._std)
-        memcpy_host_to_device_async(
-            self._std_buffer.allocation,
-            self._std,
-            self._stream,
-        )
+        self._mean_buffer = Buffer.from_array(self._mean, MemoryLocation.DEVICE)
+        self._std_buffer = Buffer.from_array(self._std, MemoryLocation.DEVICE)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # allocate_imagenet_buffers
@@ -775,12 +765,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         batch_size = len(batch_images)
         output_binding = self.output_binding
 
-        if not self._unified_mem:
-            memcpy_device_to_host_async(
-                output_binding.host_allocation,
-                output_binding.allocation,
-                self._stream,
-            )
+        output_binding.download(self._stream)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["stream_sync"])
@@ -813,7 +798,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The GPU pointer and validity flag.
 
         """
-        return (self._orig_size_buffer.allocation, self._buffers_valid)
+        return (self._orig_size_buffer.ptr, self._buffers_valid)
 
     @property
     def scale_factor_allocation(self: Self) -> tuple[int, bool]:
@@ -826,7 +811,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The GPU pointer and validity flag.
 
         """
-        return (self._scale_factor_buffer.allocation, self._buffers_valid)
+        return (self._scale_factor_buffer.ptr, self._buffers_valid)
 
     def _update_extra_buffers(
         self: Self,
@@ -862,16 +847,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
         self._scale_factor_host[0] = ratios[0]
         self._scale_factor_host[1] = ratios[1]
 
-        memcpy_host_to_device_async(
-            self._orig_size_buffer.allocation,
-            self._orig_size_host,
-            self._stream,
-        )
-        memcpy_host_to_device_async(
-            self._scale_factor_buffer.allocation,
-            self._scale_factor_host,
-            self._stream,
-        )
+        self._orig_size_buffer.copy_from(self._orig_size_host, self._stream)
+        self._scale_factor_buffer.copy_from(self._scale_factor_host, self._stream)
 
         self._last_transferred_shape = current_shape
         self._buffers_valid = True
