@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import warnings
 
 from utils.config import (
@@ -131,37 +130,21 @@ def cmd_batch(args: argparse.Namespace) -> None:
     print("=" * 70)
 
     if args.stage is not None:
-        _write_stage_snapshot(
+        from utils.runners import write_stage_snapshot
+
+        write_stage_snapshot(
             args.device,
             args.stage,
+            "batch",
             {
                 "model": args.model,
                 "imgsz": args.imgsz,
                 "batch_sizes": args.batch_sizes,
                 "warmup": args.warmup,
                 "iterations": args.iterations,
-                "batch": data,
+                "data": data,
             },
         )
-
-
-def _write_stage_snapshot(device: str, stage: str, payload: dict) -> None:
-    """Write a perf-series stage snapshot, tagged with the stage name and trtutils SHA."""
-    from utils.config import DATA_DIR
-    from utils.runners import _trtutils_git_sha
-
-    out_dir = DATA_DIR / "perf-series" / device
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"stage-{stage}.json"
-    full_payload = {
-        "device": device,
-        "stage": stage,
-        "trtutils_sha": _trtutils_git_sha(),
-        **payload,
-    }
-    with out_path.open("w") as f:
-        json.dump(full_payload, f, indent=2)
-    print(f"Wrote stage snapshot: {out_path}")
 
 
 def cmd_optimize(args: argparse.Namespace) -> None:
@@ -249,8 +232,7 @@ def cmd_plot(args: argparse.Namespace) -> None:
         if args.device:
             devices = [d for d in devices if d == args.device]
         boundaries = [
-            (float(pos), label)
-            for pos, label in (b.split(":", 1) for b in (args.boundary or []))
+            (float(pos), label) for pos, label in (b.split(":", 1) for b in (args.boundary or []))
         ]
         for device in devices:
             if device not in skip_devices:

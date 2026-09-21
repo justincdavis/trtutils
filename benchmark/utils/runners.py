@@ -372,7 +372,7 @@ def run_benchmark(
                 warmup_iters=warmup_iters,
                 image=image,
             )
-            modes = modes=[
+            modes = modes = [
                 ("trtutils", "detector"),
                 ("trtutils(graph)", "detector_graph"),
                 ("tensorrt", "raw"),
@@ -384,7 +384,7 @@ def run_benchmark(
                 model_name=model_name,
                 image=image,
             )
-            modes=[("ultralytics(torch)", False), ("ultralytics(trt)", True)],
+            modes = ([("ultralytics(torch)", False), ("ultralytics(trt)", True)],)
         _run_benchmarks(
             device,
             model_name,
@@ -491,6 +491,28 @@ def _trtutils_git_sha() -> str | None:
     except (subprocess.CalledProcessError, OSError):
         return None
     return result.stdout.strip()
+
+
+def write_stage_snapshot(device: str, stage: str, section: str, payload: dict) -> Path:
+    """
+    Merge one benchmark section into data/perf-series/<device>/stage-<stage>.json.
+
+    ``optimize`` and ``batch`` each own a section of the same stage file, so
+    running them in either order (or re-running one) never discards the other.
+    """
+    out_dir = DATA_DIR / "perf-series" / device
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"stage-{stage}.json"
+    snapshot: dict = {}
+    if out_path.exists():
+        with out_path.open("r") as f:
+            snapshot = json.load(f)
+    snapshot.update({"device": device, "stage": stage, "trtutils_sha": _trtutils_git_sha()})
+    snapshot[section] = payload
+    with out_path.open("w") as f:
+        json.dump(snapshot, f, indent=2)
+    print(f"Wrote stage snapshot: {out_path} [{section}]")
+    return out_path
 
 
 def benchmark_optimizations(
@@ -658,14 +680,11 @@ def benchmark_optimizations(
         "results": results,
     }
     if stage is not None:
-        out_dir = DATA_DIR / "perf-series" / device
-        out_path = out_dir / f"stage-{stage}.json"
-        payload["stage"] = stage
-        payload["trtutils_sha"] = _trtutils_git_sha()
-    else:
-        out_dir = DATA_DIR / "optimizations"
-        out_path = out_dir / f"{device}.json"
+        write_stage_snapshot(device, stage, "optimize", payload)
+        return
+    out_dir = DATA_DIR / "optimizations"
     out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{device}.json"
     with out_path.open("w") as f:
         json.dump(payload, f, indent=2)
     print(f"\nWrote {out_path}")
