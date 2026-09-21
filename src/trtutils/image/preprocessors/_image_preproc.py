@@ -20,7 +20,16 @@ from trtutils.core._kernels import Kernel
 from trtutils.core._memory import (
     memcpy_host_to_device_async,
 )
-from trtutils.core._stream import create_stream, stream_synchronize
+from trtutils.core._stream import (
+    create_event,
+    create_stream,
+    destroy_event,
+    destroy_stream,
+    event_synchronize,
+    record_event,
+    stream_synchronize,
+    stream_wait_event,
+)
 from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
 
 if TYPE_CHECKING:
@@ -33,6 +42,39 @@ if TYPE_CHECKING:
 
 _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
+# max cached staging buffers for heterogeneous batches before the pool resets
+_MAX_STAGING_SLOTS = 64
+# max cached (height, width, method) resize-arg entries before the cache resets
+_MAX_RESIZE_CACHE_ENTRIES = 64
+
+
+class _StagingSlot:
+    """Internal staging buffer for heterogeneous batch uploads."""
+
+    __slots__ = (
+        "binding",
+        "copy_done",
+        "copy_recorded",
+        "in_use",
+        "shape",
+        "use_done",
+        "use_recorded",
+    )
+
+    def __init__(self, shape: tuple[int, int, int], binding: Binding) -> None:
+        self.shape = shape
+        self.binding = binding
+        self.copy_done: cudart.cudaEvent_t = create_event()
+        self.use_done: cudart.cudaEvent_t = create_event()
+        self.copy_recorded: bool = False
+        self.use_recorded: bool = False
+        self.in_use: bool = False
+
+    def free(self) -> None:
+        with contextlib.suppress(RuntimeError):
+            destroy_event(self.copy_done)
+        with contextlib.suppress(RuntimeError):
+            destroy_event(self.use_done)
 
 
 class ImagePreprocessor(ABC):
@@ -323,7 +365,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 "create_resize_args": f"preproc::create_resize_args [{self._tag}]",
                 "update_extra_buffers": f"preproc::update_extra_buffers [{self._tag}]",
                 "validate_input": f"preproc::validate_input [{self._tag}]",
-                "reallocate_input": f"preproc::reallocate_input [{self._tag}]",
                 "allocate_imagenet_buffers": f"preproc::allocate_imagenet_buffers [{self._tag}]",
                 "resize_single": f"preproc::resize_single_image [{self._tag}]",
                 "resize_homogeneous": f"preproc::resize_homogeneous_batch [{self._tag}]",
@@ -350,21 +391,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
         else:
             self._stream = create_stream()
             self._own_stream = True
-
-        # allocate input, output binding
-        # need input -> intermediate -> output
-        # for now just allocate 1080p image, reallocate when needed
-        # resize kernel input binding
-        self._allocated_input_shape: tuple[int, int, int] = (1080, 1920, 3)
-        dummy_input: np.ndarray = np.zeros(
-            self._allocated_input_shape,
-            dtype=np.uint8,
-        )
-        self._input_binding = create_binding(
-            dummy_input,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=self._unified_mem,
-        )
 
         # block and thread info
         self._num_threads: tuple[int, int, int] = threads or (32, 32, 1)
@@ -411,11 +437,23 @@ class GPUImagePreprocessor(ImagePreprocessor):
         # Track current batch size for buffer reallocation
         self._current_batch_size: int = 1
 
-        # Cache for _create_resize_args: avoid repacking kernel args for same resolution
-        self._cached_resize_key: tuple[int, int, str] | None = None
-        self._cached_resize_result: (
-            tuple[Kernel, tuple[float, float], tuple[float, float], tuple[int, ...]] | None
-        ) = None
+        # Cache for _create_resize_args: avoid repacking kernel args for a
+        # resolution seen before. Bounded dict keyed on (height, width,
+        # method), so letterbox and linear entries for the same resolution
+        # coexist independently and alternating resolutions all hit.
+        self._cached_resize_args: dict[
+            tuple[int, int, str],
+            tuple[Kernel, tuple[float, float], tuple[float, float], tuple[int, ...]],
+        ] = {}
+
+        # Heterogeneous-batch staging: a dedicated copy stream plus a pool of
+        # per-shape staging buffers, created lazily on the first heterogeneous
+        # (or resolution-switching single-image) call. Distinct buffers plus
+        # a copy stream let H2D of image i+1 overlap the resize kernel of
+        # image i, and remove the buffer reallocation churn a single shared
+        # input binding caused.
+        self._copy_stream: cudart.cudaStream_t | None = None
+        self._staging_pool: list[_StagingSlot] = []
 
         # Homogeneous-batch staging buffer: one contiguous H2D for same-sized images.
         self._allocated_batch_input_shape: tuple[int, int, int, int] = (1, 1080, 1920, 3)
@@ -429,6 +467,11 @@ class GPUImagePreprocessor(ImagePreprocessor):
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
+        self._batch_input_capacity: int = int(np.prod(self._allocated_batch_input_shape))
+        self._batch_input_view: np.ndarray = self._batch_input_binding.host_allocation
+        # event guarding reuse of the pinned batch buffer across calls
+        self._batch_copy_done: cudart.cudaEvent_t | None = None
+        self._batch_copy_recorded: bool = False
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # gpu_init
@@ -443,9 +486,19 @@ class GPUImagePreprocessor(ImagePreprocessor):
         with contextlib.suppress(AttributeError):
             del self._std_buffer
         with contextlib.suppress(AttributeError):
-            del self._input_binding
-        with contextlib.suppress(AttributeError):
             del self._batch_input_binding
+        with contextlib.suppress(AttributeError, RuntimeError):
+            for slot in self._staging_pool:
+                slot.free()
+            self._staging_pool = []
+        with contextlib.suppress(AttributeError, RuntimeError):
+            if self._batch_copy_done is not None:
+                destroy_event(self._batch_copy_done)
+                self._batch_copy_done = None
+        with contextlib.suppress(AttributeError, RuntimeError):
+            if self._copy_stream is not None:
+                destroy_stream(self._copy_stream)
+                self._copy_stream = None
 
     def warmup(self: Self) -> None:
         """
@@ -543,37 +596,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # allocate_imagenet_buffers
 
-    def _reallocate_input(
-        self: Self,
-        image: np.ndarray,
-        img_shape: tuple[int, int, int],
-        *,
-        verbose: bool | None = None,
-    ) -> None:
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["reallocate_input"])
-
-        if verbose:
-            LOG.debug(f"{self._tag}: Reallocating input bindings")
-            LOG.debug(
-                f"{self._tag}: Reallocation -> new shape: {img_shape}, old shape: {self._allocated_input_shape}",
-            )
-
-        self._allocated_input_shape = img_shape
-        self._input_binding = create_binding(
-            image,
-            is_input=True,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=self._unified_mem,
-        )
-
-        # Invalidate resize args cache: input binding allocation changed
-        self._cached_resize_key = None
-        self._cached_resize_result = None
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # reallocate_input
-
     def _validate_input(
         self: Self,
         image: np.ndarray,
@@ -603,23 +625,14 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 nvtx.pop_range()  # validate_input
             raise ValueError(err_msg)
 
-        img_shape: tuple[int, int, int] = image.shape
-
-        if verbose:
-            LOG.debug(
-                f"{self._tag}: Image shape: {img_shape}, Allocated shape: {self._allocated_input_shape}",
-            )
-
-        # check if the image shape is the same as re have allocated with, if not update
-        if img_shape != self._allocated_input_shape:
-            # put ignore here, since we verified dmin is 3 above
-            if img_shape[2] != _COLOR_CHANNELS:
-                err_msg = f"{self._tag}: Can only preprocess color images."
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # validate_input
-                raise ValueError(err_msg)
-
-            self._reallocate_input(image, img_shape, verbose=verbose)
+        # no reallocation happens here: single images are staged through the
+        # per-shape pool (_acquire_staging_slot), so a resolution seen
+        # before reuses its slot instead of paying a reallocation here
+        if image.shape[2] != _COLOR_CHANNELS:
+            err_msg = f"{self._tag}: Can only preprocess color images."
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # validate_input
+            raise ValueError(err_msg)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # validate_input
@@ -632,17 +645,32 @@ class GPUImagePreprocessor(ImagePreprocessor):
         height: int,
         width: int,
     ) -> None:
-        """Reallocate homogeneous batch staging buffer when shape changes."""
+        """Resolve the homogeneous batch staging buffer, growing only when needed."""
         requested_shape = (batch_size, height, width, _COLOR_CHANNELS)
         if requested_shape == self._allocated_batch_input_shape:
             return
+        requested_nbytes = batch_size * height * width * _COLOR_CHANNELS
+        if requested_nbytes <= self._batch_input_capacity:
+            # high-water-mark: reuse the existing allocation, expose the
+            # prefix at the requested shape (contiguous uint8, views are free)
+            self._allocated_batch_input_shape = requested_shape
+            self._batch_input_view = self._batch_input_binding.host_allocation.reshape(-1)[
+                :requested_nbytes
+            ].reshape(requested_shape)
+            return
+        # growth: the old buffer may still be in flight from the previous call
+        stream_synchronize(self._stream)
+        if self._copy_stream is not None:
+            stream_synchronize(self._copy_stream)
         self._allocated_batch_input_shape = requested_shape
+        self._batch_input_capacity = requested_nbytes
         self._batch_input_binding = create_binding(
             np.zeros(requested_shape, dtype=np.uint8),
             is_input=True,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
+        self._batch_input_view = self._batch_input_binding.host_allocation
 
     @abstractmethod
     def direct_preproc(
@@ -908,10 +936,13 @@ class GPUImagePreprocessor(ImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["create_resize_args"])
 
-        # Check cache: for constant-resolution input, geometry is identical every frame.
+        # Check cache: geometry is identical every time a resolution is seen
+        # again, so a dict keyed on (height, width, method) lets alternating
+        # resolutions all hit instead of only the most recent one.
         cache_key = (height, width, method)
-        if cache_key == self._cached_resize_key and self._cached_resize_result is not None:
-            resize_kernel, ratios, padding, geometry_args = self._cached_resize_result
+        cached = self._cached_resize_args.get(cache_key)
+        if cached is not None:
+            resize_kernel, ratios, padding, geometry_args = cached
         else:
             if verbose:
                 LOG.debug(f"{self._tag}: create_resize_args")
@@ -956,8 +987,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
                     o_height,
                 )
 
-            self._cached_resize_key = cache_key
-            self._cached_resize_result = (resize_kernel, ratios, padding, geometry_args)
+            if len(self._cached_resize_args) >= _MAX_RESIZE_CACHE_ENTRIES:
+                self._cached_resize_args = {}
+            self._cached_resize_args[cache_key] = (resize_kernel, ratios, padding, geometry_args)
 
         resize_args = resize_kernel.create_args(
             input_ptr,
@@ -986,29 +1018,50 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.push_range(self._nvtx_tags["resize_single"])
 
         height, width = image.shape[:2]
+        # route through the staging pool instead of a single shared input
+        # binding: a resolution seen before reuses its slot, so alternating
+        # resolutions no longer reallocates on every call. Upload and kernel
+        # both run on the main stream (nothing to overlap for a single
+        # image), so they are already ordered relative to each other; the
+        # event gating below only protects the slot across separate calls
+        # that may not have synchronized the stream in between.
+        slot = self._acquire_staging_slot(image)
         resize_kernel, resize_args, ratios, padding = self._create_resize_args(
             height,
             width,
             resize_method,
-            self._input_binding.allocation,
+            slot.binding.allocation,
             batch_buffer_ptr,
             verbose=verbose,
         )
         self._update_extra_buffers(height, width, ratios)
         if self._pagelocked_mem and self._unified_mem:
-            np.copyto(self._input_binding.host_allocation, image)
+            # host-side write into the mapped allocation: wait for the last
+            # kernel that read this slot to finish before overwriting it
+            if slot.use_recorded:
+                event_synchronize(slot.use_done)
+            np.copyto(slot.binding.host_allocation, image)
         else:
-            memcpy_host_to_device_async(
-                self._input_binding.allocation,
-                image,
-                self._stream,
-            )
+            # copy straight from the caller's (pageable) array. Staging through
+            # the slot's pinned buffer only pays off when the host memcpy of
+            # one image can overlap the DMA of another, which a single image
+            # has nothing to overlap with: on a discrete device the serialized
+            # np.copyto + DMA measured ~0.2 ms slower per 1080p frame than the
+            # driver's own pipelined pageable copy.
+            if slot.use_recorded:
+                stream_wait_event(self._stream, slot.use_done)
+            slot.binding.device.copy_from(image, self._stream)
+        record_event(slot.copy_done, self._stream)
+        slot.copy_recorded = True
         resize_kernel.call(
             self._num_blocks,
             self._num_threads,
             self._stream,
             resize_args,
         )
+        record_event(slot.use_done, self._stream)
+        slot.use_recorded = True
+        slot.in_use = False
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # resize_single
@@ -1037,18 +1090,66 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.pop_range()  # reallocate_batch_input
             nvtx.push_range(self._nvtx_tags["pack_batch_buffer"])
 
-        # Pack host batch buffer once; avoid np.stack allocation in hot path.
-        for i, image in enumerate(images):
-            np.copyto(self._batch_input_binding.host_allocation[i], image)
+        host_batch = self._batch_input_view
+        image_nbytes = height * width * _COLOR_CHANNELS
+        unified = self._pagelocked_mem and self._unified_mem
+        if not unified:
+            if self._copy_stream is None:
+                self._copy_stream = create_stream()
+            if self._batch_copy_done is None:
+                self._batch_copy_done = create_event()
+            if self._batch_copy_recorded:
+                # prior DMA out of this pinned buffer must be complete
+                # before the host rewrites it (no-op in steady state, the
+                # main stream was synced after the previous execution)
+                event_synchronize(self._batch_copy_done)
+
+        # Direct DMA out of the caller's arrays, skipping the pinned staging
+        # copy entirely. Staging exists to get full-rate DMA out of pageable
+        # memory, but on a coherent host/device interconnect the driver
+        # already reaches full rate from pageable pages, so the staging
+        # memcpy is pure overhead: measured on GB10, staging runs 17 GB/s
+        # against 55 GB/s direct. Requires C-contiguous sources of exactly
+        # the expected size; anything else falls back to staging.
+        direct = (
+            not unified
+            and FLAGS.INTEGRATED_GPU
+            and all(img.flags["C_CONTIGUOUS"] and img.nbytes == image_nbytes for img in images)
+        )
+        if direct:
+            # the device buffer is shaped (batch, height, width, channels), so
+            # indexing it yields the slot for image i without pointer
+            # arithmetic, and the view carries its own size for the copy to
+            # validate against
+            device_batch = self._batch_input_binding.device.reshape(
+                (batch_size, height, width, _COLOR_CHANNELS)
+            )
+            for i, image in enumerate(images):
+                device_batch[i].copy_from(image, self._copy_stream)
+
+        if unified:
+            # mapped memory: host writes are the transfer
+            for i, image in enumerate(images):
+                np.copyto(host_batch[i], image)
+        elif not direct:
+            # interleave the host pack with per-slice DMA on the copy stream:
+            # the pinned memcpy of image i+1 overlaps the DMA of image i,
+            # instead of packing everything and then issuing one serial H2D
+            for i, image in enumerate(images):
+                np.copyto(host_batch[i], image)
+                memcpy_host_to_device_async(
+                    self._batch_input_binding.allocation + (i * image_nbytes),
+                    host_batch[i],
+                    self._copy_stream,
+                )
+
+        if not unified:
+            record_event(self._batch_copy_done, self._copy_stream)
+            self._batch_copy_recorded = True
+            # the resize kernel on the main stream consumes the whole batch
+            stream_wait_event(self._stream, self._batch_copy_done)
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # pack_batch_buffer
-
-        if not (self._pagelocked_mem and self._unified_mem):
-            memcpy_host_to_device_async(
-                self._batch_input_binding.allocation,
-                self._batch_input_binding.host_allocation,
-                self._stream,
-            )
 
         o_width, o_height = self._o_shape
         in_stride = height * width * _COLOR_CHANNELS
@@ -1076,6 +1177,39 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         return [ratios] * batch_size, [padding] * batch_size
 
+    def _acquire_staging_slot(
+        self: Self,
+        image: np.ndarray,
+    ) -> _StagingSlot:
+        """Get a free staging slot matching the image shape, allocating if needed."""
+        img_shape: tuple[int, int, int] = image.shape
+        for slot in self._staging_pool:
+            if not slot.in_use and slot.shape == img_shape:
+                slot.in_use = True
+                return slot
+
+        # pool reset if too many distinct shapes accumulated; requires the
+        # buffers to be idle, so drain both streams first (rare, steady-state
+        # workloads reuse the same slots every call)
+        if len(self._staging_pool) >= _MAX_STAGING_SLOTS:
+            stream_synchronize(self._stream)
+            if self._copy_stream is not None:
+                stream_synchronize(self._copy_stream)
+            for slot in self._staging_pool:
+                slot.free()
+            self._staging_pool = []
+
+        binding = create_binding(
+            image,
+            is_input=True,
+            pagelocked_mem=self._pagelocked_mem,
+            unified_mem=self._unified_mem,
+        )
+        slot = _StagingSlot(img_shape, binding)
+        slot.in_use = True
+        self._staging_pool.append(slot)
+        return slot
+
     def _resize_heterogeneous_batch(
         self: Self,
         images: list[np.ndarray],
@@ -1093,33 +1227,81 @@ class GPUImagePreprocessor(ImagePreprocessor):
         o_width, o_height = self._o_shape
         single_image_bytes = o_height * o_width * _COLOR_CHANNELS
 
-        for i, image in enumerate(images):
-            self._validate_input(image, resize_method, verbose=verbose)
+        if self._copy_stream is None:
+            self._copy_stream = create_stream()
+
+        # phase 1: enqueue every H2D upload on the copy stream, each into its
+        # own staging buffer. per-image dim/channel checks were already done
+        # by _resize_images_to_batch, and the resize method was validated on
+        # the first image, so no _validate_input (and no input binding
+        # reallocation churn) per image here.
+        slots: list[_StagingSlot] = []
+        for image in images:
+            slot = self._acquire_staging_slot(image)
+            if self._pagelocked_mem and self._unified_mem:
+                # host-side write into the mapped allocation: the host must
+                # wait until the last kernel that read this buffer finished
+                if slot.use_recorded:
+                    event_synchronize(slot.use_done)
+                np.copyto(slot.binding.host_allocation, image)
+            elif self._pagelocked_mem and not (FLAGS.INTEGRATED_GPU and image.flags["C_CONTIGUOUS"]):
+                # stage the (pageable, possibly strided) user array through
+                # the slot's pinned host buffer. a pageable cudaMemcpyAsync is
+                # driver-staged and barely overlaps kernels; a pinned-source
+                # DMA overlaps fully. the host memcpy for image i+1 also runs
+                # while the DMA of image i and kernel of image i-1 execute.
+                # this does not hold on an integrated device, where the DMA
+                # already runs at full rate from pageable memory and the
+                # staging memcpy is pure cost, so that case takes the direct
+                # branch below.
+                if slot.copy_recorded:
+                    # prior DMA out of this pinned buffer must be complete
+                    # before the host rewrites it
+                    event_synchronize(slot.copy_done)
+                np.copyto(slot.binding.host_allocation, image)
+                # the DMA must not overwrite device memory a kernel from a
+                # previous call may still be reading on the main stream
+                if slot.use_recorded:
+                    stream_wait_event(self._copy_stream, slot.use_done)
+                memcpy_host_to_device_async(
+                    slot.binding.allocation,
+                    slot.binding.host_allocation,
+                    self._copy_stream,
+                )
+            else:
+                # no pinned buffers available, direct pageable copy
+                if slot.use_recorded:
+                    stream_wait_event(self._copy_stream, slot.use_done)
+                slot.binding.device.copy_from(image, self._copy_stream)
+            record_event(slot.copy_done, self._copy_stream)
+            slot.copy_recorded = True
+            slots.append(slot)
+
+        # phase 2: enqueue the resize kernels on the main stream, each gated
+        # on its own upload. upload i+1 proceeds on the copy stream while
+        # kernel i runs on the main stream.
+        for i, (image, slot) in enumerate(zip(images, slots)):
             height, width = image.shape[:2]
             resize_kernel, resize_args, ratios, padding = self._create_resize_args(
                 height,
                 width,
                 resize_method,
-                self._input_binding.allocation,
+                slot.binding.allocation,
                 batch_buffer_ptr + (i * single_image_bytes),
                 verbose=verbose,
             )
             if i == 0:
                 self._update_extra_buffers(height, width, ratios)
-            if self._pagelocked_mem and self._unified_mem:
-                np.copyto(self._input_binding.host_allocation, image)
-            else:
-                memcpy_host_to_device_async(
-                    self._input_binding.allocation,
-                    image,
-                    self._stream,
-                )
+            stream_wait_event(self._stream, slot.copy_done)
             resize_kernel.call(
                 self._num_blocks,
                 self._num_threads,
                 self._stream,
                 resize_args,
             )
+            record_event(slot.use_done, self._stream)
+            slot.use_recorded = True
+            slot.in_use = False
             ratios_list.append(ratios)
             padding_list.append(padding)
 
