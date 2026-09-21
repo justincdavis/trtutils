@@ -23,16 +23,10 @@ from ._memory import (
     allocate_pinned_memory,
     cuda_malloc,
     get_ptr_pair,
-    memcpy_device_to_device,
-    memcpy_device_to_device_async,
+    memcpy,
     memcpy_device_to_host,
-    memcpy_device_to_host_async,
-    memcpy_host_to_device,
-    memcpy_host_to_device_async,
     memcpy_nd_device_to_host,
-    memcpy_nd_device_to_host_async,
     memcpy_nd_host_to_device,
-    memcpy_nd_host_to_device_async,
 )
 
 if TYPE_CHECKING:
@@ -44,6 +38,20 @@ class MemoryLocation(Enum):
 
     HOST = "host"
     DEVICE = "device"
+
+
+# cudaMemcpyKind for every (src, dst) pair that crosses or stays on the device;
+# host-to-host goes through numpy instead
+_COPY_KINDS: dict[tuple[MemoryLocation, MemoryLocation], cudart.cudaMemcpyKind] = {}
+with contextlib.suppress(NameError, AttributeError):
+    _COPY_KINDS = {
+        (MemoryLocation.HOST, MemoryLocation.DEVICE): cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
+        (MemoryLocation.DEVICE, MemoryLocation.HOST): cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
+        (
+            MemoryLocation.DEVICE,
+            MemoryLocation.DEVICE,
+        ): cudart.cudaMemcpyKind.cudaMemcpyDeviceToDevice,
+    }
 
 
 class Buffer:
@@ -324,6 +332,48 @@ class Buffer:
         buffer._parent = owner
         return buffer
 
+    @classmethod
+    def from_cuda_array(cls: type[Self], obj: object) -> Self:
+        """
+        Create a non-owning device Buffer view over any CUDA-array-interface object.
+
+        Accepts CuPy / Numba / PyTorch tensors, nvImageCodec images, another
+        Buffer, or anything else exposing ``__cuda_array_interface__``. The
+        object is kept alive for the lifetime of the view.
+
+        Parameters
+        ----------
+        obj : object
+            An object exposing the CUDA Array Interface.
+
+        Returns
+        -------
+        Buffer
+            A non-owning device view of the object's memory.
+
+        Raises
+        ------
+        TypeError
+            If the object does not expose ``__cuda_array_interface__``.
+        ValueError
+            If the memory is not C-contiguous.
+
+        """
+        interface = getattr(obj, "__cuda_array_interface__", None)
+        if interface is None:
+            err_msg = f"{type(obj).__name__} does not expose __cuda_array_interface__."
+            raise TypeError(err_msg)
+        shape = tuple(int(s) for s in interface["shape"])
+        dtype = np.dtype(interface["typestr"])
+        strides = interface.get("strides")
+        if strides is not None and tuple(strides) != tuple(np.empty(shape, dtype=dtype).strides):
+            err_msg = (
+                f"Buffer views require C-contiguous memory, got strides {strides} for shape {shape}."
+            )
+            raise ValueError(err_msg)
+        ptr, _ = interface["data"]
+        return cls.from_ptr(int(ptr), shape, dtype, MemoryLocation.DEVICE, owner=obj)
+
     # ------------------------------------------------------------------
     # properties
     # ------------------------------------------------------------------
@@ -531,6 +581,28 @@ class Buffer:
             nvtx.pop_range()
         return dst
 
+    def _check_nbytes(self: Self, other: int, *, dst: bool) -> None:
+        """
+        Raise if the other side of a copy holds a different number of bytes.
+
+        Parameters
+        ----------
+        other : int
+            The byte count of the other side of the copy.
+        dst : bool
+            Whether the other side is the destination (for the message).
+
+        Raises
+        ------
+        ValueError
+            If the sizes differ.
+
+        """
+        if other != self.nbytes:
+            src_n, dst_n = (self.nbytes, other) if dst else (other, self.nbytes)
+            err_msg = f"Buffer size mismatch: src has {src_n} bytes, dst has {dst_n} bytes."
+            raise ValueError(err_msg)
+
     def copy_to(
         self: Self,
         dst: Buffer | np.ndarray,
@@ -560,39 +632,19 @@ class Buffer:
 
         """
         if isinstance(dst, np.ndarray):
-            if dst.size * dst.itemsize != self.nbytes:
-                err_msg = f"Buffer size mismatch: src has {self.nbytes} bytes, dst has {dst.size * dst.itemsize} bytes."
-                raise ValueError(err_msg)
+            self._check_nbytes(dst.size * dst.itemsize, dst=True)
             if self._location == MemoryLocation.HOST:
                 np.copyto(dst, self.array.reshape(dst.shape))
-            elif stream is not None:
-                memcpy_nd_device_to_host_async(dst, self._ptr, stream)
             else:
-                memcpy_nd_device_to_host(dst, self._ptr)
+                memcpy_nd_device_to_host(dst, self._ptr, stream)
             return
-        if self.nbytes != dst.nbytes:
-            err_msg = (
-                f"Buffer size mismatch: src has {self.nbytes} bytes, dst has {dst.nbytes} bytes."
-            )
-            raise ValueError(err_msg)
 
-        src_loc, dst_loc = self._location, dst.location
-        if src_loc == MemoryLocation.HOST and dst_loc == MemoryLocation.HOST:
+        self._check_nbytes(dst.nbytes, dst=True)
+        if self._location == MemoryLocation.HOST and dst.location == MemoryLocation.HOST:
             np.copyto(dst.array, self.array.reshape(dst.array.shape))
-        elif src_loc == MemoryLocation.HOST and dst_loc == MemoryLocation.DEVICE:
-            if stream is not None:
-                memcpy_host_to_device_async(dst.ptr, self.array, stream)
-            else:
-                memcpy_host_to_device(dst.ptr, self.array)
-        elif src_loc == MemoryLocation.DEVICE and dst_loc == MemoryLocation.HOST:
-            if stream is not None:
-                memcpy_device_to_host_async(dst.array, self._ptr, stream)
-            else:
-                memcpy_device_to_host(dst.array, self._ptr)
-        elif stream is not None:
-            memcpy_device_to_device_async(dst.ptr, self._ptr, self.nbytes, stream)
-        else:
-            memcpy_device_to_device(dst.ptr, self._ptr, self.nbytes)
+            return
+        kind = _COPY_KINDS[self._location, dst.location]
+        memcpy(dst.ptr, self._ptr, self.nbytes, kind, stream)
 
     def copy_from(
         self: Self,
@@ -620,15 +672,11 @@ class Buffer:
 
         """
         if isinstance(src, np.ndarray):
-            if src.size * src.itemsize != self.nbytes:
-                err_msg = f"Buffer size mismatch: src has {src.size * src.itemsize} bytes, dst has {self.nbytes} bytes."
-                raise ValueError(err_msg)
+            self._check_nbytes(src.size * src.itemsize, dst=False)
             if self._location == MemoryLocation.HOST:
                 np.copyto(self.array.reshape(src.shape), src)
-            elif stream is not None:
-                memcpy_nd_host_to_device_async(self._ptr, src, stream)
             else:
-                memcpy_nd_host_to_device(self._ptr, src)
+                memcpy_nd_host_to_device(self._ptr, src, stream)
             return
         src.copy_to(self, stream)
 

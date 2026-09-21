@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    from .interfaces import ImageInput
+
 
 class Classifier(ImageModel, ClassifierInterface):
     """Implementation of image classifiers."""
@@ -180,7 +182,7 @@ class Classifier(ImageModel, ClassifierInterface):
     @overload
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -191,7 +193,7 @@ class Classifier(ImageModel, ClassifierInterface):
     @overload
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -201,7 +203,7 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -213,8 +215,10 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to run the model on.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images to run the model on, each an
+            HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -249,7 +253,7 @@ class Classifier(ImageModel, ClassifierInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -260,7 +264,7 @@ class Classifier(ImageModel, ClassifierInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -271,7 +275,7 @@ class Classifier(ImageModel, ClassifierInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -283,7 +287,7 @@ class Classifier(ImageModel, ClassifierInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -294,7 +298,7 @@ class Classifier(ImageModel, ClassifierInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -305,7 +309,7 @@ class Classifier(ImageModel, ClassifierInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -315,7 +319,7 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def run(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -327,8 +331,10 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to run the model on.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images to run the model on, each an
+            HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -437,7 +443,7 @@ class Classifier(ImageModel, ClassifierInterface):
     @overload
     def end2end(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
@@ -446,7 +452,7 @@ class Classifier(ImageModel, ClassifierInterface):
     @overload
     def end2end(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
@@ -454,7 +460,7 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def end2end(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         top_k: int = 5,
         *,
         verbose: bool | None = None,
@@ -468,8 +474,10 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to perform inference with.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images to perform inference with, each
+            an HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         top_k : int, optional
             The number of top predictions to return. Default is 5.
         verbose : bool, optional

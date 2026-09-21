@@ -8,8 +8,14 @@ from __future__ import annotations
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils.core import Buffer, MemoryLocation
 from trtutils.image._hand_interaction import HandInteractionDetector
 from trtutils.models import HOIDETR, Hands23
+
+HAND_INTERACTION_MODELS = [
+    pytest.param(HOIDETR, DATA_DIR / "hoi_detr" / "hoi_detr_vitl_640.onnx", id="hoi-detr"),
+    pytest.param(Hands23, DATA_DIR / "hands23" / "hands23_x101_800.onnx", id="hands23"),
+]
 
 
 def test_output_contract_validation(build_test_engine) -> None:
@@ -31,13 +37,7 @@ def _assert_interactions_close(left, right) -> None:
         assert a[3:] == b[3:]
 
 
-@pytest.mark.parametrize(
-    ("model_cls", "onnx_path"),
-    [
-        pytest.param(HOIDETR, DATA_DIR / "hoi_detr" / "hoi_detr_vitl_640.onnx", id="hoi-detr"),
-        pytest.param(Hands23, DATA_DIR / "hands23" / "hands23_x101_800.onnx", id="hands23"),
-    ],
-)
+@pytest.mark.parametrize(("model_cls", "onnx_path"), HAND_INTERACTION_MODELS)
 @pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
 def test_hand_interaction_end2end(
     build_test_engine,
@@ -83,3 +83,32 @@ def test_hand_interaction_end2end(
         else:
             assert isinstance(side, int)
             assert isinstance(contact, int)
+
+
+@pytest.mark.parametrize(("model_cls", "onnx_path"), HAND_INTERACTION_MODELS)
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+def test_hand_interaction_device_buffer_matches_ndarray(
+    build_test_engine, images, model_cls, onnx_path, preprocessor
+) -> None:
+    """A device Buffer passes through preprocess() and run(postprocess=False) like an ndarray."""
+    if not onnx_path.exists():
+        pytest.skip(f"missing {onnx_path}")
+
+    engine = build_test_engine(onnx_path)
+    model = model_cls(engine, preprocessor=preprocessor, warmup=False)
+    image = images["people"].array
+
+    expected_tensor, expected_ratios, expected_padding = model.preprocess(image)
+    expected_raw = model.run(image, postprocess=False)
+
+    buf = Buffer.from_array(image, MemoryLocation.DEVICE)
+    try:
+        tensor, ratios, padding = model.preprocess(buf)
+        raw = model.run(buf, postprocess=False)
+    finally:
+        buf.free()
+
+    assert tensor.shape == expected_tensor.shape
+    assert ratios == expected_ratios
+    assert padding == expected_padding
+    assert [o.shape for o in raw] == [o.shape for o in expected_raw]

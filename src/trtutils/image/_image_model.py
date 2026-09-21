@@ -13,6 +13,7 @@ import nvtx
 from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer
 from trtutils.core._device import Device
 from trtutils.core._graph import CUDAGraph
 from trtutils.core._memory import memcpy_host_to_device_async
@@ -22,6 +23,8 @@ from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 
 if TYPE_CHECKING:
     from typing_extensions import Self
+
+    from trtutils.image.interfaces import ImageInput
 
 _COLOR_CHANNELS = 3
 # max cached end2end CUDA graphs before the cache resets
@@ -509,7 +512,7 @@ class ImageModel:
     @overload
     def preprocess(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -520,7 +523,7 @@ class ImageModel:
     @overload
     def preprocess(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -530,7 +533,7 @@ class ImageModel:
 
     def preprocess(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         resize: str | None = None,
         method: str | None = None,
         *,
@@ -542,8 +545,12 @@ class ImageModel:
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to preprocess.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images, each an HWC uint8
+            ``np.ndarray`` or a ``Buffer`` (host or device) holding one. A
+            device Buffer is consumed in place by the CUDA/TRT
+            preprocessors (no H2D copy); the CPU preprocessor copies it to
+            host once.
         resize : str
             The method to resize the images with.
             Options are [letterbox, linear].
@@ -571,8 +578,8 @@ class ImageModel:
             nvtx.push_range(self._nvtx_tags["preprocess"])
 
         # Handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
+        if isinstance(images, (np.ndarray, Buffer)):
+            batch_images: list[ImageInput] = [images]
         else:
             batch_images = images
 
@@ -677,7 +684,7 @@ class ImageModel:
 
     def _prepare_extra_engine_inputs_cpu(
         self: Self,
-        images: list[np.ndarray],  # noqa: ARG002
+        images: list[ImageInput],  # noqa: ARG002
         ratios: list[tuple[float, float]],  # noqa: ARG002
     ) -> list[int]:
         """
@@ -688,8 +695,11 @@ class ImageModel:
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The original input images (before preprocessing).
+        images : list[ImageInput]
+            The original input images (before preprocessing), each an HWC
+            uint8 ``np.ndarray`` or a ``Buffer`` (host or device) holding
+            one. Overrides that only need each image's shape can read
+            ``.shape`` directly; it works the same on both types.
         ratios : list[tuple[float, float]]
             The scaling ratios from preprocessing.
 
@@ -732,7 +742,7 @@ class ImageModel:
     def _engine_inputs(
         self: Self,
         tensor: np.ndarray,
-        images: list[np.ndarray],  # noqa: ARG002
+        images: list[ImageInput],  # noqa: ARG002
         ratios: list[tuple[float, float]] | None,  # noqa: ARG002
         *,
         preprocessed: bool,  # noqa: ARG002
@@ -747,8 +757,10 @@ class ImageModel:
         ----------
         tensor : np.ndarray
             The preprocessed batch tensor.
-        images : list[np.ndarray]
-            The original input images, before preprocessing.
+        images : list[ImageInput]
+            The original input images, before preprocessing, each an HWC
+            uint8 ``np.ndarray`` or a ``Buffer`` (host or device) holding
+            one.
         ratios : list[tuple[float, float]] | None
             The scaling ratios from preprocessing.
         preprocessed : bool
@@ -764,7 +776,7 @@ class ImageModel:
 
     def _end2end_graph_core(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         verbose: bool | None = None,
     ) -> tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]]]:
@@ -782,8 +794,9 @@ class ImageModel:
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            List of images to process.
+        images : list[ImageInput]
+            List of images to process, each an HWC uint8 ``np.ndarray`` or
+            a ``Buffer`` (host or device) holding one.
         verbose : bool, optional
             Whether to log additional information.
 
@@ -920,9 +933,63 @@ class ImageModel:
             return [outputs], True  # ty: ignore[invalid-return-type]
         return outputs, False  # ty: ignore[invalid-return-type]
 
+    def _run_direct_gpu(
+        self: Self,
+        batch_images: list[ImageInput],
+        *,
+        postprocess: bool,
+        no_copy_run: bool | None,
+        verbose: bool | None,
+    ) -> tuple[
+        list[np.ndarray],
+        list[tuple[float, float]],
+        list[tuple[float, float]],
+        float,
+        float,
+    ]:
+        """
+        Run the direct-GPU path of ``_run_core``.
+
+        Feeds the preprocessed tensor's device pointer straight to the
+        engine instead of round-tripping through host memory (preprocess
+        to host, then back to device on execute).
+
+        Parameters
+        ----------
+        batch_images : list[ImageInput]
+            The batch of images to run inference on.
+        postprocess : bool
+            Whether postprocessing will run on the raw outputs. Raw
+            outputs are copied off the engine's host allocations only when
+            this is False and ``no_copy_run`` is falsy, since the caller
+            is keeping them past the next inference.
+        no_copy_run : bool, optional
+            Whether to avoid the extra copy of raw (non-postprocessed)
+            outputs.
+        verbose : bool, optional
+            Whether to log additional information.
+
+        Returns
+        -------
+        tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]], float, float]
+            Raw outputs, ratios, padding, and the ``perf_counter``
+            timestamps bracketing engine execution.
+
+        """
+        t0 = time.perf_counter()
+        outputs, batch_ratios, batch_padding = self._end2end_graph_core(
+            batch_images,
+            verbose=verbose,
+        )
+        # raw outputs reference the engine's host allocations
+        if not postprocess and not no_copy_run:
+            outputs = [o.copy() for o in outputs]
+        t1 = time.perf_counter()
+        return outputs, batch_ratios, batch_padding, t0, t1
+
     def _run_core(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         ratios: tuple[float, float] | list[tuple[float, float]] | None,
         padding: tuple[float, float] | list[tuple[float, float]] | None,
         *,
@@ -943,8 +1010,10 @@ class ImageModel:
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image or batch of images to run inference on.
+        images : ImageInput | list[ImageInput]
+            A single image or batch of images to run inference on, each an
+            HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         ratios : tuple[float, float] | list[tuple[float, float]] | None
             Scaling ratios, required when ``preprocessed`` is True and
             ``postprocess`` is True (unless ``needs_ratios`` is False).
@@ -991,8 +1060,8 @@ class ImageModel:
             LOG.debug(f"{self._tag}: run")
 
         # handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
+        if isinstance(images, (np.ndarray, Buffer)):
+            batch_images: list[ImageInput] = [images]
             is_single = True
         else:
             batch_images = images
@@ -1043,15 +1112,12 @@ class ImageModel:
         )
         outputs: list[np.ndarray]
         if use_direct:
-            t0 = time.perf_counter()
-            outputs, batch_ratios, batch_padding = self._end2end_graph_core(
+            outputs, batch_ratios, batch_padding, t0, t1 = self._run_direct_gpu(
                 batch_images,
+                postprocess=postprocess,
+                no_copy_run=no_copy_run,
                 verbose=verbose,
             )
-            # raw outputs reference the engine's host allocations
-            if not postprocess and not no_copy_run:
-                outputs = [o.copy() for o in outputs]
-            t1 = time.perf_counter()
         else:
             # handle preprocessing
             if not preprocessed:
@@ -1062,7 +1128,7 @@ class ImageModel:
                 )
             else:
                 # images is already preprocessed tensor when preprocessed=True
-                if len(batch_images) != 1:
+                if len(batch_images) != 1 or not isinstance(batch_images[0], np.ndarray):
                     err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
                     if FLAGS.NVTX_ENABLED:
                         nvtx.pop_range()  # run
@@ -1111,7 +1177,7 @@ class ImageModel:
 
     def _end2end_core(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         *,
         verbose: bool | None,
         post: _PostFn,
@@ -1127,8 +1193,10 @@ class ImageModel:
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image or batch of images to run inference on.
+        images : ImageInput | list[ImageInput]
+            A single image or batch of images to run inference on, each an
+            HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         verbose : bool, optional
             Whether to log additional information.
         post : _PostFn
@@ -1158,8 +1226,8 @@ class ImageModel:
             LOG.debug(f"{self._tag}: end2end")
 
         # handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
+        if isinstance(images, (np.ndarray, Buffer)):
+            batch_images: list[ImageInput] = [images]
             is_single = True
         else:
             batch_images = images

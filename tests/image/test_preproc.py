@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from cv2ext.image import letterbox, rescale, resize_linear
 
+from trtutils.core import Buffer, MemoryLocation
 from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 from trtutils.image.preprocessors._process import preprocess
 
@@ -77,6 +78,14 @@ def _old_preprocess(
 GPU_CLASSES = [
     pytest.param(CUDAPreprocessor, id="cuda"),
     pytest.param(TRTPreprocessor, id="trt"),
+]
+
+# (preprocessor class, extra constructor kwargs) for all three backends,
+# used by the Buffer-input tests below.
+ALL_PREPROC_CLASSES = [
+    pytest.param(CPUPreprocessor, {}, id="cpu"),
+    pytest.param(CUDAPreprocessor, {}, id="cuda"),
+    pytest.param(TRTPreprocessor, {"batch_size": 3}, id="trt"),
 ]
 
 
@@ -380,3 +389,133 @@ def test_homogeneous_batch_grow_then_shrink(random_images, gpu_cls) -> None:
     batch8b, ratios8b, padding8b = preproc.preprocess(imgs)
     assert_matches(batch8b, ratios8b, padding8b, 8)
     assert preproc._batch_input_binding is binding_after_grow
+
+
+# ----------------------------------------------------------------------
+# Buffer inputs (PR 9)
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), ALL_PREPROC_CLASSES)
+def test_preprocess_device_buffer_matches_ndarray(random_images, preproc_cls, kwargs) -> None:
+    """preprocess([device Buffer]) matches preprocess([ndarray]) exactly."""
+    preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
+    img = random_images(1)[0]
+    expected, exp_ratios, exp_padding = preproc.preprocess([img])
+
+    buf = Buffer.from_array(img, MemoryLocation.DEVICE)
+    try:
+        result, ratios, padding = preproc.preprocess([buf])
+    finally:
+        buf.free()
+    np.testing.assert_array_equal(result, expected)
+    assert ratios == exp_ratios
+    assert padding == exp_padding
+
+
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), ALL_PREPROC_CLASSES)
+def test_preprocess_host_buffer_matches_ndarray(random_images, preproc_cls, kwargs) -> None:
+    """preprocess([host Buffer]) matches preprocess([ndarray]) exactly."""
+    preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
+    img = random_images(1)[0]
+    expected, exp_ratios, exp_padding = preproc.preprocess([img])
+
+    buf = Buffer.from_array(img, MemoryLocation.HOST)
+    try:
+        result, ratios, padding = preproc.preprocess([buf])
+    finally:
+        buf.free()
+    np.testing.assert_array_equal(result, expected)
+    assert ratios == exp_ratios
+    assert padding == exp_padding
+
+
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), ALL_PREPROC_CLASSES)
+def test_preprocess_single_buffer_not_wrapped_in_list(random_images, preproc_cls, kwargs) -> None:
+    """A single Buffer (not wrapped in a list) is treated as one image, like a bare ndarray."""
+    preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
+    img = random_images(1)[0]
+    expected, exp_ratios, exp_padding = preproc.preprocess(img)
+
+    buf = Buffer.from_array(img, MemoryLocation.DEVICE)
+    try:
+        result, ratios, padding = preproc.preprocess(buf)
+    finally:
+        buf.free()
+    np.testing.assert_array_equal(result, expected)
+    assert ratios == exp_ratios
+    assert padding == exp_padding
+
+
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), ALL_PREPROC_CLASSES)
+def test_preprocess_mixed_batch_ndarray_host_device_buffers(
+    random_images, preproc_cls, kwargs
+) -> None:
+    """A batch mixing ndarray / host Buffer / device Buffer of different sizes matches singles."""
+    preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
+    sizes = [(480, 640), (720, 1280), (600, 800)]
+    imgs = [random_images(1, h, w)[0] for h, w in sizes]
+    singles = [preproc.preprocess([img]) for img in imgs]
+
+    host_buf = Buffer.from_array(imgs[1], MemoryLocation.HOST)
+    device_buf = Buffer.from_array(imgs[2], MemoryLocation.DEVICE)
+    try:
+        batch, ratios, padding = preproc.preprocess([imgs[0], host_buf, device_buf])
+    finally:
+        host_buf.free()
+        device_buf.free()
+
+    assert batch.shape[0] == 3
+    for i in range(3):
+        tensor, single_ratios, single_padding = singles[i]
+        np.testing.assert_array_equal(batch[i], tensor[0])
+        assert ratios[i] == single_ratios[0]
+        assert padding[i] == single_padding[0]
+
+
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), ALL_PREPROC_CLASSES)
+@pytest.mark.parametrize(
+    ("bad_array", "match"),
+    [
+        pytest.param(
+            np.zeros((4, 4), dtype=np.uint8),
+            r"(?i)image must be|preprocess color",
+            id="wrong-ndim",
+        ),
+        pytest.param(
+            np.zeros((4, 4, 4), dtype=np.uint8),
+            r"(?i)image must be|preprocess color",
+            id="wrong-channels",
+        ),
+        pytest.param(np.zeros((4, 4, 3), dtype=np.float32), "uint8", id="wrong-dtype"),
+    ],
+)
+def test_preprocess_bad_device_buffer_raises_value_error(
+    preproc_cls, kwargs, bad_array, match
+) -> None:
+    """A device Buffer with wrong ndim/channels/dtype raises ValueError."""
+    preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
+    buf = Buffer.from_array(bad_array, MemoryLocation.DEVICE)
+    try:
+        with pytest.raises(ValueError, match=match):
+            preproc.preprocess([buf])
+    finally:
+        buf.free()
+
+
+def test_preprocess_cuda_array_interface_device_buffer(random_images) -> None:
+    """A from_cuda_array()-wrapped device Buffer works exactly like a plain device Buffer."""
+    preproc = CUDAPreprocessor(SIZE, RANGE, DTYPE)
+    img = random_images(1)[0]
+    expected, exp_ratios, exp_padding = preproc.preprocess([img])
+
+    owner = Buffer.from_array(img, MemoryLocation.DEVICE)
+    view = Buffer.from_cuda_array(owner)
+    try:
+        result, ratios, padding = preproc.preprocess([view])
+    finally:
+        owner.free()
+
+    np.testing.assert_array_equal(result, expected)
+    assert ratios == exp_ratios
+    assert padding == exp_padding

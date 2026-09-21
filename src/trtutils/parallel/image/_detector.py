@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 
@@ -17,6 +17,7 @@ from typing_extensions import TypeGuard
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer, MemoryLocation
 from trtutils.image._detector import Detector
 
 if TYPE_CHECKING:
@@ -24,6 +25,51 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
+
+    from trtutils.image.interfaces import ImageInput
+
+
+def _to_queueable_images(images: Sequence[ImageInput]) -> list[ImageInput]:
+    """
+    Convert a batch of images to a form safe to hand to a worker thread's queue.
+
+    ParallelDetector routes each submitted batch to one of several models,
+    which may each run on a different CUDA device. A device ``Buffer`` is
+    only valid on the device it was allocated on, so there is no safe
+    device to run its resize kernels on here; it is rejected outright. A
+    host ``Buffer`` is unwrapped to its backing array (zero-copy); a plain
+    ndarray passes through unchanged.
+
+    Parameters
+    ----------
+    images : Sequence[ImageInput]
+        The images to convert.
+
+    Returns
+    -------
+    list[ImageInput]
+        The images as host ndarrays (never a Buffer).
+
+    Raises
+    ------
+    TypeError
+        If any image is a device Buffer.
+
+    """
+    out: list[ImageInput] = []
+    for image in images:
+        if isinstance(image, Buffer):
+            if image.location == MemoryLocation.DEVICE:
+                err_msg = (
+                    "ParallelDetector cannot accept a device Buffer: submitted work may be "
+                    "routed to a different CUDA device than the one the Buffer was allocated "
+                    "on. Pass a host array or a host Buffer instead."
+                )
+                raise TypeError(err_msg)
+            out.append(image.array)
+        else:
+            out.append(image)
+    return out
 
 
 def _is_raw_outputs(
@@ -43,7 +89,7 @@ def _is_postprocessed_batches(
 
 @dataclass
 class _InputPacket:
-    data: list[np.ndarray]
+    data: list[ImageInput]
     ratios: list[tuple[float, float]] | None = None
     padding: list[tuple[float, float]] | None = None
     preprocess_method: str | None = "trt"
@@ -366,7 +412,7 @@ class ParallelDetector:
 
     def preprocess(
         self: Self,
-        inputs: list[list[np.ndarray]],
+        inputs: Sequence[Sequence[ImageInput]],
         resize: str = "letterbox",
         method: str | None = None,
         *,
@@ -382,8 +428,11 @@ class ParallelDetector:
 
         Parameters
         ----------
-        inputs : list[list[np.ndarray]]
-            The inputs to preprocess, one batch per model.
+        inputs : Sequence[Sequence[ImageInput]]
+            The inputs to preprocess, one batch per model, each image an
+            HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one. This method calls each model's own preprocessor
+            directly (no queue), so a device Buffer is fine here.
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
@@ -439,7 +488,7 @@ class ParallelDetector:
 
     def preprocess_model(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[ImageInput],
         modelid: int,
         resize: str = "letterbox",
         method: str | None = None,
@@ -452,8 +501,11 @@ class ParallelDetector:
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The batch of images to preprocess.
+        images : Sequence[ImageInput]
+            The batch of images to preprocess, each an HWC uint8
+            ``np.ndarray`` or a ``Buffer`` (host or device) holding one.
+            This calls the model's own preprocessor directly (no queue),
+            so a device Buffer is fine here.
         modelid : int
             The model to preprocess the data for.
         resize : str
@@ -482,7 +534,7 @@ class ParallelDetector:
         if verbose:
             LOG.debug(f"{self._tag}: Preprocess model: {modelid}")
         result = self.get_model(modelid).preprocess(
-            images,
+            list(images),
             resize=resize,
             method=method,
             no_copy=no_copy,
@@ -668,7 +720,7 @@ class ParallelDetector:
 
     def submit(
         self: Self,
-        inputs: list[list[np.ndarray]],
+        inputs: Sequence[Sequence[ImageInput]],
         ratios: list[list[tuple[float, float]]] | None = None,
         paddings: list[list[tuple[float, float]]] | None = None,
         preprocess_method: str | None = None,
@@ -683,8 +735,11 @@ class ParallelDetector:
 
         Parameters
         ----------
-        inputs : list[list[np.ndarray]]
-            The batches to pass to each model.
+        inputs : list[list[ImageInput]]
+            The batches to pass to each model, each image an HWC uint8
+            ``np.ndarray`` or a host ``Buffer`` holding one. A device
+            Buffer is rejected (see Raises) since the work may be routed
+            to a different CUDA device.
         ratios : list[list[tuple[float, float]]], optional
             The ratios per image per model.
         paddings : list[list[tuple[float, float]]], optional
@@ -709,6 +764,8 @@ class ParallelDetector:
         ValueError
             If the input length does not match the models
             If preprocessed is True, but ratios/paddings not provided
+        TypeError
+            If any image is a device Buffer.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -742,7 +799,7 @@ class ParallelDetector:
 
     def submit_model(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[ImageInput],
         modelid: int,
         ratios: list[tuple[float, float]] | None = None,
         padding: list[tuple[float, float]] | None = None,
@@ -758,8 +815,11 @@ class ParallelDetector:
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The batch of images to send to the model.
+        images : list[ImageInput]
+            The batch of images to send to the model, each an HWC uint8
+            ``np.ndarray`` or a host ``Buffer`` holding one. A device
+            Buffer is rejected (see Raises) since the work may be routed
+            to a different CUDA device.
         modelid : int
             The specific model index to send the data to.
         ratios : list[tuple[float, float]], optional
@@ -781,13 +841,19 @@ class ParallelDetector:
         verbose : bool, optional
             Whether or not to log additional information.
 
+        Raises
+        ------
+        TypeError
+            If any image is a device Buffer.
+
         """
+        queueable_images = _to_queueable_images(images)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["submit_model"])
         if verbose:
             LOG.debug(f"{self._tag}: Submit model: {modelid}")
         packet = _InputPacket(
-            data=images,
+            data=queueable_images,
             ratios=ratios,
             padding=padding,
             preprocess_method=preprocess_method,
@@ -954,7 +1020,7 @@ class ParallelDetector:
 
     def end2end(
         self: Self,
-        inputs: list[list[np.ndarray]],
+        inputs: Sequence[Sequence[ImageInput]],
         ratios: list[list[tuple[float, float]]] | None = None,
         paddings: list[list[tuple[float, float]]] | None = None,
         *,
@@ -968,8 +1034,11 @@ class ParallelDetector:
 
         Parameters
         ----------
-        inputs : list[list[np.ndarray]]
-            The batches to pass to each model.
+        inputs : list[list[ImageInput]]
+            The batches to pass to each model, each image an HWC uint8
+            ``np.ndarray`` or a host ``Buffer`` holding one. A device
+            Buffer is rejected (see Raises) since the work may be routed
+            to a different CUDA device.
         ratios : list[list[tuple[float, float]]], optional
             The ratios per image per model.
         paddings : list[list[tuple[float, float]]], optional
@@ -996,6 +1065,8 @@ class ParallelDetector:
             If postprocess is False when calling end2end.
         RuntimeError
             If postprocessed outputs are not available for end2end.
+        TypeError
+            If any image is a device Buffer.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -1158,7 +1229,7 @@ class ParallelDetector:
                         no_copy=data.no_copy,
                     )
                 else:
-                    if len(images) != 1:
+                    if len(images) != 1 or not isinstance(images[0], np.ndarray):
                         err_msg = (
                             "Preprocessed inputs must be a list containing a single batch tensor."
                         )

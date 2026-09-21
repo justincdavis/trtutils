@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -15,11 +15,12 @@ from cv2ext.image import patch as patch_image
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-    from trtutils.image.interfaces import DetectorInterface
+    from trtutils.image.interfaces import DetectorInterface, ImageInput
 
 
 class SAHI:
@@ -134,7 +135,7 @@ class SAHI:
 
     def end2end(
         self: Self,
-        image: np.ndarray,
+        image: ImageInput,
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
@@ -147,8 +148,12 @@ class SAHI:
 
         Parameters
         ----------
-        image : np.ndarray
-            The image to perform inference with.
+        image : ImageInput
+            The image to perform inference with, an HWC uint8
+            ``np.ndarray`` or a ``Buffer`` (host or device) holding one.
+            SAHI slices the image on the host, so a Buffer is converted to
+            a host array up front (zero-copy for a host Buffer, one D2H
+            copy for a device Buffer).
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
             By default None
@@ -177,6 +182,9 @@ class SAHI:
             nvtx.push_range(self._nvtx_tags["end2end"])
         if verbose is None:
             verbose = self._verbose
+
+        if isinstance(image, Buffer):
+            image = image.numpy()
 
         patches, offsets, (nw, nh) = patch_image(
             image, (self._slice_width, self._slice_height), overlap=self._slice_overlap

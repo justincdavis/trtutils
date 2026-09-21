@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import pytest
 
+from trtutils.core import Buffer, MemoryLocation
 from trtutils.image import Detector
 
 
@@ -137,3 +138,88 @@ def test_detector_run_direct_gpu_path_no_copy(yolov10_engine, images) -> None:
 
     raw_view = model.run(horse, postprocess=False, no_copy=True)
     assert np.shares_memory(raw_view[0], engine_alloc)
+
+
+# ----------------------------------------------------------------------
+# Buffer inputs (PR 9)
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+@pytest.mark.parametrize("cuda_graph", [True, False])
+def test_detector_end2end_device_buffer_matches_ndarray(
+    yolov10_engine, images, preprocessor, cuda_graph
+) -> None:
+    """end2end()/run()/preprocess() with a device Buffer match the ndarray result."""
+    horse = images["horse"].array
+    model = Detector(yolov10_engine, preprocessor=preprocessor, cuda_graph=cuda_graph, warmup=False)
+
+    expected_e2e = model.end2end(horse)
+    expected_run = model.run(horse)
+    expected_tensor, expected_ratios, expected_padding = model.preprocess(horse)
+
+    buf = Buffer.from_array(horse, MemoryLocation.DEVICE)
+    try:
+        assert model.end2end(buf) == expected_e2e
+        run_bboxes, run_scores, run_cls = model.run(buf)
+        exp_bboxes, exp_scores, exp_cls = expected_run
+        np.testing.assert_array_equal(run_bboxes, exp_bboxes)
+        np.testing.assert_array_equal(run_scores, exp_scores)
+        np.testing.assert_array_equal(run_cls, exp_cls)
+
+        tensor, ratios, padding = model.preprocess(buf)
+        np.testing.assert_array_equal(tensor, expected_tensor)
+        assert ratios == expected_ratios
+        assert padding == expected_padding
+    finally:
+        buf.free()
+
+
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+def test_detector_end2end_cuda_array_interface_buffer(yolov10_engine, images, preprocessor) -> None:
+    """end2end() with a from_cuda_array()-wrapped device Buffer matches the ndarray result."""
+    horse = images["horse"].array
+    model = Detector(yolov10_engine, preprocessor=preprocessor, warmup=False)
+    expected = model.end2end(horse)
+
+    owner = Buffer.from_array(horse, MemoryLocation.DEVICE)
+    view = Buffer.from_cuda_array(owner)
+    try:
+        assert model.end2end(view) == expected
+    finally:
+        owner.free()
+
+
+def test_detector_end2end_host_buffer_matches_ndarray(yolov10_engine, images) -> None:
+    """end2end() with a host Buffer matches the ndarray result."""
+    horse = images["horse"].array
+    model = Detector(yolov10_engine, warmup=False)
+    expected = model.end2end(horse)
+
+    buf = Buffer.from_array(horse, MemoryLocation.HOST)
+    try:
+        assert model.end2end(buf) == expected
+    finally:
+        buf.free()
+
+
+@pytest.mark.parametrize("preprocessor", ["cuda", "trt"])
+def test_detector_dynamic_batch_mixes_host_and_device_buffers(
+    yolov10_dynamic_engine, images, preprocessor
+) -> None:
+    """A batch mixing ndarrays, host Buffers, and device Buffers matches per-image end2end()."""
+    model = Detector(yolov10_dynamic_engine, preprocessor=preprocessor, warmup=False)
+    pool = [img.array for img in images.values()]
+    expected = [model.end2end(img) for img in pool]
+
+    host_buf = Buffer.from_array(pool[0], MemoryLocation.HOST)
+    device_buf = Buffer.from_array(pool[1 % len(pool)], MemoryLocation.DEVICE)
+    try:
+        batch = [host_buf, device_buf, pool[0]]
+        results = model.end2end(batch)
+        assert results[0] == expected[0]
+        assert results[1] == expected[1 % len(pool)]
+        assert results[2] == expected[0]
+    finally:
+        host_buf.free()
+        device_buf.free()

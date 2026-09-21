@@ -12,11 +12,13 @@ import nvtx
 from trtutils._flags import FLAGS
 from trtutils.core._buffer import Buffer, MemoryLocation
 
-from ._image_preproc import ImagePreprocessor
+from ._image_preproc import ImagePreprocessor, normalize_image_input
 from ._process import preprocess
 
 if TYPE_CHECKING:
     from typing_extensions import Self
+
+    from trtutils.image.interfaces import ImageInput
 
 _COLOR_CHANNELS = 3
 # glibc mmaps any allocation above 32 MB and unmaps it on free, so the whole
@@ -112,11 +114,24 @@ class CPUPreprocessor(ImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # cpu_warmup
 
+    def _to_host_image(self: Self, image: ImageInput) -> np.ndarray:
+        """
+        Get a host ndarray for an ImageInput.
+
+        A device Buffer is copied to host once (one D2H copy via
+        ``numpy()``); a host Buffer is unwrapped zero-copy; a plain
+        ``np.ndarray`` passes through unchanged.
+        """
+        if not isinstance(image, Buffer):
+            return image
+        normalize_image_input(image, self._tag)  # validates shape/dtype
+        return image.numpy()
+
     # __call__ overloads
     @overload
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -126,7 +141,7 @@ class CPUPreprocessor(ImagePreprocessor):
     @overload
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -135,7 +150,7 @@ class CPUPreprocessor(ImagePreprocessor):
 
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -146,8 +161,9 @@ class CPUPreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to preprocess.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images, each an HWC uint8
+            ``np.ndarray`` or a ``Buffer`` (host or device) holding one.
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
@@ -172,7 +188,7 @@ class CPUPreprocessor(ImagePreprocessor):
     @overload
     def preprocess(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -182,7 +198,7 @@ class CPUPreprocessor(ImagePreprocessor):
     @overload
     def preprocess(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -191,7 +207,7 @@ class CPUPreprocessor(ImagePreprocessor):
 
     def preprocess(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -202,8 +218,11 @@ class CPUPreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to preprocess.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images, each an HWC uint8
+            ``np.ndarray`` or a ``Buffer`` (host or device) holding one. A
+            device Buffer is copied to host once (one D2H copy) before
+            preprocessing.
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
@@ -226,10 +245,15 @@ class CPUPreprocessor(ImagePreprocessor):
             nvtx.push_range(self._nvtx_tags["cpu_preprocess"])
 
         # Handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
+        if isinstance(images, (np.ndarray, Buffer)):
+            batch_images: list[ImageInput] = [images]
         else:
             batch_images = images
+
+        # a device Buffer needs a host array to run the CPU kernels against
+        # (one D2H copy); a host Buffer is unwrapped zero-copy, a plain
+        # ndarray passes through
+        host_images: list[np.ndarray] = [self._to_host_image(img) for img in batch_images]
 
         resize = resize if resize is not None else self._resize
         mean = self._mean
@@ -247,10 +271,10 @@ class CPUPreprocessor(ImagePreprocessor):
                 std.reshape(-1) if std.size == _COLOR_CHANNELS else std.flatten()[:_COLOR_CHANNELS]
             )
         width, height = self._o_shape
-        buffer = self._resolve_batch_buffer(len(batch_images), height, width)
+        buffer = self._resolve_batch_buffer(len(host_images), height, width)
 
         tensor, ratios, padding = preprocess(
-            batch_images,
+            host_images,
             self._o_shape,
             self._o_dtype,
             self._o_range,

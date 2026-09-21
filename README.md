@@ -97,6 +97,18 @@ image = cv2.imread("image.jpg")
 bboxes = detector.end2end([image])[0]
 ```
 
+Images can also be `trtutils.core.Buffer` objects, host or device, instead
+of `np.ndarray`. A device Buffer skips the host round trip entirely with the
+`cuda`/`trt` preprocessors (the `cpu` preprocessor copies it to host once):
+
+```python
+from trtutils.core import Buffer
+
+# torch_tensor / cupy_array: HWC uint8, already on the GPU
+buf = Buffer.from_cuda_array(torch_tensor_or_cupy_array)
+bboxes = detector.end2end(buf)
+```
+
 ### Command Line
 
 ```bash

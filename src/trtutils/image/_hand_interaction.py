@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    from .interfaces import ImageInput
     from .postprocessors import HandInteraction
 
 _EXPECTED_OUTPUT_PREFIX = ["boxes", "scores", "labels", "pair_probs"]
@@ -257,7 +258,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     @overload
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -271,7 +272,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     @overload
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -284,7 +285,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -299,8 +300,10 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to run the model on.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images to run the model on, each an
+            HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         ratios : tuple[float, float] | list[tuple[float, float]], optional
             The ratios generated during preprocessing. For single image, pass tuple.
             For batch, pass list.
@@ -347,7 +350,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -361,7 +364,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -375,7 +378,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -390,7 +393,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -404,7 +407,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -418,7 +421,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -431,7 +434,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
     def run(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -446,8 +449,10 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to run the model on.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images to run the model on, each an
+            HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         ratios : tuple[float, float] | list[tuple[float, float]], optional
             The ratios generated during preprocessing. For single image, pass tuple.
             For batch, pass list.
@@ -584,7 +589,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     @overload
     def end2end(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         conf_thres: float | None = ...,
         pair_thres: float | None = ...,
@@ -595,7 +600,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     @overload
     def end2end(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         conf_thres: float | None = ...,
         pair_thres: float | None = ...,
@@ -605,7 +610,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
     def end2end(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         *,
         conf_thres: float | None = None,
         pair_thres: float | None = None,
@@ -621,8 +626,10 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to perform inference with.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images to perform inference with, each
+            an HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         conf_thres : float, optional
             The confidence threshold to filter candidates by.
             By default None, which uses the value from the constructor.

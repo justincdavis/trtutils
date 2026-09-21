@@ -32,6 +32,8 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from .interfaces import ImageInput
+
 
 class Detector(ImageModel, DetectorInterface):
     """Implementation of object detectors."""
@@ -316,7 +318,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -330,7 +332,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -343,7 +345,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -358,8 +360,10 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to run the model on.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images to run the model on, each an
+            HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         ratios : tuple[float, float] | list[tuple[float, float]], optional
             The ratios generated during preprocessing. For single image, pass tuple.
             For batch, pass list.
@@ -406,7 +410,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -420,7 +424,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -434,7 +438,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -449,7 +453,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -463,7 +467,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -477,7 +481,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -490,7 +494,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def run(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -505,8 +509,10 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to run the model on.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images to run the model on, each an
+            HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         ratios : tuple[float, float] | list[tuple[float, float]], optional
             The ratios generated during preprocessing. For single image, pass tuple.
             For batch, pass list.
@@ -667,7 +673,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def end2end(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         conf_thres: float | None = ...,
         nms_iou_thres: float | None = ...,
         *,
@@ -679,7 +685,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def end2end(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         conf_thres: float | None = ...,
         nms_iou_thres: float | None = ...,
         *,
@@ -690,7 +696,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def end2end(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
@@ -710,8 +716,10 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
-            A single image (HWC format) or list of images to perform inference with.
+        images : ImageInput | list[ImageInput]
+            A single image or list of images to perform inference with, each
+            an HWC uint8 ``np.ndarray`` or a ``Buffer`` (host or device)
+            holding one.
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
             By default None.
@@ -767,7 +775,7 @@ class Detector(ImageModel, DetectorInterface):
     def _engine_inputs(
         self: Self,
         tensor: np.ndarray,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None,
         *,
         preprocessed: bool,
@@ -814,7 +822,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def _prepare_extra_engine_inputs_cpu(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]],
     ) -> list[int]:
         """Return additional GPU input pointers for DETR-style models (CPU preprocessor path)."""
