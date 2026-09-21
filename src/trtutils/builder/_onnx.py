@@ -12,7 +12,7 @@ from trtutils._log import LOG
 from trtutils.compat._libs import trt
 
 
-def read_onnx(
+def read_onnx(  # noqa: C901
     onnx: Path | str,
     workspace: float = 4.0,
     *,

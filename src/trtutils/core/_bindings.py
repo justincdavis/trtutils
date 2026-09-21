@@ -135,7 +135,7 @@ def create_binding(
     )
 
 
-def allocate_bindings(
+def allocate_bindings(  # noqa: C901, PLR0912, PLR0915
     engine: trt.IEngine,
     context: trt.IExecutionContext,
     *,

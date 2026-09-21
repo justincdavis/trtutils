@@ -36,7 +36,7 @@ T = TypeVar("T")
 class ImageModel:
     """Abstract base class for image models."""
 
-    def __init__(
+    def __init__(  # noqa: C901, PLR0912, PLR0915
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
@@ -488,7 +488,7 @@ class ImageModel:
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
 
-    def preprocess(
+    def preprocess(  # noqa: C901, PLR0912
         self: Self,
         images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
@@ -694,7 +694,7 @@ class ImageModel:
         """
         return [tensor]
 
-    def _end2end_graph_core(
+    def _end2end_graph_core(  # noqa: C901, PLR0912
         self: Self,
         images: list[np.ndarray],
         *,
@@ -832,7 +832,7 @@ class ImageModel:
             return [outputs], True  # ty: ignore[invalid-return-type]
         return outputs, False  # ty: ignore[invalid-return-type]
 
-    def _run_core(
+    def _run_core(  # noqa: C901, PLR0912, PLR0915
         self: Self,
         images: np.ndarray | list[np.ndarray],
         ratios: tuple[float, float] | list[tuple[float, float]] | None,
@@ -992,7 +992,7 @@ class ImageModel:
 
         return outputs
 
-    def _end2end_core(
+    def _end2end_core(  # noqa: C901
         self: Self,
         images: np.ndarray | list[np.ndarray],
         *,
