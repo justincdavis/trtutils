@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 from trtutils._log import LOG
 from trtutils.download._tools import (
     git_clone,
+    handle_batch,
+    handle_dynamic,
     handle_imgsz,
     run_cmd,
     run_download,
@@ -33,7 +35,9 @@ def export_hoi_detr(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -46,6 +50,8 @@ def export_hoi_detr(
             "and trace the ViT-L backbone"
         )
     imgsz = handle_imgsz(imgsz, 640, "HOI-DETR", adjust_div=32)
+    handle_batch(batch, "HOI-DETR", supported=False)
+    handle_dynamic(batch, "HOI-DETR", dynamic=dynamic, supported=False)
 
     git_clone(
         "https://github.com/AhmadDarKhalil/HOI-DETR",

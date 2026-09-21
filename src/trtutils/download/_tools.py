@@ -56,6 +56,113 @@ def handle_imgsz(
     return imgsz
 
 
+def handle_batch(
+    batch: int | None,
+    model_name: str,
+    *,
+    supported: bool = True,
+) -> int:
+    """
+    Handle batch size validation for an exporter.
+
+    Parameters
+    ----------
+    batch : int, optional
+        The requested batch size. None is treated as 1.
+    model_name : str
+        The model family name, used in error messages.
+    supported : bool
+        Whether the exporter can honor a batch size other than 1. When
+        False, any batch above 1 is rejected rather than silently
+        exported at batch 1.
+
+    Returns
+    -------
+    int
+        The batch size to export at.
+
+    Raises
+    ------
+    ValueError
+        If the batch size is not positive.
+    NotImplementedError
+        If a batch above 1 is requested from an exporter that cannot
+        honor it.
+
+    """
+    if batch is None:
+        return 1
+    if batch < 1:
+        err_msg = f"Batch size must be positive, got {batch}."
+        raise ValueError(err_msg)
+    if batch > 1 and not supported:
+        err_msg = (
+            f"{model_name} does not support exporting at a batch size other than 1, "
+            f"got {batch}. Export at batch 1, or build a dynamic-batch engine instead."
+        )
+        raise NotImplementedError(err_msg)
+    return batch
+
+
+def handle_dynamic(
+    batch: int | None,
+    model_name: str,
+    *,
+    dynamic: bool | None = None,
+    supported: bool = True,
+) -> bool:
+    """
+    Handle dynamic-shape export validation for an exporter.
+
+    A dynamic export leaves the batch dimension symbolic so a single ONNX
+    can build engines for a range of batch sizes. That is mutually
+    exclusive with pinning a fixed batch: the upstream exporters accept
+    both flags but silently honor only one.
+
+    Parameters
+    ----------
+    dynamic : bool, optional
+        Whether to export with dynamic axes. None is treated as False.
+    batch : int, optional
+        The requested batch size, used only to reject the combination.
+    model_name : str
+        The model family name, used in error messages.
+    supported : bool
+        Whether the exporter can honor a dynamic export. When False, a
+        dynamic request is rejected rather than silently exported static.
+
+    Returns
+    -------
+    bool
+        Whether to export with dynamic axes.
+
+    Raises
+    ------
+    ValueError
+        If a dynamic export and a fixed batch size are both requested.
+    NotImplementedError
+        If a dynamic export is requested from an exporter that cannot
+        honor it.
+
+    """
+    if not dynamic:
+        return False
+    if batch is not None and batch > 1:
+        err_msg = (
+            f"Cannot export {model_name} with both a dynamic batch dimension and a "
+            f"fixed batch size of {batch}. A dynamic export already covers every "
+            "batch size up to the engine's profile, so pass one or the other."
+        )
+        raise ValueError(err_msg)
+    if not supported:
+        err_msg = (
+            f"{model_name} does not support a dynamic-shape export. Export at a "
+            "fixed batch size instead."
+        )
+        raise NotImplementedError(err_msg)
+    return True
+
+
 def kill_process_group(pid: int | None, cmd: Sequence[str]) -> None:
     if pid is None:
         return

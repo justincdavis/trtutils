@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 from trtutils._log import LOG
 from trtutils.download._tools import (
     git_clone,
+    handle_batch,
+    handle_dynamic,
     handle_imgsz,
     run_cmd,
     run_download,
@@ -31,7 +33,9 @@ def export_hands23(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -44,6 +48,8 @@ def export_hands23(
             "C++/CUDA extensions and takes roughly 5-10 minutes; a C++ compiler is required"
         )
     imgsz = handle_imgsz(imgsz, 800, "Hands23", adjust_div=32)
+    handle_batch(batch, "Hands23", supported=False)
+    handle_dynamic(batch, "Hands23", dynamic=dynamic, supported=False)
 
     git_clone(
         "https://github.com/EvaCheng-cty/hands23_detector",

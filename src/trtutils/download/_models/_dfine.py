@@ -11,6 +11,8 @@ from trtutils.download._tools import (
     _640,
     get_patches_dir,
     git_clone,
+    handle_batch,
+    handle_dynamic,
     handle_imgsz,
     run_cmd,
     run_download,
@@ -27,7 +29,9 @@ def export_dfine(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -36,6 +40,8 @@ def export_dfine(
     if not no_warn:
         LOG.warning("D-FINE is a Apache-2.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "D-FINE", enforce=True)
+    handle_batch(batch, "D-FINE", supported=False)
+    handle_dynamic(batch, "D-FINE", dynamic=dynamic, supported=False)
     git_clone(
         "https://github.com/Peterande/D-FINE",
         directory,

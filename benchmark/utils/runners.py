@@ -7,8 +7,8 @@
 from __future__ import annotations
 
 import contextlib
+import itertools
 import json
-import shutil
 import subprocess
 import time
 import warnings
@@ -18,6 +18,10 @@ from typing import TYPE_CHECKING
 
 import cv2
 from tqdm import tqdm
+
+import trtutils
+from trtutils.builder import build_engine
+from trtutils.download import download
 
 from .config import (
     DATA_DIR,
@@ -37,6 +41,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any
 
+# alternating resolutions for the resolution-switch composition; see
+# benchmark_optimizations
+_RESOLUTION_SWITCH_SIZES = [(1280, 720), (1920, 1080)]
+
 
 def _export_batch_onnx(
     model_name: str,
@@ -50,32 +58,76 @@ def _export_batch_onnx(
 
     print(f"Exporting {model_name} ONNX with batch={batch_size}...")
 
-    pt_dir = REPO_DIR / "data" / "ultralytics"
-    pt_dir.mkdir(parents=True, exist_ok=True)
-    pt_path = pt_dir / f"{model_name}.pt"
-
-    subprocess.run(
-        [
-            "yolo",
-            "export",
-            f"model={pt_path}",
-            "format=onnx",
-            f"imgsz={imgsz}",
-            f"batch={batch_size}",
-            "opset=17",
-        ],
-        check=True,
-        capture_output=True,
+    # the download tool builds its own deterministic venv per model family,
+    # so the benchmark environment does not need the upstream frameworks
+    # installed. families whose exporters cannot set a batch size raise
+    # NotImplementedError rather than silently exporting at batch 1.
+    output_dir.mkdir(parents=True, exist_ok=True)
+    download(
+        model=model_name,
+        output=onnx_path,
+        opset=17,
+        imgsz=imgsz,
+        batch=batch_size,
+        verbose=False,
     )
 
-    exported_path = pt_path.with_suffix(".onnx")
-    if not exported_path.exists():
-        err_msg = f"ONNX export failed, file not found: {exported_path}"
+    if not onnx_path.exists():
+        err_msg = f"ONNX export failed, file not found: {onnx_path}"
         raise FileNotFoundError(err_msg)
 
-    shutil.move(str(exported_path), str(onnx_path))
     print(f"Exported batch ONNX: {onnx_path.name}")
     return onnx_path
+
+
+def ensure_dynamic_engine(
+    model_name: str,
+    imgsz: int,
+    output_dir: Path,
+    max_batch: int = 8,
+) -> Path:
+    """
+    Build an engine from a dynamic-shape ONNX export.
+
+    Needs a dynamic-shape ONNX: the default exports pin the batch dimension,
+    so an engine built from them rejects every batch but its own. Model
+    families whose upstream exporter cannot emit dynamic axes raise
+    NotImplementedError.
+
+    # ponytail: build_engine's `shapes` only takes one shape per input (min
+    # == opt == max), so this pins the profile to max_batch instead of a
+    # real 1..max_batch range. PR 3 adds triple-shape (min, opt, max)
+    # support to build_engine; once that lands this should pass the full
+    # range so callers can submit any batch up to max_batch.
+    """
+    onnx_path = output_dir / f"{model_name}_{imgsz}_dyn.onnx"
+    engine_path = output_dir / f"{model_name}_{imgsz}_dyn_b{max_batch}.engine"
+    if engine_path.exists():
+        return engine_path
+
+    if not onnx_path.exists():
+        print(f"Exporting {model_name} ONNX with dynamic axes...")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        download(
+            model=model_name,
+            output=onnx_path,
+            opset=17,
+            imgsz=imgsz,
+            dynamic=True,
+            verbose=False,
+        )
+
+    print(f"Building dynamic engine (batch {max_batch}): {engine_path.name}")
+    shape = (3, imgsz, imgsz)
+    build_engine(
+        onnx_path,
+        engine_path,
+        optimization_level=1,
+        timing_cache=get_timing_cache_path(),
+        fp16=True,
+        shapes=[("images", (max_batch, *shape))],
+    )
+    return engine_path
 
 
 def _engine_path_for_batch(
@@ -476,12 +528,29 @@ def run_benchmark(
         raise ValueError(err_msg)
 
 
+def _trtutils_git_sha() -> str | None:
+    """Git SHA of the trtutils checkout actually imported, or None outside a repo."""
+    src_dir = Path(trtutils.__file__).resolve().parent
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=src_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    return result.stdout.strip()
+
+
 def benchmark_optimizations(
     device: str,
     model_name: str,
     imgsz: int,
     warmup_iters: int,
     bench_iters: int,
+    stage: str | None = None,
 ) -> None:
     """Benchmark Detector with all combinations of optimization flags."""
     from trtutils.image import Detector
@@ -489,10 +558,53 @@ def benchmark_optimizations(
     image = cv2.imread(str(IMAGE_PATH))
 
     onnx_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR)
-    engine_path = onnx_path.with_suffix(".engine")
-    if not engine_path.exists():
-        print(f"Building engine: {engine_path}")
-        build_model(onnx_path, engine_path, imgsz, opt_level=1, timing_cache=get_timing_cache_path())
+
+    def _engine_for_batch(batch: int) -> Path:
+        """Static engine matching a batch size, built on first use."""
+        if batch == 1:
+            path = onnx_path.with_suffix(".engine")
+            source = onnx_path
+        else:
+            source = _export_batch_onnx(model_name, imgsz, batch, onnx_path.parent)
+            path = _engine_path_for_batch(onnx_path, imgsz, batch)
+        if not path.exists():
+            print(f"Building engine for batch {batch}: {path.name}")
+            build_model(
+                onnx=source,
+                output=path,
+                imgsz=imgsz,
+                batch_size=batch,
+                model_name=model_name,
+                opt_level=1,
+                timing_cache=get_timing_cache_path(),
+            )
+        return path
+
+    # Input composition matters as much as the flags. A batch of identically
+    # sized images never exercises the heterogeneous staging path, a single
+    # image never exercises batching at all, and neither exercises a shape
+    # that changes between successive calls, so a grid over flags alone
+    # leaves all three invisible.
+    inputs: dict[str, list] = {
+        "single": [image],
+        "homogeneous8": [cv2.resize(image, (1280, 720))] * 8,
+        "heterogeneous8": [
+            cv2.resize(image, size)
+            for size in [
+                (640, 480),
+                (1280, 720),
+                (800, 600),
+                (1920, 1080),
+                (512, 512),
+                (1024, 768),
+                (640, 640),
+                (1600, 900),
+            ]
+        ],
+        # single-image calls that alternate resolution every iteration; batch
+        # size stays 1, only the shape submitted to the detector changes
+        "resolution-switch": [cv2.resize(image, size) for size in _RESOLUTION_SWITCH_SIZES],
+    }
 
     configs: list[dict] = []
     for prep in ["cpu", "cuda", "trt"]:
@@ -501,14 +613,16 @@ def benchmark_optimizations(
                 for unified in [False, True]:
                     if pagelocked and unified:
                         continue
-                    configs.append(
-                        {
-                            "preprocessor": prep,
-                            "cuda_graph": cuda_graph,
-                            "pagelocked_mem": pagelocked,
-                            "unified_mem": unified,
-                        }
-                    )
+                    for inputs_key in inputs:
+                        configs.append(
+                            {
+                                "preprocessor": prep,
+                                "cuda_graph": cuda_graph,
+                                "pagelocked_mem": pagelocked,
+                                "unified_mem": unified,
+                                "inputs": inputs_key,
+                            }
+                        )
 
     results: list[dict] = []
     print(f"\nBenchmarking {model_name} @ {imgsz}x{imgsz}")
@@ -517,8 +631,16 @@ def benchmark_optimizations(
     for cfg in configs:
         desc = (
             f"prep={cfg['preprocessor']} graph={cfg['cuda_graph']} "
-            f"pl={cfg['pagelocked_mem']} um={cfg['unified_mem']}"
+            f"pl={cfg['pagelocked_mem']} um={cfg['unified_mem']} "
+            f"in={cfg['inputs']}"
         )
+        is_resolution_switch = cfg["inputs"] == "resolution-switch"
+        batch = 1 if is_resolution_switch else len(inputs[cfg["inputs"]])
+        try:
+            engine_path = _engine_for_batch(batch)
+        except Exception as e:  # noqa: BLE001
+            print(f"FAILED: {desc} - no engine for batch {batch}: {e}")
+            continue
         try:
             detector = Detector(
                 engine_path=engine_path,
@@ -530,15 +652,21 @@ def benchmark_optimizations(
                 unified_mem=cfg["unified_mem"],
                 verbose=False,
             )
+            if is_resolution_switch:
+                images_cycle = itertools.cycle(inputs["resolution-switch"])
+                exec_fn = lambda: detector.end2end(next(images_cycle))  # noqa: B023
+            else:
+                batch_images = inputs[cfg["inputs"]]
+                exec_fn = lambda imgs=batch_images: detector.end2end(imgs)
             timings = benchmark_loop(
-                lambda: detector.end2end(image),
+                exec_fn,
                 0,
                 bench_iters,
                 desc,
             )
             del detector
 
-            stats = compute_results(timings)
+            stats = compute_results(timings, batch_size=batch)
             results.append({**cfg, **stats})
         except Exception as e:
             print(f"FAILED: {desc} - {e}")
@@ -546,16 +674,16 @@ def benchmark_optimizations(
 
     results.sort(key=lambda x: x["mean"])
 
-    print("\n" + "=" * 90)
+    print("\n" + "=" * 110)
     print(
-        f"{'Preprocessor':<12} {'CUDAGraph':<10} {'Pagelocked':<10} "
+        f"{'Preprocessor':<12} {'Inputs':<16} {'CUDAGraph':<10} {'Pagelocked':<10} "
         f"{'Unified':<10} {'Mean(ms)':<10} {'Std(ms)':<10} {'Min(ms)':<10}",
     )
-    print("=" * 90)
+    print("=" * 110)
 
     for r in results:
         print(
-            f"{r['preprocessor']:<12} {r['cuda_graph']!s:<10} "
+            f"{r['preprocessor']:<12} {r['inputs']:<16} {r['cuda_graph']!s:<10} "
             f"{r['pagelocked_mem']!s:<10} {r['unified_mem']!s:<10} "
             f"{r['mean']:<10.3f} {r['std']:<10.3f} {r['min']:<10.3f}",
         )
@@ -565,15 +693,13 @@ def benchmark_optimizations(
         print("=" * 90)
         print(
             f"Fastest: {results[0]['preprocessor']}, "
+            f"inputs={results[0]['inputs']}, "
             f"graph={results[0]['cuda_graph']}, "
             f"pl={results[0]['pagelocked_mem']}, "
             f"um={results[0]['unified_mem']}",
         )
         print(f"Max speedup: {speedup:.2f}x")
 
-    out_dir = DATA_DIR / "optimizations"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{device}.json"
     payload = {
         "device": device,
         "model": model_name,
@@ -582,6 +708,15 @@ def benchmark_optimizations(
         "iterations": bench_iters,
         "results": results,
     }
+    if stage is not None:
+        out_dir = DATA_DIR / "perf-series" / device
+        out_path = out_dir / f"stage-{stage}.json"
+        payload["stage"] = stage
+        payload["trtutils_sha"] = _trtutils_git_sha()
+    else:
+        out_dir = DATA_DIR / "optimizations"
+        out_path = out_dir / f"{device}.json"
+    out_dir.mkdir(parents=True, exist_ok=True)
     with out_path.open("w") as f:
         json.dump(payload, f, indent=2)
     print(f"\nWrote {out_path}")

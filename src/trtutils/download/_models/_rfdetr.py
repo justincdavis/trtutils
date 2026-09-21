@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 from trtutils._log import LOG
 from trtutils.download._tools import (
     get_weights_cache_dir,
+    handle_batch,
+    handle_dynamic,
     handle_imgsz,
     run_cmd,
     run_uv_pip_install,
@@ -26,7 +28,9 @@ def export_rfdetr(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -44,6 +48,8 @@ def export_rfdetr(
         err_msg = f"RF-DETR does not support model {model}"
         raise ValueError(err_msg)
     imgsz = handle_imgsz(imgsz, required_imgsz, model, enforce=True, adjust_div=32)
+    handle_batch(batch, model, supported=False)
+    handle_dynamic(batch, model, dynamic=dynamic, supported=False)
 
     run_uv_pip_install(
         directory,
