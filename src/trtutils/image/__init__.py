@@ -31,6 +31,12 @@ Classes
     Wrapper around hand-object interaction models.
 :class:`SAHI`
     SAHI wrapper for slicing aided inference.
+:class:`OBBDetector`
+    Wrapper around oriented bounding box detection models.
+:class:`PoseEstimator`
+    Wrapper around pose estimation models.
+:class:`Segmenter`
+    Wrapper around instance segmentation models.
 :class:`ImageModel`
     Base class for models which process images.
 
@@ -51,6 +57,9 @@ from ._depth_estimator import DepthEstimator
 from ._detector import Detector
 from ._hand_interaction import HandInteractionDetector
 from ._image_model import ImageModel
+from ._obb_detector import OBBDetector
+from ._pose_estimator import PoseEstimator
+from ._segmenter import Segmenter
 from .sahi import SAHI
 
 __all__ = [
@@ -60,6 +69,9 @@ __all__ = [
     "Detector",
     "HandInteractionDetector",
     "ImageModel",
+    "OBBDetector",
+    "PoseEstimator",
+    "Segmenter",
     "interfaces",
     "kernels",
     "onnx_models",

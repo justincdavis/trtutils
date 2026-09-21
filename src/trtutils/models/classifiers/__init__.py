@@ -21,6 +21,7 @@ from ._squeezenet import SqueezeNet
 from ._swin import SwinTransformer, SwinTransformerV2
 from ._vgg import VGG
 from ._vit import ViT
+from ._yolo import YOLOv8Cls, YOLOv11Cls, YOLOv26Cls
 
 __all__ = [
     "VGG",
@@ -44,4 +45,7 @@ __all__ = [
     "SwinTransformerV2",
     "ViT",
     "WideResNet",
+    "YOLOv8Cls",
+    "YOLOv11Cls",
+    "YOLOv26Cls",
 ]

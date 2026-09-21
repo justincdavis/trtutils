@@ -43,6 +43,7 @@ class Classifier(ImageModel, ClassifierInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        softmax: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -97,6 +98,12 @@ class Classifier(ImageModel, ClassifierInterface):
             inference pipeline, and subsequent calls will replay it. Input
             dimensions are locked after the first end2end() call.
             Only effective with async_v3 backend. Default is True.
+        softmax : bool, optional
+            Whether or not to apply softmax to the raw network outputs during
+            postprocessing. Default is True. Some networks already apply
+            softmax inside their ONNX graph, in which case this should be False
+            to avoid a double softmax which would flatten the returned
+            confidences. Can be overridden per-call via `postprocess`.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -124,6 +131,8 @@ class Classifier(ImageModel, ClassifierInterface):
             verbose=verbose,
         )
 
+        self._softmax = softmax
+
         # prepend with 'cls_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
             {
@@ -136,6 +145,7 @@ class Classifier(ImageModel, ClassifierInterface):
         self: Self,
         outputs: list[np.ndarray],
         *,
+        softmax: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> list[list[np.ndarray]]:
@@ -146,6 +156,9 @@ class Classifier(ImageModel, ClassifierInterface):
         ----------
         outputs : list[np.ndarray]
             The raw outputs from the engine to postprocess.
+        softmax : bool, optional
+            Whether or not to apply softmax to the raw network outputs.
+            If None (default), uses the value passed to the constructor.
         no_copy : bool, optional
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE
@@ -165,8 +178,13 @@ class Classifier(ImageModel, ClassifierInterface):
         if verbose:
             LOG.debug(f"{self._tag}: postprocess")
 
+        if softmax is None:
+            softmax = self._softmax
+
         t0 = time.perf_counter()
-        data = postprocess_classifications(outputs, no_copy=no_copy, verbose=verbose)
+        data = postprocess_classifications(
+            outputs, softmax=softmax, no_copy=no_copy, verbose=verbose
+        )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 

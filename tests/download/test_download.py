@@ -53,6 +53,18 @@ _ROUTING_CASES = [
     pytest.param("depth_anything_v3_mono_large", "export_depth_anything_v3", id="depth_anything_v3"),
     pytest.param("hoi_detr_vitl", "export_hoi_detr", id="hoi_detr"),
     pytest.param("hands23_x101", "export_hands23", id="hands23"),
+    pytest.param("yolov8n-seg", "export_ultralytics", id="ultralytics-yolov8-seg"),
+    pytest.param("yolov8n-cls", "export_ultralytics", id="ultralytics-yolov8-cls"),
+    pytest.param("yolov8n-pose", "export_ultralytics", id="ultralytics-yolov8-pose"),
+    pytest.param("yolov8n-obb", "export_ultralytics", id="ultralytics-yolov8-obb"),
+    pytest.param("yolov11n-seg", "export_ultralytics", id="ultralytics-yolov11-seg"),
+    pytest.param("yolov11n-cls", "export_ultralytics", id="ultralytics-yolov11-cls"),
+    pytest.param("yolov11n-pose", "export_ultralytics", id="ultralytics-yolov11-pose"),
+    pytest.param("yolov11n-obb", "export_ultralytics", id="ultralytics-yolov11-obb"),
+    pytest.param("yolov26n-seg", "export_ultralytics", id="ultralytics-yolov26-seg"),
+    pytest.param("yolov26n-cls", "export_ultralytics", id="ultralytics-yolov26-cls"),
+    pytest.param("yolov26n-pose", "export_ultralytics", id="ultralytics-yolov26-pose"),
+    pytest.param("yolov26n-obb", "export_ultralytics", id="ultralytics-yolov26-obb"),
 ]
 
 

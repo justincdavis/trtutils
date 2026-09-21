@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
 
@@ -227,3 +227,202 @@ def resolve_detector_schemas(
         resolved_output = output_schema
 
     return (resolved_input, resolved_output)
+
+
+class SegmentationOutputSchema(Enum):
+    # dense prediction head plus mask prototypes
+    YOLO = ("output0", "output1")
+
+    @classmethod
+    def names(cls: type[Self]) -> list[str]:
+        """
+        Get the names of the segmentation output schema enums.
+
+        Returns
+        -------
+        list[str]
+            The names of the output schemas.
+
+        """
+        return list(cls.__members__.keys())
+
+
+class PoseOutputSchema(Enum):
+    # dense prediction head with per-detection keypoints
+    YOLO = ("output0",)
+
+    @classmethod
+    def names(cls: type[Self]) -> list[str]:
+        """
+        Get the names of the pose output schema enums.
+
+        Returns
+        -------
+        list[str]
+            The names of the output schemas.
+
+        """
+        return list(cls.__members__.keys())
+
+
+class OBBOutputSchema(Enum):
+    # dense prediction head with a trailing angle channel
+    YOLO = ("output0",)
+
+    @classmethod
+    def names(cls: type[Self]) -> list[str]:
+        """
+        Get the names of the OBB output schema enums.
+
+        Returns
+        -------
+        list[str]
+            The names of the output schemas.
+
+        """
+        return list(cls.__members__.keys())
+
+
+_TaskOutputSchema = TypeVar(
+    "_TaskOutputSchema",
+    SegmentationOutputSchema,
+    PoseOutputSchema,
+    OBBOutputSchema,
+)
+
+
+def _resolve_input_schema(
+    engine: TRTEngine,
+    override: InputSchema | str | None,
+) -> InputSchema:
+    if isinstance(override, InputSchema):
+        return override
+    if isinstance(override, str):
+        if override not in InputSchema.names():
+            err_msg = f"Invalid input_schema string: {override}. "
+            err_msg += f"Valid options: {InputSchema.names()}"
+            raise ValueError(err_msg)
+        return InputSchema[override]
+
+    input_names = tuple(engine.input_names)
+    for member in InputSchema:
+        if input_names == member.value:
+            return member
+    for member in InputSchema:
+        if len(engine.input_spec) == len(member.value):
+            return member
+    err_msg = f"Could not determine input schema from input names: {engine.input_names}"
+    raise ValueError(err_msg)
+
+
+def _resolve_output_schema(
+    engine: TRTEngine,
+    schema_cls: type[_TaskOutputSchema],
+    override: _TaskOutputSchema | str | None,
+) -> _TaskOutputSchema:
+    if isinstance(override, schema_cls):
+        return override
+    if isinstance(override, str):
+        valid = list(schema_cls.__members__)
+        if override not in valid:
+            err_msg = f"Invalid output_schema string: {override}. "
+            err_msg += f"Valid options: {valid}"
+            raise ValueError(err_msg)
+        return schema_cls[override]
+
+    output_names = tuple(engine.output_names)
+    for member in schema_cls:
+        if output_names == member.value:
+            return member
+    for member in schema_cls:
+        if len(engine.output_spec) == len(member.value):
+            return member
+    err_msg = f"Could not determine output schema from output names: {engine.output_names}"
+    raise ValueError(err_msg)
+
+
+def resolve_segmentation_schemas(
+    engine: TRTEngine,
+    input_schema: InputSchema | str | None = None,
+    output_schema: SegmentationOutputSchema | str | None = None,
+) -> tuple[InputSchema, SegmentationOutputSchema]:
+    """
+    Resolve segmentation input/output schemas from overrides or auto-detection.
+
+    Parameters
+    ----------
+    engine : TRTEngine
+        The loaded TensorRT engine to auto-detect schemas from.
+    input_schema : InputSchema, str, optional
+        Override for the input schema, as an enum value or matching enum name.
+    output_schema : SegmentationOutputSchema, str, optional
+        Override for the output schema, as an enum value or matching enum name.
+
+    Returns
+    -------
+    tuple[InputSchema, SegmentationOutputSchema]
+        The resolved input and output schemas.
+
+    """
+    return (
+        _resolve_input_schema(engine, input_schema),
+        _resolve_output_schema(engine, SegmentationOutputSchema, output_schema),
+    )
+
+
+def resolve_pose_schemas(
+    engine: TRTEngine,
+    input_schema: InputSchema | str | None = None,
+    output_schema: PoseOutputSchema | str | None = None,
+) -> tuple[InputSchema, PoseOutputSchema]:
+    """
+    Resolve pose input/output schemas from overrides or auto-detection.
+
+    Parameters
+    ----------
+    engine : TRTEngine
+        The loaded TensorRT engine to auto-detect schemas from.
+    input_schema : InputSchema, str, optional
+        Override for the input schema, as an enum value or matching enum name.
+    output_schema : PoseOutputSchema, str, optional
+        Override for the output schema, as an enum value or matching enum name.
+
+    Returns
+    -------
+    tuple[InputSchema, PoseOutputSchema]
+        The resolved input and output schemas.
+
+    """
+    return (
+        _resolve_input_schema(engine, input_schema),
+        _resolve_output_schema(engine, PoseOutputSchema, output_schema),
+    )
+
+
+def resolve_obb_schemas(
+    engine: TRTEngine,
+    input_schema: InputSchema | str | None = None,
+    output_schema: OBBOutputSchema | str | None = None,
+) -> tuple[InputSchema, OBBOutputSchema]:
+    """
+    Resolve OBB input/output schemas from overrides or auto-detection.
+
+    Parameters
+    ----------
+    engine : TRTEngine
+        The loaded TensorRT engine to auto-detect schemas from.
+    input_schema : InputSchema, str, optional
+        Override for the input schema, as an enum value or matching enum name.
+    output_schema : OBBOutputSchema, str, optional
+        Override for the output schema, as an enum value or matching enum name.
+
+    Returns
+    -------
+    tuple[InputSchema, OBBOutputSchema]
+        The resolved input and output schemas.
+
+    """
+    return (
+        _resolve_input_schema(engine, input_schema),
+        _resolve_output_schema(engine, OBBOutputSchema, output_schema),
+    )

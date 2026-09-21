@@ -11,6 +11,17 @@ Added
   ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``
 * Download configs and ONNX export functions for Depth-Anything-V1
   (small / base / large) and Depth-Anything-V3 (mono-large, metric-large)
+* ``image.Segmenter``, ``image.PoseEstimator``, and ``image.OBBDetector`` for instance
+  segmentation, pose estimation, and oriented-bounding-box models, each built on
+  ``ImageModel`` with its own input/output schema
+* ``models`` aliases ``YOLOv8Seg``/``YOLOv11Seg``/``YOLOv26Seg``,
+  ``YOLOv8Pose``/``YOLOv11Pose``/``YOLOv26Pose``, and
+  ``YOLOv8OBB``/``YOLOv11OBB``/``YOLOv26OBB``
+* ``models`` classification aliases ``YOLOv8Cls``/``YOLOv11Cls``/``YOLOv26Cls`` and a
+  ``softmax`` flag on ``Classifier`` (and ``postprocess_classifications``) so heads that
+  already softmax inside the ONNX graph are not double-softmaxed
+* Download support for the ``-seg``, ``-cls``, ``-pose``, and ``-obb`` variants of
+  YOLOv8, YOLOv11, and YOLOv26 (YOLOv12 does not publish these task heads upstream)
 
 Fixed
 ^^^^^
