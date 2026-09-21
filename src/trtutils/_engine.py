@@ -201,7 +201,7 @@ class TRTEngine(TRTEngineInterface):
         if self._cuda_graph and self._cuda_graph.is_captured:
             self._cuda_graph.invalidate()
 
-    def _capture_cuda_graph(self: Self) -> None:
+    def _capture_cuda_graph(self: Self) -> None:  # noqa: C901, PLR0912
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["graph_capture"])
 
@@ -271,7 +271,7 @@ class TRTEngine(TRTEngineInterface):
                 self._cuda_graph.invalidate()
         super().__del__()
 
-    def execute(
+    def execute(  # noqa: C901, PLR0912, PLR0915
         self: Self,
         data: list[np.ndarray],
         *,
@@ -465,7 +465,7 @@ class TRTEngine(TRTEngineInterface):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()
 
-    def direct_exec(
+    def direct_exec(  # noqa: C901, PLR0912
         self: Self,
         pointers: list[int],
         *,

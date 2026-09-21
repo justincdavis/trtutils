@@ -84,7 +84,7 @@ class OutputSchema(Enum):
         return list(cls.__members__.keys())
 
 
-def get_detector_io_schema(
+def get_detector_io_schema(  # noqa: C901, PLR0912, PLR0915
     engine: TRTEngine,
 ) -> tuple[InputSchema, OutputSchema]:
     input_names = tuple(engine.input_names)

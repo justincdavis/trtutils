@@ -575,7 +575,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # reallocate_input
 
-    def _validate_input(
+    def _validate_input(  # noqa: C901
         self: Self,
         image: np.ndarray,
         resize: str | None = None,
@@ -1142,7 +1142,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         return ratios_list, padding_list
 
-    def _resize_images_to_batch(
+    def _resize_images_to_batch(  # noqa: C901
         self: Self,
         images: list[np.ndarray],
         batch_buffer_ptr: int,

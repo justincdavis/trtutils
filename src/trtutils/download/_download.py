@@ -76,7 +76,7 @@ def get_supported_models() -> list[str]:
     return names
 
 
-def download_model(
+def download_model(  # noqa: C901, PLR0912, PLR0915
     model: str,
     directory: Path,
     opset: int = 17,

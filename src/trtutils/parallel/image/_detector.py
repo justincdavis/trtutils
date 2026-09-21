@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 
@@ -102,7 +102,7 @@ class ParallelDetector:
     inside of this class.
     """
 
-    def __init__(
+    def __init__(  # noqa: C901
         self: Self,
         engines: Sequence[EngineInfo],
         warmup_iterations: int = 10,
@@ -1027,7 +1027,7 @@ class ParallelDetector:
             nvtx.pop_range()
         return result
 
-    def _run(self: Self, threadid: int) -> None:
+    def _run(self: Self, threadid: int) -> None:  # noqa: C901, PLR0912, PLR0915
         # perform warmup
         info = self._engine_info[threadid]
         det_class = info.detector_class

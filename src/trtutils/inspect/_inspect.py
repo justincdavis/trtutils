@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -13,7 +13,7 @@ from trtutils.core._engine import create_engine
 from trtutils.core._stream import destroy_stream
 
 
-def inspect_engine(
+def inspect_engine(  # noqa: C901, PLR0912
     engine: Path | str | trt.ICudaEngine,
     *,
     verbose: bool | None = None,

@@ -72,7 +72,7 @@ def _build_chunk_map(
     return ordered_keys, chunk_times
 
 
-def identify_quantize_speedups_by_layer(
+def identify_quantize_speedups_by_layer(  # noqa: C901
     onnx: Path | str,
     *,
     build_func: BuildFunc | None = None,
