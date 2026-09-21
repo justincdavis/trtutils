@@ -10,8 +10,11 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+from tests.engine.conftest import SIMPLE_DYNAMIC_ENGINE_PATH, SIMPLE_ENGINE_PATH
+from trtutils import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils.core import allocate_to_device, free_device_ptrs
+from trtutils.core._memory import cuda_free, cuda_malloc
 
 
 class TestExecute:
@@ -586,3 +589,85 @@ class TestGraphExec:
 
         eng.execute(eng.get_random_input())
         assert eng._cuda_graph.is_captured is True
+
+
+@pytest.mark.regression
+class TestDynamicBatchDirectExec:
+    """direct_exec must honor the active dynamic shape, not the allocation."""
+
+    def test_direct_exec_returns_active_batch_shape(self) -> None:
+        """
+        Outputs are shaped to the submitted batch, not the max profile.
+
+        direct_exec feeds the engine raw device pointers, so the shape
+        bookkeeping execute() derives from host arrays never runs. It used to
+        return the full max-profile allocation regardless of the resolved
+        batch, so a caller submitting a smaller batch got trailing garbage
+        rows and any per-image list zipped against them ran off the end.
+        """
+        engine = TRTEngine(SIMPLE_DYNAMIC_ENGINE_PATH, warmup=False)
+        try:
+            assert engine.is_dynamic_batch
+            max_batch = engine.input_shapes[0][0]
+            per_image = int(np.prod(engine.input_shapes[0][1:]))
+            d_in = cuda_malloc(max_batch * per_image * np.dtype(np.float32).itemsize)
+            try:
+                for batch in (max_batch, 2, max_batch, 1, max_batch):
+                    engine._resolve_dynamic_batch(batch)
+                    outputs = engine.direct_exec([d_in], no_warn=True)
+                    for out in outputs:
+                        assert out.shape[0] == batch, (
+                            f"submitted batch {batch}, got output shape {out.shape}"
+                        )
+            finally:
+                cuda_free(d_in)
+        finally:
+            del engine
+
+
+@pytest.mark.regression
+class TestDynamicBatchExecute:
+    """execute() must run dynamic-batch engines at the submitted shape."""
+
+    @pytest.mark.parametrize("batch", [1, 2, 4])
+    def test_execute_matches_static_per_image(self, batch: int) -> None:
+        """
+        A dynamic engine executed at batch B matches the static engine run per-image.
+
+        execute() used to always compute and copy the full max-profile
+        allocation regardless of the submitted batch. Verify the returned
+        outputs are both shaped to the submitted batch and numerically
+        identical to running the static (batch-1) engine on each image.
+        """
+        static = TRTEngine(SIMPLE_ENGINE_PATH, warmup=False)
+        dynamic = TRTEngine(SIMPLE_DYNAMIC_ENGINE_PATH, warmup=False)
+        try:
+            img_shape = static.input_shapes[0][1:]
+            dtype = static.input_dtypes[0]
+            rng = np.random.default_rng(0)
+            images = rng.random((batch, *img_shape), dtype=np.float32).astype(dtype)
+
+            (dyn_out,) = dynamic.execute([images])
+            assert dyn_out.shape[0] == batch
+
+            expected = np.concatenate(
+                [static.execute([images[i : i + 1]])[0] for i in range(batch)],
+                axis=0,
+            )
+            np.testing.assert_allclose(dyn_out, expected, rtol=1e-5, atol=1e-5)
+        finally:
+            del static
+            del dynamic
+
+    def test_execute_batch_above_max_raises(self) -> None:
+        """Submitting a batch above the max profile shape raises ValueError."""
+        dynamic = TRTEngine(SIMPLE_DYNAMIC_ENGINE_PATH, warmup=False)
+        try:
+            max_batch = dynamic.input_shapes[0][0]
+            img_shape = dynamic.input_shapes[0][1:]
+            dtype = dynamic.input_dtypes[0]
+            oversized = np.zeros((max_batch + 1, *img_shape), dtype=dtype)
+            with pytest.raises(ValueError, match="exceeds the allocated max profile shape"):
+                dynamic.execute([oversized])
+        finally:
+            del dynamic

@@ -111,6 +111,22 @@ class TRTEngineInterface(ABC):
                 output_b.host_allocation for output_b in self._outputs
             ]
 
+            # record which inputs have dynamic dims at the *engine* level
+            # allocate_bindings resolves dynamic dims to the max profile shape,
+            # so the binding shapes no longer carry the -1 markers
+            self._engine_input_shapes: list[tuple[int, ...]] = []
+            for i_binding in self._inputs:
+                if FLAGS.TRT_10:
+                    engine_shape = tuple(self._engine.get_tensor_shape(i_binding.name))
+                else:
+                    engine_shape = tuple(self._engine.get_binding_shape(i_binding.index))
+                self._engine_input_shapes.append(engine_shape)
+            self._dynamic_input_names: set[str] = {
+                i_binding.name
+                for i_binding, engine_shape in zip(self._inputs, self._engine_input_shapes)
+                if any(dim < 0 for dim in engine_shape)
+            }
+
         # store useful properties about the engine
         self._memsize: int = 0
         if FLAGS.MEMSIZE_V2:
@@ -230,8 +246,8 @@ class TRTEngineInterface(ABC):
             The batch size. Returns -1 if dynamic, 1 if no inputs.
 
         """
-        if self._inputs and len(self._inputs[0].shape) > 0:
-            return self._inputs[0].shape[0]
+        if self._engine_input_shapes and len(self._engine_input_shapes[0]) > 0:
+            return self._engine_input_shapes[0][0]
         return 1
 
     @cached_property
@@ -245,8 +261,8 @@ class TRTEngineInterface(ABC):
             True if the engine has dynamic batch size.
 
         """
-        if self._inputs and len(self._inputs[0].shape) > 0:
-            return self._inputs[0].shape[0] == -1
+        if self._engine_input_shapes and len(self._engine_input_shapes[0]) > 0:
+            return self._engine_input_shapes[0][0] == -1
         return False
 
     @cached_property

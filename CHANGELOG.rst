@@ -17,6 +17,10 @@ Added
   and ``core.memcpy_nd_device_to_host[_async]`` for pitched 2D and strided N-D transfers
 * ``core.create_event``, ``core.destroy_event``, ``core.record_event``,
   ``core.stream_wait_event``, and ``core.event_synchronize`` CUDA event helpers
+* ``TRTEngine`` executes dynamic-batch engines at the submitted batch size instead of
+  always computing and copying the full max-profile allocation
+* ``builder.build_engine``: ``shapes`` entries may be a ``(min_shape, opt_shape, max_shape)``
+  triple to build a dynamic optimization profile for that input
 
 Fixed
 ^^^^^
@@ -25,6 +29,8 @@ Fixed
 * ``core.Kernel.create_args``: the returned argument array now owns the intermediate buffers
   its pointers reference, fixing a use-after-free when the array is cached and reused
   across calls (e.g. per-batch-size kernel argument caching)
+* ``TRTEngine.direct_exec`` on a dynamic-batch engine returned outputs shaped to the max
+  profile batch regardless of the resolved batch size
 
 
 0.6.1 (2025-06-17)
