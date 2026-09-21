@@ -70,6 +70,8 @@ Functions
     Copy data from host to device with an offset.
 :func:`memcpy_host_to_device_offset_async`
     Copy data from host to device with an offset async.
+:func:`memcpy`
+    Copy a flat run of bytes between two pointers, sync or on a stream.
 :func:`memcpy_2d`
     Copy a pitched 2D region of memory.
 :func:`memcpy_2d_async`
@@ -186,6 +188,7 @@ from ._memory import (
     cuda_host_free,
     cuda_malloc,
     free_device_ptrs,
+    memcpy,
     memcpy_2d,
     memcpy_2d_async,
     memcpy_device_to_device,
@@ -259,6 +262,7 @@ __all__ = [
     "init_cuda",
     "launch_kernel",
     "load_kernel",
+    "memcpy",
     "memcpy_2d",
     "memcpy_2d_async",
     "memcpy_device_to_device",
