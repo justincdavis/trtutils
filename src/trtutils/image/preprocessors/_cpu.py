@@ -10,6 +10,7 @@ import numpy as np
 import nvtx
 
 from trtutils._flags import FLAGS
+from trtutils.core._buffer import Buffer, MemoryLocation
 
 from ._image_preproc import ImagePreprocessor
 from ._process import preprocess
@@ -18,6 +19,12 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 _COLOR_CHANNELS = 3
+# glibc mmaps any allocation above 32 MB and unmaps it on free, so the whole
+# buffer first-touches fresh zero pages on every call. Reusing the batch
+# tensor avoids that; below the threshold the allocator recycles the block and
+# reuse would only add bookkeeping. Set below 32 MB so the transition is
+# covered rather than straddled.
+_REUSE_MIN_BYTES = 16 * 1024 * 1024
 
 
 class CPUPreprocessor(ImagePreprocessor):
@@ -81,6 +88,14 @@ class CPUPreprocessor(ImagePreprocessor):
             }
         )
 
+        # Grow-only batch tensor, mirroring the GPU preprocessors' staging
+        # buffers. Allocating this fresh per call is not merely an allocation:
+        # past glibc's 32 MB mmap ceiling the buffer is mmap'd and munmap'd
+        # every call, so every write first-touches a new zero page. For a
+        # 640x640 float32 batch that ceiling falls at batch 7, where the cost
+        # jumps roughly fivefold.
+        self._batch_buffer: Buffer | None = None
+
     def warmup(self: Self) -> None:
         """Compatibility function for CPU/CUDA parity."""
         if FLAGS.NVTX_ENABLED:
@@ -137,7 +152,9 @@ class CPUPreprocessor(ImagePreprocessor):
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
         no_copy : bool, optional
-            Compatibility parameter for CUDA parity.
+            If True, return a view of the preprocessor's reusable batch
+            buffer rather than a copy. The view is valid until the next
+            preprocess call. By default False, which returns a private copy.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -177,7 +194,7 @@ class CPUPreprocessor(ImagePreprocessor):
         images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         *,
-        no_copy: bool | None = None,  # noqa: ARG002
+        no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
         """
@@ -191,7 +208,9 @@ class CPUPreprocessor(ImagePreprocessor):
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
         no_copy : bool, optional
-            Compatibility parameter for CUDA parity.
+            If True, return a view of the preprocessor's reusable batch
+            buffer rather than a copy. The view is valid until the next
+            preprocess call. By default False, which returns a private copy.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -227,7 +246,10 @@ class CPUPreprocessor(ImagePreprocessor):
             std_tuple = tuple(
                 std.reshape(-1) if std.size == _COLOR_CHANNELS else std.flatten()[:_COLOR_CHANNELS]
             )
-        result = preprocess(
+        width, height = self._o_shape
+        buffer = self._resolve_batch_buffer(len(batch_images), height, width)
+
+        tensor, ratios, padding = preprocess(
             batch_images,
             self._o_shape,
             self._o_dtype,
@@ -235,10 +257,63 @@ class CPUPreprocessor(ImagePreprocessor):
             resize,
             mean_tuple,
             std_tuple,
+            buffer,
             verbose=verbose,
         )
+
+        # the buffer is reused by the next call, so a caller keeping the
+        # result needs its own copy unless it opted out
+        if not no_copy and tensor is buffer:
+            tensor = tensor.copy()
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # cpu_preprocess
 
-        return result
+        return tensor, ratios, padding
+
+    def _resolve_batch_buffer(
+        self: Self,
+        batch_size: int,
+        height: int,
+        width: int,
+    ) -> np.ndarray | None:
+        """
+        Get a reusable batch tensor, growing the allocation only when needed.
+
+        Parameters
+        ----------
+        batch_size : int
+            The number of images in the batch.
+        height : int
+            The height of the model input.
+        width : int
+            The width of the model input.
+
+        Returns
+        -------
+        np.ndarray, optional
+            A prefix view of the reusable batch buffer shaped
+            (batch_size, 3, height, width), or None when the requested
+            geometry cannot be served, in which case the preprocessor
+            falls back to allocating per call.
+
+        """
+        shape = (batch_size, _COLOR_CHANNELS, height, width)
+        needed = batch_size * _COLOR_CHANNELS * height * width
+        if needed * self._o_dtype.itemsize < _REUSE_MIN_BYTES:
+            # Small batches come from the heap, where the allocator recycles
+            # the block and the pages stay mapped. Reusing a buffer there only
+            # adds bookkeeping, and handing back a private array is the safer
+            # default. Reuse earns its keep once the allocation is large
+            # enough to be mmap'd.
+            return None
+        current = self._batch_buffer
+        if current is None or current.size < needed or current.dtype != self._o_dtype:
+            try:
+                self._batch_buffer = Buffer.empty((needed,), self._o_dtype, MemoryLocation.HOST)
+            except (MemoryError, ValueError, RuntimeError):
+                self._batch_buffer = None
+                return None
+            current = self._batch_buffer
+        # a prefix view keeps smaller batches on the same allocation
+        return current.array[:needed].reshape(shape)

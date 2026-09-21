@@ -5,15 +5,73 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import pytest
+from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+from trtutils.image.preprocessors._process import preprocess
 
 SIZE = (640, 640)
 RANGE = (0.0, 1.0)
 DTYPE = np.dtype(np.float32)
 IMAGENET = {"mean": (0.485, 0.456, 0.406), "std": (0.229, 0.224, 0.225)}
+# 8 * 3 * 640 * 640 * 4 bytes == ~37.5 MB, above CPUPreprocessor's 16 MB reuse
+# threshold, so it forces the grow-only batch buffer path.
+_REUSE_BATCH_SIZE = 8
+
+
+def _old_preprocess_single(
+    image: np.ndarray,
+    input_shape: tuple[int, int],
+    dtype: np.dtype,
+    input_range: tuple[float, float],
+    method: str,
+    mean: tuple[float, float, float] | None,
+    std: tuple[float, float, float] | None,
+) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    """Pre-PR14 per-image pipeline: float64 arithmetic, cast once at the end."""
+    if method == "letterbox":
+        tensor, ratios, padding = letterbox(image, new_shape=input_shape)
+    else:
+        tensor, ratios = resize_linear(image, new_shape=input_shape)
+        padding = (0.0, 0.0)
+    tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
+    if mean is not None and std is not None:
+        tensor = tensor / 255.0
+        tensor = (tensor - mean) / std
+    else:
+        tensor = rescale(tensor, input_range)
+    tensor = tensor[np.newaxis, :]
+    tensor = np.transpose(tensor, (0, 3, 1, 2))
+    if not tensor.flags["C_CONTIGUOUS"]:
+        tensor = np.ascontiguousarray(tensor)
+    tensor = tensor.astype(dtype)
+    return tensor, ratios, padding
+
+
+def _old_preprocess(
+    images: list[np.ndarray],
+    input_shape: tuple[int, int],
+    dtype: np.dtype,
+    input_range: tuple[float, float],
+    method: str,
+    mean: tuple[float, float, float] | None,
+    std: tuple[float, float, float] | None,
+) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+    """Pre-PR14 batch pipeline: per-image tensors stacked with concatenate."""
+    tensors: list[np.ndarray] = []
+    ratios_list: list[tuple[float, float]] = []
+    padding_list: list[tuple[float, float]] = []
+    for image in images:
+        tensor, ratios, padding = _old_preprocess_single(
+            image, input_shape, dtype, input_range, method, mean, std
+        )
+        tensors.append(tensor)
+        ratios_list.append(ratios)
+        padding_list.append(padding)
+    return np.concatenate(tensors, axis=0), ratios_list, padding_list
 
 
 @pytest.mark.parametrize(
@@ -70,3 +128,143 @@ def test_batch_matches_single(random_images, preproc_cls, kwargs) -> None:
             np.testing.assert_array_equal(batch[i], tensor[0])
             assert ratios[i] == single_ratios[0]
             assert padding[i] == single_padding[0]
+
+
+@pytest.fixture
+def preproc_images(images) -> list[np.ndarray]:
+    """Horse, people, and two odd-sized random images (seeded for reproducibility)."""
+    rng = np.random.default_rng(0)
+    odd1 = rng.integers(0, 255, (137, 251, 3), dtype=np.uint8)
+    odd2 = rng.integers(0, 255, (400, 89, 3), dtype=np.uint8)
+    return [images["horse"].array, images["people"].array, odd1, odd2]
+
+
+# (method, input_range, mean, std, dtype, exact)
+# "exact" cases are bit-identical to the pre-PR float64 pipeline: the
+# identity range takes a pure-transpose fast path, and uint8/float16 outputs
+# quantize away the float32-arithmetic rounding noise. The float32-output
+# scale and mean/std cases are algebraically identical but not bit-identical:
+# the fused implementation does the affine transform in float32 throughout,
+# while the old pipeline computed it in float64 and rounded once at the end.
+# Values near zero (e.g. after mean/std centering) make a ULP-based bound
+# meaningless -- a tiny absolute difference is a huge ULP count there -- so
+# those cases are checked with a tight absolute/relative tolerance instead.
+_PREPROC_CASES = [
+    pytest.param("letterbox", (0.0, 1.0), None, None, np.float32, False, id="letterbox-scale01"),
+    pytest.param("letterbox", (-1.0, 1.0), None, None, np.float32, False, id="letterbox-scale-1-1"),
+    pytest.param(
+        "letterbox",
+        (0.0, 1.0),
+        IMAGENET["mean"],
+        IMAGENET["std"],
+        np.float32,
+        False,
+        id="letterbox-imagenet",
+    ),
+    pytest.param(
+        "letterbox", (0.0, 255.0), None, None, np.uint8, True, id="letterbox-uint8-identity"
+    ),
+    pytest.param("letterbox", (0.0, 1.0), None, None, np.float16, True, id="letterbox-fp16"),
+    pytest.param("linear", (0.0, 1.0), None, None, np.float32, False, id="linear-scale01"),
+    pytest.param("linear", (-1.0, 1.0), None, None, np.float32, False, id="linear-scale-1-1"),
+    pytest.param(
+        "linear",
+        (0.0, 1.0),
+        IMAGENET["mean"],
+        IMAGENET["std"],
+        np.float32,
+        False,
+        id="linear-imagenet",
+    ),
+    pytest.param("linear", (0.0, 255.0), None, None, np.uint8, True, id="linear-uint8-identity"),
+    pytest.param("linear", (0.0, 1.0), None, None, np.float16, True, id="linear-fp16"),
+]
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(("method", "input_range", "mean", "std", "dtype", "exact"), _PREPROC_CASES)
+def test_preprocess_matches_pre_pr_algorithm(
+    preproc_images, method, input_range, mean, std, dtype, exact
+) -> None:
+    """preprocess() output matches the pre-PR per-image float64 pipeline."""
+    old_tensor, old_ratios, old_padding = _old_preprocess(
+        preproc_images, SIZE, np.dtype(dtype), input_range, method, mean, std
+    )
+    new_tensor, new_ratios, new_padding = preprocess(
+        preproc_images, SIZE, np.dtype(dtype), input_range, method, mean, std
+    )
+    assert new_ratios == old_ratios
+    assert new_padding == old_padding
+    if exact:
+        np.testing.assert_array_equal(new_tensor, old_tensor)
+    else:
+        np.testing.assert_allclose(new_tensor, old_tensor, rtol=1e-5, atol=1e-6)
+
+
+@pytest.mark.cpu
+def test_preprocess_empty_list_raises() -> None:
+    """An empty image list raises ValueError instead of failing inside np.concatenate."""
+    with pytest.raises(ValueError, match="No images"):
+        preprocess([], SIZE, DTYPE, RANGE, "letterbox")
+
+
+@pytest.mark.cpu
+def test_preprocess_out_used_when_shape_and_dtype_match(random_images) -> None:
+    """out= is written in place when its shape and dtype match, otherwise ignored."""
+    imgs = random_images(2)
+    matching = np.empty((2, 3, 640, 640), dtype=np.float32)
+    result, _, _ = preprocess(imgs, SIZE, DTYPE, RANGE, "letterbox", out=matching)
+    assert result is matching
+
+    wrong_shape = np.empty((3, 3, 640, 640), dtype=np.float32)
+    result, _, _ = preprocess(imgs, SIZE, DTYPE, RANGE, "letterbox", out=wrong_shape)
+    assert result is not wrong_shape
+
+    wrong_dtype = np.empty((2, 3, 640, 640), dtype=np.float16)
+    result, _, _ = preprocess(imgs, SIZE, DTYPE, RANGE, "letterbox", out=wrong_dtype)
+    assert result is not wrong_dtype
+
+
+@pytest.mark.cpu
+def test_cpu_preprocessor_matches_preprocess_function(preproc_images) -> None:
+    """CPUPreprocessor produces the same output as calling preprocess() directly."""
+    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize="letterbox")
+    cpu_tensor, cpu_ratios, cpu_padding = cpu.preprocess(preproc_images)
+    direct_tensor, direct_ratios, direct_padding = preprocess(
+        preproc_images, SIZE, DTYPE, RANGE, "letterbox"
+    )
+    np.testing.assert_array_equal(cpu_tensor, direct_tensor)
+    assert cpu_ratios == direct_ratios
+    assert cpu_padding == direct_padding
+
+
+@pytest.mark.cpu
+def test_cpu_preprocessor_no_copy_view_overwritten_by_next_call(random_images) -> None:
+    """no_copy=True above the reuse threshold returns a view the next call overwrites."""
+    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE)
+    imgs_a = random_images(_REUSE_BATCH_SIZE)
+    imgs_b = random_images(_REUSE_BATCH_SIZE)
+
+    view, _, _ = cpu.preprocess(imgs_a, no_copy=True)
+    assert view.nbytes > 16 * 1024 * 1024
+    snapshot = view.copy()
+
+    cpu.preprocess(imgs_b, no_copy=True)
+
+    assert not np.array_equal(view, snapshot)
+
+
+@pytest.mark.cpu
+def test_cpu_preprocessor_copy_survives_next_call(random_images) -> None:
+    """no_copy=False (the default) returns a private array unaffected by later calls."""
+    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE)
+    imgs_a = random_images(_REUSE_BATCH_SIZE)
+    imgs_b = random_images(_REUSE_BATCH_SIZE)
+
+    result, _, _ = cpu.preprocess(imgs_a, no_copy=False)
+    assert result.nbytes > 16 * 1024 * 1024
+    snapshot = result.copy()
+
+    cpu.preprocess(imgs_b, no_copy=False)
+
+    np.testing.assert_array_equal(result, snapshot)

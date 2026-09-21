@@ -18,6 +18,12 @@ Added
 * ``core.create_event``, ``core.destroy_event``, ``core.record_event``,
   ``core.stream_wait_event``, and ``core.event_synchronize`` CUDA event helpers
 
+Changed
+^^^^^^^
+* CPU preprocessing packs directly into a preallocated batch tensor with a fused
+  float32 normalization and reuses it above 16 MB; ``no_copy`` honored by the
+  CPU preprocessor
+
 Fixed
 ^^^^^
 * ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
