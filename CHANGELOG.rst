@@ -40,6 +40,12 @@ Changed
 * ``image.preprocessors.TRTPreprocessor`` runs its preprocessing engine at the submitted
   batch size instead of the configured maximum
 
+Changed
+^^^^^^^
+* CPU preprocessing packs directly into a preallocated batch tensor with a fused
+  float32 normalization and reuses it above 16 MB; ``no_copy`` honored by the
+  CPU preprocessor
+
 Fixed
 ^^^^^
 * ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"

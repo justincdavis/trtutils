@@ -558,14 +558,14 @@ class ImageModel:
                 if self._preproc_trt is None:
                     self._preproc_trt = self._setup_trt_preproc()
                 preprocessor = self._preproc_trt
-        if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            t0 = time.perf_counter()
-            data = preprocessor(batch_images, resize=resize, no_copy=no_copy, verbose=verbose)
-            t1 = time.perf_counter()
-        else:
-            t0 = time.perf_counter()
-            data = preprocessor(batch_images, resize=resize, verbose=verbose)
-            t1 = time.perf_counter()
+        # every preprocessor honors no_copy: the GPU ones hand back a view of
+        # their staging binding, the CPU one a view of its reusable batch
+        # tensor. Dropping it here forced a fresh copy of the whole batch on
+        # the CPU path, which above 32 MB is an mmap that faults in on every
+        # call rather than a cheap memcpy.
+        t0 = time.perf_counter()
+        data = preprocessor(batch_images, resize=resize, no_copy=no_copy, verbose=verbose)
+        t1 = time.perf_counter()
         self._pre_profile = (t0, t1)
 
         if FLAGS.NVTX_ENABLED:
