@@ -52,3 +52,21 @@ def test_preproc_engine_matches_cpu(images, build, extra_inputs, norm, tol) -> N
     assert result.shape == expected.shape
     assert result.dtype == expected.dtype
     np.testing.assert_allclose(result, expected, rtol=tol, atol=tol)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(build_image_preproc, id="preproc"),
+        pytest.param(build_image_preproc_imagenet, id="preproc-imagenet"),
+    ],
+)
+def test_preproc_engine_has_dynamic_batch_profile(build) -> None:
+    """A built preprocessing engine carries a 1..batch_size profile on 'input'."""
+    batch_size = 8
+    engine = TRTEngine(
+        build((640, 640), np.dtype(np.float32), batch_size, trt_version=trt.__version__),
+        warmup=False,
+    )
+    assert engine.is_dynamic_batch
+    assert engine.input_shapes[0][0] == batch_size

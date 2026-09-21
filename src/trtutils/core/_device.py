@@ -74,6 +74,30 @@ def get_device_name(device: int = 0) -> str:
     return name.decode() if isinstance(name, bytes) else name
 
 
+def is_integrated(device: int = 0) -> bool:
+    """
+    Check whether the device shares physical memory with the host.
+
+    On an integrated device the driver reaches full DMA rate straight out of
+    pageable memory, so staging a transfer through a pinned buffer costs a
+    host-side copy and buys nothing. On a discrete device over PCIe the
+    staging copy is what enables full-rate DMA and is worth paying.
+
+    Parameters
+    ----------
+    device : int, optional
+        The device index to query. Default is 0.
+
+    Returns
+    -------
+    bool
+        Whether the device is integrated with host memory.
+
+    """
+    props = cuda_call(cudart.cudaGetDeviceProperties(device))
+    return bool(props.integrated)
+
+
 def get_compute_capability(device: int = 0) -> tuple[int, int]:
     """
     Get the compute capability (SM version) of a CUDA device.

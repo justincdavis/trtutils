@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import math
 import threading
 import time
 from pathlib import Path
@@ -16,7 +17,6 @@ from ._flags import FLAGS
 from ._log import LOG
 from .core._graph import CUDAGraph
 from .core._interface import TRTEngineInterface
-from .core._memory import memcpy_device_to_host, memcpy_device_to_host_async
 from .core._stream import stream_synchronize
 
 if TYPE_CHECKING:
@@ -162,6 +162,18 @@ class TRTEngine(TRTEngineInterface):
         # only applies to the inputs
         self._using_engine_tensors: bool = True
 
+        # dynamic-shape tracking (only supported on the v3 backend)
+        # bindings are allocated at the max profile shape, so partial batches
+        # always fit; the context shape is adjusted per-call to avoid computing
+        # and copying at the max batch size when a smaller batch is submitted
+        self._has_dynamic_inputs: bool = bool(self._dynamic_input_names) and self._async_v3
+        self._active_input_shapes: list[tuple[int, ...]] = [tuple(b.shape) for b in self._inputs]
+        # None -> context is at the allocated (max) shapes, use host allocations as-is
+        self._active_output_shapes: list[tuple[int, ...]] | None = None
+        # element counts matching _active_output_shapes, cached to avoid
+        # math.prod per output per call in the hot path
+        self._active_output_sizes: list[int] | None = None
+
         # store timing variable for sleep call before stream_sync
         self._sync_t: float = 0.0
 
@@ -185,6 +197,10 @@ class TRTEngine(TRTEngineInterface):
         for i_binding in self._inputs:
             self._context.set_input_shape(i_binding.name, i_binding.shape)
             self._context.set_tensor_address(i_binding.name, i_binding.allocation)
+        # context is back at the allocated (max) shapes
+        self._active_input_shapes = [tuple(b.shape) for b in self._inputs]
+        self._active_output_shapes = None
+        self._active_output_sizes = None
         # CUDA graph is invalid if using new bindings
         if self._cuda_graph and self._cuda_graph.is_captured:
             self._cuda_graph.invalidate()
@@ -195,6 +211,125 @@ class TRTEngine(TRTEngineInterface):
         # CUDA graph is invalid if using new bindings
         if self._cuda_graph and self._cuda_graph.is_captured:
             self._cuda_graph.invalidate()
+
+    def _apply_input_shapes(self: Self, data: list[np.ndarray]) -> None:
+        """
+        Set the context input shapes to match the submitted data.
+
+        Only called when the engine has dynamic input dims and the v3
+        backend is in use. When the submitted shapes match the currently
+        active shapes this is a no-op, so static workloads that always
+        submit the same shape pay a tuple comparison per input and
+        nothing else.
+
+        Parameters
+        ----------
+        data : list[np.ndarray]
+            The inputs to the network.
+
+        Raises
+        ------
+        ValueError
+            If an input's shape exceeds the allocated max profile shape.
+
+        """
+        changed = False
+        for i_idx, i_binding in enumerate(self._inputs):
+            if i_binding.name not in self._dynamic_input_names:
+                continue
+            data_shape = tuple(data[i_idx].shape)
+            if data_shape == self._active_input_shapes[i_idx]:
+                continue
+            # bindings are allocated at the max profile shape, anything
+            # larger cannot fit in the allocation
+            if data[i_idx].nbytes > i_binding.host_allocation.nbytes:
+                err_msg = (
+                    f"Input '{i_binding.name}' with shape {data_shape} exceeds the "
+                    f"allocated max profile shape {tuple(i_binding.shape)} for engine "
+                    f"'{self._name}'. Split the data into chunks of at most the max "
+                    "profile batch size."
+                )
+                raise ValueError(err_msg)
+            self._context.set_input_shape(i_binding.name, data_shape)
+            self._active_input_shapes[i_idx] = data_shape
+            changed = True
+        if changed:
+            # resolve the output shapes for the new input shapes so the
+            # D2H copies only move the valid prefix of each output
+            self._active_output_shapes = [
+                tuple(self._context.get_tensor_shape(o.name)) for o in self._outputs
+            ]
+            # if the context is back at the allocated shapes, clear tracking
+            if self._active_input_shapes == [tuple(b.shape) for b in self._inputs]:
+                self._active_output_shapes = None
+            self._refresh_output_sizes()
+
+    def _refresh_output_sizes(self: Self) -> None:
+        if self._active_output_shapes is None:
+            self._active_output_sizes = None
+        else:
+            self._active_output_sizes = [math.prod(shape) for shape in self._active_output_shapes]
+
+    def _resolve_dynamic_batch(
+        self: Self,
+        batch_size: int,
+    ) -> list[tuple[int, ...]] | None:
+        """
+        Set the batch dim of every dynamic input to batch_size.
+
+        Used by the end2end path where inputs are raw GPU pointers and
+        _apply_input_shapes (which inspects host arrays) never runs.
+        Shares the same shape bookkeeping as execute(), so mixing
+        end2end() and execute() calls stays consistent.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size to resolve the dynamic inputs to.
+
+        Returns
+        -------
+        list[tuple[int, ...]] | None
+            The context output shapes when the context sits at a
+            non-allocated (partial) shape, otherwise None (static engine
+            or batch at the max profile shape).
+
+        Raises
+        ------
+        ValueError
+            If batch_size exceeds the max profile batch dim.
+
+        """
+        if not self._has_dynamic_inputs:
+            return None
+        changed = False
+        for i_idx, i_binding in enumerate(self._inputs):
+            if i_binding.name not in self._dynamic_input_names:
+                continue
+            engine_shape = self._engine_input_shapes[i_idx]
+            target = tuple(batch_size if dim < 0 else dim for dim in engine_shape)
+            if target == self._active_input_shapes[i_idx]:
+                continue
+            max_shape = tuple(i_binding.shape)
+            if any(t > m for t, m in zip(target, max_shape)):
+                err_msg = (
+                    f"Batch size {batch_size} exceeds the max profile shape "
+                    f"{max_shape} for input '{i_binding.name}' of engine "
+                    f"'{self._name}'."
+                )
+                raise ValueError(err_msg)
+            self._context.set_input_shape(i_binding.name, target)
+            self._active_input_shapes[i_idx] = target
+            changed = True
+        if changed:
+            if self._active_input_shapes == [tuple(b.shape) for b in self._inputs]:
+                self._active_output_shapes = None
+            else:
+                self._active_output_shapes = [
+                    tuple(self._context.get_tensor_shape(o.name)) for o in self._outputs
+                ]
+            self._refresh_output_sizes()
+        return self._active_output_shapes
 
     def _capture_cuda_graph(self: Self) -> None:
         if FLAGS.NVTX_ENABLED:
@@ -318,15 +453,29 @@ class TRTEngine(TRTEngineInterface):
                 self._set_input_bindings()
                 self._using_engine_tensors = True
 
+            # adjust the context shapes for dynamic engines so partial batches
+            # only compute and copy at the submitted size, not the max profile
+            if self._has_dynamic_inputs:
+                self._apply_input_shapes(data)
+            partial_shapes = self._active_output_shapes is not None
+
             # copy inputs
             for i_idx in range(len(self._inputs)):
-                self._inputs[i_idx].upload(data[i_idx], self._stream)
+                self._inputs[i_idx].upload(
+                    data[i_idx],
+                    self._stream,
+                    self._active_input_shapes[i_idx] if partial_shapes else None,
+                )
 
             if debug:
                 stream_synchronize(self._stream)
 
             # execute
-            if self._cuda_graph:
+            # CUDA graphs are captured at the allocated (max) shapes; when the
+            # context is at a smaller dynamic shape, fall through to a plain
+            # enqueue for this call. The captured graph stays valid for future
+            # calls at the allocated shapes.
+            if self._cuda_graph and not partial_shapes:
                 if self._cuda_graph.is_captured:
                     # uses already captured graph to handle execution
                     self._cuda_graph.launch()
@@ -352,7 +501,12 @@ class TRTEngine(TRTEngineInterface):
 
             # copy outputs
             for o_idx in range(len(self._outputs)):
-                self._outputs[o_idx].download(self._stream)
+                self._outputs[o_idx].download(
+                    self._stream,
+                    self._active_output_shapes[o_idx]
+                    if partial_shapes and self._active_output_shapes is not None
+                    else None,
+                )
 
             # make sure all operations are complete
             # Skip sync when warming up for graph capture to avoid conflicts
@@ -364,7 +518,20 @@ class TRTEngine(TRTEngineInterface):
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
 
         # return the results
-        if no_copy:
+        if (
+            partial_shapes
+            and self._active_output_shapes is not None
+            and self._active_output_sizes is not None
+        ):
+            # only the prefix of each host allocation is valid, return views
+            # (or copies) shaped to the actual context output shapes
+            outputs = []
+            for o_idx, o_binding in enumerate(self._outputs):
+                o_shape = self._active_output_shapes[o_idx]
+                size = self._active_output_sizes[o_idx]
+                arr = o_binding.host_allocation.reshape(-1)[:size].reshape(o_shape)
+                outputs.append(arr if no_copy else arr.copy())
+        elif no_copy:
             outputs = [o.host_allocation for o in self._outputs]
         else:
             outputs = [o.host_allocation.copy() for o in self._outputs]
@@ -496,21 +663,18 @@ class TRTEngine(TRTEngineInterface):
                 stream_synchronize(self._stream)
 
             # copy outputs
-            if self._unified_mem and self._pagelocked_mem:
-                pass
-            elif self._pagelocked_mem:
-                for o_idx in range(len(self._outputs)):
-                    memcpy_device_to_host_async(
-                        self._outputs[o_idx].host_allocation,
-                        self._outputs[o_idx].allocation,
-                        self._stream,
-                    )
-            else:
-                for o_idx in range(len(self._outputs)):
-                    memcpy_device_to_host(
-                        self._outputs[o_idx].host_allocation,
-                        self._outputs[o_idx].allocation,
-                    )
+            # the context may sit at a smaller dynamic shape than the
+            # allocations, in which case only the valid prefix of each output
+            # is copied back and returned. callers resolve the shape with
+            # _resolve_dynamic_batch before dispatching here.
+            partial_shapes = self._active_output_shapes is not None
+            for o_idx in range(len(self._outputs)):
+                self._outputs[o_idx].download(
+                    self._stream,
+                    self._active_output_shapes[o_idx]
+                    if partial_shapes and self._active_output_shapes is not None
+                    else None,
+                )
 
             # make sure all operations are complete
             stream_synchronize(self._stream)
@@ -518,7 +682,18 @@ class TRTEngine(TRTEngineInterface):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()
 
-        # return the output host allocations
+        # return the output host allocations, shaped to the active context
+        if (
+            partial_shapes
+            and self._active_output_shapes is not None
+            and self._active_output_sizes is not None
+        ):
+            return [
+                o_binding.host_allocation.reshape(-1)[: self._active_output_sizes[o_idx]].reshape(
+                    self._active_output_shapes[o_idx]
+                )
+                for o_idx, o_binding in enumerate(self._outputs)
+            ]
         return self._output_host_allocations
 
     def raw_exec(

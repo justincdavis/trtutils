@@ -70,6 +70,10 @@ class Flags:
         The GPU architecture name. E.g. "turing", "blackwell".
     DEVICE_NAME : str
         The name of the GPU device. E.g. "NVIDIA GeForce RTX 5080".
+    INTEGRATED_GPU : bool
+        Whether the device shares physical memory with the host, in which
+        case host-to-device copies run at full rate from pageable memory
+        and staging through a pinned buffer is pure overhead.
     HAS_DLA : bool
         Whether or not DLA hardware is available on the system.
     NUM_DLA_CORES : int
@@ -118,6 +122,7 @@ class Flags:
     DEVICE_NAME: str = "unknown"
     HAS_DLA: bool = False
     NUM_DLA_CORES: int = 0
+    INTEGRATED_GPU: bool = False
 
     # Internal flags
     JIT: bool = False
@@ -128,6 +133,7 @@ class Flags:
             get_compute_capability,
             get_device_name,
             get_sm_arch,
+            is_integrated,
         )
 
         _sm = get_compute_capability()
@@ -135,6 +141,7 @@ class Flags:
         self.IS_BLACKWELL = self.SM_VERSION >= 100  # noqa: PLR2004
         self.SM_ARCH = get_sm_arch(*_sm)
         self.DEVICE_NAME = get_device_name()
+        self.INTEGRATED_GPU = is_integrated()
 
     def init_jetson_flags(self) -> None:
         """Initialize Jetson-specific flags. Called after core is imported."""

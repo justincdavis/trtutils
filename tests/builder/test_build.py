@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import onnx
 import pytest
 
+from trtutils import TRTEngine
 from trtutils._flags import FLAGS as REAL_FLAGS
 from trtutils.builder._build import build_engine
 from trtutils.builder.onnx._shapes import get_onnx_input, get_onnx_output
@@ -246,6 +248,45 @@ def test_manual_shapes(onnx_path, output_engine_path) -> None:
         optimization_level=1,
     )
     assert output_engine_path.exists()
+
+
+def test_dynamic_batch_profile(onnx_path, output_engine_path, tmp_path) -> None:
+    """A (min, opt, max) triple in shapes builds a dynamic-batch profile."""
+    input_name, input_shape = get_onnx_input(onnx_path)
+    per_image_shape = input_shape[1:]
+    max_batch = 4
+
+    model = onnx.load(str(onnx_path))
+    for tensor in list(model.graph.input) + list(model.graph.output):
+        dim = tensor.type.tensor_type.shape.dim[0]
+        dim.ClearField("dim_value")
+        dim.dim_param = "batch"
+    dynamic_onnx_path = tmp_path / "dynamic.onnx"
+    onnx.save(model, str(dynamic_onnx_path))
+
+    build_engine(
+        dynamic_onnx_path,
+        output_engine_path,
+        shapes=[
+            (
+                input_name,
+                (
+                    (1, *per_image_shape),
+                    (max_batch, *per_image_shape),
+                    (max_batch, *per_image_shape),
+                ),
+            )
+        ],
+        optimization_level=1,
+    )
+    assert output_engine_path.exists()
+
+    engine = TRTEngine(output_engine_path, warmup=False)
+    try:
+        assert engine.is_dynamic_batch
+        assert engine.input_shapes[0][0] == max_batch
+    finally:
+        del engine
 
 
 def test_single_hook(onnx_path, output_engine_path) -> None:

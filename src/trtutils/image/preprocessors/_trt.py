@@ -265,7 +265,16 @@ class TRTPreprocessor(GPUImagePreprocessor):
             verbose=verbose,
         )
 
-        # Run TRT engine on batched intermediate buffer
+        # Run the preprocessing engine at the submitted batch. Without this
+        # it executes at the profile's max shape, so a single image is
+        # preprocessed as though the whole configured batch were present.
+        active_output_shapes = self._engine._resolve_dynamic_batch(batch_size)  # noqa: SLF001
+        # the output binding stays allocated at the engine's max profile
+        # batch; remember the active (submitted-batch) shape so preprocess()
+        # downloads only that prefix instead of the whole max-batch buffer
+        self._active_output_shape = (
+            active_output_shapes[0] if active_output_shapes is not None else None
+        )
         output_ptrs = self._engine.raw_exec(self._gpu_pointers, no_warn=True)
 
         if FLAGS.NVTX_ENABLED:

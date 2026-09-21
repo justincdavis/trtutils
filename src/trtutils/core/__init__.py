@@ -134,6 +134,8 @@ Functions
     Set the current CUDA device.
 :func:`init_cuda`
     Initialize CUDA.
+:func:`is_integrated`
+    Check whether a CUDA device shares physical memory with the host.
 :func:`cuda_free`
     Free a CUDA device pointer.
 :func:`cuda_host_free`
@@ -164,6 +166,7 @@ from ._device import (
     get_device_name,
     get_num_dla_cores,
     get_sm_arch,
+    is_integrated,
     set_device,
 )
 from ._engine import create_engine, get_engine_names
@@ -257,6 +260,7 @@ __all__ = [
     "get_num_dla_cores",
     "get_sm_arch",
     "init_cuda",
+    "is_integrated",
     "launch_kernel",
     "load_kernel",
     "memcpy_2d",
