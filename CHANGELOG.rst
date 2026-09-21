@@ -11,6 +11,16 @@ Added
   ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``
 * Download configs and ONNX export functions for Depth-Anything-V1
   (small / base / large) and Depth-Anything-V3 (mono-large, metric-large)
+* ``download``/``download_model`` and the ``download`` CLI subcommand gain ``--batch``
+  and ``--dynamic`` for exporting a model at a fixed batch size or with a symbolic
+  batch dimension; honored by the ultralytics, YOLOv10/12/13, and torchvision
+  exporters, and rejected with ``NotImplementedError`` elsewhere
+* Benchmark harness: ``optimize`` grid gains an input-composition axis (single /
+  homogeneous batch / heterogeneous batch / alternating-resolution singles) with a
+  static engine built per batch size; ``optimize``/``batch`` gain ``--stage`` to record
+  results under ``benchmark/data/perf-series/<device>/`` (tagged with the trtutils git
+  SHA) for comparing successive library revisions, plotted by
+  ``benchmark/plotting/patch_series.py`` (``run.py plot --patch-series``)
 
 Fixed
 ^^^^^

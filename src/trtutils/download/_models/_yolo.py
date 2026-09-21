@@ -11,6 +11,8 @@ from trtutils.download._tools import (
     _640,
     get_patches_dir,
     git_clone,
+    handle_batch,
+    handle_dynamic,
     handle_imgsz,
     run_cmd,
     run_download,
@@ -30,7 +32,9 @@ def export_yolov7(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -39,6 +43,8 @@ def export_yolov7(
     if not no_warn:
         LOG.warning("YOLOv7 is a GPL-3.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOv7")
+    handle_batch(batch, "YOLOv7", supported=False)
+    handle_dynamic(batch, "YOLOv7", dynamic=dynamic, supported=False)
     git_clone(
         "https://github.com/WongKinYiu/yolov7",
         directory,
@@ -94,7 +100,9 @@ def export_yolov9(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -103,6 +111,8 @@ def export_yolov9(
     if not no_warn:
         LOG.warning("YOLOv9 is a GPL-3.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOv9")
+    handle_batch(batch, "YOLOv9", supported=False)
+    handle_dynamic(batch, "YOLOv9", dynamic=dynamic, supported=False)
     git_clone(
         "https://github.com/WongKinYiu/yolov9",
         directory,
@@ -157,7 +167,9 @@ def export_yolov10(
     model: str,  # noqa: ARG001
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -166,6 +178,8 @@ def export_yolov10(
     if not no_warn:
         LOG.warning("YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOv10")
+    batch = handle_batch(batch, "YOLOv10")
+    dynamic = handle_dynamic(batch, "YOLOv10", dynamic=dynamic)
     git_clone(
         "https://github.com/THU-MIG/yolov10",
         directory,
@@ -191,6 +205,8 @@ def export_yolov10(
             "format=onnx",
             f"opset={opset}",
             f"imgsz={imgsz}",
+            f"batch={batch}",
+            f"dynamic={dynamic}",
         ],
         cwd=yolov10_dir,
         verbose=verbose,
@@ -206,7 +222,9 @@ def export_yolov12(
     model: str,  # noqa: ARG001
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -215,6 +233,8 @@ def export_yolov12(
     if not no_warn:
         LOG.warning("YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOv12")
+    batch = handle_batch(batch, "YOLOv12")
+    dynamic = handle_dynamic(batch, "YOLOv12", dynamic=dynamic)
     git_clone(
         "https://github.com/sunsmarterjie/yolov12",
         directory,
@@ -240,6 +260,8 @@ def export_yolov12(
             "format=onnx",
             f"opset={opset}",
             f"imgsz={imgsz}",
+            f"batch={batch}",
+            f"dynamic={dynamic}",
             "simplify",
         ],
         cwd=yolov12_dir,
@@ -256,7 +278,9 @@ def export_yolov13(
     model: str,  # noqa: ARG001
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -265,6 +289,8 @@ def export_yolov13(
     if not no_warn:
         LOG.warning("YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOv13")
+    batch = handle_batch(batch, "YOLOv13")
+    dynamic = handle_dynamic(batch, "YOLOv13", dynamic=dynamic)
     git_clone(
         "https://github.com/iMoonLab/yolov13",
         directory,
@@ -290,6 +316,8 @@ def export_yolov13(
             "format=onnx",
             f"opset={opset}",
             f"imgsz={imgsz}",
+            f"batch={batch}",
+            f"dynamic={dynamic}",
         ],
         cwd=yolov13_dir,
         verbose=verbose,

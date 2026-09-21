@@ -11,6 +11,8 @@ from trtutils._log import LOG
 from trtutils.download._tools import (
     get_weights_cache_dir,
     git_clone,
+    handle_batch,
+    handle_dynamic,
     handle_imgsz,
     run_cmd,
     run_download,
@@ -34,7 +36,9 @@ def export_depth_anything_v1(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -45,6 +49,8 @@ def export_depth_anything_v1(
             "DepthAnythingV1 is a Apache-2.0 licensed model, be aware of license restrictions"
         )
     imgsz = handle_imgsz(imgsz, 518, "DepthAnythingV1", enforce=True)
+    handle_batch(batch, "DepthAnythingV1", supported=False)
+    handle_dynamic(batch, "DepthAnythingV1", dynamic=dynamic, supported=False)
     git_clone(
         "https://github.com/LiheYoung/Depth-Anything",
         directory,
@@ -114,7 +120,9 @@ def export_depth_anything_v2(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -125,6 +133,8 @@ def export_depth_anything_v2(
             "DepthAnythingV2 is a Apache-2.0 licensed model, be aware of license restrictions"
         )
     imgsz = handle_imgsz(imgsz, 518, "DepthAnythingV2", enforce=True)
+    handle_batch(batch, "DepthAnythingV2", supported=False)
+    handle_dynamic(batch, "DepthAnythingV2", dynamic=dynamic, supported=False)
     git_clone(
         "https://github.com/DepthAnything/Depth-Anything-V2",
         directory,
@@ -224,7 +234,9 @@ def export_depth_anything_v3(
     model: str,
     opset: int,
     imgsz: int | None = None,
+    batch: int | None = None,
     *,
+    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -239,6 +251,8 @@ def export_depth_anything_v3(
     # ros2-depth-anything-v3-trt pins opset 20 for V3.
     opset = max(opset, _DA_V3_MIN_OPSET)
     imgsz = handle_imgsz(imgsz, 518, "DepthAnythingV3", adjust_div=14)
+    handle_batch(batch, "DepthAnythingV3", supported=False)
+    handle_dynamic(batch, "DepthAnythingV3", dynamic=dynamic, supported=False)
     git_clone(
         "https://github.com/ByteDance-Seed/depth-anything-3",
         directory,
