@@ -17,6 +17,22 @@ Added
   and ``core.memcpy_nd_device_to_host[_async]`` for pitched 2D and strided N-D transfers
 * ``core.create_event``, ``core.destroy_event``, ``core.record_event``,
   ``core.stream_wait_event``, and ``core.event_synchronize`` CUDA event helpers
+* ``FLAGS.INTEGRATED_GPU`` and ``core.is_integrated`` to detect host/device shared-memory
+  GPUs; the GPU image preprocessors use it to skip pinned staging and DMA directly out of
+  pageable memory on integrated devices
+
+Changed
+^^^^^^^
+* GPU image preprocessors (``CUDAPreprocessor``, ``TRTPreprocessor``) stage heterogeneous
+  batches through a per-shape pinned staging pool on a dedicated copy stream, overlapping
+  upload of image ``i+1`` with the resize kernel of image ``i``
+* GPU preprocessor batch buffers (homogeneous batch input, CUDA SST buffers) now grow-only
+  on a high-water-mark instead of reallocating on every batch-size change
+* Resize and SST kernel arguments are now cached per resolution and per batch size
+  (previously only the single most-recently-used resolution/batch size was cached), so
+  alternating resolutions or batch sizes no longer re-pack kernel arguments every call
+* Single-image GPU preprocessing routes through the staging pool instead of a single
+  shared input binding, so a resolution seen before no longer reallocates
 
 Fixed
 ^^^^^

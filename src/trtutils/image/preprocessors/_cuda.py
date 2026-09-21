@@ -14,7 +14,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
-from trtutils.core._stream import destroy_stream
+from trtutils.core._stream import destroy_stream, stream_synchronize
 from trtutils.image.kernels import IMAGENET_SST, SST_FAST
 
 from ._image_preproc import GPUImagePreprocessor
@@ -144,16 +144,14 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         else:
             self._sst_kernel = Kernel(SST_FAST[0], SST_FAST[1])
 
-        # Cache for _create_sst_args: avoid repacking kernel args for same batch size
-        self._cached_sst_batch_size: int | None = None
-        self._cached_sst_args: np.ndarray | None = None
+        # Cache for _create_sst_args: avoid repacking kernel args per batch size
+        self._allocated_sst_batch: int = self._current_batch_size
+        self._cached_sst_args: dict[int, np.ndarray] = {}
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
             if self._own_stream:
                 destroy_stream(self._stream)
-        with contextlib.suppress(AttributeError):
-            del self._input_binding
         with contextlib.suppress(AttributeError):
             del self._output_binding
         with contextlib.suppress(AttributeError):
@@ -165,14 +163,21 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         return self._output_binding
 
     def _reallocate_batch_buffers(self: Self, batch_size: int) -> None:
-        """Reallocate SST buffers if batch size changed."""
+        """Grow SST buffers if the batch size exceeds current capacity."""
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["reallocate_batch_buffers"])
 
-        if batch_size == self._current_batch_size:
+        self._current_batch_size = batch_size
+        # high-water-mark allocation: smaller batches run against the prefix
+        # of the existing buffers, so alternating batch sizes (e.g. 1 and N)
+        # never pays synchronous cudaMalloc/cudaFree churn per call
+        if batch_size <= self._allocated_sst_batch:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # reallocate_batch_buffers
             return
+
+        # the old buffers may still be in flight from the previous call
+        stream_synchronize(self._stream)
 
         # Reallocate SST input buffer: (N, H', W', 3) uint8
         dummy_sst_input = np.zeros(
@@ -197,11 +202,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             unified_mem=self._unified_mem,
         )
 
-        self._current_batch_size = batch_size
+        self._allocated_sst_batch = batch_size
 
         # Invalidate SST args cache: buffer allocations changed
-        self._cached_sst_batch_size = None
-        self._cached_sst_args = None
+        self._cached_sst_args = {}
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # reallocate_batch_buffers
@@ -229,11 +233,13 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["create_sst_args"])
 
-        # Check cache: for constant batch size, args are identical every frame
-        if batch_size == self._cached_sst_batch_size and self._cached_sst_args is not None:
+        # Check cache: args are identical for a given batch size while the
+        # buffers stay allocated, so alternating batch sizes all hit
+        cached = self._cached_sst_args.get(batch_size)
+        if cached is not None:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # create_sst_args
-            return self._cached_sst_args
+            return cached
 
         if verbose:
             LOG.debug(f"{self._tag}: Making sst args (batch_size={batch_size})")
@@ -271,8 +277,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             )
 
         # Store in cache
-        self._cached_sst_batch_size = batch_size
-        self._cached_sst_args = sst_args
+        self._cached_sst_args[batch_size] = sst_args
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # create_sst_args
