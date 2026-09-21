@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import cv2
+import numpy as np
 import pytest
 
 from trtutils.image import Detector
@@ -39,3 +41,96 @@ def test_detector_end2end(yolov10_engine, images, preprocessor) -> None:
     strict = model.get_detections(postprocessed, conf_thres=0.5)
     assert len(strict) <= len(via_run)
     assert all(score >= 0.5 for _bbox, score, _cls_id in strict)
+
+
+@pytest.mark.parametrize("preprocessor", ["cuda", "trt", "cpu"])
+def test_detector_end2end_resolution_switch(yolov10_engine, images, preprocessor) -> None:
+    """end2end() survives resolution changes: a graph cache hit/miss, not a locked-dims error."""
+    model = Detector(yolov10_engine, preprocessor=preprocessor, cuda_graph=True, warmup=False)
+    horse = images["horse"].array
+    sizes = [None, (1280, 720), (640, 480), None]  # None -> native size
+
+    for size in sizes:
+        image = horse if size is None else cv2.resize(horse, size)
+        result = model.end2end(image)
+
+        fresh = Detector(yolov10_engine, preprocessor=preprocessor, cuda_graph=True, warmup=False)
+        expected = fresh.end2end(image)
+        assert result == expected
+
+    # single-image batch size and the preprocessed-output pointer never
+    # change across resolutions, so only one graph should ever be cached
+    assert len(model._e2e_graphs) == 1
+
+
+@pytest.mark.parametrize("cuda_graph", [True, False])
+def test_detector_static_engine_rejects_batch_mismatch(yolov10_engine, images, cuda_graph) -> None:
+    """A static (batch-1) engine rejects a batch of 2 on end2end() and run(), graphed or not."""
+    # cpu preprocessor: no fixed batch cap of its own, so the RuntimeError
+    # raised is unambiguously _validate_batch_size's, not the TRT/CUDA
+    # preprocessor's separate (and unrelated) configured-batch-size guard.
+    model = Detector(yolov10_engine, preprocessor="cpu", cuda_graph=cuda_graph, warmup=False)
+    batch = [images["horse"].array, images["horse"].array]
+
+    with pytest.raises(RuntimeError):
+        model.end2end(batch)
+    with pytest.raises(RuntimeError):
+        model.run(batch)
+
+
+@pytest.mark.parametrize("preprocessor", ["cuda", "trt", "cpu"])
+@pytest.mark.parametrize("cuda_graph", [True, False])
+def test_detector_dynamic_batch_sweep(
+    yolov10_dynamic_engine, yolov10_engine, images, preprocessor, cuda_graph
+) -> None:
+    """A dynamic-batch engine handles a variable batch sweep; matches a fresh static-b1 detector."""
+    model = Detector(
+        yolov10_dynamic_engine, preprocessor=preprocessor, cuda_graph=cuda_graph, warmup=False
+    )
+    reference = Detector(
+        yolov10_engine, preprocessor=preprocessor, cuda_graph=cuda_graph, warmup=False
+    )
+
+    pool = [img.array for img in images.values()]
+
+    for batch_size in (8, 2, 8, 4, 1, 8):
+        batch = [pool[i % len(pool)] for i in range(batch_size)]
+        outputs = model.end2end(batch)
+        assert len(outputs) == batch_size
+
+        for image, dets in zip(batch, outputs):
+            ref_dets = reference.end2end(image)
+            assert len(dets) == len(ref_dets)
+            for (bbox, score, cls_id), (ref_bbox, ref_score, ref_cls_id) in zip(dets, ref_dets):
+                assert bbox == ref_bbox
+                assert cls_id == ref_cls_id
+                assert abs(score - ref_score) < 1e-3
+
+
+def test_detector_run_direct_gpu_path_matches_host(yolov10_engine, images) -> None:
+    """run() via the direct-GPU path (cuda preprocessor + cuda_graph) matches the CPU host path."""
+    horse = images["horse"].array
+    direct = Detector(yolov10_engine, preprocessor="cuda", cuda_graph=True, warmup=False)
+    host = Detector(yolov10_engine, preprocessor="cpu", cuda_graph=False, warmup=False)
+
+    direct_bboxes, direct_scores, direct_cls = direct.run(horse)
+    host_bboxes, host_scores, host_cls = host.run(horse)
+
+    # cuda and cpu resize kernels differ at the sub-pixel level, so bboxes
+    # rescaled through them match closely but not bit-for-bit
+    np.testing.assert_allclose(direct_bboxes, host_bboxes, atol=0.1)
+    np.testing.assert_allclose(direct_scores, host_scores, atol=1e-3)
+    np.testing.assert_array_equal(direct_cls, host_cls)
+
+
+def test_detector_run_direct_gpu_path_no_copy(yolov10_engine, images) -> None:
+    """run(postprocess=False) copies out of engine memory unless no_copy=True is passed."""
+    horse = images["horse"].array
+    model = Detector(yolov10_engine, preprocessor="cuda", cuda_graph=True, warmup=False)
+
+    raw_copy = model.run(horse, postprocess=False)
+    engine_alloc = model.engine._outputs[0].host_allocation
+    assert not np.shares_memory(raw_copy[0], engine_alloc)
+
+    raw_view = model.run(horse, postprocess=False, no_copy=True)
+    assert np.shares_memory(raw_view[0], engine_alloc)
