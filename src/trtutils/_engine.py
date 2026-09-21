@@ -45,11 +45,6 @@ class TRTEngine(TRTEngineInterface):
     """
 
     _backends: ClassVar[set[str]] = {"auto", "async_v3", "async_v2"}
-
-    # CUDA graph capture is a context-wide operation: concurrent captures
-    # from multiple threads are undefined behavior (can segfault in the
-    # CUDA runtime), so all captures are serialized process-wide.
-    # ponytail: global lock; per-context lock if multi-GPU capture contention matters
     _capture_lock: ClassVar[threading.Lock] = threading.Lock()
 
     def __init__(
@@ -225,10 +220,7 @@ class TRTEngine(TRTEngineInterface):
         self._capturing_graph = True
         capture_error: RuntimeError | None = None
         try:
-            # Serialize capture: concurrent graph captures in one CUDA context
-            # are undefined behavior (segfaults in the CUDA runtime).
-            # The lock also covers the warmup below since its enqueues are part
-            # of the capture sequence.
+            # serialize CUDA graph capture
             with self._capture_lock:
                 # at least one execution required prior to graph capture
                 # simply use one warmup iteration if warmup didnt get run
@@ -236,7 +228,7 @@ class TRTEngine(TRTEngineInterface):
                     try:
                         self.warmup(1, verbose=self._verbose)
                     except RuntimeError as e:
-                        # Warmup can fail due to multi-threaded capture conflicts
+                        # assess if cuda graph capture fails during warmup
                         if self._cuda_graph is not None:
                             self._cuda_graph.invalidate()
                         self._cuda_graph = None
@@ -250,13 +242,11 @@ class TRTEngine(TRTEngineInterface):
                         capture_error.__cause__ = e
                         return
 
-                # CUDAGraph handles capture with a context manager
+                # capture graph
                 with self._cuda_graph:
-                    # manually run execute_async_v3 instead of execute since
-                    # we only want the TRT engine
                     self._context.execute_async_v3(self._stream)
 
-                # Check if capture succeeded
+                # assess graph capture success
                 if not self._cuda_graph.is_captured:
                     self._cuda_graph = None
                     err_msg = (
