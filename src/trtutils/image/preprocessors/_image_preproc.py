@@ -425,6 +425,15 @@ class GPUImagePreprocessor(ImagePreprocessor):
         self._buffers_valid = False
         self._last_transferred_shape: tuple[int, int] | None = None
 
+        # The active shape of the output binding for the most recent
+        # direct_preproc() call. Only a dynamic-batch engine (TRTPreprocessor)
+        # ever sets this to something other than None: its output binding is
+        # allocated at the engine's max profile batch, so downloading the
+        # full allocation on every call would defeat running the engine at
+        # the submitted batch. None means the binding already holds exactly
+        # the submitted batch, so the full allocation is downloaded.
+        self._active_output_shape: tuple[int, ...] | None = None
+
         # Track current batch size for buffer reallocation
         self._current_batch_size: int = 1
 
@@ -793,7 +802,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         batch_size = len(batch_images)
         output_binding = self.output_binding
 
-        output_binding.download(self._stream)
+        output_binding.download(self._stream, self._active_output_shape)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["stream_sync"])

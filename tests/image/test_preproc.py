@@ -50,6 +50,38 @@ def test_gpu_matches_cpu(images, gpu_cls, resize, norm, tol) -> None:
         assert np.abs(result - expected).mean() < tol
 
 
+@pytest.mark.parametrize("count", [1, 3, 8])
+def test_trt_dynamic_batch_matches_cuda_and_self(random_images, count) -> None:
+    """
+    TRTPreprocessor(batch_size=8) at 1/3/8 images matches itself and CUDAPreprocessor at batch 1.
+
+    Runs the preprocessing engine at the submitted batch (not the configured
+    max), so batch position i must reproduce the single-image TRT output
+    bit-for-bit, and stay within the CUDA-vs-TRT tolerance from
+    test_gpu_matches_cpu (the TRT engine computes in fp16 internally).
+    """
+    trt_preproc = TRTPreprocessor(SIZE, RANGE, DTYPE, batch_size=8)
+    cuda_preproc = CUDAPreprocessor(SIZE, RANGE, DTYPE)
+    imgs = random_images(count)
+    batch, batch_ratios, batch_padding = trt_preproc.preprocess(imgs)
+    assert batch.shape == (count, 3, 640, 640)
+    for i, img in enumerate(imgs):
+        single_trt, trt_ratios, trt_padding = trt_preproc.preprocess([img])
+        single_cuda, cuda_ratios, cuda_padding = cuda_preproc.preprocess([img])
+        assert batch_ratios[i] == trt_ratios[0] == cuda_ratios[0]
+        assert batch_padding[i] == trt_padding[0] == cuda_padding[0]
+        np.testing.assert_array_equal(batch[i], single_trt[0])
+        assert np.abs(batch[i] - single_cuda[0]).mean() < 0.02
+
+
+def test_trt_batch_size_exceeded_raises(random_images) -> None:
+    """Submitting more images than the configured batch size raises ValueError."""
+    trt_preproc = TRTPreprocessor(SIZE, RANGE, DTYPE, batch_size=4)
+    imgs = random_images(5)
+    with pytest.raises(ValueError, match="exceeds configured batch size"):
+        trt_preproc.preprocess(imgs)
+
+
 @pytest.mark.parametrize(
     ("preproc_cls", "kwargs"),
     [

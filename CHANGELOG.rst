@@ -20,6 +20,10 @@ Added
 * ``FLAGS.INTEGRATED_GPU`` and ``core.is_integrated`` to detect host/device shared-memory
   GPUs; the GPU image preprocessors use it to skip pinned staging and DMA directly out of
   pageable memory on integrated devices
+* ``TRTEngine`` executes dynamic-batch engines at the submitted batch size instead of
+  always computing and copying the full max-profile allocation
+* ``builder.build_engine``: ``shapes`` entries may be a ``(min_shape, opt_shape, max_shape)``
+  triple to build a dynamic optimization profile for that input
 
 Changed
 ^^^^^^^
@@ -33,6 +37,8 @@ Changed
   alternating resolutions or batch sizes no longer re-pack kernel arguments every call
 * Single-image GPU preprocessing routes through the staging pool instead of a single
   shared input binding, so a resolution seen before no longer reallocates
+* ``image.preprocessors.TRTPreprocessor`` runs its preprocessing engine at the submitted
+  batch size instead of the configured maximum
 
 Fixed
 ^^^^^
@@ -41,6 +47,8 @@ Fixed
 * ``core.Kernel.create_args``: the returned argument array now owns the intermediate buffers
   its pointers reference, fixing a use-after-free when the array is cached and reused
   across calls (e.g. per-batch-size kernel argument caching)
+* ``TRTEngine.direct_exec`` on a dynamic-batch engine returned outputs shaped to the max
+  profile batch regardless of the resolved batch size
 
 
 0.6.1 (2025-06-17)
