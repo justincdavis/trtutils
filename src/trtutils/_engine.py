@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -44,6 +45,7 @@ class TRTEngine(TRTEngineInterface):
     """
 
     _backends: ClassVar[set[str]] = {"auto", "async_v3", "async_v2"}
+    _capture_lock: ClassVar[threading.Lock] = threading.Lock()
 
     def __init__(
         self: Self,
@@ -218,41 +220,41 @@ class TRTEngine(TRTEngineInterface):
         self._capturing_graph = True
         capture_error: RuntimeError | None = None
         try:
-            # at least one execution required prior to graph capture
-            # simply use one warmup iteration if warmup didnt get run
-            if not self._warmup:
-                try:
-                    self.warmup(1, verbose=self._verbose)
-                except RuntimeError as e:
-                    # Warmup can fail due to multi-threaded capture conflicts
-                    if self._cuda_graph is not None:
-                        self._cuda_graph.invalidate()
+            # serialize CUDA graph capture
+            with self._capture_lock:
+                # at least one execution required prior to graph capture
+                # simply use one warmup iteration if warmup didnt get run
+                if not self._warmup:
+                    try:
+                        self.warmup(1, verbose=self._verbose)
+                    except RuntimeError as e:
+                        # assess if cuda graph capture fails during warmup
+                        if self._cuda_graph is not None:
+                            self._cuda_graph.invalidate()
+                        self._cuda_graph = None
+                        err_msg = (
+                            f"CUDA graph capture failed for engine '{self._name}' during warmup: {e}\n"
+                            "This can happen when multiple engines attempt graph capture simultaneously.\n"
+                            "To resolve: use cuda_graph=False, or ensure engines are created sequentially, "
+                            "or use warmup=True to capture graphs at initialization time."
+                        )
+                        capture_error = RuntimeError(err_msg)
+                        capture_error.__cause__ = e
+                        return
+
+                # capture graph
+                with self._cuda_graph:
+                    self._context.execute_async_v3(self._stream)
+
+                # assess graph capture success
+                if not self._cuda_graph.is_captured:
                     self._cuda_graph = None
                     err_msg = (
-                        f"CUDA graph capture failed for engine '{self._name}' during warmup: {e}\n"
-                        "This can happen when multiple engines attempt graph capture simultaneously.\n"
-                        "To resolve: use cuda_graph=False, or ensure engines are created sequentially, "
-                        "or use warmup=True to capture graphs at initialization time."
+                        f"CUDA graph capture failed for engine '{self._name}'.\n"
+                        "The engine may not support CUDA graph capture.\n"
+                        "To resolve: use cuda_graph=False to disable CUDA graphs for this engine."
                     )
                     capture_error = RuntimeError(err_msg)
-                    capture_error.__cause__ = e
-                    return
-
-            # CUDAGraph handles capture with a context manager
-            with self._cuda_graph:
-                # manually run execute_async_v3 instead of execute since
-                # we only want the TRT engine
-                self._context.execute_async_v3(self._stream)
-
-            # Check if capture succeeded
-            if not self._cuda_graph.is_captured:
-                self._cuda_graph = None
-                err_msg = (
-                    f"CUDA graph capture failed for engine '{self._name}'.\n"
-                    "The engine may not support CUDA graph capture.\n"
-                    "To resolve: use cuda_graph=False to disable CUDA graphs for this engine."
-                )
-                capture_error = RuntimeError(err_msg)
         finally:
             self._capturing_graph = False
             if capture_error is not None:
