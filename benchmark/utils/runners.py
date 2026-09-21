@@ -20,7 +20,6 @@ import cv2
 from tqdm import tqdm
 
 import trtutils
-from trtutils.builder import build_engine
 from trtutils.download import download
 
 from .config import (
@@ -78,56 +77,6 @@ def _export_batch_onnx(
 
     print(f"Exported batch ONNX: {onnx_path.name}")
     return onnx_path
-
-
-def ensure_dynamic_engine(
-    model_name: str,
-    imgsz: int,
-    output_dir: Path,
-    max_batch: int = 8,
-) -> Path:
-    """
-    Build an engine from a dynamic-shape ONNX export.
-
-    Needs a dynamic-shape ONNX: the default exports pin the batch dimension,
-    so an engine built from them rejects every batch but its own. Model
-    families whose upstream exporter cannot emit dynamic axes raise
-    NotImplementedError.
-
-    # ponytail: build_engine's `shapes` only takes one shape per input (min
-    # == opt == max), so this pins the profile to max_batch instead of a
-    # real 1..max_batch range. PR 3 adds triple-shape (min, opt, max)
-    # support to build_engine; once that lands this should pass the full
-    # range so callers can submit any batch up to max_batch.
-    """
-    onnx_path = output_dir / f"{model_name}_{imgsz}_dyn.onnx"
-    engine_path = output_dir / f"{model_name}_{imgsz}_dyn_b{max_batch}.engine"
-    if engine_path.exists():
-        return engine_path
-
-    if not onnx_path.exists():
-        print(f"Exporting {model_name} ONNX with dynamic axes...")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        download(
-            model=model_name,
-            output=onnx_path,
-            opset=17,
-            imgsz=imgsz,
-            dynamic=True,
-            verbose=False,
-        )
-
-    print(f"Building dynamic engine (batch {max_batch}): {engine_path.name}")
-    shape = (3, imgsz, imgsz)
-    build_engine(
-        onnx_path,
-        engine_path,
-        optimization_level=1,
-        timing_cache=get_timing_cache_path(),
-        fp16=True,
-        shapes=[("images", (max_batch, *shape))],
-    )
-    return engine_path
 
 
 def _engine_path_for_batch(
