@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from trtutils.core import Buffer, MemoryLocation
 from trtutils.image import SAHI, Detector
 
 
@@ -29,3 +30,18 @@ def test_sahi_end2end(yolov10_engine, images, slice_size) -> None:
         assert 0 <= x1 <= x2 <= width
         assert 0 <= y1 <= y2 <= height
         assert 0.0 <= score <= 1.0
+
+
+@pytest.mark.parametrize("location", [MemoryLocation.HOST, MemoryLocation.DEVICE])
+def test_sahi_end2end_accepts_buffer(yolov10_engine, images, location) -> None:
+    """SAHI end2end() with a host or device Buffer matches the ndarray result."""
+    sahi = SAHI(Detector(yolov10_engine, warmup=False))
+    image = images["horse"].array
+    expected = sahi.end2end(image)
+
+    buf = Buffer.from_array(image, location)
+    try:
+        result = sahi.end2end(buf)
+    finally:
+        buf.free()
+    assert result == expected

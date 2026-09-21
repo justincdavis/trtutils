@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils.core import Buffer, MemoryLocation
 from trtutils.models import EfficientNet, MobileNetV3, ResNet
 
 CLASSIFIERS = [
@@ -41,3 +42,29 @@ def test_classifier_end2end(build_model_engine, images, model_cls, onnx_path, pr
     assert scores == sorted(scores, reverse=True)
     assert all(0.0 <= score <= 1.0 for score in scores)
     assert image.gt_cls_id in [cls_id for cls_id, _score in via_run]
+
+
+@pytest.mark.parametrize(("model_cls", "onnx_path"), CLASSIFIERS)
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+def test_classifier_device_buffer_matches_ndarray(
+    build_model_engine, images, model_cls, onnx_path, preprocessor
+) -> None:
+    """A device Buffer passes through preprocess() and run(postprocess=False) like an ndarray."""
+    engine = build_model_engine(model_cls, onnx_path)
+    model = model_cls(engine, preprocessor=preprocessor, warmup=False)
+    image = images["horse"].array
+
+    expected_tensor, expected_ratios, expected_padding = model.preprocess(image)
+    expected_raw = model.run(image, postprocess=False)
+
+    buf = Buffer.from_array(image, MemoryLocation.DEVICE)
+    try:
+        tensor, ratios, padding = model.preprocess(buf)
+        raw = model.run(buf, postprocess=False)
+    finally:
+        buf.free()
+
+    assert tensor.shape == expected_tensor.shape
+    assert ratios == expected_ratios
+    assert padding == expected_padding
+    assert [o.shape for o in raw] == [o.shape for o in expected_raw]

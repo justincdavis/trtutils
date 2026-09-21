@@ -34,6 +34,12 @@ Classes
 :class:`ImageModel`
     Base class for models which process images.
 
+Type Aliases
+------------
+:data:`ImageInput`
+    A single image, either an HWC uint8 ``np.ndarray`` or a ``Buffer``
+    (host or device) holding one.
+
 """
 
 from __future__ import annotations
@@ -51,6 +57,7 @@ from ._depth_estimator import DepthEstimator
 from ._detector import Detector
 from ._hand_interaction import HandInteractionDetector
 from ._image_model import ImageModel
+from .interfaces import ImageInput
 from .sahi import SAHI
 
 __all__ = [
@@ -59,6 +66,7 @@ __all__ = [
     "DepthEstimator",
     "Detector",
     "HandInteractionDetector",
+    "ImageInput",
     "ImageModel",
     "interfaces",
     "kernels",

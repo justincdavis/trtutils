@@ -15,6 +15,12 @@ DetectorInterface
 HandInteractionDetectorInterface
     Interface for hand-object interaction detectors.
 
+Type Aliases
+------------
+ImageInput
+    A single image, either an HWC uint8 ``np.ndarray`` or a ``Buffer``
+    (host or device) holding one.
+
 """
 
 from __future__ import annotations
@@ -22,15 +28,21 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, overload
 
-from typing_extensions import Literal
+from typing_extensions import Literal, TypeAlias
 
 if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
     from trtutils._engine import TRTEngine
+    from trtutils.core import Buffer
     from trtutils.image._schema import InputSchema, OutputSchema
     from trtutils.image.postprocessors._hand_interaction import HandInteraction
+
+# A single image: an HWC uint8 np.ndarray, or a Buffer (host or device)
+# holding one. The CPU preprocessor copies a device Buffer to host once
+# (one D2H); CUDA/TRT preprocessors consume a device Buffer in place.
+ImageInput: TypeAlias = "np.ndarray | Buffer"
 
 
 class ClassifierInterface(ABC):
@@ -61,7 +73,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -73,7 +85,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -84,7 +96,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         resize: str | None = None,
         method: str | None = None,
         *,
@@ -108,7 +120,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -120,7 +132,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -131,7 +143,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -145,7 +157,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -157,7 +169,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -169,7 +181,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -182,7 +194,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -194,7 +206,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -206,7 +218,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -217,7 +229,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -262,7 +274,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
@@ -272,7 +284,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
@@ -281,7 +293,7 @@ class ClassifierInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         top_k: int = 5,
         *,
         verbose: bool | None = None,
@@ -317,7 +329,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -329,7 +341,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -340,7 +352,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         resize: str | None = None,
         method: str | None = None,
         *,
@@ -364,7 +376,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -376,7 +388,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -387,7 +399,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -401,7 +413,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -413,7 +425,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -425,7 +437,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -438,7 +450,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -450,7 +462,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -462,7 +474,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -473,7 +485,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -515,7 +527,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         verbose: bool | None = ...,
     ) -> np.ndarray: ...
@@ -524,7 +536,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         verbose: bool | None = ...,
     ) -> list[np.ndarray]: ...
@@ -532,7 +544,7 @@ class DepthEstimatorInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         *,
         verbose: bool | None = None,
     ) -> np.ndarray | list[np.ndarray]:
@@ -578,7 +590,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -590,7 +602,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -601,7 +613,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         resize: str | None = None,
         method: str | None = None,
         *,
@@ -628,7 +640,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -643,7 +655,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -658,7 +670,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -674,7 +686,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -689,7 +701,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -704,7 +716,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -718,7 +730,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -735,7 +747,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -750,7 +762,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -764,7 +776,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -815,7 +827,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         *,
         conf_thres: float | None = ...,
         pair_thres: float | None = ...,
@@ -827,7 +839,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         *,
         conf_thres: float | None = ...,
         pair_thres: float | None = ...,
@@ -838,7 +850,7 @@ class HandInteractionDetectorInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         *,
         conf_thres: float | None = None,
         pair_thres: float | None = None,
@@ -886,7 +898,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -898,7 +910,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -909,7 +921,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         resize: str | None = None,
         method: str | None = None,
         *,
@@ -936,7 +948,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -951,7 +963,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -966,7 +978,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -982,7 +994,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -997,7 +1009,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -1012,7 +1024,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -1026,7 +1038,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def run(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -1043,7 +1055,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -1058,7 +1070,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -1072,7 +1084,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -1132,7 +1144,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: np.ndarray,
+        images: ImageInput,
         conf_thres: float | None = ...,
         nms_iou_thres: float | None = ...,
         *,
@@ -1145,7 +1157,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         conf_thres: float | None = ...,
         nms_iou_thres: float | None = ...,
         *,
@@ -1157,7 +1169,7 @@ class DetectorInterface(ABC):
     @abstractmethod
     def end2end(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: ImageInput | list[ImageInput],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,

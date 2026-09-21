@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from trtutils.compat._libs import cudart
     from trtutils.core._bindings import Binding
+    from trtutils.image.interfaces import ImageInput
 
 
 class CUDAPreprocessor(GPUImagePreprocessor):
@@ -286,7 +287,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
     def direct_preproc(
         self: Self,
-        images: list[np.ndarray],
+        images: list[ImageInput],
         resize: str | None = None,
         *,
         no_warn: bool | None = None,
@@ -297,8 +298,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray]
-            The images to preprocess.
+        images : list[ImageInput]
+            The images to preprocess, each an HWC uint8 ``np.ndarray`` or a
+            ``Buffer`` (host or device) holding one. A device Buffer is
+            consumed in place (no H2D copy).
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]

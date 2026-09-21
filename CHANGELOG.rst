@@ -16,6 +16,14 @@ Added
 * ``TRTEngine.execute`` accepts ``core.Buffer`` inputs in either memory space, and
   ``core.Buffer.from_cuda_array`` wraps any ``__cuda_array_interface__`` object (CuPy, Numba,
   PyTorch, nvImageCodec) as a non-owning device view
+* Every image model (``Detector``, ``Classifier``, ``DepthEstimator``, ``HandInteractionDetector``,
+  ``ImageModel``, the CPU/CUDA/TRT preprocessors, ``SAHI``) accepts images as
+  ``image.ImageInput``: either a host ``np.ndarray`` or a ``core.Buffer`` (host or device),
+  in ``preprocess``/``run``/``__call__``/``end2end``. A device ``Buffer`` is consumed in
+  place by the CUDA/TRT preprocessors (no H2D copy); the CPU preprocessor and ``SAHI`` copy
+  it to host once. ``ParallelDetector`` rejects a device ``Buffer`` (``TypeError``) since
+  submitted work may be routed to a different CUDA device; host Buffers are unwrapped
+  before queueing
 * ``core.memcpy_2d``, ``core.memcpy_2d_async``, ``core.memcpy_nd_host_to_device[_async]``,
   and ``core.memcpy_nd_device_to_host[_async]`` for pitched 2D and strided N-D transfers
 * ``core.create_event``, ``core.destroy_event``, ``core.record_event``,

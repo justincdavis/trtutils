@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils.core import Buffer, MemoryLocation
 from trtutils.models import DepthAnythingV1, DepthAnythingV2, DepthAnythingV3
 
 DEPTH_ESTIMATORS = [
@@ -50,3 +51,29 @@ def test_depth_estimator_end2end(
     assert np.all(np.isfinite(via_run))
     assert via_run.min() == 0.0
     assert via_run.max() == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize(("model_cls", "onnx_path"), DEPTH_ESTIMATORS)
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+def test_depth_estimator_device_buffer_matches_ndarray(
+    build_model_engine, images, model_cls, onnx_path, preprocessor
+) -> None:
+    """A device Buffer passes through preprocess() and run(postprocess=False) like an ndarray."""
+    engine = build_model_engine(model_cls, onnx_path)
+    model = model_cls(engine, preprocessor=preprocessor, warmup=False)
+    image = images["horse"].array
+
+    expected_tensor, expected_ratios, expected_padding = model.preprocess(image)
+    expected_raw = model.run(image, postprocess=False)
+
+    buf = Buffer.from_array(image, MemoryLocation.DEVICE)
+    try:
+        tensor, ratios, padding = model.preprocess(buf)
+        raw = model.run(buf, postprocess=False)
+    finally:
+        buf.free()
+
+    assert tensor.shape == expected_tensor.shape
+    assert ratios == expected_ratios
+    assert padding == expected_padding
+    assert [o.shape for o in raw] == [o.shape for o in expected_raw]
