@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import ctypes
+import gc
+
 import numpy as np
 import pytest
 
@@ -153,3 +156,54 @@ def test_kernel_launch_verbose(trivial_kernel, cuda_stream) -> None:
     trivial_kernel.call((1, 1, 1), (n, 1, 1), cuda_stream, args, verbose=True)
     stream_synchronize(cuda_stream)
     cuda_free(d_out)
+
+
+@pytest.mark.regression
+def test_cached_args_survive_intermediate_eviction(trivial_kernel, cuda_stream) -> None:
+    """
+    A cached argument array stays valid after other create_args calls.
+
+    Kernel argument arrays hold pointers into separately allocated buffers.
+    Those buffers used to be retained only by a bounded per-kernel deque, so
+    a caller that cached an argument array and reused it later (as the CUDA
+    preprocessor does, keyed by batch size) launched against freed memory
+    once other batch sizes pushed its buffers out of the deque. Regression
+    test for that use-after-free.
+    """
+    n = 32
+    d_out = cuda_malloc(n * np.dtype(np.float32).itemsize)
+    d_other = cuda_malloc(n * np.dtype(np.float32).itemsize)
+    cached_args = trivial_kernel.create_args(d_out, n)
+
+    # churn argument arrays for a *different* destination, as alternating
+    # batch sizes do. this both evicts the cached array's buffers from the
+    # bounded deque and refills the freed blocks with a different pointer,
+    # so a reclaimed buffer is distinguishable from a retained one.
+    for _ in range(512):
+        trivial_kernel.create_args(d_other, n)
+    gc.collect()
+
+    # the first argument buffer holds the destination device pointer. read it
+    # back through the address the args array carries: if the buffer was
+    # reclaimed, this reads whatever now occupies that memory instead.
+    stored_ptr = ctypes.c_uint64.from_address(int(cached_args[0])).value
+    assert stored_ptr == d_out, "argument buffer was reclaimed while still referenced"
+
+    trivial_kernel.call((1, 1, 1), (n, 1, 1), cuda_stream, cached_args)
+    stream_synchronize(cuda_stream)
+
+    result = np.zeros(n, dtype=np.float32)
+    memcpy_device_to_host(result, d_out)
+    np.testing.assert_array_equal(result, np.arange(n, dtype=np.float32))
+    cuda_free(d_out)
+    cuda_free(d_other)
+
+
+@pytest.mark.regression
+def test_create_args_owns_its_buffers(trivial_kernel) -> None:
+    """The returned argument array keeps the buffers its pointers reference."""
+    args = trivial_kernel.create_args(1234, 7)
+    # the pointers are meaningless without the buffers they point into, so
+    # the array must own them rather than rely on the kernel outliving it
+    assert getattr(args, "_keepalive", None), "argument array does not retain its buffers"
+    assert len(args._keepalive) == len(args)

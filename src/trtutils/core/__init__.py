@@ -16,7 +16,11 @@ Submodules
 Classes
 -------
 :class:`Binding`
-    A class for managing a CUDA allocation.
+    A host/device Buffer pair with TensorRT engine I/O metadata.
+:class:`Buffer`
+    A single typed allocation residing on either the host or the device.
+:class:`MemoryLocation`
+    Enum describing where a Buffer allocation resides.
 :class:`CUDAGraph`
     Wrapper around CUDA graph capture and execution.
 :class:`Device`
@@ -66,8 +70,32 @@ Functions
     Copy data from host to device with an offset.
 :func:`memcpy_host_to_device_offset_async`
     Copy data from host to device with an offset async.
+:func:`memcpy`
+    Copy a flat run of bytes between two pointers, sync or on a stream.
+:func:`memcpy_2d`
+    Copy a pitched 2D region of memory.
+:func:`memcpy_2d_async`
+    Copy a pitched 2D region of memory async.
+:func:`memcpy_nd_host_to_device`
+    Copy a possibly non-contiguous N-D array to device memory.
+:func:`memcpy_nd_host_to_device_async`
+    Copy a possibly non-contiguous N-D array to device memory async.
+:func:`memcpy_nd_device_to_host`
+    Copy device memory into a possibly non-contiguous N-D array.
+:func:`memcpy_nd_device_to_host_async`
+    Copy device memory into a possibly non-contiguous N-D array async.
 :func:`stream_synchronize`
     Synchronize the CUDA stream.
+:func:`create_event`
+    Create a CUDA event.
+:func:`destroy_event`
+    Destroy a CUDA event.
+:func:`record_event`
+    Record a CUDA event on a stream.
+:func:`stream_wait_event`
+    Make a stream wait on a CUDA event.
+:func:`event_synchronize`
+    Block the host until a CUDA event has completed.
 :func:`cuda_stream_begin_capture`
     Begin capturing a CUDA graph on a stream.
 :func:`cuda_stream_end_capture`
@@ -127,6 +155,7 @@ from ._bindings import (
     allocate_bindings,
     create_binding,
 )
+from ._buffer import Buffer, MemoryLocation
 from ._context import create_context, destroy_context
 from ._cuda import cuda_call, init_cuda
 from ._device import (
@@ -159,6 +188,9 @@ from ._memory import (
     cuda_host_free,
     cuda_malloc,
     free_device_ptrs,
+    memcpy,
+    memcpy_2d,
+    memcpy_2d_async,
     memcpy_device_to_device,
     memcpy_device_to_device_async,
     memcpy_device_to_host,
@@ -167,15 +199,30 @@ from ._memory import (
     memcpy_host_to_device_async,
     memcpy_host_to_device_offset,
     memcpy_host_to_device_offset_async,
+    memcpy_nd_device_to_host,
+    memcpy_nd_device_to_host_async,
+    memcpy_nd_host_to_device,
+    memcpy_nd_host_to_device_async,
 )
 from ._nvrtc import compile_and_load_kernel, compile_kernel, load_kernel, nvrtc_call
-from ._stream import create_stream, destroy_stream, stream_synchronize
+from ._stream import (
+    create_event,
+    create_stream,
+    destroy_event,
+    destroy_stream,
+    event_synchronize,
+    record_event,
+    stream_synchronize,
+    stream_wait_event,
+)
 
 __all__ = [
     "Binding",
+    "Buffer",
     "CUDAGraph",
     "Device",
     "Kernel",
+    "MemoryLocation",
     "TRTEngineInterface",
     "allocate_bindings",
     "allocate_managed_memory",
@@ -187,6 +234,7 @@ __all__ = [
     "create_binding",
     "create_context",
     "create_engine",
+    "create_event",
     "create_kernel_args",
     "create_stream",
     "cuda_call",
@@ -200,7 +248,9 @@ __all__ = [
     "cuda_stream_begin_capture",
     "cuda_stream_end_capture",
     "destroy_context",
+    "destroy_event",
     "destroy_stream",
+    "event_synchronize",
     "free_device_ptrs",
     "get_compute_capability",
     "get_device",
@@ -212,6 +262,9 @@ __all__ = [
     "init_cuda",
     "launch_kernel",
     "load_kernel",
+    "memcpy",
+    "memcpy_2d",
+    "memcpy_2d_async",
     "memcpy_device_to_device",
     "memcpy_device_to_device_async",
     "memcpy_device_to_host",
@@ -220,7 +273,13 @@ __all__ = [
     "memcpy_host_to_device_async",
     "memcpy_host_to_device_offset",
     "memcpy_host_to_device_offset_async",
+    "memcpy_nd_device_to_host",
+    "memcpy_nd_device_to_host_async",
+    "memcpy_nd_host_to_device",
+    "memcpy_nd_host_to_device_async",
     "nvrtc_call",
+    "record_event",
     "set_device",
     "stream_synchronize",
+    "stream_wait_event",
 ]

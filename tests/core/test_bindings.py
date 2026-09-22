@@ -12,8 +12,9 @@ import numpy as np
 import pytest
 
 from trtutils._flags import FLAGS
-from trtutils.core import _bindings
-from trtutils.core._bindings import allocate_bindings, create_binding
+from trtutils.core import _bindings, _buffer
+from trtutils.core._bindings import Binding, allocate_bindings, create_binding
+from trtutils.core._buffer import Buffer, MemoryLocation
 
 
 @pytest.mark.parametrize(
@@ -101,11 +102,11 @@ def test_create_binding_unified_memory_frees_host_only() -> None:
     binding = _bindings.create_binding(arr, pagelocked_mem=True, unified_mem=True)
 
     with patch.object(
-        _bindings.cudart, "cudaFree", wraps=_bindings.cudart.cudaFree
+        _buffer.cudart, "cudaFree", wraps=_buffer.cudart.cudaFree
     ) as cuda_free, patch.object(
-        _bindings.cudart,
+        _buffer.cudart,
         "cudaFreeHost",
-        wraps=_bindings.cudart.cudaFreeHost,
+        wraps=_buffer.cudart.cudaFreeHost,
     ) as cuda_free_host:
         binding.free()
 
@@ -157,3 +158,71 @@ def test_allocate_returns_io_bindings(simple_engine, pagelocked, unified) -> Non
 
     for b in inputs + outputs:
         b.free()
+
+
+@pytest.mark.parametrize("mapped", [False, True])
+def test_binding_from_buffers_derives_device(mapped) -> None:
+    """from_buffers derives the device buffer when one is not provided."""
+    host = Buffer.empty((4, 4), np.dtype(np.float32), MemoryLocation.HOST, mapped=mapped)
+    binding = Binding.from_buffers(host, name="derived", is_input=True)
+    assert binding.host is host
+    assert binding.device.location == MemoryLocation.DEVICE
+    assert binding.device.nbytes == host.nbytes
+    assert binding.allocation == binding.device.ptr
+    assert binding.host_allocation is host.array
+    assert binding.name == "derived"
+    assert binding.is_input is True
+    if mapped:
+        # mapped host memory aliases the device pointer; the view is non-owning
+        assert binding.device.owns_memory is False
+        assert binding.unified_mem is True
+    binding.free()
+
+
+def test_binding_from_buffers_explicit_pair() -> None:
+    """from_buffers accepts an explicit host/device pair."""
+    host = Buffer.empty((8,), np.dtype(np.float32), MemoryLocation.HOST)
+    device = Buffer.empty((8,), np.dtype(np.float32), MemoryLocation.DEVICE)
+    binding = Binding.from_buffers(host, device)
+    assert binding.device is device
+    assert binding.shape == [8]
+    assert binding.dtype == np.float32
+    binding.free()
+
+
+def test_binding_from_buffers_size_mismatch() -> None:
+    """Mismatched buffer sizes raise a ValueError."""
+    host = Buffer.empty((8,), np.dtype(np.float32), MemoryLocation.HOST)
+    device = Buffer.empty((4,), np.dtype(np.float32), MemoryLocation.DEVICE)
+    with pytest.raises(ValueError, match="size mismatch"):
+        Binding.from_buffers(host, device)
+    host.free()
+    device.free()
+
+
+def test_binding_from_buffers_wrong_locations() -> None:
+    """Buffers in the wrong memory spaces raise a ValueError."""
+    host = Buffer.empty((4,), np.dtype(np.float32), MemoryLocation.HOST)
+    device = Buffer.empty((4,), np.dtype(np.float32), MemoryLocation.DEVICE)
+    with pytest.raises(ValueError, match="must reside"):
+        Binding.from_buffers(device, host)
+    host.free()
+    device.free()
+
+
+@pytest.mark.parametrize(
+    ("pagelocked", "unified"),
+    [
+        pytest.param(True, False, id="pagelocked"),
+        pytest.param(False, False, id="pageable"),
+        pytest.param(True, True, id="unified"),
+    ],
+)
+def test_binding_upload_download_roundtrip(pagelocked, unified) -> None:
+    """Upload followed by download recovers the data in all memory modes."""
+    arr = np.arange(16, dtype=np.float32).reshape(4, 4)
+    binding = create_binding(arr, pagelocked_mem=pagelocked, unified_mem=unified)
+    binding.upload(arr)
+    result = binding.download()
+    np.testing.assert_array_equal(result, arr)
+    binding.free()

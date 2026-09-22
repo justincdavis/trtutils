@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -62,3 +62,80 @@ def stream_synchronize(stream: cudart.cudaStream_t) -> None:
     cuda_call(cudart.cudaStreamSynchronize(stream))
     if FLAGS.NVTX_ENABLED:
         nvtx.pop_range()
+
+
+def create_event() -> cudart.cudaEvent_t:
+    """
+    Create a CUDA event (timing disabled).
+
+    Returns
+    -------
+    cudart.cudaEvent_t
+        The CUDA event.
+
+    """
+    return cuda_call(
+        cudart.cudaEventCreateWithFlags(cudart.cudaEventDisableTiming),
+    )
+
+
+def destroy_event(event: cudart.cudaEvent_t) -> None:
+    """
+    Destroy a CUDA event.
+
+    Parameters
+    ----------
+    event : cudart.cudaEvent_t
+        The CUDA event to destroy.
+
+    """
+    cuda_call(cudart.cudaEventDestroy(event))
+
+
+def record_event(
+    event: cudart.cudaEvent_t,
+    stream: cudart.cudaStream_t,
+) -> None:
+    """
+    Record a CUDA event on a stream.
+
+    Parameters
+    ----------
+    event : cudart.cudaEvent_t
+        The CUDA event to record.
+    stream : cudart.cudaStream_t
+        The stream to record the event on.
+
+    """
+    cuda_call(cudart.cudaEventRecord(event, stream))
+
+
+def stream_wait_event(
+    stream: cudart.cudaStream_t,
+    event: cudart.cudaEvent_t,
+) -> None:
+    """
+    Make a stream wait on a CUDA event.
+
+    Parameters
+    ----------
+    stream : cudart.cudaStream_t
+        The stream which will wait.
+    event : cudart.cudaEvent_t
+        The CUDA event to wait on.
+
+    """
+    cuda_call(cudart.cudaStreamWaitEvent(stream, event, 0))
+
+
+def event_synchronize(event: cudart.cudaEvent_t) -> None:
+    """
+    Block the host until a CUDA event has completed.
+
+    Parameters
+    ----------
+    event : cudart.cudaEvent_t
+        The CUDA event to synchronize on.
+
+    """
+    cuda_call(cudart.cudaEventSynchronize(event))

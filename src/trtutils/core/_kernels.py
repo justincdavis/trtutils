@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # ruff: noqa: PYI041
@@ -24,6 +24,27 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
+
+
+class KernelArgs(np.ndarray):
+    """
+    A kernel argument pointer array that owns the buffers it points into.
+
+    The pointers in the array reference separately allocated numpy buffers,
+    one per argument. Those buffers must outlive every launch that uses the
+    array, or the kernel reads freed memory. Holding them on the array
+    itself ties their lifetime to the pointers that reference them, so an
+    argument array stays valid for as long as a caller keeps it, including
+    across other calls to :meth:`Kernel.create_args`.
+    """
+
+    _keepalive: list[np.ndarray]
+
+    def __array_finalize__(self: Self, obj: np.ndarray | None) -> None:
+        # propagate through views and slices so a derived array cannot
+        # outlive the buffers its pointers reference
+        if obj is not None:
+            self._keepalive = getattr(obj, "_keepalive", [])
 
 
 class Kernel:
@@ -95,10 +116,10 @@ class Kernel:
         """
         Create the argument pointer array for a CUDA kernel call.
 
-        Is a wrapper around :func:`trtutils.core.create_kernel_args`, which
-        stores the intermediate pointer results in inside of the class.
-        The intermediate arrays can be cleaned up by the garbage collector
-        if the kernel does not access the memory fast enough.
+        Is a wrapper around :func:`trtutils.core.create_kernel_args`. The
+        returned array owns the intermediate buffers its pointers reference,
+        so it stays valid for as long as the caller keeps it and may safely
+        be cached and reused across later calls to this method.
 
         Parameters
         ----------
@@ -119,8 +140,15 @@ class Kernel:
 
         """
         ptrs, intermediate = create_kernel_args(*args, verbose=verbose)
+        # Tie the intermediates to the pointer array rather than to a bounded
+        # per-kernel deque. The deque only ever retained the most recent
+        # max_arg_cache entries, so a caller caching an argument array (as the
+        # CUDA preprocessor does, keyed by batch size) would find its pointers
+        # dangling as soon as another batch size was launched.
+        args_array = ptrs.view(KernelArgs)
+        args_array._keepalive = intermediate  # noqa: SLF001
         self._inter_args.append(intermediate)
-        return ptrs
+        return args_array
 
     def __call__(
         self: Self,

@@ -10,27 +10,24 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 import nvtx
 
 from ._flags import FLAGS
 from ._log import LOG
 from .core._graph import CUDAGraph
 from .core._interface import TRTEngineInterface
-from .core._memory import (
-    memcpy_device_to_host,
-    memcpy_device_to_host_async,
-    memcpy_host_to_device,
-    memcpy_host_to_device_async,
-)
+from .core._memory import memcpy_device_to_host, memcpy_device_to_host_async
 from .core._stream import stream_synchronize
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from typing import ClassVar
 
+    import numpy as np
     from typing_extensions import Self
 
     from trtutils.compat._libs import cuda
+    from trtutils.core._buffer import Buffer
 
 
 class TRTEngine(TRTEngineInterface):
@@ -273,7 +270,7 @@ class TRTEngine(TRTEngineInterface):
 
     def execute(
         self: Self,
-        data: list[np.ndarray],
+        data: Sequence[np.ndarray | Buffer],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -284,8 +281,10 @@ class TRTEngine(TRTEngineInterface):
 
         Parameters
         ----------
-        data : list[np.ndarray]
-            The inputs to the network.
+        data : Sequence[np.ndarray | Buffer]
+            The inputs to the network. Host arrays are copied to the device
+            bindings; a device ``Buffer`` is copied device-to-device. Pass
+            ``direct_exec`` device pointers instead to run without any copy.
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -324,22 +323,8 @@ class TRTEngine(TRTEngineInterface):
                 self._using_engine_tensors = True
 
             # copy inputs
-            if self._pagelocked_mem and self._unified_mem:
-                for i_idx in range(len(self._inputs)):
-                    np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
-            elif self._pagelocked_mem:
-                for i_idx in range(len(self._inputs)):
-                    memcpy_host_to_device_async(
-                        self._inputs[i_idx].allocation,
-                        data[i_idx],
-                        self._stream,
-                    )
-            else:
-                for i_idx in range(len(self._inputs)):
-                    memcpy_host_to_device(
-                        self._inputs[i_idx].allocation,
-                        data[i_idx],
-                    )
+            for i_idx in range(len(self._inputs)):
+                self._inputs[i_idx].upload(data[i_idx], self._stream)
 
             if debug:
                 stream_synchronize(self._stream)
@@ -354,22 +339,8 @@ class TRTEngine(TRTEngineInterface):
                     self._capture_cuda_graph()
                     # After capture, re-copy user's input (warmup overwrote it) and launch
                     if self._cuda_graph is not None and self._cuda_graph.is_captured:
-                        if self._pagelocked_mem and self._unified_mem:
-                            for i_idx in range(len(self._inputs)):
-                                np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
-                        elif self._pagelocked_mem:
-                            for i_idx in range(len(self._inputs)):
-                                memcpy_host_to_device_async(
-                                    self._inputs[i_idx].allocation,
-                                    data[i_idx],
-                                    self._stream,
-                                )
-                        else:
-                            for i_idx in range(len(self._inputs)):
-                                memcpy_host_to_device(
-                                    self._inputs[i_idx].allocation,
-                                    data[i_idx],
-                                )
+                        for i_idx in range(len(self._inputs)):
+                            self._inputs[i_idx].upload(data[i_idx], self._stream)
                         self._cuda_graph.launch()
                 else:
                     # Currently capturing graph, use direct execution for warmup
@@ -384,21 +355,8 @@ class TRTEngine(TRTEngineInterface):
                 stream_synchronize(self._stream)
 
             # copy outputs
-            if self._unified_mem and self._pagelocked_mem:
-                pass
-            elif self._pagelocked_mem:
-                for o_idx in range(len(self._outputs)):
-                    memcpy_device_to_host_async(
-                        self._outputs[o_idx].host_allocation,
-                        self._outputs[o_idx].allocation,
-                        self._stream,
-                    )
-            else:
-                for o_idx in range(len(self._outputs)):
-                    memcpy_device_to_host(
-                        self._outputs[o_idx].host_allocation,
-                        self._outputs[o_idx].allocation,
-                    )
+            for o_idx in range(len(self._outputs)):
+                self._outputs[o_idx].download(self._stream)
 
             # make sure all operations are complete
             # Skip sync when warming up for graph capture to avoid conflicts

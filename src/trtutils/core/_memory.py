@@ -114,6 +114,7 @@ def memcpy_device_to_host_async(
     host_arr: np.ndarray,
     device_ptr: int,
     stream: cudart.cudaStream_t,
+    nbytes: int | None = None,
 ) -> None:
     """
     Copy a device pointer to a numpy array with error checking.
@@ -126,11 +127,17 @@ def memcpy_device_to_host_async(
         The device pointer to copy.
     stream : cudart.cudaStream_t
         The stream to utilize.
+    nbytes : int, optional
+        The number of bytes to copy. By default None, which copies
+        the full size of the host array. Used to copy only the valid
+        prefix of an allocation (e.g. partial batches on engines built
+        with a dynamic batch dimension).
 
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::memcpy_device_to_host_async")
-    nbytes = host_arr.size * host_arr.itemsize
+    if nbytes is None:
+        nbytes = host_arr.size * host_arr.itemsize
     # LOG.debug(f"MemcpyDtoH_Async: {device_ptr} with size: {nbytes}")
     cuda_call(
         cudart.cudaMemcpyAsync(
@@ -494,3 +501,342 @@ def allocate_to_device(
     if FLAGS.NVTX_ENABLED:
         nvtx.pop_range()
     return device_ptrs
+
+
+def memcpy_2d(
+    dst_ptr: int,
+    dpitch: int,
+    src_ptr: int,
+    spitch: int,
+    width_bytes: int,
+    height: int,
+    kind: cudart.cudaMemcpyKind,
+    stream: cudart.cudaStream_t | None = None,
+) -> None:
+    """
+    Copy a pitched 2D region of memory with error checking.
+
+    Copies ``height`` rows of ``width_bytes`` bytes each, where consecutive
+    rows are ``spitch`` bytes apart in the source and ``dpitch`` bytes apart
+    in the destination.
+
+    Parameters
+    ----------
+    dst_ptr : int
+        The destination pointer.
+    dpitch : int
+        The pitch (in bytes) between destination rows.
+    src_ptr : int
+        The source pointer.
+    spitch : int
+        The pitch (in bytes) between source rows.
+    width_bytes : int
+        The number of bytes to copy per row.
+    height : int
+        The number of rows to copy.
+    kind : cudart.cudaMemcpyKind
+        The direction of the copy.
+    stream : cudart.cudaStream_t, optional
+        If provided, the copy is issued asynchronously on the stream.
+
+    """
+    if FLAGS.NVTX_ENABLED:
+        nvtx.push_range("core::memcpy_2d")
+    if stream is not None:
+        cuda_call(
+            cudart.cudaMemcpy2DAsync(
+                dst_ptr, dpitch, src_ptr, spitch, width_bytes, height, kind, stream
+            ),
+        )
+    else:
+        cuda_call(cudart.cudaMemcpy2D(dst_ptr, dpitch, src_ptr, spitch, width_bytes, height, kind))
+    if FLAGS.NVTX_ENABLED:
+        nvtx.pop_range()
+
+
+def memcpy_2d_async(
+    dst_ptr: int,
+    dpitch: int,
+    src_ptr: int,
+    spitch: int,
+    width_bytes: int,
+    height: int,
+    kind: cudart.cudaMemcpyKind,
+    stream: cudart.cudaStream_t,
+) -> None:
+    """
+    Copy a pitched 2D region of memory asynchronously with error checking.
+
+    Equivalent to :func:`memcpy_2d` with a stream.
+
+    Parameters
+    ----------
+    dst_ptr : int
+        The destination pointer.
+    dpitch : int
+        The pitch (in bytes) between destination rows.
+    src_ptr : int
+        The source pointer.
+    spitch : int
+        The pitch (in bytes) between source rows.
+    width_bytes : int
+        The number of bytes to copy per row.
+    height : int
+        The number of rows to copy.
+    kind : cudart.cudaMemcpyKind
+        The direction of the copy.
+    stream : cudart.cudaStream_t
+        The stream to utilize.
+
+    """
+    memcpy_2d(dst_ptr, dpitch, src_ptr, spitch, width_bytes, height, kind, stream)
+
+
+def _contiguous_strides(shape: tuple[int, ...], itemsize: int) -> list[int]:
+    """
+    Compute the C-contiguous byte strides for a shape.
+
+    Parameters
+    ----------
+    shape : tuple[int, ...]
+        The shape to compute strides for.
+    itemsize : int
+        The size of each element in bytes.
+
+    Returns
+    -------
+    list[int]
+        The C-contiguous byte strides.
+
+    """
+    strides = [itemsize] * len(shape)
+    for d in range(len(shape) - 2, -1, -1):
+        strides[d] = strides[d + 1] * shape[d + 1]
+    return strides
+
+
+def memcpy(
+    dst_ptr: int,
+    src_ptr: int,
+    nbytes: int,
+    kind: cudart.cudaMemcpyKind,
+    stream: cudart.cudaStream_t | None = None,
+) -> None:
+    """
+    Copy a flat run of bytes between two pointers, synchronously or on a stream.
+
+    The one primitive every other copy in this module reduces to: the
+    direction comes from ``kind`` and the sync/async choice from ``stream``.
+
+    Parameters
+    ----------
+    dst_ptr : int
+        The destination pointer.
+    src_ptr : int
+        The source pointer.
+    nbytes : int
+        The number of bytes to copy.
+    kind : cudart.cudaMemcpyKind
+        The direction of the copy.
+    stream : cudart.cudaStream_t, optional
+        If provided, the copy is issued asynchronously on the stream.
+
+    """
+    if stream is not None:
+        cuda_call(cudart.cudaMemcpyAsync(dst_ptr, src_ptr, nbytes, kind, stream))
+    else:
+        cuda_call(cudart.cudaMemcpy(dst_ptr, src_ptr, nbytes, kind))
+
+
+def _row_layout(host_arr: np.ndarray) -> tuple[int, int]:
+    """
+    Collapse the contiguous trailing dimensions of an array into rows.
+
+    Parameters
+    ----------
+    host_arr : np.ndarray
+        The host array (possibly a non-contiguous view).
+
+    Returns
+    -------
+    tuple[int, int]
+        ``(width, pitch_dim)``: the row width in bytes, and the index of the
+        outermost dimension that is still contiguous, i.e. the dimension the
+        rows run along. ``pitch_dim`` is -1 when the whole array is
+        contiguous, which the strides can show even when the C_CONTIGUOUS
+        flag is unset (size-1 dimension views).
+
+    """
+    width = host_arr.itemsize
+    pitch_dim = host_arr.ndim - 1
+    while pitch_dim >= 0 and host_arr.strides[pitch_dim] == width:
+        width *= host_arr.shape[pitch_dim]
+        pitch_dim -= 1
+    return width, pitch_dim
+
+
+def _memcpy_nd(
+    host_arr: np.ndarray,
+    device_ptr: int,
+    kind: cudart.cudaMemcpyKind,
+    stream: cudart.cudaStream_t | None,
+) -> None:
+    """
+    Copy between a strided N-D numpy array and contiguous device memory.
+
+    The transfer is planned by collapsing the contiguous trailing dimensions
+    of the host array into rows, mapping the next dimension onto a pitched
+    2D copy, and iterating any remaining leading dimensions (supporting 4D,
+    5D, and beyond). Contiguous arrays degrade to a single flat copy.
+
+    Parameters
+    ----------
+    host_arr : np.ndarray
+        The host array (possibly a non-contiguous view).
+    device_ptr : int
+        The pointer to the contiguous device memory.
+    kind : cudart.cudaMemcpyKind
+        The direction of the copy (host-to-device or device-to-host).
+    stream : cudart.cudaStream_t, optional
+        If provided, copies are issued asynchronously on the stream.
+
+    """
+    h2d = kind == cudart.cudaMemcpyKind.cudaMemcpyHostToDevice
+    host_base = host_arr.ctypes.data
+    width, pitch_dim = _row_layout(host_arr)
+
+    # fully contiguous (by flag or by strides): one flat copy
+    if host_arr.flags["C_CONTIGUOUS"] or pitch_dim < 0:
+        dst, src = (device_ptr, host_base) if h2d else (host_base, device_ptr)
+        memcpy(dst, src, host_arr.size * host_arr.itemsize, kind, stream)
+        return
+
+    if FLAGS.NVTX_ENABLED:
+        nvtx.push_range("core::_memcpy_nd")
+
+    # rows run along pitch_dim; every dimension outside it is iterated here.
+    # cudaMemcpy2D needs a source pitch >= width, so reversed or overlapping
+    # views (negative or short strides) fall back to one copy per row.
+    shape = host_arr.shape
+    h_strides = host_arr.strides
+    d_strides = _contiguous_strides(shape, host_arr.itemsize)
+    height = shape[pitch_dim]
+    spitch = h_strides[pitch_dim]
+    pitched = spitch >= width
+
+    for outer_idx in np.ndindex(shape[:pitch_dim]):
+        host_ptr = host_base + sum(i * st for i, st in zip(outer_idx, h_strides))
+        dev_ptr = device_ptr + sum(i * st for i, st in zip(outer_idx, d_strides))
+        if not pitched:
+            for row in range(height):
+                row_host = host_ptr + row * spitch
+                row_dev = dev_ptr + row * width
+                dst, src = (row_dev, row_host) if h2d else (row_host, row_dev)
+                memcpy(dst, src, width, kind, stream)
+        elif h2d:
+            memcpy_2d(dev_ptr, width, host_ptr, spitch, width, height, kind, stream)
+        else:
+            memcpy_2d(host_ptr, spitch, dev_ptr, width, width, height, kind, stream)
+
+    LOG.debug(f"MemcpyND: shape={shape}, width={width}, height={height}")
+    if FLAGS.NVTX_ENABLED:
+        nvtx.pop_range()
+
+
+def memcpy_nd_host_to_device(
+    device_ptr: int,
+    host_arr: np.ndarray,
+    stream: cudart.cudaStream_t | None = None,
+) -> None:
+    """
+    Copy a possibly non-contiguous N-D numpy array to contiguous device memory.
+
+    Supports arrays of any rank (designed and tested up to 5D), including
+    strided views such as transposes, stepped slices, and reversed axes.
+    Contiguous arrays degrade to a single flat copy.
+
+    Parameters
+    ----------
+    device_ptr : int
+        The device pointer to copy to.
+    host_arr : np.ndarray
+        The numpy array (or view) to copy.
+    stream : cudart.cudaStream_t, optional
+        If provided, the copies are issued asynchronously on the stream and
+        the caller must keep the array alive and unmodified until the stream
+        is synchronized.
+
+    """
+    _memcpy_nd(host_arr, device_ptr, cudart.cudaMemcpyKind.cudaMemcpyHostToDevice, stream)
+
+
+def memcpy_nd_host_to_device_async(
+    device_ptr: int,
+    host_arr: np.ndarray,
+    stream: cudart.cudaStream_t,
+) -> None:
+    """
+    Copy a possibly non-contiguous N-D numpy array to device memory async.
+
+    Equivalent to :func:`memcpy_nd_host_to_device` with a stream.
+
+    Parameters
+    ----------
+    device_ptr : int
+        The device pointer to copy to.
+    host_arr : np.ndarray
+        The numpy array (or view) to copy.
+    stream : cudart.cudaStream_t
+        The stream to utilize.
+
+    """
+    memcpy_nd_host_to_device(device_ptr, host_arr, stream)
+
+
+def memcpy_nd_device_to_host(
+    host_arr: np.ndarray,
+    device_ptr: int,
+    stream: cudart.cudaStream_t | None = None,
+) -> None:
+    """
+    Copy contiguous device memory into a possibly non-contiguous N-D array.
+
+    Supports arrays of any rank (designed and tested up to 5D), including
+    strided views such as transposes, stepped slices, and reversed axes.
+    Contiguous arrays degrade to a single flat copy.
+
+    Parameters
+    ----------
+    host_arr : np.ndarray
+        The numpy array (or view) to copy into.
+    device_ptr : int
+        The device pointer to copy from.
+    stream : cudart.cudaStream_t, optional
+        If provided, the copies are issued asynchronously on the stream and
+        the caller must keep the array alive until the stream is synchronized.
+
+    """
+    _memcpy_nd(host_arr, device_ptr, cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost, stream)
+
+
+def memcpy_nd_device_to_host_async(
+    host_arr: np.ndarray,
+    device_ptr: int,
+    stream: cudart.cudaStream_t,
+) -> None:
+    """
+    Copy contiguous device memory into a non-contiguous N-D array async.
+
+    Equivalent to :func:`memcpy_nd_device_to_host` with a stream.
+
+    Parameters
+    ----------
+    host_arr : np.ndarray
+        The numpy array (or view) to copy into.
+    device_ptr : int
+        The device pointer to copy from.
+    stream : cudart.cudaStream_t
+        The stream to utilize.
+
+    """
+    memcpy_nd_device_to_host(host_arr, device_ptr, stream)

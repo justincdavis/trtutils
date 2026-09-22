@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from trtutils._flags import FLAGS
-from trtutils.core import allocate_to_device, free_device_ptrs
+from trtutils.core import Buffer, MemoryLocation, allocate_to_device, free_device_ptrs
 
 
 class TestExecute:
@@ -586,3 +586,41 @@ class TestGraphExec:
 
         eng.execute(eng.get_random_input())
         assert eng._cuda_graph.is_captured is True
+
+
+class TestBufferInputs:
+    """execute() accepts core.Buffer inputs in either memory space."""
+
+    @pytest.mark.parametrize(
+        ("pagelocked", "unified"),
+        [
+            pytest.param(True, False, id="pagelocked"),
+            pytest.param(False, False, id="pageable"),
+            pytest.param(True, True, id="unified"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "location", [MemoryLocation.HOST, MemoryLocation.DEVICE], ids=["host", "device"]
+    )
+    def test_buffer_input_matches_ndarray(self, make_engine, pagelocked, unified, location) -> None:
+        """A host or device Buffer input gives the same outputs as the numpy array it holds."""
+        eng = make_engine(pagelocked_mem=pagelocked, unified_mem=unified)
+        arrays = eng.get_random_input()
+        expected = eng.execute(arrays)
+        buffers = [Buffer.from_array(arr, location) for arr in arrays]
+        outputs = eng.execute(buffers)
+        for out, exp in zip(outputs, expected):
+            np.testing.assert_array_equal(out, exp)
+        for buf in buffers:
+            buf.free()
+
+    def test_cuda_array_interface_input(self, engine, random_input) -> None:
+        """Any __cuda_array_interface__ object can be wrapped and fed to execute()."""
+        expected = engine.execute(random_input)
+        owners = [Buffer.from_array(arr, MemoryLocation.DEVICE) for arr in random_input]
+        views = [Buffer.from_cuda_array(owner) for owner in owners]
+        outputs = engine.execute(views)
+        for out, exp in zip(outputs, expected):
+            np.testing.assert_array_equal(out, exp)
+        for owner in owners:
+            owner.free()

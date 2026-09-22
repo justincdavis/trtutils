@@ -11,11 +11,23 @@ Added
   ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``
 * Download configs and ONNX export functions for Depth-Anything-V1
   (small / base / large) and Depth-Anything-V3 (mono-large, metric-large)
+* ``core.Buffer`` and ``core.MemoryLocation`` for a unified host/device allocation type;
+  ``core.Binding`` is now implemented on top of a host/device ``Buffer`` pair
+* ``TRTEngine.execute`` accepts ``core.Buffer`` inputs in either memory space, and
+  ``core.Buffer.from_cuda_array`` wraps any ``__cuda_array_interface__`` object (CuPy, Numba,
+  PyTorch, nvImageCodec) as a non-owning device view
+* ``core.memcpy_2d``, ``core.memcpy_2d_async``, ``core.memcpy_nd_host_to_device[_async]``,
+  and ``core.memcpy_nd_device_to_host[_async]`` for pitched 2D and strided N-D transfers
+* ``core.create_event``, ``core.destroy_event``, ``core.record_event``,
+  ``core.stream_wait_event``, and ``core.event_synchronize`` CUDA event helpers
 
 Fixed
 ^^^^^
 * ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
   notice into the exported requirements file
+* ``core.Kernel.create_args``: the returned argument array now owns the intermediate buffers
+  its pointers reference, fixing a use-after-free when the array is cached and reused
+  across calls (e.g. per-batch-size kernel argument caching)
 
 
 0.6.1 (2025-06-17)
