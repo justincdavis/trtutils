@@ -30,9 +30,9 @@ class Binding:
     and carries the metadata TensorRT needs to treat the pair as an engine
     I/O tensor (index, name, is_input, tensor_format).
 
-    The legacy attributes ``allocation`` (device pointer) and
-    ``host_allocation`` (host numpy array) are preserved as properties, so
-    existing call sites continue to work unchanged.
+    All attributes are read-only properties; ``allocation`` (device pointer)
+    and ``host_allocation`` (host numpy array) are kept so existing call
+    sites continue to work unchanged.
     """
 
     def __init__(
@@ -94,16 +94,14 @@ class Binding:
             err_msg = f"Binding buffer size mismatch: host has {host.nbytes} bytes, device has {device.nbytes} bytes."
             raise ValueError(err_msg)
 
-        self.host = host
-        self.device = device
-        self.index = index
-        self.name = name
-        self.tensor_format = tensor_format
-        self.is_input = is_input
-        self.dtype: np.dtype = host.dtype
-        self.shape: list[int] = list(host.shape)
-        self.pagelocked_mem = host.pinned if pagelocked_mem is None else pagelocked_mem
-        self.unified_mem = host.mapped if unified_mem is None else unified_mem
+        self._host = host
+        self._device = device
+        self._index = index
+        self._name = name
+        self._tensor_format = tensor_format
+        self._is_input = is_input
+        self._pagelocked_mem = host.pinned if pagelocked_mem is None else pagelocked_mem
+        self._unified_mem = host.mapped if unified_mem is None else unified_mem
 
     @classmethod
     def from_buffers(
@@ -180,14 +178,64 @@ class Binding:
         return binding
 
     @property
+    def host(self: Self) -> Buffer:
+        """The host-side buffer of the pair."""
+        return self._host
+
+    @property
+    def device(self: Self) -> Buffer:
+        """The device-side buffer of the pair."""
+        return self._device
+
+    @property
+    def index(self: Self) -> int:
+        """The index of the binding in the engine."""
+        return self._index
+
+    @property
+    def name(self: Self) -> str:
+        """The tensor name of the binding."""
+        return self._name
+
+    @property
+    def tensor_format(self: Self) -> trt.TensorFormat:
+        """The TensorRT format of the tensor."""
+        return self._tensor_format
+
+    @property
+    def is_input(self: Self) -> bool:
+        """Whether the binding is an engine input (else an output)."""
+        return self._is_input
+
+    @property
+    def dtype(self: Self) -> np.dtype:
+        """The datatype of the binding."""
+        return self._host.dtype
+
+    @property
+    def shape(self: Self) -> list[int]:
+        """The allocated shape of the binding (the max profile shape for dynamic engines)."""
+        return list(self._host.shape)
+
+    @property
+    def pagelocked_mem(self: Self) -> bool:
+        """Whether the host allocation is pagelocked."""
+        return self._pagelocked_mem
+
+    @property
+    def unified_mem(self: Self) -> bool:
+        """Whether the pair was created for a unified memory system."""
+        return self._unified_mem
+
+    @property
     def allocation(self: Self) -> int:
         """The device pointer of the binding."""
-        return self.device.ptr
+        return self._device.ptr
 
     @property
     def host_allocation(self: Self) -> np.ndarray:
         """The host numpy array of the binding."""
-        return self.host.array
+        return self._host.array
 
     def _partial(self: Self, buffer: Buffer, shape: tuple[int, ...] | None) -> Buffer:
         """
@@ -260,12 +308,12 @@ class Binding:
 
         """
         on_device = isinstance(data, Buffer) and data.location == MemoryLocation.DEVICE
-        if self.pagelocked_mem and self.unified_mem and not on_device:
+        if self._pagelocked_mem and self._unified_mem and not on_device:
             # host Buffers land here too, through Buffer.__array__
-            np.copyto(self._partial(self.host, shape).array, data)
+            np.copyto(self._partial(self._host, shape).array, data)
             return
-        device = self._partial(self.device, shape)
-        if stream is not None and self.pagelocked_mem:
+        device = self._partial(self._device, shape)
+        if stream is not None and self._pagelocked_mem:
             device.copy_from(data, stream)
             return
         device.copy_from(data)
@@ -300,11 +348,11 @@ class Binding:
             when an active shape is given.
 
         """
-        host = self._partial(self.host, shape)
-        if self.pagelocked_mem and self.unified_mem:
+        host = self._partial(self._host, shape)
+        if self._pagelocked_mem and self._unified_mem:
             return host.array
-        device = self._partial(self.device, shape)
-        if stream is not None and self.pagelocked_mem:
+        device = self._partial(self._device, shape)
+        if stream is not None and self._pagelocked_mem:
             device.copy_to(host, stream)
         else:
             device.copy_to(host)
@@ -312,8 +360,8 @@ class Binding:
 
     def free(self: Self) -> None:
         """Free the memory of the binding."""
-        self.device.free()
-        self.host.free()
+        self._device.free()
+        self._host.free()
 
     def __del__(self: Self) -> None:
         # potentially already had free called on it previously
