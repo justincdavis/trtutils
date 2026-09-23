@@ -128,8 +128,9 @@ class Detector(ImageModel, DetectorInterface):
             When enabled, CUDA graphs are used both at the engine level and for
             end-to-end execution in the end2end() method. The first call to
             end2end() will capture a CUDA graph of the full preprocessing +
-            inference pipeline, and subsequent calls will replay it. Input
-            dimensions are locked after the first end2end() call.
+            inference pipeline, and subsequent calls will replay it. Graphs
+            are cached per batch size and input buffer set, so image
+            resolution and batch size may both change between calls.
             Only effective with async_v3 backend. Default is True.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
@@ -239,6 +240,14 @@ class Detector(ImageModel, DetectorInterface):
         self._use_image_size = self._input_schema.uses_image_size
         self._use_scale_factor = self._input_schema.uses_scale_factor
         self._orig_size_dtype = self._input_schema.orig_size_dtype
+        # RT_DETR_V3 and schemas using image-size/scale-factor build extra
+        # inputs from host data in _engine_inputs, so those keep the host
+        # path on run(); everything else can take the direct-GPU path.
+        self._single_input_schema = (
+            self._input_schema != InputSchema.RT_DETR_V3
+            and not self._use_image_size
+            and not self._use_scale_factor
+        )
 
     def postprocess(
         self: Self,
@@ -734,7 +743,7 @@ class Detector(ImageModel, DetectorInterface):
         RuntimeError
             If the scale_factor buffer is not valid
         RuntimeError
-            If end2end_graph is enabled and image dimensions change after first call.
+            If end2end_graph is enabled and a static engine receives a batch size different than what it was built for.
         RuntimeError
             If end2end_graph is enabled and CUDA graph capture fails.
 

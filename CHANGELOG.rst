@@ -45,6 +45,12 @@ Changed
 * CPU preprocessing packs directly into a preallocated batch tensor with a fused
   float32 normalization and reuses it above 16 MB; ``no_copy`` honored by the
   CPU preprocessor
+* ``image``: ``end2end`` CUDA graphs are cached per batch size and input buffer set
+  instead of being locked to the first call's image resolution and batch size, so
+  both may change freely between calls
+* ``image``: ``run()`` feeds the engine directly from device memory when a GPU
+  preprocessor (``cuda``/``trt``) and CUDA graphs are enabled and the input schema
+  takes a single image input, removing a D2H + H2D round trip
 
 Fixed
 ^^^^^
@@ -55,6 +61,9 @@ Fixed
   across calls (e.g. per-batch-size kernel argument caching)
 * ``TRTEngine.direct_exec`` on a dynamic-batch engine returned outputs shaped to the max
   profile batch regardless of the resolved batch size
+* ``image``: static engines now reject a mismatched batch size with a clear
+  ``RuntimeError`` on every execution path (``run``, ``end2end``, graphed or not)
+  instead of running against undersized buffers
 
 
 0.6.1 (2025-06-17)

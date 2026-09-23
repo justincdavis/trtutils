@@ -15,7 +15,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._device import Device
 from trtutils.core._graph import CUDAGraph
-from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
+from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.core._stream import stream_synchronize
 
 from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 _COLOR_CHANNELS = 3
+# max cached end2end CUDA graphs before the cache resets
+_MAX_E2E_GRAPHS = 32
 
 # (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image
 _PostFn = Callable[
@@ -104,8 +106,9 @@ class ImageModel:
             When enabled, CUDA graphs are used both at the engine level and for
             end-to-end execution in the end2end() method. The first call to
             end2end() will capture a CUDA graph of the full preprocessing +
-            inference pipeline, and subsequent calls will replay it. Input
-            dimensions are locked after the first end2end() call.
+            inference pipeline, and subsequent calls will replay it. Graphs
+            are cached per batch size and input buffer set, so image
+            resolution and batch size may both change between calls.
             Only effective with async_v3 backend. Default is True.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
@@ -210,6 +213,11 @@ class ImageModel:
         self._orig_size_dtype: np.dtype[Any] | None = None
         self._use_image_size: bool = False
         self._use_scale_factor: bool = False
+        # whether the engine takes a single image input (no extra per-image
+        # host-built inputs). Only such schemas can take the direct-GPU
+        # run() path, since the extras are built from host data in
+        # _engine_inputs. Detector overrides this in _configure_model.
+        self._single_input_schema: bool = True
 
         # Hook for subclasses to configure model-specific state
         # after engine is loaded but before preprocessors are created.
@@ -252,9 +260,11 @@ class ImageModel:
         # Note: Preprocessing runs outside the graph since H2D copies cannot be captured.
         # Only TRTEngine inference is captured in the graph.
         self._e2e_graph_enabled: bool = cuda_graph if cuda_graph is not None else True
-        self._e2e_graph: CUDAGraph | None = None
-        self._e2e_input_dims: tuple[int, int] | None = None
-        self._e2e_batch_size: int | None = None
+        # graphs cached per (batch_size, input pointer set). including the
+        # pointers in the key means graphs baked against reallocated
+        # preprocessor buffers naturally miss instead of replaying stale
+        # addresses. bounded, cleared wholesale on overflow.
+        self._e2e_graphs: dict[tuple[int, tuple[int, ...]], CUDAGraph] = {}
 
         # if warmup, warmup the preprocessors
         if warmup:
@@ -360,6 +370,36 @@ class ImageModel:
     def is_dynamic_batch(self: Self) -> bool:
         """Check if model has dynamic batch size."""
         return self._is_dynamic_batch
+
+    def _validate_batch_size(self: Self, batch_size: int) -> None:
+        """
+        Reject a batch size a static engine cannot serve.
+
+        A static engine's bindings are sized for exactly one batch size.
+        Submitting a different one runs the engine against allocations that
+        do not match the submitted data: the trailing rows are garbage at
+        best, and reads run past the preprocessor's batch buffer at worst.
+        Every execution path must check this before dispatching.
+
+        Parameters
+        ----------
+        batch_size : int
+            The number of images submitted.
+
+        Raises
+        ------
+        RuntimeError
+            If the engine is static and the batch size does not match.
+
+        """
+        if self._engine.is_dynamic_batch or batch_size == self._batch_size:
+            return
+        err_msg = (
+            f"Batch size {batch_size} != engine batch size {self._batch_size}. "
+            "Build the engine with a dynamic batch profile to submit variable "
+            "batch sizes."
+        )
+        raise RuntimeError(err_msg)
 
     def _update_preprocessors(self: Self) -> None:
         if self._preproc_cpu is not None:
@@ -573,20 +613,48 @@ class ImageModel:
 
         return data
 
-    def _copy_engine_outputs(self: Self) -> list[np.ndarray]:
-        """Copy engine outputs from device to host."""
+    def _stage_graphed_postprocess(
+        self: Self,
+        batch_size: int,  # noqa: ARG002
+        ratios: list[tuple[float, float]],
+        padding: list[tuple[float, float]],
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Stage per-image transform data for an in-graph postprocess kernel.
+
+        No-op in the base class. Subclasses with a GPU postprocessor
+        upload the per-image transforms here (outside the graph, values
+        change per call) and return identity ratios/padding so the CPU
+        postprocess affine becomes a pass-through.
+        """
+        return ratios, padding
+
+    def _capture_graphed_postprocess(self: Self, batch_size: int) -> None:
+        """
+        Enqueue the in-graph postprocess kernel, if any.
+
+        No-op in the base class. Called inside CUDA graph capture, after
+        engine execution — the launch is recorded into the graph, so
+        replays run it with zero per-call launch overhead.
+        """
+
+    def _copy_engine_outputs(
+        self: Self,
+        output_shapes: list[tuple[int, ...]] | None = None,
+    ) -> list[np.ndarray]:
+        """Copy engine outputs from device to host, sized to the actual shapes."""
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["_copy_engine_outputs"])
 
-        outputs: list[np.ndarray] = []
-        for binding in self._engine._outputs:  # noqa: SLF001
-            if not (self._engine._unified_mem and self._engine._pagelocked_mem):  # noqa: SLF001
-                memcpy_device_to_host_async(
-                    binding.host_allocation,
-                    binding.allocation,
-                    self._engine.stream,
-                )
-            outputs.append(binding.host_allocation)
+        # when output_shapes is given only the prefix of each max-shape
+        # allocation is valid, so copy and expose exactly that
+        outputs: list[np.ndarray] = [
+            binding.download(
+                self._engine.stream,
+                output_shapes[o_idx] if output_shapes is not None else None,
+            )
+            for o_idx, binding in enumerate(self._engine._outputs)  # noqa: SLF001
+        ]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # copy_engine_outputs
@@ -703,9 +771,14 @@ class ImageModel:
         """
         Core graph-accelerated execution shared by subclasses.
 
-        Handles dimension locking, preprocessing dispatch, graph capture/replay,
-        and D2H output copy. Subclasses call this and then perform their own
-        postprocessing.
+        Handles batch validation, preprocessing dispatch, graph capture/replay
+        (keyed per batch size and input pointer set), and D2H output copy.
+        Subclasses call this and then perform their own postprocessing.
+
+        With per-shape staging slots the preprocessor's output pointer
+        is stable per resolution, so image dimensions are no longer locked on
+        the first call: a changed resolution is just a graph-cache hit or
+        miss like any other pointer change.
 
         Parameters
         ----------
@@ -722,7 +795,8 @@ class ImageModel:
         Raises
         ------
         RuntimeError
-            If image dimensions or batch size change after first call.
+            If a static engine receives a batch size different than what
+            it was built for.
         RuntimeError
             If CUDA graph capture fails.
 
@@ -732,33 +806,31 @@ class ImageModel:
 
         batch_size = len(images)
 
-        # Auto-capture on first call: lock dimensions
-        if self._e2e_graph is None:
-            self._e2e_input_dims = (images[0].shape[0], images[0].shape[1])
-            self._e2e_batch_size = batch_size
-
-        # Validate dimensions match locked values
-        img_dims = (images[0].shape[0], images[0].shape[1])
-        if img_dims != self._e2e_input_dims:
-            err_msg = f"Image dims {img_dims} != graph dims {self._e2e_input_dims}"
+        # resolve the context shapes for this batch size
+        # dynamic engines: sets the batch dim, returns actual output shapes
+        # static engines: returns None, the submitted batch must match exactly
+        # (the engine would read past the preprocessor's batch buffer and the
+        # trailing output rows would be garbage otherwise)
+        try:
+            self._validate_batch_size(batch_size)
+        except RuntimeError:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # end2end_graph_core
-            raise RuntimeError(err_msg)
-        if batch_size != self._e2e_batch_size:
-            err_msg = f"Batch size {batch_size} != graph batch size {self._e2e_batch_size}"
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # end2end_graph_core
-            raise RuntimeError(err_msg)
+            raise
+        output_shapes = self._engine._resolve_dynamic_batch(batch_size)  # noqa: SLF001
 
         # Preprocess and get GPU pointer based on preprocessor type
         if isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             # GPU preprocessor: use direct_preproc for GPU pointer
+            t0 = time.perf_counter()
             gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
                 images,
                 resize=self._resize_method,
                 no_warn=True,
                 verbose=verbose,
             )
+            t1 = time.perf_counter()
+            self._pre_profile = (t0, t1)
             extra_ptrs = self._prepare_extra_engine_inputs_gpu()
             input_ptrs = self._build_graph_input_ptrs(gpu_ptr, extra_ptrs)
         else:
@@ -778,15 +850,32 @@ class ImageModel:
             extra_ptrs = self._prepare_extra_engine_inputs_cpu(images, ratios)
             input_ptrs = self._build_graph_input_ptrs(gpu_ptr, extra_ptrs)
 
-        # Capture or replay the graph (inference only)
-        if self._e2e_graph is None:
-            # First call: capture the graph
-            self._e2e_graph = CUDAGraph(self._engine.stream)
-            with self._e2e_graph:
+        # stage in-graph GPU postprocessing (no-op unless a subclass enables
+        # it): uploads per-image transforms and swaps ratios/padding for
+        # identity values so downstream CPU postprocess is a pass-through
+        ratios, padding = self._stage_graphed_postprocess(batch_size, ratios, padding)
+
+        # Capture or replay the graph for this (batch, pointers) combination.
+        # A graph bakes the context shapes and tensor addresses at capture
+        # time, so each batch size / pointer set gets its own graph. Replays
+        # are shape-independent, no per-call context work.
+        graph_key = (batch_size, tuple(input_ptrs))
+        e2e_graph = self._e2e_graphs.get(graph_key)
+        if e2e_graph is None:
+            # bounded cache: distinct keys only accumulate when buffers get
+            # reallocated or many batch sizes are used, clear wholesale
+            if len(self._e2e_graphs) >= _MAX_E2E_GRAPHS:
+                for old_graph in self._e2e_graphs.values():
+                    old_graph.invalidate()
+                self._e2e_graphs = {}
+
+            e2e_graph = CUDAGraph(self._engine.stream)
+            with e2e_graph:
                 self._engine.raw_exec(input_ptrs, no_warn=True)
+                self._capture_graphed_postprocess(batch_size)
 
             # Verify capture succeeded
-            if not self._e2e_graph.is_captured:
+            if not e2e_graph.is_captured:
                 err_msg = (
                     "CUDA graph capture failed for end2end. Engine may not support graph capture."
                 )
@@ -794,15 +883,14 @@ class ImageModel:
                     nvtx.pop_range()  # end2end_graph_core
                 raise RuntimeError(err_msg)
 
-            # Launch graph after capture to actually run inference
-            # (capture only records operations, doesn't execute them)
-            self._e2e_graph.launch()
-        else:
-            # Replay the captured graph
-            self._e2e_graph.launch()
+            self._e2e_graphs[graph_key] = e2e_graph
 
-        # D2H copy of outputs + sync (outside the graph)
-        raw_outputs = self._copy_engine_outputs()
+        # Launch the graph (capture only records operations, doesn't execute them)
+        e2e_graph.launch()
+
+        # D2H copy of outputs + sync (outside the graph), sized to the
+        # actual output shapes for partial batches on dynamic engines
+        raw_outputs = self._copy_engine_outputs(output_shapes)
         stream_synchronize(self._engine.stream)
 
         if FLAGS.NVTX_ENABLED:
@@ -941,28 +1029,57 @@ class ImageModel:
                 f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
             )
 
-        # handle preprocessing
-        if not preprocessed:
-            if verbose:
-                LOG.debug("Preprocessing inputs")
-            tensor, batch_ratios, batch_padding = self.preprocess(batch_images, no_copy=no_copy_pre)
-        else:
-            # images is already preprocessed tensor when preprocessed=True
-            if len(batch_images) != 1:
-                err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # run
-                raise ValueError(err_msg)
-            tensor = batch_images[0]
-
-        engine_inputs = self._engine_inputs(
-            tensor, batch_images, batch_ratios, preprocessed=preprocessed
+        # Direct GPU path: for single-input schemas with a GPU-resident
+        # preprocessor, feed the engine the preprocessed tensor's device
+        # pointer instead of copying it to host (preprocess) and back to
+        # device (execute). Multi-input schemas keep the host path since
+        # their extra inputs are built from per-image host data in
+        # _engine_inputs.
+        use_direct = (
+            not preprocessed
+            and self._e2e_graph_enabled
+            and isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor))
+            and self._single_input_schema
         )
+        outputs: list[np.ndarray]
+        if use_direct:
+            t0 = time.perf_counter()
+            outputs, batch_ratios, batch_padding = self._end2end_graph_core(
+                batch_images,
+                verbose=verbose,
+            )
+            # raw outputs reference the engine's host allocations
+            if not postprocess and not no_copy_run:
+                outputs = [o.copy() for o in outputs]
+            t1 = time.perf_counter()
+        else:
+            # handle preprocessing
+            if not preprocessed:
+                if verbose:
+                    LOG.debug("Preprocessing inputs")
+                tensor, batch_ratios, batch_padding = self.preprocess(
+                    batch_images, no_copy=no_copy_pre
+                )
+            else:
+                # images is already preprocessed tensor when preprocessed=True
+                if len(batch_images) != 1:
+                    err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
+                    if FLAGS.NVTX_ENABLED:
+                        nvtx.pop_range()  # run
+                    raise ValueError(err_msg)
+                tensor = batch_images[0]
 
-        # execute
-        t0 = time.perf_counter()
-        outputs: list[np.ndarray] = self._engine(engine_inputs, no_copy=no_copy_run)
-        t1 = time.perf_counter()
+            batch_size = len(batch_images) if not preprocessed else tensor.shape[0]
+            self._validate_batch_size(batch_size)
+
+            engine_inputs = self._engine_inputs(
+                tensor, batch_images, batch_ratios, preprocessed=preprocessed
+            )
+
+            # execute
+            t0 = time.perf_counter()
+            outputs = self._engine(engine_inputs, no_copy=no_copy_run)
+            t1 = time.perf_counter()
 
         # handle postprocessing
         if postprocess:
@@ -1030,8 +1147,8 @@ class ImageModel:
         Raises
         ------
         RuntimeError
-            If the CUDA-graph path is enabled and dimensions/batch size
-            change after the first call, or graph capture fails.
+            If a static engine receives a batch size different than what
+            it was built for, or CUDA graph capture fails.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -1070,6 +1187,15 @@ class ImageModel:
         else:
             if verbose:
                 LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
+
+            # Resolve the context shapes for this batch before dispatching.
+            # direct_exec feeds the engine raw GPU pointers, so the shape
+            # bookkeeping execute() derives from host arrays never runs and a
+            # dynamic engine would return outputs at the max profile shape
+            # while ratios/padding hold one entry per submitted image.
+            self._validate_batch_size(len(batch_images))
+            self._engine._resolve_dynamic_batch(len(batch_images))  # noqa: SLF001
+
             gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
                 batch_images,
                 resize=self._resize_method,
