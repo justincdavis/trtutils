@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import contextlib
-from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,6 +25,27 @@ if TYPE_CHECKING:
     from trtutils.compat._libs import cudart
 
 
+class KernelArgs(np.ndarray):
+    """
+    A kernel argument pointer array that owns the buffers it points into.
+
+    The pointers in the array reference separately allocated numpy buffers,
+    one per argument. Those buffers must outlive every launch that uses the
+    array, or the kernel reads freed memory. Holding them on the array
+    itself ties their lifetime to the pointers that reference them, so an
+    argument array stays valid for as long as a caller keeps it, including
+    across other calls to :meth:`Kernel.create_args`.
+    """
+
+    _keepalive: list[np.ndarray]
+
+    def __array_finalize__(self: Self, obj: np.ndarray | None) -> None:
+        # propagate through views and slices so a derived array cannot
+        # outlive the buffers its pointers reference
+        if obj is not None:
+            self._keepalive = getattr(obj, "_keepalive", [])
+
+
 class Kernel:
     """Holds kernel coda and PTX for execution."""
 
@@ -33,7 +53,6 @@ class Kernel:
         self: Self,
         kernel_file: Path | str,
         name: str,
-        max_arg_cache: int = 1,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -46,10 +65,6 @@ class Kernel:
             The CUDA file containing the kernel definition.
         name : str
             The name of the kernel to compile.
-        max_arg_cache : int
-            The number of arg arrays to store cached to prevent garbage collection.
-            Since args are created per-call only 1 is typically needed.
-            Default 1.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -68,7 +83,6 @@ class Kernel:
             name,
             verbose=verbose,
         )
-        self._inter_args: deque[list[np.ndarray]] = deque(maxlen=max_arg_cache)
         self._freed = False
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()
@@ -91,14 +105,14 @@ class Kernel:
         self: Self,
         *args: int | float | np.ndarray,
         verbose: bool | None = False,
-    ) -> np.ndarray:
+    ) -> KernelArgs:
         """
         Create the argument pointer array for a CUDA kernel call.
 
-        Is a wrapper around :func:`trtutils.core.create_kernel_args`, which
-        stores the intermediate pointer results in inside of the class.
-        The intermediate arrays can be cleaned up by the garbage collector
-        if the kernel does not access the memory fast enough.
+        Is a wrapper around :func:`trtutils.core.create_kernel_args`. The
+        returned array owns the intermediate buffers its pointers reference,
+        so it stays valid for as long as the caller keeps it and may safely
+        be cached and reused across later calls to this method.
 
         Parameters
         ----------
@@ -119,8 +133,12 @@ class Kernel:
 
         """
         ptrs, intermediate = create_kernel_args(*args, verbose=verbose)
-        self._inter_args.append(intermediate)
-        return ptrs
+        # tie the intermediates to the pointer array itself: a bounded
+        # per-kernel cache dropped them once enough other argument sets were
+        # built, leaving any cached argument array pointing at freed memory
+        args_array = ptrs.view(KernelArgs)
+        args_array._keepalive = intermediate  # noqa: SLF001
+        return args_array
 
     def __call__(
         self: Self,

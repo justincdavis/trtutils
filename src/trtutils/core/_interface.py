@@ -17,10 +17,13 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._bindings import Binding, allocate_bindings
+from ._buffer import Buffer
 from ._device import Device
 from ._engine import create_engine, get_engine_names
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from numpy.random import Generator
     from typing_extensions import Self
 
@@ -102,14 +105,16 @@ class TRTEngineInterface(ABC):
                 pagelocked_mem=self._pagelocked_mem,
                 unified_mem=self._unified_mem,
             )
-            self._input_allocations: list[int] = [input_b.allocation for input_b in self._inputs]
-            self._input_host_allocations: list[np.ndarray] = [
-                input_b.host_allocation for input_b in self._inputs
-            ]
-            self._output_allocations: list[int] = [output_b.allocation for output_b in self._outputs]
-            self._output_host_allocations: list[np.ndarray] = [
-                output_b.host_allocation for output_b in self._outputs
-            ]
+            # engine-level input shapes (-1 marks a dynamic dim) and the
+            # per-dim bounds an input Buffer's shape must fall inside
+            self._input_engine_shapes: list[tuple[int, ...]] = []
+            self._input_min_shapes: list[tuple[int, ...]] = []
+            self._input_max_shapes: list[tuple[int, ...]] = []
+            for i_binding in self._inputs:
+                engine_shape, min_shape, max_shape = self._input_shape_bounds(i_binding)
+                self._input_engine_shapes.append(engine_shape)
+                self._input_min_shapes.append(min_shape)
+                self._input_max_shapes.append(max_shape)
 
         # store useful properties about the engine
         self._memsize: int = 0
@@ -132,7 +137,7 @@ class TRTEngineInterface(ABC):
                 LOG.info(f"\tOutput: {o_binding.name} {o_binding.shape} {o_binding.dtype}")
 
         # store cache random data
-        self._rand_input: list[np.ndarray] | None = None
+        self._rand_input: list[Buffer] | None = None
 
         # setup the nvtx tags
         self._nvtx_tags: dict[str, str] = {
@@ -142,6 +147,23 @@ class TRTEngineInterface(ABC):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # init
+
+    def _input_shape_bounds(
+        self: Self,
+        binding: Binding,
+    ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+        """Get the engine shape and the (min, max) profile shapes of an input."""
+        if FLAGS.TRT_10:
+            engine_shape = tuple(self._engine.get_tensor_shape(binding.name))
+        else:
+            engine_shape = tuple(self._engine.get_binding_shape(binding.index))
+        if all(dim >= 0 for dim in engine_shape):
+            return engine_shape, engine_shape, engine_shape
+        if FLAGS.TRT_10:
+            profile = self._engine.get_tensor_profile_shape(binding.name, 0)
+        else:
+            profile = self._engine.get_profile_shape(0, binding.name)
+        return engine_shape, tuple(profile[0]), tuple(profile[2])
 
     @property
     def name(self: Self) -> str:
@@ -224,10 +246,12 @@ class TRTEngineInterface(ABC):
         """
         Get the batch size of the engine (first dim of first input).
 
+        For a dynamic-batch engine this is the max profile batch size.
+
         Returns
         -------
         int
-            The batch size. Returns -1 if dynamic, 1 if no inputs.
+            The batch size. Returns 1 if there are no inputs.
 
         """
         if self._inputs and len(self._inputs[0].shape) > 0:
@@ -237,7 +261,7 @@ class TRTEngineInterface(ABC):
     @cached_property
     def is_dynamic_batch(self: Self) -> bool:
         """
-        Check if the engine has dynamic batch size (-1 in first dim).
+        Check if the engine has a dynamic batch size (-1 in the first engine dim).
 
         Returns
         -------
@@ -245,8 +269,8 @@ class TRTEngineInterface(ABC):
             True if the engine has dynamic batch size.
 
         """
-        if self._inputs and len(self._inputs[0].shape) > 0:
-            return self._inputs[0].shape[0] == -1
+        if self._input_engine_shapes and len(self._input_engine_shapes[0]) > 0:
+            return self._input_engine_shapes[0][0] == -1
         return False
 
     @cached_property
@@ -380,7 +404,7 @@ class TRTEngineInterface(ABC):
     @abstractmethod
     def execute(
         self: Self,
-        data: list[np.ndarray],
+        data: Sequence[Buffer],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -391,8 +415,8 @@ class TRTEngineInterface(ABC):
 
         Parameters
         ----------
-        data : list[np.ndarray]
-            The inputs to the network.
+        data : Sequence[Buffer]
+            One Buffer per engine input, on the host or the device.
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -414,28 +438,20 @@ class TRTEngineInterface(ABC):
         """
 
     @abstractmethod
-    def direct_exec(
+    def raw_exec(
         self: Self,
-        pointers: list[int],
+        data: Sequence[Buffer],
         *,
-        no_warn: bool | None = None,
         verbose: bool | None = None,
         debug: bool | None = None,
-    ) -> list[np.ndarray]:
+    ) -> list[Buffer]:
         """
-        Execute the network with the given GPU memory pointers.
-
-        The outputs of this function are not copied on return.
-        The data will be updated inplace if execute or direct_exec
-        is called. Calling this method while giving bad pointers
-        will also cause CUDA runtime to crash and program to crash.
+        Enqueue the network on its stream, leaving the outputs on the device.
 
         Parameters
         ----------
-        pointers : list[int]
-            The inputs to the network.
-        no_warn : bool, optional
-            If True, do not warn about usage.
+        data : Sequence[Buffer]
+            One Buffer per engine input, on the host or the device.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -445,8 +461,8 @@ class TRTEngineInterface(ABC):
 
         Returns
         -------
-        list[np.ndarray]
-            The outputs of the network.
+        list[Buffer]
+            Device views of the outputs, shaped to the executed input shapes.
 
         """
 
@@ -456,7 +472,7 @@ class TRTEngineInterface(ABC):
 
     def get_random_input(
         self: Self, *, new: bool | None = None, verbose: bool | None = None
-    ) -> list[np.ndarray]:
+    ) -> list[Buffer]:
         """
         Generate a random input for the network.
 
@@ -471,34 +487,34 @@ class TRTEngineInterface(ABC):
 
         Returns
         -------
-        list[np.ndarray]
-            The random input to the network.
+        list[Buffer]
+            One random host Buffer per engine input, at the max input shape.
 
         """
         verbose = verbose if verbose is not None else self._verbose
         if new or self._rand_input is None:
             # generate in input datatype directly instead of casting (if possible)
-            rand_input = []
+            rand_input: list[Buffer] = []
             for shape, dtype in self.input_spec:
                 if np.issubdtype(dtype, np.floating):
                     rand_arr = self._rng.random(size=shape, dtype=dtype)
                 else:
                     # fallback to cast if not supported
                     rand_arr = self._rng.random(size=shape, dtype=np.float32).astype(dtype)
-                rand_input.append(rand_arr)
+                rand_input.append(Buffer.wrap(rand_arr))
             self._rand_input = rand_input
             if verbose:
                 LOG.debug(
-                    f"Generated random input: {[(a.shape, a.dtype) for a in self._rand_input]}"
+                    f"Generated random input: {[(b.shape, b.dtype) for b in self._rand_input]}"
                 )
             return self._rand_input
         if verbose:
-            LOG.debug(f"Using random input: {[(a.shape, a.dtype) for a in self._rand_input]}")
+            LOG.debug(f"Using random input: {[(b.shape, b.dtype) for b in self._rand_input]}")
         return self._rand_input
 
     def __call__(
         self: Self,
-        data: list[np.ndarray],
+        data: Sequence[Buffer],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -509,8 +525,8 @@ class TRTEngineInterface(ABC):
 
         Parameters
         ----------
-        data : list[np.ndarray]
-            The inputs to the network.
+        data : Sequence[Buffer]
+            One Buffer per engine input, on the host or the device.
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -534,7 +550,7 @@ class TRTEngineInterface(ABC):
 
     def mock_execute(
         self: Self,
-        data: list[np.ndarray] | None = None,
+        data: Sequence[Buffer] | None = None,
         *,
         verbose: bool | None = None,
         debug: bool | None = None,
@@ -547,7 +563,7 @@ class TRTEngineInterface(ABC):
 
         Parameters
         ----------
-        data : list[np.ndarray], optional
+        data : Sequence[Buffer], optional
             The inputs to the network, by default None
             If None, random inputs will be generated.
         verbose : bool, optional

@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    from trtutils.core._buffer import Buffer
+
 
 class QueuedTRTEngine:
     """Interact with TRTEngine over Thread and Queue."""
@@ -78,7 +80,7 @@ class QueuedTRTEngine:
         }
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["init"])
-        self._input_queue: Queue[list[np.ndarray]] = Queue()
+        self._input_queue: Queue[list[Buffer]] = Queue()
         self._output_queue: Queue[list[np.ndarray]] = Queue()
         self._thread = Thread(
             target=self._run,
@@ -170,7 +172,7 @@ class QueuedTRTEngine:
         """
         return self._engine.output_dtypes
 
-    def get_random_input(self: Self, *, new: bool | None = None) -> list[np.ndarray]:
+    def get_random_input(self: Self, *, new: bool | None = None) -> list[Buffer]:
         """
         Get a random input to the underlying TRTEngine.
 
@@ -182,7 +184,7 @@ class QueuedTRTEngine:
 
         Returns
         -------
-        list[np.ndarray]
+        list[Buffer]
             The random input.
 
         """
@@ -197,15 +199,16 @@ class QueuedTRTEngine:
 
     def submit(
         self: Self,
-        data: list[np.ndarray],
+        data: list[Buffer],
     ) -> None:
         """
         Put data in the input queue.
 
         Parameters
         ----------
-        data : list[np.ndarray]
-            The data to have the engine run.
+        data : list[Buffer]
+            One Buffer per engine input. The Buffers must stay unmodified
+            until the result is retrieved.
 
         """
         if FLAGS.NVTX_ENABLED:

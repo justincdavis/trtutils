@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 import nvtx
@@ -12,9 +12,9 @@ from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
-from trtutils.core._memory import memcpy_host_to_device_async
+from trtutils.core._buffer import Buffer
 
-from ._image_model import ImageModel
+from ._image_model import ImageModel, T
 from ._schema import InputSchema, OutputSchema, resolve_detector_schemas
 from .interfaces import DetectorInterface
 from .postprocessors import (
@@ -773,82 +773,63 @@ class Detector(ImageModel, DetectorInterface):
             extras.append(np.array(sizes, dtype=self._orig_size_dtype))
         if self._use_scale_factor:
             extras.append(np.array(ratios, dtype=np.float32))
-        return self._build_graph_input_ptrs(tensor, extras)
+        return self._order_engine_inputs(tensor, extras)
 
-    def _prepare_extra_engine_inputs_gpu(self: Self) -> list[int]:
-        """Return additional GPU input pointers for DETR-style models (GPU preprocessor path)."""
+    def _prepare_extra_engine_inputs_gpu(self: Self) -> list[Buffer]:
+        """Return additional device inputs for DETR-style models (GPU preprocessor path)."""
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["det__prepare_extra_gpu"])
 
-        input_ptrs: list[int] = []
+        inputs: list[Buffer] = []
         if self._use_image_size:
-            orig_size_ptr, valid = self._preprocessor.orig_size_allocation  # ty: ignore[unresolved-attribute]
+            orig_size, valid = self._preprocessor.orig_size_input  # ty: ignore[unresolved-attribute]
             if not valid:
                 err_msg = "orig_image_size buffer not valid"
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # prepare_extra_gpu
                 raise RuntimeError(err_msg)
-            input_ptrs.append(orig_size_ptr)
+            inputs.append(orig_size)
         if self._use_scale_factor:
-            scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation  # ty: ignore[unresolved-attribute]
+            scale_factor, scale_valid = self._preprocessor.scale_factor_input  # ty: ignore[unresolved-attribute]
             if not scale_valid:
                 err_msg = "scale_factor buffer not valid"
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # prepare_extra_gpu
                 raise RuntimeError(err_msg)
-            input_ptrs.append(scale_ptr)
+            inputs.append(scale_factor)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # prepare_extra_gpu
 
-        return input_ptrs
+        return inputs
 
     def _prepare_extra_engine_inputs_cpu(
         self: Self,
         images: list[np.ndarray],
         ratios: list[tuple[float, float]],
-    ) -> list[int]:
-        """Return additional GPU input pointers for DETR-style models (CPU preprocessor path)."""
+    ) -> list[Buffer]:
+        """Return additional host inputs for DETR-style models (CPU preprocessor path)."""
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["det__prepare_extra_cpu"])
 
-        input_ptrs: list[int] = []
-        input_idx = 1  # Start after the main image input
-
+        inputs: list[Buffer] = []
         if self._use_image_size:
-            # Build orig_target_sizes: (batch, 2) with (height, width) per image
-            orig_sizes = np.array(
-                [img.shape[:2] for img in images],
-                dtype=self._orig_size_dtype,
-            )
-            memcpy_host_to_device_async(
-                self._engine._inputs[input_idx].allocation,  # noqa: SLF001
-                orig_sizes,
-                self._engine.stream,
-            )
-            input_ptrs.append(self._engine._inputs[input_idx].allocation)  # noqa: SLF001
-            input_idx += 1
-
+            # orig_target_sizes: (batch, 2) with (height, width) per image
+            orig_sizes = np.array([img.shape[:2] for img in images], dtype=self._orig_size_dtype)
+            inputs.append(Buffer.wrap(orig_sizes))
         if self._use_scale_factor:
-            # Build scale_factor from ratios
-            scale_factors = np.array(ratios, dtype=np.float32)
-            memcpy_host_to_device_async(
-                self._engine._inputs[input_idx].allocation,  # noqa: SLF001
-                scale_factors,
-                self._engine.stream,
-            )
-            input_ptrs.append(self._engine._inputs[input_idx].allocation)  # noqa: SLF001
+            inputs.append(Buffer.wrap(np.array(ratios, dtype=np.float32)))
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # prepare_extra_cpu
 
-        return input_ptrs
+        return inputs
 
-    def _build_graph_input_ptrs(
+    def _order_engine_inputs(
         self: Self,
-        image: Any,  # noqa: ANN401
-        extras: list[Any],
-    ) -> list[Any]:
+        image: T,
+        extras: list[T],
+    ) -> list[T]:
         """Override to handle RTDETRv3 input ordering (im_shape, image, scale_factor)."""
         # RTDETRv3 expects: (im_shape, image, scale_factor)
         # extras[0] = orig_size, extras[1] = scale_factor

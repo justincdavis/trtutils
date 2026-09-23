@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from trtutils._config import CONFIG
 from trtutils._flags import FLAGS
@@ -27,9 +27,14 @@ if FLAGS.BUILD_PROGRESS:
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    # A binding shape is either one static shape, or a (min, opt, max) triple
+    # that builds a dynamic optimization profile for that input.
+    BindingShape = tuple[int, ...] | tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]
+
     from ._batcher import AbstractBatcher
 
 _MIN_OPTIM_LEVEL = 0
+_PROFILE_TRIPLE = 3
 _MAX_OPTIM_LEVEL = 5
 
 
@@ -43,7 +48,7 @@ def build_engine(
     data_batcher: AbstractBatcher | None = None,
     layer_precision: list[tuple[int, trt.DataType | None]] | None = None,
     layer_device: list[tuple[int, trt.DeviceType | None]] | None = None,
-    shapes: Sequence[tuple[str, tuple[int, ...]]] | None = None,
+    shapes: Sequence[tuple[str, BindingShape]] | None = None,
     input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
     output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
     hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
@@ -126,11 +131,16 @@ def build_engine(
     layer_device : list[tuple[int, trt.DeviceType | None]], optional
         The device to use for specific layers.
         By default, None.
-    shapes : list[tuple[str, tuple[int, ...]]], optional
+    shapes : list[tuple[str, BindingShape]], optional
         A list of (input_name, shape) pairs to specify the shapes of the input layers.
         For example, shapes=[("images", (1, 3, imgsz, imgsz))] will set the input
         “images” to a fixed shape. This shape will be used as the min, optimal,
         and max shape for the binding.
+        A shape may also be a (min_shape, opt_shape, max_shape) triple to build
+        a dynamic profile. For example,
+        shapes=[("images", ((1, 3, imgsz, imgsz), (4, 3, imgsz, imgsz), (8, 3, imgsz, imgsz)))]
+        builds an engine accepting batch sizes 1 through 8, with kernels tuned
+        for batch 4.
         By default, None.
     input_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
         A list of (name, dtype format) to allow deep specification of input layers.
@@ -325,8 +335,8 @@ def build_engine(
     # handle if manual shapes were passed for inputs
     if shapes:
         for input_name, shape in shapes:
-            # set the minimum, optimal, maximum to all the same
-            profile.set_shape(input_name, shape, shape, shape)
+            min_shape, opt_shape, max_shape = _profile_shapes(input_name, shape)
+            profile.set_shape(input_name, min_shape, opt_shape, max_shape)
 
     config.add_optimization_profile(profile)
 
@@ -501,3 +511,36 @@ def build_engine(
 
     if cache:
         caching_tools.store(output_path, overwrite=False, delete_source=False)
+
+
+def _profile_shapes(
+    input_name: str,
+    shape: BindingShape,
+) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
+    """
+    Resolve a static shape or a (min, opt, max) triple into profile shapes.
+
+    Raises
+    ------
+    ValueError
+        If a triple has mismatched ranks or is not ordered min <= opt <= max.
+
+    """
+    parts = [part if isinstance(part, (tuple, list)) else None for part in shape]
+    if len(parts) != _PROFILE_TRIPLE or any(part is None for part in parts):
+        # single static shape: the minimum, optimal, and maximum are all the same
+        static = tuple(int(d) for d in cast("tuple[int, ...]", shape))
+        return static, static, static
+    min_shape, opt_shape, max_shape = (
+        tuple(int(d) for d in cast("tuple[int, ...]", part)) for part in parts
+    )
+    ordered = len(min_shape) == len(opt_shape) == len(max_shape) and all(
+        lo <= opt <= hi for lo, opt, hi in zip(min_shape, opt_shape, max_shape)
+    )
+    if not ordered:
+        err_msg = (
+            f"Invalid profile for input '{input_name}': expected (min, opt, max) shapes of "
+            f"equal rank with min <= opt <= max, got {min_shape}, {opt_shape}, {max_shape}."
+        )
+        raise ValueError(err_msg)
+    return min_shape, opt_shape, max_shape

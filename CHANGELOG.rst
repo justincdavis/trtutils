@@ -11,9 +11,57 @@ Added
   ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``
 * Download configs and ONNX export functions for Depth-Anything-V1
   (small / base / large) and Depth-Anything-V3 (mono-large, metric-large)
+* ``Buffer`` / ``MemoryLocation`` (also ``core.Buffer``): one contiguous, typed allocation
+  on the host (pageable, pinned, or pinned + mapped) or the device. ``Buffer.wrap`` views
+  numpy arrays and any ``__cuda_array_interface__`` object (CuPy, PyTorch, ...) without
+  copying; memory is reference counted so views and numpy arrays never outlive it
+* ``TRTEngine.stage_inputs`` to make inputs device-resident before recording
+  ``raw_exec`` into an outer CUDA graph, and ``TRTEngine.active_input_shapes`` /
+  ``active_output_shapes``
+* ``Binding.stage`` / ``Binding.fetch`` for copying a leading prefix of a binding
+* ``build_engine(shapes=[(name, (min_shape, opt_shape, max_shape))])`` builds a dynamic
+  optimization profile; malformed triples raise ``ValueError``
+* ``core.KernelArgs``: ``Kernel.create_args`` returns an argument array that owns the
+  buffers its pointers reference
+
+Changed
+^^^^^^^
+* **Breaking:** ``TRTEngine`` inputs are ``Buffer`` objects only. ``execute``, ``__call__``,
+  ``mock_execute``, ``raw_exec``, and ``QueuedTRTEngine`` / ``ParallelTRTEngines.submit``
+  take a list of Buffers; wrap numpy data with ``Buffer.wrap(array)``.
+  ``get_random_input`` returns host Buffers
+* **Breaking:** ``TRTEngine.direct_exec`` is removed; ``execute`` reads device Buffers in
+  place. ``raw_exec`` takes Buffers and returns device ``Buffer`` views of the outputs
+  instead of pointers; its ``set_pointers`` / ``no_warn`` arguments are removed
+* **Breaking:** the engine runs at the shapes of the submitted Buffers and validates
+  every input (dtype, rank, static dims, profile bounds of dynamic dims), raising
+  ``ValueError`` instead of copying mismatched bytes. Dynamic engines return outputs of
+  the executed shape
+* **Breaking:** ``Binding`` is a class over a host and a device ``Buffer`` (``host`` /
+  ``device``); ``allocation``, ``host_allocation``, ``pagelocked_mem``, and ``unified_mem``
+  are derived properties
+* **Breaking:** ``GPUImagePreprocessor.direct_preproc`` returns a device ``Buffer`` shaped
+  to the submitted images instead of a pointer; ``orig_size_allocation`` /
+  ``scale_factor_allocation`` are replaced by ``orig_size_input`` / ``scale_factor_input``
+* **Breaking:** ``Kernel`` no longer takes ``max_arg_cache``
+* The engine's CUDA graph is captured after a real first execution and replays only for
+  its own bindings at their full shapes; other inputs enqueue directly
 
 Fixed
 ^^^^^
+* ``TRTEngine``: a dynamic-batch engine executed ``direct_exec`` / ``raw_exec`` at whatever
+  shape the previous call left on the context; inputs now carry their shape
+* ``TRTEngine``: ``is_dynamic_batch`` read the max-profile binding shape and was always False
+* ``TRTEngine``: shapes rejected by TensorRT's ``set_input_shape`` were silently ignored
+* ``allocate_bindings``: inputs with dynamic non-batch dimensions are allocated at the
+  max profile shape
+* Pinned host memory is freed only when no Buffer view or numpy array references it,
+  fixing use-after-free on ``no_copy`` outputs held past a reallocation
+* ``Kernel.create_args``: cached argument arrays no longer point at freed buffers after
+  other argument sets are created
+* ``Detector`` with a CPU preprocessor and CUDA graphs wrote RT-DETRv3 extra inputs into
+  the wrong engine bindings
+* GPU preprocessors copy back only the submitted images, not the full allocated batch
 * ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
   notice into the exported requirements file
 

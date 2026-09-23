@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils._engine import TRTEngine
+    from trtutils.core._buffer import Buffer
 
 
 class ParallelTRTEngines:
@@ -86,7 +87,7 @@ class ParallelTRTEngines:
         self: Self,
         *,
         new: bool | None = None,
-    ) -> list[list[np.ndarray]]:
+    ) -> list[list[Buffer]]:
         """
         Get a random input to the underlying TRTEngines.
 
@@ -98,7 +99,7 @@ class ParallelTRTEngines:
 
         Returns
         -------
-        list[list[np.ndarray]]
+        list[list[Buffer]]
             The random inputs.
 
         """
@@ -111,14 +112,14 @@ class ParallelTRTEngines:
 
     def submit(
         self: Self,
-        inputs: list[list[np.ndarray]],
+        inputs: list[list[Buffer]],
     ) -> None:
         """
         Submit data to be processed by the engines.
 
         Parameters
         ----------
-        inputs : list[list[np.ndarray]]
+        inputs : list[list[Buffer]]
             The inputs to pass to the engines.
             Should be a list of the same lenght of engines created.
 
