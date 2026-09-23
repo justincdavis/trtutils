@@ -12,9 +12,8 @@ from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
-from trtutils.core._buffer import Buffer
 
-from ._image_model import ImageModel, T
+from ._image_model import ImageModel, T, host_input
 from ._schema import InputSchema, OutputSchema, resolve_detector_schemas
 from .interfaces import DetectorInterface
 from .postprocessors import (
@@ -31,6 +30,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
+
+    from trtutils.core._buffer import Buffer
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -182,7 +183,6 @@ class Detector(ImageModel, DetectorInterface):
                 "det_postprocess": f"detector::postprocess [{self._tag}]",
                 "det_get_detections": f"detector::get_detections [{self._tag}]",
                 "det__prepare_extra_gpu": f"detector::_prepare_extra_gpu [{self._tag}]",
-                "det__prepare_extra_cpu": f"detector::_prepare_extra_cpu [{self._tag}]",
             }
         )
 
@@ -762,7 +762,7 @@ class Detector(ImageModel, DetectorInterface):
         ratios: list[tuple[float, float]] | None,
         *,
         preprocessed: bool,
-    ) -> list[np.ndarray]:
+    ) -> list[Buffer]:
         """Build host engine inputs, adding orig size / scale factor arrays per input schema."""
         if preprocessed:
             sizes = [(self._input_size[1], self._input_size[0])] * tensor.shape[0]
@@ -773,7 +773,7 @@ class Detector(ImageModel, DetectorInterface):
             extras.append(np.array(sizes, dtype=self._orig_size_dtype))
         if self._use_scale_factor:
             extras.append(np.array(ratios, dtype=np.float32))
-        return self._order_engine_inputs(tensor, extras)
+        return self._order_engine_inputs(host_input(tensor), [host_input(e) for e in extras])
 
     def _prepare_extra_engine_inputs_gpu(self: Self) -> list[Buffer]:
         """Return additional device inputs for DETR-style models (GPU preprocessor path)."""
@@ -800,28 +800,6 @@ class Detector(ImageModel, DetectorInterface):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # prepare_extra_gpu
-
-        return inputs
-
-    def _prepare_extra_engine_inputs_cpu(
-        self: Self,
-        images: list[np.ndarray],
-        ratios: list[tuple[float, float]],
-    ) -> list[Buffer]:
-        """Return additional host inputs for DETR-style models (CPU preprocessor path)."""
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["det__prepare_extra_cpu"])
-
-        inputs: list[Buffer] = []
-        if self._use_image_size:
-            # orig_target_sizes: (batch, 2) with (height, width) per image
-            orig_sizes = np.array([img.shape[:2] for img in images], dtype=self._orig_size_dtype)
-            inputs.append(Buffer.wrap(orig_sizes))
-        if self._use_scale_factor:
-            inputs.append(Buffer.wrap(np.array(ratios, dtype=np.float32)))
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # prepare_extra_cpu
 
         return inputs
 

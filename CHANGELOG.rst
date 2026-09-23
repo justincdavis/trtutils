@@ -16,7 +16,8 @@ Added
   numpy arrays and any ``__cuda_array_interface__`` object (CuPy, PyTorch, ...) without
   copying; memory is reference counted so views and numpy arrays never outlive it
 * ``TRTEngine.stage_inputs`` to make inputs device-resident before recording
-  ``raw_exec`` into an outer CUDA graph, and ``TRTEngine.active_input_shapes`` /
+  ``raw_exec`` into an outer CUDA graph, ``TRTEngine.fetch_outputs`` to copy the
+  latest outputs back without synchronizing, and ``TRTEngine.active_input_shapes`` /
   ``active_output_shapes``
 * ``Binding.stage`` / ``Binding.fetch`` for copying a leading prefix of a binding
 * ``build_engine(shapes=[(name, (min_shape, opt_shape, max_shape))])`` builds a dynamic

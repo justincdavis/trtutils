@@ -33,6 +33,11 @@ _PostFn = Callable[
 T = TypeVar("T")
 
 
+def host_input(array: np.ndarray) -> Buffer:
+    """Wrap host data as an engine input, gathering it first if it is not C-contiguous."""
+    return Buffer.wrap(np.ascontiguousarray(array))
+
+
 class ImageModel:
     """Abstract base class for image models."""
 
@@ -580,12 +585,7 @@ class ImageModel:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["_copy_engine_outputs"])
 
-        outputs: list[np.ndarray] = [
-            binding.fetch(shape, self._engine.stream).array
-            for binding, shape in zip(
-                self._engine.output_bindings, self._engine.active_output_shapes
-            )
-        ]
+        outputs = [output.array for output in self._engine.fetch_outputs()]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # copy_engine_outputs
@@ -602,31 +602,6 @@ class ImageModel:
         -------
         list[Buffer]
             Device Buffers for additional inputs.
-
-        """
-        return []
-
-    def _prepare_extra_engine_inputs_cpu(
-        self: Self,
-        images: list[np.ndarray],  # noqa: ARG002
-        ratios: list[tuple[float, float]],  # noqa: ARG002
-    ) -> list[Buffer]:
-        """
-        Return additional engine inputs for the CPU preprocessor path.
-
-        Override in subclasses that need extra inputs (e.g., DETR models).
-
-        Parameters
-        ----------
-        images : list[np.ndarray]
-            The original input images (before preprocessing).
-        ratios : list[tuple[float, float]]
-            The scaling ratios from preprocessing.
-
-        Returns
-        -------
-        list[Buffer]
-            Host or device Buffers for additional inputs.
 
         """
         return []
@@ -664,9 +639,9 @@ class ImageModel:
         ratios: list[tuple[float, float]] | None,  # noqa: ARG002
         *,
         preprocessed: bool,  # noqa: ARG002
-    ) -> list[np.ndarray]:
+    ) -> list[Buffer]:
         """
-        Build the host arrays passed to the engine call.
+        Build the host inputs passed to the engine call.
 
         Override in subclasses that need schema-specific inputs, e.g.
         Detector adds image size / scale factor arrays for DETR models.
@@ -684,11 +659,11 @@ class ImageModel:
 
         Returns
         -------
-        list[np.ndarray]
-            The host arrays to pass to the engine call.
+        list[Buffer]
+            The host inputs to pass to the engine call.
 
         """
-        return [tensor]
+        return [host_input(tensor)]
 
     def _end2end_graph_core(
         self: Self,
@@ -764,11 +739,9 @@ class ImageModel:
             # copies from pageable host memory cannot be captured
             # Both Classifier and Detector have compatible preprocess signatures for basic call
             tensor, ratios, padding = self.preprocess(images, no_copy=True, verbose=verbose)
-            host_inputs = self._order_engine_inputs(
-                Buffer.wrap(np.ascontiguousarray(tensor)),
-                self._prepare_extra_engine_inputs_cpu(images, ratios),
+            engine_inputs = self._engine.stage_inputs(
+                self._engine_inputs(tensor, images, ratios, preprocessed=False)
             )
-            engine_inputs = self._engine.stage_inputs(host_inputs)
 
         # Capture or replay the graph (inference only)
         if self._e2e_graph is None:
@@ -947,12 +920,9 @@ class ImageModel:
                 raise ValueError(err_msg)
             tensor = batch_images[0]
 
-        engine_inputs = [
-            Buffer.wrap(np.ascontiguousarray(data))
-            for data in self._engine_inputs(
-                tensor, batch_images, batch_ratios, preprocessed=preprocessed
-            )
-        ]
+        engine_inputs = self._engine_inputs(
+            tensor, batch_images, batch_ratios, preprocessed=preprocessed
+        )
 
         # execute
         t0 = time.perf_counter()

@@ -355,8 +355,5 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # cuda_direct_preproc
 
-        return (
-            self._output_binding.device.view((batch_size, *self._output_binding.shape[1:])),
-            ratios_list,
-            padding_list,
-        )
+        # the output binding is reallocated to exactly batch_size above
+        return self._output_binding.device, ratios_list, padding_list

@@ -15,6 +15,7 @@ guess from a raw pointer or reverse-engineer a numpy array's strides.
 from __future__ import annotations
 
 import contextlib
+import math
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +28,7 @@ with contextlib.suppress(Exception):
     from trtutils.compat._libs import cudart
 
 from ._cuda import cuda_call
+from ._memory import cuda_free, cuda_host_free, cuda_malloc
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -47,7 +49,7 @@ class _DeviceAllocation:
     """Owns a cudaMalloc allocation; freed when the last reference is dropped."""
 
     def __init__(self: Self, nbytes: int) -> None:
-        self._ptr: int = cuda_call(cudart.cudaMalloc(nbytes)) if nbytes > 0 else 0
+        self._ptr: int = cuda_malloc(nbytes) if nbytes > 0 else 0
 
     @property
     def ptr(self: Self) -> int:
@@ -58,17 +60,16 @@ class _DeviceAllocation:
         # the CUDA context may already be gone during interpreter shutdown
         with contextlib.suppress(Exception):
             if self._ptr:
-                cuda_call(cudart.cudaFree(self._ptr))
+                cuda_free(self._ptr)
         self._ptr = 0
 
 
 class _PinnedAllocation:
     """
-    Owns a cudaHostAlloc allocation and exposes it to numpy.
+    Owns a cudaHostAlloc allocation; freed when the last reference is dropped.
 
-    Numpy arrays created from this object (and every view derived from them)
-    hold it as their ``base``, so the pinned memory is only returned to CUDA
-    once no Buffer *and* no numpy array references it anymore.
+    The numpy arrays over it (see :func:`_host_array`) reference this object,
+    so the pinned memory outlives every Buffer *and* numpy view of it.
     """
 
     def __init__(self: Self, nbytes: int, *, mapped: bool) -> None:
@@ -77,13 +78,6 @@ class _PinnedAllocation:
         self._device_ptr: int | None = (
             cuda_call(cudart.cudaHostGetDevicePointer(self._ptr, 0)) if mapped else None
         )
-        # the numpy array interface protocol, read by np.asarray
-        self.__array_interface__ = {
-            "shape": (nbytes,),
-            "typestr": "|u1",
-            "data": (self._ptr, False),
-            "version": 3,
-        }
 
     @property
     def ptr(self: Self) -> int:
@@ -98,15 +92,33 @@ class _PinnedAllocation:
     def __del__(self: Self) -> None:
         with contextlib.suppress(Exception):
             if self._ptr:
-                cuda_call(cudart.cudaFreeHost(self._ptr))
+                cuda_host_free(self._ptr)
         self._ptr = 0
 
 
-def _nbytes(shape: tuple[int, ...], dtype: np.dtype) -> int:
-    nbytes = dtype.itemsize
-    for dim in shape:
-        nbytes *= dim
-    return nbytes
+class _HostMemory:
+    """Expose raw host memory to numpy while keeping the memory's owner alive."""
+
+    def __init__(self: Self, ptr: int, nbytes: int, owner: object | None) -> None:
+        # the numpy array interface protocol, read by np.asarray
+        self.__array_interface__ = {
+            "shape": (nbytes,),
+            "typestr": "|u1",
+            "data": (ptr, False),
+            "version": 3,
+        }
+        self._owner = owner
+
+
+def _host_array(
+    ptr: int,
+    shape: tuple[int, ...],
+    dtype: np.dtype,
+    owner: object | None,
+) -> np.ndarray:
+    """Build a numpy array over host memory; the array (and its views) keep ``owner`` alive."""
+    nbytes = math.prod(shape) * dtype.itemsize
+    return np.asarray(_HostMemory(ptr, nbytes, owner)).view(dtype).reshape(shape)
 
 
 def _normalize_shape(
@@ -119,10 +131,7 @@ def _normalize_shape(
         err_msg = f"Cannot infer the -1 dimension of shape {dims}."
         raise ValueError(err_msg)
     if -1 in dims and size is not None:
-        known = 1
-        for dim in dims:
-            if dim != -1:
-                known *= dim
+        known = math.prod(d for d in dims if d != -1)
         if known == 0 or size % known != 0:
             err_msg = f"Cannot infer shape {dims} for {size} elements."
             raise ValueError(err_msg)
@@ -268,7 +277,7 @@ class Buffer:
             nvtx.push_range("core::Buffer.empty")
         dtype = np.dtype(dtype)
         dims = _normalize_shape(shape)
-        nbytes = _nbytes(dims, dtype)
+        nbytes = math.prod(dims) * dtype.itemsize
         pinned = pinned if pinned is not None else True
         mapped = mapped if mapped is not None else False
 
@@ -277,7 +286,7 @@ class Buffer:
             buffer = cls(location, dtype, dims, device_alloc.ptr, owner=device_alloc)
         elif pinned and nbytes > 0:
             pinned_alloc = _PinnedAllocation(nbytes, mapped=mapped)
-            array = np.asarray(pinned_alloc).view(dtype).reshape(dims)
+            array = _host_array(pinned_alloc.ptr, dims, dtype, pinned_alloc)
             buffer = cls(
                 location,
                 dtype,
@@ -462,14 +471,7 @@ class Buffer:
         dims = _normalize_shape(tuple(shape))
         array: np.ndarray | None = None
         if location == MemoryLocation.HOST:
-            nbytes = _nbytes(dims, dtype)
-            interface = {
-                "shape": (nbytes,),
-                "typestr": "|u1",
-                "data": (int(ptr), False),
-                "version": 3,
-            }
-            array = np.asarray(_ArrayInterface(interface, owner)).view(dtype).reshape(dims)
+            array = _host_array(int(ptr), dims, dtype, owner)
         return cls(location, dtype, dims, ptr, array=array, owner=owner)
 
     # ------------------------------------------------------------------
@@ -509,10 +511,7 @@ class Buffer:
     @property
     def size(self: Self) -> int:
         """The number of elements."""
-        size = 1
-        for dim in self._shape:
-            size *= dim
-        return size
+        return math.prod(self._shape)
 
     @property
     def nbytes(self: Self) -> int:
@@ -610,7 +609,7 @@ class Buffer:
         Parameters
         ----------
         shape : tuple[int, ...] | list[int] | int
-            The shape of the view. One dimension may be -1.
+            The shape of the view.
 
         Returns
         -------
@@ -624,10 +623,8 @@ class Buffer:
 
         """
         self._check_alive()
-        dims = _normalize_shape(shape, self.size)
-        count = 1
-        for dim in dims:
-            count *= dim
+        dims = _normalize_shape(shape)
+        count = math.prod(dims)
         if count > self.size:
             err_msg = (
                 f"View of shape {dims} ({count} elements) exceeds buffer of {self.size} elements."
@@ -655,14 +652,12 @@ class Buffer:
             If the number of elements differs.
 
         """
+        self._check_alive()
         dims = _normalize_shape(shape, self.size)
-        count = 1
-        for dim in dims:
-            count *= dim
-        if count != self.size:
+        if math.prod(dims) != self.size:
             err_msg = f"Cannot reshape buffer of {self.size} elements into shape {dims}."
             raise ValueError(err_msg)
-        return self.view(dims)
+        return self._subview(0, dims)
 
     def __len__(self: Self) -> int:
         """
@@ -711,9 +706,7 @@ class Buffer:
             err_msg = "Cannot index a 0-dimensional Buffer."
             raise IndexError(err_msg)
         inner = self._shape[1:]
-        inner_size = 1
-        for dim in inner:
-            inner_size *= dim
+        inner_size = math.prod(inner)
         if isinstance(key, slice):
             if key.step not in (None, 1):
                 err_msg = "Buffer views only support slices with step 1."
@@ -730,9 +723,7 @@ class Buffer:
         offset = offset_elems * self._dtype.itemsize
         array: np.ndarray | None = None
         if self._array is not None:
-            count = 1
-            for dim in shape:
-                count *= dim
+            count = math.prod(shape)
             array = self._array.reshape(-1)[offset_elems : offset_elems + count].reshape(shape)
         return Buffer(
             self._location,
@@ -966,15 +957,6 @@ class Buffer:
         return f"Buffer(shape={self._shape}, dtype={self._dtype}, {kind}{state})"
 
 
-class _ArrayInterface:
-    """Expose foreign host memory to numpy while keeping its owner alive."""
-
-    def __init__(self: Self, interface: dict[str, Any], owner: object | None) -> None:
-        # the numpy array interface protocol, read by np.asarray
-        self.__array_interface__ = interface
-        self._owner = owner
-
-
 def as_buffers(data: object) -> list[Buffer]:
     """
     Validate that every element of a sequence is a Buffer.
@@ -995,7 +977,7 @@ def as_buffers(data: object) -> list[Buffer]:
         If ``data`` is not a sequence of Buffers.
 
     """
-    if isinstance(data, (Buffer, np.ndarray)) or not isinstance(data, (list, tuple)):
+    if not isinstance(data, (list, tuple)):
         err_msg = f"Engine inputs must be a list of Buffers, got {type(data).__name__}."
         raise TypeError(err_msg)
     for item in data:

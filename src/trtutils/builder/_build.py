@@ -526,13 +526,12 @@ def _profile_shapes(
         If a triple has mismatched ranks or is not ordered min <= opt <= max.
 
     """
-    parts = [part if isinstance(part, (tuple, list)) else None for part in shape]
-    if len(parts) != _PROFILE_TRIPLE or any(part is None for part in parts):
+    if len(shape) != _PROFILE_TRIPLE or not all(isinstance(p, (tuple, list)) for p in shape):
         # single static shape: the minimum, optimal, and maximum are all the same
         static = tuple(int(d) for d in cast("tuple[int, ...]", shape))
         return static, static, static
     min_shape, opt_shape, max_shape = (
-        tuple(int(d) for d in cast("tuple[int, ...]", part)) for part in parts
+        tuple(int(d) for d in cast("tuple[int, ...]", part)) for part in shape
     )
     ordered = len(min_shape) == len(opt_shape) == len(max_shape) and all(
         lo <= opt <= hi for lo, opt, hi in zip(min_shape, opt_shape, max_shape)

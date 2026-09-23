@@ -28,10 +28,7 @@ if TYPE_CHECKING:
 
     from trtutils.compat._libs import cuda
 
-
-def _bindable(buffer: Buffer) -> bool:
-    """Whether TensorRT can read a Buffer in place (device-visible and aligned)."""
-    return buffer.device_visible and buffer.device_ptr % DEVICE_ALIGNMENT == 0
+    from .core._bindings import Binding
 
 
 class TRTEngine(TRTEngineInterface):
@@ -159,14 +156,17 @@ class TRTEngine(TRTEngineInterface):
         # the shapes and device addresses the context currently holds for each
         # input; every call compares against these, so the context is only
         # updated when a submitted Buffer differs from the previous call
-        self._input_shapes: list[tuple[int, ...]] = [tuple(b.shape) for b in self._inputs]
+        self._input_shapes: list[tuple[int, ...]] = list(self._input_max_shapes)
         self._input_addresses: list[int] = [b.allocation for b in self._inputs]
+        # the engine's own input addresses: with the max shapes, the only
+        # configuration the engine's CUDA graph is captured and replayed for
+        self._allocated_addresses: list[int] = list(self._input_addresses)
         self._output_shapes: list[tuple[int, ...]] = [tuple(b.shape) for b in self._outputs]
+        # device views of the outputs at the current output shapes
+        self._output_views: list[Buffer] = [b.device for b in self._outputs]
         # set when the context shapes change; the next enqueue then runs
         # without a CUDA graph so TensorRT can react to the new shapes
         self._shapes_changed: bool = False
-        # the v2 backend takes a pointer per binding index instead of names
-        self._v2_pointers: list[int] = list(self._allocations)
         if self._async_v3:
             for i_binding in self._inputs:
                 self._context.set_input_shape(i_binding.name, i_binding.shape)
@@ -245,6 +245,10 @@ class TRTEngine(TRTEngineInterface):
                 shape = tuple(o_binding.shape)
             shapes.append(shape)
         self._output_shapes = shapes
+        self._output_views = [
+            b.device if s == tuple(b.shape) else b.device.view(s)
+            for b, s in zip(self._outputs, shapes)
+        ]
 
     def _set_input_address(self: Self, index: int, address: int) -> None:
         if address == self._input_addresses[index]:
@@ -253,18 +257,13 @@ class TRTEngine(TRTEngineInterface):
         if self._async_v3:
             self._context.set_tensor_address(binding.name, address)
         else:
-            self._v2_pointers[binding.index] = address
+            # the v2 backend takes a pointer per binding index instead of names
+            self._allocations[binding.index] = address
         self._input_addresses[index] = address
 
-    def _bind_inputs(self: Self, data: Sequence[Buffer]) -> None:
+    def _validate_inputs(self: Self, data: Sequence[Buffer]) -> list[Buffer]:
         """
-        Point the context at the given inputs, updating shapes and addresses as needed.
-
-        Every input is validated before the context is touched, so a bad
-        input never leaves the engine half-updated. Device Buffers (and
-        mapped host Buffers) are bound in place; host Buffers, and device
-        Buffers TensorRT cannot address directly, are copied into the
-        engine's own input bindings on the engine stream.
+        Check the inputs against the engine without touching the context.
 
         Raises
         ------
@@ -285,34 +284,38 @@ class TRTEngine(TRTEngineInterface):
                 raise ValueError(err_msg)
             if buffer.shape != self._input_shapes[index]:
                 self._check_input_shape(index, buffer.shape)
+        return inputs
 
+    def _device_input(self: Self, binding: Binding, buffer: Buffer) -> Buffer:
+        """Get a Buffer TensorRT can read in place, staging into the binding when needed."""
+        if buffer.device_visible and buffer.device_ptr % DEVICE_ALIGNMENT == 0:
+            return buffer
+        return binding.stage(buffer, self._stream)
+
+    def _bind_inputs(self: Self, data: Sequence[Buffer]) -> None:
+        """
+        Point the context at the given inputs, updating shapes and addresses as needed.
+
+        Every input is validated before the context is touched, so a bad
+        input never leaves the engine half-updated. Device Buffers (and
+        mapped host Buffers) are bound in place; host Buffers, and device
+        Buffers TensorRT cannot address directly, are copied into the
+        engine's own input bindings on the engine stream.
+        """
+        inputs = self._validate_inputs(data)
         shapes_changed = False
         for index, (binding, buffer) in enumerate(zip(self._inputs, inputs)):
             if buffer.shape != self._input_shapes[index]:
                 self._set_context_shape(index, buffer.shape)
                 shapes_changed = True
-            if _bindable(buffer):
-                address = buffer.device_ptr
-            else:
-                address = binding.stage(buffer, self._stream).ptr
-            self._set_input_address(index, address)
+            self._set_input_address(index, self._device_input(binding, buffer).device_ptr)
         if shapes_changed:
             self._refresh_output_shapes()
-
-    @property
-    def _at_allocated_bindings(self: Self) -> bool:
-        """Whether the context holds exactly the engine's own bindings at their full shapes."""
-        return all(
-            address == binding.allocation and shape == tuple(binding.shape)
-            for binding, address, shape in zip(
-                self._inputs, self._input_addresses, self._input_shapes
-            )
-        )
 
     def _enqueue(self: Self, *, allow_graph: bool) -> None:
         """Enqueue one execution of the context on the engine stream."""
         if not self._async_v3:
-            self._context.execute_async_v2(self._v2_pointers, self._stream)
+            self._context.execute_async_v2(self._allocations, self._stream)
             return
         # the CUDA graph was captured against the engine's own bindings at
         # their full shapes, so it only replays for exactly that configuration
@@ -320,7 +323,8 @@ class TRTEngine(TRTEngineInterface):
             allow_graph
             and self._cuda_graph is not None
             and not self._shapes_changed
-            and self._at_allocated_bindings
+            and self._input_addresses == self._allocated_addresses
+            and self._input_shapes == self._input_max_shapes
         )
         if use_graph and self._cuda_graph is not None and self._cuda_graph.is_captured:
             self._cuda_graph.launch()
@@ -414,38 +418,48 @@ class TRTEngine(TRTEngineInterface):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["execute"])
-
-        with self._device_guard:
-            try:
-                self._bind_inputs(data)
-            except (TypeError, ValueError):
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # execute
-                raise
-
-            if debug:
+        try:
+            with self._device_guard:
+                self._run(data, allow_graph=True, debug=debug)
+                outputs = self.fetch_outputs()
                 stream_synchronize(self._stream)
-
-            self._enqueue(allow_graph=True)
-
-            if debug:
-                stream_synchronize(self._stream)
-
-            outputs = [
-                binding.fetch(shape, self._stream)
-                for binding, shape in zip(self._outputs, self._output_shapes)
-            ]
-            stream_synchronize(self._stream)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # execute
 
         if verbose:
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
 
-        results = [o.array if no_copy else o.array.copy() for o in outputs]
+        return [o.array if no_copy else o.array.copy() for o in outputs]
 
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
+    def _run(self: Self, data: Sequence[Buffer], *, allow_graph: bool, debug: bool | None) -> None:
+        """Bind the inputs and enqueue one execution on the engine stream."""
+        self._bind_inputs(data)
+        if debug:
+            stream_synchronize(self._stream)
+        self._enqueue(allow_graph=allow_graph)
+        if debug:
+            stream_synchronize(self._stream)
 
-        return results
+    def fetch_outputs(self: Self) -> list[Buffer]:
+        """
+        Enqueue copies of the latest outputs into the host buffers of the output bindings.
+
+        Only the valid prefix of each output (the shape of the latest
+        execution) is copied. The host Buffers are ready to read once the
+        engine stream is synchronized, and are overwritten by later calls.
+
+        Returns
+        -------
+        list[Buffer]
+            Host views of the outputs, one per output binding.
+
+        """
+        with self._device_guard:
+            return [
+                binding.fetch(shape, self._stream)
+                for binding, shape in zip(self._outputs, self._output_shapes)
+            ]
 
     def stage_inputs(self: Self, data: Sequence[Buffer]) -> list[Buffer]:
         """
@@ -466,14 +480,11 @@ class TRTEngine(TRTEngineInterface):
             Device Buffers holding the inputs, in the same order.
 
         """
-        staged: list[Buffer] = []
+        inputs = self._validate_inputs(data)
         with self._device_guard:
-            for binding, buffer in zip(self._inputs, as_buffers(data)):
-                if _bindable(buffer):
-                    staged.append(buffer)
-                else:
-                    staged.append(binding.stage(buffer, self._stream))
-        return staged
+            return [
+                self._device_input(binding, buffer) for binding, buffer in zip(self._inputs, inputs)
+            ]
 
     def graph_exec(
         self: Self,
@@ -565,21 +576,11 @@ class TRTEngine(TRTEngineInterface):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["raw_exec"])
+        try:
+            with self._device_guard:
+                self._run(data, allow_graph=False, debug=debug)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # raw_exec
 
-        with self._device_guard:
-            try:
-                self._bind_inputs(data)
-            except (TypeError, ValueError):
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # raw_exec
-                raise
-            self._enqueue(allow_graph=False)
-            if debug:
-                stream_synchronize(self._stream)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
-
-        return [
-            binding.device.view(shape) for binding, shape in zip(self._outputs, self._output_shapes)
-        ]
+        return list(self._output_views)

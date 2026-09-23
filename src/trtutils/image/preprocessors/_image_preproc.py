@@ -386,11 +386,12 @@ class GPUImagePreprocessor(ImagePreprocessor):
         self._orig_size_dtype: np.dtype[Any] = (
             orig_size_dtype if orig_size_dtype is not None else np.dtype(np.int32)
         )
-        orig_size_arr: np.ndarray = np.array([1080, 1920], dtype=self._orig_size_dtype)
+        # shaped (1, 2): one (height, width) row, as the engine input expects
+        orig_size_arr: np.ndarray = np.array([[1080, 1920]], dtype=self._orig_size_dtype)
         self._orig_size_host = orig_size_arr
         self._orig_size_buffer = create_binding(orig_size_arr)
 
-        scale_factor_arr: np.ndarray = np.array([1.0, 1.0], dtype=np.float32)
+        scale_factor_arr: np.ndarray = np.array([[1.0, 1.0]], dtype=np.float32)
         self._scale_factor_host = scale_factor_arr
         self._scale_factor_buffer = create_binding(scale_factor_arr)
 
@@ -807,7 +808,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The device Buffer, shaped (1, 2), and the validity flag.
 
         """
-        return (self._orig_size_buffer.device.reshape((1, 2)), self._buffers_valid)
+        return (self._orig_size_buffer.device, self._buffers_valid)
 
     @property
     def scale_factor_input(self: Self) -> tuple[Buffer, bool]:
@@ -820,7 +821,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The device Buffer, shaped (1, 2), and the validity flag.
 
         """
-        return (self._scale_factor_buffer.device.reshape((1, 2)), self._buffers_valid)
+        return (self._scale_factor_buffer.device, self._buffers_valid)
 
     def _update_extra_buffers(
         self: Self,
@@ -851,10 +852,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             return
 
         # Update host arrays
-        self._orig_size_host[0] = height
-        self._orig_size_host[1] = width
-        self._scale_factor_host[0] = ratios[0]
-        self._scale_factor_host[1] = ratios[1]
+        self._orig_size_host[0] = (height, width)
+        self._scale_factor_host[0] = ratios
 
         memcpy_host_to_device_async(
             self._orig_size_buffer.allocation,

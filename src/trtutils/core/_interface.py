@@ -106,15 +106,16 @@ class TRTEngineInterface(ABC):
                 unified_mem=self._unified_mem,
             )
             # engine-level input shapes (-1 marks a dynamic dim) and the
-            # per-dim bounds an input Buffer's shape must fall inside
-            self._input_engine_shapes: list[tuple[int, ...]] = []
-            self._input_min_shapes: list[tuple[int, ...]] = []
-            self._input_max_shapes: list[tuple[int, ...]] = []
-            for i_binding in self._inputs:
-                engine_shape, min_shape, max_shape = self._input_shape_bounds(i_binding)
-                self._input_engine_shapes.append(engine_shape)
-                self._input_min_shapes.append(min_shape)
-                self._input_max_shapes.append(max_shape)
+            # per-dim bounds an input Buffer's shape must fall inside; the
+            # bindings are allocated at the max profile shape
+            self._input_engine_shapes: list[tuple[int, ...]] = [
+                self._input_engine_shape(b) for b in self._inputs
+            ]
+            self._input_min_shapes: list[tuple[int, ...]] = [
+                self._input_min_shape(b, shape)
+                for b, shape in zip(self._inputs, self._input_engine_shapes)
+            ]
+            self._input_max_shapes: list[tuple[int, ...]] = [tuple(b.shape) for b in self._inputs]
 
         # store useful properties about the engine
         self._memsize: int = 0
@@ -148,22 +149,23 @@ class TRTEngineInterface(ABC):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # init
 
-    def _input_shape_bounds(
-        self: Self,
-        binding: Binding,
-    ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
-        """Get the engine shape and the (min, max) profile shapes of an input."""
+    def _input_engine_shape(self: Self, binding: Binding) -> tuple[int, ...]:
+        """Get the engine-level shape of an input, with -1 marking dynamic dims."""
         if FLAGS.TRT_10:
-            engine_shape = tuple(self._engine.get_tensor_shape(binding.name))
-        else:
-            engine_shape = tuple(self._engine.get_binding_shape(binding.index))
+            return tuple(self._engine.get_tensor_shape(binding.name))
+        return tuple(self._engine.get_binding_shape(binding.index))
+
+    def _input_min_shape(
+        self: Self, binding: Binding, engine_shape: tuple[int, ...]
+    ) -> tuple[int, ...]:
+        """Get the min profile shape of an input (its engine shape when static)."""
         if all(dim >= 0 for dim in engine_shape):
-            return engine_shape, engine_shape, engine_shape
+            return engine_shape
         if FLAGS.TRT_10:
             profile = self._engine.get_tensor_profile_shape(binding.name, 0)
         else:
             profile = self._engine.get_profile_shape(0, binding.name)
-        return engine_shape, tuple(profile[0]), tuple(profile[2])
+        return tuple(profile[0])
 
     @property
     def name(self: Self) -> str:

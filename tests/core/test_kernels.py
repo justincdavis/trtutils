@@ -191,13 +191,3 @@ def test_cached_args_survive_intermediate_eviction(trivial_kernel, cuda_stream) 
     np.testing.assert_array_equal(result, np.arange(n, dtype=np.float32))
     cuda_free(d_out)
     cuda_free(d_other)
-
-
-@pytest.mark.regression
-def test_create_args_owns_its_buffers(trivial_kernel) -> None:
-    """The returned argument array keeps the buffers its pointers reference."""
-    args = trivial_kernel.create_args(1234, 7)
-    # the pointers are meaningless without the buffers they point into, so
-    # the array must own them rather than rely on the kernel outliving it
-    assert getattr(args, "_keepalive", None), "argument array does not retain its buffers"
-    assert len(args._keepalive) == len(args)

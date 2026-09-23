@@ -5,7 +5,7 @@
 CPU tests for how TRTEngine binds Buffer inputs.
 
 A TRTEngine is assembled around a fake TensorRT execution context and the
-host-memory CUDA fake from ``test_buffer``, so the input validation, shape
+host-memory CUDA fake from ``conftest``, so the input validation, shape
 tracking, staging, and CUDA graph selection logic run without a GPU.
 """
 
@@ -21,8 +21,6 @@ from trtutils import _engine
 from trtutils._engine import TRTEngine
 from trtutils.core import _bindings
 from trtutils.core._buffer import Buffer, MemoryLocation
-
-from .test_buffer import fake_cuda  # noqa: F401
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -99,14 +97,15 @@ def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
     eng._async_v3 = True
     eng._inputs = [inp]
     eng._outputs = [out]
-    eng._input_engine_shapes = [(-1, _FEATURES)]
     eng._input_min_shapes = [(1, _FEATURES)]
     eng._input_max_shapes = [(_MAX_BATCH, _FEATURES)]
     eng._input_shapes = [(_MAX_BATCH, _FEATURES)]
     eng._input_addresses = [inp.allocation]
+    eng._allocated_addresses = [inp.allocation]
     eng._output_shapes = [(_MAX_BATCH, _OUT_FEATURES)]
+    eng._output_views = [out.device]
     eng._shapes_changed = False
-    eng._v2_pointers = []
+    eng._allocations = [inp.allocation, out.allocation]
     eng._cuda_graph = _FakeGraph() if cuda_graph else None  # ty: ignore[invalid-assignment]
     return eng, context
 
@@ -124,7 +123,7 @@ def _host(n: int) -> Buffer:
 pytestmark = [pytest.mark.cpu, pytest.mark.usefixtures("fake_cuda", "no_sync")]
 
 
-def test_host_input_is_staged_into_binding(fake_cuda) -> None:  # noqa: F811
+def test_host_input_is_staged_into_binding(fake_cuda) -> None:
     """Host inputs are copied into the engine binding, which stays bound."""
     eng, context = _make_engine()
     eng.execute([_host(_MAX_BATCH)])
@@ -150,7 +149,7 @@ def test_unchanged_shape_is_not_reset() -> None:
     assert context.shape_calls == [(2, _FEATURES)]
 
 
-def test_aligned_device_input_is_bound_in_place(fake_cuda) -> None:  # noqa: F811
+def test_aligned_device_input_is_bound_in_place(fake_cuda) -> None:
     """Aligned device inputs are bound directly without an input copy."""
     eng, context = _make_engine()
     device = Buffer.from_array(_host(3).array, MemoryLocation.DEVICE)
@@ -161,7 +160,7 @@ def test_aligned_device_input_is_bound_in_place(fake_cuda) -> None:  # noqa: F81
     assert [kind for kind, _ in fake_cuda.copies] == ["D2H"]
 
 
-def test_misaligned_device_input_is_staged(fake_cuda) -> None:  # noqa: F811
+def test_misaligned_device_input_is_staged(fake_cuda) -> None:
     """Device inputs TensorRT cannot address directly are copied into the binding."""
     eng, context = _make_engine()
     backing = Buffer.empty((_MAX_BATCH * _FEATURES + 1,), np.float32, MemoryLocation.DEVICE)
@@ -256,7 +255,7 @@ def test_raw_exec_never_uses_the_graph() -> None:
     assert (context.enqueues, graph.captures, graph.launches) == (2, 0, 0)
 
 
-def test_stage_inputs_returns_device_buffers(fake_cuda) -> None:  # noqa: F811
+def test_stage_inputs_returns_device_buffers(fake_cuda) -> None:
     """stage_inputs passes device Buffers through and copies host ones."""
     eng, _ = _make_engine()
     device = Buffer.from_array(_host(2).array, MemoryLocation.DEVICE)
