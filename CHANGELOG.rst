@@ -38,8 +38,9 @@ Changed
   ``ValueError`` instead of copying mismatched bytes. Dynamic engines return outputs of
   the executed shape
 * **Breaking:** ``Binding`` is a class over a host and a device ``Buffer`` (``host`` /
-  ``device``); ``allocation``, ``host_allocation``, ``pagelocked_mem``, and ``unified_mem``
-  are derived properties
+  ``device``). Its fields (``index``, ``name``, ``dtype``, ``shape``, ``is_input``,
+  ``tensor_format``, ``host``, ``device``) are read-only properties, and ``allocation``,
+  ``host_allocation``, ``pagelocked_mem``, and ``unified_mem`` are derived from the buffers
 * **Breaking:** ``GPUImagePreprocessor.direct_preproc`` returns a device ``Buffer`` shaped
   to the submitted images instead of a pointer; ``orig_size_allocation`` /
   ``scale_factor_allocation`` are replaced by ``orig_size_input`` / ``scale_factor_input``

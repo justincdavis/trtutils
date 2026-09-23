@@ -429,6 +429,20 @@ class TestBindingOnFakeCuda:
         kinds = [kind for kind, _ in fake_cuda.copies]
         assert kinds == ([] if unified else ["H2D", "D2H"])
 
+    def test_binding_fields_are_read_only(self, fake_cuda) -> None:
+        binding = _bindings.create_binding(
+            np.zeros((2, 3), dtype=np.float32), bind_id=4, name="x", is_input=True
+        )
+        assert (binding.index, binding.name, binding.is_input) == (4, "x", True)
+        assert binding.dtype == np.float32
+        assert binding.shape == [2, 3]
+        # shape hands out a copy, so the binding cannot be changed through it
+        binding.shape.append(7)
+        assert binding.shape == [2, 3]
+        for attr in ("index", "name", "dtype", "shape", "is_input", "host", "device"):
+            with pytest.raises(AttributeError):
+                setattr(binding, attr, None)
+
     def test_unified_binding_is_one_allocation(self, fake_cuda) -> None:
         binding = _bindings.create_binding(
             np.zeros(4, dtype=np.float32), pagelocked_mem=True, unified_mem=True

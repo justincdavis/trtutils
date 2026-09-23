@@ -70,34 +70,74 @@ class Binding:
             The format of the tensor.
 
         """
-        self.index = index
-        self.name = name
-        self.dtype = np.dtype(dtype)
-        self.shape = list(shape)
-        self.is_input = is_input
-        self.host = host
-        self.device = device
-        self.tensor_format = tensor_format
+        self._index = index
+        self._name = name
+        self._dtype = np.dtype(dtype)
+        self._shape = tuple(int(d) for d in shape)
+        self._is_input = is_input
+        self._host = host
+        self._device = device
+        self._tensor_format = tensor_format
+
+    @property
+    def index(self: Self) -> int:
+        """The index of the tensor in the engine."""
+        return self._index
+
+    @property
+    def name(self: Self) -> str:
+        """The name of the tensor."""
+        return self._name
+
+    @property
+    def dtype(self: Self) -> np.dtype:
+        """The datatype of the tensor."""
+        return self._dtype
+
+    @property
+    def shape(self: Self) -> list[int]:
+        """The allocated (max) shape of the tensor, as a new list."""
+        return list(self._shape)
+
+    @property
+    def is_input(self: Self) -> bool:
+        """Whether the tensor is an engine input."""
+        return self._is_input
+
+    @property
+    def host(self: Self) -> Buffer:
+        """The host buffer, at the allocated shape."""
+        return self._host
+
+    @property
+    def device(self: Self) -> Buffer:
+        """The device buffer (the device alias of the host buffer with unified memory)."""
+        return self._device
+
+    @property
+    def tensor_format(self: Self) -> trt.TensorFormat:
+        """The format of the tensor."""
+        return self._tensor_format
 
     @property
     def allocation(self: Self) -> int:
         """The device address of the binding."""
-        return self.device.ptr
+        return self._device.ptr
 
     @property
     def host_allocation(self: Self) -> np.ndarray:
         """The host array of the binding, at the allocated shape."""
-        return self.host.array
+        return self._host.array
 
     @property
     def pagelocked_mem(self: Self) -> bool:
         """Whether the host buffer is pagelocked."""
-        return self.host.pinned
+        return self._host.pinned
 
     @property
     def unified_mem(self: Self) -> bool:
         """Whether the host buffer is mapped into the device (one shared allocation)."""
-        return self.host.mapped
+        return self._host.mapped
 
     def stage(self: Self, src: Buffer, stream: cudart.cudaStream_t | None = None) -> Buffer:
         """
@@ -121,9 +161,9 @@ class Binding:
         """
         # with unified memory the host buffer *is* the device memory, so a
         # host source is a plain memcpy on the CPU
-        target = self.host if self.unified_mem else self.device
+        target = self._host if self.unified_mem else self._device
         _prefix(target, src.shape).copy_from(src, stream)
-        return _prefix(self.device, src.shape)
+        return _prefix(self._device, src.shape)
 
     def fetch(
         self: Self,
@@ -147,16 +187,16 @@ class Binding:
             The host view holding the data.
 
         """
-        shape = tuple(shape) if shape is not None else tuple(self.shape)
-        host = _prefix(self.host, shape)
+        shape = tuple(shape) if shape is not None else self._shape
+        host = _prefix(self._host, shape)
         if not self.unified_mem:
-            host.copy_from(_prefix(self.device, shape), stream)
+            host.copy_from(_prefix(self._device, shape), stream)
         return host
 
     def free(self: Self) -> None:
         """Release the binding's buffers."""
-        self.host.free()
-        self.device.free()
+        self._host.free()
+        self._device.free()
 
     def __repr__(self: Self) -> str:
         """
@@ -168,9 +208,10 @@ class Binding:
             The representation.
 
         """
-        kind = "input" if self.is_input else "output"
+        kind = "input" if self._is_input else "output"
         return (
-            f"Binding({self.index}, '{self.name}', {kind}, shape={self.shape}, dtype={self.dtype})"
+            f"Binding({self._index}, '{self._name}', {kind}, "
+            f"shape={list(self._shape)}, dtype={self._dtype})"
         )
 
 

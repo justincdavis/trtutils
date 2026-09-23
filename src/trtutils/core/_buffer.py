@@ -47,14 +47,19 @@ class _DeviceAllocation:
     """Owns a cudaMalloc allocation; freed when the last reference is dropped."""
 
     def __init__(self: Self, nbytes: int) -> None:
-        self.ptr: int = cuda_call(cudart.cudaMalloc(nbytes)) if nbytes > 0 else 0
+        self._ptr: int = cuda_call(cudart.cudaMalloc(nbytes)) if nbytes > 0 else 0
+
+    @property
+    def ptr(self: Self) -> int:
+        """The device address of the allocation."""
+        return self._ptr
 
     def __del__(self: Self) -> None:
         # the CUDA context may already be gone during interpreter shutdown
         with contextlib.suppress(Exception):
-            if self.ptr:
-                cuda_call(cudart.cudaFree(self.ptr))
-        self.ptr = 0
+            if self._ptr:
+                cuda_call(cudart.cudaFree(self._ptr))
+        self._ptr = 0
 
 
 class _PinnedAllocation:
@@ -68,22 +73,33 @@ class _PinnedAllocation:
 
     def __init__(self: Self, nbytes: int, *, mapped: bool) -> None:
         flags = cudart.cudaHostAllocMapped if mapped else cudart.cudaHostAllocDefault
-        self.ptr: int = cuda_call(cudart.cudaHostAlloc(nbytes, flags))
-        self.device_ptr: int | None = (
-            cuda_call(cudart.cudaHostGetDevicePointer(self.ptr, 0)) if mapped else None
+        self._ptr: int = cuda_call(cudart.cudaHostAlloc(nbytes, flags))
+        self._device_ptr: int | None = (
+            cuda_call(cudart.cudaHostGetDevicePointer(self._ptr, 0)) if mapped else None
         )
+        # the numpy array interface protocol, read by np.asarray
         self.__array_interface__ = {
             "shape": (nbytes,),
             "typestr": "|u1",
-            "data": (self.ptr, False),
+            "data": (self._ptr, False),
             "version": 3,
         }
 
+    @property
+    def ptr(self: Self) -> int:
+        """The host address of the allocation."""
+        return self._ptr
+
+    @property
+    def device_ptr(self: Self) -> int | None:
+        """The device alias of a mapped allocation, None when unmapped."""
+        return self._device_ptr
+
     def __del__(self: Self) -> None:
         with contextlib.suppress(Exception):
-            if self.ptr:
-                cuda_call(cudart.cudaFreeHost(self.ptr))
-        self.ptr = 0
+            if self._ptr:
+                cuda_call(cudart.cudaFreeHost(self._ptr))
+        self._ptr = 0
 
 
 def _nbytes(shape: tuple[int, ...], dtype: np.dtype) -> int:
@@ -954,6 +970,7 @@ class _ArrayInterface:
     """Expose foreign host memory to numpy while keeping its owner alive."""
 
     def __init__(self: Self, interface: dict[str, Any], owner: object | None) -> None:
+        # the numpy array interface protocol, read by np.asarray
         self.__array_interface__ = interface
         self._owner = owner
 
