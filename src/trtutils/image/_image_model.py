@@ -13,9 +13,9 @@ import nvtx
 from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer
 from trtutils.core._device import Device
 from trtutils.core._graph import CUDAGraph
-from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
 from trtutils.core._stream import stream_synchronize
 
 from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
@@ -31,6 +31,11 @@ _PostFn = Callable[
     List[List[np.ndarray]],
 ]
 T = TypeVar("T")
+
+
+def host_input(array: np.ndarray) -> Buffer:
+    """Wrap host data as an engine input, gathering it first if it is not C-contiguous."""
+    return Buffer.wrap(np.ascontiguousarray(array))
 
 
 class ImageModel:
@@ -426,7 +431,7 @@ class ImageModel:
             A list containing one random image.
 
         """
-        return [self._engine.get_random_input()[0]]
+        return [self._engine.get_random_input()[0].numpy()]
 
     def mock_run(
         self: Self,
@@ -451,12 +456,14 @@ class ImageModel:
             nvtx.push_range(self._nvtx_tags["mock_run"])
 
         if images is not None:
-            # Stack images into batch tensor if provided as list
-            if len(images) == 1:
-                result = self._engine.mock_execute(data=[images[0]])
+            # a single entry that already has the engine's rank is a batch
+            # tensor; otherwise stack the images into one
+            engine_rank = len(self._engine.input_shapes[0])
+            if len(images) == 1 and images[0].ndim == engine_rank:
+                tensor = np.ascontiguousarray(images[0])
             else:
-                batch_tensor = np.stack(images, axis=0)
-                result = self._engine.mock_execute(data=[batch_tensor])
+                tensor = np.stack(images, axis=0)
+            result = self._engine.mock_execute(data=[Buffer.wrap(tensor)])
         else:
             result = self._engine.mock_execute()
 
@@ -578,84 +585,48 @@ class ImageModel:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["_copy_engine_outputs"])
 
-        outputs: list[np.ndarray] = []
-        for binding in self._engine._outputs:  # noqa: SLF001
-            if not (self._engine._unified_mem and self._engine._pagelocked_mem):  # noqa: SLF001
-                memcpy_device_to_host_async(
-                    binding.host_allocation,
-                    binding.allocation,
-                    self._engine.stream,
-                )
-            outputs.append(binding.host_allocation)
+        outputs = [output.array for output in self._engine.fetch_outputs()]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # copy_engine_outputs
 
         return outputs
 
-    def _prepare_extra_engine_inputs_gpu(self: Self) -> list[int]:
+    def _prepare_extra_engine_inputs_gpu(self: Self) -> list[Buffer]:
         """
-        Return additional GPU input pointers for GPU preprocessor path.
+        Return additional engine inputs for the GPU preprocessor path.
 
         Override in subclasses that need extra inputs (e.g., DETR models).
 
         Returns
         -------
-        list[int]
-            List of GPU device pointers for additional inputs.
+        list[Buffer]
+            Device Buffers for additional inputs.
 
         """
         return []
 
-    def _prepare_extra_engine_inputs_cpu(
+    def _order_engine_inputs(
         self: Self,
-        images: list[np.ndarray],  # noqa: ARG002
-        ratios: list[tuple[float, float]],  # noqa: ARG002
-    ) -> list[int]:
+        image: T,
+        extras: list[T],
+    ) -> list[T]:
         """
-        Return additional GPU input pointers for CPU preprocessor path.
-
-        Override in subclasses that need extra inputs (e.g., DETR models).
-        Subclasses should copy data to engine input bindings and return pointers.
-
-        Parameters
-        ----------
-        images : list[np.ndarray]
-            The original input images (before preprocessing).
-        ratios : list[tuple[float, float]]
-            The scaling ratios from preprocessing.
-
-        Returns
-        -------
-        list[int]
-            List of GPU device pointers for additional inputs.
-
-        """
-        return []
-
-    def _build_graph_input_ptrs(
-        self: Self,
-        image: Any,  # noqa: ANN401
-        extras: list[Any],
-    ) -> list[Any]:
-        """
-        Build the input list for CUDA graph execution or engine calls.
+        Order the image and extra inputs as the engine expects them.
 
         Override in subclasses that need schema-specific input ordering.
-        The default puts the image first followed by extra inputs. Inputs
-        are GPU device pointers (int) on the CUDA graph path, or host
-        arrays (np.ndarray) when reused to order CPU engine inputs.
+        The default puts the image first followed by extra inputs.
 
         Parameters
         ----------
-        image : Any
-            The main image input: a GPU device pointer or a host array.
-        extras : list[Any]
-            Additional inputs: GPU device pointers or host arrays.
+        image : T
+            The main image input.
+        extras : list[T]
+            Additional inputs.
 
         Returns
         -------
-        list[Any]
+        list[T]
             Ordered list of inputs for engine execution.
 
         """
@@ -668,9 +639,9 @@ class ImageModel:
         ratios: list[tuple[float, float]] | None,  # noqa: ARG002
         *,
         preprocessed: bool,  # noqa: ARG002
-    ) -> list[np.ndarray]:
+    ) -> list[Buffer]:
         """
-        Build the host arrays passed to the engine call.
+        Build the host inputs passed to the engine call.
 
         Override in subclasses that need schema-specific inputs, e.g.
         Detector adds image size / scale factor arrays for DETR models.
@@ -688,11 +659,11 @@ class ImageModel:
 
         Returns
         -------
-        list[np.ndarray]
-            The host arrays to pass to the engine call.
+        list[Buffer]
+            The host inputs to pass to the engine call.
 
         """
-        return [tensor]
+        return [host_input(tensor)]
 
     def _end2end_graph_core(
         self: Self,
@@ -752,38 +723,32 @@ class ImageModel:
 
         # Preprocess and get GPU pointer based on preprocessor type
         if isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            # GPU preprocessor: use direct_preproc for GPU pointer
-            gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
+            # GPU preprocessor: the preprocessed batch is already on the device
+            image_input, ratios, padding = self._preprocessor.direct_preproc(
                 images,
                 resize=self._resize_method,
                 no_warn=True,
                 verbose=verbose,
             )
-            extra_ptrs = self._prepare_extra_engine_inputs_gpu()
-            input_ptrs = self._build_graph_input_ptrs(gpu_ptr, extra_ptrs)
+            engine_inputs = self._order_engine_inputs(
+                image_input, self._prepare_extra_engine_inputs_gpu()
+            )
         else:
-            # CPU preprocessor: preprocess to numpy, copy to engine binding
+            # CPU preprocessor: preprocess to numpy, then stage every host
+            # input into the engine's bindings outside of the graph, since
+            # copies from pageable host memory cannot be captured
             # Both Classifier and Detector have compatible preprocess signatures for basic call
             tensor, ratios, padding = self.preprocess(images, no_copy=True, verbose=verbose)
-
-            # Copy preprocessed tensor to engine's input binding (H2D)
-            memcpy_host_to_device_async(
-                self._engine._inputs[0].allocation,  # noqa: SLF001
-                tensor,
-                self._engine.stream,
+            engine_inputs = self._engine.stage_inputs(
+                self._engine_inputs(tensor, images, ratios, preprocessed=False)
             )
-            gpu_ptr = self._engine._inputs[0].allocation  # noqa: SLF001
-
-            # Add extra inputs from subclass
-            extra_ptrs = self._prepare_extra_engine_inputs_cpu(images, ratios)
-            input_ptrs = self._build_graph_input_ptrs(gpu_ptr, extra_ptrs)
 
         # Capture or replay the graph (inference only)
         if self._e2e_graph is None:
             # First call: capture the graph
             self._e2e_graph = CUDAGraph(self._engine.stream)
             with self._e2e_graph:
-                self._engine.raw_exec(input_ptrs, no_warn=True)
+                self._engine.raw_exec(engine_inputs)
 
             # Verify capture succeeded
             if not self._e2e_graph.is_captured:
@@ -1070,16 +1035,16 @@ class ImageModel:
         else:
             if verbose:
                 LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
-            gpu_ptr, ratios, padding = self._preprocessor.direct_preproc(
+            image_input, ratios, padding = self._preprocessor.direct_preproc(
                 batch_images,
                 resize=self._resize_method,
                 no_warn=True,
                 verbose=verbose,
             )
-            input_ptrs = self._build_graph_input_ptrs(
-                gpu_ptr, self._prepare_extra_engine_inputs_gpu()
+            engine_inputs = self._order_engine_inputs(
+                image_input, self._prepare_extra_engine_inputs_gpu()
             )
-            raw = self._engine.direct_exec(input_ptrs, no_warn=True)
+            raw = self._engine.execute(engine_inputs, no_copy=True)
             pp = post(raw, ratios, padding, no_copy_e2e)
 
         result = get(pp)

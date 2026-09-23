@@ -1,10 +1,11 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/core/_bindings.py -- Binding dataclass and allocation."""
+"""Tests for src/trtutils/core/_bindings.py -- Binding and allocation."""
 
 from __future__ import annotations
 
+import gc
 import itertools
 from unittest.mock import patch
 
@@ -12,8 +13,9 @@ import numpy as np
 import pytest
 
 from trtutils._flags import FLAGS
-from trtutils.core import _bindings
+from trtutils.core import _buffer
 from trtutils.core._bindings import allocate_bindings, create_binding
+from trtutils.core._buffer import Buffer
 
 
 @pytest.mark.parametrize(
@@ -96,21 +98,67 @@ def test_create_binding_memory(use_array_data, pagelocked_mem, unified_mem):
 
 
 def test_create_binding_unified_memory_frees_host_only() -> None:
-    """Mapped unified host allocations should not be freed with cudaFree."""
+    """A unified binding is one mapped host allocation: freed with cudaFreeHost only."""
     arr = np.zeros((4,), dtype=np.float32)
-    binding = _bindings.create_binding(arr, pagelocked_mem=True, unified_mem=True)
-
     with patch.object(
-        _bindings.cudart, "cudaFree", wraps=_bindings.cudart.cudaFree
+        _buffer.cudart, "cudaFree", wraps=_buffer.cudart.cudaFree
     ) as cuda_free, patch.object(
-        _bindings.cudart,
+        _buffer.cudart,
         "cudaFreeHost",
-        wraps=_bindings.cudart.cudaFreeHost,
+        wraps=_buffer.cudart.cudaFreeHost,
     ) as cuda_free_host:
+        binding = create_binding(arr, pagelocked_mem=True, unified_mem=True)
+        assert binding.allocation == binding.host.device_ptr
         binding.free()
+        del binding
+        gc.collect()
 
     cuda_free.assert_not_called()
     cuda_free_host.assert_called_once()
+
+
+def test_host_array_outlives_binding() -> None:
+    """Arrays taken from a binding keep its pinned memory alive after the binding is gone."""
+    data = np.arange(8, dtype=np.float32)
+    binding = create_binding(data, use_array_data=True)
+    host_array = binding.host_allocation
+    with patch.object(
+        _buffer.cudart, "cudaFreeHost", wraps=_buffer.cudart.cudaFreeHost
+    ) as cuda_free_host:
+        binding.free()
+        del binding
+        gc.collect()
+        cuda_free_host.assert_not_called()
+        np.testing.assert_array_equal(host_array, data)
+        del host_array
+        gc.collect()
+        cuda_free_host.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("pagelocked_mem", "unified_mem"),
+    [
+        pytest.param(True, False, id="pagelocked"),
+        pytest.param(False, False, id="pageable"),
+        pytest.param(True, True, id="unified"),
+    ],
+)
+def test_binding_stage_and_fetch(pagelocked_mem, unified_mem) -> None:
+    """stage() writes the leading elements of the binding and fetch() reads them back."""
+    binding = create_binding(
+        np.zeros((4, 3), dtype=np.float32),
+        pagelocked_mem=pagelocked_mem,
+        unified_mem=unified_mem,
+    )
+    data = np.arange(6, dtype=np.float32).reshape(2, 3)
+    staged = binding.stage(Buffer.wrap(data))
+    assert staged.is_device
+    assert staged.shape == (2, 3)
+    assert staged.ptr == binding.allocation
+    fetched = binding.fetch((2, 3))
+    np.testing.assert_array_equal(fetched.array, data)
+    # the full shape hands back the binding's own host array
+    assert binding.fetch().array is binding.host_allocation
 
 
 @pytest.mark.parametrize(

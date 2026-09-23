@@ -16,10 +16,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
-from trtutils.core._memory import (
-    memcpy_device_to_host_async,
-    memcpy_host_to_device_async,
-)
+from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.core._stream import create_stream, stream_synchronize
 from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
 
@@ -30,6 +27,7 @@ if TYPE_CHECKING:
 
     from trtutils.compat._libs import cudart
     from trtutils.core._bindings import Binding
+    from trtutils.core._buffer import Buffer
 
 _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
@@ -388,11 +386,12 @@ class GPUImagePreprocessor(ImagePreprocessor):
         self._orig_size_dtype: np.dtype[Any] = (
             orig_size_dtype if orig_size_dtype is not None else np.dtype(np.int32)
         )
-        orig_size_arr: np.ndarray = np.array([1080, 1920], dtype=self._orig_size_dtype)
+        # shaped (1, 2): one (height, width) row, as the engine input expects
+        orig_size_arr: np.ndarray = np.array([[1080, 1920]], dtype=self._orig_size_dtype)
         self._orig_size_host = orig_size_arr
         self._orig_size_buffer = create_binding(orig_size_arr)
 
-        scale_factor_arr: np.ndarray = np.array([1.0, 1.0], dtype=np.float32)
+        scale_factor_arr: np.ndarray = np.array([[1.0, 1.0]], dtype=np.float32)
         self._scale_factor_host = scale_factor_arr
         self._scale_factor_buffer = create_binding(scale_factor_arr)
 
@@ -653,7 +652,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         *,
         no_warn: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]:
+    ) -> tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]:
         """
         Preprocess images for the model with H2D copies and GPU kernels.
 
@@ -676,9 +675,11 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         Returns
         -------
-        tuple[int, list[tuple[float, float]], list[tuple[float, float]]]
-            GPU pointer to preprocessed output, list of ratios (scale_x, scale_y),
-            and list of padding (pad_x, pad_y) per image.
+        tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]
+            Device Buffer of the preprocessed batch, shaped (batch, 3, height, width)
+            for exactly the given images, list of ratios (scale_x, scale_y),
+            and list of padding (pad_x, pad_y) per image. The Buffer views
+            the preprocessor's output memory and is overwritten by the next call.
 
         """
         ...
@@ -765,22 +766,16 @@ class GPUImagePreprocessor(ImagePreprocessor):
         else:
             batch_images = images
 
-        _, ratios_list, padding_list = self.direct_preproc(
+        output, ratios_list, padding_list = self.direct_preproc(
             batch_images,
             resize=resize,
             no_warn=True,
             verbose=verbose,
         )
 
-        batch_size = len(batch_images)
-        output_binding = self.output_binding
-
-        if not self._unified_mem:
-            memcpy_device_to_host_async(
-                output_binding.host_allocation,
-                output_binding.allocation,
-                self._stream,
-            )
+        # only the submitted images are copied back, even when the output
+        # memory is allocated for a larger batch
+        host_output = self.output_binding.fetch(output.shape, self._stream)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["stream_sync"])
@@ -789,44 +784,44 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.pop_range()  # stream_sync
 
         if no_copy:
-            result = (output_binding.host_allocation[:batch_size], ratios_list, padding_list)
+            result = (host_output.array, ratios_list, padding_list)
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # gpu_preprocess
             return result
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["copy_output"])
-        result = (output_binding.host_allocation[:batch_size].copy(), ratios_list, padding_list)
+        result = (host_output.array.copy(), ratios_list, padding_list)
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # copy_output
             nvtx.pop_range()  # gpu_preprocess
         return result
 
     @property
-    def orig_size_allocation(self: Self) -> tuple[int, bool]:
+    def orig_size_input(self: Self) -> tuple[Buffer, bool]:
         """
-        Get GPU pointer and validity for orig_image_size buffer.
+        Get the device Buffer and validity of the orig_image_size data.
 
         Returns
         -------
-        tuple[int, bool]
-            The GPU pointer and validity flag.
+        tuple[Buffer, bool]
+            The device Buffer, shaped (1, 2), and the validity flag.
 
         """
-        return (self._orig_size_buffer.allocation, self._buffers_valid)
+        return (self._orig_size_buffer.device, self._buffers_valid)
 
     @property
-    def scale_factor_allocation(self: Self) -> tuple[int, bool]:
+    def scale_factor_input(self: Self) -> tuple[Buffer, bool]:
         """
-        Get GPU pointer and validity for scale_factor buffer.
+        Get the device Buffer and validity of the scale_factor data.
 
         Returns
         -------
-        tuple[int, bool]
-            The GPU pointer and validity flag.
+        tuple[Buffer, bool]
+            The device Buffer, shaped (1, 2), and the validity flag.
 
         """
-        return (self._scale_factor_buffer.allocation, self._buffers_valid)
+        return (self._scale_factor_buffer.device, self._buffers_valid)
 
     def _update_extra_buffers(
         self: Self,
@@ -857,10 +852,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             return
 
         # Update host arrays
-        self._orig_size_host[0] = height
-        self._orig_size_host[1] = width
-        self._scale_factor_host[0] = ratios[0]
-        self._scale_factor_host[1] = ratios[1]
+        self._orig_size_host[0] = (height, width)
+        self._scale_factor_host[0] = ratios
 
         memcpy_host_to_device_async(
             self._orig_size_buffer.allocation,

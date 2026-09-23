@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from trtutils.compat._libs import cudart
     from trtutils.core._bindings import Binding
+    from trtutils.core._buffer import Buffer
 
 
 class CUDAPreprocessor(GPUImagePreprocessor):
@@ -286,7 +287,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         *,
         no_warn: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]:
+    ) -> tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]:
         """
         Preprocess images for the model.
 
@@ -306,8 +307,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         Returns
         -------
-        tuple[int, list[tuple[float, float]], list[tuple[float, float]]]
-            The GPU pointer to preprocessed data, list of ratios, and list of padding per image.
+        tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]
+            The device Buffer of preprocessed data, list of ratios, and list of padding per image.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -354,4 +355,5 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # cuda_direct_preproc
 
-        return self._output_binding.allocation, ratios_list, padding_list
+        # the output binding is reallocated to exactly batch_size above
+        return self._output_binding.device, ratios_list, padding_list

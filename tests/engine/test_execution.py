@@ -1,17 +1,20 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for TRTEngine execution methods -- execute, direct_exec, raw_exec, graph_exec, mock_execute."""
+"""Tests for TRTEngine execution methods -- execute, raw_exec, graph_exec, mock_execute."""
 
 from __future__ import annotations
-
-from unittest.mock import patch
 
 import numpy as np
 import pytest
 
 from trtutils._flags import FLAGS
-from trtutils.core import allocate_to_device, free_device_ptrs
+from trtutils.core import Buffer, MemoryLocation, stream_synchronize
+
+
+def _to_device(buffers: list[Buffer]) -> list[Buffer]:
+    """Copy host Buffers into new device Buffers."""
+    return [Buffer.from_array(b.array, MemoryLocation.DEVICE) for b in buffers]
 
 
 class TestExecute:
@@ -158,86 +161,35 @@ class TestExecute:
             assert out_ref is binding.host_allocation
 
 
-class TestDirectExec:
-    """Tests for TRTEngine.direct_exec()."""
+class TestDeviceInputs:
+    """Tests for TRTEngine.execute() with device-resident Buffers."""
 
-    def test_direct_exec_matches_execute(self, make_engine) -> None:
-        """direct_exec and execute produce same results for same input."""
+    def test_device_inputs_match_host_inputs(self, make_engine) -> None:
+        """Device and host Buffers holding the same data produce the same outputs."""
         eng = make_engine()
-        rand_input = eng.get_random_input()
-        device_ptrs = allocate_to_device(rand_input)
+        host = eng.get_random_input()
+        device = _to_device(host)
+        out_device = eng.execute(device)
+        out_host = eng.execute(host)
+        for od, oh in zip(out_device, out_host):
+            np.testing.assert_array_equal(od, oh)
 
-        outputs_direct = eng.direct_exec(device_ptrs, no_warn=True)
-        outputs_direct_copy = [o.copy() for o in outputs_direct]
-
-        outputs_execute = eng.execute(rand_input)
-
-        for od, oe in zip(outputs_direct_copy, outputs_execute):
-            np.testing.assert_array_equal(od, oe)
-
-        free_device_ptrs(device_ptrs)
-
-    @pytest.mark.parametrize(
-        "set_pointers",
-        [
-            pytest.param(True, id="set-pointers-true"),
-            pytest.param(False, id="set-pointers-false"),
-        ],
-    )
-    def test_set_pointers_flag(self, make_engine, set_pointers) -> None:
-        """Both set_pointers=True and set_pointers=False paths work."""
-        eng = make_engine()
-        rand_input = eng.get_random_input()
-        device_ptrs = allocate_to_device(rand_input)
-
-        if not set_pointers and not FLAGS.EXEC_ASYNC_V3:
-            pass
-
-        if set_pointers:
-            outputs = eng.direct_exec(device_ptrs, set_pointers=True, no_warn=True)
-        else:
-            eng.direct_exec(device_ptrs, set_pointers=True, no_warn=True)
-            outputs = eng.direct_exec(device_ptrs, set_pointers=False, no_warn=True)
-
-        assert outputs is not None
-        assert len(outputs) >= 1
-
-        free_device_ptrs(device_ptrs)
-
-    @pytest.mark.parametrize(
-        "no_warn",
-        [
-            pytest.param(True, id="no-warn-true"),
-            pytest.param(False, id="no-warn-false"),
-            pytest.param(None, id="no-warn-none"),
-        ],
-    )
-    def test_no_warn_flag(self, make_engine, no_warn) -> None:
-        """Warning suppression flag works for all values."""
-        eng = make_engine()
-        rand_input = eng.get_random_input()
-        device_ptrs = allocate_to_device(rand_input)
-
-        outputs = eng.direct_exec(device_ptrs, no_warn=no_warn)
-        assert outputs is not None
-
-        free_device_ptrs(device_ptrs)
-
-    def test_direct_exec_sets_using_engine_false(self, make_engine) -> None:
-        """direct_exec() with set_pointers marks _using_engine_tensors=False."""
+    def test_device_inputs_bound_in_place(self, make_engine) -> None:
+        """Aligned device Buffers are read by TensorRT directly, without a copy."""
         if not FLAGS.EXEC_ASYNC_V3:
             pytest.skip("Only relevant for async_v3 backend")
-
         eng = make_engine(backend="async_v3")
-        assert eng._using_engine_tensors is True
+        device = _to_device(eng.get_random_input())
+        eng.execute(device)
+        assert eng._input_addresses == [b.ptr for b in device]
 
-        rand_input = eng.get_random_input()
-        device_ptrs = allocate_to_device(rand_input)
-
-        eng.direct_exec(device_ptrs, set_pointers=True, no_warn=True)
-        assert eng._using_engine_tensors is False
-
-        free_device_ptrs(device_ptrs)
+    def test_host_after_device_rebinds_engine_memory(self, make_engine) -> None:
+        """A host call after a device call points the context back at the engine bindings."""
+        eng = make_engine()
+        host = eng.get_random_input()
+        eng.execute(_to_device(host))
+        eng.execute(host)
+        assert eng._input_addresses == [b.allocation for b in eng.input_bindings]
 
     @pytest.mark.parametrize(
         ("pagelocked_mem", "unified_mem"),
@@ -247,109 +199,118 @@ class TestDirectExec:
             pytest.param(True, True, id="unified"),
         ],
     )
-    def test_direct_exec_memory_mode(self, make_engine, pagelocked_mem, unified_mem) -> None:
-        """direct_exec() output copy path works for all memory modes."""
+    def test_device_inputs_memory_mode(self, make_engine, pagelocked_mem, unified_mem) -> None:
+        """Device inputs work for every host memory mode."""
         eng = make_engine(pagelocked_mem=pagelocked_mem, unified_mem=unified_mem)
-        rand_input = eng.get_random_input()
-        device_ptrs = allocate_to_device(rand_input)
+        host = eng.get_random_input()
+        out_device = eng.execute(_to_device(host))
+        out_host = eng.execute(host)
+        for od, oh in zip(out_device, out_host):
+            np.testing.assert_allclose(od, oh)
 
-        outputs = eng.direct_exec(device_ptrs, no_warn=True)
-        assert outputs is not None
-        assert len(outputs) >= 1
-
-        free_device_ptrs(device_ptrs)
-
-    def test_binding_reset(self, make_engine) -> None:
-        """execute() after direct_exec() resets tensor addresses."""
+    def test_misaligned_device_input_is_staged(self, make_engine) -> None:
+        """A device view TensorRT cannot address directly is copied into the binding."""
         eng = make_engine()
-        rand_input = eng.get_random_input()
-        device_ptrs = allocate_to_device(rand_input)
+        host = eng.get_random_input()
+        misaligned: list[Buffer] = []
+        for buffer in host:
+            backing = Buffer.empty((buffer.size + 1,), buffer.dtype, MemoryLocation.DEVICE)
+            view = backing[1:].reshape(buffer.shape)
+            view.copy_from(buffer)
+            misaligned.append(view)
+        out_misaligned = eng.execute(misaligned)
+        assert eng._input_addresses == [b.allocation for b in eng.input_bindings]
+        for om, oh in zip(out_misaligned, eng.execute(host)):
+            np.testing.assert_array_equal(om, oh)
 
-        eng.direct_exec(device_ptrs, no_warn=True)
-        assert eng._using_engine_tensors is False
+    def test_cuda_array_interface_input(self, make_engine) -> None:
+        """Objects exposing __cuda_array_interface__ can be wrapped as inputs."""
 
-        eng.execute(rand_input)
-        assert eng._using_engine_tensors is True
+        class _Foreign:
+            def __init__(self, buffer: Buffer) -> None:
+                self._buffer = buffer
+                self.__cuda_array_interface__ = buffer.__cuda_array_interface__
 
-        free_device_ptrs(device_ptrs)
+        eng = make_engine()
+        host = eng.get_random_input()
+        wrapped = [Buffer.wrap(_Foreign(b)) for b in _to_device(host)]
+        for ow, oh in zip(eng.execute(wrapped), eng.execute(host)):
+            np.testing.assert_array_equal(ow, oh)
+
+
+class TestInputValidation:
+    """Tests for the checks execute() applies to its inputs."""
+
+    def test_ndarray_input_raises(self, engine, random_input) -> None:
+        """Plain numpy arrays are rejected with a pointer to Buffer.wrap."""
+        with pytest.raises(TypeError, match=r"Buffer\.wrap"):
+            engine.execute([b.array for b in random_input])
+
+    def test_wrong_input_count_raises(self, engine, random_input) -> None:
+        """A different number of inputs than the engine has raises ValueError."""
+        with pytest.raises(ValueError, match="expects"):
+            engine.execute([*random_input, *random_input])
+
+    def test_wrong_dtype_raises(self, engine, random_input) -> None:
+        """An input with the wrong dtype raises ValueError."""
+        bad = [Buffer.wrap(b.array.astype(np.float64)) for b in random_input]
+        with pytest.raises(ValueError, match="dtype"):
+            engine.execute(bad)
+
+    def test_wrong_shape_raises_and_leaves_engine_usable(self, engine, random_input) -> None:
+        """A static engine rejects other shapes without changing its state."""
+        bad = [Buffer.wrap(np.zeros((2, *b.shape), dtype=b.dtype)) for b in random_input]
+        with pytest.raises(ValueError, match="shape"):
+            engine.execute(bad)
+        assert engine.active_input_shapes == [tuple(b.shape) for b in engine.input_bindings]
+        assert engine.execute(random_input) is not None
 
 
 class TestRawExec:
     """Tests for TRTEngine.raw_exec()."""
 
-    def test_raw_exec_returns_valid_pointers(self, engine) -> None:
-        """raw_exec returns non-zero integer GPU pointers matching output bindings."""
-        ptrs = [b.allocation for b in engine.input_bindings]
-        result = engine.raw_exec(ptrs, no_warn=True)
-        assert isinstance(result, list)
-        assert len(result) == len(engine.output_bindings)
-        assert all(isinstance(p, int) for p in result)
-        assert all(p != 0 for p in result)
+    def test_raw_exec_returns_device_output_views(self, engine, random_input) -> None:
+        """raw_exec returns device Buffers over the output bindings."""
+        outputs = engine.raw_exec(random_input)
+        stream_synchronize(engine.stream)
+        assert len(outputs) == len(engine.output_bindings)
+        for out, binding in zip(outputs, engine.output_bindings):
+            assert isinstance(out, Buffer)
+            assert out.is_device
+            assert out.ptr == binding.allocation
+            assert list(out.shape) == binding.shape
 
-    def test_raw_exec_output_pointers_match_bindings(self, engine) -> None:
-        """Returned pointers match the output binding allocations."""
-        ptrs = [b.allocation for b in engine.input_bindings]
-        result = engine.raw_exec(ptrs, no_warn=True)
-        expected = [b.allocation for b in engine.output_bindings]
-        assert result == expected
+    def test_raw_exec_matches_execute(self, engine, random_input) -> None:
+        """raw_exec outputs hold the same values execute returns."""
+        outputs = engine.raw_exec(_to_device(random_input))
+        stream_synchronize(engine.stream)
+        raw = [o.numpy() for o in outputs]
+        for r, e in zip(raw, engine.execute(random_input)):
+            np.testing.assert_array_equal(r, e)
 
-    @pytest.mark.parametrize(
-        "set_pointers",
-        [
-            pytest.param(True, id="set-pointers-true"),
-            pytest.param(False, id="set-pointers-false"),
-        ],
-    )
-    def test_raw_exec_set_pointers(self, engine, set_pointers) -> None:
-        """set_pointers controls whether tensor addresses are set."""
-        ptrs = [b.allocation for b in engine.input_bindings]
-        if not set_pointers:
-            engine.raw_exec(ptrs, set_pointers=True, no_warn=True)
-        result = engine.raw_exec(ptrs, set_pointers=set_pointers, no_warn=True)
-        assert isinstance(result, list)
-        if set_pointers:
-            assert engine._using_engine_tensors is False
-
-    @pytest.mark.parametrize(
-        "no_warn",
-        [
-            pytest.param(True, id="no-warn-true"),
-            pytest.param(False, id="no-warn-false"),
-            pytest.param(None, id="no-warn-none"),
-        ],
-    )
-    def test_raw_exec_no_warn(self, engine, no_warn) -> None:
-        """no_warn parameter is accepted for all values."""
-        ptrs = [b.allocation for b in engine.input_bindings]
-        engine.raw_exec(ptrs, no_warn=no_warn)
-
-    def test_binding_reset(self, make_engine) -> None:
-        """execute() after raw_exec() resets tensor addresses."""
+    def test_execute_after_raw_exec_rebinds(self, make_engine) -> None:
+        """execute() with host inputs after raw_exec() with device inputs rebinds the engine memory."""
         eng = make_engine()
-        rand_input = eng.get_random_input()
-        device_ptrs = allocate_to_device(rand_input)
-
-        eng.raw_exec(device_ptrs, no_warn=True)
-        assert eng._using_engine_tensors is False
-
-        eng.execute(rand_input)
-        assert eng._using_engine_tensors is True
-
-        free_device_ptrs(device_ptrs)
+        host = eng.get_random_input()
+        eng.raw_exec(_to_device(host))
+        stream_synchronize(eng.stream)
+        eng.execute(host)
+        assert eng._input_addresses == [b.allocation for b in eng.input_bindings]
 
 
 class TestMockExecute:
     """Tests for mock_execute(), warmup(), get_random_input(), and __call__."""
 
     def test_get_random_input_matches_spec(self, engine) -> None:
-        """get_random_input returns arrays matching engine input spec shapes and dtypes."""
+        """get_random_input returns host Buffers matching engine input spec shapes and dtypes."""
         data = engine.get_random_input()
         assert isinstance(data, list)
         assert len(data) == len(engine.input_spec)
-        for arr, (shape, dtype) in zip(data, engine.input_spec):
-            assert isinstance(arr, np.ndarray)
-            assert list(arr.shape) == shape
-            assert arr.dtype == dtype
+        for buffer, (shape, dtype) in zip(data, engine.input_spec):
+            assert isinstance(buffer, Buffer)
+            assert buffer.is_host
+            assert list(buffer.shape) == shape
+            assert buffer.dtype == dtype
 
     def test_cached_returns_same(self, engine) -> None:
         """Default (new=None) returns cached data on second call."""
@@ -456,12 +417,19 @@ class TestGraphExec:
         if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
             eng.graph_exec(debug=True)
 
-    def test_graph_invalidation_on_set_input(self, make_engine) -> None:
-        """Setting input bindings invalidates the captured graph."""
+    def test_device_inputs_bypass_graph(self, make_engine) -> None:
+        """Device inputs run without the graph, which stays valid for host calls."""
         eng = make_engine(warmup=True, warmup_iterations=2)
-        if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
-            eng._set_input_bindings()
-            assert not eng._cuda_graph.is_captured
+        if eng._cuda_graph is None or not eng._cuda_graph.is_captured:
+            pytest.skip("CUDA graph not captured")
+        host = eng.get_random_input()
+        expected = eng.execute(host)
+        out_device = eng.execute(_to_device(host))
+        assert eng._cuda_graph.is_captured
+        for od, oe in zip(out_device, expected):
+            np.testing.assert_array_equal(od, oe)
+        for oh, oe in zip(eng.execute(host), expected):
+            np.testing.assert_array_equal(oh, oe)
 
     def test_execute_with_cuda_graph_full_flow(self, make_engine) -> None:
         """Full flow: init -> execute (capture) -> execute (replay)."""
@@ -511,15 +479,6 @@ class TestGraphExec:
         assert not eng._cuda_graph_enabled
         assert eng._cuda_graph is None
 
-    def test_capture_recursion_guard(self, make_engine) -> None:
-        """_capturing_graph=True causes _capture_cuda_graph to return early."""
-        eng = make_engine(cuda_graph=True)
-        if eng._cuda_graph is None:
-            pytest.skip("CUDA graph not enabled")
-        eng._capturing_graph = True
-        eng._capture_cuda_graph()
-        eng._capturing_graph = False
-
     def test_capture_cuda_graph_none_raises(self, make_engine) -> None:
         """_capture_cuda_graph raises RuntimeError when _cuda_graph is None."""
         eng = make_engine(cuda_graph=True)
@@ -529,45 +488,6 @@ class TestGraphExec:
             eng._capture_cuda_graph()
         eng._cuda_graph = saved
 
-    def test_capture_warmup_failure_invalidates_graph(self, make_engine) -> None:
-        """RuntimeError during warmup invalidates graph and raises."""
-        eng = make_engine(cuda_graph=True)
-        if eng._cuda_graph is None:
-            pytest.skip("CUDA graph not enabled")
-        with patch.object(
-            eng, "warmup", side_effect=RuntimeError("mock warmup failure")
-        ), pytest.raises(
-            RuntimeError,
-            match=r"CUDA graph capture failed.*during warmup",
-        ):
-            eng._capture_cuda_graph()
-        assert eng._cuda_graph is None
-
-    def test_binding_change_invalidates_graph(self, make_engine) -> None:
-        """Changing output bindings invalidates captured graph."""
-        eng = make_engine(warmup=True, warmup_iterations=2)
-        if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
-            eng._set_output_bindings()
-            assert not eng._cuda_graph.is_captured
-
-    def test_direct_exec_bypasses_graph_capture(self, make_engine) -> None:
-        """direct_exec() does not trigger CUDA graph capture."""
-        eng = make_engine(cuda_graph=True)
-        if eng._cuda_graph is None:
-            pytest.skip("CUDA graph not enabled")
-        assert eng._cuda_graph.is_captured is False
-
-        rand_input = eng.get_random_input()
-        device_ptrs = allocate_to_device(rand_input)
-
-        eng.direct_exec(device_ptrs, no_warn=True)
-        assert eng._cuda_graph.is_captured is False
-
-        free_device_ptrs(device_ptrs)
-
-        eng.execute(eng.get_random_input())
-        assert eng._cuda_graph.is_captured is True
-
     def test_raw_exec_bypasses_graph_capture(self, make_engine) -> None:
         """raw_exec() does not trigger CUDA graph capture."""
         eng = make_engine(cuda_graph=True)
@@ -575,14 +495,10 @@ class TestGraphExec:
             pytest.skip("CUDA graph not enabled")
         assert eng._cuda_graph.is_captured is False
 
-        rand_input = eng.get_random_input()
-        device_ptrs = allocate_to_device(rand_input)
-
-        output_ptrs = eng.raw_exec(device_ptrs, no_warn=True)
-        assert output_ptrs is not None
+        outputs = eng.raw_exec(eng.get_random_input())
+        stream_synchronize(eng.stream)
+        assert outputs is not None
         assert eng._cuda_graph.is_captured is False
-
-        free_device_ptrs(device_ptrs)
 
         eng.execute(eng.get_random_input())
         assert eng._cuda_graph.is_captured is True

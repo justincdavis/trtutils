@@ -10,27 +10,25 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 import nvtx
 
 from ._flags import FLAGS
 from ._log import LOG
+from .core._buffer import DEVICE_ALIGNMENT, Buffer, as_buffers
 from .core._graph import CUDAGraph
 from .core._interface import TRTEngineInterface
-from .core._memory import (
-    memcpy_device_to_host,
-    memcpy_device_to_host_async,
-    memcpy_host_to_device,
-    memcpy_host_to_device_async,
-)
 from .core._stream import stream_synchronize
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from typing import ClassVar
 
+    import numpy as np
     from typing_extensions import Self
 
     from trtutils.compat._libs import cuda
+
+    from .core._bindings import Binding
 
 
 class TRTEngine(TRTEngineInterface):
@@ -131,7 +129,6 @@ class TRTEngine(TRTEngineInterface):
                 "graph_capture": f"engine::graph_capture [{self.name}]",
                 "execute": f"engine::execute [{self.name}]",
                 "graph_exec": f"engine::graph_exec [{self.name}]",
-                "direct_exec": f"engine::direct_exec [{self.name}]",
                 "raw_exec": f"engine::raw_exec [{self.name}]",
             }
         )
@@ -153,19 +150,29 @@ class TRTEngine(TRTEngineInterface):
             cuda_graph if cuda_graph is not None else True
         ) and self._async_v3
         self._cuda_graph: CUDAGraph | None = None
-        self._capturing_graph: bool = False  # Guard against capture recursion
         if self._cuda_graph_enabled:
             self._cuda_graph = CUDAGraph(self._stream)
 
-        # if using v3
-        # 1.) need to do set_input_shape for all input bindings
-        # 2.) need to do set_tensor_address for all input/output bindings
+        # the shapes and device addresses the context currently holds for each
+        # input; every call compares against these, so the context is only
+        # updated when a submitted Buffer differs from the previous call
+        self._input_shapes: list[tuple[int, ...]] = list(self._input_max_shapes)
+        self._input_addresses: list[int] = [b.allocation for b in self._inputs]
+        # the engine's own input addresses: with the max shapes, the only
+        # configuration the engine's CUDA graph is captured and replayed for
+        self._allocated_addresses: list[int] = list(self._input_addresses)
+        self._output_shapes: list[tuple[int, ...]] = [tuple(b.shape) for b in self._outputs]
+        # device views of the outputs at the current output shapes
+        self._output_views: list[Buffer] = [b.device for b in self._outputs]
+        # set when the context shapes change; the next enqueue then runs
+        # without a CUDA graph so TensorRT can react to the new shapes
+        self._shapes_changed: bool = False
         if self._async_v3:
-            self._set_input_bindings()
-            self._set_output_bindings()
-        # if using the v3 backend also need to track if we are pointing to the 'built-in' tensors
-        # only applies to the inputs
-        self._using_engine_tensors: bool = True
+            for i_binding in self._inputs:
+                self._context.set_input_shape(i_binding.name, i_binding.shape)
+                self._context.set_tensor_address(i_binding.name, i_binding.allocation)
+            for o_binding in self._outputs:
+                self._context.set_tensor_address(o_binding.name, o_binding.allocation)
 
         # store timing variable for sleep call before stream_sync
         self._sync_t: float = 0.0
@@ -186,82 +193,170 @@ class TRTEngine(TRTEngineInterface):
 
         LOG.debug(f"Created TRTEngine: {self.name}")
 
-    def _set_input_bindings(self: Self) -> None:
-        for i_binding in self._inputs:
-            self._context.set_input_shape(i_binding.name, i_binding.shape)
-            self._context.set_tensor_address(i_binding.name, i_binding.allocation)
-        # CUDA graph is invalid if using new bindings
-        if self._cuda_graph and self._cuda_graph.is_captured:
-            self._cuda_graph.invalidate()
+    @property
+    def active_input_shapes(self: Self) -> list[tuple[int, ...]]:
+        """The input shapes of the most recent execution."""
+        return list(self._input_shapes)
 
-    def _set_output_bindings(self: Self) -> None:
+    @property
+    def active_output_shapes(self: Self) -> list[tuple[int, ...]]:
+        """The output shapes of the most recent execution."""
+        return list(self._output_shapes)
+
+    def _check_input_shape(self: Self, index: int, shape: tuple[int, ...]) -> None:
+        name = self._inputs[index].name
+        min_shape = self._input_min_shapes[index]
+        max_shape = self._input_max_shapes[index]
+        valid = len(shape) == len(min_shape) and all(
+            lo <= dim <= hi for dim, lo, hi in zip(shape, min_shape, max_shape)
+        )
+        if not valid:
+            if min_shape == max_shape:
+                expected = f"exactly {min_shape}"
+            else:
+                expected = f"between {min_shape} and {max_shape}"
+            err_msg = (
+                f"Input '{name}' of engine '{self._name}' got shape {shape}, expected {expected}."
+            )
+            raise ValueError(err_msg)
+
+    def _set_context_shape(self: Self, index: int, shape: tuple[int, ...]) -> None:
+        binding = self._inputs[index]
+        if self._async_v3:
+            ok = self._context.set_input_shape(binding.name, shape)
+        else:
+            ok = self._context.set_binding_shape(binding.index, shape)
+        if ok is False:
+            err_msg = f"TensorRT rejected shape {shape} for input '{binding.name}' of engine '{self._name}'."
+            raise ValueError(err_msg)
+        self._input_shapes[index] = shape
+        self._shapes_changed = True
+
+    def _refresh_output_shapes(self: Self) -> None:
+        shapes: list[tuple[int, ...]] = []
         for o_binding in self._outputs:
-            self._context.set_tensor_address(o_binding.name, o_binding.allocation)
-        # CUDA graph is invalid if using new bindings
-        if self._cuda_graph and self._cuda_graph.is_captured:
-            self._cuda_graph.invalidate()
+            if self._async_v3:
+                shape = tuple(self._context.get_tensor_shape(o_binding.name))
+            else:
+                shape = tuple(self._context.get_binding_shape(o_binding.index))
+            # data-dependent output shapes are only known after execution;
+            # fall back to the full allocation for those
+            if any(dim < 0 for dim in shape):
+                shape = tuple(o_binding.shape)
+            shapes.append(shape)
+        self._output_shapes = shapes
+        self._output_views = [
+            b.device if s == tuple(b.shape) else b.device.view(s)
+            for b, s in zip(self._outputs, shapes)
+        ]
+
+    def _set_input_address(self: Self, index: int, address: int) -> None:
+        if address == self._input_addresses[index]:
+            return
+        binding = self._inputs[index]
+        if self._async_v3:
+            self._context.set_tensor_address(binding.name, address)
+        else:
+            # the v2 backend takes a pointer per binding index instead of names
+            self._allocations[binding.index] = address
+        self._input_addresses[index] = address
+
+    def _validate_inputs(self: Self, data: Sequence[Buffer]) -> list[Buffer]:
+        """
+        Check the inputs against the engine without touching the context.
+
+        Raises
+        ------
+        ValueError
+            If the number of inputs, a dtype, or a shape does not match the engine.
+
+        """
+        inputs = as_buffers(data)
+        if len(inputs) != len(self._inputs):
+            err_msg = f"Engine '{self._name}' expects {len(self._inputs)} inputs, got {len(inputs)}."
+            raise ValueError(err_msg)
+        for index, (binding, buffer) in enumerate(zip(self._inputs, inputs)):
+            if buffer.dtype != binding.dtype:
+                err_msg = (
+                    f"Input '{binding.name}' of engine '{self._name}' expects dtype "
+                    f"{binding.dtype}, got {buffer.dtype}."
+                )
+                raise ValueError(err_msg)
+            if buffer.shape != self._input_shapes[index]:
+                self._check_input_shape(index, buffer.shape)
+        return inputs
+
+    def _device_input(self: Self, binding: Binding, buffer: Buffer) -> Buffer:
+        """Get a Buffer TensorRT can read in place, staging into the binding when needed."""
+        if buffer.device_visible and buffer.device_ptr % DEVICE_ALIGNMENT == 0:
+            return buffer
+        return binding.stage(buffer, self._stream)
+
+    def _bind_inputs(self: Self, data: Sequence[Buffer]) -> None:
+        """
+        Point the context at the given inputs, updating shapes and addresses as needed.
+
+        Every input is validated before the context is touched, so a bad
+        input never leaves the engine half-updated. Device Buffers (and
+        mapped host Buffers) are bound in place; host Buffers, and device
+        Buffers TensorRT cannot address directly, are copied into the
+        engine's own input bindings on the engine stream.
+        """
+        inputs = self._validate_inputs(data)
+        shapes_changed = False
+        for index, (binding, buffer) in enumerate(zip(self._inputs, inputs)):
+            if buffer.shape != self._input_shapes[index]:
+                self._set_context_shape(index, buffer.shape)
+                shapes_changed = True
+            self._set_input_address(index, self._device_input(binding, buffer).device_ptr)
+        if shapes_changed:
+            self._refresh_output_shapes()
+
+    def _enqueue(self: Self, *, allow_graph: bool) -> None:
+        """Enqueue one execution of the context on the engine stream."""
+        if not self._async_v3:
+            self._context.execute_async_v2(self._allocations, self._stream)
+            return
+        # the CUDA graph was captured against the engine's own bindings at
+        # their full shapes, so it only replays for exactly that configuration
+        use_graph = (
+            allow_graph
+            and self._cuda_graph is not None
+            and not self._shapes_changed
+            and self._input_addresses == self._allocated_addresses
+            and self._input_shapes == self._input_max_shapes
+        )
+        if use_graph and self._cuda_graph is not None and self._cuda_graph.is_captured:
+            self._cuda_graph.launch()
+            return
+        self._context.execute_async_v3(self._stream)
+        self._shapes_changed = False
+        if use_graph:
+            # this call already ran for real; record a graph for the next ones
+            self._capture_cuda_graph()
 
     def _capture_cuda_graph(self: Self) -> None:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["graph_capture"])
-
-        # Prevent recursion: warmup() -> mock_execute() -> execute() -> _capture_cuda_graph()
-        if self._capturing_graph:
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # graph_capture
-            return
-
-        if self._cuda_graph is None:
+        graph = self._cuda_graph
+        if graph is None:
             err_msg = f"CUDA graph is not enabled in engine: {self._name}"
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # graph_capture
             raise RuntimeError(err_msg)
-
-        self._capturing_graph = True
-        capture_error: RuntimeError | None = None
-        try:
-            # serialize CUDA graph capture
-            with self._capture_lock:
-                # at least one execution required prior to graph capture
-                # simply use one warmup iteration if warmup didnt get run
-                if not self._warmup:
-                    try:
-                        self.warmup(1, verbose=self._verbose)
-                    except RuntimeError as e:
-                        # assess if cuda graph capture fails during warmup
-                        if self._cuda_graph is not None:
-                            self._cuda_graph.invalidate()
-                        self._cuda_graph = None
-                        err_msg = (
-                            f"CUDA graph capture failed for engine '{self._name}' during warmup: {e}\n"
-                            "This can happen when multiple engines attempt graph capture simultaneously.\n"
-                            "To resolve: use cuda_graph=False, or ensure engines are created sequentially, "
-                            "or use warmup=True to capture graphs at initialization time."
-                        )
-                        capture_error = RuntimeError(err_msg)
-                        capture_error.__cause__ = e
-                        return
-
-                # capture graph
-                with self._cuda_graph:
-                    self._context.execute_async_v3(self._stream)
-
-                # assess graph capture success
-                if not self._cuda_graph.is_captured:
-                    self._cuda_graph = None
-                    err_msg = (
-                        f"CUDA graph capture failed for engine '{self._name}'.\n"
-                        "The engine may not support CUDA graph capture.\n"
-                        "To resolve: use cuda_graph=False to disable CUDA graphs for this engine."
-                    )
-                    capture_error = RuntimeError(err_msg)
-        finally:
-            self._capturing_graph = False
-            if capture_error is not None:
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # graph_capture
-                raise capture_error
-
+        # serialize CUDA graph capture across engines
+        with self._capture_lock, graph:
+            self._context.execute_async_v3(self._stream)
+        if not graph.is_captured:
+            self._cuda_graph = None
+            err_msg = (
+                f"CUDA graph capture failed for engine '{self._name}'.\n"
+                "The engine may not support CUDA graph capture.\n"
+                "To resolve: use cuda_graph=False to disable CUDA graphs for this engine."
+            )
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # graph_capture
+            raise RuntimeError(err_msg)
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # graph_capture
 
@@ -273,7 +368,7 @@ class TRTEngine(TRTEngineInterface):
 
     def execute(
         self: Self,
-        data: list[np.ndarray],
+        data: Sequence[Buffer],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -282,10 +377,17 @@ class TRTEngine(TRTEngineInterface):
         """
         Execute the network with the given inputs.
 
+        Each input is a :class:`~trtutils.core.Buffer` on the host or the
+        device. The engine runs at the shapes of the given Buffers, so a
+        dynamic engine executes exactly the submitted batch/resolution and
+        returns outputs of the matching shape. Device Buffers are read in
+        place (no copy); host Buffers are copied to the device first.
+
         Parameters
         ----------
-        data : list[np.ndarray]
-            The inputs to the network.
+        data : Sequence[Buffer]
+            One Buffer per engine input. Wrap numpy arrays or CUDA arrays
+            (CuPy, PyTorch, ...) with :meth:`Buffer.wrap`.
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -316,109 +418,73 @@ class TRTEngine(TRTEngineInterface):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["execute"])
-
-        with self._device_guard:
-            # reset the input bindings if direct_exec or raw_exec were used
-            if not self._using_engine_tensors:
-                self._set_input_bindings()
-                self._using_engine_tensors = True
-
-            # copy inputs
-            if self._pagelocked_mem and self._unified_mem:
-                for i_idx in range(len(self._inputs)):
-                    np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
-            elif self._pagelocked_mem:
-                for i_idx in range(len(self._inputs)):
-                    memcpy_host_to_device_async(
-                        self._inputs[i_idx].allocation,
-                        data[i_idx],
-                        self._stream,
-                    )
-            else:
-                for i_idx in range(len(self._inputs)):
-                    memcpy_host_to_device(
-                        self._inputs[i_idx].allocation,
-                        data[i_idx],
-                    )
-
-            if debug:
+        try:
+            with self._device_guard:
+                self._run(data, allow_graph=True, debug=debug)
+                outputs = self.fetch_outputs()
                 stream_synchronize(self._stream)
-
-            # execute
-            if self._cuda_graph:
-                if self._cuda_graph.is_captured:
-                    # uses already captured graph to handle execution
-                    self._cuda_graph.launch()
-                elif not self._capturing_graph:
-                    # Capture the graph (warmup inside will use random data)
-                    self._capture_cuda_graph()
-                    # After capture, re-copy user's input (warmup overwrote it) and launch
-                    if self._cuda_graph is not None and self._cuda_graph.is_captured:
-                        if self._pagelocked_mem and self._unified_mem:
-                            for i_idx in range(len(self._inputs)):
-                                np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
-                        elif self._pagelocked_mem:
-                            for i_idx in range(len(self._inputs)):
-                                memcpy_host_to_device_async(
-                                    self._inputs[i_idx].allocation,
-                                    data[i_idx],
-                                    self._stream,
-                                )
-                        else:
-                            for i_idx in range(len(self._inputs)):
-                                memcpy_host_to_device(
-                                    self._inputs[i_idx].allocation,
-                                    data[i_idx],
-                                )
-                        self._cuda_graph.launch()
-                else:
-                    # Currently capturing graph, use direct execution for warmup
-                    self._context.execute_async_v3(self._stream)
-            # base execution cases
-            elif self._async_v3:
-                self._context.execute_async_v3(self._stream)
-            else:
-                self._context.execute_async_v2(self._allocations, self._stream)
-
-            if debug:
-                stream_synchronize(self._stream)
-
-            # copy outputs
-            if self._unified_mem and self._pagelocked_mem:
-                pass
-            elif self._pagelocked_mem:
-                for o_idx in range(len(self._outputs)):
-                    memcpy_device_to_host_async(
-                        self._outputs[o_idx].host_allocation,
-                        self._outputs[o_idx].allocation,
-                        self._stream,
-                    )
-            else:
-                for o_idx in range(len(self._outputs)):
-                    memcpy_device_to_host(
-                        self._outputs[o_idx].host_allocation,
-                        self._outputs[o_idx].allocation,
-                    )
-
-            # make sure all operations are complete
-            # Skip sync when warming up for graph capture to avoid conflicts
-            # with cudaStreamCaptureModeGlobal in multi-threaded scenarios
-            if not self._capturing_graph:
-                stream_synchronize(self._stream)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # execute
 
         if verbose:
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
 
-        # return the results
-        if no_copy:
-            outputs = [o.host_allocation for o in self._outputs]
-        else:
-            outputs = [o.host_allocation.copy() for o in self._outputs]
+        return [o.array if no_copy else o.array.copy() for o in outputs]
 
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
+    def _run(self: Self, data: Sequence[Buffer], *, allow_graph: bool, debug: bool | None) -> None:
+        """Bind the inputs and enqueue one execution on the engine stream."""
+        self._bind_inputs(data)
+        if debug:
+            stream_synchronize(self._stream)
+        self._enqueue(allow_graph=allow_graph)
+        if debug:
+            stream_synchronize(self._stream)
 
-        return outputs
+    def fetch_outputs(self: Self) -> list[Buffer]:
+        """
+        Enqueue copies of the latest outputs into the host buffers of the output bindings.
+
+        Only the valid prefix of each output (the shape of the latest
+        execution) is copied. The host Buffers are ready to read once the
+        engine stream is synchronized, and are overwritten by later calls.
+
+        Returns
+        -------
+        list[Buffer]
+            Host views of the outputs, one per output binding.
+
+        """
+        with self._device_guard:
+            return [
+                binding.fetch(shape, self._stream)
+                for binding, shape in zip(self._outputs, self._output_shapes)
+            ]
+
+    def stage_inputs(self: Self, data: Sequence[Buffer]) -> list[Buffer]:
+        """
+        Make every input device-resident, copying host Buffers into the engine's bindings.
+
+        Useful before recording the engine into an outer CUDA graph with
+        :meth:`raw_exec`, since host-to-device copies from pageable memory
+        cannot be captured. The copies are enqueued on the engine stream.
+
+        Parameters
+        ----------
+        data : Sequence[Buffer]
+            One Buffer per engine input.
+
+        Returns
+        -------
+        list[Buffer]
+            Device Buffers holding the inputs, in the same order.
+
+        """
+        inputs = self._validate_inputs(data)
+        with self._device_guard:
+            return [
+                self._device_input(binding, buffer) for binding, buffer in zip(self._inputs, inputs)
+            ]
 
     def graph_exec(
         self: Self,
@@ -430,7 +496,8 @@ class TRTEngine(TRTEngineInterface):
 
         This method only launches the graph - it does not handle
         input/output memory transfers or graph capture. The graph must
-        already be captured (via warmup or prior execute() calls).
+        already be captured (via warmup or prior execute() calls) and
+        replays the engine's own input/output bindings at their full shapes.
 
         This method does NOT synchronize the stream by default, allowing
         the graph to be embedded in a larger pipeline. Use debug=True
@@ -465,135 +532,25 @@ class TRTEngine(TRTEngineInterface):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()
 
-    def direct_exec(
-        self: Self,
-        pointers: list[int],
-        *,
-        set_pointers: bool = True,
-        no_warn: bool | None = None,
-        verbose: bool | None = None,
-        debug: bool | None = None,
-    ) -> list[np.ndarray]:
-        """
-        Execute the network with the given GPU memory pointers.
-
-        The outputs of this function are not copied on return.
-        The data will be updated inplace if execute or direct_exec
-        is called. Calling this method while giving bad pointers
-        will also cause CUDA runtime to crash and program to crash.
-
-        Parameters
-        ----------
-        pointers : list[int]
-            The inputs to the network.
-            Pointers must be in the order of expected inputs for the engine.
-        set_pointers : bool, optional
-            Whether to set tensor addresses before execution.
-            If True (default), tensor addresses will be set.
-            If False, tensor addresses are assumed to already be configured.
-            By default True.
-        no_warn : bool, optional
-            If True, do not warn about usage.
-        verbose : bool, optional
-            Whether or not to output additional information
-            to stdout. If not provided, will default to overall
-            engines verbose setting.
-        debug : bool, optional
-            Enable intermediate stream synchronize for debugging.
-
-        Returns
-        -------
-        list[np.ndarray]
-            The outputs of the network.
-
-        Notes
-        -----
-        This method always synchronizes the stream before returning,
-        ensuring outputs are ready to read on the host.
-
-        """
-        verbose = verbose if verbose is not None else self._verbose
-        if not no_warn:
-            LOG.warning(
-                "Calling direct_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
-            )
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["direct_exec"])
-
-        with self._device_guard:
-            # execute
-            if self._async_v3:
-                if set_pointers:
-                    # need to set the input pointers to match the bindings, assume in same order
-                    for i in range(len(pointers)):
-                        self._context.set_tensor_address(self._inputs[i].name, pointers[i])
-                    self._using_engine_tensors = (
-                        False  # set flag to tell future execute calls to reset inputs
-                    )
-                self._context.execute_async_v3(self._stream)
-            else:
-                self._context.execute_async_v2(
-                    pointers + self._output_allocations,
-                    self._stream,
-                )
-
-            if debug:
-                stream_synchronize(self._stream)
-
-            # copy outputs
-            if self._unified_mem and self._pagelocked_mem:
-                pass
-            elif self._pagelocked_mem:
-                for o_idx in range(len(self._outputs)):
-                    memcpy_device_to_host_async(
-                        self._outputs[o_idx].host_allocation,
-                        self._outputs[o_idx].allocation,
-                        self._stream,
-                    )
-            else:
-                for o_idx in range(len(self._outputs)):
-                    memcpy_device_to_host(
-                        self._outputs[o_idx].host_allocation,
-                        self._outputs[o_idx].allocation,
-                    )
-
-            # make sure all operations are complete
-            stream_synchronize(self._stream)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
-
-        # return the output host allocations
-        return self._output_host_allocations
-
     def raw_exec(
         self: Self,
-        pointers: list[int],
+        data: Sequence[Buffer],
         *,
-        set_pointers: bool = True,
-        no_warn: bool | None = None,
         verbose: bool | None = None,
         debug: bool | None = None,
-    ) -> list[int]:
+    ) -> list[Buffer]:
         """
-        Execute the network with the given GPU memory pointers.
+        Enqueue the network on its stream, leaving the outputs on the device.
 
-        The outputs of this function are the direct GPU pointers
-        of the output allocations.
+        Inputs are handled as in :meth:`execute`. The engine's own CUDA
+        graph is never used, so this call can be recorded into an outer
+        graph. The returned Buffers view the engine's output bindings and
+        are overwritten by the next execution.
 
         Parameters
         ----------
-        pointers : list[int]
-            The inputs to the network.
-            Pointers must be in the order of expected inputs for the engine.
-        set_pointers : bool, optional
-            Whether to set tensor addresses before execution.
-            If True (default), tensor addresses will be set.
-            If False, tensor addresses are assumed to already be configured.
-            By default True.
-        no_warn : bool, optional
-            If True, do not warn about usage.
+        data : Sequence[Buffer]
+            One Buffer per engine input.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -603,47 +560,27 @@ class TRTEngine(TRTEngineInterface):
 
         Returns
         -------
-        list[int]
-            The pointers to the network outputs.
+        list[Buffer]
+            Device views of the outputs, shaped to the executed input shapes.
 
         Notes
         -----
-        This method does NOT synchronize the stream by default. The caller
-        is responsible for synchronization if needed. Use debug=True to
-        force synchronization after execution.
+        This method does NOT synchronize the stream by default. Input
+        Buffers must stay alive and unmodified, and the outputs must not be
+        read, until the caller synchronizes the stream.
 
         """
         verbose = verbose if verbose is not None else self._verbose
-        if not no_warn:
-            LOG.warning(
-                "Calling raw_exec is potentially dangerous, ensure all pointers and data are valid. Outputs can be overwritten inplace!",
-            )
+        if verbose:
+            LOG.info(f"{time.perf_counter()} {self.name} raw_exec")
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["raw_exec"])
+        try:
+            with self._device_guard:
+                self._run(data, allow_graph=False, debug=debug)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # raw_exec
 
-        with self._device_guard:
-            # execute
-            if self._async_v3:
-                if set_pointers:
-                    # need to set the input pointers to match the bindings, assume in same order
-                    for i in range(len(pointers)):
-                        self._context.set_tensor_address(self._inputs[i].name, pointers[i])
-                    self._using_engine_tensors = (
-                        False  # set flag to tell future execute calls to reset inputs
-                    )
-                self._context.execute_async_v3(self._stream)
-            else:
-                self._context.execute_async_v2(
-                    pointers + self._output_allocations,
-                    self._stream,
-                )
-
-            if debug:
-                stream_synchronize(self._stream)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
-
-        # return the pointers to the output allocations
-        return self._output_allocations
+        return list(self._output_views)

@@ -1140,7 +1140,7 @@ class ParallelDetector:
                     # direct_preproc handles batch
                     gpu_img, ratios, padding = preproc.direct_preproc(images, no_warn=True)
                     t0 = time.perf_counter()
-                    results = detector.engine.direct_exec([gpu_img], no_warn=True)
+                    results = detector.engine.execute([gpu_img], no_copy=True)
                     t1 = time.perf_counter()
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # gpu_preprocess

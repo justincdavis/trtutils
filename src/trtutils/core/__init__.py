@@ -16,7 +16,9 @@ Submodules
 Classes
 -------
 :class:`Binding`
-    A class for managing a CUDA allocation.
+    A TensorRT I/O tensor: metadata plus a host and a device Buffer.
+:class:`Buffer`
+    One contiguous, typed allocation on the host or device; the engine input type.
 :class:`CUDAGraph`
     Wrapper around CUDA graph capture and execution.
 :class:`Device`
@@ -25,6 +27,10 @@ Classes
     An interface for the TRTEngine class.
 :class:`Kernel`
     Wrapper around CUDA kernels.
+:class:`KernelArgs`
+    A kernel argument array that keeps its argument buffers alive.
+:class:`MemoryLocation`
+    Where a Buffer resides: host or device.
 
 Functions
 ---------
@@ -127,6 +133,7 @@ from ._bindings import (
     allocate_bindings,
     create_binding,
 )
+from ._buffer import Buffer, MemoryLocation
 from ._context import create_context, destroy_context
 from ._cuda import cuda_call, init_cuda
 from ._device import (
@@ -150,7 +157,7 @@ from ._graph import (
     cuda_stream_end_capture,
 )
 from ._interface import TRTEngineInterface
-from ._kernels import Kernel, create_kernel_args, launch_kernel
+from ._kernels import Kernel, KernelArgs, create_kernel_args, launch_kernel
 from ._memory import (
     allocate_managed_memory,
     allocate_pinned_memory,
@@ -173,9 +180,12 @@ from ._stream import create_stream, destroy_stream, stream_synchronize
 
 __all__ = [
     "Binding",
+    "Buffer",
     "CUDAGraph",
     "Device",
     "Kernel",
+    "KernelArgs",
+    "MemoryLocation",
     "TRTEngineInterface",
     "allocate_bindings",
     "allocate_managed_memory",

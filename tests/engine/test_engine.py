@@ -157,9 +157,11 @@ def test_del_deletes_context_engine(make_engine) -> None:
     assert not hasattr(eng, "_engine")
 
 
-def test_using_engine_tensors_flag_default(engine) -> None:
-    """_using_engine_tensors is True by default after init."""
-    assert engine._using_engine_tensors is True
+def test_engine_bindings_bound_by_default(engine) -> None:
+    """After init the context points at the engine's own bindings at their full shapes."""
+    assert engine._input_addresses == [b.allocation for b in engine.input_bindings]
+    assert engine.active_input_shapes == [tuple(b.shape) for b in engine.input_bindings]
+    assert engine.active_output_shapes == [tuple(b.shape) for b in engine.output_bindings]
 
 
 def test_async_v2_backend_init(make_engine) -> None:
