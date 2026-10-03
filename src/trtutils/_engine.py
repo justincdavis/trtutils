@@ -201,6 +201,36 @@ class TRTEngine(TRTEngineInterface):
         if self._cuda_graph and self._cuda_graph.is_captured:
             self._cuda_graph.invalidate()
 
+    def _update_dynamic_shapes(self: Self, data: list[np.ndarray]) -> None:
+        """
+        Update input/output binding shapes for a dynamic-profile engine.
+
+        Allocations are already sized for the optimization profile's max shape
+        (see ``allocate_bindings``); this only updates the shape TensorRT
+        actually runs at, for an engine built with a (min, opt, max) dynamic
+        profile (see ``build_engine(..., shapes=...)``). A no-op for
+        static-shape inputs/engines, since ``data``'s shape then always
+        matches the binding's existing shape.
+        """
+        if not self._async_v3:
+            # ponytail: dynamic-shape support is only wired up for the
+            # async_v3 (tensor API) backend, which is what "auto" picks on TRT 10+
+            return
+        changed = False
+        for i_binding, arr in zip(self._inputs, data):
+            shape = list(arr.shape)
+            if i_binding.shape != shape:
+                self._context.set_input_shape(i_binding.name, shape)
+                i_binding.shape = shape
+                changed = True
+        if not changed:
+            return
+        for o_binding in self._outputs:
+            o_binding.shape = list(self._context.get_tensor_shape(o_binding.name))
+        # bindings changed shape: any captured graph is now stale
+        if self._cuda_graph and self._cuda_graph.is_captured:
+            self._cuda_graph.invalidate()
+
     def _capture_cuda_graph(self: Self) -> None:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["graph_capture"])
@@ -323,10 +353,14 @@ class TRTEngine(TRTEngineInterface):
                 self._set_input_bindings()
                 self._using_engine_tensors = True
 
+            # for a dynamic-profile engine, (re)set the shape TensorRT runs at
+            # if this call's input shape differs from the previous one
+            self._update_dynamic_shapes(data)
+
             # copy inputs
             if self._pagelocked_mem and self._unified_mem:
                 for i_idx in range(len(self._inputs)):
-                    np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
+                    np.copyto(self._inputs[i_idx].view(), data[i_idx])
             elif self._pagelocked_mem:
                 for i_idx in range(len(self._inputs)):
                     memcpy_host_to_device_async(
@@ -356,7 +390,7 @@ class TRTEngine(TRTEngineInterface):
                     if self._cuda_graph is not None and self._cuda_graph.is_captured:
                         if self._pagelocked_mem and self._unified_mem:
                             for i_idx in range(len(self._inputs)):
-                                np.copyto(self._inputs[i_idx].host_allocation, data[i_idx])
+                                np.copyto(self._inputs[i_idx].view(), data[i_idx])
                         elif self._pagelocked_mem:
                             for i_idx in range(len(self._inputs)):
                                 memcpy_host_to_device_async(
@@ -409,11 +443,11 @@ class TRTEngine(TRTEngineInterface):
         if verbose:
             LOG.info(f"{time.perf_counter()} {self.name} Dispatch: END")
 
-        # return the results
+        # return the results -- view() trims to the current (possibly dynamic) shape
         if no_copy:
-            outputs = [o.host_allocation for o in self._outputs]
+            outputs = [o.view() for o in self._outputs]
         else:
-            outputs = [o.host_allocation.copy() for o in self._outputs]
+            outputs = [o.view().copy() for o in self._outputs]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()

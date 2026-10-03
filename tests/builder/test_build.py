@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -246,6 +247,24 @@ def test_manual_shapes(onnx_path, output_engine_path) -> None:
         optimization_level=1,
     )
     assert output_engine_path.exists()
+
+
+def test_manual_shapes_dynamic_profile(dynamic_onnx_path, output_engine_path) -> None:
+    """Passing a (min, opt, max) triple builds a dynamic optimization profile."""
+    min_shape, opt_shape, max_shape = (1, 3, 4, 4), (1, 3, 8, 8), (1, 3, 16, 16)
+    build_engine(
+        dynamic_onnx_path,
+        output_engine_path,
+        shapes=[("x", (min_shape, opt_shape, max_shape))],
+        optimization_level=1,
+    )
+    assert output_engine_path.exists()
+
+    with Path.open(output_engine_path, "rb") as f:
+        engine = trt.Runtime(trt.Logger()).deserialize_cuda_engine(f.read())
+    assert tuple(engine.get_tensor_profile_shape("x", 0)[0]) == min_shape
+    assert tuple(engine.get_tensor_profile_shape("x", 0)[1]) == opt_shape
+    assert tuple(engine.get_tensor_profile_shape("x", 0)[2]) == max_shape
 
 
 def test_single_hook(onnx_path, output_engine_path) -> None:

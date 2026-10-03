@@ -37,6 +37,31 @@ class Binding:
     pagelocked_mem: bool
     unified_mem: bool
 
+    def view(self: Self) -> np.ndarray:
+        """
+        Get a view of host_allocation trimmed/reshaped to the binding's current shape.
+
+        host_allocation is sized for the optimization profile's max shape; for a
+        dynamic-shaped binding the current call's shape may be smaller. The data
+        for the current shape is always the leading, contiguous portion of the
+        buffer, so this is a cheap reshape, never a copy.
+
+        Returns
+        -------
+        np.ndarray
+            A ``self.shape``-shaped view of ``host_allocation``.
+
+        """
+        shape = tuple(self.shape)
+        if shape == self.host_allocation.shape:
+            # common case (static shape, or dynamic call at the max profile
+            # shape): no reshape needed, return the real allocation itself
+            return self.host_allocation
+        n = 1
+        for dim in shape:
+            n *= dim
+        return self.host_allocation.reshape(-1)[:n].reshape(shape)
+
     def free(self: Self) -> None:
         """Free the memory of the binding."""
         if self.pagelocked_mem:
@@ -204,7 +229,7 @@ def allocate_bindings(
             dtype = np.dtype(trt.nptype(engine.get_tensor_dtype(name)))
             shape = context.get_tensor_shape(name)
             data_format = engine.get_tensor_format(name)
-            if is_input and shape[0] < 0:
+            if is_input and any(dim < 0 for dim in shape):
                 if not engine.num_optimization_profiles > 0:
                     err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
                     if FLAGS.NVTX_ENABLED:
@@ -228,7 +253,7 @@ def allocate_bindings(
             dtype = np.dtype(trt.nptype(engine.get_binding_dtype(i)))
             shape = context.get_binding_shape(i)
             data_format = engine.get_binding_format(i)
-            if is_input and shape[0] < 0:
+            if is_input and any(dim < 0 for dim in shape):
                 if not engine.num_optimization_profiles > 0:
                     err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
                     if FLAGS.NVTX_ENABLED:

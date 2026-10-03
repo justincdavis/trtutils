@@ -192,6 +192,28 @@ def simple_onnx_path() -> Path:
 
 
 @pytest.fixture(scope="session")
+def dynamic_onnx_path(tmp_path_factory) -> Path:
+    """Minimal ONNX model (Relu) with a dynamic H/W input, for dynamic-profile tests."""
+    from onnx import TensorProto, helper
+
+    out_path = tmp_path_factory.mktemp("dynamic") / "dynamic_relu.onnx"
+    shape = [1, 3, "h", "w"]
+    inp = helper.make_tensor_value_info("x", TensorProto.FLOAT, shape)
+    out = helper.make_tensor_value_info("y", TensorProto.FLOAT, shape)
+    node = helper.make_node("Relu", inputs=["x"], outputs=["y"], name="relu")
+    graph = helper.make_graph([node], "dynamic_relu", [inp], [out])
+    model = helper.make_model(
+        graph,
+        opset_imports=[helper.make_opsetid("", 13)],
+        producer_name="trtutils-tests",
+    )
+    model.ir_version = 8
+    onnx.checker.check_model(model)
+    onnx.save(model, str(out_path))
+    return out_path
+
+
+@pytest.fixture(scope="session")
 def engine_path(build_test_engine, simple_onnx_path) -> Path:
     """Build and return path to a simple test engine."""
     return build_test_engine(simple_onnx_path)
