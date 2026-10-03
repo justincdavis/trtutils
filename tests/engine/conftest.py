@@ -72,3 +72,25 @@ def engine_no_pagelocked(engine_path) -> Generator:
 def random_input(engine) -> list:
     """Generate random input matching engine spec."""
     return engine.get_random_input()
+
+
+def _build_dynamic_engine(dynamic_onnx_path: Path) -> Path:
+    """Build (once) an engine with a dynamic (min, opt, max) input profile."""
+    engine_path = ENGINES_DIR / f"dynamic_relu_{trt.__version__}.engine"
+    if not engine_path.exists():
+        ENGINES_DIR.mkdir(parents=True, exist_ok=True)
+        build_engine(
+            dynamic_onnx_path,
+            engine_path,
+            shapes=[("x", ((1, 3, 4, 4), (1, 3, 8, 8), (1, 3, 16, 16)))],
+            optimization_level=1,
+        )
+    return engine_path
+
+
+@pytest.fixture
+def dynamic_engine(dynamic_onnx_path) -> Generator:
+    """TRTEngine built with a dynamic (min, opt, max) input profile (Relu, see dynamic_onnx_path)."""
+    eng = TRTEngine(_build_dynamic_engine(dynamic_onnx_path), warmup=True, warmup_iterations=1)
+    yield eng
+    del eng

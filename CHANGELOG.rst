@@ -11,11 +11,19 @@ Added
   ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``
 * Download configs and ONNX export functions for Depth-Anything-V1
   (small / base / large) and Depth-Anything-V3 (mono-large, metric-large)
+* ``builder.build_engine``: a ``shapes`` entry may now be a ``(min_shape, opt_shape, max_shape)``
+  triple to build a dynamic optimization profile for that input, instead of only a single
+  static shape
+* ``TRTEngine.execute``: supports calls with an input shape that differs from the previous
+  call, for engines built with a dynamic profile -- the runtime input/output shapes are
+  updated automatically
 
 Fixed
 ^^^^^
 * ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
   notice into the exported requirements file
+* ``core.allocate_bindings``: detect a dynamic input shape from any negative dimension
+  (e.g. height/width), not only a dynamic leading (batch) dimension
 
 
 0.6.1 (2025-06-17)

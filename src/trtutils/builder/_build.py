@@ -27,10 +27,15 @@ if FLAGS.BUILD_PROGRESS:
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    # one static shape (used as min/opt/max), or an explicit (min, opt, max)
+    # triple to build a dynamic optimization profile for that input
+    BindingShape = tuple[int, ...] | tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]
+
     from ._batcher import AbstractBatcher
 
 _MIN_OPTIM_LEVEL = 0
 _MAX_OPTIM_LEVEL = 5
+_SHAPE_TRIPLE_LEN = 3
 
 
 def build_engine(
@@ -43,7 +48,7 @@ def build_engine(
     data_batcher: AbstractBatcher | None = None,
     layer_precision: list[tuple[int, trt.DataType | None]] | None = None,
     layer_device: list[tuple[int, trt.DeviceType | None]] | None = None,
-    shapes: Sequence[tuple[str, tuple[int, ...]]] | None = None,
+    shapes: Sequence[tuple[str, BindingShape]] | None = None,
     input_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
     output_tensor_formats: list[tuple[str, trt.DataType, trt.TensorFormat]] | None = None,
     hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
@@ -126,11 +131,17 @@ def build_engine(
     layer_device : list[tuple[int, trt.DeviceType | None]], optional
         The device to use for specific layers.
         By default, None.
-    shapes : list[tuple[str, tuple[int, ...]]], optional
+    shapes : list[tuple[str, BindingShape]], optional
         A list of (input_name, shape) pairs to specify the shapes of the input layers.
         For example, shapes=[("images", (1, 3, imgsz, imgsz))] will set the input
         “images” to a fixed shape. This shape will be used as the min, optimal,
         and max shape for the binding.
+        A shape may also be a (min_shape, opt_shape, max_shape) triple to build a
+        dynamic optimization profile for that input instead, e.g.
+        shapes=[("x", ((1, 3, 32, 32), (1, 3, 736, 736), (1, 3, 1280, 1280)))]
+        accepts any input shape between the min and max (inclusive) at runtime,
+        with kernels tuned for the opt shape. See ``TRTEngine.execute`` for
+        running such an engine with varying input shapes.
         By default, None.
     input_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
         A list of (name, dtype format) to allow deep specification of input layers.
@@ -325,8 +336,13 @@ def build_engine(
     # handle if manual shapes were passed for inputs
     if shapes:
         for input_name, shape in shapes:
-            # set the minimum, optimal, maximum to all the same
-            profile.set_shape(input_name, shape, shape, shape)
+            if len(shape) == _SHAPE_TRIPLE_LEN and isinstance(shape[0], (tuple, list)):
+                # (min_shape, opt_shape, max_shape) triple: dynamic profile
+                min_shape, opt_shape, max_shape = shape
+                profile.set_shape(input_name, min_shape, opt_shape, max_shape)
+            else:
+                # single static shape: set the minimum, optimal, maximum to all the same
+                profile.set_shape(input_name, shape, shape, shape)
 
     config.add_optimization_profile(profile)
 

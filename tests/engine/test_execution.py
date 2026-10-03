@@ -158,6 +158,36 @@ class TestExecute:
             assert out_ref is binding.host_allocation
 
 
+class TestDynamicShapes:
+    """Tests for TRTEngine.execute() on an engine built with a dynamic (min, opt, max) profile."""
+
+    @pytest.mark.parametrize(
+        "shape",
+        [
+            pytest.param((1, 3, 4, 4), id="min"),
+            pytest.param((1, 3, 8, 8), id="opt"),
+            pytest.param((1, 3, 16, 16), id="max"),
+            pytest.param((1, 3, 5, 11), id="in-between"),
+        ],
+    )
+    def test_execute_varying_shapes(self, dynamic_engine, shape) -> None:
+        """execute() accepts any shape within the profile and returns a matching output."""
+        rng = np.random.default_rng(0)
+        x = rng.standard_normal(shape).astype(np.float32)
+        (out,) = dynamic_engine.execute([x])
+        assert out.shape == shape
+        np.testing.assert_allclose(out, np.maximum(x, 0), rtol=1e-5, atol=1e-5)
+
+    def test_execute_shape_change_across_calls(self, dynamic_engine) -> None:
+        """Consecutive calls at different shapes each produce correctly shaped/valued output."""
+        rng = np.random.default_rng(1)
+        for shape in [(1, 3, 4, 4), (1, 3, 16, 16), (1, 3, 8, 8), (1, 3, 4, 4)]:
+            x = rng.standard_normal(shape).astype(np.float32)
+            (out,) = dynamic_engine.execute([x], no_copy=True)
+            assert out.shape == shape
+            np.testing.assert_allclose(out, np.maximum(x, 0), rtol=1e-5, atol=1e-5)
+
+
 class TestDirectExec:
     """Tests for TRTEngine.direct_exec()."""
 
