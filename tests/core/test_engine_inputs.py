@@ -113,6 +113,7 @@ def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
     eng._allocations = [inp.allocation, out.allocation]
     eng._cuda_graph_enabled = cuda_graph
     eng._cuda_graphs = OrderedDict()
+    eng._seen_configs = OrderedDict()
     return eng, context
 
 
@@ -282,6 +283,23 @@ def test_cuda_graph_cache_evicts_least_recently_used(fake_graphs, monkeypatch) -
     assert len(eng._cuda_graphs) == 2
 
 
+def test_one_off_inputs_do_not_evict_captured_graphs(fake_graphs, monkeypatch) -> None:
+    """Seen-once placeholders are dropped before captured graphs when the cache is full."""
+    monkeypatch.setattr(_engine, "_MAX_CUDA_GRAPHS", 2)
+    eng, _ = _make_engine(cuda_graph=True)
+    eng.execute([_host(_MAX_BATCH)])
+    eng.execute([_host(_MAX_BATCH)])  # captured
+    for batch in (3, 2, 1):  # a burst of configurations that never repeat
+        eng.execute([_host(batch)])
+    assert fake_graphs[0].is_captured
+    assert len(eng._cuda_graphs) == 1
+    assert len(eng._seen_configs) == 2  # seen-once tracking is bounded on its own
+    eng.execute([_host(_MAX_BATCH)])  # shape changed back: one plain run
+    eng.execute([_host(_MAX_BATCH)])  # then the graph captured earlier replays
+    assert fake_graphs[0].launches == 1
+    assert len(fake_graphs) == 1
+
+
 def test_failed_capture_falls_back_without_graphs(fake_graphs) -> None:
     """A failed capture disables graphs; the call that captured still returns its outputs."""
     _FakeGraph.fail_capture = True
@@ -313,8 +331,6 @@ def test_execute_restores_the_callers_device(monkeypatch) -> None:
     eng._device_guard = _device.Device(1)
     eng.execute([_host(2)])
     assert current["device"] == 0
-    eng.fetch_outputs()
-    assert current["device"] == 0
 
 
 def test_raw_exec_never_uses_the_graph(fake_graphs) -> None:
@@ -323,14 +339,3 @@ def test_raw_exec_never_uses_the_graph(fake_graphs) -> None:
     for _ in range(3):
         eng.raw_exec([_host(_MAX_BATCH)])
     assert (context.enqueues, len(fake_graphs)) == (3, 0)
-
-
-def test_stage_inputs_returns_device_buffers(fake_cuda) -> None:
-    """stage_inputs passes device Buffers through and copies host ones."""
-    eng, _ = _make_engine()
-    device = Buffer.from_array(_host(2).array, MemoryLocation.DEVICE)
-    assert eng.stage_inputs([device])[0] is device
-    staged = eng.stage_inputs([_host(2)])[0]
-    assert staged.is_device
-    assert staged.ptr == eng._inputs[0].allocation
-    assert staged.shape == (2, _FEATURES)

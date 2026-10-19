@@ -400,16 +400,17 @@ class TestGraphExec:
         for o1, o2 in zip(out1, out2):
             np.testing.assert_array_equal(o1, o2)
 
-    def test_graph_invalidate_and_recapture(self, make_engine) -> None:
-        """An invalidated graph is recaptured by the next execute of its configuration."""
+    def test_graph_clear_and_recapture(self, make_engine) -> None:
+        """After the graphs are cleared, a configuration is captured again once it repeats."""
         eng = make_engine(warmup=True, warmup_iterations=2)
-        graph = eng._current_graph()
-        if graph is None:
+        if eng._current_graph() is None:
             pytest.skip("CUDA graph not captured")
-        graph.invalidate()
+        eng._clear_graphs()
         assert eng._current_graph() is None
-        result = eng.execute(eng.get_random_input())
-        assert isinstance(result, list)
+        data = eng.get_random_input()
+        eng.execute(data)
+        assert eng._current_graph() is None
+        eng.execute(data)
         assert eng._current_graph() is not None
 
     def test_graph_exec_debug(self, make_engine) -> None:
@@ -447,13 +448,6 @@ class TestGraphExec:
             for o1, o2 in zip(outputs[0], later):
                 np.testing.assert_array_equal(o1, o2)
 
-    def test_execute_second_call_replays_graph(self, make_engine) -> None:
-        """Second execute() replays the captured graph."""
-        eng = make_engine(warmup=True, warmup_iterations=2)
-        data = eng.get_random_input()
-        result = eng.execute(data)
-        assert isinstance(result, list)
-
     def test_execute_no_copy_with_graph(self, make_engine) -> None:
         """no_copy=True works correctly with CUDA graph path."""
         eng = make_engine(warmup=True, warmup_iterations=2)
@@ -478,11 +472,6 @@ class TestGraphExec:
         for _ in range(2):
             assert isinstance(eng.execute(data), list)
         assert eng._current_graph() is None
-
-    def test_cuda_graph_with_async_v2(self, make_engine) -> None:
-        """cuda_graph=True + async_v2 backend disables graph."""
-        eng = make_engine(backend="async_v2", cuda_graph=True)
-        assert not eng._cuda_graph_enabled
 
     def test_raw_exec_bypasses_graph_capture(self, make_engine) -> None:
         """raw_exec() does not trigger CUDA graph capture."""

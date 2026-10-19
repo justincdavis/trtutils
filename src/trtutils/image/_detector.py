@@ -12,8 +12,9 @@ from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer
 
-from ._image_model import ImageModel, T, host_input
+from ._image_model import ImageModel
 from ._schema import InputSchema, OutputSchema, resolve_detector_schemas
 from .interfaces import DetectorInterface
 from .postprocessors import (
@@ -30,8 +31,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
-
-    from trtutils.core._buffer import Buffer
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -772,17 +771,8 @@ class Detector(ImageModel, DetectorInterface):
             extras.append(np.array(sizes, dtype=self._orig_size_dtype))
         if self._use_scale_factor:
             extras.append(np.array(ratios, dtype=np.float32))
-        return self._order_engine_inputs(image, [host_input(e) for e in extras])
-
-    def _order_engine_inputs(
-        self: Self,
-        image: T,
-        extras: list[T],
-    ) -> list[T]:
-        """Override to handle RTDETRv3 input ordering (im_shape, image, scale_factor)."""
-        # RTDETRv3 expects: (im_shape, image, scale_factor)
-        # extras[0] = orig_size, extras[1] = scale_factor
-        if self._input_schema == InputSchema.RT_DETR_V3 and len(extras) >= 2:  # noqa: PLR2004
-            return [extras[0], image, extras[1]]
-        # Default: image first, then extra inputs
-        return [image, *extras]
+        extra_inputs = [Buffer.wrap(e) for e in extras]
+        # RTDETRv3 expects (im_shape, image, scale_factor); others take the image first
+        if self._input_schema == InputSchema.RT_DETR_V3 and len(extra_inputs) >= 2:  # noqa: PLR2004
+            return [extra_inputs[0], image, extra_inputs[1]]
+        return [image, *extra_inputs]

@@ -15,10 +15,7 @@ Added
   on the host (pageable, pinned, or pinned + mapped) or the device. ``Buffer.wrap`` views
   numpy arrays and any ``__cuda_array_interface__`` object (CuPy, PyTorch, ...) without
   copying; memory is reference counted so views and numpy arrays never outlive it
-* ``TRTEngine.stage_inputs`` to make inputs device-resident before recording
-  ``raw_exec`` into an outer CUDA graph, ``TRTEngine.fetch_outputs`` to copy the
-  latest outputs back without synchronizing, and ``TRTEngine.active_input_shapes`` /
-  ``active_output_shapes``
+* ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
 * ``Binding.stage`` / ``Binding.fetch`` for copying a leading prefix of a binding
 * ``build_engine(shapes=[(name, (min_shape, opt_shape, max_shape))])`` builds a dynamic
   optimization profile; malformed triples raise ``ValueError``
@@ -55,6 +52,8 @@ Changed
   replayed afterwards; the least recently used graph is evicted beyond 8. ``graph_exec``
   replays the configuration of the latest execution. A failed capture logs a warning and
   disables graphs for the engine instead of raising out of the call that triggered it
+* ``ImageModel.end2end`` no longer captures its own CUDA graph or locks the image size and
+  batch size after the first call; it uses the engine's per-configuration graphs
 
 Fixed
 ^^^^^

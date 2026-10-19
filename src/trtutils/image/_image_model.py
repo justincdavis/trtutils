@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, TypeVar, overload
+from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, TypeVar, overload
 
 import numpy as np
 import nvtx
@@ -15,8 +15,6 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 from trtutils.core._device import Device
-from trtutils.core._graph import CUDAGraph
-from trtutils.core._stream import stream_synchronize
 
 from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 
@@ -112,11 +110,10 @@ class ImageModel:
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            When enabled, CUDA graphs are used both at the engine level and for
-            end-to-end execution in the end2end() method. The first call to
-            end2end() will capture a CUDA graph of the full preprocessing +
-            inference pipeline, and subsequent calls will replay it. Input
-            dimensions are locked after the first end2end() call.
+            When enabled, the engine records a CUDA graph for each input
+            configuration (batch size, resolution, input buffers) once it
+            repeats and replays it afterwards, for run() and end2end() alike.
+            Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
@@ -141,8 +138,6 @@ class ImageModel:
             "mock_run": f"image_model::mock_run [{self._tag}]",
             "run": f"image_model::run [{self._tag}]",
             "end2end": f"image_model::end2end [{self._tag}]",
-            "_end2end_graph_core": f"image_model::_end2end_graph_core [{self._tag}]",
-            "_copy_engine_outputs": f"image_model::_copy_engine_outputs [{self._tag}]",
             "_setup_cpu_preproc": f"image_model::_setup_cpu_preproc [{self._tag}]",
             "_setup_cuda_preproc": f"image_model::_setup_cuda_preproc [{self._tag}]",
             "_setup_trt_preproc": f"image_model::_setup_trt_preproc [{self._tag}]",
@@ -214,13 +209,6 @@ class ImageModel:
         self._mean = mean
         self._std = std
 
-        # Model-specific attributes — set by subclass _configure_model() overrides.
-        # Declared here with defaults so base methods can reference them.
-        # -- Detector --
-        self._orig_size_dtype: np.dtype[Any] | None = None
-        self._use_image_size: bool = False
-        self._use_scale_factor: bool = False
-
         # Hook for subclasses to configure model-specific state
         # after engine is loaded but before preprocessors are created.
         self._configure_model()
@@ -257,15 +245,6 @@ class ImageModel:
         self._pre_profile: tuple[float, float] = (0.0, 0.0)
         self._infer_profile: tuple[float, float] = (0.0, 0.0)
         self._post_profile: tuple[float, float] = (0.0, 0.0)
-
-        # E2E graph state (enabled when cuda_graph=True)
-        # Note: Preprocessing runs outside the graph since H2D copies cannot be captured.
-        # Only TRTEngine inference is captured in the graph.
-        self._e2e_graph_enabled: bool = cuda_graph if cuda_graph is not None else True
-        self._e2e_graph: CUDAGraph | None = None
-        self._e2e_output_shapes: list[tuple[int, ...]] | None = None
-        self._e2e_input_dims: tuple[int, int] | None = None
-        self._e2e_batch_size: int | None = None
 
         # if warmup, warmup the preprocessors
         if warmup:
@@ -584,44 +563,6 @@ class ImageModel:
 
         return data
 
-    def _copy_engine_outputs(self: Self) -> list[np.ndarray]:
-        """Copy engine outputs from device to host."""
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["_copy_engine_outputs"])
-
-        outputs = [output.array for output in self._engine.fetch_outputs(self._e2e_output_shapes)]
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # copy_engine_outputs
-
-        return outputs
-
-    def _order_engine_inputs(
-        self: Self,
-        image: T,
-        extras: list[T],
-    ) -> list[T]:
-        """
-        Order the image and extra inputs as the engine expects them.
-
-        Override in subclasses that need schema-specific input ordering.
-        The default puts the image first followed by extra inputs.
-
-        Parameters
-        ----------
-        image : T
-            The main image input.
-        extras : list[T]
-            Additional inputs.
-
-        Returns
-        -------
-        list[T]
-            Ordered list of inputs for engine execution.
-
-        """
-        return [image, *extras]
-
     def _engine_inputs(
         self: Self,
         image: Buffer,
@@ -654,111 +595,6 @@ class ImageModel:
 
         """
         return [image]
-
-    def _end2end_graph_core(
-        self: Self,
-        images: list[np.ndarray],
-        *,
-        verbose: bool | None = None,
-    ) -> tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]]]:
-        """
-        Core graph-accelerated execution shared by subclasses.
-
-        Handles dimension locking, preprocessing dispatch, graph capture/replay,
-        and D2H output copy. Subclasses call this and then perform their own
-        postprocessing.
-
-        Parameters
-        ----------
-        images : list[np.ndarray]
-            List of images to process.
-        verbose : bool, optional
-            Whether to log additional information.
-
-        Returns
-        -------
-        tuple[list[np.ndarray], list[tuple[float, float]], list[tuple[float, float]]]
-            Raw outputs, ratios, and padding for subclass postprocessing.
-
-        Raises
-        ------
-        RuntimeError
-            If image dimensions or batch size change after first call.
-        RuntimeError
-            If CUDA graph capture fails.
-
-        """
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["_end2end_graph_core"])
-
-        batch_size = len(images)
-
-        # Auto-capture on first call: lock dimensions
-        if self._e2e_graph is None:
-            self._e2e_input_dims = (images[0].shape[0], images[0].shape[1])
-            self._e2e_batch_size = batch_size
-
-        # Validate dimensions match locked values
-        img_dims = (images[0].shape[0], images[0].shape[1])
-        if img_dims != self._e2e_input_dims:
-            err_msg = f"Image dims {img_dims} != graph dims {self._e2e_input_dims}"
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # end2end_graph_core
-            raise RuntimeError(err_msg)
-        if batch_size != self._e2e_batch_size:
-            err_msg = f"Batch size {batch_size} != graph batch size {self._e2e_batch_size}"
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # end2end_graph_core
-            raise RuntimeError(err_msg)
-
-        # Preprocess: GPU preprocessors leave the batch on the device
-        if isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            image_input, ratios, padding = self._preprocessor.direct_preproc(
-                images,
-                resize=self._resize_method,
-                no_warn=True,
-                verbose=verbose,
-            )
-        else:
-            # Both Classifier and Detector have compatible preprocess signatures for basic call
-            tensor, ratios, padding = self.preprocess(images, no_copy=True, verbose=verbose)
-            image_input = host_input(tensor)
-        # stage every host input into the engine's bindings outside of the
-        # graph, since copies from pageable host memory cannot be captured
-        engine_inputs = self._engine.stage_inputs(
-            self._engine_inputs(image_input, images, ratios, preprocessed=False)
-        )
-
-        if self._e2e_graph is None:
-            # First call: run for real, which also moves the context to these
-            # input shapes outside of any capture (TensorRT needs one plain
-            # enqueue after a shape change), then record the graph for later
-            # calls. The outputs are read at the shapes the graph was built for.
-            self._engine.raw_exec(engine_inputs)
-            self._e2e_output_shapes = self._engine.active_output_shapes
-            graph = CUDAGraph(self._engine.stream)
-            with graph:
-                self._engine.raw_exec(engine_inputs)
-            if not graph.is_captured:
-                err_msg = (
-                    "CUDA graph capture failed for end2end. Engine may not support graph capture."
-                )
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # end2end_graph_core
-                raise RuntimeError(err_msg)
-            self._e2e_graph = graph
-        else:
-            # Replay the captured graph
-            self._e2e_graph.launch()
-
-        # D2H copy of outputs + sync (outside the graph)
-        raw_outputs = self._copy_engine_outputs()
-        stream_synchronize(self._engine.stream)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # end2end_graph_core
-
-        return raw_outputs, ratios, padding
 
     @staticmethod
     def _as_batch(
@@ -1000,10 +836,7 @@ class ImageModel:
 
         no_copy_e2e = True
         pp: list[list[np.ndarray]]
-        if self._e2e_graph_enabled:
-            raw, ratios, padding = self._end2end_graph_core(batch_images, verbose=verbose)
-            pp = post(raw, ratios, padding, no_copy_e2e)
-        elif not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+        if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             if verbose:
                 LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
             pp = self._run_core(  # ty: ignore[invalid-assignment]

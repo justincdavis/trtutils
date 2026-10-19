@@ -35,7 +35,8 @@ if TYPE_CHECKING:
     _GraphKey = tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]
 
 
-# input configurations with a cached CUDA graph, least recently used evicted first
+# input configurations with a cached CUDA graph (least recently used evicted
+# first), and separately, configurations seen once that may be captured next
 _MAX_CUDA_GRAPHS = 8
 
 
@@ -153,12 +154,14 @@ class TRTEngine(TRTEngineInterface):
 
         # CUDA graph support: one graph per input configuration (the shape and
         # device address of every input), least recently used first. A
-        # configuration maps to None until it has been seen twice, so inputs
-        # that never repeat never pay for a capture.
+        # configuration is only captured once it repeats; configurations seen
+        # once are tracked separately so inputs that never repeat neither pay
+        # for a capture nor evict graphs worth keeping.
         self._cuda_graph_enabled: bool = (
             cuda_graph if cuda_graph is not None else True
         ) and self._async_v3
-        self._cuda_graphs: OrderedDict[_GraphKey, CUDAGraph | None] = OrderedDict()
+        self._cuda_graphs: OrderedDict[_GraphKey, CUDAGraph] = OrderedDict()
+        self._seen_configs: OrderedDict[_GraphKey, None] = OrderedDict()
 
         # the shapes and device addresses the context currently holds for each
         # input; every call compares against these, so the context is only
@@ -326,38 +329,37 @@ class TRTEngine(TRTEngineInterface):
 
     def _current_graph(self: Self) -> CUDAGraph | None:
         """Get the captured CUDA graph for the context's current input configuration."""
-        graph = self._cuda_graphs.get(self._graph_key())
-        return graph if graph is not None and graph.is_captured else None
+        return self._cuda_graphs.get(self._graph_key())
 
     def _enqueue(self: Self, *, allow_graph: bool) -> None:
         """Enqueue one execution of the context on the engine stream."""
         if not self._async_v3:
             self._check_enqueued(self._context.execute_async_v2(self._allocations, self._stream))
             return
-        if not (allow_graph and self._cuda_graph_enabled):
-            self._check_enqueued(self._context.execute_async_v3(self._stream))
-            self._shapes_changed = False
-            return
-        key = self._graph_key()
-        graph = self._cuda_graphs.get(key)
-        captured = graph is not None and graph.is_captured
+        key = self._graph_key() if allow_graph and self._cuda_graph_enabled else None
+        graph = self._cuda_graphs.get(key) if key is not None else None
         # right after a shape change TensorRT needs one real enqueue before
         # a graph for the new shapes may be captured or replayed
-        if captured and not self._shapes_changed:
+        if key is not None and graph is not None and not self._shapes_changed:
             self._cuda_graphs.move_to_end(key)
             graph.launch()
             return
         self._check_enqueued(self._context.execute_async_v3(self._stream))
         self._shapes_changed = False
-        if key not in self._cuda_graphs:
-            self._remember_graph(key, None)
-        elif not captured:
-            # second time this configuration runs: record it for the next calls
-            new_graph = self._capture_cuda_graph()
-            if new_graph is not None:
-                self._remember_graph(key, new_graph)
-        else:
+        if key is None:
+            return
+        if graph is not None:
             self._cuda_graphs.move_to_end(key)
+        elif key in self._seen_configs:
+            # second time this configuration runs: record it for the next calls
+            del self._seen_configs[key]
+            graph = self._capture_cuda_graph()
+            if graph is not None:
+                self._store_graph(key, graph)
+        else:
+            self._seen_configs[key] = None
+            if len(self._seen_configs) > _MAX_CUDA_GRAPHS:
+                self._seen_configs.popitem(last=False)
 
     def _check_enqueued(self: Self, ok: object) -> None:
         if ok is False:
@@ -367,20 +369,18 @@ class TRTEngine(TRTEngineInterface):
             )
             raise RuntimeError(err_msg)
 
-    def _remember_graph(self: Self, key: _GraphKey, graph: CUDAGraph | None) -> None:
-        """Store a configuration's graph, evicting the least recently used beyond the limit."""
+    def _store_graph(self: Self, key: _GraphKey, graph: CUDAGraph) -> None:
+        """Cache a captured graph, invalidating the least recently used beyond the limit."""
         self._cuda_graphs[key] = graph
-        self._cuda_graphs.move_to_end(key)
         while len(self._cuda_graphs) > _MAX_CUDA_GRAPHS:
             _, evicted = self._cuda_graphs.popitem(last=False)
-            if evicted is not None:
-                evicted.invalidate()
+            evicted.invalidate()
 
     def _clear_graphs(self: Self) -> None:
         for graph in self._cuda_graphs.values():
-            if graph is not None:
-                graph.invalidate()
+            graph.invalidate()
         self._cuda_graphs.clear()
+        self._seen_configs.clear()
 
     def _capture_cuda_graph(self: Self) -> CUDAGraph | None:
         """
@@ -494,60 +494,12 @@ class TRTEngine(TRTEngineInterface):
         if debug:
             stream_synchronize(self._stream)
 
-    def fetch_outputs(
-        self: Self,
-        shapes: Sequence[tuple[int, ...]] | None = None,
-    ) -> list[Buffer]:
-        """
-        Enqueue copies of the outputs into the host buffers of the output bindings.
-
-        Only the valid prefix of each output is copied. The host Buffers are
-        ready to read once the engine stream is synchronized, and are
-        overwritten by later calls.
-
-        Parameters
-        ----------
-        shapes : Sequence[tuple[int, ...]], optional
-            The output shapes to copy, e.g. those recorded when an outer CUDA
-            graph was captured. Defaults to the shapes of the latest execution.
-
-        Returns
-        -------
-        list[Buffer]
-            Host views of the outputs, one per output binding.
-
-        """
-        with self._device_guard:
-            return self._fetch_outputs(shapes)
-
-    def _fetch_outputs(self: Self, shapes: Sequence[tuple[int, ...]] | None = None) -> list[Buffer]:
-        shapes = self._output_shapes if shapes is None else shapes
-        return [binding.fetch(shape, self._stream) for binding, shape in zip(self._outputs, shapes)]
-
-    def stage_inputs(self: Self, data: Sequence[Buffer]) -> list[Buffer]:
-        """
-        Make every input device-resident, copying host Buffers into the engine's bindings.
-
-        Useful before recording the engine into an outer CUDA graph with
-        :meth:`raw_exec`, since host-to-device copies from pageable memory
-        cannot be captured. The copies are enqueued on the engine stream.
-
-        Parameters
-        ----------
-        data : Sequence[Buffer]
-            One Buffer per engine input.
-
-        Returns
-        -------
-        list[Buffer]
-            Device Buffers holding the inputs, in the same order.
-
-        """
-        inputs = self._validate_inputs(data)
-        with self._device_guard:
-            return [
-                self._device_input(binding, buffer) for binding, buffer in zip(self._inputs, inputs)
-            ]
+    def _fetch_outputs(self: Self) -> list[Buffer]:
+        """Enqueue copies of the latest outputs into the host buffers of the output bindings."""
+        return [
+            binding.fetch(shape, self._stream)
+            for binding, shape in zip(self._outputs, self._output_shapes)
+        ]
 
     def graph_exec(
         self: Self,
