@@ -23,7 +23,8 @@ Added
 * ``build_engine(shapes=[(name, (min_shape, opt_shape, max_shape))])`` builds a dynamic
   optimization profile; malformed triples raise ``ValueError``
 * ``core.KernelArgs``: ``Kernel.create_args`` returns an argument array that owns the
-  buffers its pointers reference
+  buffers its pointers reference; build one directly with ``KernelArgs.from_values(*args)``
+  or ``KernelArgs(pointers, keepalive)``
 
 Changed
 ^^^^^^^
@@ -46,8 +47,11 @@ Changed
   to the submitted images instead of a pointer; ``orig_size_allocation`` /
   ``scale_factor_allocation`` are replaced by ``orig_size_input`` / ``scale_factor_input``
 * **Breaking:** ``Kernel`` no longer takes ``max_arg_cache``
-* The engine's CUDA graph is captured after a real first execution and replays only for
-  its own bindings at their full shapes; other inputs enqueue directly
+* ``TRTEngine`` keeps one CUDA graph per input configuration (the shape and device
+  address of every input), so dynamic batch sizes / resolutions and in-place device
+  inputs are graphed too. A configuration is captured the second time it executes and
+  replayed afterwards; the least recently used graph is evicted beyond 8. ``graph_exec``
+  replays the configuration of the latest execution
 
 Fixed
 ^^^^^

@@ -20,6 +20,8 @@ from ._cuda import cuda_call
 from ._nvrtc import compile_and_load_kernel
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
@@ -35,9 +37,68 @@ class KernelArgs(np.ndarray):
     itself ties their lifetime to the pointers that reference them, so an
     argument array stays valid for as long as a caller keeps it, including
     across other calls to :meth:`Kernel.create_args`.
+
+    Build one from argument values with :meth:`KernelArgs.from_values`, or
+    from an existing pointer array and its buffers with ``KernelArgs(...)``.
     """
 
     _keepalive: list[np.ndarray]
+
+    def __new__(
+        cls: type[Self],
+        pointers: np.ndarray,
+        keepalive: Sequence[np.ndarray],
+    ) -> Self:
+        """
+        Create an argument array from pointers and the buffers they point into.
+
+        Parameters
+        ----------
+        pointers : np.ndarray
+            The argument pointer array (one uint64 pointer per argument), as
+            returned by :func:`create_kernel_args`.
+        keepalive : Sequence[np.ndarray]
+            The buffers the pointers reference, kept alive by the array.
+
+        Returns
+        -------
+        KernelArgs
+            The argument array.
+
+        """
+        args = np.asarray(pointers, dtype=np.uint64).view(cls)
+        args._keepalive = list(keepalive)  # noqa: SLF001
+        return args
+
+    @classmethod
+    def from_values(
+        cls: type[Self],
+        *args: int | float | np.ndarray,
+        verbose: bool | None = None,
+    ) -> Self:
+        """
+        Create an argument array from kernel argument values.
+
+        Parameters
+        ----------
+        *args : int | float | np.ndarray
+            The kernel arguments, as accepted by :func:`create_kernel_args`.
+        verbose : bool, optional
+            Whether or not to output additional information about the passed args.
+
+        Returns
+        -------
+        KernelArgs
+            The argument array, owning one buffer per argument.
+
+        """
+        pointers, keepalive = create_kernel_args(*args, verbose=verbose)
+        return cls(pointers, keepalive)
+
+    @property
+    def keepalive(self: Self) -> list[np.ndarray]:
+        """The buffers the argument pointers reference."""
+        return self._keepalive
 
     def __array_finalize__(self: Self, obj: np.ndarray | None) -> None:
         # propagate through views and slices so a derived array cannot
@@ -132,13 +193,10 @@ class Kernel:
             The np.ndarray of argument pointers (one pointer per arg)
 
         """
-        ptrs, intermediate = create_kernel_args(*args, verbose=verbose)
-        # tie the intermediates to the pointer array itself: a bounded
+        # the intermediates live on the argument array itself: a bounded
         # per-kernel cache dropped them once enough other argument sets were
         # built, leaving any cached argument array pointing at freed memory
-        args_array = ptrs.view(KernelArgs)
-        args_array._keepalive = intermediate  # noqa: SLF001
-        return args_array
+        return KernelArgs.from_values(*args, verbose=verbose)
 
     def __call__(
         self: Self,

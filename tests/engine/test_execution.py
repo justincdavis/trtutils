@@ -368,18 +368,19 @@ class TestMockExecute:
 class TestGraphExec:
     """Tests for CUDA graph capture, replay, edge cases, and bypass."""
 
-    def test_first_execute_captures_graph(self, make_engine) -> None:
-        """cuda_graph=True + first execute() triggers graph capture."""
+    def test_second_execute_captures_graph(self, make_engine) -> None:
+        """A configuration's graph is captured the second time it executes."""
         eng = make_engine(cuda_graph=True)
         data = eng.get_random_input()
         eng.execute(data)
-        if eng._cuda_graph is not None:
-            assert eng._cuda_graph.is_captured
+        assert eng._current_graph() is None
+        eng.execute(data)
+        assert eng._current_graph() is not None
 
     def test_graph_exec_after_capture(self, make_engine) -> None:
         """After warmup with cuda_graph=True, graph_exec succeeds."""
         eng = make_engine(warmup=True, warmup_iterations=2)
-        if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
+        if eng._current_graph() is not None:
             eng.graph_exec()
 
     def test_graph_exec_without_capture_raises(self, make_engine) -> None:
@@ -391,7 +392,7 @@ class TestGraphExec:
     def test_graph_exec_deterministic(self, make_engine) -> None:
         """Graph replay produces consistent output."""
         eng = make_engine(warmup=True, warmup_iterations=2)
-        if eng._cuda_graph is None or not eng._cuda_graph.is_captured:
+        if eng._current_graph() is None:
             pytest.skip("CUDA graph not captured")
         data = eng.get_random_input()
         out1 = eng.execute(data)
@@ -400,47 +401,51 @@ class TestGraphExec:
             np.testing.assert_array_equal(o1, o2)
 
     def test_graph_invalidate_and_recapture(self, make_engine) -> None:
-        """Invalidating graph allows recapture on next execute."""
+        """An invalidated graph is recaptured by the next execute of its configuration."""
         eng = make_engine(warmup=True, warmup_iterations=2)
-        if eng._cuda_graph is None or not eng._cuda_graph.is_captured:
+        graph = eng._current_graph()
+        if graph is None:
             pytest.skip("CUDA graph not captured")
-        eng._cuda_graph.invalidate()
-        assert not eng._cuda_graph.is_captured
-        data = eng.get_random_input()
-        result = eng.execute(data)
+        graph.invalidate()
+        assert eng._current_graph() is None
+        result = eng.execute(eng.get_random_input())
         assert isinstance(result, list)
-        assert eng._cuda_graph.is_captured
+        assert eng._current_graph() is not None
 
     def test_graph_exec_debug(self, make_engine) -> None:
         """graph_exec(debug=True) synchronizes the stream."""
         eng = make_engine(warmup=True, warmup_iterations=2)
-        if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
+        if eng._current_graph() is not None:
             eng.graph_exec(debug=True)
 
-    def test_device_inputs_bypass_graph(self, make_engine) -> None:
-        """Device inputs run without the graph, which stays valid for host calls."""
+    def test_device_inputs_get_their_own_graph(self, make_engine) -> None:
+        """Device inputs at a stable address are graphed separately, with identical results."""
         eng = make_engine(warmup=True, warmup_iterations=2)
-        if eng._cuda_graph is None or not eng._cuda_graph.is_captured:
+        host_graph = eng._current_graph()
+        if host_graph is None:
             pytest.skip("CUDA graph not captured")
         host = eng.get_random_input()
         expected = eng.execute(host)
-        out_device = eng.execute(_to_device(host))
-        assert eng._cuda_graph.is_captured
-        for od, oe in zip(out_device, expected):
-            np.testing.assert_array_equal(od, oe)
+        device = _to_device(host)
+        for _ in range(3):
+            out_device = eng.execute(device)
+            for od, oe in zip(out_device, expected):
+                np.testing.assert_array_equal(od, oe)
+        device_graph = eng._current_graph()
+        assert device_graph is not None
+        assert device_graph is not host_graph
+        assert host_graph.is_captured
         for oh, oe in zip(eng.execute(host), expected):
             np.testing.assert_array_equal(oh, oe)
 
     def test_execute_with_cuda_graph_full_flow(self, make_engine) -> None:
-        """Full flow: init -> execute (capture) -> execute (replay)."""
+        """Full flow: execute (plain) -> execute (capture) -> execute (replay)."""
         eng = make_engine(cuda_graph=True)
         data = eng.get_random_input()
-        out1 = eng.execute(data)
-        assert isinstance(out1, list)
-        out2 = eng.execute(data)
-        assert isinstance(out2, list)
-        for o1, o2 in zip(out1, out2):
-            np.testing.assert_array_equal(o1, o2)
+        outputs = [eng.execute(data) for _ in range(3)]
+        for later in outputs[1:]:
+            for o1, o2 in zip(outputs[0], later):
+                np.testing.assert_array_equal(o1, o2)
 
     def test_execute_second_call_replays_graph(self, make_engine) -> None:
         """Second execute() replays the captured graph."""
@@ -452,7 +457,7 @@ class TestGraphExec:
     def test_execute_no_copy_with_graph(self, make_engine) -> None:
         """no_copy=True works correctly with CUDA graph path."""
         eng = make_engine(warmup=True, warmup_iterations=2)
-        if eng._cuda_graph is None or not eng._cuda_graph.is_captured:
+        if eng._current_graph() is None:
             pytest.skip("CUDA graph not captured")
         data = eng.get_random_input()
         outputs = eng.execute(data, no_copy=True)
@@ -462,43 +467,34 @@ class TestGraphExec:
     def test_graph_exec_no_default_sync(self, make_engine) -> None:
         """graph_exec() without debug does not add extra sync."""
         eng = make_engine(warmup=True, warmup_iterations=2)
-        if eng._cuda_graph is not None and eng._cuda_graph.is_captured:
+        if eng._current_graph() is not None:
             eng.graph_exec()
 
     def test_cuda_graph_disabled(self, make_engine) -> None:
         """cuda_graph=False disables graph capture entirely."""
         eng = make_engine(cuda_graph=False)
-        assert eng._cuda_graph is None
+        assert not eng._cuda_graph_enabled
         data = eng.get_random_input()
-        result = eng.execute(data)
-        assert isinstance(result, list)
+        for _ in range(2):
+            assert isinstance(eng.execute(data), list)
+        assert eng._current_graph() is None
 
     def test_cuda_graph_with_async_v2(self, make_engine) -> None:
         """cuda_graph=True + async_v2 backend disables graph."""
         eng = make_engine(backend="async_v2", cuda_graph=True)
         assert not eng._cuda_graph_enabled
-        assert eng._cuda_graph is None
-
-    def test_capture_cuda_graph_none_raises(self, make_engine) -> None:
-        """_capture_cuda_graph raises RuntimeError when _cuda_graph is None."""
-        eng = make_engine(cuda_graph=True)
-        saved = eng._cuda_graph
-        eng._cuda_graph = None
-        with pytest.raises(RuntimeError, match="CUDA graph is not enabled"):
-            eng._capture_cuda_graph()
-        eng._cuda_graph = saved
 
     def test_raw_exec_bypasses_graph_capture(self, make_engine) -> None:
         """raw_exec() does not trigger CUDA graph capture."""
         eng = make_engine(cuda_graph=True)
-        if eng._cuda_graph is None:
+        if not eng._cuda_graph_enabled:
             pytest.skip("CUDA graph not enabled")
-        assert eng._cuda_graph.is_captured is False
-
-        outputs = eng.raw_exec(eng.get_random_input())
+        for _ in range(2):
+            outputs = eng.raw_exec(eng.get_random_input())
         stream_synchronize(eng.stream)
         assert outputs is not None
-        assert eng._cuda_graph.is_captured is False
+        assert eng._current_graph() is None
 
-        eng.execute(eng.get_random_input())
-        assert eng._cuda_graph.is_captured is True
+        for _ in range(2):
+            eng.execute(eng.get_random_input())
+        assert eng._current_graph() is not None

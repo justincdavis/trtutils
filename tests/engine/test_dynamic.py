@@ -91,23 +91,25 @@ def test_batch_outside_profile_raises(dynamic_engine, n) -> None:
 
 
 @pytest.mark.cuda_graph
-def test_graph_only_replays_at_full_shape(dynamic_engine_path) -> None:
-    """The CUDA graph is captured at the full shape and bypassed at partial shapes."""
+def test_graph_per_batch_size(dynamic_engine_path, static_engine) -> None:
+    """Each batch size gets its own CUDA graph, and replays match the static engine."""
     eng = TRTEngine(dynamic_engine_path, warmup=False, cuda_graph=True)
     try:
-        if eng._cuda_graph is None:
+        if not eng._cuda_graph_enabled:
             pytest.skip("CUDA graph not enabled")
-        full = _batch(eng, _MAX_BATCH, seed=1)
-        partial = _batch(eng, 2, seed=2)
-        first = eng.execute([Buffer.wrap(full)])
-        assert eng._cuda_graph.is_captured
-        out_partial = eng.execute([Buffer.wrap(partial)])
-        assert all(out.shape[0] == 2 for out in out_partial)
-        # back at the full shape: a plain enqueue first, then graph replays
-        for _ in range(2):
-            again = eng.execute([Buffer.wrap(full)])
-            for a, f in zip(again, first):
-                np.testing.assert_array_equal(a, f)
-        assert eng._cuda_graph.is_captured
+        graphs = {}
+        # alternate batch sizes so every call after a switch also exercises
+        # the plain enqueue TensorRT needs after a shape change
+        for n in (_MAX_BATCH, 2, _MAX_BATCH, 2, _MAX_BATCH, 2):
+            batch = _batch(eng, n, seed=n)
+            for _ in range(3):
+                outputs = eng.execute([Buffer.wrap(batch)])
+                for out, ref in zip(outputs, _reference(static_engine, batch)):
+                    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
+            graph = eng._current_graph()
+            assert graph is not None
+            graphs.setdefault(n, graph)
+            assert graph is graphs[n]
+        assert graphs[_MAX_BATCH] is not graphs[2]
     finally:
         del eng

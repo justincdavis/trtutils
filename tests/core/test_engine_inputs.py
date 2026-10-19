@@ -12,7 +12,8 @@ tracking, staging, and CUDA graph selection logic run without a GPU.
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+from collections import OrderedDict
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 import pytest
@@ -59,16 +60,19 @@ class _FakeContext:
 
 
 class _FakeGraph:
-    def __init__(self) -> None:
+    """Stands in for CUDAGraph; every instance is recorded in ``created``."""
+
+    created: ClassVar[list[_FakeGraph]] = []
+
+    def __init__(self, _stream: object = None) -> None:
         self.is_captured = False
-        self.captures = 0
         self.launches = 0
+        _FakeGraph.created.append(self)
 
     def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
-        self.captures += 1
         self.is_captured = True
 
     def launch(self) -> None:
@@ -101,12 +105,12 @@ def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
     eng._input_max_shapes = [(_MAX_BATCH, _FEATURES)]
     eng._input_shapes = [(_MAX_BATCH, _FEATURES)]
     eng._input_addresses = [inp.allocation]
-    eng._allocated_addresses = [inp.allocation]
     eng._output_shapes = [(_MAX_BATCH, _OUT_FEATURES)]
     eng._output_views = [out.device]
     eng._shapes_changed = False
     eng._allocations = [inp.allocation, out.allocation]
-    eng._cuda_graph = _FakeGraph() if cuda_graph else None  # ty: ignore[invalid-assignment]
+    eng._cuda_graph_enabled = cuda_graph
+    eng._cuda_graphs = OrderedDict()
     return eng, context
 
 
@@ -114,6 +118,14 @@ def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
 def no_sync(monkeypatch) -> None:
     """Skip stream synchronization, which the fake runtime does not provide."""
     monkeypatch.setattr(_engine, "stream_synchronize", lambda _stream: None)
+
+
+@pytest.fixture
+def fake_graphs(monkeypatch) -> list[_FakeGraph]:
+    """Replace CUDAGraph in the engine; returns every graph the engine creates."""
+    _FakeGraph.created = []
+    monkeypatch.setattr(_engine, "CUDAGraph", _FakeGraph)
+    return _FakeGraph.created
 
 
 def _host(n: int) -> Buffer:
@@ -219,40 +231,60 @@ def test_dtype_and_count_are_checked() -> None:
         eng.execute([np.zeros((2, _FEATURES), np.float32)])  # ty: ignore[invalid-argument-type]
 
 
-def test_cuda_graph_only_at_full_engine_bindings() -> None:
-    """The engine graph replays only for its own bindings at full shape."""
+def _launches(graphs: list[_FakeGraph]) -> int:
+    return sum(graph.launches for graph in graphs)
+
+
+def test_cuda_graph_per_input_configuration(fake_graphs) -> None:
+    """Each input configuration gets its own graph once it repeats, dynamic shapes included."""
     eng, context = _make_engine(cuda_graph=True)
-    graph = eng._cuda_graph
-    assert isinstance(graph, _FakeGraph)
 
-    eng.execute([_host(_MAX_BATCH)])  # plain run, then capture for later calls
-    assert (context.enqueues, graph.captures, graph.launches) == (2, 1, 0)
-
+    eng.execute([_host(_MAX_BATCH)])  # first sighting: plain run only
+    assert (context.enqueues, len(fake_graphs)) == (1, 0)
+    eng.execute([_host(_MAX_BATCH)])  # second sighting: plain run, then capture
+    assert (context.enqueues, len(fake_graphs)) == (3, 1)
     eng.execute([_host(_MAX_BATCH)])  # replay
-    assert (context.enqueues, graph.launches) == (2, 1)
+    assert (context.enqueues, _launches(fake_graphs)) == (3, 1)
 
-    eng.execute([_host(2)])  # partial shape: plain enqueue
-    assert (context.enqueues, graph.launches) == (3, 1)
+    # a partial batch is a configuration of its own
+    eng.execute([_host(2)])
+    eng.execute([_host(2)])
+    assert (context.enqueues, len(fake_graphs)) == (6, 2)
+    eng.execute([_host(2)])
+    assert (context.enqueues, _launches(fake_graphs)) == (6, 2)
 
-    eng.execute([_host(_MAX_BATCH)])  # shape changed back: one plain enqueue first
-    assert (context.enqueues, graph.launches) == (4, 1)
+    # back at the full shape: one plain run after the shape change, then replay
+    eng.execute([_host(_MAX_BATCH)])
+    assert (context.enqueues, _launches(fake_graphs)) == (7, 2)
+    eng.execute([_host(_MAX_BATCH)])
+    assert (context.enqueues, _launches(fake_graphs), len(fake_graphs)) == (7, 3, 2)
 
-    eng.execute([_host(_MAX_BATCH)])  # then the graph again
-    assert (context.enqueues, graph.launches) == (4, 2)
-
+    # a device input bound in place is keyed by its address
     device = Buffer.from_array(_host(_MAX_BATCH).array, MemoryLocation.DEVICE)
-    eng.execute([device])  # foreign address: plain enqueue, graph untouched
-    assert (context.enqueues, graph.launches, graph.captures) == (5, 2, 1)
+    for _ in range(3):
+        eng.execute([device])
+    assert (context.enqueues, _launches(fake_graphs), len(fake_graphs)) == (10, 4, 3)
 
 
-def test_raw_exec_never_uses_the_graph() -> None:
+def test_cuda_graph_cache_evicts_least_recently_used(fake_graphs, monkeypatch) -> None:
+    """Beyond the cache limit the least recently used graph is invalidated and dropped."""
+    monkeypatch.setattr(_engine, "_MAX_CUDA_GRAPHS", 2)
+    eng, _ = _make_engine(cuda_graph=True)
+    for batch in (4, 3, 2):
+        eng.execute([_host(batch)])
+        eng.execute([_host(batch)])
+    assert len(fake_graphs) == 3
+    assert not fake_graphs[0].is_captured  # batch 4, evicted
+    assert all(graph.is_captured for graph in fake_graphs[1:])
+    assert len(eng._cuda_graphs) == 2
+
+
+def test_raw_exec_never_uses_the_graph(fake_graphs) -> None:
     """raw_exec always enqueues directly so it can be captured by callers."""
     eng, context = _make_engine(cuda_graph=True)
-    eng.raw_exec([_host(_MAX_BATCH)])
-    eng.raw_exec([_host(_MAX_BATCH)])
-    graph = eng._cuda_graph
-    assert isinstance(graph, _FakeGraph)
-    assert (context.enqueues, graph.captures, graph.launches) == (2, 0, 0)
+    for _ in range(3):
+        eng.raw_exec([_host(_MAX_BATCH)])
+    assert (context.enqueues, len(fake_graphs)) == (3, 0)
 
 
 def test_stage_inputs_returns_device_buffers(fake_cuda) -> None:

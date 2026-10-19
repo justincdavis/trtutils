@@ -13,6 +13,7 @@ import pytest
 from trtutils import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils.core._bindings import Binding
+from trtutils.core._graph import CUDAGraph
 
 from .conftest import ENGINE_PATHS
 
@@ -62,7 +63,6 @@ def test_cuda_graph_init(make_engine, backend, cuda_graph, expect_enabled) -> No
             assert eng._cuda_graph_enabled is False
     elif expect_enabled:
         assert eng._cuda_graph_enabled is True
-        assert eng._cuda_graph is not None
     else:
         assert eng._cuda_graph_enabled is False
 
@@ -138,8 +138,7 @@ def test_del_with_cuda_graph(make_engine) -> None:
         backend="async_v3",
         cuda_graph=True,
     )
-    assert eng._cuda_graph is not None
-    assert eng._cuda_graph.is_captured is True
+    assert eng._current_graph() is not None
 
 
 def test_double_del_no_error(make_engine) -> None:
@@ -168,7 +167,7 @@ def test_async_v2_backend_init(make_engine) -> None:
     """backend='async_v2' sets _async_v3=False and disables CUDA graph."""
     eng = make_engine(backend="async_v2")
     assert eng._async_v3 is False
-    assert eng._cuda_graph is None
+    assert eng._cuda_graph_enabled is False
 
 
 def test_async_v2_backend_execute(make_engine) -> None:
@@ -189,20 +188,23 @@ def test_graph_capture_failure_falls_through(make_engine) -> None:
         pytest.skip("async_v3 required for CUDA graph")
 
     eng = make_engine(backend="async_v3", cuda_graph=True)
+    data = eng.get_random_input()
+    original_stop = CUDAGraph.stop
 
-    original_stop = eng._cuda_graph.stop
-    cuda_graph_ref = eng._cuda_graph
-
-    def failing_stop():
-        original_stop()
-        cuda_graph_ref._graph_exec = None
-        cuda_graph_ref._graph = None
+    def failing_stop(graph: CUDAGraph) -> bool:
+        original_stop(graph)
+        graph._graph_exec = None
+        graph._graph = None
         return True
 
-    with patch.object(eng._cuda_graph, "stop", side_effect=failing_stop):
-        data = eng.get_random_input()
+    with patch.object(CUDAGraph, "stop", failing_stop):
+        eng.execute(data)  # first sighting of the configuration: no capture yet
         with pytest.raises(RuntimeError, match="graph capture failed"):
             eng.execute(data)
+
+    # graphs are disabled after a failed capture; execution carries on without them
+    assert eng._cuda_graph_enabled is False
+    assert isinstance(eng.execute(data), list)
 
 
 @pytest.mark.parametrize("engine_path", ENGINE_PATHS)

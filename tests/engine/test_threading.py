@@ -139,7 +139,7 @@ def test_independent_graphs_in_threads(engine_path) -> None:
             cuda_graph=True,
         )
 
-        cuda_graph = engine._cuda_graph
+        cuda_graph = engine._current_graph()
         if cuda_graph is None:
             res[threadid] = {"success": False, "graph_exec_id": None}
             del engine
@@ -195,16 +195,17 @@ def test_lazy_graph_capture_in_thread(engine_path) -> None:
                 cuda_graph=True,
             )
 
-            cuda_graph = engine._cuda_graph
-            if cuda_graph is None:
+            if not engine._cuda_graph_enabled:
                 res["success"] = False
                 res["error"] = "no graph"
                 del engine
                 return
 
-            res["pre_captured"] = cuda_graph.is_captured
+            res["pre_captured"] = engine._current_graph() is not None
+            # a configuration is captured the second time it executes
             engine.mock_execute()
-            res["post_captured"] = cuda_graph.is_captured
+            engine.mock_execute()
+            res["post_captured"] = engine._current_graph() is not None
             res["success"] = True
             del engine
         except Exception as exc:

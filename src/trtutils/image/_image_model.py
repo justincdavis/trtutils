@@ -34,7 +34,13 @@ T = TypeVar("T")
 
 
 def host_input(array: np.ndarray) -> Buffer:
-    """Wrap host data as an engine input, gathering it first if it is not C-contiguous."""
+    """
+    Wrap host data as an engine input.
+
+    ``np.ascontiguousarray`` returns ``array`` itself when it is already
+    C-contiguous, so the common case is zero-copy; only strided or
+    Fortran-ordered data is gathered into a new array.
+    """
     return Buffer.wrap(np.ascontiguousarray(array))
 
 

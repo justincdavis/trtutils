@@ -112,9 +112,28 @@ def test_kernel_create_args_owns_intermediates(trivial_kernel) -> None:
     """The returned KernelArgs keeps the argument buffers its pointers reference."""
     args = trivial_kernel.create_args(1, 2)
     assert isinstance(args, KernelArgs)
-    assert len(args._keepalive) == 2
-    # views of the argument array keep them too
-    assert args[:1]._keepalive is args._keepalive
+    assert len(args.keepalive) == 2
+
+
+@pytest.mark.cpu
+def test_kernel_args_from_values() -> None:
+    """KernelArgs.from_values builds one pointer per argument and owns the buffers."""
+    args = KernelArgs.from_values(3, 2.5, np.array([7], dtype=np.int32))
+    assert args.dtype == np.uint64
+    assert len(args) == len(args.keepalive) == 3
+    # the first pointer reads back the first argument
+    assert ctypes.c_uint64.from_address(int(args[0])).value == 3
+    # views and slices keep the buffers too
+    assert args[:1].keepalive is args.keepalive
+
+
+@pytest.mark.cpu
+def test_kernel_args_constructor() -> None:
+    """KernelArgs(pointers, keepalive) wraps an existing pointer array."""
+    pointers, buffers = create_kernel_args(1, 2)
+    args = KernelArgs(pointers, buffers)
+    np.testing.assert_array_equal(args, pointers)
+    assert args.keepalive == buffers
 
 
 @pytest.mark.parametrize(
