@@ -44,14 +44,17 @@ Changed
   ``tensor_format``, ``host``, ``device``) are read-only properties, and ``allocation``,
   ``host_allocation``, ``pagelocked_mem``, and ``unified_mem`` are derived from the buffers
 * **Breaking:** ``GPUImagePreprocessor.direct_preproc`` returns a device ``Buffer`` shaped
-  to the submitted images instead of a pointer; ``orig_size_allocation`` /
-  ``scale_factor_allocation`` are replaced by ``orig_size_input`` / ``scale_factor_input``
+  to the submitted images instead of a pointer. GPU preprocessors no longer hold
+  orig-size / scale-factor buffers: ``orig_size_allocation``, ``scale_factor_allocation``
+  and the ``orig_size_dtype`` argument are removed, and ``Detector`` builds those inputs
+  per image for every preprocessor
 * **Breaking:** ``Kernel`` no longer takes ``max_arg_cache``
 * ``TRTEngine`` keeps one CUDA graph per input configuration (the shape and device
   address of every input), so dynamic batch sizes / resolutions and in-place device
   inputs are graphed too. A configuration is captured the second time it executes and
   replayed afterwards; the least recently used graph is evicted beyond 8. ``graph_exec``
-  replays the configuration of the latest execution
+  replays the configuration of the latest execution. A failed capture logs a warning and
+  disables graphs for the engine instead of raising out of the call that triggered it
 
 Fixed
 ^^^^^
@@ -66,7 +69,13 @@ Fixed
 * ``Kernel.create_args``: cached argument arrays no longer point at freed buffers after
   other argument sets are created
 * ``Detector`` with a CPU preprocessor and CUDA graphs wrote RT-DETRv3 extra inputs into
-  the wrong engine bindings
+  the wrong engine bindings, and the GPU-preprocessor path fed a single image's size /
+  scale factor to every image of a batch
+* ``ParallelDetector`` with a GPU preprocessor passed only the image to multi-input
+  (DETR-style) engines
+* ``ImageModel.is_dynamic_batch`` was always False; it now reads the engine
+* ``TRTEngine``: an enqueue rejected by TensorRT raises instead of returning the previous
+  outputs
 * GPU preprocessors copy back only the submitted images, not the full allocated batch
 * ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
   notice into the exported requirements file

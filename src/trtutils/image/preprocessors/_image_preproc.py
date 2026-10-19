@@ -254,7 +254,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a GPUImagePreprocessor for image processing models.
@@ -297,8 +296,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
-        orig_size_dtype : np.dtype, optional
-            The dtype to use for the orig_size buffer. Default is np.int32.
 
         """
         super().__init__(
@@ -319,7 +316,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 "direct_preproc": f"preproc::direct_preproc [{self._tag}]",
                 "resize_images_to_batch": f"preproc::resize_images_to_batch [{self._tag}]",
                 "create_resize_args": f"preproc::create_resize_args [{self._tag}]",
-                "update_extra_buffers": f"preproc::update_extra_buffers [{self._tag}]",
                 "validate_input": f"preproc::validate_input [{self._tag}]",
                 "reallocate_input": f"preproc::reallocate_input [{self._tag}]",
                 "allocate_imagenet_buffers": f"preproc::allocate_imagenet_buffers [{self._tag}]",
@@ -382,22 +378,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
         if mean is not None and std is not None:
             self._allocate_imagenet_buffers()
 
-        # Allocate GPU buffers for alternative input schemas
-        self._orig_size_dtype: np.dtype[Any] = (
-            orig_size_dtype if orig_size_dtype is not None else np.dtype(np.int32)
-        )
-        # shaped (1, 2): one (height, width) row, as the engine input expects
-        orig_size_arr: np.ndarray = np.array([[1080, 1920]], dtype=self._orig_size_dtype)
-        self._orig_size_host = orig_size_arr
-        self._orig_size_buffer = create_binding(orig_size_arr)
-
-        scale_factor_arr: np.ndarray = np.array([[1.0, 1.0]], dtype=np.float32)
-        self._scale_factor_host = scale_factor_arr
-        self._scale_factor_buffer = create_binding(scale_factor_arr)
-
-        self._buffers_valid = False
-        self._last_transferred_shape: tuple[int, int] | None = None
-
         # Track current batch size for buffer reallocation
         self._current_batch_size: int = 1
 
@@ -424,10 +404,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.pop_range()  # gpu_init
 
     def __del__(self: Self) -> None:
-        with contextlib.suppress(AttributeError):
-            del self._orig_size_buffer
-        with contextlib.suppress(AttributeError):
-            del self._scale_factor_buffer
         with contextlib.suppress(AttributeError):
             del self._mean_buffer
         with contextlib.suppress(AttributeError):
@@ -797,81 +773,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.pop_range()  # gpu_preprocess
         return result
 
-    @property
-    def orig_size_input(self: Self) -> tuple[Buffer, bool]:
-        """
-        Get the device Buffer and validity of the orig_image_size data.
-
-        Returns
-        -------
-        tuple[Buffer, bool]
-            The device Buffer, shaped (1, 2), and the validity flag.
-
-        """
-        return (self._orig_size_buffer.device, self._buffers_valid)
-
-    @property
-    def scale_factor_input(self: Self) -> tuple[Buffer, bool]:
-        """
-        Get the device Buffer and validity of the scale_factor data.
-
-        Returns
-        -------
-        tuple[Buffer, bool]
-            The device Buffer, shaped (1, 2), and the validity flag.
-
-        """
-        return (self._scale_factor_buffer.device, self._buffers_valid)
-
-    def _update_extra_buffers(
-        self: Self,
-        height: int,
-        width: int,
-        ratios: tuple[float, float],
-    ) -> None:
-        """
-        Update GPU buffers for orig_image_size and scale_factor.
-
-        Parameters
-        ----------
-        height : int
-            The original image height.
-        width : int
-            The original image width.
-        ratios : tuple[float, float]
-            The scale ratios (scale_x, scale_y).
-
-        """
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["update_extra_buffers"])
-
-        current_shape = (height, width)
-        if self._last_transferred_shape == current_shape:
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # update_extra_buffers
-            return
-
-        # Update host arrays
-        self._orig_size_host[0] = (height, width)
-        self._scale_factor_host[0] = ratios
-
-        memcpy_host_to_device_async(
-            self._orig_size_buffer.allocation,
-            self._orig_size_host,
-            self._stream,
-        )
-        memcpy_host_to_device_async(
-            self._scale_factor_buffer.allocation,
-            self._scale_factor_host,
-            self._stream,
-        )
-
-        self._last_transferred_shape = current_shape
-        self._buffers_valid = True
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # update_extra_buffers
-
     def _create_resize_args(
         self: Self,
         height: int,
@@ -1001,7 +902,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
             batch_buffer_ptr,
             verbose=verbose,
         )
-        self._update_extra_buffers(height, width, ratios)
         if self._pagelocked_mem and self._unified_mem:
             np.copyto(self._input_binding.host_allocation, image)
         else:
@@ -1070,7 +970,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
             output_stride=out_stride,
             verbose=verbose,
         )
-        self._update_extra_buffers(height, width, ratios)
         resize_kernel.call(
             (self._num_blocks[0], self._num_blocks[1], batch_size),
             self._num_threads,
@@ -1111,8 +1010,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 batch_buffer_ptr + (i * single_image_bytes),
                 verbose=verbose,
             )
-            if i == 0:
-                self._update_extra_buffers(height, width, ratios)
             if self._pagelocked_mem and self._unified_mem:
                 np.copyto(self._input_binding.host_allocation, image)
             else:

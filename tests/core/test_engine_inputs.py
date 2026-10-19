@@ -20,7 +20,7 @@ import pytest
 
 from trtutils import _engine
 from trtutils._engine import TRTEngine
-from trtutils.core import _bindings
+from trtutils.core import _bindings, _device
 from trtutils.core._buffer import Buffer, MemoryLocation
 
 if TYPE_CHECKING:
@@ -40,6 +40,7 @@ class _FakeContext:
         self.shape_calls: list[tuple[int, ...]] = []
         self.enqueues = 0
         self.accept_shapes = True
+        self.accept_enqueue = True
 
     def set_input_shape(self, name: str, shape: tuple[int, ...]) -> bool:
         self.shape_calls.append(tuple(shape))
@@ -56,13 +57,14 @@ class _FakeContext:
 
     def execute_async_v3(self, _stream: object) -> bool:
         self.enqueues += 1
-        return True
+        return self.accept_enqueue
 
 
 class _FakeGraph:
     """Stands in for CUDAGraph; every instance is recorded in ``created``."""
 
     created: ClassVar[list[_FakeGraph]] = []
+    fail_capture: ClassVar[bool] = False
 
     def __init__(self, _stream: object = None) -> None:
         self.is_captured = False
@@ -73,7 +75,7 @@ class _FakeGraph:
         return self
 
     def __exit__(self, *args: object) -> None:
-        self.is_captured = True
+        self.is_captured = not _FakeGraph.fail_capture
 
     def launch(self) -> None:
         self.launches += 1
@@ -124,6 +126,7 @@ def no_sync(monkeypatch) -> None:
 def fake_graphs(monkeypatch) -> list[_FakeGraph]:
     """Replace CUDAGraph in the engine; returns every graph the engine creates."""
     _FakeGraph.created = []
+    _FakeGraph.fail_capture = False
     monkeypatch.setattr(_engine, "CUDAGraph", _FakeGraph)
     return _FakeGraph.created
 
@@ -277,6 +280,41 @@ def test_cuda_graph_cache_evicts_least_recently_used(fake_graphs, monkeypatch) -
     assert not fake_graphs[0].is_captured  # batch 4, evicted
     assert all(graph.is_captured for graph in fake_graphs[1:])
     assert len(eng._cuda_graphs) == 2
+
+
+def test_failed_capture_falls_back_without_graphs(fake_graphs) -> None:
+    """A failed capture disables graphs; the call that captured still returns its outputs."""
+    _FakeGraph.fail_capture = True
+    eng, context = _make_engine(cuda_graph=True)
+    for _ in range(2):
+        outputs = eng.execute([_host(_MAX_BATCH)])
+    assert outputs[0].shape == (_MAX_BATCH, _OUT_FEATURES)
+    assert not eng._cuda_graph_enabled
+    assert len(eng._cuda_graphs) == 0
+    eng.execute([_host(_MAX_BATCH)])
+    assert len(fake_graphs) == 1  # no further capture attempts
+    assert context.enqueues == 4  # 3 real runs + 1 failed capture
+
+
+def test_rejected_enqueue_raises() -> None:
+    """An enqueue TensorRT refuses raises instead of returning stale outputs."""
+    eng, context = _make_engine()
+    context.accept_enqueue = False
+    with pytest.raises(RuntimeError, match="failed to enqueue"):
+        eng.execute([_host(2)])
+
+
+def test_execute_restores_the_callers_device(monkeypatch) -> None:
+    """execute() leaves the caller on its own CUDA device (the guard is never nested)."""
+    current = {"device": 0}
+    monkeypatch.setattr(_device, "get_device", lambda: current["device"])
+    monkeypatch.setattr(_device, "set_device", lambda d: current.update(device=d))
+    eng, _ = _make_engine()
+    eng._device_guard = _device.Device(1)
+    eng.execute([_host(2)])
+    assert current["device"] == 0
+    eng.fetch_outputs()
+    assert current["device"] == 0
 
 
 def test_raw_exec_never_uses_the_graph(fake_graphs) -> None:

@@ -308,13 +308,17 @@ class TRTEngine(TRTEngineInterface):
         """
         inputs = self._validate_inputs(data)
         shapes_changed = False
-        for index, (binding, buffer) in enumerate(zip(self._inputs, inputs)):
-            if buffer.shape != self._input_shapes[index]:
-                self._set_context_shape(index, buffer.shape)
-                shapes_changed = True
-            self._set_input_address(index, self._device_input(binding, buffer).device_ptr)
-        if shapes_changed:
-            self._refresh_output_shapes()
+        try:
+            for index, (binding, buffer) in enumerate(zip(self._inputs, inputs)):
+                if buffer.shape != self._input_shapes[index]:
+                    self._set_context_shape(index, buffer.shape)
+                    shapes_changed = True
+                self._set_input_address(index, self._device_input(binding, buffer).device_ptr)
+        finally:
+            # even if a later input fails, the outputs must describe the
+            # shapes the context now holds
+            if shapes_changed:
+                self._refresh_output_shapes()
 
     def _graph_key(self: Self) -> _GraphKey:
         """Get the input configuration a CUDA graph is captured for and replays."""
@@ -328,10 +332,10 @@ class TRTEngine(TRTEngineInterface):
     def _enqueue(self: Self, *, allow_graph: bool) -> None:
         """Enqueue one execution of the context on the engine stream."""
         if not self._async_v3:
-            self._context.execute_async_v2(self._allocations, self._stream)
+            self._check_enqueued(self._context.execute_async_v2(self._allocations, self._stream))
             return
         if not (allow_graph and self._cuda_graph_enabled):
-            self._context.execute_async_v3(self._stream)
+            self._check_enqueued(self._context.execute_async_v3(self._stream))
             self._shapes_changed = False
             return
         key = self._graph_key()
@@ -343,15 +347,25 @@ class TRTEngine(TRTEngineInterface):
             self._cuda_graphs.move_to_end(key)
             graph.launch()
             return
-        self._context.execute_async_v3(self._stream)
+        self._check_enqueued(self._context.execute_async_v3(self._stream))
         self._shapes_changed = False
         if key not in self._cuda_graphs:
             self._remember_graph(key, None)
         elif not captured:
             # second time this configuration runs: record it for the next calls
-            self._remember_graph(key, self._capture_cuda_graph())
+            new_graph = self._capture_cuda_graph()
+            if new_graph is not None:
+                self._remember_graph(key, new_graph)
         else:
             self._cuda_graphs.move_to_end(key)
+
+    def _check_enqueued(self: Self, ok: object) -> None:
+        if ok is False:
+            err_msg = (
+                f"TensorRT failed to enqueue engine '{self._name}' at input shapes "
+                f"{self._input_shapes}; check that the shapes are consistent with each other."
+            )
+            raise RuntimeError(err_msg)
 
     def _remember_graph(self: Self, key: _GraphKey, graph: CUDAGraph | None) -> None:
         """Store a configuration's graph, evicting the least recently used beyond the limit."""
@@ -368,14 +382,18 @@ class TRTEngine(TRTEngineInterface):
                 graph.invalidate()
         self._cuda_graphs.clear()
 
-    def _capture_cuda_graph(self: Self) -> CUDAGraph:
+    def _capture_cuda_graph(self: Self) -> CUDAGraph | None:
         """
         Record one execution of the context at its current configuration.
 
-        Raises
-        ------
-        RuntimeError
-            If capture fails; CUDA graphs are then disabled for the engine.
+        The call that triggers a capture has already run for real, so a
+        failed capture only logs a warning and disables CUDA graphs for the
+        engine; execution carries on without them.
+
+        Returns
+        -------
+        CUDAGraph | None
+            The captured graph, or None if capture failed.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -389,12 +407,11 @@ class TRTEngine(TRTEngineInterface):
         if not graph.is_captured:
             self._cuda_graph_enabled = False
             self._clear_graphs()
-            err_msg = (
-                f"CUDA graph capture failed for engine '{self._name}'.\n"
-                "The engine may not support CUDA graph capture.\n"
-                "To resolve: use cuda_graph=False to disable CUDA graphs for this engine."
+            LOG.warning(
+                f"CUDA graph capture failed for engine '{self._name}'; continuing without "
+                "CUDA graphs. Pass cuda_graph=False to skip the capture attempt."
             )
-            raise RuntimeError(err_msg)
+            return None
         return graph
 
     def __del__(self: Self) -> None:
@@ -457,7 +474,7 @@ class TRTEngine(TRTEngineInterface):
         try:
             with self._device_guard:
                 self._run(data, allow_graph=True, debug=debug)
-                outputs = self.fetch_outputs()
+                outputs = self._fetch_outputs()
                 stream_synchronize(self._stream)
         finally:
             if FLAGS.NVTX_ENABLED:
@@ -477,13 +494,22 @@ class TRTEngine(TRTEngineInterface):
         if debug:
             stream_synchronize(self._stream)
 
-    def fetch_outputs(self: Self) -> list[Buffer]:
+    def fetch_outputs(
+        self: Self,
+        shapes: Sequence[tuple[int, ...]] | None = None,
+    ) -> list[Buffer]:
         """
-        Enqueue copies of the latest outputs into the host buffers of the output bindings.
+        Enqueue copies of the outputs into the host buffers of the output bindings.
 
-        Only the valid prefix of each output (the shape of the latest
-        execution) is copied. The host Buffers are ready to read once the
-        engine stream is synchronized, and are overwritten by later calls.
+        Only the valid prefix of each output is copied. The host Buffers are
+        ready to read once the engine stream is synchronized, and are
+        overwritten by later calls.
+
+        Parameters
+        ----------
+        shapes : Sequence[tuple[int, ...]], optional
+            The output shapes to copy, e.g. those recorded when an outer CUDA
+            graph was captured. Defaults to the shapes of the latest execution.
 
         Returns
         -------
@@ -492,10 +518,11 @@ class TRTEngine(TRTEngineInterface):
 
         """
         with self._device_guard:
-            return [
-                binding.fetch(shape, self._stream)
-                for binding, shape in zip(self._outputs, self._output_shapes)
-            ]
+            return self._fetch_outputs(shapes)
+
+    def _fetch_outputs(self: Self, shapes: Sequence[tuple[int, ...]] | None = None) -> list[Buffer]:
+        shapes = self._output_shapes if shapes is None else shapes
+        return [binding.fetch(shape, self._stream) for binding, shape in zip(self._outputs, shapes)]
 
     def stage_inputs(self: Self, data: Sequence[Buffer]) -> list[Buffer]:
         """

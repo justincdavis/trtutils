@@ -198,12 +198,14 @@ def test_graph_capture_failure_falls_through(make_engine) -> None:
         return True
 
     with patch.object(CUDAGraph, "stop", failing_stop):
-        eng.execute(data)  # first sighting of the configuration: no capture yet
-        with pytest.raises(RuntimeError, match="graph capture failed"):
-            eng.execute(data)
+        expected = eng.execute(data)  # first sighting of the configuration: no capture yet
+        # the capturing call already ran for real, so it still returns its outputs
+        outputs = eng.execute(data)
 
     # graphs are disabled after a failed capture; execution carries on without them
     assert eng._cuda_graph_enabled is False
+    for out, exp in zip(outputs, expected):
+        np.testing.assert_array_equal(out, exp)
     assert isinstance(eng.execute(data), list)
 
 

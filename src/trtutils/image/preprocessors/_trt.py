@@ -47,7 +47,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a TRTPreprocessor for image processing models.
@@ -93,8 +92,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
-        orig_size_dtype : np.dtype, optional
-            The dtype to use for the orig_size buffer. Default is np.int32.
 
         Raises
         ------
@@ -115,7 +112,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
             tag,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
-            orig_size_dtype=orig_size_dtype,
         )
 
         self._nvtx_tags.update(

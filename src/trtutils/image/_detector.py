@@ -182,7 +182,6 @@ class Detector(ImageModel, DetectorInterface):
                 "det_init": f"detector::init [{self._tag}]",
                 "det_postprocess": f"detector::postprocess [{self._tag}]",
                 "det_get_detections": f"detector::get_detections [{self._tag}]",
-                "det__prepare_extra_gpu": f"detector::_prepare_extra_gpu [{self._tag}]",
             }
         )
 
@@ -757,15 +756,15 @@ class Detector(ImageModel, DetectorInterface):
 
     def _engine_inputs(
         self: Self,
-        tensor: np.ndarray,
+        image: Buffer,
         images: list[np.ndarray],
         ratios: list[tuple[float, float]] | None,
         *,
         preprocessed: bool,
     ) -> list[Buffer]:
-        """Build host engine inputs, adding orig size / scale factor arrays per input schema."""
+        """Build engine inputs, adding per-image orig size / scale factor arrays per input schema."""
         if preprocessed:
-            sizes = [(self._input_size[1], self._input_size[0])] * tensor.shape[0]
+            sizes = [(self._input_size[1], self._input_size[0])] * image.shape[0]
         else:
             sizes = [img.shape[:2] for img in images]
         extras: list[np.ndarray] = []
@@ -773,35 +772,7 @@ class Detector(ImageModel, DetectorInterface):
             extras.append(np.array(sizes, dtype=self._orig_size_dtype))
         if self._use_scale_factor:
             extras.append(np.array(ratios, dtype=np.float32))
-        return self._order_engine_inputs(host_input(tensor), [host_input(e) for e in extras])
-
-    def _prepare_extra_engine_inputs_gpu(self: Self) -> list[Buffer]:
-        """Return additional device inputs for DETR-style models (GPU preprocessor path)."""
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["det__prepare_extra_gpu"])
-
-        inputs: list[Buffer] = []
-        if self._use_image_size:
-            orig_size, valid = self._preprocessor.orig_size_input  # ty: ignore[unresolved-attribute]
-            if not valid:
-                err_msg = "orig_image_size buffer not valid"
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # prepare_extra_gpu
-                raise RuntimeError(err_msg)
-            inputs.append(orig_size)
-        if self._use_scale_factor:
-            scale_factor, scale_valid = self._preprocessor.scale_factor_input  # ty: ignore[unresolved-attribute]
-            if not scale_valid:
-                err_msg = "scale_factor buffer not valid"
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # prepare_extra_gpu
-                raise RuntimeError(err_msg)
-            inputs.append(scale_factor)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # prepare_extra_gpu
-
-        return inputs
+        return self._order_engine_inputs(image, [host_input(e) for e in extras])
 
     def _order_engine_inputs(
         self: Self,
