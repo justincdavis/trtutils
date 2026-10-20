@@ -168,9 +168,10 @@ class TRTEngine(TRTEngineInterface):
         # updated when a submitted Buffer differs from the previous call
         self._input_shapes: list[tuple[int, ...]] = list(self._input_max_shapes)
         self._input_addresses: list[int] = [b.allocation for b in self._inputs]
+        # the Buffers the context reads, kept alive for graph_exec / raw_exec,
+        # which use them after the call that bound them returns
+        self._bound_inputs: list[Buffer] = [b.device for b in self._inputs]
         self._output_shapes: list[tuple[int, ...]] = [tuple(b.shape) for b in self._outputs]
-        # device views of the outputs at the current output shapes
-        self._output_views: list[Buffer] = [b.device for b in self._outputs]
         # set when the context shapes change; the next enqueue then runs
         # without a CUDA graph so TensorRT can react to the new shapes
         self._shapes_changed: bool = False
@@ -252,10 +253,6 @@ class TRTEngine(TRTEngineInterface):
                 shape = tuple(o_binding.shape)
             shapes.append(shape)
         self._output_shapes = shapes
-        self._output_views = [
-            b.device if s == tuple(b.shape) else b.device.view(s)
-            for b, s in zip(self._outputs, shapes)
-        ]
 
     def _set_input_address(self: Self, index: int, address: int) -> None:
         if address == self._input_addresses[index]:
@@ -316,7 +313,9 @@ class TRTEngine(TRTEngineInterface):
                 if buffer.shape != self._input_shapes[index]:
                     self._set_context_shape(index, buffer.shape)
                     shapes_changed = True
-                self._set_input_address(index, self._device_input(binding, buffer).device_ptr)
+                bound = self._device_input(binding, buffer)
+                self._set_input_address(index, bound.device_ptr)
+                self._bound_inputs[index] = bound
         finally:
             # even if a later input fails, the outputs must describe the
             # shapes the context now holds
@@ -401,10 +400,13 @@ class TRTEngine(TRTEngineInterface):
         graph = CUDAGraph(self._stream)
         # serialize CUDA graph capture across engines
         with self._capture_lock, graph:
-            self._context.execute_async_v3(self._stream)
+            enqueued = self._context.execute_async_v3(self._stream)
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # graph_capture
-        if not graph.is_captured:
+        if enqueued is False or not graph.is_captured:
+            if graph.is_captured:
+                # a rejected enqueue still records a graph, which must never replay
+                graph.invalidate()
             self._cuda_graph_enabled = False
             self._clear_graphs()
             LOG.warning(
@@ -539,7 +541,8 @@ class TRTEngine(TRTEngineInterface):
             graph = self._current_graph()
             if graph is None:
                 err_msg = f"No CUDA graph captured for engine '{self._name}'. "
-                err_msg += "Ensure cuda_graph=True and warmup=True, or call execute() first."
+                err_msg += "Ensure cuda_graph=True and execute the current inputs at least "
+                err_msg += "twice first (warmup iterations count)."
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # graph_exec
                 raise RuntimeError(err_msg)
@@ -601,4 +604,5 @@ class TRTEngine(TRTEngineInterface):
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # raw_exec
 
-        return list(self._output_views)
+        # fresh views, so a caller freeing an output never frees the binding
+        return [b.device.view(s) for b, s in zip(self._outputs, self._output_shapes)]

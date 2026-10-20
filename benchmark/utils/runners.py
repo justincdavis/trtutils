@@ -198,8 +198,8 @@ def _runner_trtutils(mode, imgsz, bs, *, model_name, warmup_iters, image):
         if cuda_graph:
             exec_fn = lambda: engine.graph_exec(debug=True)
         else:
-            input_ptrs = [b.allocation for b in engine.input_bindings]
-            exec_fn = lambda: engine.raw_exec(input_ptrs, debug=True, no_warn=True)
+            inputs = [b.device for b in engine.input_bindings]
+            exec_fn = lambda: engine.raw_exec(inputs, debug=True)
     else:
         images = [image] * bs
         exec_fn = lambda: detector.end2end(images)

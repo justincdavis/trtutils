@@ -162,11 +162,13 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         return self._output_binding
 
     def _reallocate_batch_buffers(self: Self, batch_size: int) -> None:
-        """Reallocate SST buffers if batch size changed."""
+        """Grow the SST buffers when a batch exceeds their capacity; smaller batches use a prefix."""
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["reallocate_batch_buffers"])
 
-        if batch_size == self._current_batch_size:
+        # keeping the allocation for smaller batches keeps the output address
+        # stable, so the engine's CUDA graph for each batch size stays valid
+        if batch_size <= self._current_batch_size:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # reallocate_batch_buffers
             return
@@ -351,5 +353,5 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # cuda_direct_preproc
 
-        # the output binding is reallocated to exactly batch_size above
-        return self._output_binding.device, ratios_list, padding_list
+        output = self._output_binding.device.view((batch_size, *self._output_binding.shape[1:]))
+        return output, ratios_list, padding_list

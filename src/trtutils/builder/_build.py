@@ -4,6 +4,7 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import contextlib
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -517,7 +518,7 @@ def build_engine(
 
 def _dims(input_name: str, shape: object) -> tuple[int, ...]:
     """
-    Validate one shape: a tuple or list of integer dimensions.
+    Validate one shape: a sequence of integer dimensions (tuple, list, array, Dims).
 
     Raises
     ------
@@ -525,10 +526,10 @@ def _dims(input_name: str, shape: object) -> tuple[int, ...]:
         If the shape is not a sequence of integers.
 
     """
-    if isinstance(shape, (tuple, list)):
-        dims = tuple(int(d) for d in shape if isinstance(d, (int, np.integer)))
-        if len(dims) == len(shape):
-            return dims
+    with contextlib.suppress(ValueError, TypeError):
+        dims = np.asarray(shape)
+        if dims.ndim == 1 and (dims.size == 0 or np.issubdtype(dims.dtype, np.integer)):
+            return tuple(int(d) for d in dims)
     err_msg = f"Invalid shape for input '{input_name}': expected a tuple of ints, got {shape!r}."
     raise TypeError(err_msg)
 

@@ -12,6 +12,7 @@ tracking, staging, and CUDA graph selection logic run without a GPU.
 from __future__ import annotations
 
 import contextlib
+import gc
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -41,6 +42,7 @@ class _FakeContext:
         self.enqueues = 0
         self.accept_shapes = True
         self.accept_enqueue = True
+        self.reject_enqueue_at: int | None = None
 
     def set_input_shape(self, name: str, shape: tuple[int, ...]) -> bool:
         self.shape_calls.append(tuple(shape))
@@ -57,7 +59,7 @@ class _FakeContext:
 
     def execute_async_v3(self, _stream: object) -> bool:
         self.enqueues += 1
-        return self.accept_enqueue
+        return self.accept_enqueue and self.enqueues != self.reject_enqueue_at
 
 
 class _FakeGraph:
@@ -107,8 +109,8 @@ def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
     eng._input_max_shapes = [(_MAX_BATCH, _FEATURES)]
     eng._input_shapes = [(_MAX_BATCH, _FEATURES)]
     eng._input_addresses = [inp.allocation]
+    eng._bound_inputs = [inp.device]
     eng._output_shapes = [(_MAX_BATCH, _OUT_FEATURES)]
-    eng._output_views = [out.device]
     eng._shapes_changed = False
     eng._allocations = [inp.allocation, out.allocation]
     eng._cuda_graph_enabled = cuda_graph
@@ -313,6 +315,41 @@ def test_failed_capture_falls_back_without_graphs(fake_graphs) -> None:
     eng.execute([_host(_MAX_BATCH)])
     assert len(fake_graphs) == 1  # no further capture attempts
     assert context.enqueues == 4  # 3 real runs + 1 failed capture
+
+
+def test_rejected_capture_enqueue_disables_graphs(fake_graphs) -> None:
+    """A capture whose enqueue TensorRT refuses is discarded, never replayed."""
+    eng, context = _make_engine(cuda_graph=True)
+    context.reject_enqueue_at = 3  # run, run, capture
+    for _ in range(3):
+        eng.execute([_host(_MAX_BATCH)])
+    assert not eng._cuda_graph_enabled
+    assert len(eng._cuda_graphs) == 0
+    assert not fake_graphs[0].is_captured
+    assert context.enqueues == 4  # the third execute ran for real
+
+
+def test_bound_device_input_outlives_the_caller(fake_cuda) -> None:
+    """The engine keeps the Buffers it reads alive for graph_exec and async raw_exec."""
+    eng, _ = _make_engine()
+    device = Buffer.from_array(_host(3).array, MemoryLocation.DEVICE)
+    ptr = device.ptr
+    eng.raw_exec([device])
+    del device
+    gc.collect()
+    assert ("device", ptr) not in fake_cuda.freed
+    eng.raw_exec([_host(3)])
+    gc.collect()
+    assert ("device", ptr) in fake_cuda.freed
+
+
+def test_freeing_an_output_keeps_the_engine_usable() -> None:
+    """Returned outputs are views, so freeing one never frees the engine's binding."""
+    eng, _ = _make_engine()
+    for out in eng.raw_exec([_host(_MAX_BATCH)]):
+        out.free()
+    outputs = eng.execute([_host(_MAX_BATCH)])
+    assert outputs[0].shape == (_MAX_BATCH, _OUT_FEATURES)
 
 
 def test_rejected_enqueue_raises() -> None:

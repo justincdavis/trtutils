@@ -55,6 +55,10 @@ Changed
   replayed afterwards; the least recently used graph is evicted beyond 8. ``graph_exec``
   replays the configuration of the latest execution. A failed capture logs a warning and
   disables graphs for the engine instead of raising out of the call that triggered it
+* ``TRTEngine`` holds a reference to the Buffers bound for the latest call, so
+  ``graph_exec`` and an unsynchronized ``raw_exec`` never read freed inputs
+* ``CUDAPreprocessor`` keeps its buffers for batches smaller than the largest seen, so the
+  ``direct_preproc`` output address (and the engine's CUDA graph for it) stays stable
 * ``ImageModel.end2end`` no longer captures its own CUDA graph or locks the image size and
   batch size after the first call; it uses the engine's per-configuration graphs
 * ``ParallelDetector`` runs the GPU-preprocessor path whenever the preprocessor in use is a
@@ -84,7 +88,7 @@ Fixed
 * ``Detector``: models with a scale-factor input raise a clear ``ValueError`` when run on
   preprocessed input without ``ratios``
 * ``TRTEngine``: an enqueue rejected by TensorRT raises instead of returning the previous
-  outputs
+  outputs, and a CUDA graph whose captured enqueue was rejected is discarded
 * GPU preprocessors copy back only the submitted images, not the full allocated batch
 * ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
   notice into the exported requirements file
