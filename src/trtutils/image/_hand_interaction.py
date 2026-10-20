@@ -124,11 +124,10 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            When enabled, CUDA graphs are used both at the engine level and for
-            end-to-end execution in the end2end() method. The first call to
-            end2end() will capture a CUDA graph of the full preprocessing +
-            inference pipeline, and subsequent calls will replay it. Input
-            dimensions are locked after the first end2end() call.
+            When enabled, the engine records a CUDA graph for each input
+            configuration (batch size, resolution, input buffers) once it
+            repeats and replays it afterwards, for run() and end2end() alike.
+            Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
@@ -188,7 +187,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
                 f"found: {names}"
             )
             raise ValueError(err_msg)
-        self._has_side: bool = len(names) == 5  # noqa: PLR2004
+        self._has_side: bool = names[4:] == ["side"]
 
     def postprocess(
         self: Self,
@@ -331,15 +330,17 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             returns list[np.ndarray]. For batch, returns batch results.
 
         """
-        return self.run(  # ty: ignore[no-matching-overload]
+        return self._run_core(
             images,
             ratios,
             padding,
-            conf_thres,
             preprocessed=preprocessed,
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
+            post=lambda o, r, p, nc: self.postprocess(
+                o, r, p, conf_thres, no_copy=nc, verbose=verbose
+            ),
         )
 
     # run overloads - batch input (3 overloads)

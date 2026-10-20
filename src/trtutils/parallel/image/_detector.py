@@ -18,7 +18,7 @@ from typing_extensions import TypeGuard
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.image._detector import Detector
-from trtutils.image.preprocessors import GPUImagePreprocessor
+from trtutils.image._image_model import host_input
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -1104,61 +1104,27 @@ class ParallelDetector:
 
             images = data.data
 
-            preproc = (
-                None if data.preprocessed else detector.get_preprocessor(data.preprocess_method)
-            )
-
-            # path 1: GPU preprocess needed, make end2end optimizations
-            if isinstance(preproc, GPUImagePreprocessor):
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.push_range(
-                        f"parallel_detector::_run::gpu_preprocess [{self._tag}:{threadid}]"
-                    )
-                gpu_img, ratios, padding = preproc.direct_preproc(images, no_warn=True)
-                t0 = time.perf_counter()
-                engine_inputs = detector.engine_inputs(gpu_img, images, ratios, preprocessed=False)
-                results = detector.engine.execute(engine_inputs, no_copy=True)
-                t1 = time.perf_counter()
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # gpu_preprocess
-
-            # path 2: preprocess not needed, or CPU preprocessing
+            if FLAGS.NVTX_ENABLED:
+                nvtx.push_range(f"parallel_detector::_run::infer [{self._tag}:{threadid}]")
+            if data.preprocessed:
+                if len(images) != 1:
+                    err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
+                    if FLAGS.NVTX_ENABLED:
+                        nvtx.pop_range()  # infer
+                        nvtx.pop_range()  # _run
+                    raise ValueError(err_msg)
+                ratios = data.ratios
+                padding = data.padding
+                engine_inputs = detector.engine_inputs(host_input(images[0]), None, ratios)
             else:
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.push_range(
-                        f"parallel_detector::_run::cpu_preprocess [{self._tag}:{threadid}]"
-                    )
-                if not data.preprocessed:
-                    tensor, ratios, padding = detector.preprocess(
-                        images,
-                        method=data.preprocess_method,
-                        no_copy=data.no_copy,
-                    )
-                else:
-                    if len(images) != 1:
-                        err_msg = (
-                            "Preprocessed inputs must be a list containing a single batch tensor."
-                        )
-                        if FLAGS.NVTX_ENABLED:
-                            nvtx.pop_range()  # cpu_preprocess
-                            nvtx.pop_range()  # _run
-                        raise ValueError(err_msg)
-                    tensor = images[0]
-                    ratios = data.ratios
-                    padding = data.padding
-                t0 = time.perf_counter()
-                # Run inference only (postprocess=False), handle postprocessing separately
-                results = detector.run(
-                    [tensor],
-                    ratios=ratios,
-                    padding=padding,
-                    preprocessed=True,
-                    postprocess=False,
-                    no_copy=data.no_copy,
+                engine_inputs, ratios, padding = detector.prepare_inputs(
+                    images, data.preprocess_method
                 )
-                t1 = time.perf_counter()
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # cpu_preprocess
+            t0 = time.perf_counter()
+            results = detector.engine.execute(engine_inputs, no_copy=data.no_copy)
+            t1 = time.perf_counter()
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # infer
 
             # run the postprocessing (common for all paths)
             if FLAGS.NVTX_ENABLED:

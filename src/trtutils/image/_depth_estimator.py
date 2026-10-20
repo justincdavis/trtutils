@@ -93,11 +93,10 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            When enabled, CUDA graphs are used both at the engine level and for
-            end-to-end execution in the end2end() method. The first call to
-            end2end() will capture a CUDA graph of the full preprocessing +
-            inference pipeline, and subsequent calls will replay it. Input
-            dimensions are locked after the first end2end() call.
+            When enabled, the engine records a CUDA graph for each input
+            configuration (batch size, resolution, input buffers) once it
+            repeats and replays it afterwards, for run() and end2end() alike.
+            Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.

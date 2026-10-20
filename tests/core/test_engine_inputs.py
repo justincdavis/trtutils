@@ -89,7 +89,10 @@ class _FakeGraph:
 def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
     """Assemble a dynamic-batch (1..4, 3) -> (batch, 2) engine without TensorRT."""
     inp = _bindings.create_binding(
-        np.zeros((_MAX_BATCH, _FEATURES), np.float32), name="input", is_input=True
+        np.zeros((_MAX_BATCH, _FEATURES), np.float32),
+        name="input",
+        is_input=True,
+        min_shape=(1, _FEATURES),
     )
     out = _bindings.create_binding(
         np.zeros((_MAX_BATCH, _OUT_FEATURES), np.float32), bind_id=1, name="output"
@@ -105,8 +108,6 @@ def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
     eng._async_v3 = True
     eng._inputs = [inp]
     eng._outputs = [out]
-    eng._input_min_shapes = [(1, _FEATURES)]
-    eng._input_max_shapes = [(_MAX_BATCH, _FEATURES)]
     eng._input_shapes = [(_MAX_BATCH, _FEATURES)]
     eng._input_addresses = [inp.allocation]
     eng._bound_inputs = [inp.device]

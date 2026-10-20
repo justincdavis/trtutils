@@ -29,6 +29,7 @@ with contextlib.suppress(Exception):
 
 from ._cuda import cuda_call
 from ._memory import cuda_free, cuda_host_free, cuda_malloc
+from ._stream import stream_synchronize
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -421,7 +422,7 @@ class Buffer:
         # CAI v3: the consumer must order itself after the producer's stream
         stream = interface.get("stream")
         if stream is not None:
-            cuda_call(cudart.cudaStreamSynchronize(cudart.cudaStream_t(int(stream))))
+            stream_synchronize(cudart.cudaStream_t(int(stream)))
         ptr, readonly = interface["data"]
         return cls(
             MemoryLocation.DEVICE,

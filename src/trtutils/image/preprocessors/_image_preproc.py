@@ -378,9 +378,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
         if mean is not None and std is not None:
             self._allocate_imagenet_buffers()
 
-        # Track current batch size for buffer reallocation
-        self._current_batch_size: int = 1
-
         # Cache for _create_resize_args: avoid repacking kernel args for same resolution
         self._cached_resize_key: tuple[int, int, str] | None = None
         self._cached_resize_result: (

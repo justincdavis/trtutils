@@ -105,17 +105,6 @@ class TRTEngineInterface(ABC):
                 pagelocked_mem=self._pagelocked_mem,
                 unified_mem=self._unified_mem,
             )
-            # engine-level input shapes (-1 marks a dynamic dim) and the
-            # per-dim bounds an input Buffer's shape must fall inside; the
-            # bindings are allocated at the max profile shape
-            self._input_engine_shapes: list[tuple[int, ...]] = [
-                self._input_engine_shape(b) for b in self._inputs
-            ]
-            self._input_min_shapes: list[tuple[int, ...]] = [
-                self._input_min_shape(b, shape)
-                for b, shape in zip(self._inputs, self._input_engine_shapes)
-            ]
-            self._input_max_shapes: list[tuple[int, ...]] = [tuple(b.shape) for b in self._inputs]
 
         # store useful properties about the engine
         self._memsize: int = 0
@@ -148,24 +137,6 @@ class TRTEngineInterface(ABC):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # init
-
-    def _input_engine_shape(self: Self, binding: Binding) -> tuple[int, ...]:
-        """Get the engine-level shape of an input, with -1 marking dynamic dims."""
-        if FLAGS.TRT_10:
-            return tuple(self._engine.get_tensor_shape(binding.name))
-        return tuple(self._engine.get_binding_shape(binding.index))
-
-    def _input_min_shape(
-        self: Self, binding: Binding, engine_shape: tuple[int, ...]
-    ) -> tuple[int, ...]:
-        """Get the min profile shape of an input (its engine shape when static)."""
-        if all(dim >= 0 for dim in engine_shape):
-            return engine_shape
-        if FLAGS.TRT_10:
-            profile = self._engine.get_tensor_profile_shape(binding.name, 0)
-        else:
-            profile = self._engine.get_profile_shape(0, binding.name)
-        return tuple(profile[0])
 
     @property
     def name(self: Self) -> str:
@@ -263,7 +234,7 @@ class TRTEngineInterface(ABC):
     @cached_property
     def is_dynamic_batch(self: Self) -> bool:
         """
-        Check if the engine has a dynamic batch size (-1 in the first engine dim).
+        Check if the engine accepts more than one batch size (its first input's batch dim).
 
         Returns
         -------
@@ -271,9 +242,8 @@ class TRTEngineInterface(ABC):
             True if the engine has dynamic batch size.
 
         """
-        if self._input_engine_shapes and len(self._input_engine_shapes[0]) > 0:
-            return self._input_engine_shapes[0][0] == -1
-        return False
+        binding = self._inputs[0]
+        return len(binding.max_shape) > 0 and binding.min_shape[0] != binding.max_shape[0]
 
     @cached_property
     def input_dtypes(self: Self) -> list[np.dtype]:

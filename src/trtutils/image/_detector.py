@@ -125,11 +125,10 @@ class Detector(ImageModel, DetectorInterface):
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            When enabled, CUDA graphs are used both at the engine level and for
-            end-to-end execution in the end2end() method. The first call to
-            end2end() will capture a CUDA graph of the full preprocessing +
-            inference pipeline, and subsequent calls will replay it. Input
-            dimensions are locked after the first end2end() call.
+            When enabled, the engine records a CUDA graph for each input
+            configuration (batch size, resolution, input buffers) once it
+            repeats and replays it afterwards, for run() and end2end() alike.
+            Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
@@ -747,27 +746,24 @@ class Detector(ImageModel, DetectorInterface):
     def engine_inputs(
         self: Self,
         image: Buffer,
-        images: list[np.ndarray],
+        images: list[np.ndarray] | None,
         ratios: list[tuple[float, float]] | None,
-        *,
-        preprocessed: bool,
+        /,
     ) -> list[Buffer]:
         """Build engine inputs, adding per-image orig size / scale factor arrays per input schema."""
-        if preprocessed:
+        if images is None:
+            # an already preprocessed batch: the original sizes are unknown
             sizes = [(self._input_size[1], self._input_size[0])] * image.shape[0]
         else:
             sizes = [img.shape[:2] for img in images]
-        extras: list[np.ndarray] = []
+        inputs: list[Buffer] = []
         if self._use_image_size:
-            extras.append(np.array(sizes, dtype=self._orig_size_dtype))
+            inputs.append(Buffer.wrap(np.array(sizes, dtype=self._orig_size_dtype)))
         if self._use_scale_factor:
             if ratios is None:
                 err_msg = "Must pass ratios for models with a scale_factor input."
                 raise ValueError(err_msg)
-            extras.append(np.array(ratios, dtype=np.float32))
-        extra_inputs = [Buffer.wrap(e) for e in extras]
-        if self._input_schema == InputSchema.RT_DETR_V3:
-            # RTDETRv3 takes (im_shape, image, scale_factor) and always uses both extras
-            im_shape, scale_factor = extra_inputs
-            return [im_shape, image, scale_factor]
-        return [image, *extra_inputs]
+            inputs.append(Buffer.wrap(np.array(ratios, dtype=np.float32)))
+        # every schema lists its size input before its scale factor input
+        inputs.insert(self._image_input_index, image)
+        return inputs

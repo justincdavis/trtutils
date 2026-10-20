@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from trtutils.core import _buffer, _memory, cache
+from trtutils.core import _buffer, _memory, _stream, cache
 
 _CPU_ONLY = os.environ.get("TRTUTILS_IGNORE_MISSING_CUDA", "0") == "1"
 
@@ -25,11 +25,6 @@ def patched_cache_dir(tmp_path, monkeypatch):
     return cache_dir
 
 
-def _namespace(attrs: dict[str, object]) -> SimpleNamespace:
-    # cuda-python's names are camelCase, so build the namespace from a dict
-    return SimpleNamespace(**attrs)
-
-
 class _FakeCuda:
     """A CUDA runtime stand-in backed by host memory, recording every call."""
 
@@ -38,31 +33,27 @@ class _FakeCuda:
         self.freed: list[tuple[str, int]] = []
         self.copies: list[tuple[str, bool]] = []
         self.synced: list[int] = []
-        self.cudart = _namespace(
-            {
-                "cudaHostAllocDefault": 0,
-                "cudaHostAllocMapped": 2,
-                "cudaMemcpyKind": _namespace(
-                    {
-                        "cudaMemcpyHostToDevice": "H2D",
-                        "cudaMemcpyDeviceToHost": "D2H",
-                        "cudaMemcpyDeviceToDevice": "D2D",
-                    }
-                ),
-                "cudaMalloc": self._alloc,
-                "cudaHostAlloc": lambda nbytes, _flags: self._alloc(nbytes),
-                "cudaHostGetDevicePointer": lambda ptr, _flags: ptr,
-                "cudaFree": lambda ptr: self._free("device", ptr),
-                "cudaFreeHost": lambda ptr: self._free("host", ptr),
-                "cudaMemcpy": lambda dst, src, nbytes, kind: self._copy(
-                    dst, src, nbytes, kind, is_async=False
-                ),
-                "cudaMemcpyAsync": lambda dst, src, nbytes, kind, _stream: self._copy(
-                    dst, src, nbytes, kind, is_async=True
-                ),
-                "cudaStream_t": lambda handle: handle,
-                "cudaStreamSynchronize": self.synced.append,
-            }
+        self.cudart = SimpleNamespace(
+            cudaHostAllocDefault=0,
+            cudaHostAllocMapped=2,
+            cudaMemcpyKind=SimpleNamespace(
+                cudaMemcpyHostToDevice="H2D",
+                cudaMemcpyDeviceToHost="D2H",
+                cudaMemcpyDeviceToDevice="D2D",
+            ),
+            cudaMalloc=self._alloc,
+            cudaHostAlloc=lambda nbytes, _flags: self._alloc(nbytes),
+            cudaHostGetDevicePointer=lambda ptr, _flags: ptr,
+            cudaFree=lambda ptr: self._free("device", ptr),
+            cudaFreeHost=lambda ptr: self._free("host", ptr),
+            cudaMemcpy=lambda dst, src, nbytes, kind: self._copy(
+                dst, src, nbytes, kind, is_async=False
+            ),
+            cudaMemcpyAsync=lambda dst, src, nbytes, kind, _stream: self._copy(
+                dst, src, nbytes, kind, is_async=True
+            ),
+            cudaStream_t=lambda handle: handle,
+            cudaStreamSynchronize=self.synced.append,
         )
 
     def _alloc(self, nbytes: int) -> int:
@@ -85,11 +76,19 @@ class _FakeCuda:
 def fake_cuda(monkeypatch) -> _FakeCuda:
     """Route the CUDA calls made by Buffer allocations and copies through a host-memory fake."""
     fake = _FakeCuda()
-    for module in (_buffer, _memory):
+    for module in (_buffer, _memory, _stream):
         monkeypatch.setattr(module, "cudart", fake.cudart, raising=False)
         monkeypatch.setattr(module, "cuda_call", lambda result: result)
     return fake
 
 
 if not _CPU_ONLY:
-    from tests.core._gpu_fixtures import *  # noqa: F403
+    from tests.core._gpu_fixtures import (
+        cuda_context,
+        cuda_stream,
+        device_ptr,
+        nvrtc_cache_clear,
+        trivial_kernel,
+    )
+
+    __all__ = ["cuda_context", "cuda_stream", "device_ptr", "nvrtc_cache_clear", "trivial_kernel"]

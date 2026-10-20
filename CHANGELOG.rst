@@ -23,8 +23,10 @@ Added
 * ``core.KernelArgs``: ``Kernel.create_args`` returns an argument array that owns the
   buffers its pointers reference; build one directly with ``KernelArgs.from_values(*args)``
   or ``KernelArgs(pointers, keepalive)``
-* ``ImageModel.engine_inputs`` (the engine inputs for a preprocessed batch, including
-  DETR-style extras) and ``ImageModel.get_preprocessor(method)``
+* ``ImageModel.prepare_inputs(images, method)`` preprocesses images into engine inputs
+  (bound in place on the device for GPU preprocessors), ``ImageModel.engine_inputs(image,
+  images, ratios)`` builds them from a preprocessed batch (``images=None`` when the batch
+  came preprocessed), and ``ImageModel.get_preprocessor(method)``
 
 Changed
 ^^^^^^^
@@ -42,7 +44,9 @@ Changed
 * **Breaking:** ``Binding`` is a class over a host and a device ``Buffer`` (``host`` /
   ``device``). Its fields (``index``, ``name``, ``dtype``, ``shape``, ``is_input``,
   ``tensor_format``, ``host``, ``device``) are read-only properties, and ``allocation``,
-  ``host_allocation``, ``pagelocked_mem``, and ``unified_mem`` are derived from the buffers
+  ``host_allocation``, ``pagelocked_mem``, and ``unified_mem`` are derived from the buffers.
+  ``min_shape`` / ``max_shape`` / ``accepts(shape)`` give the profile bounds of an input, and
+  ``bind(src, stream)`` returns device memory TensorRT can read ``src`` from
 * **Breaking:** ``GPUImagePreprocessor.direct_preproc`` returns a device ``Buffer`` shaped
   to the submitted images instead of a pointer. GPU preprocessors no longer hold
   orig-size / scale-factor buffers: ``orig_size_allocation``, ``scale_factor_allocation``
@@ -61,9 +65,11 @@ Changed
   ``direct_preproc`` output address (and the engine's CUDA graph for it) stays stable
 * ``ImageModel.end2end`` no longer captures its own CUDA graph or locks the image size and
   batch size after the first call; it uses the engine's per-configuration graphs
-* ``ParallelDetector`` runs the GPU-preprocessor path whenever the preprocessor in use is a
-  GPU one (including the constructor's default), creating it on first use instead of
-  preprocessing through host memory
+* ``ImageModel.run`` with a GPU preprocessor binds the preprocessed batch on the device
+  instead of copying it to the host and back
+* ``ParallelDetector`` preprocesses through ``prepare_inputs`` for every preprocessor,
+  keeping GPU-preprocessed batches on the device, and honors ``no_copy`` on every path
+* ``TRTEngine.is_dynamic_batch`` is True when the profile allows more than one batch size
 
 Fixed
 ^^^^^
@@ -83,6 +89,8 @@ Fixed
 * ``ParallelDetector`` with a GPU preprocessor passed only the image to multi-input
   (DETR-style) engines
 * ``ImageModel.is_dynamic_batch`` was always False; it now reads the engine
+* ``ParallelDetector`` with a CPU preprocessor fed RT-DETR models the model input size
+  instead of each image's original size
 * ``ParallelTRTEngines``: ``(engine, dla_core, device)`` tuples raised ``ValueError`` and
   the device was never applied
 * ``Detector``: models with a scale-factor input raise a clear ``ValueError`` when run on

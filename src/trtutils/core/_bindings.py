@@ -13,7 +13,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
 
-from ._buffer import Buffer, MemoryLocation
+from ._buffer import DEVICE_ALIGNMENT, Buffer, MemoryLocation
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -46,6 +46,7 @@ class Binding:
         host: Buffer,
         device: Buffer,
         tensor_format: trt.TensorFormat = trt.TensorFormat.LINEAR,
+        min_shape: tuple[int, ...] | list[int] | None = None,
     ) -> None:
         """
         Create a binding from a host/device buffer pair.
@@ -68,6 +69,9 @@ class Binding:
             The device buffer, or the device alias of a mapped host buffer.
         tensor_format : trt.TensorFormat, optional
             The format of the tensor.
+        min_shape : tuple[int, ...] | list[int], optional
+            The smallest shape the tensor accepts (the min profile shape of a
+            dynamic input). By default None, which means the allocated shape.
 
         """
         self._index = index
@@ -78,6 +82,7 @@ class Binding:
         self._host = host
         self._device = device
         self._tensor_format = tensor_format
+        self._min_shape = self._shape if min_shape is None else tuple(int(d) for d in min_shape)
 
     @property
     def index(self: Self) -> int:
@@ -98,6 +103,22 @@ class Binding:
     def shape(self: Self) -> list[int]:
         """The allocated (max) shape of the tensor, as a new list."""
         return list(self._shape)
+
+    @property
+    def min_shape(self: Self) -> tuple[int, ...]:
+        """The smallest shape the tensor accepts; equal to the allocated shape when static."""
+        return self._min_shape
+
+    @property
+    def max_shape(self: Self) -> tuple[int, ...]:
+        """The largest shape the tensor accepts, which is its allocated shape."""
+        return self._shape
+
+    def accepts(self: Self, shape: tuple[int, ...]) -> bool:
+        """Check that a shape has the tensor's rank and lies within its min/max bounds."""
+        return len(shape) == len(self._shape) and all(
+            lo <= dim <= hi for dim, lo, hi in zip(shape, self._min_shape, self._shape)
+        )
 
     @property
     def is_input(self: Self) -> bool:
@@ -139,6 +160,30 @@ class Binding:
         """Whether the host buffer is mapped into the device (one shared allocation)."""
         return self._host.mapped
 
+    def bind(self: Self, src: Buffer, stream: cudart.cudaStream_t | None = None) -> Buffer:
+        """
+        Get device memory TensorRT can read ``src`` from, staging into the binding when needed.
+
+        Device Buffers and mapped host Buffers at 256-byte aligned addresses
+        are returned as is; anything else is copied in with :meth:`stage`.
+
+        Parameters
+        ----------
+        src : Buffer
+            The data, on the host or the device.
+        stream : cudart.cudaStream_t, optional
+            The stream to enqueue a staging copy on.
+
+        Returns
+        -------
+        Buffer
+            ``src`` itself, or the device view of the staged data.
+
+        """
+        if src.device_visible and src.device_ptr % DEVICE_ALIGNMENT == 0:
+            return src
+        return self.stage(src, stream)
+
     def stage(self: Self, src: Buffer, stream: cudart.cudaStream_t | None = None) -> Buffer:
         """
         Copy data into the device-visible memory of the binding.
@@ -161,9 +206,9 @@ class Binding:
         """
         # with unified memory the host buffer *is* the device memory, so a
         # host source is a plain memcpy on the CPU
-        target = self._host if self.unified_mem else self._device
-        _prefix(target, src.shape).copy_from(src, stream)
-        return _prefix(self._device, src.shape)
+        dst = _prefix(self._device, src.shape)
+        (_prefix(self._host, src.shape) if self.unified_mem else dst).copy_from(src, stream)
+        return dst
 
     def fetch(
         self: Self,
@@ -225,6 +270,7 @@ def create_binding(
     is_input: bool | None = None,
     pagelocked_mem: bool | None = None,
     unified_mem: bool | None = None,
+    min_shape: tuple[int, ...] | None = None,
 ) -> Binding:
     """
     Create a binding for a TensorRT engine.
@@ -250,6 +296,9 @@ def create_binding(
     unified_mem : bool, optional
         Whether or not the system has unified memory.
         If True, use cudaHostAllocMapped to take advantage of unified memory.
+    min_shape : tuple[int, ...], optional
+        The smallest shape the tensor accepts. By default None, which means
+        the shape of ``array``.
 
     Returns
     -------
@@ -283,6 +332,7 @@ def create_binding(
         host=host,
         device=device,
         tensor_format=tensor_format,
+        min_shape=min_shape,
     )
 
 
@@ -347,6 +397,7 @@ def allocate_bindings(
     # based on the version of tensorrt, num_io_tensors is not available in IEngine
     # first case: version 9 or higher OR version 8.5 and higher
     for i in num_tensors:
+        min_shape: tuple[int, ...] | None = None
         if FLAGS.TRT_10:
             name = engine.get_tensor_name(i)
             is_input = False
@@ -368,8 +419,9 @@ def allocate_bindings(
                     if FLAGS.NVTX_ENABLED:
                         nvtx.pop_range()
                     raise RuntimeError(err_msg)
-                # Set the *max* profile as binding shape
+                # allocate at the *max* profile shape; the min bounds the inputs
                 context.set_input_shape(name, profile_shape[2])
+                min_shape = tuple(profile_shape[0])
                 shape = context.get_tensor_shape(name)
         else:
             is_input = False
@@ -392,8 +444,9 @@ def allocate_bindings(
                     if FLAGS.NVTX_ENABLED:
                         nvtx.pop_range()
                     raise RuntimeError(err_msg)
-                # Set the *max* profile as binding shape
+                # allocate at the *max* profile shape; the min bounds the inputs
                 context.set_binding_shape(i, profile_shape[2])
+                min_shape = tuple(profile_shape[0])
                 shape = context.get_binding_shape(i)
 
         LOG.debug(f"Allocating for I/O tensor: {name} - is_input: {is_input}")
@@ -407,6 +460,7 @@ def allocate_bindings(
             is_input=is_input,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            min_shape=min_shape,
         )
 
         allocations.append(binding.allocation)

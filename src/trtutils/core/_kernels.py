@@ -188,13 +188,10 @@ class Kernel:
 
         Returns
         -------
-        np.ndarray
-            The np.ndarray of argument pointers (one pointer per arg)
+        KernelArgs
+            The argument pointers (one per arg), owning the buffers they point at.
 
         """
-        # the intermediates live on the argument array itself: a bounded
-        # per-kernel cache dropped them once enough other argument sets were
-        # built, leaving any cached argument array pointing at freed memory
         return KernelArgs.from_values(*args, verbose=verbose)
 
     def __call__(

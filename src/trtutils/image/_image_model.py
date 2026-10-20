@@ -16,7 +16,12 @@ from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 from trtutils.core._device import Device
 
-from .preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+from .preprocessors import (
+    CPUPreprocessor,
+    CUDAPreprocessor,
+    GPUImagePreprocessor,
+    TRTPreprocessor,
+)
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -169,12 +174,15 @@ class ImageModel:
         # Find the image input: 4D tensor with 3 channels (batch, 3, H, W)
         input_size: tuple[int, ...] | None = None
         input_spec = self._engine.input_spec[0]
+        # position of the image among the engine inputs; other inputs go around it
+        self._image_input_index = 0
         expected_input_size = 4
-        for spec in self._engine.input_spec:
+        for index, spec in enumerate(self._engine.input_spec):
             shape = tuple(spec[0])
             if len(shape) == expected_input_size and shape[1] == _COLOR_CHANNELS:
                 input_size = shape
                 input_spec = spec
+                self._image_input_index = index
                 break
 
         if input_size is None:
@@ -201,7 +209,6 @@ class ImageModel:
         # Extract batch size from engine (the max profile batch for a
         # dynamic-batch engine, which bounds what the preprocessors accept)
         self._batch_size: int = input_size[0]
-        self._is_dynamic_batch: bool = self._engine.is_dynamic_batch
 
         self._input_size: tuple[int, int] = (input_size[3], input_size[2])
         self._dtype = input_spec[1]
@@ -347,7 +354,7 @@ class ImageModel:
     @property
     def is_dynamic_batch(self: Self) -> bool:
         """Check if model has dynamic batch size."""
-        return self._is_dynamic_batch
+        return self._engine.is_dynamic_batch
 
     def get_preprocessor(
         self: Self, method: str | None = None
@@ -479,10 +486,10 @@ class ImageModel:
             # tensor; otherwise stack the images into one
             engine_rank = len(self._engine.input_shapes[0])
             if len(images) == 1 and images[0].ndim == engine_rank:
-                tensor = np.ascontiguousarray(images[0])
+                tensor = images[0]
             else:
                 tensor = np.stack(images, axis=0)
-            result = self._engine.mock_execute(data=[Buffer.wrap(tensor)])
+            result = self._engine.mock_execute(data=[host_input(tensor)])
         else:
             result = self._engine.mock_execute()
 
@@ -569,28 +576,64 @@ class ImageModel:
             )
             LOG.debug(f"{self._tag}: Using device: {method}")
         preprocessor = self.get_preprocessor(method)
-        if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            t0 = time.perf_counter()
-            data = preprocessor(batch_images, resize=resize, no_copy=no_copy, verbose=verbose)
-            t1 = time.perf_counter()
-        else:
-            t0 = time.perf_counter()
-            data = preprocessor(batch_images, resize=resize, verbose=verbose)
-            t1 = time.perf_counter()
-        self._pre_profile = (t0, t1)
+        t0 = time.perf_counter()
+        data = preprocessor(batch_images, resize=resize, no_copy=no_copy, verbose=verbose)
+        self._pre_profile = (t0, time.perf_counter())
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # preprocess
 
         return data
 
+    def prepare_inputs(
+        self: Self,
+        images: list[np.ndarray],
+        method: str | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[list[Buffer], list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Preprocess images into the inputs of the engine call.
+
+        GPU preprocessors leave the batch on the device, so it is bound in
+        place; the CPU preprocessor's batch is wrapped as a host Buffer.
+
+        Parameters
+        ----------
+        images : list[np.ndarray]
+            The images to preprocess.
+        method : str, optional
+            The preprocessor to use, as in :meth:`get_preprocessor`.
+            By default None, the preprocessor stated in the constructor.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        tuple[list[Buffer], list[tuple[float, float]], list[tuple[float, float]]]
+            The engine inputs, and the ratios and padding per image.
+
+        """
+        preprocessor = self.get_preprocessor(method)
+        t0 = time.perf_counter()
+        if isinstance(preprocessor, GPUImagePreprocessor):
+            image, ratios, padding = preprocessor.direct_preproc(
+                images, resize=self._resize_method, no_warn=True, verbose=verbose
+            )
+        else:
+            tensor, ratios, padding = preprocessor(
+                images, resize=self._resize_method, verbose=verbose
+            )
+            image = host_input(tensor)
+        self._pre_profile = (t0, time.perf_counter())
+        return self.engine_inputs(image, images, ratios), ratios, padding
+
     def engine_inputs(
         self: Self,
         image: Buffer,
-        images: list[np.ndarray],  # noqa: ARG002
-        ratios: list[tuple[float, float]] | None,  # noqa: ARG002
-        *,
-        preprocessed: bool,  # noqa: ARG002
+        _images: list[np.ndarray] | None,
+        _ratios: list[tuple[float, float]] | None,
+        /,
     ) -> list[Buffer]:
         """
         Build the inputs passed to the engine call.
@@ -602,12 +645,11 @@ class ImageModel:
         ----------
         image : Buffer
             The preprocessed batch, on the host or the device.
-        images : list[np.ndarray]
-            The original input images, before preprocessing.
-        ratios : list[tuple[float, float]] | None
+        _images : list[np.ndarray] | None
+            The original input images, or None when the caller passed an
+            already preprocessed batch.
+        _ratios : list[tuple[float, float]] | None
             The scaling ratios from preprocessing.
-        preprocessed : bool
-            Whether the inputs were already preprocessed.
 
         Returns
         -------
@@ -733,13 +775,10 @@ class ImageModel:
 
         # assign no_copy values
         if no_copy is None and not preprocessed and postprocess:
-            # remove two sets of copies when doing preprocess/run/postprocess inside
-            # a single run call
-            no_copy_pre: bool | None = True
+            # skip the output copy when the outputs are postprocessed inside this call
             no_copy_run: bool | None = True
             no_copy_post: bool | None = False
         else:
-            no_copy_pre = no_copy
             no_copy_run = no_copy
             no_copy_post = no_copy
 
@@ -752,7 +791,9 @@ class ImageModel:
         if not preprocessed:
             if verbose:
                 LOG.debug("Preprocessing inputs")
-            tensor, batch_ratios, batch_padding = self.preprocess(batch_images, no_copy=no_copy_pre)
+            engine_inputs, batch_ratios, batch_padding = self.prepare_inputs(
+                batch_images, verbose=verbose
+            )
         else:
             # images is already preprocessed tensor when preprocessed=True
             if len(batch_images) != 1:
@@ -760,11 +801,7 @@ class ImageModel:
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # run
                 raise ValueError(err_msg)
-            tensor = batch_images[0]
-
-        engine_inputs = self.engine_inputs(
-            host_input(tensor), batch_images, batch_ratios, preprocessed=preprocessed
-        )
+            engine_inputs = self.engine_inputs(host_input(batch_images[0]), None, batch_ratios)
 
         # execute
         t0 = time.perf_counter()
@@ -846,25 +883,11 @@ class ImageModel:
             batch_images = images
             is_single = False
 
-        if isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
-            if verbose:
-                LOG.debug(f"{self._tag}: end2end -> calling GPU preprocess")
-            image_input, ratios, padding = self._preprocessor.direct_preproc(
-                batch_images,
-                resize=self._resize_method,
-                no_warn=True,
-                verbose=verbose,
-            )
-        else:
-            if verbose:
-                LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
-            tensor, ratios, padding = self.preprocess(batch_images, no_copy=True, verbose=verbose)
-            image_input = host_input(tensor)
-
-        engine_inputs = self.engine_inputs(image_input, batch_images, ratios, preprocessed=False)
+        engine_inputs, ratios, padding = self.prepare_inputs(batch_images, verbose=verbose)
         t0 = time.perf_counter()
         raw = self._engine.execute(engine_inputs, no_copy=True)
         self._infer_profile = (t0, time.perf_counter())
+        # outputs are consumed by get() inside this call, so skip their copies
         no_copy_post = True
         pp = post(raw, ratios, padding, no_copy_post)
         result = get(pp)

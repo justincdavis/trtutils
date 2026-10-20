@@ -168,7 +168,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         # keeping the allocation for smaller batches keeps the output address
         # stable, so the engine's CUDA graph for each batch size stays valid
-        if batch_size <= self._current_batch_size:
+        if batch_size <= self._output_binding.shape[0]:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # reallocate_batch_buffers
             return
@@ -195,8 +195,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
-
-        self._current_batch_size = batch_size
 
         # Invalidate SST args cache: buffer allocations changed
         self._cached_sst_batch_size = None
@@ -322,7 +320,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         batch_size = len(images)
 
-        # Reallocate buffers if batch size changed
+        # Grow the buffers if the batch exceeds their capacity
         self._reallocate_batch_buffers(batch_size)
 
         # Resize images and copy to batch buffer
@@ -353,5 +351,4 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # cuda_direct_preproc
 
-        output = self._output_binding.device.view((batch_size, *self._output_binding.shape[1:]))
-        return output, ratios_list, padding_list
+        return self._output_binding.device[:batch_size], ratios_list, padding_list

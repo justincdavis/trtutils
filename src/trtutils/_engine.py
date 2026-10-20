@@ -15,7 +15,7 @@ import nvtx
 
 from ._flags import FLAGS
 from ._log import LOG
-from .core._buffer import DEVICE_ALIGNMENT, Buffer, as_buffers
+from .core._buffer import Buffer, as_buffers
 from .core._graph import CUDAGraph
 from .core._interface import TRTEngineInterface
 from .core._stream import stream_synchronize
@@ -28,8 +28,6 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils.compat._libs import cuda
-
-    from .core._bindings import Binding
 
     # the shape and device address of every input
     _GraphKey = tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]
@@ -166,7 +164,7 @@ class TRTEngine(TRTEngineInterface):
         # the shapes and device addresses the context currently holds for each
         # input; every call compares against these, so the context is only
         # updated when a submitted Buffer differs from the previous call
-        self._input_shapes: list[tuple[int, ...]] = list(self._input_max_shapes)
+        self._input_shapes: list[tuple[int, ...]] = [b.max_shape for b in self._inputs]
         self._input_addresses: list[int] = [b.allocation for b in self._inputs]
         # the Buffers the context reads, kept alive for graph_exec / raw_exec,
         # which use them after the call that bound them returns
@@ -212,20 +210,14 @@ class TRTEngine(TRTEngineInterface):
         return list(self._output_shapes)
 
     def _check_input_shape(self: Self, index: int, shape: tuple[int, ...]) -> None:
-        name = self._inputs[index].name
-        min_shape = self._input_min_shapes[index]
-        max_shape = self._input_max_shapes[index]
-        valid = len(shape) == len(min_shape) and all(
-            lo <= dim <= hi for dim, lo, hi in zip(shape, min_shape, max_shape)
-        )
-        if not valid:
+        binding = self._inputs[index]
+        if not binding.accepts(shape):
+            min_shape, max_shape = binding.min_shape, binding.max_shape
             if min_shape == max_shape:
                 expected = f"exactly {min_shape}"
             else:
                 expected = f"between {min_shape} and {max_shape}"
-            err_msg = (
-                f"Input '{name}' of engine '{self._name}' got shape {shape}, expected {expected}."
-            )
+            err_msg = f"Input '{binding.name}' of engine '{self._name}' got shape {shape}, expected {expected}."
             raise ValueError(err_msg)
 
     def _set_context_shape(self: Self, index: int, shape: tuple[int, ...]) -> None:
@@ -290,12 +282,6 @@ class TRTEngine(TRTEngineInterface):
                 self._check_input_shape(index, buffer.shape)
         return inputs
 
-    def _device_input(self: Self, binding: Binding, buffer: Buffer) -> Buffer:
-        """Get a Buffer TensorRT can read in place, staging into the binding when needed."""
-        if buffer.device_visible and buffer.device_ptr % DEVICE_ALIGNMENT == 0:
-            return buffer
-        return binding.stage(buffer, self._stream)
-
     def _bind_inputs(self: Self, data: Sequence[Buffer]) -> None:
         """
         Point the context at the given inputs, updating shapes and addresses as needed.
@@ -313,7 +299,7 @@ class TRTEngine(TRTEngineInterface):
                 if buffer.shape != self._input_shapes[index]:
                     self._set_context_shape(index, buffer.shape)
                     shapes_changed = True
-                bound = self._device_input(binding, buffer)
+                bound = binding.bind(buffer, self._stream)
                 self._set_input_address(index, bound.device_ptr)
                 self._bound_inputs[index] = bound
         finally:
@@ -339,17 +325,16 @@ class TRTEngine(TRTEngineInterface):
         graph = self._cuda_graphs.get(key) if key is not None else None
         # right after a shape change TensorRT needs one real enqueue before
         # a graph for the new shapes may be captured or replayed
-        if key is not None and graph is not None and not self._shapes_changed:
+        if key is not None and graph is not None:
             self._cuda_graphs.move_to_end(key)
-            graph.launch()
-            return
+            if not self._shapes_changed:
+                graph.launch()
+                return
         self._check_enqueued(self._context.execute_async_v3(self._stream))
         self._shapes_changed = False
-        if key is None:
+        if key is None or graph is not None:
             return
-        if graph is not None:
-            self._cuda_graphs.move_to_end(key)
-        elif key in self._seen_configs:
+        if key in self._seen_configs:
             # second time this configuration runs: record it for the next calls
             del self._seen_configs[key]
             graph = self._capture_cuda_graph()
