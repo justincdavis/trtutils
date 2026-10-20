@@ -640,13 +640,6 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             For single image: list[HandInteraction] (interactions).
             For batch: list[list[HandInteraction]] (interactions per image).
 
-        Raises
-        ------
-        RuntimeError
-            If end2end_graph is enabled and image dimensions change after first call.
-        RuntimeError
-            If end2end_graph is enabled and CUDA graph capture fails.
-
         """
         return self._end2end_core(
             images,

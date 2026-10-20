@@ -480,18 +480,10 @@ class Classifier(ImageModel, ClassifierInterface):
             For single image: list[tuple[int, float]] (classifications).
             For batch: list[list[tuple[int, float]]] (classifications per image).
 
-        Raises
-        ------
-        RuntimeError
-            If end2end_graph is enabled and image dimensions change after first call.
-        RuntimeError
-            If end2end_graph is enabled and CUDA graph capture fails.
-
         """
         return self._end2end_core(
             images,
             verbose=verbose,
             post=lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose),
             get=lambda pp: get_classifications(pp, top_k=top_k, verbose=verbose),
-            needs_ratios=False,
         )

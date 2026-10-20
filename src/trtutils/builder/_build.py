@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
+
+import numpy as np
 
 from trtutils._config import CONFIG
 from trtutils._flags import FLAGS
@@ -513,6 +515,24 @@ def build_engine(
         caching_tools.store(output_path, overwrite=False, delete_source=False)
 
 
+def _dims(input_name: str, shape: object) -> tuple[int, ...]:
+    """
+    Validate one shape: a tuple or list of integer dimensions.
+
+    Raises
+    ------
+    TypeError
+        If the shape is not a sequence of integers.
+
+    """
+    if isinstance(shape, (tuple, list)):
+        dims = tuple(int(d) for d in shape if isinstance(d, (int, np.integer)))
+        if len(dims) == len(shape):
+            return dims
+    err_msg = f"Invalid shape for input '{input_name}': expected a tuple of ints, got {shape!r}."
+    raise TypeError(err_msg)
+
+
 def _profile_shapes(
     input_name: str,
     shape: BindingShape,
@@ -528,11 +548,9 @@ def _profile_shapes(
     """
     if len(shape) != _PROFILE_TRIPLE or not all(isinstance(p, (tuple, list)) for p in shape):
         # single static shape: the minimum, optimal, and maximum are all the same
-        static = tuple(int(d) for d in cast("tuple[int, ...]", shape))
+        static = _dims(input_name, shape)
         return static, static, static
-    min_shape, opt_shape, max_shape = (
-        tuple(int(d) for d in cast("tuple[int, ...]", part)) for part in shape
-    )
+    min_shape, opt_shape, max_shape = (_dims(input_name, part) for part in shape)
     ordered = len(min_shape) == len(opt_shape) == len(max_shape) and all(
         lo <= opt <= hi for lo, opt, hi in zip(min_shape, opt_shape, max_shape)
     )

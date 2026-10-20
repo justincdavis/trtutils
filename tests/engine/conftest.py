@@ -79,7 +79,7 @@ def make_engine(engine_path):
     """Factory fixture that creates TRTEngine instances with automatic cleanup."""
     engines = []
 
-    def _factory(**kwargs):  # noqa: ANN003
+    def _factory(**kwargs: object):
         kwargs.setdefault("warmup", False)
         eng = TRTEngine(engine_path, **kwargs)
         engines.append(eng)

@@ -380,15 +380,17 @@ class Detector(ImageModel, DetectorInterface):
             returns list[np.ndarray]. For batch, returns batch results.
 
         """
-        return self.run(  # ty: ignore[no-matching-overload]
+        return self._run_core(
             images,
             ratios,
             padding,
-            conf_thres,
             preprocessed=preprocessed,
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
+            post=lambda o, r, p, nc: self.postprocess(
+                o, r, p, conf_thres, no_copy=nc, verbose=verbose
+            ),
         )
 
     # run overloads - batch input (3 overloads)
@@ -725,17 +727,6 @@ class Detector(ImageModel, DetectorInterface):
             For single image: list[tuple[...]] (detections).
             For batch: list[list[tuple[...]]] (detections per image).
 
-        Raises
-        ------
-        RuntimeError
-            If the orig_image_size buffer is not valid
-        RuntimeError
-            If the scale_factor buffer is not valid
-        RuntimeError
-            If end2end_graph is enabled and image dimensions change after first call.
-        RuntimeError
-            If end2end_graph is enabled and CUDA graph capture fails.
-
         """
         return self._end2end_core(
             images,
@@ -753,7 +744,7 @@ class Detector(ImageModel, DetectorInterface):
             ),
         )
 
-    def _engine_inputs(
+    def engine_inputs(
         self: Self,
         image: Buffer,
         images: list[np.ndarray],
@@ -770,9 +761,13 @@ class Detector(ImageModel, DetectorInterface):
         if self._use_image_size:
             extras.append(np.array(sizes, dtype=self._orig_size_dtype))
         if self._use_scale_factor:
+            if ratios is None:
+                err_msg = "Must pass ratios for models with a scale_factor input."
+                raise ValueError(err_msg)
             extras.append(np.array(ratios, dtype=np.float32))
         extra_inputs = [Buffer.wrap(e) for e in extras]
-        # RTDETRv3 expects (im_shape, image, scale_factor); others take the image first
-        if self._input_schema == InputSchema.RT_DETR_V3 and len(extra_inputs) >= 2:  # noqa: PLR2004
-            return [extra_inputs[0], image, extra_inputs[1]]
+        if self._input_schema == InputSchema.RT_DETR_V3:
+            # RTDETRv3 takes (im_shape, image, scale_factor) and always uses both extras
+            im_shape, scale_factor = extra_inputs
+            return [im_shape, image, scale_factor]
         return [image, *extra_inputs]

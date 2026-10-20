@@ -18,10 +18,13 @@ Added
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
 * ``Binding.stage`` / ``Binding.fetch`` for copying a leading prefix of a binding
 * ``build_engine(shapes=[(name, (min_shape, opt_shape, max_shape))])`` builds a dynamic
-  optimization profile; malformed triples raise ``ValueError``
+  optimization profile; malformed triples raise ``ValueError`` and non-integer dims
+  raise ``TypeError``
 * ``core.KernelArgs``: ``Kernel.create_args`` returns an argument array that owns the
   buffers its pointers reference; build one directly with ``KernelArgs.from_values(*args)``
   or ``KernelArgs(pointers, keepalive)``
+* ``ImageModel.engine_inputs`` (the engine inputs for a preprocessed batch, including
+  DETR-style extras) and ``ImageModel.get_preprocessor(method)``
 
 Changed
 ^^^^^^^
@@ -54,6 +57,9 @@ Changed
   disables graphs for the engine instead of raising out of the call that triggered it
 * ``ImageModel.end2end`` no longer captures its own CUDA graph or locks the image size and
   batch size after the first call; it uses the engine's per-configuration graphs
+* ``ParallelDetector`` runs the GPU-preprocessor path whenever the preprocessor in use is a
+  GPU one (including the constructor's default), creating it on first use instead of
+  preprocessing through host memory
 
 Fixed
 ^^^^^
@@ -73,6 +79,10 @@ Fixed
 * ``ParallelDetector`` with a GPU preprocessor passed only the image to multi-input
   (DETR-style) engines
 * ``ImageModel.is_dynamic_batch`` was always False; it now reads the engine
+* ``ParallelTRTEngines``: ``(engine, dla_core, device)`` tuples raised ``ValueError`` and
+  the device was never applied
+* ``Detector``: models with a scale-factor input raise a clear ``ValueError`` when run on
+  preprocessed input without ``ratios``
 * ``TRTEngine``: an enqueue rejected by TensorRT raises instead of returning the previous
   outputs
 * GPU preprocessors copy back only the submitted images, not the full allocated batch

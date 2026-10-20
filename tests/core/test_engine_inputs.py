@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import contextlib
 from collections import OrderedDict
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 import pytest
@@ -231,8 +231,9 @@ def test_dtype_and_count_are_checked() -> None:
         eng.execute([Buffer.wrap(np.zeros((2, _FEATURES), np.float64))])
     with pytest.raises(ValueError, match="expects 1 inputs"):
         eng.execute([_host(2), _host(2)])
+    not_a_buffer: Any = np.zeros((2, _FEATURES), np.float32)
     with pytest.raises(TypeError, match=r"Buffer\.wrap"):
-        eng.execute([np.zeros((2, _FEATURES), np.float32)])  # ty: ignore[invalid-argument-type]
+        eng.execute([not_a_buffer])
 
 
 def _launches(graphs: list[_FakeGraph]) -> int:

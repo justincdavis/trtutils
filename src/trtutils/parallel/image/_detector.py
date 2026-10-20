@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Thread
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 import nvtx
@@ -18,6 +18,7 @@ from typing_extensions import TypeGuard
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.image._detector import Detector
+from trtutils.image.preprocessors import GPUImagePreprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -840,8 +841,7 @@ class ParallelDetector:
         if modelid is not None:
             if data is not None and len(data) > 0 and isinstance(data[0], np.ndarray):
                 # Single batch for single model
-                # Type narrowing: data is list[np.ndarray] here
-                data_single: list[np.ndarray] = cast("list[np.ndarray]", data)
+                data_single = [d for d in data if isinstance(d, np.ndarray)]
                 self.submit_model(
                     data_single,
                     modelid,
@@ -865,8 +865,7 @@ class ParallelDetector:
         else:
             if data is not None and len(data) > 0 and isinstance(data[0], list):
                 # Batches for all models
-                # Type narrowing: data is list[list[np.ndarray]] here
-                data_batches: list[list[np.ndarray]] = cast("list[list[np.ndarray]]", data)
+                data_batches = [d for d in data if isinstance(d, list)]
                 self.submit(data_batches, preprocessed=True, postprocess=False, no_copy=True)
             elif data is not None and len(data) > 0 and isinstance(data[0], np.ndarray):
                 err_msg = "Submitted list[np.ndarray], but no model ID to specify which model."
@@ -1105,46 +1104,21 @@ class ParallelDetector:
 
             images = data.data
 
+            preproc = (
+                None if data.preprocessed else detector.get_preprocessor(data.preprocess_method)
+            )
+
             # path 1: GPU preprocess needed, make end2end optimizations
-            if not data.preprocessed and (
-                data.preprocess_method == "cuda" or data.preprocess_method == "trt"
-            ):
+            if isinstance(preproc, GPUImagePreprocessor):
                 if FLAGS.NVTX_ENABLED:
                     nvtx.push_range(
                         f"parallel_detector::_run::gpu_preprocess [{self._tag}:{threadid}]"
                     )
-                preproc = (
-                    detector._preproc_trt  # noqa: SLF001
-                    if data.preprocess_method == "trt"
-                    else detector._preproc_cuda  # noqa: SLF001
-                )
-                # if the preprocessor is None, need to use preprocess method to create it
-                if preproc is None:
-                    tensor, ratios, padding = detector.preprocess(
-                        images,
-                        method=data.preprocess_method,
-                        no_copy=data.no_copy,
-                    )
-                    t0 = time.perf_counter()
-                    # Run inference only (postprocess=False), handle postprocessing separately
-                    results = detector.run(
-                        [tensor],
-                        ratios=ratios,
-                        padding=padding,
-                        preprocessed=True,
-                        postprocess=False,
-                        no_copy=data.no_copy,
-                    )
-                    t1 = time.perf_counter()
-                else:
-                    # direct_preproc handles batch
-                    gpu_img, ratios, padding = preproc.direct_preproc(images, no_warn=True)
-                    t0 = time.perf_counter()
-                    engine_inputs = detector._engine_inputs(  # noqa: SLF001
-                        gpu_img, images, ratios, preprocessed=False
-                    )
-                    results = detector.engine.execute(engine_inputs, no_copy=True)
-                    t1 = time.perf_counter()
+                gpu_img, ratios, padding = preproc.direct_preproc(images, no_warn=True)
+                t0 = time.perf_counter()
+                engine_inputs = detector.engine_inputs(gpu_img, images, ratios, preprocessed=False)
+                results = detector.engine.execute(engine_inputs, no_copy=True)
+                t1 = time.perf_counter()
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # gpu_preprocess
 

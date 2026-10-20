@@ -68,7 +68,8 @@ class ParallelTRTEngines:
             dla_core: int | None = None
             device: int | None = None
             if isinstance(engine_info, tuple):
-                engine, dla_core = engine_info  # ty: ignore[invalid-assignment]
+                engine, dla_core, *rest = engine_info
+                device = rest[0] if rest else None
             else:
                 engine = engine_info
             q_engine = QueuedTRTEngine(

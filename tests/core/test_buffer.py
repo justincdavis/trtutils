@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import gc
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pytest
@@ -242,8 +243,9 @@ class TestCopies:
 
     def test_copy_from_ndarray_raises(self) -> None:
         dst = Buffer.wrap(np.zeros(4, dtype=np.float32))
+        not_a_buffer: Any = np.zeros(4, dtype=np.float32)
         with pytest.raises(TypeError, match=r"Buffer\.wrap"):
-            dst.copy_from(np.zeros(4, dtype=np.float32))  # ty: ignore[invalid-argument-type]
+            dst.copy_from(not_a_buffer)
 
 
 @pytest.mark.cpu

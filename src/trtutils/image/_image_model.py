@@ -349,6 +349,42 @@ class ImageModel:
         """Check if model has dynamic batch size."""
         return self._is_dynamic_batch
 
+    def get_preprocessor(
+        self: Self, method: str | None = None
+    ) -> CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor:
+        """
+        Get the preprocessor for a method, creating it on first use.
+
+        Parameters
+        ----------
+        method : str, optional
+            Options are 'cpu', 'cuda', or 'trt'. 'trt' falls back to 'cuda'
+            on platforms without UINT8 support. By default None, which
+            returns the preprocessor stated in the constructor.
+
+        Returns
+        -------
+        CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
+            The preprocessor.
+
+        """
+        if method is None:
+            return self._preprocessor
+        if method == "trt" and not FLAGS.TRT_HAS_UINT8:
+            method = "cuda"
+            LOG.warning(
+                "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
+            )
+        if method == "cuda":
+            if self._preproc_cuda is None:
+                self._preproc_cuda = self._setup_cuda_preproc()
+            return self._preproc_cuda
+        if method == "trt":
+            if self._preproc_trt is None:
+                self._preproc_trt = self._setup_trt_preproc()
+            return self._preproc_trt
+        return self._preproc_cpu
+
     def _update_preprocessors(self: Self) -> None:
         if self._preproc_cpu is not None:
             self._preproc_cpu = self._setup_cpu_preproc()
@@ -532,22 +568,7 @@ class ImageModel:
                 f"{self._tag}: Running preprocess, batch_size: {len(batch_images)}, with method: {resize}",
             )
             LOG.debug(f"{self._tag}: Using device: {method}")
-        preprocessor = self._preprocessor
-        if method is not None:
-            if method == "trt" and not FLAGS.TRT_HAS_UINT8:
-                method = "cuda"
-                LOG.warning(
-                    "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
-                )
-            preprocessor = self._preproc_cpu
-            if method == "cuda":
-                if self._preproc_cuda is None:
-                    self._preproc_cuda = self._setup_cuda_preproc()
-                preprocessor = self._preproc_cuda
-            elif method == "trt":
-                if self._preproc_trt is None:
-                    self._preproc_trt = self._setup_trt_preproc()
-                preprocessor = self._preproc_trt
+        preprocessor = self.get_preprocessor(method)
         if isinstance(preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             t0 = time.perf_counter()
             data = preprocessor(batch_images, resize=resize, no_copy=no_copy, verbose=verbose)
@@ -563,7 +584,7 @@ class ImageModel:
 
         return data
 
-    def _engine_inputs(
+    def engine_inputs(
         self: Self,
         image: Buffer,
         images: list[np.ndarray],  # noqa: ARG002
@@ -615,8 +636,8 @@ class ImageModel:
 
         """
         if outputs and isinstance(outputs[0], np.ndarray):
-            return [outputs], True  # ty: ignore[invalid-return-type]
-        return outputs, False  # ty: ignore[invalid-return-type]
+            return [[o for o in outputs if isinstance(o, np.ndarray)]], True
+        return [o for o in outputs if isinstance(o, list)], False
 
     def _run_core(
         self: Self,
@@ -741,7 +762,7 @@ class ImageModel:
                 raise ValueError(err_msg)
             tensor = batch_images[0]
 
-        engine_inputs = self._engine_inputs(
+        engine_inputs = self.engine_inputs(
             host_input(tensor), batch_images, batch_ratios, preprocessed=preprocessed
         )
 
@@ -785,14 +806,13 @@ class ImageModel:
         verbose: bool | None,
         post: _PostFn,
         get: Callable[[list[list[np.ndarray]]], list[T]],
-        needs_ratios: bool = True,
     ) -> T | list[T]:
         """
         Shared implementation of the public ``end2end`` method.
 
-        Dispatches to the CUDA-graph path, the CPU-preprocessor path
-        (via ``_run_core``), or the GPU-preprocessor direct-exec path,
-        then extracts final results with ``get``.
+        Preprocesses on the CPU or GPU, executes the engine (which handles
+        CUDA graph capture/replay), postprocesses with ``post``, then
+        extracts final results with ``get``.
 
         Parameters
         ----------
@@ -805,19 +825,11 @@ class ImageModel:
         get : Callable[[list[list[np.ndarray]]], list[T]]
             Callable extracting final per-image results from postprocessed
             outputs, e.g. ``get_detections`` or ``get_classifications``.
-        needs_ratios : bool
-            Passed through to ``_run_core`` on the CPU-preprocessor path.
 
         Returns
         -------
         T | list[T]
             Final results, unwrapped for single-image input.
-
-        Raises
-        ------
-        RuntimeError
-            If the CUDA-graph path is enabled and dimensions/batch size
-            change after the first call, or graph capture fails.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -834,37 +846,27 @@ class ImageModel:
             batch_images = images
             is_single = False
 
-        no_copy_e2e = True
-        pp: list[list[np.ndarray]]
-        if not isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
+        if isinstance(self._preprocessor, (CUDAPreprocessor, TRTPreprocessor)):
             if verbose:
-                LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
-            pp = self._run_core(  # ty: ignore[invalid-assignment]
-                batch_images,
-                None,
-                None,
-                preprocessed=False,
-                postprocess=True,
-                no_copy=True,
-                verbose=verbose,
-                post=post,
-                needs_ratios=needs_ratios,
-            )
-        else:
-            if verbose:
-                LOG.debug(f"{self._tag}: end2end -> calling CUDA preprocess")
+                LOG.debug(f"{self._tag}: end2end -> calling GPU preprocess")
             image_input, ratios, padding = self._preprocessor.direct_preproc(
                 batch_images,
                 resize=self._resize_method,
                 no_warn=True,
                 verbose=verbose,
             )
-            engine_inputs = self._engine_inputs(
-                image_input, batch_images, ratios, preprocessed=False
-            )
-            raw = self._engine.execute(engine_inputs, no_copy=True)
-            pp = post(raw, ratios, padding, no_copy_e2e)
+        else:
+            if verbose:
+                LOG.debug(f"{self._tag}: end2end -> calling CPU preprocess")
+            tensor, ratios, padding = self.preprocess(batch_images, no_copy=True, verbose=verbose)
+            image_input = host_input(tensor)
 
+        engine_inputs = self.engine_inputs(image_input, batch_images, ratios, preprocessed=False)
+        t0 = time.perf_counter()
+        raw = self._engine.execute(engine_inputs, no_copy=True)
+        self._infer_profile = (t0, time.perf_counter())
+        no_copy_post = True
+        pp = post(raw, ratios, padding, no_copy_post)
         result = get(pp)
 
         # unwrap for single-image input

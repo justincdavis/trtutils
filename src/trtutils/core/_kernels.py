@@ -1,7 +1,6 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: PYI041
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
@@ -66,14 +65,14 @@ class KernelArgs(np.ndarray):
             The argument array.
 
         """
-        args = np.asarray(pointers, dtype=np.uint64).view(cls)
-        args._keepalive = list(keepalive)  # noqa: SLF001
-        return args
+        self = np.asarray(pointers, dtype=np.uint64).view(cls)
+        self._keepalive = list(keepalive)
+        return self
 
     @classmethod
     def from_values(
         cls: type[Self],
-        *args: int | float | np.ndarray,
+        *args: float | np.ndarray,
         verbose: bool | None = None,
     ) -> Self:
         """
@@ -81,7 +80,7 @@ class KernelArgs(np.ndarray):
 
         Parameters
         ----------
-        *args : int | float | np.ndarray
+        *args : float | np.ndarray
             The kernel arguments, as accepted by :func:`create_kernel_args`.
         verbose : bool, optional
             Whether or not to output additional information about the passed args.
@@ -164,7 +163,7 @@ class Kernel:
 
     def create_args(
         self: Self,
-        *args: int | float | np.ndarray,
+        *args: float | np.ndarray,
         verbose: bool | None = False,
     ) -> KernelArgs:
         """
@@ -177,7 +176,7 @@ class Kernel:
 
         Parameters
         ----------
-        *args : int | float | np.ndarray
+        *args : float | np.ndarray
             All args to pass to the kernel as integers, floats, or pre-formed args.
             If arrays are to be passed to the kernel, they should be
             given as an integer representing the pointer returned
@@ -301,7 +300,7 @@ def launch_kernel(
 
 
 def create_kernel_args(
-    *args: int | float | np.ndarray,
+    *args: float | np.ndarray,
     verbose: bool | None = False,
 ) -> tuple[np.ndarray, list[np.ndarray]]:
     """
@@ -319,7 +318,7 @@ def create_kernel_args(
 
     Parameters
     ----------
-    *args : int | float | np.ndarray
+    *args : float | np.ndarray
         All args to pass to the kernel as integers, floats, or pre-formed args.
         If arrays are to be passed to the kernel, they should be
         given as an integer representing the pointer returned

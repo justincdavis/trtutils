@@ -472,18 +472,10 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             For single image: np.ndarray (depth map of shape (1, H, W)).
             For batch: list[np.ndarray] (depth map per image).
 
-        Raises
-        ------
-        RuntimeError
-            If end2end_graph is enabled and image dimensions change after first call.
-        RuntimeError
-            If end2end_graph is enabled and CUDA graph capture fails.
-
         """
         return self._end2end_core(
             images,
             verbose=verbose,
             post=lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose),
             get=lambda pp: get_depth_maps(pp, verbose=verbose),
-            needs_ratios=False,
         )
