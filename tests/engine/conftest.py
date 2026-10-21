@@ -67,7 +67,6 @@ def _build_dynamic_test_engine(onnx_name: str, max_batch: int = 4) -> Path:
 
 
 SIMPLE_ENGINE_PATH = _build_test_engine("simple")
-SIMPLE_DYNAMIC_ENGINE_PATH = _build_dynamic_test_engine("simple")
 
 ENGINE_PATHS = [
     pytest.param(SIMPLE_ENGINE_PATH, id="simple"),
@@ -112,7 +111,7 @@ def random_input(engine) -> list:
     return engine.get_random_input()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def dynamic_engine_path() -> Path:
-    """Path to the simple engine built with a 1..4 dynamic batch profile."""
-    return SIMPLE_DYNAMIC_ENGINE_PATH
+    """Path to the simple engine built with a 1..4 dynamic batch profile, built on first use."""
+    return _build_dynamic_test_engine("simple")

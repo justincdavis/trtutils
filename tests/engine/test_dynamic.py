@@ -28,11 +28,9 @@ def dynamic_engine(dynamic_engine_path) -> Generator[TRTEngine, None, None]:
 
 
 @pytest.fixture
-def static_engine(engine_path) -> Generator[TRTEngine, None, None]:
+def static_engine(make_engine) -> TRTEngine:
     """The batch-1 static version of the same network, used as a reference."""
-    eng = TRTEngine(engine_path, warmup=False, cuda_graph=False)
-    yield eng
-    del eng
+    return make_engine(cuda_graph=False)
 
 
 def _batch(engine: TRTEngine, n: int, seed: int = 0) -> np.ndarray:

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import contextlib
 import gc
-from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
@@ -108,15 +107,9 @@ def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
     eng._async_v3 = True
     eng._inputs = [inp]
     eng._outputs = [out]
-    eng._input_shapes = [(_MAX_BATCH, _FEATURES)]
-    eng._input_addresses = [inp.allocation]
-    eng._bound_inputs = [inp.device]
-    eng._output_shapes = [(_MAX_BATCH, _OUT_FEATURES)]
-    eng._shapes_changed = False
     eng._allocations = [inp.allocation, out.allocation]
-    eng._cuda_graph_enabled = cuda_graph
-    eng._cuda_graphs = OrderedDict()
-    eng._seen_configs = OrderedDict()
+    eng._init_io_state(cuda_graph=cuda_graph)
+    context.shape_calls.clear()  # only record the calls the tests make
     return eng, context
 
 

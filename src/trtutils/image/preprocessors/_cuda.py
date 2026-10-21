@@ -168,7 +168,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         # keeping the allocation for smaller batches keeps the output address
         # stable, so the engine's CUDA graph for each batch size stays valid
-        if batch_size <= self._output_binding.shape[0]:
+        if batch_size <= self._output_binding.max_shape[0]:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # reallocate_batch_buffers
             return
@@ -320,7 +320,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         batch_size = len(images)
 
-        # Grow the buffers if the batch exceeds their capacity
         self._reallocate_batch_buffers(batch_size)
 
         # Resize images and copy to batch buffer

@@ -83,6 +83,8 @@ class Binding:
         self._device = device
         self._tensor_format = tensor_format
         self._min_shape = self._shape if min_shape is None else tuple(int(d) for d in min_shape)
+        # the last shape check() accepted, so a repeated shape skips the bounds test
+        self._checked_shape = self._shape
         # (host, device) views of the leading elements for the last shape
         # staged or fetched, which stays the same from call to call
         self._view_shape = self._shape
@@ -118,11 +120,45 @@ class Binding:
         """The largest shape the tensor accepts, which is its allocated shape."""
         return self._shape
 
-    def accepts(self: Self, shape: tuple[int, ...]) -> bool:
-        """Check that a shape has the tensor's rank and lies within its min/max bounds."""
-        return len(shape) == len(self._shape) and all(
+    def check(self: Self, buffer: Buffer, engine: str) -> None:
+        """
+        Check that a Buffer can be bound to the tensor: same dtype, shape within bounds.
+
+        Parameters
+        ----------
+        buffer : Buffer
+            The data to check.
+        engine : str
+            The name of the engine, for the error message.
+
+        Raises
+        ------
+        ValueError
+            If the dtype differs or the shape is outside the min/max bounds.
+
+        """
+        if buffer.dtype != self._dtype:
+            err_msg = (
+                f"Input '{self._name}' of engine '{engine}' expects dtype "
+                f"{self._dtype}, got {buffer.dtype}."
+            )
+            raise ValueError(err_msg)
+        shape = buffer.shape
+        if shape == self._checked_shape:
+            return
+        in_bounds = len(shape) == len(self._shape) and all(
             lo <= dim <= hi for dim, lo, hi in zip(shape, self._min_shape, self._shape)
         )
+        if not in_bounds:
+            if self._min_shape == self._shape:
+                expected = f"exactly {self._shape}"
+            else:
+                expected = f"between {self._min_shape} and {self._shape}"
+            err_msg = (
+                f"Input '{self._name}' of engine '{engine}' got shape {shape}, expected {expected}."
+            )
+            raise ValueError(err_msg)
+        self._checked_shape = shape
 
     @property
     def is_input(self: Self) -> bool:
@@ -409,56 +445,43 @@ def allocate_bindings(
     # based on the version of tensorrt, num_io_tensors is not available in IEngine
     # first case: version 9 or higher OR version 8.5 and higher
     for i in num_tensors:
-        min_shape: tuple[int, ...] | None = None
         if FLAGS.TRT_10:
             name = engine.get_tensor_name(i)
-            is_input = False
-            if engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
-                is_input = True
+            is_input = engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT
             dtype = np.dtype(trt.nptype(engine.get_tensor_dtype(name)))
             shape = context.get_tensor_shape(name)
             data_format = engine.get_tensor_format(name)
-            if is_input and any(dim < 0 for dim in shape):
-                if not engine.num_optimization_profiles > 0:
-                    err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()
-                    raise RuntimeError(err_msg)
-                profile_shape = engine.get_tensor_profile_shape(name, 0)
-                # ensure that profile shape is min,opt,max
-                if len(profile_shape) != correct_profile_shape:
-                    err_msg = f"Profile shape for tensor '{name}' has {len(profile_shape)} elements, expected {correct_profile_shape}"
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()
-                    raise RuntimeError(err_msg)
-                # allocate at the *max* profile shape; the min bounds the inputs
-                context.set_input_shape(name, profile_shape[2])
-                min_shape = tuple(profile_shape[0])
-                shape = context.get_tensor_shape(name)
         else:
-            is_input = False
-            if engine.binding_is_input(i):
-                is_input = True
+            is_input = bool(engine.binding_is_input(i))
             name = engine.get_binding_name(i)
             dtype = np.dtype(trt.nptype(engine.get_binding_dtype(i)))
             shape = context.get_binding_shape(i)
             data_format = engine.get_binding_format(i)
-            if is_input and any(dim < 0 for dim in shape):
-                if not engine.num_optimization_profiles > 0:
-                    err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()
-                    raise RuntimeError(err_msg)
+
+        min_shape: tuple[int, ...] | None = None
+        if is_input and any(dim < 0 for dim in shape):
+            if not engine.num_optimization_profiles > 0:
+                err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()
+                raise RuntimeError(err_msg)
+            if FLAGS.TRT_10:
+                profile_shape = engine.get_tensor_profile_shape(name, 0)
+            else:
                 profile_shape = engine.get_profile_shape(0, name)
-                # ensure that profile shape is min,opt,max
-                if len(profile_shape) != correct_profile_shape:
-                    err_msg = f"Profile shape for tensor '{name}' has {len(profile_shape)} elements, expected {correct_profile_shape}"
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()
-                    raise RuntimeError(err_msg)
-                # allocate at the *max* profile shape; the min bounds the inputs
+            # ensure that profile shape is min,opt,max
+            if len(profile_shape) != correct_profile_shape:
+                err_msg = f"Profile shape for tensor '{name}' has {len(profile_shape)} elements, expected {correct_profile_shape}"
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()
+                raise RuntimeError(err_msg)
+            # allocate at the *max* profile shape; the min bounds the inputs
+            min_shape = tuple(profile_shape[0])
+            if FLAGS.TRT_10:
+                context.set_input_shape(name, profile_shape[2])
+                shape = context.get_tensor_shape(name)
+            else:
                 context.set_binding_shape(i, profile_shape[2])
-                min_shape = tuple(profile_shape[0])
                 shape = context.get_binding_shape(i)
 
         LOG.debug(f"Allocating for I/O tensor: {name} - is_input: {is_input}")

@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    from ._image_model import _PostFn
+
 
 class Classifier(ImageModel, ClassifierInterface):
     """Implementation of image classifiers."""
@@ -173,6 +175,10 @@ class Classifier(ImageModel, ClassifierInterface):
             nvtx.pop_range()  # postprocess
 
         return data
+
+    def _post_fn(self: Self, *, verbose: bool | None) -> _PostFn:
+        """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""
+        return lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose)
 
     # __call__ overloads
     @overload
@@ -367,7 +373,7 @@ class Classifier(ImageModel, ClassifierInterface):
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
-            post=lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose),
+            post=self._post_fn(verbose=verbose),
             needs_ratios=False,
         )
 
@@ -483,6 +489,6 @@ class Classifier(ImageModel, ClassifierInterface):
         return self._end2end_core(
             images,
             verbose=verbose,
-            post=lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose),
+            post=self._post_fn(verbose=verbose),
             get=lambda pp: get_classifications(pp, top_k=top_k, verbose=verbose),
         )

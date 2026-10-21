@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    from ._image_model import _PostFn
     from .postprocessors import HandInteraction
 
 _EXPECTED_OUTPUT_PREFIX = ["boxes", "scores", "labels", "pair_probs"]
@@ -251,6 +252,10 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
         return data
 
+    def _post_fn(self: Self, conf_thres: float | None, *, verbose: bool | None) -> _PostFn:
+        """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""
+        return lambda o, r, p, nc: self.postprocess(o, r, p, conf_thres, no_copy=nc, verbose=verbose)
+
     # __call__ overloads
     @overload
     def __call__(
@@ -338,9 +343,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
-            post=lambda o, r, p, nc: self.postprocess(
-                o, r, p, conf_thres, no_copy=nc, verbose=verbose
-            ),
+            post=self._post_fn(conf_thres, verbose=verbose),
         )
 
     # run overloads - batch input (3 overloads)
@@ -503,9 +506,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
-            post=lambda o, r, p, nc: self.postprocess(
-                o, r, p, conf_thres, no_copy=nc, verbose=verbose
-            ),
+            post=self._post_fn(conf_thres, verbose=verbose),
         )
 
     # get_interactions overloads
@@ -645,8 +646,6 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         return self._end2end_core(
             images,
             verbose=verbose,
-            post=lambda o, r, p, nc: self.postprocess(
-                o, r, p, conf_thres, no_copy=nc, verbose=verbose
-            ),
+            post=self._post_fn(conf_thres, verbose=verbose),
             get=lambda pp: self.get_interactions(pp, pair_thres, second_pair_thres, verbose=verbose),
         )

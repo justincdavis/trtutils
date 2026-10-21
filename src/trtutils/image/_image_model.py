@@ -231,22 +231,7 @@ class ImageModel:
         self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
         self._preproc_cuda: CUDAPreprocessor | None = None
         self._preproc_trt: TRTPreprocessor | None = None
-        # change the preprocessor setup to cuda if set to trt and trt doesnt have uint8 support
-        if preprocessor == "trt" and not FLAGS.TRT_HAS_UINT8:
-            preprocessor = "cuda"
-            LOG.warning(
-                "Preprocessing method set to TensorRT, but platform doesnt have UINT8 support, fallback to CUDA."
-            )
-        # existing logic — guard CUDA/TRT preprocessor setup on correct device
-        with Device(device):
-            if preprocessor == "trt":
-                self._preproc_trt = self._setup_trt_preproc()
-                self._preprocessor = self._preproc_trt
-            elif preprocessor == "cuda" and self._dtype == np.float32:
-                self._preproc_cuda = self._setup_cuda_preproc()
-                self._preprocessor = self._preproc_cuda
-            else:
-                self._preprocessor = self._preproc_cpu
+        self._preprocessor = self.get_preprocessor(preprocessor)
 
         # basic profiler setup
         self._pre_profile: tuple[float, float] = (0.0, 0.0)
@@ -352,6 +337,11 @@ class ImageModel:
         return self._batch_size
 
     @property
+    def infer_profile(self: Self) -> tuple[float, float]:
+        """The start and end times of the latest engine execution."""
+        return self._infer_profile
+
+    @property
     def is_dynamic_batch(self: Self) -> bool:
         """Check if model has dynamic batch size."""
         return self._engine.is_dynamic_batch
@@ -366,7 +356,8 @@ class ImageModel:
         ----------
         method : str, optional
             Options are 'cpu', 'cuda', or 'trt'. 'trt' falls back to 'cuda'
-            on platforms without UINT8 support. By default None, which
+            on platforms without UINT8 support, and 'cuda' to 'cpu' for
+            models whose input is not float32. By default None, which
             returns the preprocessor stated in the constructor.
 
         Returns
@@ -382,13 +373,15 @@ class ImageModel:
             LOG.warning(
                 "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
             )
-        if method == "cuda":
+        if method == "cuda" and self._dtype == np.float32:
             if self._preproc_cuda is None:
-                self._preproc_cuda = self._setup_cuda_preproc()
+                with Device(self._device):
+                    self._preproc_cuda = self._setup_cuda_preproc()
             return self._preproc_cuda
         if method == "trt":
             if self._preproc_trt is None:
-                self._preproc_trt = self._setup_trt_preproc()
+                with Device(self._device):
+                    self._preproc_trt = self._setup_trt_preproc()
             return self._preproc_trt
         return self._preproc_cpu
 
@@ -649,6 +642,66 @@ class ImageModel:
         self._pre_profile = (t0, time.perf_counter())
         return self.engine_inputs(image, images, ratios), ratios, padding
 
+    def infer(
+        self: Self,
+        images: list[np.ndarray],
+        method: str | None = None,
+        *,
+        preprocessed: bool = False,
+        ratios: list[tuple[float, float]] | None = None,
+        padding: list[tuple[float, float]] | None = None,
+        postprocess: bool = False,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[list[np.ndarray], list[tuple[float, float]] | None, list[tuple[float, float]] | None]:
+        """
+        Run the engine on a batch of images, returning its raw outputs.
+
+        The inputs come from :meth:`prepare_inputs`, which takes the
+        ``method``, ``preprocessed``, ``ratios``, ``padding`` and ``verbose``
+        arguments.
+
+        Parameters
+        ----------
+        images : list[np.ndarray]
+            The images, or a single already preprocessed batch tensor.
+        method : str, optional
+            The preprocessor to use, as in :meth:`get_preprocessor`.
+        preprocessed : bool, optional
+            Whether ``images`` holds an already preprocessed batch tensor.
+        ratios : list[tuple[float, float]], optional
+            The ratios of an already preprocessed batch.
+        padding : list[tuple[float, float]], optional
+            The padding of an already preprocessed batch.
+        postprocess : bool, optional
+            Whether the caller postprocesses the outputs right away, in which
+            case they are not copied out of the engine unless ``no_copy`` is False.
+        no_copy : bool, optional
+            Whether to return the engine's host output memory without a copy.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        tuple[list[np.ndarray], list[tuple[float, float]] | None, list[tuple[float, float]] | None]
+            The raw outputs, and the ratios and padding per image.
+
+        """
+        engine_inputs, ratios, padding = self.prepare_inputs(
+            images,
+            method,
+            preprocessed=preprocessed,
+            ratios=ratios,
+            padding=padding,
+            verbose=verbose,
+        )
+        if no_copy is None and postprocess:
+            no_copy = True
+        t0 = time.perf_counter()
+        outputs = self._engine(engine_inputs, no_copy=no_copy)
+        self._infer_profile = (t0, time.perf_counter())
+        return outputs, ratios, padding
+
     def engine_inputs(
         self: Self,
         image: Buffer,
@@ -739,7 +792,7 @@ class ImageModel:
             Whether to run postprocessing on the raw outputs.
             By default None, treated as True.
         no_copy : bool, optional
-            Whether to avoid extra copies during preprocess/run/postprocess.
+            Whether to return engine outputs and postprocessed results without copies.
         verbose : bool, optional
             Whether to log additional information.
         post : _PostFn
@@ -794,37 +847,25 @@ class ImageModel:
         if postprocess is None:
             postprocess = True
 
-        # assign no_copy values
-        if no_copy is None and not preprocessed and postprocess:
-            # skip the output copy when the outputs are postprocessed inside this call
-            no_copy_run: bool | None = True
-            no_copy_post: bool | None = False
-        else:
-            no_copy_run = no_copy
-            no_copy_post = no_copy
-
         if verbose:
             LOG.debug(
                 f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
             )
 
         try:
-            engine_inputs, batch_ratios, batch_padding = self.prepare_inputs(
+            outputs, batch_ratios, batch_padding = self.infer(
                 batch_images,
                 preprocessed=preprocessed,
                 ratios=batch_ratios,
                 padding=batch_padding,
+                postprocess=postprocess,
+                no_copy=no_copy,
                 verbose=verbose,
             )
         except ValueError:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # run
             raise
-
-        # execute
-        t0 = time.perf_counter()
-        outputs: list[np.ndarray] = self._engine(engine_inputs, no_copy=no_copy_run)
-        t1 = time.perf_counter()
 
         # handle postprocessing
         if postprocess:
@@ -835,8 +876,7 @@ class ImageModel:
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # run
                 raise RuntimeError(err_msg)
-            result = post(outputs, batch_ratios or [], batch_padding or [], no_copy_post)
-            self._infer_profile = (t0, t1)
+            result = post(outputs, batch_ratios or [], batch_padding or [], no_copy)
 
             # unwrap for single-image input
             if is_single:
@@ -846,8 +886,6 @@ class ImageModel:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # run
             return result
-
-        self._infer_profile = (t0, t1)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # run

@@ -16,7 +16,8 @@ Added
   numpy arrays and any ``__cuda_array_interface__`` object (CuPy, PyTorch, ...) without
   copying; memory is reference counted so views and numpy arrays never outlive it
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
-* ``Binding.stage`` / ``Binding.fetch`` for copying a leading prefix of a binding
+* ``Binding.stage`` / ``Binding.fetch`` for copying a leading prefix of a binding (their
+  views are reused while the shape repeats)
 * ``build_engine(shapes=[(name, (min_shape, opt_shape, max_shape))])`` builds a dynamic
   optimization profile; malformed triples raise ``ValueError`` and non-integer dims
   raise ``TypeError``
@@ -27,7 +28,8 @@ Added
   engine inputs for images, preprocessing them unless ``preprocessed`` (GPU-preprocessed
   batches are bound in place on the device), ``ImageModel.engine_inputs(image,
   images, ratios)`` builds them from a preprocessed batch (``images=None`` when the batch
-  came preprocessed), and ``ImageModel.get_preprocessor(method)``
+  came preprocessed), ``ImageModel.infer`` runs the engine on them and returns the raw
+  outputs (``ImageModel.infer_profile`` times it), and ``ImageModel.get_preprocessor(method)``
 
 Changed
 ^^^^^^^
@@ -46,8 +48,9 @@ Changed
   ``device``). Its fields (``index``, ``name``, ``dtype``, ``shape``, ``is_input``,
   ``tensor_format``, ``host``, ``device``) are read-only properties, and ``allocation``,
   ``host_allocation``, ``pagelocked_mem``, and ``unified_mem`` are derived from the buffers.
-  ``min_shape`` / ``max_shape`` / ``accepts(shape)`` give the profile bounds of an input, and
-  ``bind(src, stream)`` returns device memory TensorRT can read ``src`` from
+  ``min_shape`` / ``max_shape`` give the profile bounds of an input, ``check(buffer, engine)``
+  validates a Buffer against them and the dtype, and ``bind(src, stream)`` returns device
+  memory TensorRT can read ``src`` from
 * **Breaking:** ``GPUImagePreprocessor.direct_preproc`` returns a device ``Buffer`` shaped
   to the submitted images instead of a pointer. GPU preprocessors no longer hold
   orig-size / scale-factor buffers: ``orig_size_allocation``, ``scale_factor_allocation``
@@ -58,8 +61,9 @@ Changed
   address of every input), so dynamic batch sizes / resolutions and in-place device
   inputs are graphed too. A configuration is captured the second time it executes and
   replayed afterwards; the least recently used graph is evicted beyond 8. ``graph_exec``
-  replays the configuration of the latest execution. A failed capture logs a warning and
-  disables graphs for the engine instead of raising out of the call that triggered it
+  replays the configuration of the latest execution. A failed capture (including one
+  whose enqueue TensorRT rejects) logs a warning and disables graphs for the engine
+  instead of raising out of the call that triggered it
 * ``TRTEngine`` holds a reference to the Buffers bound for the latest call, so
   ``graph_exec`` and an unsynchronized ``raw_exec`` never read freed inputs
 * ``CUDAPreprocessor`` keeps its buffers for batches smaller than the largest seen, so the
@@ -68,17 +72,17 @@ Changed
   batch size after the first call; it uses the engine's per-configuration graphs
 * ``ImageModel.run`` with a GPU preprocessor binds the preprocessed batch on the device
   instead of copying it to the host and back
-* ``ParallelDetector`` preprocesses through ``prepare_inputs`` for every preprocessor,
-  keeping GPU-preprocessed batches on the device; outputs it postprocesses are not copied
-  unless ``no_copy=False``
-* ``Binding.stage`` / ``fetch`` reuse their views while the shape repeats
-* ``TRTEngine.is_dynamic_batch`` is True when the profile allows more than one batch size
+* ``ImageModel.run`` and ``ParallelDetector`` skip the copy of engine outputs they
+  postprocess right away unless ``no_copy=False``; ``ParallelDetector`` runs through
+  ``ImageModel.infer`` for every preprocessor, keeping GPU-preprocessed batches on the device
+* ``ImageModel.get_preprocessor`` falls back from 'cuda' to 'cpu' for models whose input is
+  not float32, as the constructor does
 
 Fixed
 ^^^^^
-* ``TRTEngine``: a dynamic-batch engine executed ``direct_exec`` / ``raw_exec`` at whatever
-  shape the previous call left on the context; inputs now carry their shape
-* ``TRTEngine``: ``is_dynamic_batch`` read the max-profile binding shape and was always False
+* ``TRTEngine.is_dynamic_batch`` read the max-profile binding shape and was always False;
+  it is True when the profile allows more than one batch size, and
+  ``ImageModel.is_dynamic_batch`` reads it
 * ``TRTEngine``: shapes rejected by TensorRT's ``set_input_shape`` were silently ignored
 * ``allocate_bindings``: inputs with dynamic non-batch dimensions are allocated at the
   max profile shape
@@ -87,11 +91,9 @@ Fixed
 * ``Kernel.create_args``: cached argument arrays no longer point at freed buffers after
   other argument sets are created
 * ``Detector`` with a CPU preprocessor and CUDA graphs wrote RT-DETRv3 extra inputs into
-  the wrong engine bindings, and the GPU-preprocessor path fed a single image's size /
-  scale factor to every image of a batch
+  the wrong engine bindings
 * ``ParallelDetector`` with a GPU preprocessor passed only the image to multi-input
   (DETR-style) engines
-* ``ImageModel.is_dynamic_batch`` was always False; it now reads the engine
 * ``ParallelDetector`` with a CPU preprocessor fed RT-DETR models the model input size
   instead of each image's original size
 * ``ParallelTRTEngines``: ``(engine, dla_core, device)`` tuples raised ``ValueError`` and
@@ -99,7 +101,7 @@ Fixed
 * ``Detector``: models with a scale-factor input raise a clear ``ValueError`` when run on
   preprocessed input without ``ratios``
 * ``TRTEngine``: an enqueue rejected by TensorRT raises instead of returning the previous
-  outputs, and a CUDA graph whose captured enqueue was rejected is discarded
+  outputs
 * GPU preprocessors copy back only the submitted images, not the full allocated batch
 * ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
   notice into the exported requirements file

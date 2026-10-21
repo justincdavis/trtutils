@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import contextlib
-import time
 from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Thread
@@ -165,8 +164,9 @@ class ParallelDetector:
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            When enabled, CUDA graphs are used both at the engine level and for
-            end-to-end execution in the end2end() method.
+            When enabled, each engine records a CUDA graph for each input
+            configuration (batch size, resolution, input buffers) once it
+            repeats and replays it afterwards.
             Only effective with async_v3 backend. Default is True.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
@@ -1081,10 +1081,6 @@ class ParallelDetector:
         # set flag that we are ready
         flag.set()
 
-        # set types
-        ratios: list[tuple[float, float]] | None
-        padding: list[tuple[float, float]] | None
-
         # handle inference
         while not self._stopflag.is_set():
             try:
@@ -1100,23 +1096,20 @@ class ParallelDetector:
             if FLAGS.NVTX_ENABLED:
                 nvtx.push_range(f"parallel_detector::_run::infer [{self._tag}:{threadid}]")
             try:
-                engine_inputs, ratios, padding = detector.prepare_inputs(
+                results, ratios, padding = detector.infer(
                     images,
                     data.preprocess_method,
                     preprocessed=bool(data.preprocessed),
                     ratios=data.ratios,
                     padding=data.padding,
+                    postprocess=bool(data.postprocess),
+                    no_copy=data.no_copy,
                 )
             except ValueError:
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # infer
                     nvtx.pop_range()  # _run
                 raise
-            # outputs that are postprocessed here need no copy of their own
-            no_copy_run = True if data.postprocess and data.no_copy is None else data.no_copy
-            t0 = time.perf_counter()
-            results = detector.engine.execute(engine_inputs, no_copy=no_copy_run)
-            t1 = time.perf_counter()
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # infer
 
@@ -1147,7 +1140,7 @@ class ParallelDetector:
                 padding=padding,
                 postprocessed=data.postprocess,
             )
-            self._profilers[threadid] = (t0, t1)
+            self._profilers[threadid] = detector.infer_profile
 
             self._oqueues[threadid].put(packet)
             if FLAGS.NVTX_ENABLED:

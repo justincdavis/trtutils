@@ -149,6 +149,28 @@ class TRTEngine(TRTEngineInterface):
 
         self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (backend == "async_v3" or backend == "auto")
 
+        self._init_io_state(cuda_graph=cuda_graph)
+
+        # store timing variable for sleep call before stream_sync
+        self._sync_t: float = 0.0
+
+        # store verbose info
+        self._verbose = verbose if verbose is not None else False
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["warmup"])
+
+        if warmup:
+            self.warmup(warmup_iterations, verbose=self._verbose)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # warmup
+            nvtx.pop_range()  # init
+
+        LOG.debug(f"Created TRTEngine: {self.name}")
+
+    def _init_io_state(self: Self, *, cuda_graph: bool | None) -> None:
+        """Point the context at the bindings at their max shapes and reset the graph cache."""
         # CUDA graph support: one graph per input configuration (the shape and
         # device address of every input), least recently used first. A
         # configuration is only captured once it repeats; configurations seen
@@ -179,24 +201,6 @@ class TRTEngine(TRTEngineInterface):
             for o_binding in self._outputs:
                 self._context.set_tensor_address(o_binding.name, o_binding.allocation)
 
-        # store timing variable for sleep call before stream_sync
-        self._sync_t: float = 0.0
-
-        # store verbose info
-        self._verbose = verbose if verbose is not None else False
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["warmup"])
-
-        if warmup:
-            self.warmup(warmup_iterations, verbose=self._verbose)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # warmup
-            nvtx.pop_range()  # init
-
-        LOG.debug(f"Created TRTEngine: {self.name}")
-
     @property
     def active_input_shapes(self: Self) -> list[tuple[int, ...]]:
         """The input shapes of the most recent execution."""
@@ -206,17 +210,6 @@ class TRTEngine(TRTEngineInterface):
     def active_output_shapes(self: Self) -> list[tuple[int, ...]]:
         """The output shapes of the most recent execution."""
         return list(self._output_shapes)
-
-    def _check_input_shape(self: Self, index: int, shape: tuple[int, ...]) -> None:
-        binding = self._inputs[index]
-        if not binding.accepts(shape):
-            min_shape, max_shape = binding.min_shape, binding.max_shape
-            if min_shape == max_shape:
-                expected = f"exactly {min_shape}"
-            else:
-                expected = f"between {min_shape} and {max_shape}"
-            err_msg = f"Input '{binding.name}' of engine '{self._name}' got shape {shape}, expected {expected}."
-            raise ValueError(err_msg)
 
     def _set_context_shape(self: Self, index: int, shape: tuple[int, ...]) -> None:
         binding = self._inputs[index]
@@ -269,15 +262,8 @@ class TRTEngine(TRTEngineInterface):
         if len(inputs) != len(self._inputs):
             err_msg = f"Engine '{self._name}' expects {len(self._inputs)} inputs, got {len(inputs)}."
             raise ValueError(err_msg)
-        for index, (binding, buffer) in enumerate(zip(self._inputs, inputs)):
-            if buffer.dtype != binding.dtype:
-                err_msg = (
-                    f"Input '{binding.name}' of engine '{self._name}' expects dtype "
-                    f"{binding.dtype}, got {buffer.dtype}."
-                )
-                raise ValueError(err_msg)
-            if buffer.shape != self._input_shapes[index]:
-                self._check_input_shape(index, buffer.shape)
+        for binding, buffer in zip(self._inputs, inputs):
+            binding.check(buffer, self._name)
         return inputs
 
     def _bind_inputs(self: Self, data: Sequence[Buffer]) -> None:
@@ -570,8 +556,8 @@ class TRTEngine(TRTEngineInterface):
         Notes
         -----
         This method does NOT synchronize the stream by default. Input
-        Buffers must stay alive and unmodified, and the outputs must not be
-        read, until the caller synchronizes the stream.
+        Buffers must stay unmodified, and the outputs must not be read,
+        until the caller synchronizes the stream.
 
         """
         verbose = verbose if verbose is not None else self._verbose

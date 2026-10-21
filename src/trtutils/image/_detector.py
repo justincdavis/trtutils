@@ -32,6 +32,8 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from ._image_model import _PostFn
+
 
 class Detector(ImageModel, DetectorInterface):
     """Implementation of object detectors."""
@@ -153,8 +155,7 @@ class Detector(ImageModel, DetectorInterface):
         self._input_schema_override = input_schema
         self._output_schema_override = output_schema
 
-        # parent creates engine, calls _configure_model() (which sets schemas),
-        # then creates preprocessors (which need _input_schema for dtype)
+        # parent creates the engine and calls _configure_model(), which sets the schemas
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -300,6 +301,10 @@ class Detector(ImageModel, DetectorInterface):
 
         return data
 
+    def _post_fn(self: Self, conf_thres: float | None, *, verbose: bool | None) -> _PostFn:
+        """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""
+        return lambda o, r, p, nc: self.postprocess(o, r, p, conf_thres, no_copy=nc, verbose=verbose)
+
     # __call__ overloads
     @overload
     def __call__(
@@ -387,9 +392,7 @@ class Detector(ImageModel, DetectorInterface):
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
-            post=lambda o, r, p, nc: self.postprocess(
-                o, r, p, conf_thres, no_copy=nc, verbose=verbose
-            ),
+            post=self._post_fn(conf_thres, verbose=verbose),
         )
 
     # run overloads - batch input (3 overloads)
@@ -551,9 +554,7 @@ class Detector(ImageModel, DetectorInterface):
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
-            post=lambda o, r, p, nc: self.postprocess(
-                o, r, p, conf_thres, no_copy=nc, verbose=verbose
-            ),
+            post=self._post_fn(conf_thres, verbose=verbose),
         )
 
     # get_detections overloads
@@ -730,9 +731,7 @@ class Detector(ImageModel, DetectorInterface):
         return self._end2end_core(
             images,
             verbose=verbose,
-            post=lambda o, r, p, nc: self.postprocess(
-                o, r, p, conf_thres, no_copy=nc, verbose=verbose
-            ),
+            post=self._post_fn(conf_thres, verbose=verbose),
             get=lambda pp: self.get_detections(
                 pp,
                 conf_thres=conf_thres,
