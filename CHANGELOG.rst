@@ -59,8 +59,10 @@ Changed
 * **Breaking:** ``Kernel`` no longer takes ``max_arg_cache``
 * ``TRTEngine`` keeps one CUDA graph per input configuration (the shape and device
   address of every input), so dynamic batch sizes / resolutions and in-place device
-  inputs are graphed too. A configuration is captured the second time it executes and
-  replayed afterwards; the least recently used graph is evicted beyond 8. ``graph_exec``
+  inputs are graphed too. A configuration is captured the second time it runs at unchanged
+  shapes and replayed afterwards (a graph cannot replay on a call that changes the shapes,
+  so inputs that alternate shapes every call are never captured); the least recently used
+  graph is evicted beyond 8. ``graph_exec``
   replays the configuration of the latest execution. A failed capture (including one
   whose enqueue TensorRT rejects) logs a warning and disables graphs for the engine
   instead of raising out of the call that triggered it
@@ -74,9 +76,8 @@ Changed
   GPU-preprocessed batches on the device instead of round-tripping through the host, and
   skip the copy of engine outputs they postprocess right away unless ``no_copy=False``
 * ``ImageModel.preprocess(method='cuda')`` falls back to 'cpu' for models whose input is not
-  float32, as the constructor does, and an unknown ``method`` (also ``ParallelDetector``'s
-  ``preprocess_method``, checked at submit) raises ``ValueError`` instead of silently using
-  the CPU preprocessor
+  float32, as the constructor does, and an unknown ``method`` raises ``ValueError`` instead
+  of silently using the CPU preprocessor
 * ``Detector`` models with a scale-factor input treat an already preprocessed batch passed
   without ``ratios`` as unscaled, as they already did for its original size
 
@@ -98,6 +99,11 @@ Fixed
   (DETR-style) engines
 * ``ParallelDetector`` with a CPU preprocessor fed RT-DETR models the model input size
   instead of each image's original size
+* ``ParallelDetector``: an error while processing a submitted batch (a bad
+  ``preprocess_method``, a wrongly shaped preprocessed tensor, a rejected enqueue, ...)
+  killed the model's worker thread and left ``retrieve`` waiting forever. It is now raised
+  by ``retrieve`` / ``retrieve_model`` in the caller's thread, after every model's result is
+  taken, and the worker keeps serving later batches
 * ``ParallelTRTEngines``: ``(engine, dla_core, device)`` tuples raised ``ValueError`` and
   the device was never applied
 * ``ImageModel.mock_run`` with images builds every engine input (DETR-style models failed

@@ -172,10 +172,12 @@ class TRTEngine(TRTEngineInterface):
     def _init_io_state(self: Self, *, cuda_graph: bool | None) -> None:
         """Point the context at the bindings at their max shapes and reset the graph cache."""
         # CUDA graph support: one graph per input configuration (the shape and
-        # device address of every input), least recently used first. A
-        # configuration is only captured once it repeats; configurations seen
-        # once are tracked separately so inputs that never repeat neither pay
-        # for a capture nor evict graphs worth keeping.
+        # device address of every input), least recently used first. A graph
+        # can only replay on a call that does not change the shapes, so a
+        # configuration counts only when it runs at unchanged shapes, and is
+        # captured the second time it does; configurations seen once are
+        # tracked separately so inputs that never repeat (or alternate shapes
+        # every call) neither pay for a capture nor evict graphs worth keeping.
         self._cuda_graph_enabled: bool = (
             cuda_graph if cuda_graph is not None else True
         ) and self._async_v3
@@ -315,11 +317,11 @@ class TRTEngine(TRTEngineInterface):
                 graph.launch()
                 return
         self._check_enqueued(self._context.execute_async_v3(self._stream))
-        self._shapes_changed = False
-        if key is None or graph is not None:
+        shapes_changed, self._shapes_changed = self._shapes_changed, False
+        if key is None or graph is not None or shapes_changed:
             return
         if key in self._seen_configs:
-            # second time this configuration runs: record it for the next calls
+            # second run at unchanged shapes: record it for the next calls
             del self._seen_configs[key]
             graph = self._capture_cuda_graph()
             if graph is not None:
@@ -483,9 +485,9 @@ class TRTEngine(TRTEngineInterface):
         This method only launches the graph - it does not handle
         input/output memory transfers or graph capture. A graph is captured
         once an input configuration (the shape and device address of every
-        input) has been executed twice, e.g. by warmup or prior execute()
-        calls; the graph launched here replays the configuration of the
-        most recent execution.
+        input) has been executed twice at unchanged shapes, e.g. by warmup or
+        prior execute() calls; the graph launched here replays the
+        configuration of the most recent execution.
 
         This method does NOT synchronize the stream by default, allowing
         the graph to be embedded in a larger pipeline. Use debug=True
@@ -510,8 +512,8 @@ class TRTEngine(TRTEngineInterface):
             graph = self._current_graph()
             if graph is None:
                 err_msg = f"No CUDA graph captured for engine '{self._name}'. "
-                err_msg += "Ensure cuda_graph=True and execute the current inputs at least "
-                err_msg += "twice first (warmup iterations count)."
+                err_msg += "Ensure cuda_graph=True and execute the current inputs twice at "
+                err_msg += "unchanged shapes first (warmup iterations count)."
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # graph_exec
                 raise RuntimeError(err_msg)

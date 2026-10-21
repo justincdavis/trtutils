@@ -240,24 +240,37 @@ def test_cuda_graph_per_input_configuration(fake_graphs) -> None:
     eng.execute([_host(_MAX_BATCH)])  # replay
     assert (context.enqueues, _launches(fake_graphs)) == (3, 1)
 
-    # a partial batch is a configuration of its own
+    # a partial batch is a configuration of its own; the call that changes
+    # the shapes only runs plain, so it is captured on its second run after that
     eng.execute([_host(2)])
     eng.execute([_host(2)])
-    assert (context.enqueues, len(fake_graphs)) == (6, 2)
+    assert (context.enqueues, len(fake_graphs)) == (5, 1)
     eng.execute([_host(2)])
-    assert (context.enqueues, _launches(fake_graphs)) == (6, 2)
+    assert (context.enqueues, len(fake_graphs)) == (7, 2)
+    eng.execute([_host(2)])
+    assert (context.enqueues, _launches(fake_graphs)) == (7, 2)
 
     # back at the full shape: one plain run after the shape change, then replay
     eng.execute([_host(_MAX_BATCH)])
-    assert (context.enqueues, _launches(fake_graphs)) == (7, 2)
+    assert (context.enqueues, _launches(fake_graphs)) == (8, 2)
     eng.execute([_host(_MAX_BATCH)])
-    assert (context.enqueues, _launches(fake_graphs), len(fake_graphs)) == (7, 3, 2)
+    assert (context.enqueues, _launches(fake_graphs), len(fake_graphs)) == (8, 3, 2)
 
     # a device input bound in place is keyed by its address
     device = Buffer.from_array(_host(_MAX_BATCH).array, MemoryLocation.DEVICE)
     for _ in range(3):
         eng.execute([device])
-    assert (context.enqueues, _launches(fake_graphs), len(fake_graphs)) == (10, 4, 3)
+    assert (context.enqueues, _launches(fake_graphs), len(fake_graphs)) == (11, 4, 3)
+
+
+def test_alternating_shapes_are_not_captured(fake_graphs) -> None:
+    """Shapes that change every call could never replay a graph, so none is captured."""
+    eng, context = _make_engine(cuda_graph=True)
+    for _ in range(4):
+        eng.execute([_host(2)])
+        eng.execute([_host(3)])
+    assert (context.enqueues, len(fake_graphs)) == (8, 0)
+    assert len(eng._seen_configs) == 0
 
 
 def test_cuda_graph_cache_evicts_least_recently_used(fake_graphs, monkeypatch) -> None:
@@ -265,8 +278,8 @@ def test_cuda_graph_cache_evicts_least_recently_used(fake_graphs, monkeypatch) -
     monkeypatch.setattr(_engine, "_MAX_CUDA_GRAPHS", 2)
     eng, _ = _make_engine(cuda_graph=True)
     for batch in (4, 3, 2):
-        eng.execute([_host(batch)])
-        eng.execute([_host(batch)])
+        for _ in range(3):  # a shape change, then two runs at unchanged shapes
+            eng.execute([_host(batch)])
     assert len(fake_graphs) == 3
     assert not fake_graphs[0].is_captured  # batch 4, evicted
     assert all(graph.is_captured for graph in fake_graphs[1:])
@@ -279,13 +292,14 @@ def test_one_off_inputs_do_not_evict_captured_graphs(fake_graphs, monkeypatch) -
     eng, _ = _make_engine(cuda_graph=True)
     eng.execute([_host(_MAX_BATCH)])
     eng.execute([_host(_MAX_BATCH)])  # captured
-    for batch in (3, 2, 1):  # a burst of configurations that never repeat
-        eng.execute([_host(batch)])
+    # a burst of configurations that never repeat: fresh device buffers
+    one_offs = [Buffer.from_array(_host(_MAX_BATCH).array, MemoryLocation.DEVICE) for _ in range(3)]
+    for device in one_offs:
+        eng.execute([device])
     assert fake_graphs[0].is_captured
     assert len(eng._cuda_graphs) == 1
     assert len(eng._seen_configs) == 2  # seen-once tracking is bounded on its own
-    eng.execute([_host(_MAX_BATCH)])  # shape changed back: one plain run
-    eng.execute([_host(_MAX_BATCH)])  # then the graph captured earlier replays
+    eng.execute([_host(_MAX_BATCH)])  # the graph captured earlier replays
     assert fake_graphs[0].launches == 1
     assert len(fake_graphs) == 1
 

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Thread
@@ -17,7 +18,6 @@ from typing_extensions import TypeGuard
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.image._detector import Detector
-from trtutils.image._image_model import check_preprocessor_method
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -52,6 +52,8 @@ class _OutputPacket:
     ratios: list[tuple[float, float]] | None = None
     padding: list[tuple[float, float]] | None = None
     postprocessed: bool | None = None
+    # an error raised while processing the batch, re-raised by retrieve()
+    error: Exception | None = None
 
 
 @dataclass
@@ -704,11 +706,8 @@ class ParallelDetector:
         ValueError
             If the input length does not match the models
             If preprocessed is True, but ratios/paddings not provided
-            If preprocess_method is not 'cpu', 'cuda', or 'trt'
 
         """
-        # checked here so the caller sees the error, not the worker thread
-        check_preprocessor_method(preprocess_method)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["submit"])
         if len(inputs) != len(self._engine_info):
@@ -779,14 +778,7 @@ class ParallelDetector:
         verbose : bool, optional
             Whether or not to log additional information.
 
-        Raises
-        ------
-        ValueError
-            If preprocess_method is not 'cpu', 'cuda', or 'trt'.
-
         """
-        # checked here so the caller sees the error, not the worker thread
-        check_preprocessor_method(preprocess_method)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["submit_model"])
         if verbose:
@@ -905,20 +897,31 @@ class ParallelDetector:
         ]
             The outputs per image per model, ratios per image per model, padding per image per model.
 
+        Raises
+        ------
+        Exception
+            The first error a model raised while processing its batch. Every
+            model's result is taken off its queue first, so none is left behind.
+
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["retrieve"])
-        outputs: list[list[list[np.ndarray]] | list[np.ndarray]] = []
-        ratios: list[list[tuple[float, float]] | None] = []
-        paddings: list[list[tuple[float, float]] | None] = []
-        for modelid in range(len(self._engine_info)):
-            output, ratio_list, padding_list = self.retrieve_model(modelid, verbose=verbose)
-            outputs.append(output)
-            ratios.append(ratio_list)
-            paddings.append(padding_list)
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
-        return outputs, ratios, paddings
+        try:
+            packets = [
+                self._get_packet(modelid, verbose=verbose)
+                for modelid in range(len(self._engine_info))
+            ]
+            for packet in packets:
+                if packet.error is not None:
+                    raise packet.error
+            return (
+                [packet.data for packet in packets],
+                [packet.ratios for packet in packets],
+                [packet.padding for packet in packets],
+            )
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
 
     def retrieve_model(
         self: Self,
@@ -945,15 +948,27 @@ class ParallelDetector:
         tuple[list[list[np.ndarray]] | list[np.ndarray], list[tuple[float, float]] | None, list[tuple[float, float]] | None]
             The outputs per image, ratios per image, and padding per image.
 
+        Raises
+        ------
+        Exception
+            The error the model raised while processing the batch, if any.
+
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["retrieve_model"])
+        try:
+            packet = self._get_packet(modelid, verbose=verbose)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
+        if packet.error is not None:
+            raise packet.error
+        return (packet.data, packet.ratios, packet.padding)
+
+    def _get_packet(self: Self, modelid: int, *, verbose: bool | None) -> _OutputPacket:
         if verbose:
             LOG.debug(f"{self._tag}: Retrieve model: {modelid}")
-        packet = self._oqueues[modelid].get()
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
-        return (packet.data, packet.ratios, packet.padding)
+        return self._oqueues[modelid].get()
 
     def end2end(
         self: Self,
@@ -1101,60 +1116,52 @@ class ParallelDetector:
             LOG.debug(f"{self._tag}: Received data")
             if FLAGS.NVTX_ENABLED:
                 nvtx.push_range(f"parallel_detector::_run [{self._tag}:{threadid}]")
-
-            images = data.data
-
-            if FLAGS.NVTX_ENABLED:
-                nvtx.push_range(f"parallel_detector::_run::infer [{self._tag}:{threadid}]")
             try:
-                results, ratios, padding = detector.infer(
-                    images,
-                    data.preprocess_method,
-                    preprocessed=bool(data.preprocessed),
-                    ratios=data.ratios,
-                    padding=data.padding,
-                    postprocess=bool(data.postprocess),
-                    no_copy=data.no_copy,
+                packet = self._process(detector, data, threadid)
+            except Exception as err:
+                # hand the error to retrieve(), which raises it in the caller's
+                # thread, and keep serving later batches; the traceback is logged
+                # through LOG's stdlib logger
+                logging.getLogger("trtutils").exception(
+                    "%s: model %d failed on a batch", self._tag, threadid
                 )
-            except ValueError:
+                packet = _OutputPacket(data=[], error=err)
+            finally:
                 if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # infer
                     nvtx.pop_range()  # _run
-                raise
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # infer
-
-            # run the postprocessing
-            if FLAGS.NVTX_ENABLED:
-                nvtx.push_range(f"parallel_detector::_run::postprocess [{self._tag}:{threadid}]")
-            if data.postprocess:
-                if ratios is None or padding is None:
-                    err_msg = "Ratios/Padding is None, but postprocess set to True."
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()  # postprocess
-                        nvtx.pop_range()  # _run
-                    raise ValueError(err_msg)
-                postproc_results = detector.postprocess(
-                    results,
-                    ratios,
-                    padding,
-                    no_copy=data.no_copy,
-                )
-            else:
-                postproc_results = results
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # postprocess
-
-            packet = _OutputPacket(
-                data=postproc_results,
-                ratios=ratios,
-                padding=padding,
-                postprocessed=data.postprocess,
-            )
-            self._profilers[threadid] = detector.infer_profile
-
             self._oqueues[threadid].put(packet)
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # _run
 
         del detector
+
+    def _process(self: Self, detector: Detector, data: _InputPacket, threadid: int) -> _OutputPacket:
+        """Run one submitted batch through a model, optionally postprocessing it."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(f"parallel_detector::_run::infer [{self._tag}:{threadid}]")
+        try:
+            results, ratios, padding = detector.infer(
+                data.data,
+                data.preprocess_method,
+                preprocessed=bool(data.preprocessed),
+                ratios=data.ratios,
+                padding=data.padding,
+                postprocess=bool(data.postprocess),
+                no_copy=data.no_copy,
+            )
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # infer
+        self._profilers[threadid] = detector.infer_profile
+        if not data.postprocess:
+            return _OutputPacket(data=results, ratios=ratios, padding=padding, postprocessed=False)
+
+        if ratios is None or padding is None:
+            err_msg = "Ratios/Padding is None, but postprocess set to True."
+            raise ValueError(err_msg)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(f"parallel_detector::_run::postprocess [{self._tag}:{threadid}]")
+        try:
+            postprocessed = detector.postprocess(results, ratios, padding, no_copy=data.no_copy)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # postprocess
+        return _OutputPacket(data=postprocessed, ratios=ratios, padding=padding, postprocessed=True)

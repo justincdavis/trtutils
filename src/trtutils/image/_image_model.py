@@ -31,25 +31,6 @@ _COLOR_CHANNELS = 3
 _PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
 
 
-def check_preprocessor_method(method: str | None) -> None:
-    """
-    Check that a preprocessing method is one an ImageModel accepts.
-
-    None, meaning the model's default preprocessor, is always accepted.
-
-    Raises
-    ------
-    ValueError
-        If the method is not None, 'cpu', 'cuda', or 'trt'.
-
-    """
-    if method is not None and method not in _PREPROCESSOR_METHODS:
-        err_msg = (
-            f"Invalid preprocessing method {method!r}, options are: {list(_PREPROCESSOR_METHODS)}"
-        )
-        raise ValueError(err_msg)
-
-
 # (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image
 _PostFn = Callable[
     [List[np.ndarray], List[Tuple[float, float]], List[Tuple[float, float]], Optional[bool]],
@@ -417,7 +398,9 @@ class ImageModel:
             If the method is not 'cpu', 'cuda', or 'trt'.
 
         """
-        check_preprocessor_method(method)
+        if method not in _PREPROCESSOR_METHODS:
+            err_msg = f"Invalid preprocessing method {method!r}, options are: {list(_PREPROCESSOR_METHODS)}"
+            raise ValueError(err_msg)
         if method == "trt" and not FLAGS.TRT_HAS_UINT8:
             method = "cuda"
             LOG.warning(
