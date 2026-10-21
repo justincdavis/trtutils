@@ -28,6 +28,9 @@ if TYPE_CHECKING:
 
 _COLOR_CHANNELS = 3
 
+# the preprocessing methods an ImageModel accepts
+PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
+
 # (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image
 _PostFn = Callable[
     [List[np.ndarray], List[Tuple[float, float]], List[Tuple[float, float]], Optional[bool]],
@@ -366,6 +369,11 @@ class ImageModel:
         CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
             The preprocessor.
 
+        Raises
+        ------
+        ValueError
+            If the method is not 'cpu', 'cuda', or 'trt'.
+
         """
         method = self._preprocessor_method if method is None else self._resolve_method(method)
         if method == "cuda":
@@ -390,9 +398,8 @@ class ImageModel:
             If the method is not 'cpu', 'cuda', or 'trt'.
 
         """
-        valid_preprocessors = ["cpu", "cuda", "trt"]
-        if method not in valid_preprocessors:
-            err_msg = f"Invalid preprocessor found, options are: {valid_preprocessors}"
+        if method not in PREPROCESSOR_METHODS:
+            err_msg = f"Invalid preprocessor found, options are: {list(PREPROCESSOR_METHODS)}"
             raise ValueError(err_msg)
         if method == "trt" and not FLAGS.TRT_HAS_UINT8:
             method = "cuda"
@@ -570,7 +577,13 @@ class ImageModel:
         tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
             The preprocessed batch tensor, list of ratios per image, and list of padding per image.
 
+        Raises
+        ------
+        ValueError
+            If the method is not 'cpu', 'cuda', or 'trt'.
+
         """
+        preprocessor = self.get_preprocessor(method)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["preprocess"])
 
@@ -586,7 +599,6 @@ class ImageModel:
                 f"{self._tag}: Running preprocess, batch_size: {len(batch_images)}, with method: {resize}",
             )
             LOG.debug(f"{self._tag}: Using device: {method}")
-        preprocessor = self.get_preprocessor(method)
         t0 = time.perf_counter()
         data = preprocessor(batch_images, resize=resize, no_copy=no_copy, verbose=verbose)
         self._pre_profile = (t0, time.perf_counter())
@@ -789,10 +801,9 @@ class ImageModel:
         """
         Shared implementation of the public ``run`` method.
 
-        Handles single/batch normalization, the preprocess-or-validate
-        split, engine execution + timing, and optional postprocessing.
-        Subclasses supply ``post`` to bridge to their own postprocess
-        signature.
+        Normalizes single-image input and tuple ratios/padding, runs
+        :meth:`infer`, and optionally postprocesses with ``post``, which
+        subclasses supply to bridge to their own postprocess signature.
 
         Parameters
         ----------
@@ -935,9 +946,7 @@ class ImageModel:
 
             # outputs are consumed by get() inside this call, so skip their copies
             no_copy = True
-            outputs, ratios, padding = self.infer(
-                batch_images, postprocess=True, no_copy=no_copy, verbose=verbose
-            )
+            outputs, ratios, padding = self.infer(batch_images, no_copy=no_copy, verbose=verbose)
             result = get(post(outputs, ratios or [], padding or [], no_copy))
             # unwrap for single-image input
             return result[0] if is_single else result

@@ -17,12 +17,20 @@ from typing_extensions import TypeGuard
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.image._detector import Detector
+from trtutils.image._image_model import PREPROCESSOR_METHODS
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
     from typing_extensions import Self
+
+
+def _check_preprocess_method(method: str | None) -> None:
+    # checked at submit so the caller sees the error, not the worker thread
+    if method is not None and method not in PREPROCESSOR_METHODS:
+        err_msg = f"Invalid preprocess_method {method!r}, options are: {list(PREPROCESSOR_METHODS)}"
+        raise ValueError(err_msg)
 
 
 def _is_postprocessed_batches(
@@ -703,8 +711,10 @@ class ParallelDetector:
         ValueError
             If the input length does not match the models
             If preprocessed is True, but ratios/paddings not provided
+            If preprocess_method is not 'cpu', 'cuda', or 'trt'
 
         """
+        _check_preprocess_method(preprocess_method)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["submit"])
         if len(inputs) != len(self._engine_info):
@@ -775,7 +785,13 @@ class ParallelDetector:
         verbose : bool, optional
             Whether or not to log additional information.
 
+        Raises
+        ------
+        ValueError
+            If preprocess_method is not 'cpu', 'cuda', or 'trt'.
+
         """
+        _check_preprocess_method(preprocess_method)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["submit_model"])
         if verbose:

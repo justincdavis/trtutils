@@ -74,8 +74,9 @@ Changed
   GPU-preprocessed batches on the device instead of round-tripping through the host, and
   skip the copy of engine outputs they postprocess right away unless ``no_copy=False``
 * ``ImageModel.preprocess(method='cuda')`` falls back to 'cpu' for models whose input is not
-  float32, as the constructor does, and an unknown ``method`` raises ``ValueError`` instead
-  of silently using the CPU preprocessor
+  float32, as the constructor does, and an unknown ``method`` (also ``ParallelDetector``'s
+  ``preprocess_method``, checked at submit) raises ``ValueError`` instead of silently using
+  the CPU preprocessor
 * ``Detector`` models with a scale-factor input treat an already preprocessed batch passed
   without ``ratios`` as unscaled, as they already did for its original size
 
