@@ -16,8 +16,6 @@ Added
   numpy arrays and any ``__cuda_array_interface__`` object (CuPy, PyTorch, ...) without
   copying; memory is reference counted so views and numpy arrays never outlive it
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
-* ``Binding.stage`` / ``Binding.fetch`` for copying a leading prefix of a binding (their
-  views are reused while the shape repeats)
 * ``build_engine(shapes=[(name, (min_shape, opt_shape, max_shape))])`` builds a dynamic
   optimization profile; malformed triples raise ``ValueError`` and non-integer dims
   raise ``TypeError``
@@ -50,8 +48,9 @@ Changed
   ``tensor_format``, ``host``, ``device``) are read-only properties, and ``allocation``,
   ``host_allocation``, ``pagelocked_mem``, and ``unified_mem`` are derived from the buffers.
   ``min_shape`` / ``max_shape`` give the profile bounds of an input, ``check(buffer, engine)``
-  validates a Buffer against them and the dtype, and ``bind(src, stream)`` returns device
-  memory TensorRT can read ``src`` from
+  validates a Buffer against them and the dtype, ``bind(src, stream)`` returns device
+  memory TensorRT can read ``src`` from, and ``stage`` / ``fetch`` copy a leading prefix of
+  the binding (their views are reused while the shape repeats)
 * **Breaking:** ``GPUImagePreprocessor.direct_preproc`` returns a device ``Buffer`` shaped
   to the submitted images instead of a pointer. GPU preprocessors no longer hold
   orig-size / scale-factor buffers: ``orig_size_allocation``, ``scale_factor_allocation``
@@ -75,7 +74,8 @@ Changed
   GPU-preprocessed batches on the device instead of round-tripping through the host, and
   skip the copy of engine outputs they postprocess right away unless ``no_copy=False``
 * ``ImageModel.preprocess(method='cuda')`` falls back to 'cpu' for models whose input is not
-  float32, as the constructor does
+  float32, as the constructor does, and an unknown ``method`` raises ``ValueError`` instead
+  of silently using the CPU preprocessor
 * ``Detector`` models with a scale-factor input treat an already preprocessed batch passed
   without ``ratios`` as unscaled, as they already did for its original size
 

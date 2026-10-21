@@ -220,19 +220,18 @@ class ImageModel:
         # after engine is loaded but before preprocessors are created.
         self._configure_model()
 
-        # set up the preprocessor
-        valid_preprocessors = ["cpu", "cuda", "trt"]
-        if preprocessor not in valid_preprocessors:
-            err_msg = f"Invalid preprocessor found, options are: {valid_preprocessors}"
+        # set up the preprocessor; the default is kept as a resolved method so
+        # get_preprocessor() always returns the current instance
+        # (update_input_range/update_mean_std rebuild them)
+        try:
+            self._preprocessor_method: str = self._resolve_method(preprocessor)
+        except ValueError:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # init
-            raise ValueError(err_msg)
+            raise
         self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
         self._preproc_cuda: CUDAPreprocessor | None = None
         self._preproc_trt: TRTPreprocessor | None = None
-        # the method is resolved on use, so get_preprocessor() always returns
-        # the current instance (update_input_range/update_mean_std rebuild them)
-        self._preprocessor_method: str = preprocessor
         default_preprocessor = self.get_preprocessor()
 
         # basic profiler setup
@@ -368,14 +367,8 @@ class ImageModel:
             The preprocessor.
 
         """
-        if method is None:
-            method = self._preprocessor_method
-        if method == "trt" and not FLAGS.TRT_HAS_UINT8:
-            method = "cuda"
-            LOG.warning(
-                "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
-            )
-        if method == "cuda" and self._dtype == np.float32:
+        method = self._preprocessor_method if method is None else self._resolve_method(method)
+        if method == "cuda":
             if self._preproc_cuda is None:
                 with Device(self._device):
                     self._preproc_cuda = self._setup_cuda_preproc()
@@ -386,6 +379,29 @@ class ImageModel:
                     self._preproc_trt = self._setup_trt_preproc()
             return self._preproc_trt
         return self._preproc_cpu
+
+    def _resolve_method(self: Self, method: str) -> str:
+        """
+        Validate a preprocessing method and apply the platform/model fallbacks.
+
+        Raises
+        ------
+        ValueError
+            If the method is not 'cpu', 'cuda', or 'trt'.
+
+        """
+        valid_preprocessors = ["cpu", "cuda", "trt"]
+        if method not in valid_preprocessors:
+            err_msg = f"Invalid preprocessor found, options are: {valid_preprocessors}"
+            raise ValueError(err_msg)
+        if method == "trt" and not FLAGS.TRT_HAS_UINT8:
+            method = "cuda"
+            LOG.warning(
+                "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
+            )
+        if method == "cuda" and self._dtype != np.float32:
+            method = "cpu"
+        return method
 
     def _update_preprocessors(self: Self) -> None:
         if self._preproc_cpu is not None:
@@ -909,40 +925,22 @@ class ImageModel:
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["end2end"])
+        try:
+            if verbose:
+                LOG.debug(f"{self._tag}: end2end")
 
-        if verbose:
-            LOG.debug(f"{self._tag}: end2end")
+            # handle single-image input
+            is_single = isinstance(images, np.ndarray)
+            batch_images: list[np.ndarray] = [images] if isinstance(images, np.ndarray) else images
 
-        # handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
-            is_single = True
-        else:
-            batch_images = images
-            is_single = False
-
-        # outputs are consumed by get() inside this call, so skip their copies
-        pp, _ = self._as_batch(
-            self._run_core(
-                batch_images,
-                None,
-                None,
-                preprocessed=False,
-                postprocess=True,
-                no_copy=True,
-                verbose=verbose,
-                post=post,
+            # outputs are consumed by get() inside this call, so skip their copies
+            no_copy = True
+            outputs, ratios, padding = self.infer(
+                batch_images, postprocess=True, no_copy=no_copy, verbose=verbose
             )
-        )
-        result = get(pp)
-
-        # unwrap for single-image input
-        if is_single:
+            result = get(post(outputs, ratios or [], padding or [], no_copy))
+            # unwrap for single-image input
+            return result[0] if is_single else result
+        finally:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # end2end
-            return result[0]
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # end2end
-
-        return result
