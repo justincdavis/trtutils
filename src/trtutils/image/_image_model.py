@@ -221,7 +221,6 @@ class ImageModel:
         self._configure_model()
 
         # set up the preprocessor
-        self._preprocessor: CPUPreprocessor | CUDAPreprocessor | TRTPreprocessor
         valid_preprocessors = ["cpu", "cuda", "trt"]
         if preprocessor not in valid_preprocessors:
             err_msg = f"Invalid preprocessor found, options are: {valid_preprocessors}"
@@ -231,7 +230,10 @@ class ImageModel:
         self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
         self._preproc_cuda: CUDAPreprocessor | None = None
         self._preproc_trt: TRTPreprocessor | None = None
-        self._preprocessor = self.get_preprocessor(preprocessor)
+        # the method is resolved on use, so get_preprocessor() always returns
+        # the current instance (update_input_range/update_mean_std rebuild them)
+        self._preprocessor_method: str = preprocessor
+        default_preprocessor = self.get_preprocessor()
 
         # basic profiler setup
         self._pre_profile: tuple[float, float] = (0.0, 0.0)
@@ -240,7 +242,7 @@ class ImageModel:
 
         # if warmup, warmup the preprocessors
         if warmup:
-            self._preprocessor.warmup()
+            default_preprocessor.warmup()
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # init
@@ -367,7 +369,7 @@ class ImageModel:
 
         """
         if method is None:
-            return self._preprocessor
+            method = self._preprocessor_method
         if method == "trt" and not FLAGS.TRT_HAS_UINT8:
             method = "cuda"
             LOG.warning(
@@ -450,7 +452,7 @@ class ImageModel:
             A list containing one random image.
 
         """
-        return [self._engine.get_random_input()[0].numpy()]
+        return [self._engine.get_random_input()[self._image_input_index].numpy()]
 
     def mock_run(
         self: Self,
@@ -477,12 +479,12 @@ class ImageModel:
         if images is not None:
             # a single entry that already has the engine's rank is a batch
             # tensor; otherwise stack the images into one
-            engine_rank = len(self._engine.input_shapes[0])
+            engine_rank = len(self._engine.input_shapes[self._image_input_index])
             if len(images) == 1 and images[0].ndim == engine_rank:
                 tensor = images[0]
             else:
                 tensor = np.stack(images, axis=0)
-            result = self._engine.mock_execute(data=[host_input(tensor)])
+            result, _, _ = self.infer([tensor], preprocessed=True, no_copy=True)
         else:
             result = self._engine.mock_execute()
 
@@ -821,38 +823,33 @@ class ImageModel:
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["run"])
+        try:
+            if verbose:
+                LOG.debug(f"{self._tag}: run")
 
-        if verbose:
-            LOG.debug(f"{self._tag}: run")
+            # handle single-image input
+            is_single = isinstance(images, np.ndarray)
+            batch_images: list[np.ndarray] = [images] if isinstance(images, np.ndarray) else images
 
-        # handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
-            is_single = True
-        else:
-            batch_images = images
-            is_single = False
-
-        # normalize ratios/padding to list form
-        batch_ratios: list[tuple[float, float]] | None = (
-            [ratios] if isinstance(ratios, tuple) else ratios
-        )
-        batch_padding: list[tuple[float, float]] | None = (
-            [padding] if isinstance(padding, tuple) else padding
-        )
-
-        # assign flags
-        if preprocessed is None:
-            preprocessed = False
-        if postprocess is None:
-            postprocess = True
-
-        if verbose:
-            LOG.debug(
-                f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
+            # normalize ratios/padding to list form
+            batch_ratios: list[tuple[float, float]] | None = (
+                [ratios] if isinstance(ratios, tuple) else ratios
+            )
+            batch_padding: list[tuple[float, float]] | None = (
+                [padding] if isinstance(padding, tuple) else padding
             )
 
-        try:
+            # assign flags
+            if preprocessed is None:
+                preprocessed = False
+            if postprocess is None:
+                postprocess = True
+
+            if verbose:
+                LOG.debug(
+                    f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
+                )
+
             outputs, batch_ratios, batch_padding = self.infer(
                 batch_images,
                 preprocessed=preprocessed,
@@ -862,35 +859,20 @@ class ImageModel:
                 no_copy=no_copy,
                 verbose=verbose,
             )
-        except ValueError:
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # run
-            raise
+            if not postprocess:
+                return outputs
 
-        # handle postprocessing
-        if postprocess:
             if verbose:
                 LOG.debug("Postprocessing outputs")
             if needs_ratios and (batch_ratios is None or batch_padding is None):
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # run
                 raise RuntimeError(err_msg)
             result = post(outputs, batch_ratios or [], batch_padding or [], no_copy)
-
             # unwrap for single-image input
-            if is_single:
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # run
-                return result[0]
+            return result[0] if is_single else result
+        finally:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # run
-            return result
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # run
-
-        return outputs
 
     def _end2end_core(
         self: Self,

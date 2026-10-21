@@ -760,8 +760,8 @@ class Detector(ImageModel, DetectorInterface):
             inputs.append(Buffer.wrap(np.array(sizes, dtype=self._orig_size_dtype)))
         if self._use_scale_factor:
             if ratios is None:
-                err_msg = "Must pass ratios for models with a scale_factor input."
-                raise ValueError(err_msg)
+                # an already preprocessed batch without ratios is taken as unscaled
+                ratios = [(1.0, 1.0)] * image.shape[0]
             inputs.append(Buffer.wrap(np.array(ratios, dtype=np.float32)))
         # every schema lists its size input before its scale factor input
         inputs.insert(self._image_input_index, image)

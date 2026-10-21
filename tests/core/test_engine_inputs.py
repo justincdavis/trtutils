@@ -40,7 +40,6 @@ class _FakeContext:
         self.shape_calls: list[tuple[int, ...]] = []
         self.enqueues = 0
         self.accept_shapes = True
-        self.accept_enqueue = True
         self.reject_enqueue_at: int | None = None
 
     def set_input_shape(self, name: str, shape: tuple[int, ...]) -> bool:
@@ -58,7 +57,7 @@ class _FakeContext:
 
     def execute_async_v3(self, _stream: object) -> bool:
         self.enqueues += 1
-        return self.accept_enqueue and self.enqueues != self.reject_enqueue_at
+        return self.enqueues != self.reject_enqueue_at
 
 
 class _FakeGraph:
@@ -343,7 +342,7 @@ def test_freeing_an_output_keeps_the_engine_usable() -> None:
 def test_rejected_enqueue_raises() -> None:
     """An enqueue TensorRT refuses raises instead of returning stale outputs."""
     eng, context = _make_engine()
-    context.accept_enqueue = False
+    context.reject_enqueue_at = 1
     with pytest.raises(RuntimeError, match="failed to enqueue"):
         eng.execute([_host(2)])
 

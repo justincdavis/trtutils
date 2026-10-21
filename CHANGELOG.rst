@@ -30,6 +30,7 @@ Added
   images, ratios)`` builds them from a preprocessed batch (``images=None`` when the batch
   came preprocessed), ``ImageModel.infer`` runs the engine on them and returns the raw
   outputs (``ImageModel.infer_profile`` times it), and ``ImageModel.get_preprocessor(method)``
+  returns the preprocessor for a method, creating it on first use
 
 Changed
 ^^^^^^^
@@ -70,13 +71,13 @@ Changed
   ``direct_preproc`` output address (and the engine's CUDA graph for it) stays stable
 * ``ImageModel.end2end`` no longer captures its own CUDA graph or locks the image size and
   batch size after the first call; it uses the engine's per-configuration graphs
-* ``ImageModel.run`` with a GPU preprocessor binds the preprocessed batch on the device
-  instead of copying it to the host and back
-* ``ImageModel.run`` and ``ParallelDetector`` skip the copy of engine outputs they
-  postprocess right away unless ``no_copy=False``; ``ParallelDetector`` runs through
-  ``ImageModel.infer`` for every preprocessor, keeping GPU-preprocessed batches on the device
-* ``ImageModel.get_preprocessor`` falls back from 'cuda' to 'cpu' for models whose input is
-  not float32, as the constructor does
+* ``ImageModel.run`` and ``ParallelDetector`` (now through ``ImageModel.infer``) bind
+  GPU-preprocessed batches on the device instead of round-tripping through the host, and
+  skip the copy of engine outputs they postprocess right away unless ``no_copy=False``
+* ``ImageModel.preprocess(method='cuda')`` falls back to 'cpu' for models whose input is not
+  float32, as the constructor does
+* ``Detector`` models with a scale-factor input treat an already preprocessed batch passed
+  without ``ratios`` as unscaled, as they already did for its original size
 
 Fixed
 ^^^^^
@@ -98,8 +99,10 @@ Fixed
   instead of each image's original size
 * ``ParallelTRTEngines``: ``(engine, dla_core, device)`` tuples raised ``ValueError`` and
   the device was never applied
-* ``Detector``: models with a scale-factor input raise a clear ``ValueError`` when run on
-  preprocessed input without ``ratios``
+* ``ImageModel.mock_run`` with images builds every engine input (DETR-style models failed
+  the input count), and ``get_random_input`` returns the image input rather than the first
+* ``ImageModel`` kept using the old default preprocessor after ``update_input_range`` /
+  ``update_mean_std``
 * ``TRTEngine``: an enqueue rejected by TensorRT raises instead of returning the previous
   outputs
 * GPU preprocessors copy back only the submitted images, not the full allocated batch
