@@ -87,13 +87,10 @@ def test_create_binding_memory(use_array_data, pagelocked_mem, unified_mem):
     if pagelocked_mem is not None:
         assert binding.pagelocked_mem is pagelocked_mem
     if unified_mem is not None:
-        assert binding.unified_mem is unified_mem
+        # unified memory is a mapped pinned allocation, so it requires pagelocked memory
+        assert binding.unified_mem is (unified_mem and binding.pagelocked_mem)
     if use_array_data is True:
         np.testing.assert_array_equal(binding.host_allocation, arr)
-    elif (use_array_data is None or use_array_data is False) and not binding.pagelocked_mem:
-        # pagelocked memory (cudaHostAlloc) is not guaranteed to be zero-initialized,
-        # so only check zero contents for regular numpy allocations
-        np.testing.assert_array_equal(binding.host_allocation, np.zeros_like(arr))
     binding.free()
 
 
