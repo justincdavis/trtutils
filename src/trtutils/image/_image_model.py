@@ -31,17 +31,19 @@ _COLOR_CHANNELS = 3
 _PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
 
 
-def check_preprocessor_method(method: str) -> None:
+def check_preprocessor_method(method: str | None) -> None:
     """
     Check that a preprocessing method is one an ImageModel accepts.
+
+    None, meaning the model's default preprocessor, is always accepted.
 
     Raises
     ------
     ValueError
-        If the method is not 'cpu', 'cuda', or 'trt'.
+        If the method is not None, 'cpu', 'cuda', or 'trt'.
 
     """
-    if method not in _PREPROCESSOR_METHODS:
+    if method is not None and method not in _PREPROCESSOR_METHODS:
         err_msg = (
             f"Invalid preprocessing method {method!r}, options are: {list(_PREPROCESSOR_METHODS)}"
         )

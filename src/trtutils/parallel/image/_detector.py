@@ -708,8 +708,7 @@ class ParallelDetector:
 
         """
         # checked here so the caller sees the error, not the worker thread
-        if preprocess_method is not None:
-            check_preprocessor_method(preprocess_method)
+        check_preprocessor_method(preprocess_method)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["submit"])
         if len(inputs) != len(self._engine_info):
@@ -787,8 +786,7 @@ class ParallelDetector:
 
         """
         # checked here so the caller sees the error, not the worker thread
-        if preprocess_method is not None:
-            check_preprocessor_method(preprocess_method)
+        check_preprocessor_method(preprocess_method)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["submit_model"])
         if verbose:
