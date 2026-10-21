@@ -28,8 +28,25 @@ if TYPE_CHECKING:
 
 _COLOR_CHANNELS = 3
 
-# the preprocessing methods an ImageModel accepts
-PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
+_PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
+
+
+def check_preprocessor_method(method: str) -> None:
+    """
+    Check that a preprocessing method is one an ImageModel accepts.
+
+    Raises
+    ------
+    ValueError
+        If the method is not 'cpu', 'cuda', or 'trt'.
+
+    """
+    if method not in _PREPROCESSOR_METHODS:
+        err_msg = (
+            f"Invalid preprocessing method {method!r}, options are: {list(_PREPROCESSOR_METHODS)}"
+        )
+        raise ValueError(err_msg)
+
 
 # (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image
 _PostFn = Callable[
@@ -398,9 +415,7 @@ class ImageModel:
             If the method is not 'cpu', 'cuda', or 'trt'.
 
         """
-        if method not in PREPROCESSOR_METHODS:
-            err_msg = f"Invalid preprocessor found, options are: {list(PREPROCESSOR_METHODS)}"
-            raise ValueError(err_msg)
+        check_preprocessor_method(method)
         if method == "trt" and not FLAGS.TRT_HAS_UINT8:
             method = "cuda"
             LOG.warning(
