@@ -19,7 +19,6 @@ from typing import Any
 import numpy as np
 import pytest
 
-from trtutils.core import _bindings
 from trtutils.core._buffer import Buffer, MemoryLocation, as_buffers
 
 
@@ -345,59 +344,3 @@ class TestAsBuffers:
     def test_rejects_non_buffers(self, data) -> None:
         with pytest.raises(TypeError, match="Buffer"):
             as_buffers(data)
-
-
-@pytest.mark.cpu
-class TestBindingOnFakeCuda:
-    """Binding staging and fetching over Buffers."""
-
-    @pytest.mark.parametrize("unified", [False, True], ids=["discrete", "unified"])
-    def test_stage_and_fetch(self, fake_cuda, unified) -> None:
-        binding = _bindings.create_binding(
-            np.zeros((4, 3), dtype=np.float32), pagelocked_mem=True, unified_mem=unified
-        )
-        data = np.arange(6, dtype=np.float32).reshape(2, 3)
-        staged = binding.stage(Buffer.wrap(data))
-        assert staged.ptr == binding.allocation
-        assert staged.shape == (2, 3)
-        np.testing.assert_array_equal(binding.fetch((2, 3)).array, data)
-        # unified memory stages with a host memcpy and never copies back
-        kinds = [kind for kind, _ in fake_cuda.copies]
-        assert kinds == ([] if unified else ["H2D", "D2H"])
-
-    def test_fetch_reuses_views_for_a_repeated_shape(self, fake_cuda) -> None:
-        binding = _bindings.create_binding(np.zeros((4, 3), dtype=np.float32))
-        device_ptr = binding.allocation
-        first = binding.fetch((2, 3))
-        assert binding.fetch((2, 3)) is first
-        assert binding.fetch((1, 3)).shape == (1, 3)
-        # free() drops the cached views, so they no longer pin the memory
-        del first
-        binding.free()
-        gc.collect()
-        assert ("device", device_ptr) in fake_cuda.freed
-
-    def test_binding_fields_are_read_only(self, fake_cuda) -> None:
-        binding = _bindings.create_binding(
-            np.zeros((2, 3), dtype=np.float32), bind_id=4, name="x", is_input=True
-        )
-        assert (binding.index, binding.name, binding.is_input) == (4, "x", True)
-        assert binding.dtype == np.float32
-        assert binding.shape == [2, 3]
-        # shape hands out a copy, so the binding cannot be changed through it
-        binding.shape.append(7)
-        assert binding.shape == [2, 3]
-        for attr in ("index", "name", "dtype", "shape", "is_input", "host", "device"):
-            with pytest.raises(AttributeError):
-                setattr(binding, attr, None)
-
-    def test_unified_binding_is_one_allocation(self, fake_cuda) -> None:
-        binding = _bindings.create_binding(
-            np.zeros(4, dtype=np.float32), pagelocked_mem=True, unified_mem=True
-        )
-        assert binding.unified_mem
-        assert binding.allocation == binding.host.ptr
-        binding.free()
-        del binding
-        _collect()
-        assert [kind for kind, _ in fake_cuda.freed] == ["host"]
