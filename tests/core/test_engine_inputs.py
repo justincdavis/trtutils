@@ -121,12 +121,6 @@ def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
 
 
 @pytest.fixture
-def no_sync(monkeypatch) -> None:
-    """Skip stream synchronization, which the fake runtime does not provide."""
-    monkeypatch.setattr(_engine, "stream_synchronize", lambda _stream: None)
-
-
-@pytest.fixture
 def fake_graphs(monkeypatch) -> list[_FakeGraph]:
     """Replace CUDAGraph in the engine; returns every graph the engine creates."""
     _FakeGraph.created = []
@@ -139,7 +133,7 @@ def _host(n: int) -> Buffer:
     return Buffer.wrap(np.arange(n * _FEATURES, dtype=np.float32).reshape(n, _FEATURES))
 
 
-pytestmark = [pytest.mark.cpu, pytest.mark.usefixtures("fake_cuda", "no_sync")]
+pytestmark = [pytest.mark.cpu, pytest.mark.usefixtures("fake_cuda")]
 
 
 def test_host_input_is_staged_into_binding(fake_cuda) -> None:

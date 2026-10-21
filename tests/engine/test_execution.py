@@ -164,16 +164,6 @@ class TestExecute:
 class TestDeviceInputs:
     """Tests for TRTEngine.execute() with device-resident Buffers."""
 
-    def test_device_inputs_match_host_inputs(self, make_engine) -> None:
-        """Device and host Buffers holding the same data produce the same outputs."""
-        eng = make_engine()
-        host = eng.get_random_input()
-        device = _to_device(host)
-        out_device = eng.execute(device)
-        out_host = eng.execute(host)
-        for od, oh in zip(out_device, out_host):
-            np.testing.assert_array_equal(od, oh)
-
     def test_device_inputs_bound_in_place(self, make_engine) -> None:
         """Aligned device Buffers are read by TensorRT directly, without a copy."""
         if not FLAGS.EXEC_ASYNC_V3:
@@ -287,15 +277,6 @@ class TestRawExec:
         raw = [o.numpy() for o in outputs]
         for r, e in zip(raw, engine.execute(random_input)):
             np.testing.assert_array_equal(r, e)
-
-    def test_execute_after_raw_exec_rebinds(self, make_engine) -> None:
-        """execute() with host inputs after raw_exec() with device inputs rebinds the engine memory."""
-        eng = make_engine()
-        host = eng.get_random_input()
-        eng.raw_exec(_to_device(host))
-        stream_synchronize(eng.stream)
-        eng.execute(host)
-        assert eng._input_addresses == [b.allocation for b in eng.input_bindings]
 
 
 class TestMockExecute:

@@ -590,30 +590,51 @@ class ImageModel:
         images: list[np.ndarray],
         method: str | None = None,
         *,
+        preprocessed: bool = False,
+        ratios: list[tuple[float, float]] | None = None,
+        padding: list[tuple[float, float]] | None = None,
         verbose: bool | None = None,
-    ) -> tuple[list[Buffer], list[tuple[float, float]], list[tuple[float, float]]]:
+    ) -> tuple[list[Buffer], list[tuple[float, float]] | None, list[tuple[float, float]] | None]:
         """
-        Preprocess images into the inputs of the engine call.
+        Get the inputs of the engine call for a batch of images.
 
-        GPU preprocessors leave the batch on the device, so it is bound in
-        place; the CPU preprocessor's batch is wrapped as a host Buffer.
+        Images are preprocessed unless ``preprocessed`` is set. GPU
+        preprocessors leave the batch on the device, so it is bound in place;
+        the CPU preprocessor's batch, or an already preprocessed one, is
+        wrapped as a host Buffer.
 
         Parameters
         ----------
         images : list[np.ndarray]
-            The images to preprocess.
+            The images to preprocess, or a single already preprocessed batch tensor.
         method : str, optional
             The preprocessor to use, as in :meth:`get_preprocessor`.
             By default None, the preprocessor stated in the constructor.
+        preprocessed : bool, optional
+            Whether ``images`` holds an already preprocessed batch tensor.
+        ratios : list[tuple[float, float]], optional
+            The ratios of an already preprocessed batch.
+        padding : list[tuple[float, float]], optional
+            The padding of an already preprocessed batch.
         verbose : bool, optional
             Whether or not to log additional information.
 
         Returns
         -------
-        tuple[list[Buffer], list[tuple[float, float]], list[tuple[float, float]]]
+        tuple[list[Buffer], list[tuple[float, float]] | None, list[tuple[float, float]] | None]
             The engine inputs, and the ratios and padding per image.
 
+        Raises
+        ------
+        ValueError
+            If ``preprocessed`` is set and ``images`` is not a single batch tensor.
+
         """
+        if preprocessed:
+            if len(images) != 1:
+                err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
+                raise ValueError(err_msg)
+            return self.engine_inputs(host_input(images[0]), None, ratios), ratios, padding
         preprocessor = self.get_preprocessor(method)
         t0 = time.perf_counter()
         if isinstance(preprocessor, GPUImagePreprocessor):
@@ -787,21 +808,18 @@ class ImageModel:
                 f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
             )
 
-        # handle preprocessing
-        if not preprocessed:
-            if verbose:
-                LOG.debug("Preprocessing inputs")
+        try:
             engine_inputs, batch_ratios, batch_padding = self.prepare_inputs(
-                batch_images, verbose=verbose
+                batch_images,
+                preprocessed=preprocessed,
+                ratios=batch_ratios,
+                padding=batch_padding,
+                verbose=verbose,
             )
-        else:
-            # images is already preprocessed tensor when preprocessed=True
-            if len(batch_images) != 1:
-                err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # run
-                raise ValueError(err_msg)
-            engine_inputs = self.engine_inputs(host_input(batch_images[0]), None, batch_ratios)
+        except ValueError:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # run
+            raise
 
         # execute
         t0 = time.perf_counter()
@@ -883,13 +901,19 @@ class ImageModel:
             batch_images = images
             is_single = False
 
-        engine_inputs, ratios, padding = self.prepare_inputs(batch_images, verbose=verbose)
-        t0 = time.perf_counter()
-        raw = self._engine.execute(engine_inputs, no_copy=True)
-        self._infer_profile = (t0, time.perf_counter())
         # outputs are consumed by get() inside this call, so skip their copies
-        no_copy_post = True
-        pp = post(raw, ratios, padding, no_copy_post)
+        pp, _ = self._as_batch(
+            self._run_core(
+                batch_images,
+                None,
+                None,
+                preprocessed=False,
+                postprocess=True,
+                no_copy=True,
+                verbose=verbose,
+                post=post,
+            )
+        )
         result = get(pp)
 
         # unwrap for single-image input

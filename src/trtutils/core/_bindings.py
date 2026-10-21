@@ -83,6 +83,10 @@ class Binding:
         self._device = device
         self._tensor_format = tensor_format
         self._min_shape = self._shape if min_shape is None else tuple(int(d) for d in min_shape)
+        # (host, device) views of the leading elements for the last shape
+        # staged or fetched, which stays the same from call to call
+        self._view_shape = self._shape
+        self._view_pair = (host, device)
 
     @property
     def index(self: Self) -> int:
@@ -206,9 +210,9 @@ class Binding:
         """
         # with unified memory the host buffer *is* the device memory, so a
         # host source is a plain memcpy on the CPU
-        dst = _prefix(self._device, src.shape)
-        (_prefix(self._host, src.shape) if self.unified_mem else dst).copy_from(src, stream)
-        return dst
+        host, device = self._views(src.shape)
+        (host if self.unified_mem else device).copy_from(src, stream)
+        return device
 
     def fetch(
         self: Self,
@@ -232,16 +236,24 @@ class Binding:
             The host view holding the data.
 
         """
-        shape = tuple(shape) if shape is not None else self._shape
-        host = _prefix(self._host, shape)
+        host, device = self._views(tuple(shape) if shape is not None else self._shape)
         if not self.unified_mem:
-            host.copy_from(_prefix(self._device, shape), stream)
+            host.copy_from(device, stream)
         return host
+
+    def _views(self: Self, shape: tuple[int, ...]) -> tuple[Buffer, Buffer]:
+        if shape != self._view_shape:
+            self._view_pair = (_prefix(self._host, shape), _prefix(self._device, shape))
+            self._view_shape = shape
+        return self._view_pair
 
     def free(self: Self) -> None:
         """Release the binding's buffers."""
         self._host.free()
         self._device.free()
+        # cached views would otherwise keep the memory alive
+        self._view_shape = self._shape
+        self._view_pair = (self._host, self._device)
 
     def __repr__(self: Self) -> str:
         """

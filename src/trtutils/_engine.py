@@ -33,8 +33,7 @@ if TYPE_CHECKING:
     _GraphKey = tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]
 
 
-# input configurations with a cached CUDA graph (least recently used evicted
-# first), and separately, configurations seen once that may be captured next
+# the most CUDA graphs (and seen-once configurations) an engine keeps
 _MAX_CUDA_GRAPHS = 8
 
 
@@ -169,7 +168,7 @@ class TRTEngine(TRTEngineInterface):
         # the Buffers the context reads, kept alive for graph_exec / raw_exec,
         # which use them after the call that bound them returns
         self._bound_inputs: list[Buffer] = [b.device for b in self._inputs]
-        self._output_shapes: list[tuple[int, ...]] = [tuple(b.shape) for b in self._outputs]
+        self._output_shapes: list[tuple[int, ...]] = [b.max_shape for b in self._outputs]
         # set when the context shapes change; the next enqueue then runs
         # without a CUDA graph so TensorRT can react to the new shapes
         self._shapes_changed: bool = False
@@ -189,8 +188,7 @@ class TRTEngine(TRTEngineInterface):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["warmup"])
 
-        self._warmup = warmup
-        if self._warmup:
+        if warmup:
             self.warmup(warmup_iterations, verbose=self._verbose)
 
         if FLAGS.NVTX_ENABLED:
@@ -242,7 +240,7 @@ class TRTEngine(TRTEngineInterface):
             # data-dependent output shapes are only known after execution;
             # fall back to the full allocation for those
             if any(dim < 0 for dim in shape):
-                shape = tuple(o_binding.shape)
+                shape = o_binding.max_shape
             shapes.append(shape)
         self._output_shapes = shapes
 

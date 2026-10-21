@@ -18,19 +18,12 @@ from typing_extensions import TypeGuard
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.image._detector import Detector
-from trtutils.image._image_model import host_input
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
     from typing_extensions import Self
-
-
-def _is_raw_outputs(
-    outputs: list[np.ndarray] | list[list[np.ndarray]],
-) -> TypeGuard[list[np.ndarray]]:
-    return not outputs or isinstance(outputs[0], np.ndarray)
 
 
 def _is_postprocessed_batches(
@@ -1106,27 +1099,28 @@ class ParallelDetector:
 
             if FLAGS.NVTX_ENABLED:
                 nvtx.push_range(f"parallel_detector::_run::infer [{self._tag}:{threadid}]")
-            if data.preprocessed:
-                if len(images) != 1:
-                    err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()  # infer
-                        nvtx.pop_range()  # _run
-                    raise ValueError(err_msg)
-                ratios = data.ratios
-                padding = data.padding
-                engine_inputs = detector.engine_inputs(host_input(images[0]), None, ratios)
-            else:
+            try:
                 engine_inputs, ratios, padding = detector.prepare_inputs(
-                    images, data.preprocess_method
+                    images,
+                    data.preprocess_method,
+                    preprocessed=bool(data.preprocessed),
+                    ratios=data.ratios,
+                    padding=data.padding,
                 )
+            except ValueError:
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # infer
+                    nvtx.pop_range()  # _run
+                raise
+            # outputs that are postprocessed here need no copy of their own
+            no_copy_run = True if data.postprocess and data.no_copy is None else data.no_copy
             t0 = time.perf_counter()
-            results = detector.engine.execute(engine_inputs, no_copy=data.no_copy)
+            results = detector.engine.execute(engine_inputs, no_copy=no_copy_run)
             t1 = time.perf_counter()
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # infer
 
-            # run the postprocessing (common for all paths)
+            # run the postprocessing
             if FLAGS.NVTX_ENABLED:
                 nvtx.push_range(f"parallel_detector::_run::postprocess [{self._tag}:{threadid}]")
             if data.postprocess:
@@ -1136,12 +1130,6 @@ class ParallelDetector:
                         nvtx.pop_range()  # postprocess
                         nvtx.pop_range()  # _run
                     raise ValueError(err_msg)
-                if not _is_raw_outputs(results):
-                    err_msg = "Expected raw detector outputs before postprocess."
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()  # postprocess
-                        nvtx.pop_range()  # _run
-                    raise RuntimeError(err_msg)
                 postproc_results = detector.postprocess(
                     results,
                     ratios,

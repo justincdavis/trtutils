@@ -23,8 +23,9 @@ Added
 * ``core.KernelArgs``: ``Kernel.create_args`` returns an argument array that owns the
   buffers its pointers reference; build one directly with ``KernelArgs.from_values(*args)``
   or ``KernelArgs(pointers, keepalive)``
-* ``ImageModel.prepare_inputs(images, method)`` preprocesses images into engine inputs
-  (bound in place on the device for GPU preprocessors), ``ImageModel.engine_inputs(image,
+* ``ImageModel.prepare_inputs(images, method, *, preprocessed, ratios, padding)`` gets the
+  engine inputs for images, preprocessing them unless ``preprocessed`` (GPU-preprocessed
+  batches are bound in place on the device), ``ImageModel.engine_inputs(image,
   images, ratios)`` builds them from a preprocessed batch (``images=None`` when the batch
   came preprocessed), and ``ImageModel.get_preprocessor(method)``
 
@@ -68,7 +69,9 @@ Changed
 * ``ImageModel.run`` with a GPU preprocessor binds the preprocessed batch on the device
   instead of copying it to the host and back
 * ``ParallelDetector`` preprocesses through ``prepare_inputs`` for every preprocessor,
-  keeping GPU-preprocessed batches on the device, and honors ``no_copy`` on every path
+  keeping GPU-preprocessed batches on the device; outputs it postprocesses are not copied
+  unless ``no_copy=False``
+* ``Binding.stage`` / ``fetch`` reuse their views while the shape repeats
 * ``TRTEngine.is_dynamic_batch`` is True when the profile allows more than one batch size
 
 Fixed

@@ -365,6 +365,18 @@ class TestBindingOnFakeCuda:
         kinds = [kind for kind, _ in fake_cuda.copies]
         assert kinds == ([] if unified else ["H2D", "D2H"])
 
+    def test_fetch_reuses_views_for_a_repeated_shape(self, fake_cuda) -> None:
+        binding = _bindings.create_binding(np.zeros((4, 3), dtype=np.float32))
+        device_ptr = binding.allocation
+        first = binding.fetch((2, 3))
+        assert binding.fetch((2, 3)) is first
+        assert binding.fetch((1, 3)).shape == (1, 3)
+        # free() drops the cached views, so they no longer pin the memory
+        del first
+        binding.free()
+        gc.collect()
+        assert ("device", device_ptr) in fake_cuda.freed
+
     def test_binding_fields_are_read_only(self, fake_cuda) -> None:
         binding = _bindings.create_binding(
             np.zeros((2, 3), dtype=np.float32), bind_id=4, name="x", is_input=True

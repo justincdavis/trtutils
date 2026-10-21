@@ -751,13 +751,13 @@ class Detector(ImageModel, DetectorInterface):
         /,
     ) -> list[Buffer]:
         """Build engine inputs, adding per-image orig size / scale factor arrays per input schema."""
-        if images is None:
-            # an already preprocessed batch: the original sizes are unknown
-            sizes = [(self._input_size[1], self._input_size[0])] * image.shape[0]
-        else:
-            sizes = [img.shape[:2] for img in images]
         inputs: list[Buffer] = []
         if self._use_image_size:
+            if images is None:
+                # an already preprocessed batch: the original sizes are unknown
+                sizes = [(self._input_size[1], self._input_size[0])] * image.shape[0]
+            else:
+                sizes = [img.shape[:2] for img in images]
             inputs.append(Buffer.wrap(np.array(sizes, dtype=self._orig_size_dtype)))
         if self._use_scale_factor:
             if ratios is None:

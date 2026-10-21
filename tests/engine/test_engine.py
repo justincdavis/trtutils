@@ -25,18 +25,12 @@ def test_init_default_args(engine_path) -> None:
     del eng
 
 
-@pytest.mark.parametrize(
-    ("warmup", "expected"),
-    [
-        pytest.param(True, True, id="warmup-true"),
-        pytest.param(False, False, id="warmup-false"),
-        pytest.param(None, None, id="warmup-none"),
-    ],
-)
-def test_init_warmup(make_engine, warmup, expected) -> None:
-    """_warmup attribute matches the constructor argument."""
+@pytest.mark.parametrize("warmup", [True, False, None])
+def test_init_warmup(make_engine, warmup) -> None:
+    """Warmup executes the engine only when requested (seen by the CUDA graph cache)."""
     eng = make_engine(warmup=warmup, warmup_iterations=3)
-    assert eng._warmup is expected
+    executed = bool(eng._cuda_graphs or eng._seen_configs)
+    assert executed is (bool(warmup) and eng._cuda_graph_enabled)
 
 
 @pytest.mark.cuda_graph
