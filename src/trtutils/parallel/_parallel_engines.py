@@ -163,13 +163,26 @@ class ParallelTRTEngines:
 
         Returns
         -------
-        list[np.ndarray]
-            The output from the engines.
+        list[list[np.ndarray] | None]
+            The output from each engine, or None for an engine whose timeout passed first.
+
+        Raises
+        ------
+        Exception
+            The first error an engine raised for its input. Every engine's
+            result is taken first, so none is left behind for the next call.
 
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range("parallel_engines::retrieve")
-        results = [engine.retrieve(timeout=timeout) for engine in self._engines]
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
-        return results
+        try:
+            results = [engine.retrieve_result(timeout=timeout) for engine in self._engines]
+            outputs: list[list[np.ndarray] | None] = []
+            for result in results:
+                if isinstance(result, Exception):
+                    raise result
+                outputs.append(result)
+            return outputs
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()

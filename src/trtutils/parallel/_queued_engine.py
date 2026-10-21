@@ -3,7 +3,7 @@
 # MIT License
 from __future__ import annotations
 
-import contextlib
+import logging
 from queue import Empty, Queue
 from threading import Thread
 from typing import TYPE_CHECKING
@@ -81,7 +81,8 @@ class QueuedTRTEngine:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["init"])
         self._input_queue: Queue[list[Buffer]] = Queue()
-        self._output_queue: Queue[list[np.ndarray]] = Queue()
+        # outputs, or the error the engine raised for an input
+        self._output_queue: Queue[list[np.ndarray] | Exception] = Queue()
         self._thread = Thread(
             target=self._run,
             args=(),
@@ -238,20 +239,48 @@ class QueuedTRTEngine:
 
         Returns
         -------
-        list[np.ndarray]
-            The output from the engine.
+        list[np.ndarray] | None
+            The output from the engine, or None if the timeout passed first.
+
+        Raises
+        ------
+        Exception
+            The error the engine raised for the corresponding input.
+
+        """
+        result = self.retrieve_result(timeout)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def retrieve_result(
+        self: Self,
+        timeout: float | None = None,
+    ) -> list[np.ndarray] | Exception | None:
+        """
+        Get an output from the engine thread, or the error it raised, without raising it.
+
+        Parameters
+        ----------
+        timeout : float, optional
+            Timeout for waiting for data.
+
+        Returns
+        -------
+        list[np.ndarray] | Exception | None
+            The output from the engine, the error the engine raised for the
+            corresponding input, or None if the timeout passed first.
 
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["retrieve"])
-        with contextlib.suppress(Empty):
-            result = self._output_queue.get(timeout=timeout)
+        try:
+            return self._output_queue.get(timeout=timeout)
+        except Empty:
+            return None
+        finally:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()
-            return result
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
-        return None
 
     def _run(
         self: Self,
@@ -264,8 +293,16 @@ class QueuedTRTEngine:
 
             if FLAGS.NVTX_ENABLED:
                 nvtx.push_range(self._nvtx_tags["_run"])
-            result = self._engine(inputs)
-
+            result: list[np.ndarray] | Exception
+            try:
+                result = self._engine(inputs)
+            except Exception as err:
+                # hand the error to retrieve(), which raises it in the caller's
+                # thread, and keep serving later inputs; the traceback is logged
+                # through LOG's stdlib logger
+                logging.getLogger("trtutils").exception("%s: execution failed", self._engine.name)
+                result = err
+            finally:
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()
             self._output_queue.put(result)
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()

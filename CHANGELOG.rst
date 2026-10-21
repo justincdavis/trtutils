@@ -22,6 +22,8 @@ Added
 * ``core.KernelArgs``: ``Kernel.create_args`` returns an argument array that owns the
   buffers its pointers reference; build one directly with ``KernelArgs.from_values(*args)``
   or ``KernelArgs(pointers, keepalive)``
+* ``QueuedTRTEngine.retrieve_result`` returns the next output, or the error the engine raised
+  for that input, without raising it
 * ``ImageModel.prepare_inputs(images, method, *, preprocessed, ratios, padding)`` gets the
   engine inputs for images, preprocessing them unless ``preprocessed`` (GPU-preprocessed
   batches are bound in place on the device), ``ImageModel.engine_inputs(image,
@@ -103,7 +105,9 @@ Fixed
   ``preprocess_method``, a wrongly shaped preprocessed tensor, a rejected enqueue, ...)
   killed the model's worker thread and left ``retrieve`` waiting forever. It is now raised
   by ``retrieve`` / ``retrieve_model`` in the caller's thread, after every model's result is
-  taken, and the worker keeps serving later batches
+  taken, and the worker keeps serving later batches. ``QueuedTRTEngine`` /
+  ``ParallelTRTEngines`` had the same flaw and now do the same: ``retrieve`` raises the
+  engine's error, and ``ParallelTRTEngines.retrieve`` takes every engine's result first
 * ``ParallelTRTEngines``: ``(engine, dla_core, device)`` tuples raised ``ValueError`` and
   the device was never applied
 * ``ImageModel.mock_run`` with images builds every engine input (DETR-style models failed
