@@ -7,11 +7,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import onnx
 import pytest
 import tensorrt as trt
 
-from tests.conftest import DATA_DIR, ENGINES_DIR
+from tests.conftest import DATA_DIR, ENGINES_DIR, SIMPLE_DYNAMIC_PROFILES
 from trtutils import TRTEngine
 from trtutils.builder import build_engine
 
@@ -27,42 +26,6 @@ def _build_test_engine(onnx_name: str) -> Path:
     if not engine_path.exists():
         ENGINES_DIR.mkdir(parents=True, exist_ok=True)
         build_engine(onnx_path, engine_path, optimization_level=1)
-    return engine_path
-
-
-def _build_dynamic_test_engine(onnx_name: str, max_batch: int = 4) -> Path:
-    """
-    Build an engine with a dynamic batch profile (1..max_batch) from a static ONNX.
-
-    The exported test models are static, so the batch dimension is made
-    symbolic here rather than shipping a second ONNX asset.
-    """
-    onnx_path = DATA_DIR / f"{onnx_name}.onnx"
-    engine_path = ENGINES_DIR / f"{onnx_name}_dyn_b{max_batch}_{trt.__version__}.engine"
-    if engine_path.exists():
-        return engine_path
-
-    ENGINES_DIR.mkdir(parents=True, exist_ok=True)
-    model = onnx.load(str(onnx_path))
-    for tensor in list(model.graph.input) + list(model.graph.output):
-        dim = tensor.type.tensor_type.shape.dim[0]
-        dim.ClearField("dim_value")
-        dim.dim_param = "batch"
-    dyn_onnx = ENGINES_DIR / f"{onnx_name}_dyn.onnx"
-    onnx.save(model, str(dyn_onnx))
-
-    shape = tuple(d.dim_value for d in model.graph.input[0].type.tensor_type.shape.dim[1:])
-    build_engine(
-        dyn_onnx,
-        engine_path,
-        optimization_level=1,
-        shapes=[
-            (
-                model.graph.input[0].name,
-                ((1, *shape), (max_batch, *shape), (max_batch, *shape)),
-            )
-        ],
-    )
     return engine_path
 
 
@@ -112,6 +75,6 @@ def random_input(engine) -> list:
 
 
 @pytest.fixture(scope="session")
-def dynamic_engine_path() -> Path:
+def dynamic_engine_path(build_dynamic_engine) -> Path:
     """Path to the simple engine built with a 1..4 dynamic batch profile, built on first use."""
-    return _build_dynamic_test_engine("simple")
+    return build_dynamic_engine(DATA_DIR / "simple.onnx", SIMPLE_DYNAMIC_PROFILES["batch"])

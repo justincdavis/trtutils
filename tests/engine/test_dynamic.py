@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from tests.conftest import DATA_DIR, SIMPLE_DYNAMIC_PROFILES
 from trtutils import TRTEngine
 from trtutils.core import Buffer, MemoryLocation, stream_synchronize
 
@@ -86,6 +87,38 @@ def test_batch_outside_profile_raises(dynamic_engine, n) -> None:
     with pytest.raises(ValueError, match="between"):
         dynamic_engine.execute([Buffer.wrap(_batch(dynamic_engine, n))])
     assert dynamic_engine.active_input_shapes == before
+
+
+@pytest.mark.parametrize(
+    ("profile", "at"),
+    [
+        pytest.param(SIMPLE_DYNAMIC_PROFILES[name], at, id=f"{name}-{at}")
+        for name in SIMPLE_DYNAMIC_PROFILES
+        for at in ("min", "opt", "max", "mixed")
+    ],
+)
+@pytest.mark.parametrize(
+    "location",
+    [pytest.param(MemoryLocation.HOST, id="host"), pytest.param(MemoryLocation.DEVICE, id="device")],
+)
+def test_dynamic_dims_run_at_submitted_shape(build_dynamic_engine, profile, at, location) -> None:
+    """Any dims, batch or not, run at the submitted shape and compute x * 0.5 + 1."""
+    lo, opt, hi = profile
+    # "mixed" takes the max of the leading dims and the min of the trailing ones
+    shape = {"min": lo, "opt": opt, "max": hi, "mixed": (*hi[:2], *lo[2:])}[at]
+    eng = TRTEngine(
+        build_dynamic_engine(DATA_DIR / "simple.onnx", profile), warmup=False, cuda_graph=False
+    )
+    try:
+        assert eng.input_spec[0][0] == list(hi)
+        x = np.random.default_rng(0).random(shape, dtype=np.float32)
+        (out,) = eng.execute([Buffer.from_array(x, location)])
+        assert out.shape == shape
+        assert eng.active_input_shapes[0] == shape
+        assert eng.active_output_shapes[0] == shape
+        np.testing.assert_allclose(out, x * 0.5 + 1, rtol=1e-6)
+    finally:
+        del eng
 
 
 @pytest.mark.cuda_graph
