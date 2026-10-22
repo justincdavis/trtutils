@@ -12,8 +12,6 @@ from trtutils.download._tools import (
     _640,
     get_patches_dir,
     git_clone,
-    handle_batch,
-    handle_dynamic,
     handle_imgsz,
     run_cmd,
     run_download,
@@ -33,9 +31,7 @@ def export_yolox(
     model: str,
     opset: int,
     imgsz: int | None = None,
-    batch: int | None = None,
     *,
-    dynamic: bool | None = None,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -44,8 +40,6 @@ def export_yolox(
     if not no_warn:
         LOG.warning("YOLOX is a Apache-2.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOX")
-    handle_batch(batch, "YOLOX", supported=False)
-    handle_dynamic(batch, "YOLOX", dynamic=dynamic, supported=False)
     git_clone(
         "https://github.com/Megvii-BaseDetection/YOLOX",
         directory,

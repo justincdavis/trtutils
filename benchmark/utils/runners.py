@@ -20,7 +20,6 @@ import cv2
 from tqdm import tqdm
 
 import trtutils
-from trtutils.download import download
 
 from .config import (
     DATA_DIR,
@@ -40,52 +39,22 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from typing import Any
 
-# alternating resolutions for the resolution-switch composition; see
-# benchmark_optimizations
-_RESOLUTION_SWITCH_SIZES = [(1280, 720), (1920, 1080)]
 
-
-def _export_batch_onnx(
-    model_name: str,
-    imgsz: int,
-    batch_size: int,
-    output_dir: Path,
-) -> Path:
-    onnx_path = output_dir / f"{model_name}_{imgsz}_b{batch_size}.onnx"
-    if onnx_path.exists():
-        return onnx_path
-
-    print(f"Exporting {model_name} ONNX with batch={batch_size}...")
-
-    # the download tool builds its own deterministic venv per model family,
-    # so the benchmark environment does not need the upstream frameworks
-    # installed. families whose exporters cannot set a batch size raise
-    # NotImplementedError rather than silently exporting at batch 1.
-    output_dir.mkdir(parents=True, exist_ok=True)
-    download(
-        model=model_name,
-        output=onnx_path,
-        opset=17,
-        imgsz=imgsz,
-        batch=batch_size,
-        verbose=False,
-    )
-
-    if not onnx_path.exists():
-        err_msg = f"ONNX export failed, file not found: {onnx_path}"
-        raise FileNotFoundError(err_msg)
-
-    print(f"Exported batch ONNX: {onnx_path.name}")
-    return onnx_path
-
-
-def _engine_path_for_batch(
-    onnx_path: Path,
-    imgsz: int,
-    batch_size: int,
-) -> Path:
-    model_name = onnx_path.stem.rsplit("_", 1)[0]
-    return onnx_path.parent / f"{model_name}_{imgsz}_b{batch_size}.engine"
+def _engine_for_batch(model_name: str, imgsz: int, bs: int, *, rebuild: bool = False) -> Path:
+    """Return the static engine for a batch size, exporting and building it on first use."""
+    onnx_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR, batch=bs)
+    engine_path = onnx_path.with_suffix(".engine")
+    if rebuild or not engine_path.exists():
+        print(f"\tBuilding engine for {imgsz}x{bs}: {engine_path.name}")
+        build_model(
+            onnx=onnx_path,
+            output=engine_path,
+            imgsz=imgsz,
+            batch_size=bs,
+            model_name=model_name,
+            timing_cache=get_timing_cache_path(),
+        )
+    return engine_path
 
 
 def _run_benchmarks(
@@ -93,15 +62,20 @@ def _run_benchmarks(
     model_name: str,
     configs: list[tuple[str, int, int]],
     bench_iters: int,
-    data_subdir: str,
+    data_subdir: str | None,
     frameworks: list[str],
     modes: list[tuple[str, Any]],
     runner_factory: Callable,
     loop_warmup: int = 0,
     *,
     overwrite: bool = False,
-) -> None:
-    data = get_data(device, data_subdir, frameworks)
+) -> dict:
+    """Measure each mode/config; returns only this call's results. data_subdir=None persists nothing."""
+    if data_subdir is None:
+        data: dict = {fw: {} for fw in frameworks}
+    else:
+        data = get_data(device, data_subdir, frameworks)
+    measured: dict = {}
 
     for framework, flag in modes:
         if framework not in frameworks:
@@ -127,7 +101,9 @@ def _run_benchmarks(
 
                 results = compute_results(timings, batch_size=bs)
                 data[framework][model_name][data_key] = results
-                write_data(device, data_subdir, data)
+                measured.setdefault(framework, {}).setdefault(model_name, {})[data_key] = results
+                if data_subdir is not None:
+                    write_data(device, data_subdir, data)
 
                 print(
                     f"\t{framework} {data_key}: "
@@ -137,6 +113,7 @@ def _run_benchmarks(
             except Exception as e:
                 warnings.warn(f"Failed {framework} {data_key}: {e}")
                 continue
+    return measured
 
 
 @contextlib.contextmanager
@@ -146,31 +123,7 @@ def _runner_trtutils(mode, imgsz, bs, *, model_name, warmup_iters, image):
     cuda_graph = mode in ("detector_graph", "raw_graph")
     is_raw = mode in ("raw", "raw_graph")
 
-    onnx_path = ensure_model_available(
-        model_name,
-        imgsz,
-        MODEL_TO_DIR,
-        auto_download=True,
-    )
-    if bs > 1:
-        batch_onnx = _export_batch_onnx(model_name, imgsz, bs, onnx_path.parent)
-        engine_path = _engine_path_for_batch(onnx_path, imgsz, bs)
-    else:
-        batch_onnx = onnx_path
-        engine_path = onnx_path.with_suffix(".engine")
-
-    def build_engine():
-        print(f"\tBuilding engine for {imgsz}x{bs}...")
-        build_model(
-            onnx=batch_onnx,
-            output=engine_path,
-            imgsz=imgsz,
-            batch_size=bs,
-            model_name=model_name,
-            timing_cache=get_timing_cache_path(),
-        )
-
-    def create_detector() -> Detector:
+    def create_detector(engine_path: Path) -> Detector:
         return Detector(
             engine_path=engine_path,
             warmup_iterations=warmup_iters,
@@ -181,18 +134,14 @@ def _runner_trtutils(mode, imgsz, bs, *, model_name, warmup_iters, image):
             verbose=False,
         )
 
-    if not engine_path.exists():
-        build_engine()
-
+    engine_path = _engine_for_batch(model_name, imgsz, bs)
     try:
-        detector = create_detector()
+        detector = create_detector(engine_path)
     except RuntimeError as e:
         if "Failed to deserialize" not in str(e):
             raise
         print(f"\tEngine incompatible, rebuilding: {engine_path}")
-        engine_path.unlink(missing_ok=True)
-        build_engine()
-        detector = create_detector()
+        detector = create_detector(_engine_for_batch(model_name, imgsz, bs, rebuild=True))
 
     if is_raw:
         engine = detector.engine
@@ -359,10 +308,10 @@ def run_benchmark(
     bench_iters: int,
     *,
     configs: list[tuple[str, int, int]] | None = None,
-    data_subdir: str = "models",
+    data_subdir: str | None = "models",
     frameworks: list[str] | None = None,
     overwrite: bool = False,
-) -> None:
+) -> dict | None:
     if kind == "trtutils" or kind == "ultralytics":
         image = cv2.imread(IMAGE_PATH)
         if kind == "trtutils":
@@ -372,7 +321,7 @@ def run_benchmark(
                 warmup_iters=warmup_iters,
                 image=image,
             )
-            modes = modes = [
+            modes = [
                 ("trtutils", "detector"),
                 ("trtutils(graph)", "detector_graph"),
                 ("tensorrt", "raw"),
@@ -384,8 +333,8 @@ def run_benchmark(
                 model_name=model_name,
                 image=image,
             )
-            modes = ([("ultralytics(torch)", False), ("ultralytics(trt)", True)],)
-        _run_benchmarks(
+            modes = [("ultralytics(torch)", False), ("ultralytics(trt)", True)]
+        return _run_benchmarks(
             device,
             model_name,
             configs,
@@ -397,7 +346,7 @@ def run_benchmark(
             loop_warmup=warmup_iters,
             overwrite=overwrite,
         )
-    elif kind == "sahi":
+    if kind == "sahi":
         image = cv2.imread(SAHI_IMAGE_PATH)
         imgsz = 640
         overlap = 0.2
@@ -475,6 +424,7 @@ def run_benchmark(
     else:
         err_msg = f"Unknown benchmark kind: {kind}"
         raise ValueError(err_msg)
+    return None
 
 
 def _trtutils_git_sha() -> str | None:
@@ -493,12 +443,13 @@ def _trtutils_git_sha() -> str | None:
     return result.stdout.strip()
 
 
-def write_stage_snapshot(device: str, stage: str, section: str, payload: dict) -> Path:
+def write_stage_snapshot(device: str, stage: str, section: str, payload: dict) -> None:
     """
     Merge one benchmark section into data/perf-series/<device>/stage-<stage>.json.
 
     ``optimize`` and ``batch`` each own a section of the same stage file, so
     running them in either order (or re-running one) never discards the other.
+    Each section records the trtutils git SHA it measured.
     """
     out_dir = DATA_DIR / "perf-series" / device
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -507,12 +458,11 @@ def write_stage_snapshot(device: str, stage: str, section: str, payload: dict) -
     if out_path.exists():
         with out_path.open("r") as f:
             snapshot = json.load(f)
-    snapshot.update({"device": device, "stage": stage, "trtutils_sha": _trtutils_git_sha()})
-    snapshot[section] = payload
+    snapshot.update({"device": device, "stage": stage})
+    snapshot[section] = {**payload, "trtutils_sha": _trtutils_git_sha()}
     with out_path.open("w") as f:
         json.dump(snapshot, f, indent=2)
     print(f"Wrote stage snapshot: {out_path} [{section}]")
-    return out_path
 
 
 def benchmark_optimizations(
@@ -528,72 +478,46 @@ def benchmark_optimizations(
 
     image = cv2.imread(str(IMAGE_PATH))
 
-    onnx_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR)
-
-    def _engine_for_batch(batch: int) -> Path:
-        """Static engine matching a batch size, built on first use."""
-        if batch == 1:
-            path = onnx_path.with_suffix(".engine")
-            source = onnx_path
-        else:
-            source = _export_batch_onnx(model_name, imgsz, batch, onnx_path.parent)
-            path = _engine_path_for_batch(onnx_path, imgsz, batch)
-        if not path.exists():
-            print(f"Building engine for batch {batch}: {path.name}")
-            build_model(
-                onnx=source,
-                output=path,
-                imgsz=imgsz,
-                batch_size=batch,
-                model_name=model_name,
-                opt_level=1,
-                timing_cache=get_timing_cache_path(),
-            )
-        return path
-
-    # Input composition matters as much as the flags. A batch of identically
-    # sized images never exercises the heterogeneous staging path, a single
-    # image never exercises batching at all, and neither exercises a shape
-    # that changes between successive calls, so a grid over flags alone
-    # leaves all three invisible.
-    inputs: dict[str, list] = {
-        "single": [image],
-        "homogeneous8": [cv2.resize(image, (1280, 720))] * 8,
-        "heterogeneous8": [
-            cv2.resize(image, size)
-            for size in [
-                (640, 480),
-                (1280, 720),
-                (800, 600),
-                (1920, 1080),
-                (512, 512),
-                (1024, 768),
-                (640, 640),
-                (1600, 900),
-            ]
-        ],
-        # single-image calls that alternate resolution every iteration; batch
-        # size stays 1, only the shape submitted to the detector changes
-        "resolution-switch": [cv2.resize(image, size) for size in _RESOLUTION_SWITCH_SIZES],
+    # each composition is the list of end2end calls cycled through: a lone image or
+    # batch never exercises heterogeneous staging or a shape that changes per call
+    hetero_sizes = [
+        (640, 480),
+        (1280, 720),
+        (800, 600),
+        (1920, 1080),
+        (512, 512),
+        (1024, 768),
+        (640, 640),
+        (1600, 900),
+    ]
+    calls: dict[str, list[list]] = {
+        "single": [[image]],
+        "homogeneous8": [[cv2.resize(image, (1280, 720))] * 8],
+        "heterogeneous8": [[cv2.resize(image, size) for size in hetero_sizes]],
+        "resolution-switch": [[cv2.resize(image, size)] for size in [(1280, 720), (1920, 1080)]],
     }
 
-    configs: list[dict] = []
-    for prep in ["cpu", "cuda", "trt"]:
-        for cuda_graph in [False, True]:
-            for pagelocked in [False, True]:
-                for unified in [False, True]:
-                    if pagelocked and unified:
-                        continue
-                    for inputs_key in inputs:
-                        configs.append(
-                            {
-                                "preprocessor": prep,
-                                "cuda_graph": cuda_graph,
-                                "pagelocked_mem": pagelocked,
-                                "unified_mem": unified,
-                                "inputs": inputs_key,
-                            }
-                        )
+    # build each engine once; a failed build skips its configs instead of retrying
+    engines: dict[int, Path | Exception] = {}
+    for bs in sorted({len(c[0]) for c in calls.values()}):
+        try:
+            engines[bs] = _engine_for_batch(model_name, imgsz, bs)
+        except Exception as e:  # noqa: BLE001
+            engines[bs] = e
+
+    configs = [
+        {
+            "preprocessor": prep,
+            "cuda_graph": cuda_graph,
+            "pagelocked_mem": pagelocked,
+            "unified_mem": unified,
+            "inputs": inputs_key,
+        }
+        for prep, cuda_graph, pagelocked, unified, inputs_key in itertools.product(
+            ["cpu", "cuda", "trt"], [False, True], [False, True], [False, True], calls
+        )
+        if not (pagelocked and unified)
+    ]
 
     results: list[dict] = []
     print(f"\nBenchmarking {model_name} @ {imgsz}x{imgsz}")
@@ -605,33 +529,26 @@ def benchmark_optimizations(
             f"pl={cfg['pagelocked_mem']} um={cfg['unified_mem']} "
             f"in={cfg['inputs']}"
         )
-        is_resolution_switch = cfg["inputs"] == "resolution-switch"
-        batch = 1 if is_resolution_switch else len(inputs[cfg["inputs"]])
-        try:
-            engine_path = _engine_for_batch(batch)
-        except Exception as e:  # noqa: BLE001
-            print(f"FAILED: {desc} - no engine for batch {batch}: {e}")
+        batch = len(calls[cfg["inputs"]][0])
+        engine_path = engines[batch]
+        if isinstance(engine_path, Exception):
+            print(f"FAILED: {desc} - no engine for batch {batch}: {engine_path}")
             continue
         try:
+            # the timed loop's own warmup runs the composition's real shapes
             detector = Detector(
                 engine_path=engine_path,
-                warmup=True,
-                warmup_iterations=warmup_iters,
+                warmup=False,
                 preprocessor=cfg["preprocessor"],
                 cuda_graph=cfg["cuda_graph"],
                 pagelocked_mem=cfg["pagelocked_mem"],
                 unified_mem=cfg["unified_mem"],
                 verbose=False,
             )
-            if is_resolution_switch:
-                images_cycle = itertools.cycle(inputs["resolution-switch"])
-                exec_fn = lambda: detector.end2end(next(images_cycle))  # noqa: B023
-            else:
-                batch_images = inputs[cfg["inputs"]]
-                exec_fn = lambda imgs=batch_images: detector.end2end(imgs)
+            cycle = itertools.cycle(calls[cfg["inputs"]])
             timings = benchmark_loop(
-                exec_fn,
-                0,
+                lambda d=detector, c=cycle: d.end2end(next(c)),
+                warmup_iters,
                 bench_iters,
                 desc,
             )
@@ -661,7 +578,7 @@ def benchmark_optimizations(
 
     if len(results) >= 2:
         speedup = results[-1]["mean"] / results[0]["mean"] if results[0]["mean"] > 0 else 0
-        print("=" * 90)
+        print("=" * 110)
         print(
             f"Fastest: {results[0]['preprocessor']}, "
             f"inputs={results[0]['inputs']}, "

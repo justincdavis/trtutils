@@ -90,26 +90,29 @@ def cmd_batch(args: argparse.Namespace) -> None:
 
     configs = [(str(bs), args.imgsz, bs) for bs in args.batch_sizes]
 
+    # a stage measures this checkout fresh and leaves the device's batch file alone
+    measured: dict = {}
     for name, enabled in [("trtutils", args.trtutils), ("ultralytics", args.ultralytics)]:
         if not enabled:
             continue
         if name == "ultralytics" and args.model not in ULTRALYTICS_MODELS:
             warnings.warn(f"{args.model} is not a supported ultralytics model")
             continue
-        run_benchmark(
+        result = run_benchmark(
             name,
             args.device,
             args.model,
             args.warmup,
             args.iterations,
             configs=configs,
-            data_subdir="batch",
+            data_subdir="batch" if args.stage is None else None,
             frameworks=BATCH_FRAMEWORKS,
             overwrite=args.overwrite,
         )
+        measured.update(result or {})
 
     # Print summary
-    data = get_data(args.device, "batch", BATCH_FRAMEWORKS)
+    data = get_data(args.device, "batch", BATCH_FRAMEWORKS) if args.stage is None else measured
     print("\n" + "=" * 70)
     print(f"Summary: {args.model} @ {args.imgsz}")
     print(
@@ -142,7 +145,7 @@ def cmd_batch(args: argparse.Namespace) -> None:
                 "batch_sizes": args.batch_sizes,
                 "warmup": args.warmup,
                 "iterations": args.iterations,
-                "data": data,
+                "data": measured,
             },
         )
 
@@ -325,7 +328,7 @@ def main() -> None:
     p.add_argument(
         "--stage",
         default=None,
-        help="Write results to data/perf-series/<device>/stage-<STAGE>.json "
+        help="Measure fresh and write results to data/perf-series/<device>/stage-<STAGE>.json "
         "(tagged with the trtutils git SHA) instead of the normal batch data file.",
     )
     p.set_defaults(func=cmd_batch)

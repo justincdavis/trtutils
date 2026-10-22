@@ -6,12 +6,7 @@ from __future__ import annotations
 import shutil
 from typing import TYPE_CHECKING
 
-from trtutils.download._tools import (
-    handle_batch,
-    handle_dynamic,
-    run_cmd,
-    run_uv_pip_install,
-)
+from trtutils.download._tools import run_cmd, run_uv_pip_install
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -25,9 +20,9 @@ def export_torchvision_classifier(
     model: str,
     opset: int,
     imgsz: int | None = None,
-    batch: int | None = None,
     *,
-    dynamic: bool | None = None,
+    batch: int = 1,
+    dynamic: bool = False,
     no_cache: bool | None = None,  # noqa: ARG001
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,  # noqa: ARG001
@@ -36,10 +31,6 @@ def export_torchvision_classifier(
     _224 = 224
     if imgsz is None:
         imgsz = _224
-    batch = handle_batch(batch, "torchvision classifier")
-    dynamic = handle_dynamic(batch, "torchvision classifier", dynamic=dynamic)
-    # a dynamic export leaves the batch axis symbolic; otherwise the graph is
-    # pinned to the traced batch so --batch means what it says
     dynamic_axes = '{"input": {0: "batch_size"}, "output": {0: "batch_size"}}' if dynamic else "None"
     run_uv_pip_install(
         directory,

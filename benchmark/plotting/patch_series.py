@@ -17,7 +17,6 @@ section (``optimize`` / ``batch``) of that file.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import matplotlib
@@ -27,16 +26,17 @@ import matplotlib.pyplot as plt
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-_PLOT_DIR = Path(__file__).resolve().parent.parent / "plots"
+    from pathlib import Path
 
 PREPROCESSORS = ("cpu", "cuda", "trt")
-COMPOSITIONS = ("homogeneous8", "heterogeneous8", "resolution-switch")
+# composition -> line style in the composition panel
+COMPOSITIONS = {"homogeneous8": "-", "heterogeneous8": "--", "resolution-switch": ":"}
 # the raw tensorrt path runs the same engine without the library in the
 # loop, so it is a control for machine noise and should stay flat
 BATCH_FRAMEWORK = "trtutils(graph)"
 BATCH_CONTROL = "tensorrt(graph)"
 PREP_COLORS = {"cpu": plt.cm.tab10(0), "cuda": plt.cm.tab10(1), "trt": plt.cm.tab10(2)}
+_LINE = {"marker": "o", "markersize": 3.5, "linewidth": 1.6}
 
 
 def load_stages(results_dir: Path) -> list[dict]:
@@ -115,9 +115,8 @@ def _annotate_series(
 
 def plot_patch_series(
     results_dir: Path,
-    output: Path | None = None,
+    output: Path,
     *,
-    batch_model: str = "yolov10n",
     series_boundaries: Sequence[tuple[float, str]] = (),
 ) -> Path:
     """
@@ -128,10 +127,8 @@ def plot_patch_series(
     results_dir : Path
         Directory of stage-NN.json result files, e.g.
         data/perf-series/<device>.
-    output : Path, optional
-        Where to write the PNG. Defaults to plots/patch_series.png.
-    batch_model : str
-        The model to use for the batch-throughput panel.
+    output : Path
+        Where to write the PNG.
     series_boundaries : Sequence[tuple[float, str]]
         (stage index - 0.5, label) pairs marking boundaries between
         independently developed patch series. Empty by default.
@@ -164,9 +161,7 @@ def plot_patch_series(
                 ax_single.plot(
                     xs,
                     ys,
-                    marker="o",
-                    markersize=3.5,
-                    linewidth=1.6,
+                    **_LINE,
                     color=PREP_COLORS[prep],
                     alpha=alpha,
                     label=f"{prep}{' (graph)' if cuda_graph else ''}",
@@ -175,18 +170,15 @@ def plot_patch_series(
     ax_single.set_title("single image end2end — lower is better", fontsize=10, loc="left")
 
     # --- panel 2: composition throughput, graph on ---------------------------
-    styles = {"homogeneous8": "-", "heterogeneous8": "--", "resolution-switch": ":"}
     for prep in PREPROCESSORS:
-        for comp in COMPOSITIONS:
+        for comp, linestyle in COMPOSITIONS.items():
             xs, ys = _optimize_series(stages, prep, comp, "throughput")
             if xs:
                 ax_comp.plot(
                     xs,
                     ys,
-                    marker="o",
-                    markersize=3.5,
-                    linewidth=1.6,
-                    linestyle=styles[comp],
+                    **_LINE,
+                    linestyle=linestyle,
                     color=PREP_COLORS[prep],
                     label=f"{prep} {comp}",
                 )
@@ -194,6 +186,7 @@ def plot_patch_series(
     ax_comp.set_title("input compositions (graph) — higher is better", fontsize=10, loc="left")
 
     # --- panel 3: batch sweep ------------------------------------------------
+    batch_model = next((s["batch"]["model"] for s in reversed(stages) if "batch" in s), None)
     batch_keys = sorted(
         {
             k
@@ -207,9 +200,7 @@ def plot_patch_series(
         shade = cmap(idx / max(len(batch_keys) - 1, 1))
         xs, ys = _batch_series(stages, BATCH_FRAMEWORK, batch_model, key)
         if xs:
-            ax_batch.plot(
-                xs, ys, marker="o", markersize=3.5, linewidth=1.6, color=shade, label=f"batch {key}"
-            )
+            ax_batch.plot(xs, ys, **_LINE, color=shade, label=f"batch {key}")
         xs, ys = _batch_series(stages, BATCH_CONTROL, batch_model, key)
         if xs:
             ax_batch.plot(xs, ys, linestyle="--", linewidth=1.0, color=shade, alpha=0.35)
@@ -225,13 +216,13 @@ def plot_patch_series(
 
     for ax in axes:
         ax.grid(visible=True, alpha=0.25)
-        ax.legend(fontsize=7, ncol=3, loc="best", framealpha=0.85)
+        if ax.get_legend_handles_labels()[0]:
+            ax.legend(fontsize=7, ncol=3, loc="best", framealpha=0.85)
         _annotate_series(ax, len(stages), series_boundaries)
 
     fig.suptitle("trtutils perf series — per-stage latency and throughput", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
 
-    output = output or (_PLOT_DIR / "patch_series.png")
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=150)
     plt.close(fig)

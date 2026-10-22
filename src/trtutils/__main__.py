@@ -1243,8 +1243,8 @@ def _download(args: SimpleNamespace) -> None:
         args.output,
         args.opset,
         args.imgsz,
-        args.batch,
         requirements_export=args.requirements_export,
+        batch=args.batch,
         dynamic=args.dynamic,
         simplify=simplify_value,
         verbose=args.verbose,
@@ -2008,8 +2008,10 @@ def _main() -> None:
     download_parser.add_argument(
         "--dynamic",
         action="store_true",
+        default=None,
         help="Export with a symbolic batch dimension so one ONNX can build "
-        "engines for a range of batch sizes. Cannot be combined with --batch.",
+        "engines for a range of batch sizes. Cannot be combined with --batch. "
+        "Torchvision classifiers export dynamic by default.",
     )
     download_parser.add_argument(
         "--requirements_export",

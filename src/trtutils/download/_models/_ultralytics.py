@@ -10,8 +10,6 @@ from trtutils._log import LOG
 from trtutils.download._tools import (
     _640,
     get_weights_cache_dir,
-    handle_batch,
-    handle_dynamic,
     handle_imgsz,
     run_cmd,
     run_uv_pip_install,
@@ -29,9 +27,9 @@ def export_ultralytics(
     model: str,
     opset: int,
     imgsz: int | None = None,
-    batch: int | None = None,
     *,
-    dynamic: bool | None = None,
+    batch: int = 1,
+    dynamic: bool = False,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,
@@ -42,8 +40,6 @@ def export_ultralytics(
             "Ultralytics is a AGPL-3.0 and commercial licensed model, be aware of license restrictions"
         )
     imgsz = handle_imgsz(imgsz, _640, "Ultralytics")
-    batch = handle_batch(batch, "Ultralytics")
-    dynamic = handle_dynamic(batch, "Ultralytics", dynamic=dynamic)
     run_uv_pip_install(
         directory,
         bin_path.parent,

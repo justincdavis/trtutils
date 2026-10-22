@@ -197,10 +197,30 @@ Output: `plots/{device}/optimizations.png`
 Run optimization benchmarks to generate data for `--optimizations` plots (requires `--device`):
 
 ```bash
-python benchmark/optimizations.py --device MyDevice --model yolov10n
+python benchmark/run.py optimize --device MyDevice --model yolov10n
 ```
 
+The grid covers preprocessor x CUDA graph x memory mode x input composition: `single`,
+`homogeneous8` (8 images at 720p), `heterogeneous8` (8 distinct resolutions), and
+`resolution-switch` (single images alternating 720p/1080p each call). Batch compositions
+run on a static batch-8 engine whose ONNX is exported with `trtutils download --batch`.
 Results are saved to `data/optimizations/{device}.json`.
+
+### Perf Series
+
+To compare library revisions with the harness held constant, record each revision as a stage:
+
+```bash
+python benchmark/run.py optimize --device MyDevice --stage 01
+python benchmark/run.py batch --device MyDevice --trtutils --stage 01
+python benchmark/run.py plot --patch-series --device MyDevice
+```
+
+Each command writes its section of `data/perf-series/{device}/stage-{STAGE}.json`, tagged with
+the trtutils git SHA. A staged run always measures fresh and leaves `data/batch/` and
+`data/optimizations/` untouched. Stages
+plot in name order, so zero-pad them; `--boundary 'POS:LABEL'` marks series boundaries.
+Output: `plots/patch_series_{device}.png`.
 
 ## Notes
 

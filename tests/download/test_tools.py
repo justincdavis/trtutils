@@ -1,73 +1,47 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/download/_tools.py -- handle_batch and handle_dynamic."""
+"""Tests for src/trtutils/download/_tools.py -- handle_batch."""
 
 from __future__ import annotations
 
 import pytest
 
-from trtutils.download._tools import handle_batch, handle_dynamic
+from trtutils.download._tools import handle_batch
 
 pytestmark = pytest.mark.cpu
 
 
-def test_handle_batch_none_defaults_to_one() -> None:
-    """A None batch is treated as batch 1."""
-    assert handle_batch(None, "model") == 1
+@pytest.mark.parametrize(
+    ("batch", "dynamic", "supported", "expected"),
+    [
+        pytest.param(None, None, True, (1, False), id="defaults"),
+        pytest.param(None, None, False, (1, False), id="defaults-unsupported"),
+        pytest.param(1, False, False, (1, False), id="batch-1-unsupported"),
+        pytest.param(8, None, True, (8, False), id="batch-8"),
+        pytest.param(8, False, True, (8, False), id="batch-8-static"),
+        pytest.param(None, True, True, (1, True), id="dynamic"),
+        pytest.param(1, True, True, (1, True), id="dynamic-batch-1"),
+    ],
+)
+def test_handle_batch(batch, dynamic, supported, expected) -> None:
+    """None means batch 1 / static; supported exporters accept any batch or dynamic."""
+    assert handle_batch(batch, "fam", dynamic=dynamic, supported=supported) == expected
 
 
-def test_handle_batch_invalid_raises_value_error() -> None:
-    """A batch size of 0 is rejected."""
-    with pytest.raises(ValueError, match="positive"):
-        handle_batch(0, "model")
-
-
-def test_handle_batch_negative_raises_value_error() -> None:
-    """A negative batch size is rejected."""
-    with pytest.raises(ValueError, match="positive"):
-        handle_batch(-1, "model")
-
-
-def test_handle_batch_unsupported_above_one_raises() -> None:
-    """An exporter that cannot honor batch > 1 raises NotImplementedError."""
-    with pytest.raises(NotImplementedError, match="model"):
-        handle_batch(2, "model", supported=False)
-
-
-def test_handle_batch_unsupported_at_one_passes() -> None:
-    """Batch 1 is always fine, even for an unsupported exporter."""
-    assert handle_batch(1, "model", supported=False) == 1
-
-
-def test_handle_batch_supported_passes_through() -> None:
-    """A supported exporter returns the requested batch size unchanged."""
-    assert handle_batch(8, "model", supported=True) == 8
-
-
-def test_handle_dynamic_falsy_returns_false() -> None:
-    """A falsy dynamic flag (None or False) returns False."""
-    assert handle_dynamic(None, "model", dynamic=None) is False
-    assert handle_dynamic(None, "model", dynamic=False) is False
-
-
-def test_handle_dynamic_with_fixed_batch_raises_value_error() -> None:
-    """Requesting dynamic export together with a fixed batch > 1 is rejected."""
-    with pytest.raises(ValueError, match="model"):
-        handle_dynamic(4, "model", dynamic=True)
-
-
-def test_handle_dynamic_batch_one_is_fine() -> None:
-    """Dynamic export combined with batch 1 (or None) is allowed."""
-    assert handle_dynamic(1, "model", dynamic=True) is True
-
-
-def test_handle_dynamic_unsupported_raises() -> None:
-    """An exporter that cannot honor dynamic export raises NotImplementedError."""
-    with pytest.raises(NotImplementedError, match="model"):
-        handle_dynamic(None, "model", dynamic=True, supported=False)
-
-
-def test_handle_dynamic_supported_passes_through() -> None:
-    """A supported exporter returns True when dynamic export is requested."""
-    assert handle_dynamic(None, "model", dynamic=True, supported=True) is True
+@pytest.mark.parametrize(
+    ("batch", "dynamic", "supported", "error", "match"),
+    [
+        pytest.param(0, None, True, ValueError, "positive", id="zero"),
+        pytest.param(-1, None, True, ValueError, "positive", id="negative"),
+        pytest.param(0, None, False, ValueError, "positive", id="zero-unsupported"),
+        pytest.param(4, True, True, ValueError, "fam", id="dynamic-with-batch"),
+        pytest.param(2, None, False, NotImplementedError, "fam", id="batch-unsupported"),
+        pytest.param(None, True, False, NotImplementedError, "fam", id="dynamic-unsupported"),
+        pytest.param(4, True, False, NotImplementedError, "fam", id="both-unsupported"),
+    ],
+)
+def test_handle_batch_rejects(batch, dynamic, supported, error, match) -> None:
+    """Non-positive batches, dynamic plus a batch, or anything above 1 on an unsupported exporter."""
+    with pytest.raises(error, match=match):
+        handle_batch(batch, "fam", dynamic=dynamic, supported=supported)

@@ -31,10 +31,13 @@ Added
   came preprocessed), ``ImageModel.infer`` runs the engine on them and returns the raw
   outputs (``ImageModel.infer_profile`` times it), and ``ImageModel.get_preprocessor(method)``
   returns the preprocessor for a method, creating it on first use
-* ``download``/``download_model`` and the ``download`` CLI subcommand gain ``--batch``
-  and ``--dynamic`` for exporting a model at a fixed batch size or with a symbolic
-  batch dimension; honored by the ultralytics, YOLOv10/12/13, and torchvision
-  exporters, and rejected with ``NotImplementedError`` elsewhere
+* ``download``/``download_model`` gain keyword-only ``batch`` and ``dynamic`` (CLI
+  ``--batch`` / ``--dynamic``) for exporting at a fixed batch size or with a symbolic
+  batch dimension (ultralytics and YOLOv10/12/13 also leave height and width symbolic);
+  honored by the ultralytics, YOLOv10/12/13, and torchvision exporters and rejected
+  with ``NotImplementedError`` elsewhere. ``dynamic`` cannot be combined with a batch
+  above 1 or ``make_static``. Torchvision classifiers still export batch-dynamic by
+  default; passing ``batch`` (or ``dynamic=False``) pins a static batch
 * Benchmark harness: ``optimize`` grid gains an input-composition axis (single /
   homogeneous batch / heterogeneous batch / alternating-resolution singles) with a
   static engine built per batch size; ``optimize``/``batch`` gain ``--stage`` to record
