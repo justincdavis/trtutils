@@ -13,6 +13,7 @@ import pytest
 from trtutils import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils.core._bindings import Binding
+from trtutils.core._graph import CUDAGraph
 
 from .conftest import ENGINE_PATHS
 
@@ -24,18 +25,12 @@ def test_init_default_args(engine_path) -> None:
     del eng
 
 
-@pytest.mark.parametrize(
-    ("warmup", "expected"),
-    [
-        pytest.param(True, True, id="warmup-true"),
-        pytest.param(False, False, id="warmup-false"),
-        pytest.param(None, None, id="warmup-none"),
-    ],
-)
-def test_init_warmup(make_engine, warmup, expected) -> None:
-    """_warmup attribute matches the constructor argument."""
+@pytest.mark.parametrize("warmup", [True, False, None])
+def test_init_warmup(make_engine, warmup) -> None:
+    """Warmup executes the engine only when requested (seen by the CUDA graph cache)."""
     eng = make_engine(warmup=warmup, warmup_iterations=3)
-    assert eng._warmup is expected
+    executed = bool(eng._cuda_graphs or eng._seen_configs)
+    assert executed is (bool(warmup) and eng._cuda_graph_enabled)
 
 
 @pytest.mark.cuda_graph
@@ -62,7 +57,6 @@ def test_cuda_graph_init(make_engine, backend, cuda_graph, expect_enabled) -> No
             assert eng._cuda_graph_enabled is False
     elif expect_enabled:
         assert eng._cuda_graph_enabled is True
-        assert eng._cuda_graph is not None
     else:
         assert eng._cuda_graph_enabled is False
 
@@ -138,8 +132,7 @@ def test_del_with_cuda_graph(make_engine) -> None:
         backend="async_v3",
         cuda_graph=True,
     )
-    assert eng._cuda_graph is not None
-    assert eng._cuda_graph.is_captured is True
+    assert eng._current_graph() is not None
 
 
 def test_double_del_no_error(make_engine) -> None:
@@ -157,16 +150,18 @@ def test_del_deletes_context_engine(make_engine) -> None:
     assert not hasattr(eng, "_engine")
 
 
-def test_using_engine_tensors_flag_default(engine) -> None:
-    """_using_engine_tensors is True by default after init."""
-    assert engine._using_engine_tensors is True
+def test_engine_bindings_bound_by_default(engine) -> None:
+    """After init the context points at the engine's own bindings at their full shapes."""
+    assert engine._input_addresses == [b.allocation for b in engine.input_bindings]
+    assert engine.active_input_shapes == [tuple(b.shape) for b in engine.input_bindings]
+    assert engine.active_output_shapes == [tuple(b.shape) for b in engine.output_bindings]
 
 
 def test_async_v2_backend_init(make_engine) -> None:
     """backend='async_v2' sets _async_v3=False and disables CUDA graph."""
     eng = make_engine(backend="async_v2")
     assert eng._async_v3 is False
-    assert eng._cuda_graph is None
+    assert eng._cuda_graph_enabled is False
 
 
 def test_async_v2_backend_execute(make_engine) -> None:
@@ -187,20 +182,25 @@ def test_graph_capture_failure_falls_through(make_engine) -> None:
         pytest.skip("async_v3 required for CUDA graph")
 
     eng = make_engine(backend="async_v3", cuda_graph=True)
+    data = eng.get_random_input()
+    original_stop = CUDAGraph.stop
 
-    original_stop = eng._cuda_graph.stop
-    cuda_graph_ref = eng._cuda_graph
-
-    def failing_stop():
-        original_stop()
-        cuda_graph_ref._graph_exec = None
-        cuda_graph_ref._graph = None
+    def failing_stop(graph: CUDAGraph) -> bool:
+        original_stop(graph)
+        graph._graph_exec = None
+        graph._graph = None
         return True
 
-    with patch.object(eng._cuda_graph, "stop", side_effect=failing_stop):
-        data = eng.get_random_input()
-        with pytest.raises(RuntimeError, match="graph capture failed"):
-            eng.execute(data)
+    with patch.object(CUDAGraph, "stop", failing_stop):
+        expected = eng.execute(data)  # first sighting of the configuration: no capture yet
+        # the capturing call already ran for real, so it still returns its outputs
+        outputs = eng.execute(data)
+
+    # graphs are disabled after a failed capture; execution carries on without them
+    assert eng._cuda_graph_enabled is False
+    for out, exp in zip(outputs, expected):
+        np.testing.assert_array_equal(out, exp)
+    assert isinstance(eng.execute(data), list)
 
 
 @pytest.mark.parametrize("engine_path", ENGINE_PATHS)

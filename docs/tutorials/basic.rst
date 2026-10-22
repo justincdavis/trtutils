@@ -16,7 +16,7 @@ An example of using :py:class:`~trtutils.TRTEngine` is given below:
 
 .. code-block:: python
 
-    from trtutils import TRTEngine
+    from trtutils import Buffer, TRTEngine
 
     engine = TRTEngine("engine.engine")  # pass you compiled TensorRT engine file
 
@@ -24,16 +24,30 @@ An example of using :py:class:`~trtutils.TRTEngine` is given below:
     engine.mock_execute()
 
     # or with real data
-    data = read_data()
-    outputs = engine([data])
+    data = read_data()  # a C-contiguous np.ndarray
+    outputs = engine([Buffer.wrap(data)])
 
-This class implements a barebones interface over a compiled TensorRT engine.
-All data inputted is required to be formatted as a list of NumPy arrays, and are
-expected to be of the correct shape and size (or risk a segmentation fault).
+Every input is a :py:class:`~trtutils.Buffer`: one contiguous, typed allocation
+on the host or the device. :py:meth:`~trtutils.Buffer.wrap` views existing data
+without copying it - a numpy array, another Buffer, or any object exposing
+``__cuda_array_interface__`` (CuPy, PyTorch, Numba, ...). Device Buffers are read
+by TensorRT in place; host Buffers are copied to the device first.
 
-The format and datatype of inputs can be acquired from TRTEngine directly to ensure
-that inputs are of the correct form. But, do note that inputs are not checked against
-these properties automatically since that could incur large overhead among other issues.
+Because a Buffer carries its shape and dtype, the engine checks each input
+before running: the dtype, the rank, every static dimension, and the optimization
+profile bounds of every dynamic dimension. A dynamic engine runs at exactly the
+submitted shape and returns outputs of the matching shape.
+
+.. code-block:: python
+
+    from trtutils import Buffer, MemoryLocation
+
+    # a device Buffer, uploaded once and reused across calls
+    device_input = Buffer.from_array(data, MemoryLocation.DEVICE)
+    outputs = engine([device_input])
+
+    # CuPy / PyTorch tensors are wrapped without a copy
+    outputs = engine([Buffer.wrap(torch_tensor)])
 
 .. code-block:: python
 
@@ -52,7 +66,7 @@ for itself to perform inference on. This can be accessed via:
 
 .. code-block:: python
 
-    rand_data = engine.get_random_input()
+    rand_data = engine.get_random_input()  # a list of host Buffers
     for input_data in rand_data:
         print(input_data.shape, input_data.dtype)
     output = engine(rand_data)

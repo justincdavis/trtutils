@@ -35,6 +35,10 @@ Classes
 -------
 :class:`BenchmarkResult`
     A dataclass for storing profiling information from benchmarking engines.
+:class:`Buffer`
+    One contiguous, typed allocation on the host or device; the TRTEngine input type.
+:class:`MemoryLocation`
+    Where a Buffer resides: host or device.
 :class:`Metric`
     A dataclass storing specific metric information from benchmarking.
 :class:`TRTEngine`
@@ -135,6 +139,7 @@ from ._benchmark import BenchmarkResult, Metric, benchmark_engine, benchmark_eng
 from ._engine import TRTEngine
 from ._profile import profile_engine
 from .builder import build_engine
+from .core._buffer import Buffer, MemoryLocation
 from .core._device import Device, get_device, set_device
 from .inspect import inspect_engine
 from .trtexec import find_trtexec, run_trtexec
@@ -146,7 +151,9 @@ __all__ = [
     "LOG",
     "NVTX",
     "BenchmarkResult",
+    "Buffer",
     "Device",
+    "MemoryLocation",
     "Metric",
     "TRTEngine",
     "benchmark_engine",

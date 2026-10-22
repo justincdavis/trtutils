@@ -4,8 +4,6 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-import contextlib
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -13,45 +11,301 @@ import nvtx
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
-from trtutils.compat._libs import cudart, trt
+from trtutils.compat._libs import trt
 
-from ._cuda import cuda_call
-from ._memory import allocate_pinned_memory, cuda_malloc, get_ptr_pair
+from ._buffer import DEVICE_ALIGNMENT, Buffer, MemoryLocation
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+    from trtutils.compat._libs import cudart
 
-@dataclass
+
+def _prefix(buffer: Buffer, shape: tuple[int, ...]) -> Buffer:
+    """View the leading elements of a buffer, reusing the buffer itself at its full shape."""
+    return buffer if shape == buffer.shape else buffer.view(shape)
+
+
 class Binding:
-    """Small wrapper for a host/device allocation pair."""
+    """
+    A TensorRT I/O tensor: its metadata plus a host and a device :class:`Buffer`.
 
-    index: int
-    name: str
-    dtype: np.dtype
-    shape: list[int]
-    is_input: bool
-    allocation: int
-    host_allocation: np.ndarray
-    tensor_format: trt.TensorFormat
-    pagelocked_mem: bool
-    unified_mem: bool
+    Both buffers are allocated at the tensor's max (profile) shape. With
+    unified memory the device buffer is the device alias of the mapped host
+    buffer, so there is a single allocation and no copies are needed.
+    """
+
+    def __init__(
+        self: Self,
+        index: int,
+        name: str,
+        dtype: np.dtype,
+        shape: list[int],
+        *,
+        is_input: bool,
+        host: Buffer,
+        device: Buffer,
+        tensor_format: trt.TensorFormat = trt.TensorFormat.LINEAR,
+        min_shape: tuple[int, ...] | list[int] | None = None,
+    ) -> None:
+        """
+        Create a binding from a host/device buffer pair.
+
+        Parameters
+        ----------
+        index : int
+            The index of the tensor in the engine.
+        name : str
+            The name of the tensor.
+        dtype : np.dtype
+            The datatype of the tensor.
+        shape : list[int]
+            The allocated (max) shape of the tensor.
+        is_input : bool
+            Whether the tensor is an engine input.
+        host : Buffer
+            The host buffer.
+        device : Buffer
+            The device buffer, or the device alias of a mapped host buffer.
+        tensor_format : trt.TensorFormat, optional
+            The format of the tensor.
+        min_shape : tuple[int, ...] | list[int], optional
+            The smallest shape the tensor accepts (the min profile shape of a
+            dynamic input). By default None, which means the allocated shape.
+
+        """
+        self._index = index
+        self._name = name
+        self._dtype = np.dtype(dtype)
+        self._shape = tuple(int(d) for d in shape)
+        self._is_input = is_input
+        self._host = host
+        self._device = device
+        self._tensor_format = tensor_format
+        self._min_shape = self._shape if min_shape is None else tuple(int(d) for d in min_shape)
+        # the last shape check() accepted, so a repeated shape skips the bounds test
+        self._checked_shape = self._shape
+        # (host, device) views of the leading elements for the last shape
+        # staged or fetched, which stays the same from call to call
+        self._view_shape = self._shape
+        self._view_pair = (host, device)
+
+    @property
+    def index(self: Self) -> int:
+        """The index of the tensor in the engine."""
+        return self._index
+
+    @property
+    def name(self: Self) -> str:
+        """The name of the tensor."""
+        return self._name
+
+    @property
+    def dtype(self: Self) -> np.dtype:
+        """The datatype of the tensor."""
+        return self._dtype
+
+    @property
+    def shape(self: Self) -> list[int]:
+        """The allocated (max) shape of the tensor, as a new list."""
+        return list(self._shape)
+
+    @property
+    def min_shape(self: Self) -> tuple[int, ...]:
+        """The smallest shape the tensor accepts; equal to the allocated shape when static."""
+        return self._min_shape
+
+    @property
+    def max_shape(self: Self) -> tuple[int, ...]:
+        """The largest shape the tensor accepts, which is its allocated shape."""
+        return self._shape
+
+    def check(self: Self, buffer: Buffer, engine: str) -> None:
+        """
+        Check that a Buffer can be bound to the tensor: same dtype, shape within bounds.
+
+        Parameters
+        ----------
+        buffer : Buffer
+            The data to check.
+        engine : str
+            The name of the engine, for the error message.
+
+        Raises
+        ------
+        ValueError
+            If the dtype differs or the shape is outside the min/max bounds.
+
+        """
+        if buffer.dtype != self._dtype:
+            err_msg = (
+                f"Input '{self._name}' of engine '{engine}' expects dtype "
+                f"{self._dtype}, got {buffer.dtype}."
+            )
+            raise ValueError(err_msg)
+        shape = buffer.shape
+        if shape == self._checked_shape:
+            return
+        in_bounds = len(shape) == len(self._shape) and all(
+            lo <= dim <= hi for dim, lo, hi in zip(shape, self._min_shape, self._shape)
+        )
+        if not in_bounds:
+            if self._min_shape == self._shape:
+                expected = f"exactly {self._shape}"
+            else:
+                expected = f"between {self._min_shape} and {self._shape}"
+            err_msg = (
+                f"Input '{self._name}' of engine '{engine}' got shape {shape}, expected {expected}."
+            )
+            raise ValueError(err_msg)
+        self._checked_shape = shape
+
+    @property
+    def is_input(self: Self) -> bool:
+        """Whether the tensor is an engine input."""
+        return self._is_input
+
+    @property
+    def host(self: Self) -> Buffer:
+        """The host buffer, at the allocated shape."""
+        return self._host
+
+    @property
+    def device(self: Self) -> Buffer:
+        """The device buffer (the device alias of the host buffer with unified memory)."""
+        return self._device
+
+    @property
+    def tensor_format(self: Self) -> trt.TensorFormat:
+        """The format of the tensor."""
+        return self._tensor_format
+
+    @property
+    def allocation(self: Self) -> int:
+        """The device address of the binding."""
+        return self._device.ptr
+
+    @property
+    def host_allocation(self: Self) -> np.ndarray:
+        """The host array of the binding, at the allocated shape."""
+        return self._host.array
+
+    @property
+    def pagelocked_mem(self: Self) -> bool:
+        """Whether the host buffer is pagelocked."""
+        return self._host.pinned
+
+    @property
+    def unified_mem(self: Self) -> bool:
+        """Whether the host buffer is mapped into the device (one shared allocation)."""
+        return self._host.mapped
+
+    def bind(self: Self, src: Buffer, stream: cudart.cudaStream_t | None = None) -> Buffer:
+        """
+        Get device memory TensorRT can read ``src`` from, staging into the binding when needed.
+
+        Device Buffers and mapped host Buffers at 256-byte aligned addresses
+        are returned as is; anything else is copied in with :meth:`stage`.
+
+        Parameters
+        ----------
+        src : Buffer
+            The data, on the host or the device.
+        stream : cudart.cudaStream_t, optional
+            The stream to enqueue a staging copy on.
+
+        Returns
+        -------
+        Buffer
+            ``src`` itself, or the device view of the staged data.
+
+        """
+        if src.device_visible and src.device_ptr % DEVICE_ALIGNMENT == 0:
+            return src
+        return self.stage(src, stream)
+
+    def stage(self: Self, src: Buffer, stream: cudart.cudaStream_t | None = None) -> Buffer:
+        """
+        Copy data into the device-visible memory of the binding.
+
+        The data occupies the leading elements of the allocation, which is
+        the layout TensorRT expects for a tensor smaller than the max shape.
+
+        Parameters
+        ----------
+        src : Buffer
+            The data to copy, on the host or the device.
+        stream : cudart.cudaStream_t, optional
+            The stream to enqueue the copy on.
+
+        Returns
+        -------
+        Buffer
+            The device view of the staged data, shaped like ``src``.
+
+        """
+        # with unified memory the host buffer *is* the device memory, so a
+        # host source is a plain memcpy on the CPU
+        host, device = self._views(src.shape)
+        (host if self.unified_mem else device).copy_from(src, stream)
+        return device
+
+    def fetch(
+        self: Self,
+        shape: tuple[int, ...] | list[int] | None = None,
+        stream: cudart.cudaStream_t | None = None,
+    ) -> Buffer:
+        """
+        Copy the leading ``shape`` elements of the device memory to the host buffer.
+
+        Parameters
+        ----------
+        shape : tuple[int, ...] | list[int], optional
+            The shape of the data to fetch. Defaults to the allocated shape.
+        stream : cudart.cudaStream_t, optional
+            The stream to enqueue the copy on. The caller must synchronize
+            it before reading the result.
+
+        Returns
+        -------
+        Buffer
+            The host view holding the data.
+
+        """
+        host, device = self._views(tuple(shape) if shape is not None else self._shape)
+        if not self.unified_mem:
+            host.copy_from(device, stream)
+        return host
+
+    def _views(self: Self, shape: tuple[int, ...]) -> tuple[Buffer, Buffer]:
+        if shape != self._view_shape:
+            self._view_pair = (_prefix(self._host, shape), _prefix(self._device, shape))
+            self._view_shape = shape
+        return self._view_pair
 
     def free(self: Self) -> None:
-        """Free the memory of the binding."""
-        if self.pagelocked_mem:
-            cuda_call(cudart.cudaFreeHost(self.host_allocation))
-            # unified pagelocked memory maps a host allocation to a device-visible alias pointer;
-            # only the host allocation should be freed.
-            if not self.unified_mem:
-                cuda_call(cudart.cudaFree(self.allocation))
-            return
-        cuda_call(cudart.cudaFree(self.allocation))
+        """Release the binding's buffers."""
+        self._host.free()
+        self._device.free()
+        # cached views would otherwise keep the memory alive
+        self._view_shape = self._shape
+        self._view_pair = (self._host, self._device)
 
-    def __del__(self: Self) -> None:
-        # potentially already had free called on it previously
-        with contextlib.suppress(RuntimeError):
-            self.free()
+    def __repr__(self: Self) -> str:
+        """
+        Get a string representation of the binding.
+
+        Returns
+        -------
+        str
+            The representation.
+
+        """
+        kind = "input" if self._is_input else "output"
+        return (
+            f"Binding({self._index}, '{self._name}', {kind}, "
+            f"shape={list(self._shape)}, dtype={self._dtype})"
+        )
 
 
 def create_binding(
@@ -64,6 +318,7 @@ def create_binding(
     is_input: bool | None = None,
     pagelocked_mem: bool | None = None,
     unified_mem: bool | None = None,
+    min_shape: tuple[int, ...] | None = None,
 ) -> Binding:
     """
     Create a binding for a TensorRT engine.
@@ -71,7 +326,7 @@ def create_binding(
     Parameters
     ----------
     array : np.ndarray
-        The array to use for the binding.
+        The array whose shape and dtype define the binding.
     bind_id : int, optional
         The index of the binding.
     name : str, optional
@@ -79,7 +334,7 @@ def create_binding(
     tensor_format : trt.TensorFormat, optional
         The format of the tensor.
     use_array_data : bool, optional
-        Whether to use the data from the array for the binding.
+        Whether to copy the data from the array into the host buffer.
         By default None, which means the data will not be copied.
     is_input : bool, optional
         Whether the binding is an input or output.
@@ -89,6 +344,9 @@ def create_binding(
     unified_mem : bool, optional
         Whether or not the system has unified memory.
         If True, use cudaHostAllocMapped to take advantage of unified memory.
+    min_shape : tuple[int, ...], optional
+        The smallest shape the tensor accepts. By default None, which means
+        the shape of ``array``.
 
     Returns
     -------
@@ -97,41 +355,32 @@ def create_binding(
 
     """
     pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+    shape = tuple(array.shape)
 
-    # info from the np.ndarray
-    shape = array.shape
-    dtype = array.dtype
-    size = array.itemsize
-    for s in shape:
-        size *= s
-
-    # allocate host and device memory
     if pagelocked_mem and unified_mem:
-        host_allocation = allocate_pinned_memory(size, dtype, tuple(shape), unified_mem=unified_mem)
-        _, device_allocation = get_ptr_pair(host_allocation)
+        host = Buffer.empty(shape, array.dtype, MemoryLocation.HOST, pinned=True, mapped=True)
+        # the device alias holds the host array (and through it the pinned
+        # allocation), so it stays valid independently of the host Buffer
+        device = Buffer.from_ptr(
+            host.device_ptr, shape, array.dtype, MemoryLocation.DEVICE, owner=host.array
+        )
     else:
-        device_allocation = cuda_malloc(size)
-        if pagelocked_mem:
-            host_allocation = allocate_pinned_memory(size, dtype, tuple(shape))
-        else:
-            host_allocation = np.zeros(tuple(shape), dtype=dtype)
+        host = Buffer.empty(shape, array.dtype, MemoryLocation.HOST, pinned=pagelocked_mem)
+        device = Buffer.empty(shape, array.dtype, MemoryLocation.DEVICE)
 
-    # copy the data from the host array to the host allocation
     if use_array_data:
-        np.copyto(host_allocation, array)
+        np.copyto(host.array, array)
 
-    # make the binding
     return Binding(
         bind_id,
         name,
-        dtype,
+        array.dtype,
         list(shape),
-        bool(is_input),
-        device_allocation,
-        host_allocation,
-        tensor_format,
-        pagelocked_mem,
-        bool(unified_mem),
+        is_input=bool(is_input),
+        host=host,
+        device=device,
+        tensor_format=tensor_format,
+        min_shape=min_shape,
     )
 
 
@@ -198,50 +447,40 @@ def allocate_bindings(
     for i in num_tensors:
         if FLAGS.TRT_10:
             name = engine.get_tensor_name(i)
-            is_input = False
-            if engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
-                is_input = True
+            is_input = engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT
             dtype = np.dtype(trt.nptype(engine.get_tensor_dtype(name)))
             shape = context.get_tensor_shape(name)
             data_format = engine.get_tensor_format(name)
-            if is_input and shape[0] < 0:
-                if not engine.num_optimization_profiles > 0:
-                    err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()
-                    raise RuntimeError(err_msg)
-                profile_shape = engine.get_tensor_profile_shape(name, 0)
-                # ensure that profile shape is min,opt,max
-                if len(profile_shape) != correct_profile_shape:
-                    err_msg = f"Profile shape for tensor '{name}' has {len(profile_shape)} elements, expected {correct_profile_shape}"
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()
-                    raise RuntimeError(err_msg)
-                # Set the *max* profile as binding shape
-                context.set_input_shape(name, profile_shape[2])
-                shape = context.get_tensor_shape(name)
         else:
-            is_input = False
-            if engine.binding_is_input(i):
-                is_input = True
+            is_input = bool(engine.binding_is_input(i))
             name = engine.get_binding_name(i)
             dtype = np.dtype(trt.nptype(engine.get_binding_dtype(i)))
             shape = context.get_binding_shape(i)
             data_format = engine.get_binding_format(i)
-            if is_input and shape[0] < 0:
-                if not engine.num_optimization_profiles > 0:
-                    err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()
-                    raise RuntimeError(err_msg)
+
+        min_shape: tuple[int, ...] | None = None
+        if is_input and any(dim < 0 for dim in shape):
+            if not engine.num_optimization_profiles > 0:
+                err_msg = "No optimization profiles found. Ensure that the engine has at least one optimization profile."
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()
+                raise RuntimeError(err_msg)
+            if FLAGS.TRT_10:
+                profile_shape = engine.get_tensor_profile_shape(name, 0)
+            else:
                 profile_shape = engine.get_profile_shape(0, name)
-                # ensure that profile shape is min,opt,max
-                if len(profile_shape) != correct_profile_shape:
-                    err_msg = f"Profile shape for tensor '{name}' has {len(profile_shape)} elements, expected {correct_profile_shape}"
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()
-                    raise RuntimeError(err_msg)
-                # Set the *max* profile as binding shape
+            # ensure that profile shape is min,opt,max
+            if len(profile_shape) != correct_profile_shape:
+                err_msg = f"Profile shape for tensor '{name}' has {len(profile_shape)} elements, expected {correct_profile_shape}"
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()
+                raise RuntimeError(err_msg)
+            # allocate at the *max* profile shape; the min bounds the inputs
+            min_shape = tuple(profile_shape[0])
+            if FLAGS.TRT_10:
+                context.set_input_shape(name, profile_shape[2])
+                shape = context.get_tensor_shape(name)
+            else:
                 context.set_binding_shape(i, profile_shape[2])
                 shape = context.get_binding_shape(i)
 
@@ -256,6 +495,7 @@ def allocate_bindings(
             is_input=is_input,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            min_shape=min_shape,
         )
 
         allocations.append(binding.allocation)

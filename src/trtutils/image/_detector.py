@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 import nvtx
@@ -12,7 +12,7 @@ from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
-from trtutils.core._memory import memcpy_host_to_device_async
+from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
 from ._schema import InputSchema, OutputSchema, resolve_detector_schemas
@@ -31,6 +31,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
+
+    from ._image_model import _PostFn
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -125,11 +127,10 @@ class Detector(ImageModel, DetectorInterface):
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            When enabled, CUDA graphs are used both at the engine level and for
-            end-to-end execution in the end2end() method. The first call to
-            end2end() will capture a CUDA graph of the full preprocessing +
-            inference pipeline, and subsequent calls will replay it. Input
-            dimensions are locked after the first end2end() call.
+            When enabled, the engine records a CUDA graph for each input
+            configuration (batch size, resolution, input buffers) once it
+            repeats and replays it afterwards, for run() and end2end() alike.
+            Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
@@ -154,8 +155,7 @@ class Detector(ImageModel, DetectorInterface):
         self._input_schema_override = input_schema
         self._output_schema_override = output_schema
 
-        # parent creates engine, calls _configure_model() (which sets schemas),
-        # then creates preprocessors (which need _input_schema for dtype)
+        # parent creates the engine and calls _configure_model(), which sets the schemas
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -181,8 +181,6 @@ class Detector(ImageModel, DetectorInterface):
                 "det_init": f"detector::init [{self._tag}]",
                 "det_postprocess": f"detector::postprocess [{self._tag}]",
                 "det_get_detections": f"detector::get_detections [{self._tag}]",
-                "det__prepare_extra_gpu": f"detector::_prepare_extra_gpu [{self._tag}]",
-                "det__prepare_extra_cpu": f"detector::_prepare_extra_cpu [{self._tag}]",
             }
         )
 
@@ -303,6 +301,10 @@ class Detector(ImageModel, DetectorInterface):
 
         return data
 
+    def _post_fn(self: Self, conf_thres: float | None, *, verbose: bool | None) -> _PostFn:
+        """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""
+        return lambda o, r, p, nc: self.postprocess(o, r, p, conf_thres, no_copy=nc, verbose=verbose)
+
     # __call__ overloads
     @overload
     def __call__(
@@ -382,15 +384,15 @@ class Detector(ImageModel, DetectorInterface):
             returns list[np.ndarray]. For batch, returns batch results.
 
         """
-        return self.run(  # ty: ignore[no-matching-overload]
+        return self._run_core(
             images,
             ratios,
             padding,
-            conf_thres,
             preprocessed=preprocessed,
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
+            post=self._post_fn(conf_thres, verbose=verbose),
         )
 
     # run overloads - batch input (3 overloads)
@@ -552,9 +554,7 @@ class Detector(ImageModel, DetectorInterface):
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
-            post=lambda o, r, p, nc: self.postprocess(
-                o, r, p, conf_thres, no_copy=nc, verbose=verbose
-            ),
+            post=self._post_fn(conf_thres, verbose=verbose),
         )
 
     # get_detections overloads
@@ -727,24 +727,11 @@ class Detector(ImageModel, DetectorInterface):
             For single image: list[tuple[...]] (detections).
             For batch: list[list[tuple[...]]] (detections per image).
 
-        Raises
-        ------
-        RuntimeError
-            If the orig_image_size buffer is not valid
-        RuntimeError
-            If the scale_factor buffer is not valid
-        RuntimeError
-            If end2end_graph is enabled and image dimensions change after first call.
-        RuntimeError
-            If end2end_graph is enabled and CUDA graph capture fails.
-
         """
         return self._end2end_core(
             images,
             verbose=verbose,
-            post=lambda o, r, p, nc: self.postprocess(
-                o, r, p, conf_thres, no_copy=nc, verbose=verbose
-            ),
+            post=self._post_fn(conf_thres, verbose=verbose),
             get=lambda pp: self.get_detections(
                 pp,
                 conf_thres=conf_thres,
@@ -755,104 +742,27 @@ class Detector(ImageModel, DetectorInterface):
             ),
         )
 
-    def _engine_inputs(
+    def engine_inputs(
         self: Self,
-        tensor: np.ndarray,
-        images: list[np.ndarray],
+        image: Buffer,
+        images: list[np.ndarray] | None,
         ratios: list[tuple[float, float]] | None,
-        *,
-        preprocessed: bool,
-    ) -> list[np.ndarray]:
-        """Build host engine inputs, adding orig size / scale factor arrays per input schema."""
-        if preprocessed:
-            sizes = [(self._input_size[1], self._input_size[0])] * tensor.shape[0]
-        else:
-            sizes = [img.shape[:2] for img in images]
-        extras: list[np.ndarray] = []
+        /,
+    ) -> list[Buffer]:
+        """Build engine inputs, adding per-image orig size / scale factor arrays per input schema."""
+        inputs: list[Buffer] = []
         if self._use_image_size:
-            extras.append(np.array(sizes, dtype=self._orig_size_dtype))
+            if images is None:
+                # an already preprocessed batch: the original sizes are unknown
+                sizes = [(self._input_size[1], self._input_size[0])] * image.shape[0]
+            else:
+                sizes = [img.shape[:2] for img in images]
+            inputs.append(Buffer.wrap(np.array(sizes, dtype=self._orig_size_dtype)))
         if self._use_scale_factor:
-            extras.append(np.array(ratios, dtype=np.float32))
-        return self._build_graph_input_ptrs(tensor, extras)
-
-    def _prepare_extra_engine_inputs_gpu(self: Self) -> list[int]:
-        """Return additional GPU input pointers for DETR-style models (GPU preprocessor path)."""
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["det__prepare_extra_gpu"])
-
-        input_ptrs: list[int] = []
-        if self._use_image_size:
-            orig_size_ptr, valid = self._preprocessor.orig_size_allocation  # ty: ignore[unresolved-attribute]
-            if not valid:
-                err_msg = "orig_image_size buffer not valid"
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # prepare_extra_gpu
-                raise RuntimeError(err_msg)
-            input_ptrs.append(orig_size_ptr)
-        if self._use_scale_factor:
-            scale_ptr, scale_valid = self._preprocessor.scale_factor_allocation  # ty: ignore[unresolved-attribute]
-            if not scale_valid:
-                err_msg = "scale_factor buffer not valid"
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # prepare_extra_gpu
-                raise RuntimeError(err_msg)
-            input_ptrs.append(scale_ptr)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # prepare_extra_gpu
-
-        return input_ptrs
-
-    def _prepare_extra_engine_inputs_cpu(
-        self: Self,
-        images: list[np.ndarray],
-        ratios: list[tuple[float, float]],
-    ) -> list[int]:
-        """Return additional GPU input pointers for DETR-style models (CPU preprocessor path)."""
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["det__prepare_extra_cpu"])
-
-        input_ptrs: list[int] = []
-        input_idx = 1  # Start after the main image input
-
-        if self._use_image_size:
-            # Build orig_target_sizes: (batch, 2) with (height, width) per image
-            orig_sizes = np.array(
-                [img.shape[:2] for img in images],
-                dtype=self._orig_size_dtype,
-            )
-            memcpy_host_to_device_async(
-                self._engine._inputs[input_idx].allocation,  # noqa: SLF001
-                orig_sizes,
-                self._engine.stream,
-            )
-            input_ptrs.append(self._engine._inputs[input_idx].allocation)  # noqa: SLF001
-            input_idx += 1
-
-        if self._use_scale_factor:
-            # Build scale_factor from ratios
-            scale_factors = np.array(ratios, dtype=np.float32)
-            memcpy_host_to_device_async(
-                self._engine._inputs[input_idx].allocation,  # noqa: SLF001
-                scale_factors,
-                self._engine.stream,
-            )
-            input_ptrs.append(self._engine._inputs[input_idx].allocation)  # noqa: SLF001
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # prepare_extra_cpu
-
-        return input_ptrs
-
-    def _build_graph_input_ptrs(
-        self: Self,
-        image: Any,  # noqa: ANN401
-        extras: list[Any],
-    ) -> list[Any]:
-        """Override to handle RTDETRv3 input ordering (im_shape, image, scale_factor)."""
-        # RTDETRv3 expects: (im_shape, image, scale_factor)
-        # extras[0] = orig_size, extras[1] = scale_factor
-        if self._input_schema == InputSchema.RT_DETR_V3 and len(extras) >= 2:  # noqa: PLR2004
-            return [extras[0], image, extras[1]]
-        # Default: image first, then extra inputs
-        return [image, *extras]
+            if ratios is None:
+                # an already preprocessed batch without ratios is taken as unscaled
+                ratios = [(1.0, 1.0)] * image.shape[0]
+            inputs.append(Buffer.wrap(np.array(ratios, dtype=np.float32)))
+        # every schema lists its size input before its scale factor input
+        inputs.insert(self._image_input_index, image)
+        return inputs

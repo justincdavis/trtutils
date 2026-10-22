@@ -67,7 +67,7 @@ pip install "trtutils[dev]"
 The `TRTEngine` class provides a simple interface for running any TensorRT engine:
 
 ```python
-from trtutils import TRTEngine
+from trtutils import Buffer, TRTEngine
 
 # Load your TensorRT engine
 engine = TRTEngine("path_to_engine")
@@ -76,10 +76,17 @@ engine = TRTEngine("path_to_engine")
 print(engine.input_shapes)  # Expected input shapes
 print(engine.input_dtypes)  # Expected input data types
 
-# Run inference
-inputs = read_your_data()
+# Run inference: every input is a Buffer, on the host or the device
+inputs = [Buffer.wrap(array) for array in read_your_data()]  # zero-copy numpy views
 outputs = engine.execute(inputs)
+
+# GPU-resident data (CuPy, PyTorch, ...) is read in place, with no host round trip
+outputs = engine.execute([Buffer.wrap(cupy_array)])
 ```
+
+Inputs are validated against the engine: dtype, rank, static dims, and the
+optimization profile of dynamic dims. A dynamic engine runs at exactly the
+shape of the Buffers it is given and returns outputs of the matching shape.
 
 ### End-to-End Image Models
 

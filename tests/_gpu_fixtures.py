@@ -186,6 +186,44 @@ def build_test_engine() -> Callable[..., Path]:
 
 
 @pytest.fixture(scope="session")
+def build_dynamic_engine() -> Callable[..., Path]:
+    """
+    Build an engine with one (min, opt, max) profile on its first input.
+
+    Factory: build_dynamic_engine(onnx_path, profile). The test models are
+    exported static, so every dim that differs between min and max is made
+    symbolic on all graph inputs and outputs here rather than shipping more
+    ONNX assets.
+    """
+
+    def _build(onnx_path: Path, profile: tuple[tuple[int, ...], ...]) -> Path:
+        lo, _, hi = profile
+        tag = "-".join("x".join(map(str, shape)) for shape in profile)
+        engine_path = version_engine_path(ENGINES_DIR / f"{onnx_path.stem}_dyn_{tag}.engine")
+        if engine_path.exists():
+            return engine_path
+
+        ENGINES_DIR.mkdir(parents=True, exist_ok=True)
+        model = onnx.load(str(onnx_path))
+        for tensor in [*model.graph.input, *model.graph.output]:
+            for i, dim in enumerate(tensor.type.tensor_type.shape.dim):
+                if lo[i] != hi[i]:
+                    dim.ClearField("dim_value")
+                    dim.dim_param = f"d{i}"
+        dyn_onnx = engine_path.with_suffix(".onnx")
+        onnx.save(model, str(dyn_onnx))
+        _build_engine(
+            dyn_onnx,
+            engine_path,
+            optimization_level=1,
+            shapes=[(model.graph.input[0].name, profile)],
+        )
+        return engine_path
+
+    return _build
+
+
+@pytest.fixture(scope="session")
 def simple_onnx_path() -> Path:
     """Path to a minimal ONNX model for core tests."""
     return BASE_DIR / "data" / "simple.onnx"

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
     from trtutils.compat._libs import cudart
     from trtutils.core._bindings import Binding
+    from trtutils.core._buffer import Buffer
 
 
 class CUDAPreprocessor(GPUImagePreprocessor):
@@ -43,7 +44,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a CUDAPreprocessor for image processing models.
@@ -86,8 +86,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
-        orig_size_dtype : np.dtype, optional
-            The dtype to use for the orig_size buffer. Default is np.int32.
 
         """
         tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
@@ -103,7 +101,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             tag,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
-            orig_size_dtype=orig_size_dtype,
         )
 
         self._nvtx_tags.update(
@@ -165,11 +162,13 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         return self._output_binding
 
     def _reallocate_batch_buffers(self: Self, batch_size: int) -> None:
-        """Reallocate SST buffers if batch size changed."""
+        """Grow the SST buffers when a batch exceeds their capacity; smaller batches use a prefix."""
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["reallocate_batch_buffers"])
 
-        if batch_size == self._current_batch_size:
+        # keeping the allocation for smaller batches keeps the output address
+        # stable, so the engine's CUDA graph for each batch size stays valid
+        if batch_size <= self._output_binding.max_shape[0]:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # reallocate_batch_buffers
             return
@@ -196,8 +195,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
-
-        self._current_batch_size = batch_size
 
         # Invalidate SST args cache: buffer allocations changed
         self._cached_sst_batch_size = None
@@ -286,7 +283,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         *,
         no_warn: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]:
+    ) -> tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]:
         """
         Preprocess images for the model.
 
@@ -306,8 +303,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         Returns
         -------
-        tuple[int, list[tuple[float, float]], list[tuple[float, float]]]
-            The GPU pointer to preprocessed data, list of ratios, and list of padding per image.
+        tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]
+            The device Buffer of preprocessed data, list of ratios, and list of padding per image.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -323,7 +320,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         batch_size = len(images)
 
-        # Reallocate buffers if batch size changed
         self._reallocate_batch_buffers(batch_size)
 
         # Resize images and copy to batch buffer
@@ -354,4 +350,4 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # cuda_direct_preproc
 
-        return self._output_binding.allocation, ratios_list, padding_list
+        return self._output_binding.device[:batch_size], ratios_list, padding_list

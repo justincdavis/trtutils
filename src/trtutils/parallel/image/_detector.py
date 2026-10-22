@@ -5,11 +5,11 @@
 from __future__ import annotations
 
 import contextlib
-import time
+import logging
 from dataclasses import dataclass
 from queue import Empty, Queue
 from threading import Event, Thread
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 import nvtx
@@ -24,12 +24,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from typing_extensions import Self
-
-
-def _is_raw_outputs(
-    outputs: list[np.ndarray] | list[list[np.ndarray]],
-) -> TypeGuard[list[np.ndarray]]:
-    return not outputs or isinstance(outputs[0], np.ndarray)
 
 
 def _is_postprocessed_batches(
@@ -58,6 +52,8 @@ class _OutputPacket:
     ratios: list[tuple[float, float]] | None = None
     padding: list[tuple[float, float]] | None = None
     postprocessed: bool | None = None
+    # an error raised while processing the batch, re-raised by retrieve()
+    error: Exception | None = None
 
 
 @dataclass
@@ -171,8 +167,9 @@ class ParallelDetector:
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            When enabled, CUDA graphs are used both at the engine level and for
-            end-to-end execution in the end2end() method.
+            When enabled, each engine records a CUDA graph for each input
+            configuration (batch size, resolution, input buffers) once it
+            repeats and replays it afterwards.
             Only effective with async_v3 backend. Default is True.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
@@ -840,8 +837,7 @@ class ParallelDetector:
         if modelid is not None:
             if data is not None and len(data) > 0 and isinstance(data[0], np.ndarray):
                 # Single batch for single model
-                # Type narrowing: data is list[np.ndarray] here
-                data_single: list[np.ndarray] = cast("list[np.ndarray]", data)
+                data_single = [d for d in data if isinstance(d, np.ndarray)]
                 self.submit_model(
                     data_single,
                     modelid,
@@ -865,8 +861,7 @@ class ParallelDetector:
         else:
             if data is not None and len(data) > 0 and isinstance(data[0], list):
                 # Batches for all models
-                # Type narrowing: data is list[list[np.ndarray]] here
-                data_batches: list[list[np.ndarray]] = cast("list[list[np.ndarray]]", data)
+                data_batches = [d for d in data if isinstance(d, list)]
                 self.submit(data_batches, preprocessed=True, postprocess=False, no_copy=True)
             elif data is not None and len(data) > 0 and isinstance(data[0], np.ndarray):
                 err_msg = "Submitted list[np.ndarray], but no model ID to specify which model."
@@ -902,20 +897,31 @@ class ParallelDetector:
         ]
             The outputs per image per model, ratios per image per model, padding per image per model.
 
+        Raises
+        ------
+        Exception
+            The first error a model raised while processing its batch. Every
+            model's result is taken off its queue first, so none is left behind.
+
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["retrieve"])
-        outputs: list[list[list[np.ndarray]] | list[np.ndarray]] = []
-        ratios: list[list[tuple[float, float]] | None] = []
-        paddings: list[list[tuple[float, float]] | None] = []
-        for modelid in range(len(self._engine_info)):
-            output, ratio_list, padding_list = self.retrieve_model(modelid, verbose=verbose)
-            outputs.append(output)
-            ratios.append(ratio_list)
-            paddings.append(padding_list)
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
-        return outputs, ratios, paddings
+        try:
+            packets = [
+                self._get_packet(modelid, verbose=verbose)
+                for modelid in range(len(self._engine_info))
+            ]
+            for packet in packets:
+                if packet.error is not None:
+                    raise packet.error
+            return (
+                [packet.data for packet in packets],
+                [packet.ratios for packet in packets],
+                [packet.padding for packet in packets],
+            )
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
 
     def retrieve_model(
         self: Self,
@@ -942,15 +948,27 @@ class ParallelDetector:
         tuple[list[list[np.ndarray]] | list[np.ndarray], list[tuple[float, float]] | None, list[tuple[float, float]] | None]
             The outputs per image, ratios per image, and padding per image.
 
+        Raises
+        ------
+        Exception
+            The error the model raised while processing the batch, if any.
+
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["retrieve_model"])
+        try:
+            packet = self._get_packet(modelid, verbose=verbose)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
+        if packet.error is not None:
+            raise packet.error
+        return (packet.data, packet.ratios, packet.padding)
+
+    def _get_packet(self: Self, modelid: int, *, verbose: bool | None) -> _OutputPacket:
         if verbose:
             LOG.debug(f"{self._tag}: Retrieve model: {modelid}")
-        packet = self._oqueues[modelid].get()
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
-        return (packet.data, packet.ratios, packet.padding)
+        return self._oqueues[modelid].get()
 
     def end2end(
         self: Self,
@@ -1089,10 +1107,6 @@ class ParallelDetector:
         # set flag that we are ready
         flag.set()
 
-        # set types
-        ratios: list[tuple[float, float]] | None
-        padding: list[tuple[float, float]] | None
-
         # handle inference
         while not self._stopflag.is_set():
             try:
@@ -1102,124 +1116,52 @@ class ParallelDetector:
             LOG.debug(f"{self._tag}: Received data")
             if FLAGS.NVTX_ENABLED:
                 nvtx.push_range(f"parallel_detector::_run [{self._tag}:{threadid}]")
-
-            images = data.data
-
-            # path 1: GPU preprocess needed, make end2end optimizations
-            if not data.preprocessed and (
-                data.preprocess_method == "cuda" or data.preprocess_method == "trt"
-            ):
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.push_range(
-                        f"parallel_detector::_run::gpu_preprocess [{self._tag}:{threadid}]"
-                    )
-                preproc = (
-                    detector._preproc_trt  # noqa: SLF001
-                    if data.preprocess_method == "trt"
-                    else detector._preproc_cuda  # noqa: SLF001
+            try:
+                packet = self._process(detector, data, threadid)
+            except Exception as err:
+                # hand the error to retrieve(), which raises it in the caller's
+                # thread, and keep serving later batches; the traceback is logged
+                # through LOG's stdlib logger
+                logging.getLogger("trtutils").exception(
+                    "%s: model %d failed on a batch", self._tag, threadid
                 )
-                # if the preprocessor is None, need to use preprocess method to create it
-                if preproc is None:
-                    tensor, ratios, padding = detector.preprocess(
-                        images,
-                        method=data.preprocess_method,
-                        no_copy=data.no_copy,
-                    )
-                    t0 = time.perf_counter()
-                    # Run inference only (postprocess=False), handle postprocessing separately
-                    results = detector.run(
-                        [tensor],
-                        ratios=ratios,
-                        padding=padding,
-                        preprocessed=True,
-                        postprocess=False,
-                        no_copy=data.no_copy,
-                    )
-                    t1 = time.perf_counter()
-                else:
-                    # direct_preproc handles batch
-                    gpu_img, ratios, padding = preproc.direct_preproc(images, no_warn=True)
-                    t0 = time.perf_counter()
-                    results = detector.engine.direct_exec([gpu_img], no_warn=True)
-                    t1 = time.perf_counter()
+                packet = _OutputPacket(data=[], error=err)
+            finally:
                 if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # gpu_preprocess
-
-            # path 2: preprocess not needed, or CPU preprocessing
-            else:
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.push_range(
-                        f"parallel_detector::_run::cpu_preprocess [{self._tag}:{threadid}]"
-                    )
-                if not data.preprocessed:
-                    tensor, ratios, padding = detector.preprocess(
-                        images,
-                        method=data.preprocess_method,
-                        no_copy=data.no_copy,
-                    )
-                else:
-                    if len(images) != 1:
-                        err_msg = (
-                            "Preprocessed inputs must be a list containing a single batch tensor."
-                        )
-                        if FLAGS.NVTX_ENABLED:
-                            nvtx.pop_range()  # cpu_preprocess
-                            nvtx.pop_range()  # _run
-                        raise ValueError(err_msg)
-                    tensor = images[0]
-                    ratios = data.ratios
-                    padding = data.padding
-                t0 = time.perf_counter()
-                # Run inference only (postprocess=False), handle postprocessing separately
-                results = detector.run(
-                    [tensor],
-                    ratios=ratios,
-                    padding=padding,
-                    preprocessed=True,
-                    postprocess=False,
-                    no_copy=data.no_copy,
-                )
-                t1 = time.perf_counter()
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # cpu_preprocess
-
-            # run the postprocessing (common for all paths)
-            if FLAGS.NVTX_ENABLED:
-                nvtx.push_range(f"parallel_detector::_run::postprocess [{self._tag}:{threadid}]")
-            if data.postprocess:
-                if ratios is None or padding is None:
-                    err_msg = "Ratios/Padding is None, but postprocess set to True."
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()  # postprocess
-                        nvtx.pop_range()  # _run
-                    raise ValueError(err_msg)
-                if not _is_raw_outputs(results):
-                    err_msg = "Expected raw detector outputs before postprocess."
-                    if FLAGS.NVTX_ENABLED:
-                        nvtx.pop_range()  # postprocess
-                        nvtx.pop_range()  # _run
-                    raise RuntimeError(err_msg)
-                postproc_results = detector.postprocess(
-                    results,
-                    ratios,
-                    padding,
-                    no_copy=data.no_copy,
-                )
-            else:
-                postproc_results = results
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # postprocess
-
-            packet = _OutputPacket(
-                data=postproc_results,
-                ratios=ratios,
-                padding=padding,
-                postprocessed=data.postprocess,
-            )
-            self._profilers[threadid] = (t0, t1)
-
+                    nvtx.pop_range()  # _run
             self._oqueues[threadid].put(packet)
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # _run
 
         del detector
+
+    def _process(self: Self, detector: Detector, data: _InputPacket, threadid: int) -> _OutputPacket:
+        """Run one submitted batch through a model, optionally postprocessing it."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(f"parallel_detector::_run::infer [{self._tag}:{threadid}]")
+        try:
+            results, ratios, padding = detector.infer(
+                data.data,
+                data.preprocess_method,
+                preprocessed=bool(data.preprocessed),
+                ratios=data.ratios,
+                padding=data.padding,
+                postprocess=bool(data.postprocess),
+                no_copy=data.no_copy,
+            )
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # infer
+        self._profilers[threadid] = detector.infer_profile
+        if not data.postprocess:
+            return _OutputPacket(data=results, ratios=ratios, padding=padding, postprocessed=False)
+
+        if ratios is None or padding is None:
+            err_msg = "Ratios/Padding is None, but postprocess set to True."
+            raise ValueError(err_msg)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(f"parallel_detector::_run::postprocess [{self._tag}:{threadid}]")
+        try:
+            postprocessed = detector.postprocess(results, ratios, padding, no_copy=data.no_copy)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # postprocess
+        return _OutputPacket(data=postprocessed, ratios=ratios, padding=padding, postprocessed=True)

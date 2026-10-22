@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import tensorrt as trt
 
-from trtutils import TRTEngine
+from trtutils import Buffer, TRTEngine
 from trtutils.image.onnx_models import build_image_preproc, build_image_preproc_imagenet
 from trtutils.image.preprocessors import preprocess
 
@@ -48,7 +48,8 @@ def test_preproc_engine_matches_cpu(images, build, extra_inputs, norm, tol) -> N
     engine = TRTEngine(
         build((640, 640), np.dtype(np.float32), trt_version=trt.__version__), warmup=False
     )
-    result = engine.execute([img, *extra_inputs])[0]
+    inputs = [Buffer.wrap(data) for data in [img[np.newaxis], *extra_inputs]]
+    result = engine.execute(inputs)[0]
     assert result.shape == expected.shape
     assert result.dtype == expected.dtype
     np.testing.assert_allclose(result, expected, rtol=tol, atol=tol)

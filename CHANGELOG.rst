@@ -11,9 +11,112 @@ Added
   ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``
 * Download configs and ONNX export functions for Depth-Anything-V1
   (small / base / large) and Depth-Anything-V3 (mono-large, metric-large)
+* ``Buffer`` / ``MemoryLocation`` (also ``core.Buffer``): one contiguous, typed allocation
+  on the host (pageable, pinned, or pinned + mapped) or the device. ``Buffer.wrap`` views
+  numpy arrays and any ``__cuda_array_interface__`` object (CuPy, PyTorch, ...) without
+  copying; memory is reference counted so views and numpy arrays never outlive it
+* ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
+* ``build_engine(shapes=[(name, (min_shape, opt_shape, max_shape))])`` builds a dynamic
+  optimization profile; malformed triples raise ``ValueError`` and non-integer dims
+  raise ``TypeError``
+* ``core.KernelArgs``: ``Kernel.create_args`` returns an argument array that owns the
+  buffers its pointers reference; build one directly with ``KernelArgs.from_values(*args)``
+  or ``KernelArgs(pointers, keepalive)``
+* ``QueuedTRTEngine.retrieve_result`` returns the next output, or the error the engine raised
+  for that input, without raising it
+* ``ImageModel.prepare_inputs(images, method, *, preprocessed, ratios, padding)`` gets the
+  engine inputs for images, preprocessing them unless ``preprocessed`` (GPU-preprocessed
+  batches are bound in place on the device), ``ImageModel.engine_inputs(image,
+  images, ratios)`` builds them from a preprocessed batch (``images=None`` when the batch
+  came preprocessed), ``ImageModel.infer`` runs the engine on them and returns the raw
+  outputs (``ImageModel.infer_profile`` times it), and ``ImageModel.get_preprocessor(method)``
+  returns the preprocessor for a method, creating it on first use
+
+Changed
+^^^^^^^
+* **Breaking:** ``TRTEngine`` inputs are ``Buffer`` objects only. ``execute``, ``__call__``,
+  ``mock_execute``, ``raw_exec``, and ``QueuedTRTEngine`` / ``ParallelTRTEngines.submit``
+  take a list of Buffers; wrap numpy data with ``Buffer.wrap(array)``.
+  ``get_random_input`` returns host Buffers
+* **Breaking:** ``TRTEngine.direct_exec`` is removed; ``execute`` reads device Buffers in
+  place. ``raw_exec`` takes Buffers and returns device ``Buffer`` views of the outputs
+  instead of pointers; its ``set_pointers`` / ``no_warn`` arguments are removed
+* **Breaking:** the engine runs at the shapes of the submitted Buffers and validates
+  every input (dtype, rank, static dims, profile bounds of dynamic dims), raising
+  ``ValueError`` instead of copying mismatched bytes. Dynamic engines return outputs of
+  the executed shape
+* **Breaking:** ``Binding`` is a class over a host and a device ``Buffer`` (``host`` /
+  ``device``). Its fields (``index``, ``name``, ``dtype``, ``shape``, ``is_input``,
+  ``tensor_format``, ``host``, ``device``) are read-only properties, and ``allocation``,
+  ``host_allocation``, ``pagelocked_mem``, and ``unified_mem`` are derived from the buffers.
+  ``min_shape`` / ``max_shape`` give the profile bounds of an input, ``check(buffer, engine)``
+  validates a Buffer against them and the dtype, ``bind(src, stream)`` returns device
+  memory TensorRT can read ``src`` from, and ``stage`` / ``fetch`` copy a leading prefix of
+  the binding (their views are reused while the shape repeats)
+* **Breaking:** ``GPUImagePreprocessor.direct_preproc`` returns a device ``Buffer`` shaped
+  to the submitted images instead of a pointer. GPU preprocessors no longer hold
+  orig-size / scale-factor buffers: ``orig_size_allocation``, ``scale_factor_allocation``
+  and the ``orig_size_dtype`` argument are removed, and ``Detector`` builds those inputs
+  per image for every preprocessor
+* **Breaking:** ``Kernel`` no longer takes ``max_arg_cache``
+* ``TRTEngine`` keeps one CUDA graph per input configuration (the shape and device
+  address of every input), so dynamic batch sizes / resolutions and in-place device
+  inputs are graphed too. A configuration is captured the second time it runs at unchanged
+  shapes and replayed afterwards (a graph cannot replay on a call that changes the shapes,
+  so inputs that alternate shapes every call are never captured); the least recently used
+  graph is evicted beyond 8. ``graph_exec``
+  replays the configuration of the latest execution. A failed capture (including one
+  whose enqueue TensorRT rejects) logs a warning and disables graphs for the engine
+  instead of raising out of the call that triggered it
+* ``TRTEngine`` holds a reference to the Buffers bound for the latest call, so
+  ``graph_exec`` and an unsynchronized ``raw_exec`` never read freed inputs
+* ``CUDAPreprocessor`` keeps its buffers for batches smaller than the largest seen, so the
+  ``direct_preproc`` output address (and the engine's CUDA graph for it) stays stable
+* ``ImageModel.end2end`` no longer captures its own CUDA graph or locks the image size and
+  batch size after the first call; it uses the engine's per-configuration graphs
+* ``ImageModel.run`` and ``ParallelDetector`` (now through ``ImageModel.infer``) bind
+  GPU-preprocessed batches on the device instead of round-tripping through the host, and
+  skip the copy of engine outputs they postprocess right away unless ``no_copy=False``
+* ``ImageModel.preprocess(method='cuda')`` falls back to 'cpu' for models whose input is not
+  float32, as the constructor does, and an unknown ``method`` raises ``ValueError`` instead
+  of silently using the CPU preprocessor
+* ``Detector`` models with a scale-factor input treat an already preprocessed batch passed
+  without ``ratios`` as unscaled, as they already did for its original size
 
 Fixed
 ^^^^^
+* ``TRTEngine.is_dynamic_batch`` read the max-profile binding shape and was always False;
+  it is True when the profile allows more than one batch size, and
+  ``ImageModel.is_dynamic_batch`` reads it
+* ``TRTEngine``: shapes rejected by TensorRT's ``set_input_shape`` were silently ignored
+* ``allocate_bindings``: inputs with dynamic non-batch dimensions are allocated at the
+  max profile shape
+* Pinned host memory is freed only when no Buffer view or numpy array references it,
+  fixing use-after-free on ``no_copy`` outputs held past a reallocation
+* ``Kernel.create_args``: cached argument arrays no longer point at freed buffers after
+  other argument sets are created
+* ``Detector`` with a CPU preprocessor and CUDA graphs wrote RT-DETRv3 extra inputs into
+  the wrong engine bindings
+* ``ParallelDetector`` with a GPU preprocessor passed only the image to multi-input
+  (DETR-style) engines
+* ``ParallelDetector`` with a CPU preprocessor fed RT-DETR models the model input size
+  instead of each image's original size
+* ``ParallelDetector``: an error while processing a submitted batch (a bad
+  ``preprocess_method``, a wrongly shaped preprocessed tensor, a rejected enqueue, ...)
+  killed the model's worker thread and left ``retrieve`` waiting forever. It is now raised
+  by ``retrieve`` / ``retrieve_model`` in the caller's thread, after every model's result is
+  taken, and the worker keeps serving later batches. ``QueuedTRTEngine`` /
+  ``ParallelTRTEngines`` had the same flaw and now do the same: ``retrieve`` raises the
+  engine's error, and ``ParallelTRTEngines.retrieve`` takes every engine's result first
+* ``ParallelTRTEngines``: ``(engine, dla_core, device)`` tuples raised ``ValueError`` and
+  the device was never applied
+* ``ImageModel.mock_run`` with images builds every engine input (DETR-style models failed
+  the input count), and ``get_random_input`` returns the image input rather than the first
+* ``ImageModel`` kept using the old default preprocessor after ``update_input_range`` /
+  ``update_mean_std``
+* ``TRTEngine``: an enqueue rejected by TensorRT raises instead of returning the previous
+  outputs
+* GPU preprocessors copy back only the submitted images, not the full allocated batch
 * ``download``: ``requirements_export`` no longer writes uv's "Using Python ... environment at"
   notice into the exported requirements file
 

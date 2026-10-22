@@ -3,7 +3,7 @@
 # MIT License
 from __future__ import annotations
 
-import contextlib
+import logging
 from queue import Empty, Queue
 from threading import Thread
 from typing import TYPE_CHECKING
@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
     import numpy as np
     from typing_extensions import Self
+
+    from trtutils.core._buffer import Buffer
 
 
 class QueuedTRTEngine:
@@ -78,8 +80,9 @@ class QueuedTRTEngine:
         }
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["init"])
-        self._input_queue: Queue[list[np.ndarray]] = Queue()
-        self._output_queue: Queue[list[np.ndarray]] = Queue()
+        self._input_queue: Queue[list[Buffer]] = Queue()
+        # outputs, or the error the engine raised for an input
+        self._output_queue: Queue[list[np.ndarray] | Exception] = Queue()
         self._thread = Thread(
             target=self._run,
             args=(),
@@ -170,7 +173,7 @@ class QueuedTRTEngine:
         """
         return self._engine.output_dtypes
 
-    def get_random_input(self: Self, *, new: bool | None = None) -> list[np.ndarray]:
+    def get_random_input(self: Self, *, new: bool | None = None) -> list[Buffer]:
         """
         Get a random input to the underlying TRTEngine.
 
@@ -182,7 +185,7 @@ class QueuedTRTEngine:
 
         Returns
         -------
-        list[np.ndarray]
+        list[Buffer]
             The random input.
 
         """
@@ -197,15 +200,16 @@ class QueuedTRTEngine:
 
     def submit(
         self: Self,
-        data: list[np.ndarray],
+        data: list[Buffer],
     ) -> None:
         """
         Put data in the input queue.
 
         Parameters
         ----------
-        data : list[np.ndarray]
-            The data to have the engine run.
+        data : list[Buffer]
+            One Buffer per engine input. The Buffers must stay unmodified
+            until the result is retrieved.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -235,20 +239,48 @@ class QueuedTRTEngine:
 
         Returns
         -------
-        list[np.ndarray]
-            The output from the engine.
+        list[np.ndarray] | None
+            The output from the engine, or None if the timeout passed first.
+
+        Raises
+        ------
+        Exception
+            The error the engine raised for the corresponding input.
+
+        """
+        result = self.retrieve_result(timeout)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def retrieve_result(
+        self: Self,
+        timeout: float | None = None,
+    ) -> list[np.ndarray] | Exception | None:
+        """
+        Get an output from the engine thread, or the error it raised, without raising it.
+
+        Parameters
+        ----------
+        timeout : float, optional
+            Timeout for waiting for data.
+
+        Returns
+        -------
+        list[np.ndarray] | Exception | None
+            The output from the engine, the error the engine raised for the
+            corresponding input, or None if the timeout passed first.
 
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["retrieve"])
-        with contextlib.suppress(Empty):
-            result = self._output_queue.get(timeout=timeout)
+        try:
+            return self._output_queue.get(timeout=timeout)
+        except Empty:
+            return None
+        finally:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()
-            return result
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
-        return None
 
     def _run(
         self: Self,
@@ -261,8 +293,16 @@ class QueuedTRTEngine:
 
             if FLAGS.NVTX_ENABLED:
                 nvtx.push_range(self._nvtx_tags["_run"])
-            result = self._engine(inputs)
-
+            result: list[np.ndarray] | Exception
+            try:
+                result = self._engine(inputs)
+            except Exception as err:
+                # hand the error to retrieve(), which raises it in the caller's
+                # thread, and keep serving later inputs; the traceback is logged
+                # through LOG's stdlib logger
+                logging.getLogger("trtutils").exception("%s: execution failed", self._engine.name)
+                result = err
+            finally:
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()
             self._output_queue.put(result)
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()

@@ -1,12 +1,10 @@
 # Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: PYI041
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
 import contextlib
-from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,9 +19,91 @@ from ._cuda import cuda_call
 from ._nvrtc import compile_and_load_kernel
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
+
+
+class KernelArgs(np.ndarray):
+    """
+    A kernel argument pointer array that owns the buffers it points into.
+
+    The pointers in the array reference separately allocated numpy buffers,
+    one per argument. Those buffers must outlive every launch that uses the
+    array, or the kernel reads freed memory. Holding them on the array
+    itself ties their lifetime to the pointers that reference them, so an
+    argument array stays valid for as long as a caller keeps it, including
+    across other calls to :meth:`Kernel.create_args`.
+
+    Build one from argument values with :meth:`KernelArgs.from_values`, or
+    from an existing pointer array and its buffers with ``KernelArgs(...)``.
+    """
+
+    _keepalive: list[np.ndarray]
+
+    def __new__(
+        cls: type[Self],
+        pointers: np.ndarray,
+        keepalive: Sequence[np.ndarray],
+    ) -> Self:
+        """
+        Create an argument array from pointers and the buffers they point into.
+
+        Parameters
+        ----------
+        pointers : np.ndarray
+            The argument pointer array (one uint64 pointer per argument), as
+            returned by :func:`create_kernel_args`.
+        keepalive : Sequence[np.ndarray]
+            The buffers the pointers reference, kept alive by the array.
+
+        Returns
+        -------
+        KernelArgs
+            The argument array.
+
+        """
+        self = np.asarray(pointers, dtype=np.uint64).view(cls)
+        self._keepalive = list(keepalive)
+        return self
+
+    @classmethod
+    def from_values(
+        cls: type[Self],
+        *args: float | np.ndarray,
+        verbose: bool | None = None,
+    ) -> Self:
+        """
+        Create an argument array from kernel argument values.
+
+        Parameters
+        ----------
+        *args : float | np.ndarray
+            The kernel arguments, as accepted by :func:`create_kernel_args`.
+        verbose : bool, optional
+            Whether or not to output additional information about the passed args.
+
+        Returns
+        -------
+        KernelArgs
+            The argument array, owning one buffer per argument.
+
+        """
+        pointers, keepalive = create_kernel_args(*args, verbose=verbose)
+        return cls(pointers, keepalive)
+
+    @property
+    def keepalive(self: Self) -> list[np.ndarray]:
+        """The buffers the argument pointers reference."""
+        return self._keepalive
+
+    def __array_finalize__(self: Self, obj: np.ndarray | None) -> None:
+        # propagate through views and slices so a derived array cannot
+        # outlive the buffers its pointers reference
+        if obj is not None:
+            self._keepalive = getattr(obj, "_keepalive", [])
 
 
 class Kernel:
@@ -33,7 +113,6 @@ class Kernel:
         self: Self,
         kernel_file: Path | str,
         name: str,
-        max_arg_cache: int = 1,
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -46,10 +125,6 @@ class Kernel:
             The CUDA file containing the kernel definition.
         name : str
             The name of the kernel to compile.
-        max_arg_cache : int
-            The number of arg arrays to store cached to prevent garbage collection.
-            Since args are created per-call only 1 is typically needed.
-            Default 1.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -68,7 +143,6 @@ class Kernel:
             name,
             verbose=verbose,
         )
-        self._inter_args: deque[list[np.ndarray]] = deque(maxlen=max_arg_cache)
         self._freed = False
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()
@@ -89,20 +163,20 @@ class Kernel:
 
     def create_args(
         self: Self,
-        *args: int | float | np.ndarray,
+        *args: float | np.ndarray,
         verbose: bool | None = False,
-    ) -> np.ndarray:
+    ) -> KernelArgs:
         """
         Create the argument pointer array for a CUDA kernel call.
 
-        Is a wrapper around :func:`trtutils.core.create_kernel_args`, which
-        stores the intermediate pointer results in inside of the class.
-        The intermediate arrays can be cleaned up by the garbage collector
-        if the kernel does not access the memory fast enough.
+        Is a wrapper around :func:`trtutils.core.create_kernel_args`. The
+        returned array owns the intermediate buffers its pointers reference,
+        so it stays valid for as long as the caller keeps it and may safely
+        be cached and reused across later calls to this method.
 
         Parameters
         ----------
-        *args : int | float | np.ndarray
+        *args : float | np.ndarray
             All args to pass to the kernel as integers, floats, or pre-formed args.
             If arrays are to be passed to the kernel, they should be
             given as an integer representing the pointer returned
@@ -114,13 +188,11 @@ class Kernel:
 
         Returns
         -------
-        np.ndarray
-            The np.ndarray of argument pointers (one pointer per arg)
+        KernelArgs
+            The argument pointers (one per arg), owning the buffers they point at.
 
         """
-        ptrs, intermediate = create_kernel_args(*args, verbose=verbose)
-        self._inter_args.append(intermediate)
-        return ptrs
+        return KernelArgs.from_values(*args, verbose=verbose)
 
     def __call__(
         self: Self,
@@ -225,7 +297,7 @@ def launch_kernel(
 
 
 def create_kernel_args(
-    *args: int | float | np.ndarray,
+    *args: float | np.ndarray,
     verbose: bool | None = False,
 ) -> tuple[np.ndarray, list[np.ndarray]]:
     """
@@ -243,7 +315,7 @@ def create_kernel_args(
 
     Parameters
     ----------
-    *args : int | float | np.ndarray
+    *args : float | np.ndarray
         All args to pass to the kernel as integers, floats, or pre-formed args.
         If arrays are to be passed to the kernel, they should be
         given as an integer representing the pointer returned

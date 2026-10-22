@@ -21,7 +21,7 @@ Quick Start
 
 .. code-block:: python
 
-    from trtutils import TRTEngine
+    from trtutils import Buffer, TRTEngine
 
     # Load your TensorRT engine
     engine = TRTEngine("path_to_engine")
@@ -30,8 +30,8 @@ Quick Start
     print(engine.input_shapes)  # Expected input shapes
     print(engine.input_dtypes)  # Expected input data types
 
-    # Run inference
-    inputs = read_your_data()
+    # Run inference: every input is a Buffer, on the host or the device
+    inputs = [Buffer.wrap(array) for array in read_your_data()]
     outputs = engine.execute(inputs)
 
 Documentation

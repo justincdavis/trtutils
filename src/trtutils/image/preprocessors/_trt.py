@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     from trtutils.compat._libs import cudart
     from trtutils.core._bindings import Binding
+    from trtutils.core._buffer import Buffer
 
 
 class TRTPreprocessor(GPUImagePreprocessor):
@@ -46,7 +47,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        orig_size_dtype: np.dtype[Any] | None = None,
     ) -> None:
         """
         Create a TRTPreprocessor for image processing models.
@@ -92,8 +92,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
-        orig_size_dtype : np.dtype, optional
-            The dtype to use for the orig_size buffer. Default is np.int32.
 
         Raises
         ------
@@ -114,7 +112,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
             tag,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
-            orig_size_dtype=orig_size_dtype,
         )
 
         self._nvtx_tags.update(
@@ -178,25 +175,16 @@ class TRTPreprocessor(GPUImagePreprocessor):
 
         self._engine_output_binding = self._engine.output_bindings[0]
 
-        # pre-allocate the input pointer list for the engine
-        self._gpu_pointers = [self._intermediate_binding.allocation]
+        # the engine inputs never change: the batch of resized images, then
+        # either scale/offset or imagenet mean/std, all resident on the device
+        self._engine_inputs: list[Buffer] = [self._intermediate_binding.device]
         if not self._use_imagenet:
-            self._gpu_pointers.extend(
-                [
-                    self._scale_binding.allocation,
-                    self._offset_binding.allocation,
-                ]
-            )
+            self._engine_inputs.extend([self._scale_binding.device, self._offset_binding.device])
         else:
             if self._mean_buffer is None or self._std_buffer is None:
                 err_msg = "Imagenet buffers not allocated for TRT preprocessor."
                 raise RuntimeError(err_msg)
-            self._gpu_pointers.extend(
-                [
-                    self._mean_buffer.allocation,
-                    self._std_buffer.allocation,
-                ]
-            )
+            self._engine_inputs.extend([self._mean_buffer.device, self._std_buffer.device])
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -219,7 +207,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         *,
         no_warn: bool | None = None,
         verbose: bool | None = None,
-    ) -> tuple[int, list[tuple[float, float]], list[tuple[float, float]]]:
+    ) -> tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]:
         """
         Preprocess images for the model.
 
@@ -239,8 +227,8 @@ class TRTPreprocessor(GPUImagePreprocessor):
 
         Returns
         -------
-        tuple[int, list[tuple[float, float]], list[tuple[float, float]]]
-            The GPU pointer to preprocessed data, list of ratios, and list of padding per image.
+        tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]
+            The device Buffer of preprocessed data, list of ratios, and list of padding per image.
 
         Raises
         ------
@@ -277,9 +265,10 @@ class TRTPreprocessor(GPUImagePreprocessor):
         )
 
         # Run TRT engine on batched intermediate buffer
-        output_ptrs = self._engine.raw_exec(self._gpu_pointers, no_warn=True)
+        outputs = self._engine.raw_exec(self._engine_inputs)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # trt_direct_preproc
 
-        return output_ptrs[0], ratios_list, padding_list
+        # the engine runs at its configured batch; hand back only the images given
+        return outputs[0][:batch_size], ratios_list, padding_list

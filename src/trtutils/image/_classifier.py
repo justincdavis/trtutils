@@ -22,6 +22,8 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    from ._image_model import _PostFn
+
 
 class Classifier(ImageModel, ClassifierInterface):
     """Implementation of image classifiers."""
@@ -91,11 +93,10 @@ class Classifier(ImageModel, ClassifierInterface):
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
-            When enabled, CUDA graphs are used both at the engine level and for
-            end-to-end execution in the end2end() method. The first call to
-            end2end() will capture a CUDA graph of the full preprocessing +
-            inference pipeline, and subsequent calls will replay it. Input
-            dimensions are locked after the first end2end() call.
+            When enabled, the engine records a CUDA graph for each input
+            configuration (batch size, resolution, input buffers) once it
+            repeats and replays it afterwards, for run() and end2end() alike.
+            Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
@@ -174,6 +175,10 @@ class Classifier(ImageModel, ClassifierInterface):
             nvtx.pop_range()  # postprocess
 
         return data
+
+    def _post_fn(self: Self, *, verbose: bool | None) -> _PostFn:
+        """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""
+        return lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose)
 
     # __call__ overloads
     @overload
@@ -368,7 +373,7 @@ class Classifier(ImageModel, ClassifierInterface):
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
-            post=lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose),
+            post=self._post_fn(verbose=verbose),
             needs_ratios=False,
         )
 
@@ -480,18 +485,10 @@ class Classifier(ImageModel, ClassifierInterface):
             For single image: list[tuple[int, float]] (classifications).
             For batch: list[list[tuple[int, float]]] (classifications per image).
 
-        Raises
-        ------
-        RuntimeError
-            If end2end_graph is enabled and image dimensions change after first call.
-        RuntimeError
-            If end2end_graph is enabled and CUDA graph capture fails.
-
         """
         return self._end2end_core(
             images,
             verbose=verbose,
-            post=lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose),
+            post=self._post_fn(verbose=verbose),
             get=lambda pp: get_classifications(pp, top_k=top_k, verbose=verbose),
-            needs_ratios=False,
         )

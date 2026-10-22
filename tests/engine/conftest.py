@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import pytest
 import tensorrt as trt
 
-from tests.conftest import DATA_DIR, ENGINES_DIR
+from tests.conftest import DATA_DIR, ENGINES_DIR, SIMPLE_DYNAMIC_PROFILES
 from trtutils import TRTEngine
 from trtutils.builder import build_engine
 
@@ -41,7 +41,7 @@ def make_engine(engine_path):
     """Factory fixture that creates TRTEngine instances with automatic cleanup."""
     engines = []
 
-    def _factory(**kwargs):  # noqa: ANN003
+    def _factory(**kwargs: object):
         kwargs.setdefault("warmup", False)
         eng = TRTEngine(engine_path, **kwargs)
         engines.append(eng)
@@ -72,3 +72,9 @@ def engine_no_pagelocked(engine_path) -> Generator:
 def random_input(engine) -> list:
     """Generate random input matching engine spec."""
     return engine.get_random_input()
+
+
+@pytest.fixture(scope="session")
+def dynamic_engine_path(build_dynamic_engine) -> Path:
+    """Path to the simple engine built with a 1..4 dynamic batch profile, built on first use."""
+    return build_dynamic_engine(DATA_DIR / "simple.onnx", SIMPLE_DYNAMIC_PROFILES["batch"])
