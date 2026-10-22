@@ -98,6 +98,11 @@ Changed
 
 Fixed
 ^^^^^
+* CUDA/TRT preprocessors reallocated their staging buffers on every input shape change;
+  with ``pagelocked_mem`` each free synchronized the device, making mixed-size batches
+  ~3.9x and resolution switches ~3.7x slower than pageable memory. The buffers now only
+  grow, and ``unified_mem`` heterogeneous batches synchronize before reusing the mapped
+  buffer (a race the per-shape reallocation had hidden)
 * ``TRTEngine.is_dynamic_batch`` read the max-profile binding shape and was always False;
   it is True when the profile allows more than one batch size, and
   ``ImageModel.is_dynamic_batch`` reads it
