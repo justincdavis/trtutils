@@ -22,6 +22,8 @@ from trtutils.image.onnx_models import build_image_preproc, build_image_preproc_
 from ._image_preproc import GPUImagePreprocessor
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
@@ -202,7 +204,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
 
     def direct_preproc(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
         no_warn: bool | None = None,
@@ -213,7 +215,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray]
+        images : list[np.ndarray | Buffer]
             The images to preprocess.
         resize : str
             The method to resize the image with.

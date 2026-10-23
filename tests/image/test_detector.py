@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import pytest
 
+from trtutils import Buffer, MemoryLocation
 from trtutils.image import Detector
 
 
@@ -97,3 +98,36 @@ def test_detector_run_gpu_matches_cpu(yolov10_engine, images) -> None:
     np.testing.assert_allclose(gpu[0], cpu[0], atol=0.1)
     np.testing.assert_allclose(gpu[1], cpu[1], atol=1e-3)
     np.testing.assert_array_equal(gpu[2], cpu[2])
+
+
+@pytest.mark.parametrize("preprocessor", ["cuda", "trt", "cpu"])
+@pytest.mark.parametrize("cuda_graph", [True, False])
+def test_detector_device_buffer_input(yolov10_engine, images, preprocessor, cuda_graph) -> None:
+    """Device Buffer images give the same results as arrays from end2end(), run() and preprocess()."""
+    model = Detector(yolov10_engine, preprocessor=preprocessor, cuda_graph=cuda_graph, warmup=False)
+    horse = images["horse"].array
+    small = cv2.resize(horse, (640, 480))
+    device = [Buffer.from_array(img, MemoryLocation.DEVICE) for img in (horse, small)]
+
+    assert model.end2end(device[0]) == model.end2end(horse)
+    assert model.get_detections(model.run(device[0])) == model.end2end(horse)
+
+    tensor, ratios, padding = model.preprocess(horse)
+    device_tensor, device_ratios, device_padding = model.preprocess(device[0])
+    np.testing.assert_array_equal(device_tensor, tensor)
+    assert (device_ratios, device_padding) == (ratios, padding)
+
+    # an already preprocessed tensor on the device is bound as is
+    preprocessed = Buffer.from_array(tensor, MemoryLocation.DEVICE)
+    outputs = model.run(preprocessed, ratios=ratios[0], padding=padding[0], preprocessed=True)
+    assert model.get_detections(outputs) == model.end2end(horse)
+
+
+def test_detector_mixed_buffer_batch(yolov10_dynamic_engine, images) -> None:
+    """A dynamic-batch engine takes arrays and device Buffers of mixed resolutions in one batch."""
+    model = Detector(yolov10_dynamic_engine, preprocessor="cuda", warmup=False)
+    pool = [img.array for img in images.values()]
+    batch = [
+        Buffer.from_array(img, MemoryLocation.DEVICE) if i % 2 else img for i, img in enumerate(pool)
+    ]
+    assert model.end2end(batch) == model.end2end(pool)

@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from cv2ext.image import letterbox, rescale, resize_linear
 
+from trtutils import Buffer, MemoryLocation
 from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 from trtutils.image.preprocessors._process import preprocess
 
@@ -179,6 +180,68 @@ def test_homogeneous_batch_accepts_strided_views(gpu_cls, memory) -> None:
     expected = preproc.preprocess([np.ascontiguousarray(v) for v in views])
     result = preproc.preprocess(views)
     np.testing.assert_array_equal(result[0], expected[0])
+
+
+BUFFER_PLACEMENTS = [
+    pytest.param({"location": MemoryLocation.DEVICE}, id="device"),
+    pytest.param({"pinned": True, "mapped": True}, id="mapped"),
+    pytest.param({"pinned": True, "mapped": False}, id="pinned"),
+    pytest.param({"pinned": False}, id="pageable"),
+]
+
+
+@pytest.mark.parametrize(
+    ("preproc_cls", "kwargs"),
+    [
+        pytest.param(CPUPreprocessor, {}, id="cpu"),
+        pytest.param(CUDAPreprocessor, {}, id="cuda"),
+        pytest.param(TRTPreprocessor, {"batch_size": 4}, id="trt"),
+    ],
+)
+@pytest.mark.parametrize("placement", BUFFER_PLACEMENTS)
+@pytest.mark.parametrize(
+    "shapes",
+    [
+        pytest.param(SHAPES[:1], id="single"),
+        pytest.param(SHAPES[:1] * 4, id="homogeneous"),
+        pytest.param(SHAPES[:4], id="heterogeneous"),
+    ],
+)
+def test_buffer_input_matches_ndarray(preproc_cls, kwargs, placement, shapes) -> None:
+    """Buffer images, alone or mixed with arrays, preprocess exactly like the arrays."""
+    rng = np.random.default_rng(0)
+    imgs = [rng.integers(0, 256, (*s, 3), dtype=np.uint8) for s in shapes]
+    mixed = [
+        Buffer.from_array(img, **placement) if i % 2 == 0 else img for i, img in enumerate(imgs)
+    ]
+    preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
+    expected = preproc.preprocess(imgs)
+    result = preproc.preprocess(mixed)
+    np.testing.assert_array_equal(result[0], expected[0])
+    assert result[1:] == expected[1:]
+    single = preproc.preprocess(mixed[0])
+    np.testing.assert_array_equal(single[0], expected[0][:1])
+
+
+@pytest.mark.parametrize(
+    "gpu_cls",
+    [
+        pytest.param(CUDAPreprocessor, id="cuda"),
+        pytest.param(TRTPreprocessor, id="trt"),
+    ],
+)
+@pytest.mark.parametrize("count", [1, 2])
+@pytest.mark.parametrize("as_buffer", [False, True], ids=["ndarray", "device"])
+def test_gpu_rejects_non_uint8(gpu_cls, count, as_buffer) -> None:
+    """GPU preprocessors raise on non-uint8 images instead of reading their bytes as uint8."""
+    image = np.zeros((480, 640, 3), dtype=np.float32)
+    if as_buffer:
+        image = Buffer.from_array(image, MemoryLocation.DEVICE)
+    preproc = gpu_cls(
+        SIZE, RANGE, DTYPE, **({"batch_size": 2} if gpu_cls is TRTPreprocessor else {})
+    )
+    with pytest.raises(ValueError, match="uint8"):
+        preproc.preprocess([image] * count)
 
 
 def _reference_preprocess(images, input_shape, dtype, input_range, method, mean, std):

@@ -11,11 +11,14 @@ import numpy as np
 import nvtx
 
 from trtutils._flags import FLAGS
+from trtutils.core._buffer import Buffer
 
 from ._image_preproc import ImagePreprocessor
 from ._process import preprocess
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from typing_extensions import Self
 
 _COLOR_CHANNELS = 3
@@ -105,7 +108,7 @@ class CPUPreprocessor(ImagePreprocessor):
     @overload
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -115,7 +118,7 @@ class CPUPreprocessor(ImagePreprocessor):
     @overload
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -124,7 +127,7 @@ class CPUPreprocessor(ImagePreprocessor):
 
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -135,7 +138,7 @@ class CPUPreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the image with.
@@ -160,7 +163,7 @@ class CPUPreprocessor(ImagePreprocessor):
     @overload
     def preprocess(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -170,7 +173,7 @@ class CPUPreprocessor(ImagePreprocessor):
     @overload
     def preprocess(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -179,7 +182,7 @@ class CPUPreprocessor(ImagePreprocessor):
 
     def preprocess(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -190,7 +193,7 @@ class CPUPreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the image with.
@@ -213,10 +216,9 @@ class CPUPreprocessor(ImagePreprocessor):
             nvtx.push_range(self._nvtx_tags["cpu_preprocess"])
 
         # Handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
-        else:
-            batch_images = images
+        if isinstance(images, (np.ndarray, Buffer)):
+            images = [images]
+        batch_images = [img.numpy() if isinstance(img, Buffer) else img for img in images]
 
         resize = resize if resize is not None else self._resize
         mean = self._mean

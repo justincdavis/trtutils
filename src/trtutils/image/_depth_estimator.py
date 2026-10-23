@@ -17,10 +17,13 @@ from .interfaces import DepthEstimatorInterface
 from .postprocessors import get_depth_maps, postprocess_depth
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     import numpy as np
     from typing_extensions import Self
+
+    from trtutils.core._buffer import Buffer
 
     from ._image_model import _PostFn
 
@@ -186,7 +189,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     @overload
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -197,7 +200,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     @overload
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -207,7 +210,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
 
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -219,7 +222,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to run the model on.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
@@ -255,7 +258,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -266,7 +269,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -277,7 +280,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -289,7 +292,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -300,7 +303,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -311,7 +314,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -321,7 +324,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
 
     def run(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -333,7 +336,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to run the model on.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
@@ -438,7 +441,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     @overload
     def end2end(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         *,
         verbose: bool | None = ...,
     ) -> np.ndarray: ...
@@ -446,14 +449,14 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     @overload
     def end2end(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         *,
         verbose: bool | None = ...,
     ) -> list[np.ndarray]: ...
 
     def end2end(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         *,
         verbose: bool | None = None,
     ) -> np.ndarray | list[np.ndarray]:
@@ -466,7 +469,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to perform inference with.
         verbose : bool, optional
             Whether or not to log additional information.

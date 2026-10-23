@@ -28,6 +28,7 @@ from .postprocessors import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from typing_extensions import Self
@@ -322,7 +323,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -336,7 +337,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -349,7 +350,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -364,7 +365,7 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to run the model on.
         ratios : tuple[float, float] | list[tuple[float, float]], optional
             The ratios generated during preprocessing. For single image, pass tuple.
@@ -412,7 +413,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -426,7 +427,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -440,7 +441,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
         conf_thres: float | None = ...,
@@ -455,7 +456,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -469,7 +470,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -483,7 +484,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def run(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
         conf_thres: float | None = ...,
@@ -496,7 +497,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def run(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
         conf_thres: float | None = None,
@@ -511,7 +512,7 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to run the model on.
         ratios : tuple[float, float] | list[tuple[float, float]], optional
             The ratios generated during preprocessing. For single image, pass tuple.
@@ -671,7 +672,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def end2end(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         conf_thres: float | None = ...,
         nms_iou_thres: float | None = ...,
         *,
@@ -683,7 +684,7 @@ class Detector(ImageModel, DetectorInterface):
     @overload
     def end2end(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         conf_thres: float | None = ...,
         nms_iou_thres: float | None = ...,
         *,
@@ -694,7 +695,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def end2end(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         conf_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
@@ -714,7 +715,7 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to perform inference with.
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
@@ -758,7 +759,7 @@ class Detector(ImageModel, DetectorInterface):
     def engine_inputs(
         self: Self,
         image: Buffer,
-        images: list[np.ndarray] | None,
+        images: Sequence[np.ndarray | Buffer] | None,
         ratios: list[tuple[float, float]] | None,
         /,
     ) -> list[Buffer]:
