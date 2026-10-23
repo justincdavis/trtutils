@@ -38,6 +38,7 @@ from ._models import (
 from ._tools import (
     check_uv_version,
     export_requirements,
+    handle_batch,
     make_venv,
 )
 
@@ -83,6 +84,8 @@ def download_model(
     imgsz: int | None = None,
     requirements_export: Path | None = None,
     *,
+    batch: int | None = None,
+    dynamic: bool | None = None,
     simplify: Sequence[str] | bool | None = None,
     make_static: bool | None = None,
     no_cache: bool | None = None,
@@ -106,6 +109,13 @@ def download_model(
         By default, the model will use the default image size for the model.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
+    batch : int, optional
+        The batch size to export at, by default 1. Only the ultralytics,
+        YOLOv10/12/13, and torchvision exporters accept a batch above 1.
+    dynamic : bool, optional
+        Leave the batch dimension symbolic (ultralytics and YOLOv10/12/13 also
+        leave height and width symbolic). Same exporters as batch. By default
+        only torchvision classifiers export dynamic, unless a batch is given.
     simplify : Sequence[str] or bool, optional
         Whether and how to simplify the model after exporting.
         If True, uses default tools (polygraphy, onnxslim).
@@ -133,9 +143,15 @@ def download_model(
     Raises
     ------
     ValueError
-        If the model is not supported.
+        If the model is not supported, the batch is not positive, or dynamic is
+        combined with a batch above 1 or make_static.
+    NotImplementedError
+        If batch > 1 or dynamic is requested from an exporter that cannot honor it.
 
     """
+    if dynamic and make_static:
+        err_msg = "dynamic and make_static are mutually exclusive"
+        raise ValueError(err_msg)
     model_configs: dict[str, dict[str, dict[str, str]]] = load_model_configs()
     config: dict[str, str] | None = None
     for model_set in model_configs.values():
@@ -148,9 +164,6 @@ def download_model(
     if config is None:
         err_msg = f"Model {model} is not supported"
         raise ValueError(err_msg)
-
-    python_path, bin_path = make_venv(directory, no_cache=no_uv_cache, verbose=verbose)
-    requirements_export_path = Path(requirements_export) if requirements_export is not None else None
 
     # Determine which export function to use
     export_func = None
@@ -200,6 +213,23 @@ def download_model(
         err_msg = f"Model {model} is not supported"
         raise ValueError(err_msg)
 
+    # torchvision classifiers have always exported batch-dynamic
+    if dynamic is None:
+        dynamic = export_func is export_torchvision_classifier and batch is None
+    # only these exporters' upstream tooling can set a batch size or a dynamic batch
+    supported = export_func in (
+        export_torchvision_classifier,
+        export_ultralytics,
+        export_yolov10,
+        export_yolov12,
+        export_yolov13,
+    )
+    batch, dynamic = handle_batch(batch, model, dynamic=dynamic, supported=supported)
+    batch_kwargs = {"batch": batch, "dynamic": dynamic} if supported else {}
+
+    python_path, bin_path = make_venv(directory, no_cache=no_uv_cache, verbose=verbose)
+    requirements_export_path = Path(requirements_export) if requirements_export is not None else None
+
     model_path = export_func(
         directory,
         config,
@@ -208,6 +238,7 @@ def download_model(
         model,
         opset,
         imgsz,
+        **batch_kwargs,
         no_cache=no_cache,
         no_uv_cache=no_uv_cache,
         no_warn=no_warn,
@@ -252,6 +283,8 @@ def download(
     imgsz: int | None = None,
     requirements_export: Path | None = None,
     *,
+    batch: int | None = None,
+    dynamic: bool | None = None,
     simplify: Sequence[str] | bool | None = None,
     make_static: bool | None = None,
     no_cache: bool | None = None,
@@ -275,6 +308,13 @@ def download(
         By default, the model will use the default image size for the model.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
+    batch : int, optional
+        The batch size to export at, by default 1. Only the ultralytics,
+        YOLOv10/12/13, and torchvision exporters accept a batch above 1.
+    dynamic : bool, optional
+        Leave the batch dimension symbolic (ultralytics and YOLOv10/12/13 also
+        leave height and width symbolic). Same exporters as batch. By default
+        only torchvision classifiers export dynamic, unless a batch is given.
     simplify : Sequence[str] or bool, optional
         Whether and how to simplify the model after exporting.
         If True, uses default tools (polygraphy, onnxslim).
@@ -304,6 +344,8 @@ def download(
             opset,
             imgsz,
             requirements_export=requirements_export,
+            batch=batch,
+            dynamic=dynamic,
             simplify=simplify,
             make_static=make_static,
             no_cache=no_cache,

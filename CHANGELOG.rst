@@ -31,6 +31,19 @@ Added
   came preprocessed), ``ImageModel.infer`` runs the engine on them and returns the raw
   outputs (``ImageModel.infer_profile`` times it), and ``ImageModel.get_preprocessor(method)``
   returns the preprocessor for a method, creating it on first use
+* ``download``/``download_model`` gain keyword-only ``batch`` and ``dynamic`` (CLI
+  ``--batch`` / ``--dynamic``) for exporting at a fixed batch size or with a symbolic
+  batch dimension (ultralytics and YOLOv10/12/13 also leave height and width symbolic);
+  honored by the ultralytics, YOLOv10/12/13, and torchvision exporters and rejected
+  with ``NotImplementedError`` elsewhere. ``dynamic`` cannot be combined with a batch
+  above 1 or ``make_static``. Torchvision classifiers still export batch-dynamic by
+  default; passing ``batch`` (or ``dynamic=False``) pins a static batch
+* Benchmark harness: ``optimize`` grid gains an input-composition axis (single /
+  homogeneous batch / heterogeneous batch / alternating-resolution singles) with a
+  static engine built per batch size; ``optimize``/``batch`` gain ``--stage`` to record
+  results under ``benchmark/data/perf-series/<device>/`` (tagged with the trtutils git
+  SHA) for comparing successive library revisions, plotted by
+  ``benchmark/plotting/patch_series.py`` (``run.py plot --patch-series``)
 
 Changed
 ^^^^^^^
@@ -85,6 +98,12 @@ Changed
 
 Fixed
 ^^^^^
+* CUDA/TRT preprocessors reallocated their staging buffers on every input shape change;
+  with ``pagelocked_mem`` each free synchronized the device, making mixed-size batches
+  ~3.9x and resolution switches ~3.7x slower than pageable memory. The buffers now only
+  grow, and the preprocessors synchronize their stream before the CPU rewrites a pinned
+  or mapped staging buffer that an earlier copy or kernel may still read (a race the
+  per-shape reallocation had hidden for ``unified_mem`` mixed-size batches)
 * ``TRTEngine.is_dynamic_batch`` read the max-profile binding shape and was always False;
   it is True when the profile allows more than one batch size, and
   ``ImageModel.is_dynamic_batch`` reads it

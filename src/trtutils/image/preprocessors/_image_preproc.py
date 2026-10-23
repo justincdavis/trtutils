@@ -347,15 +347,10 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         # allocate input, output binding
         # need input -> intermediate -> output
-        # for now just allocate 1080p image, reallocate when needed
-        # resize kernel input binding
-        self._allocated_input_shape: tuple[int, int, int] = (1080, 1920, 3)
-        dummy_input: np.ndarray = np.zeros(
-            self._allocated_input_shape,
-            dtype=np.uint8,
-        )
+        # staging buffers start at 1080p and only grow: freeing pinned memory
+        # synchronizes the device, so reallocating per shape change is costly
         self._input_binding = create_binding(
-            dummy_input,
+            np.zeros((1080, 1920, 3), dtype=np.uint8),
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
@@ -385,13 +380,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
         ) = None
 
         # Homogeneous-batch staging buffer: one contiguous H2D for same-sized images.
-        self._allocated_batch_input_shape: tuple[int, int, int, int] = (1, 1080, 1920, 3)
-        dummy_batch_input: np.ndarray = np.zeros(
-            self._allocated_batch_input_shape,
-            dtype=np.uint8,
-        )
         self._batch_input_binding = create_binding(
-            dummy_batch_input,
+            np.zeros((1, 1080, 1920, 3), dtype=np.uint8),
             is_input=True,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
@@ -519,7 +509,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
     def _reallocate_input(
         self: Self,
         image: np.ndarray,
-        img_shape: tuple[int, int, int],
         *,
         verbose: bool | None = None,
     ) -> None:
@@ -527,12 +516,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.push_range(self._nvtx_tags["reallocate_input"])
 
         if verbose:
-            LOG.debug(f"{self._tag}: Reallocating input bindings")
-            LOG.debug(
-                f"{self._tag}: Reallocation -> new shape: {img_shape}, old shape: {self._allocated_input_shape}",
-            )
+            LOG.debug(f"{self._tag}: Growing input binding to {image.shape}")
 
-        self._allocated_input_shape = img_shape
         self._input_binding = create_binding(
             image,
             is_input=True,
@@ -580,19 +565,17 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         if verbose:
             LOG.debug(
-                f"{self._tag}: Image shape: {img_shape}, Allocated shape: {self._allocated_input_shape}",
+                f"{self._tag}: Image shape: {img_shape}, Allocated: {self._input_binding.host_allocation.shape}",
             )
 
-        # check if the image shape is the same as re have allocated with, if not update
-        if img_shape != self._allocated_input_shape:
-            # put ignore here, since we verified dmin is 3 above
-            if img_shape[2] != _COLOR_CHANNELS:
-                err_msg = f"{self._tag}: Can only preprocess color images."
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # validate_input
-                raise ValueError(err_msg)
+        if img_shape[2] != _COLOR_CHANNELS:
+            err_msg = f"{self._tag}: Can only preprocess color images."
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # validate_input
+            raise ValueError(err_msg)
 
-            self._reallocate_input(image, img_shape, verbose=verbose)
+        if image.nbytes > self._input_binding.host_allocation.nbytes:
+            self._reallocate_input(image, verbose=verbose)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # validate_input
@@ -604,18 +587,18 @@ class GPUImagePreprocessor(ImagePreprocessor):
         batch_size: int,
         height: int,
         width: int,
-    ) -> None:
-        """Reallocate homogeneous batch staging buffer when shape changes."""
-        requested_shape = (batch_size, height, width, _COLOR_CHANNELS)
-        if requested_shape == self._allocated_batch_input_shape:
-            return
-        self._allocated_batch_input_shape = requested_shape
-        self._batch_input_binding = create_binding(
-            np.zeros(requested_shape, dtype=np.uint8),
-            is_input=True,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=self._unified_mem,
-        )
+    ) -> np.ndarray:
+        """Grow the homogeneous batch staging buffer if needed; return a host view of the batch."""
+        shape = (batch_size, height, width, _COLOR_CHANNELS)
+        size = math.prod(shape)
+        if size > self._batch_input_binding.host_allocation.size:
+            self._batch_input_binding = create_binding(
+                np.zeros(shape, dtype=np.uint8),
+                is_input=True,
+                pagelocked_mem=self._pagelocked_mem,
+                unified_mem=self._unified_mem,
+            )
+        return self._batch_input_binding.host_allocation.reshape(-1)[:size].reshape(shape)
 
     @abstractmethod
     def direct_preproc(
@@ -878,6 +861,15 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         return resize_kernel, resize_args, ratios, padding
 
+    def _stage_image(self: Self, image: np.ndarray) -> None:
+        """Put one image into the device input binding, ahead of its resize kernel."""
+        if self._pagelocked_mem and self._unified_mem:
+            # the kernel for the previous image may still read this mapped buffer
+            stream_synchronize(self._stream)
+            self._input_binding.host_allocation.reshape(-1)[: image.size] = image.reshape(-1)
+        else:
+            memcpy_host_to_device_async(self._input_binding.allocation, image, self._stream)
+
     def _resize_single_image_to_batch(
         self: Self,
         image: np.ndarray,
@@ -899,14 +891,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             batch_buffer_ptr,
             verbose=verbose,
         )
-        if self._pagelocked_mem and self._unified_mem:
-            np.copyto(self._input_binding.host_allocation, image)
-        else:
-            memcpy_host_to_device_async(
-                self._input_binding.allocation,
-                image,
-                self._stream,
-            )
+        self._stage_image(image)
         resize_kernel.call(
             self._num_blocks,
             self._num_threads,
@@ -936,21 +921,24 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["reallocate_batch_input"])
-        self._reallocate_batch_input(batch_size, height, width)
+        host_batch = self._reallocate_batch_input(batch_size, height, width)
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # reallocate_batch_input
             nvtx.push_range(self._nvtx_tags["pack_batch_buffer"])
 
+        # pinned staging may still feed an earlier copy or kernel on the stream
+        if self._pagelocked_mem:
+            stream_synchronize(self._stream)
         # Pack host batch buffer once; avoid np.stack allocation in hot path.
         for i, image in enumerate(images):
-            np.copyto(self._batch_input_binding.host_allocation[i], image)
+            np.copyto(host_batch[i], image)
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # pack_batch_buffer
 
         if not (self._pagelocked_mem and self._unified_mem):
             memcpy_host_to_device_async(
                 self._batch_input_binding.allocation,
-                self._batch_input_binding.host_allocation,
+                host_batch,
                 self._stream,
             )
 
@@ -1007,14 +995,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 batch_buffer_ptr + (i * single_image_bytes),
                 verbose=verbose,
             )
-            if self._pagelocked_mem and self._unified_mem:
-                np.copyto(self._input_binding.host_allocation, image)
-            else:
-                memcpy_host_to_device_async(
-                    self._input_binding.allocation,
-                    image,
-                    self._stream,
-                )
+            self._stage_image(image)
             resize_kernel.call(
                 self._num_blocks,
                 self._num_threads,

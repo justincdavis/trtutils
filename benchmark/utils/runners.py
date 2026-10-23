@@ -7,8 +7,8 @@
 from __future__ import annotations
 
 import contextlib
+import itertools
 import json
-import shutil
 import subprocess
 import time
 import warnings
@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 
 import cv2
 from tqdm import tqdm
+
+import trtutils
 
 from .config import (
     DATA_DIR,
@@ -38,53 +40,21 @@ if TYPE_CHECKING:
     from typing import Any
 
 
-def _export_batch_onnx(
-    model_name: str,
-    imgsz: int,
-    batch_size: int,
-    output_dir: Path,
-) -> Path:
-    onnx_path = output_dir / f"{model_name}_{imgsz}_b{batch_size}.onnx"
-    if onnx_path.exists():
-        return onnx_path
-
-    print(f"Exporting {model_name} ONNX with batch={batch_size}...")
-
-    pt_dir = REPO_DIR / "data" / "ultralytics"
-    pt_dir.mkdir(parents=True, exist_ok=True)
-    pt_path = pt_dir / f"{model_name}.pt"
-
-    subprocess.run(
-        [
-            "yolo",
-            "export",
-            f"model={pt_path}",
-            "format=onnx",
-            f"imgsz={imgsz}",
-            f"batch={batch_size}",
-            "opset=17",
-        ],
-        check=True,
-        capture_output=True,
-    )
-
-    exported_path = pt_path.with_suffix(".onnx")
-    if not exported_path.exists():
-        err_msg = f"ONNX export failed, file not found: {exported_path}"
-        raise FileNotFoundError(err_msg)
-
-    shutil.move(str(exported_path), str(onnx_path))
-    print(f"Exported batch ONNX: {onnx_path.name}")
-    return onnx_path
-
-
-def _engine_path_for_batch(
-    onnx_path: Path,
-    imgsz: int,
-    batch_size: int,
-) -> Path:
-    model_name = onnx_path.stem.rsplit("_", 1)[0]
-    return onnx_path.parent / f"{model_name}_{imgsz}_b{batch_size}.engine"
+def _engine_for_batch(model_name: str, imgsz: int, bs: int, *, rebuild: bool = False) -> Path:
+    """Return the static engine for a batch size, exporting and building it on first use."""
+    onnx_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR, batch=bs)
+    engine_path = onnx_path.with_suffix(".engine")
+    if rebuild or not engine_path.exists():
+        print(f"\tBuilding engine for {imgsz}x{bs}: {engine_path.name}")
+        build_model(
+            onnx=onnx_path,
+            output=engine_path,
+            imgsz=imgsz,
+            batch_size=bs,
+            model_name=model_name,
+            timing_cache=get_timing_cache_path(),
+        )
+    return engine_path
 
 
 def _run_benchmarks(
@@ -92,15 +62,20 @@ def _run_benchmarks(
     model_name: str,
     configs: list[tuple[str, int, int]],
     bench_iters: int,
-    data_subdir: str,
+    data_subdir: str | None,
     frameworks: list[str],
     modes: list[tuple[str, Any]],
     runner_factory: Callable,
     loop_warmup: int = 0,
     *,
     overwrite: bool = False,
-) -> None:
-    data = get_data(device, data_subdir, frameworks)
+) -> dict:
+    """Measure each mode/config; returns only this call's results. data_subdir=None persists nothing."""
+    if data_subdir is None:
+        data: dict = {fw: {} for fw in frameworks}
+    else:
+        data = get_data(device, data_subdir, frameworks)
+    measured: dict = {}
 
     for framework, flag in modes:
         if framework not in frameworks:
@@ -126,7 +101,9 @@ def _run_benchmarks(
 
                 results = compute_results(timings, batch_size=bs)
                 data[framework][model_name][data_key] = results
-                write_data(device, data_subdir, data)
+                measured.setdefault(framework, {}).setdefault(model_name, {})[data_key] = results
+                if data_subdir is not None:
+                    write_data(device, data_subdir, data)
 
                 print(
                     f"\t{framework} {data_key}: "
@@ -136,6 +113,7 @@ def _run_benchmarks(
             except Exception as e:
                 warnings.warn(f"Failed {framework} {data_key}: {e}")
                 continue
+    return measured
 
 
 @contextlib.contextmanager
@@ -145,31 +123,7 @@ def _runner_trtutils(mode, imgsz, bs, *, model_name, warmup_iters, image):
     cuda_graph = mode in ("detector_graph", "raw_graph")
     is_raw = mode in ("raw", "raw_graph")
 
-    onnx_path = ensure_model_available(
-        model_name,
-        imgsz,
-        MODEL_TO_DIR,
-        auto_download=True,
-    )
-    if bs > 1:
-        batch_onnx = _export_batch_onnx(model_name, imgsz, bs, onnx_path.parent)
-        engine_path = _engine_path_for_batch(onnx_path, imgsz, bs)
-    else:
-        batch_onnx = onnx_path
-        engine_path = onnx_path.with_suffix(".engine")
-
-    def build_engine():
-        print(f"\tBuilding engine for {imgsz}x{bs}...")
-        build_model(
-            onnx=batch_onnx,
-            output=engine_path,
-            imgsz=imgsz,
-            batch_size=bs,
-            model_name=model_name,
-            timing_cache=get_timing_cache_path(),
-        )
-
-    def create_detector() -> Detector:
+    def create_detector(engine_path: Path) -> Detector:
         return Detector(
             engine_path=engine_path,
             warmup_iterations=warmup_iters,
@@ -180,18 +134,14 @@ def _runner_trtutils(mode, imgsz, bs, *, model_name, warmup_iters, image):
             verbose=False,
         )
 
-    if not engine_path.exists():
-        build_engine()
-
+    engine_path = _engine_for_batch(model_name, imgsz, bs)
     try:
-        detector = create_detector()
+        detector = create_detector(engine_path)
     except RuntimeError as e:
         if "Failed to deserialize" not in str(e):
             raise
         print(f"\tEngine incompatible, rebuilding: {engine_path}")
-        engine_path.unlink(missing_ok=True)
-        build_engine()
-        detector = create_detector()
+        detector = create_detector(_engine_for_batch(model_name, imgsz, bs, rebuild=True))
 
     if is_raw:
         engine = detector.engine
@@ -358,10 +308,10 @@ def run_benchmark(
     bench_iters: int,
     *,
     configs: list[tuple[str, int, int]] | None = None,
-    data_subdir: str = "models",
+    data_subdir: str | None = "models",
     frameworks: list[str] | None = None,
     overwrite: bool = False,
-) -> None:
+) -> dict | None:
     if kind == "trtutils" or kind == "ultralytics":
         image = cv2.imread(IMAGE_PATH)
         if kind == "trtutils":
@@ -371,7 +321,7 @@ def run_benchmark(
                 warmup_iters=warmup_iters,
                 image=image,
             )
-            modes = modes=[
+            modes = [
                 ("trtutils", "detector"),
                 ("trtutils(graph)", "detector_graph"),
                 ("tensorrt", "raw"),
@@ -383,8 +333,8 @@ def run_benchmark(
                 model_name=model_name,
                 image=image,
             )
-            modes=[("ultralytics(torch)", False), ("ultralytics(trt)", True)],
-        _run_benchmarks(
+            modes = [("ultralytics(torch)", False), ("ultralytics(trt)", True)]
+        return _run_benchmarks(
             device,
             model_name,
             configs,
@@ -396,7 +346,7 @@ def run_benchmark(
             loop_warmup=warmup_iters,
             overwrite=overwrite,
         )
-    elif kind == "sahi":
+    if kind == "sahi":
         image = cv2.imread(SAHI_IMAGE_PATH)
         imgsz = 640
         overlap = 0.2
@@ -474,6 +424,45 @@ def run_benchmark(
     else:
         err_msg = f"Unknown benchmark kind: {kind}"
         raise ValueError(err_msg)
+    return None
+
+
+def _trtutils_git_sha() -> str | None:
+    """Git SHA of the trtutils checkout actually imported, or None outside a repo."""
+    src_dir = Path(trtutils.__file__).resolve().parent
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=src_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    return result.stdout.strip()
+
+
+def write_stage_snapshot(device: str, stage: str, section: str, payload: dict) -> None:
+    """
+    Merge one benchmark section into data/perf-series/<device>/stage-<stage>.json.
+
+    ``optimize`` and ``batch`` each own a section of the same stage file, so
+    running them in either order (or re-running one) never discards the other.
+    Each section records the trtutils git SHA it measured.
+    """
+    out_dir = DATA_DIR / "perf-series" / device
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"stage-{stage}.json"
+    snapshot: dict = {}
+    if out_path.exists():
+        with out_path.open("r") as f:
+            snapshot = json.load(f)
+    snapshot.update({"device": device, "stage": stage})
+    snapshot[section] = {**payload, "trtutils_sha": _trtutils_git_sha()}
+    with out_path.open("w") as f:
+        json.dump(snapshot, f, indent=2)
+    print(f"Wrote stage snapshot: {out_path} [{section}]")
 
 
 def benchmark_optimizations(
@@ -482,33 +471,53 @@ def benchmark_optimizations(
     imgsz: int,
     warmup_iters: int,
     bench_iters: int,
+    stage: str | None = None,
 ) -> None:
     """Benchmark Detector with all combinations of optimization flags."""
     from trtutils.image import Detector
 
     image = cv2.imread(str(IMAGE_PATH))
 
-    onnx_path = ensure_model_available(model_name, imgsz, MODEL_TO_DIR)
-    engine_path = onnx_path.with_suffix(".engine")
-    if not engine_path.exists():
-        print(f"Building engine: {engine_path}")
-        build_model(onnx_path, engine_path, imgsz, opt_level=1, timing_cache=get_timing_cache_path())
+    # each composition is the list of end2end calls cycled through: a lone image or
+    # batch never exercises heterogeneous staging or a shape that changes per call
+    hetero_sizes = [
+        (640, 480),
+        (1280, 720),
+        (800, 600),
+        (1920, 1080),
+        (512, 512),
+        (1024, 768),
+        (640, 640),
+        (1600, 900),
+    ]
+    calls: dict[str, list[list]] = {
+        "single": [[image]],
+        "homogeneous8": [[cv2.resize(image, (1280, 720))] * 8],
+        "heterogeneous8": [[cv2.resize(image, size) for size in hetero_sizes]],
+        "resolution-switch": [[cv2.resize(image, size)] for size in [(1280, 720), (1920, 1080)]],
+    }
 
-    configs: list[dict] = []
-    for prep in ["cpu", "cuda", "trt"]:
-        for cuda_graph in [False, True]:
-            for pagelocked in [False, True]:
-                for unified in [False, True]:
-                    if pagelocked and unified:
-                        continue
-                    configs.append(
-                        {
-                            "preprocessor": prep,
-                            "cuda_graph": cuda_graph,
-                            "pagelocked_mem": pagelocked,
-                            "unified_mem": unified,
-                        }
-                    )
+    # build each engine once; a failed build skips its configs instead of retrying
+    engines: dict[int, Path | Exception] = {}
+    for bs in sorted({len(c[0]) for c in calls.values()}):
+        try:
+            engines[bs] = _engine_for_batch(model_name, imgsz, bs)
+        except Exception as e:  # noqa: BLE001
+            engines[bs] = e
+
+    configs = [
+        {
+            "preprocessor": prep,
+            "cuda_graph": cuda_graph,
+            "pagelocked_mem": pagelocked,
+            "unified_mem": unified,
+            "inputs": inputs_key,
+        }
+        for prep, cuda_graph, pagelocked, unified, inputs_key in itertools.product(
+            ["cpu", "cuda", "trt"], [False, True], [False, True], [False, True], calls
+        )
+        if not (pagelocked and unified)
+    ]
 
     results: list[dict] = []
     print(f"\nBenchmarking {model_name} @ {imgsz}x{imgsz}")
@@ -517,28 +526,35 @@ def benchmark_optimizations(
     for cfg in configs:
         desc = (
             f"prep={cfg['preprocessor']} graph={cfg['cuda_graph']} "
-            f"pl={cfg['pagelocked_mem']} um={cfg['unified_mem']}"
+            f"pl={cfg['pagelocked_mem']} um={cfg['unified_mem']} "
+            f"in={cfg['inputs']}"
         )
+        batch = len(calls[cfg["inputs"]][0])
+        engine_path = engines[batch]
+        if isinstance(engine_path, Exception):
+            print(f"FAILED: {desc} - no engine for batch {batch}: {engine_path}")
+            continue
         try:
+            # the timed loop's own warmup runs the composition's real shapes
             detector = Detector(
                 engine_path=engine_path,
-                warmup=True,
-                warmup_iterations=warmup_iters,
+                warmup=False,
                 preprocessor=cfg["preprocessor"],
                 cuda_graph=cfg["cuda_graph"],
                 pagelocked_mem=cfg["pagelocked_mem"],
                 unified_mem=cfg["unified_mem"],
                 verbose=False,
             )
+            cycle = itertools.cycle(calls[cfg["inputs"]])
             timings = benchmark_loop(
-                lambda: detector.end2end(image),
-                0,
+                lambda d=detector, c=cycle: d.end2end(next(c)),
+                warmup_iters,
                 bench_iters,
                 desc,
             )
             del detector
 
-            stats = compute_results(timings)
+            stats = compute_results(timings, batch_size=batch)
             results.append({**cfg, **stats})
         except Exception as e:
             print(f"FAILED: {desc} - {e}")
@@ -546,34 +562,32 @@ def benchmark_optimizations(
 
     results.sort(key=lambda x: x["mean"])
 
-    print("\n" + "=" * 90)
+    print("\n" + "=" * 110)
     print(
-        f"{'Preprocessor':<12} {'CUDAGraph':<10} {'Pagelocked':<10} "
+        f"{'Preprocessor':<12} {'Inputs':<16} {'CUDAGraph':<10} {'Pagelocked':<10} "
         f"{'Unified':<10} {'Mean(ms)':<10} {'Std(ms)':<10} {'Min(ms)':<10}",
     )
-    print("=" * 90)
+    print("=" * 110)
 
     for r in results:
         print(
-            f"{r['preprocessor']:<12} {r['cuda_graph']!s:<10} "
+            f"{r['preprocessor']:<12} {r['inputs']:<16} {r['cuda_graph']!s:<10} "
             f"{r['pagelocked_mem']!s:<10} {r['unified_mem']!s:<10} "
             f"{r['mean']:<10.3f} {r['std']:<10.3f} {r['min']:<10.3f}",
         )
 
     if len(results) >= 2:
         speedup = results[-1]["mean"] / results[0]["mean"] if results[0]["mean"] > 0 else 0
-        print("=" * 90)
+        print("=" * 110)
         print(
             f"Fastest: {results[0]['preprocessor']}, "
+            f"inputs={results[0]['inputs']}, "
             f"graph={results[0]['cuda_graph']}, "
             f"pl={results[0]['pagelocked_mem']}, "
             f"um={results[0]['unified_mem']}",
         )
         print(f"Max speedup: {speedup:.2f}x")
 
-    out_dir = DATA_DIR / "optimizations"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{device}.json"
     payload = {
         "device": device,
         "model": model_name,
@@ -582,6 +596,12 @@ def benchmark_optimizations(
         "iterations": bench_iters,
         "results": results,
     }
+    if stage is not None:
+        write_stage_snapshot(device, stage, "optimize", payload)
+        return
+    out_dir = DATA_DIR / "optimizations"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{device}.json"
     with out_path.open("w") as f:
         json.dump(payload, f, indent=2)
     print(f"\nWrote {out_path}")

@@ -21,6 +21,8 @@ def export_torchvision_classifier(
     opset: int,
     imgsz: int | None = None,
     *,
+    batch: int = 1,
+    dynamic: bool = False,
     no_cache: bool | None = None,  # noqa: ARG001
     no_uv_cache: bool | None = None,
     no_warn: bool | None = None,  # noqa: ARG001
@@ -29,6 +31,7 @@ def export_torchvision_classifier(
     _224 = 224
     if imgsz is None:
         imgsz = _224
+    dynamic_axes = '{"input": {0: "batch_size"}, "output": {0: "batch_size"}}' if dynamic else "None"
     run_uv_pip_install(
         directory,
         bin_path.parent,
@@ -49,7 +52,7 @@ output_path = model_name + ".onnx"
 
 model = getattr(models, model_name)(weights="DEFAULT")
 model.eval()
-dummy_input = torch.randn(1, 3, imgsz, imgsz)
+dummy_input = torch.randn({batch}, 3, imgsz, imgsz)
 torch.onnx.export(
     model,
     dummy_input,
@@ -57,7 +60,7 @@ torch.onnx.export(
     opset_version=opset,
     input_names=["input"],
     output_names=["output"],
-    dynamic_axes={{"input": {{0: "batch_size"}}, "output": {{0: "batch_size"}}}},
+    dynamic_axes={dynamic_axes},
 )
 # Fix Einsum equations: TensorRT only supports lowercase letters
 onnx_model = onnx.load(output_path)

@@ -429,6 +429,10 @@ Download a model from remote source and convert to ONNX format. This command sup
     # Download YOLOX small model
     python3 -m trtutils download --model yoloxs --output yoloxs.onnx --imgsz 640 --opset 17 --accept
 
+    # Download YOLOv10n at batch 8, or with a dynamic batch dimension
+    python3 -m trtutils download --model yolov10n --output yolov10n_b8.onnx --batch 8 --accept
+    python3 -m trtutils download --model yolov10n --output yolov10n_dyn.onnx --dynamic --accept
+
     # Download RT-DETRv1 model
     python3 -m trtutils download --model rtdetrv1_r18vd --output rtdetrv1.onnx --accept
 
@@ -444,6 +448,12 @@ Options
 
 * ``--opset``: ONNX opset version to use (default: 17)
 * ``--imgsz``: Image size to use for the model (default: 640)
+* ``--batch``: Export at a fixed batch size (default: 1). Supported by the Ultralytics
+  models, YOLOv10/12/13, and torchvision classifiers; other families raise an error
+* ``--dynamic``: Export with a symbolic batch dimension so one ONNX builds engines for a
+  range of batch sizes (Ultralytics and YOLOv10/12/13 also leave height and width
+  symbolic). Cannot be combined with ``--batch``. Torchvision classifiers export
+  dynamic by default
 * ``--accept``: Accept the license terms for the model. If not provided, you will be prompted.
 
 Supported Models

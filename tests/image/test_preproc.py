@@ -70,3 +70,64 @@ def test_batch_matches_single(random_images, preproc_cls, kwargs) -> None:
             np.testing.assert_array_equal(batch[i], tensor[0])
             assert ratios[i] == single_ratios[0]
             assert padding[i] == single_padding[0]
+
+
+SHAPES = [(1080, 1920), (480, 640), (2160, 3840), (720, 1280), (512, 512)]
+
+
+@pytest.mark.parametrize(
+    "gpu_cls",
+    [
+        pytest.param(CUDAPreprocessor, id="cuda"),
+        pytest.param(TRTPreprocessor, id="trt"),
+    ],
+)
+@pytest.mark.parametrize(
+    "memory",
+    [
+        pytest.param({"pagelocked_mem": False}, id="pageable"),
+        pytest.param({"pagelocked_mem": True}, id="pagelocked"),
+        pytest.param({"pagelocked_mem": True, "unified_mem": True}, id="unified"),
+    ],
+)
+@pytest.mark.parametrize(
+    "calls",
+    [
+        pytest.param([[s] for s in SHAPES], id="single"),
+        pytest.param([[s] * n for n, s in zip((3, 1, 2, 4, 2), SHAPES)], id="homogeneous"),
+        pytest.param([SHAPES[:4], SHAPES[1:], SHAPES[::2]], id="heterogeneous"),
+    ],
+)
+def test_reused_staging_matches_fresh(gpu_cls, memory, calls) -> None:
+    """Growing and shrinking inputs on one preprocessor match a fresh one per call."""
+    rng = np.random.default_rng(0)
+    kwargs = {"batch_size": 4} if gpu_cls is TRTPreprocessor else {}
+    reused = gpu_cls(SIZE, RANGE, DTYPE, **memory, **kwargs)
+    for shapes in calls:
+        imgs = [rng.integers(0, 256, (*s, 3), dtype=np.uint8) for s in shapes]
+        expected = gpu_cls(SIZE, RANGE, DTYPE, **memory, **kwargs).preprocess(imgs)
+        result = reused.preprocess(imgs)
+        np.testing.assert_array_equal(result[0], expected[0])
+        assert result[1:] == expected[1:]
+
+
+@pytest.mark.parametrize(
+    "gpu_cls",
+    [
+        pytest.param(CUDAPreprocessor, id="cuda"),
+        pytest.param(TRTPreprocessor, id="trt"),
+    ],
+)
+def test_staging_only_grows(gpu_cls) -> None:
+    """Smaller inputs reuse the staging buffers; only a larger input reallocates."""
+    kwargs = {"batch_size": 4} if gpu_cls is TRTPreprocessor else {}
+    preproc = gpu_cls(SIZE, RANGE, DTYPE, **kwargs)
+    single, batch = preproc._input_binding, preproc._batch_input_binding
+    preproc.preprocess([np.zeros((480, 640, 3), np.uint8)])
+    preproc.preprocess([np.zeros((540, 960, 3), np.uint8)] * 4)
+    assert preproc._input_binding is single
+    assert preproc._batch_input_binding is batch
+    preproc.preprocess([np.zeros((2160, 3840, 3), np.uint8)])
+    preproc.preprocess([np.zeros((720, 1280, 3), np.uint8)] * 4)
+    assert preproc._input_binding is not single
+    assert preproc._batch_input_binding is not batch

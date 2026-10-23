@@ -120,6 +120,8 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "list_models": False,
         "opset": 17,
         "imgsz": None,
+        "batch": None,
+        "dynamic": None,
         "requirements_export": None,
         "verbose": False,
         "no_cache": False,
@@ -190,6 +192,17 @@ def test_download_simplify_argument_translation(simplify_arg, expected) -> None:
         _download(_args("download", simplify=simplify_arg))
     mock_dl.assert_called_once()
     assert mock_dl.call_args[1]["simplify"] == expected
+
+
+@pytest.mark.parametrize("dynamic", [None, True])
+@pytest.mark.parametrize("batch", [None, 8])
+def test_download_batch_and_dynamic_forwarded(batch, dynamic) -> None:
+    """The CLI's --batch and --dynamic flags reach download() as keywords, unset as None."""
+    with patch("trtutils.__main__.trtutils.download.download") as mock_dl:
+        _download(_args("download", batch=batch, dynamic=dynamic))
+    mock_dl.assert_called_once()
+    assert mock_dl.call_args.kwargs["batch"] == batch
+    assert mock_dl.call_args.kwargs["dynamic"] is dynamic
 
 
 def test_download_list_models_skips_download() -> None:

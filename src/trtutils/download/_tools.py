@@ -56,6 +56,61 @@ def handle_imgsz(
     return imgsz
 
 
+def handle_batch(
+    batch: int | None,
+    model_name: str,
+    *,
+    dynamic: bool | None,
+    supported: bool,
+) -> tuple[int, bool]:
+    """
+    Validate the batch / dynamic export options for an exporter.
+
+    Parameters
+    ----------
+    batch : int, optional
+        The requested batch size. None is treated as 1.
+    model_name : str
+        The model name, used in error messages.
+    dynamic : bool, optional
+        Whether to leave the batch dimension symbolic. None is treated as False.
+    supported : bool
+        Whether the exporter can set a batch size and export dynamic. When False,
+        any batch above 1 or a dynamic request is rejected rather than silently
+        exported at batch 1.
+
+    Returns
+    -------
+    tuple[int, bool]
+        The batch size and dynamic flag to export with.
+
+    Raises
+    ------
+    ValueError
+        If the batch size is not positive, or dynamic is combined with a batch above 1.
+    NotImplementedError
+        If the exporter is not supported and batch > 1 or dynamic is requested.
+
+    """
+    batch = 1 if batch is None else batch
+    if batch < 1:
+        err_msg = f"Batch size must be positive, got {batch}."
+        raise ValueError(err_msg)
+    if not supported and (batch > 1 or dynamic):
+        err_msg = (
+            f"{model_name} does not support exporting at a batch size other than 1 "
+            "or with a dynamic batch. Export at batch 1 instead."
+        )
+        raise NotImplementedError(err_msg)
+    if dynamic and batch > 1:
+        err_msg = (
+            f"Cannot export {model_name} with both a dynamic batch and a fixed batch of "
+            f"{batch}; pass one or the other."
+        )
+        raise ValueError(err_msg)
+    return batch, bool(dynamic)
+
+
 def kill_process_group(pid: int | None, cmd: Sequence[str]) -> None:
     if pid is None:
         return

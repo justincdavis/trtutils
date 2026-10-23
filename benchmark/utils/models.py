@@ -75,9 +75,10 @@ def ensure_model_available(
     model_to_dir: dict[str, str],
     opset: int = 17,
     *,
+    batch: int = 1,
     auto_download: bool = True,
 ) -> Path:
-    """Ensure a model is available, downloading it if necessary."""
+    """Ensure a model (at a fixed batch above 1, if given) is available, downloading it if needed."""
     from trtutils.download import download
 
     if model_name not in model_to_dir:
@@ -85,7 +86,8 @@ def ensure_model_available(
         raise ValueError(err_msg)
 
     model_dir = REPO_DIR / "data" / model_to_dir[model_name]
-    model_path = model_dir / f"{model_name}_{imgsz}.onnx"
+    suffix = f"_b{batch}" if batch > 1 else ""
+    model_path = model_dir / f"{model_name}_{imgsz}{suffix}.onnx"
 
     if model_path.exists():
         return model_path
@@ -103,6 +105,7 @@ def ensure_model_available(
         output=model_path,
         opset=opset,
         imgsz=imgsz,
+        batch=batch,
         verbose=False,
     )
     return model_path

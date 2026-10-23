@@ -1203,6 +1203,10 @@ def _download(args: SimpleNamespace) -> None:
             ONNX opset version to use.
         - imgsz : int
             Image size for the model.
+        - batch : int
+            Batch size to export the model at.
+        - dynamic : bool
+            Export with a symbolic batch dimension.
         - requirements_export : Path | None
             Optional path to export the created virtual environment's requirements file.
         - verbose : bool
@@ -1240,6 +1244,8 @@ def _download(args: SimpleNamespace) -> None:
         args.opset,
         args.imgsz,
         requirements_export=args.requirements_export,
+        batch=args.batch,
+        dynamic=args.dynamic,
         simplify=simplify_value,
         verbose=args.verbose,
         no_cache=args.no_cache,
@@ -1991,6 +1997,21 @@ def _main() -> None:
         type=int,
         default=None,
         help="Image size to use for the model. If not specified, uses the model's default.",
+    )
+    download_parser.add_argument(
+        "--batch",
+        type=int,
+        default=None,
+        help="Batch size to export the model at. Default is 1. Not all model "
+        "families support a batch size other than 1.",
+    )
+    download_parser.add_argument(
+        "--dynamic",
+        action="store_true",
+        default=None,
+        help="Export with a symbolic batch dimension so one ONNX can build "
+        "engines for a range of batch sizes. Cannot be combined with --batch. "
+        "Torchvision classifiers export dynamic by default.",
     )
     download_parser.add_argument(
         "--requirements_export",

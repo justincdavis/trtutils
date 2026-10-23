@@ -29,6 +29,8 @@ BATCH_FRAMEWORKS = [
     "trtutils(graph)",
     "ultralytics(trt)",
     "ultralytics(torch)",
+    "tensorrt",
+    "tensorrt(graph)",
 ]
 
 ULTRALYTICS_MODELS = [

@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.download.conftest import ROUTING_CASES
 from trtutils.download import download, download_model
 from trtutils.download._simplify import simplify
 from trtutils.download._tools import check_uv_available, handle_imgsz
@@ -31,32 +32,7 @@ def test_unsupported_model_raises(tmp_path, func, model) -> None:
         func(tmp_path, model)
 
 
-_ROUTING_CASES = [
-    pytest.param("yolov8n", "export_ultralytics", id="ultralytics-yolov8"),
-    pytest.param("yolov11n", "export_ultralytics", id="ultralytics-yolov11"),
-    pytest.param("yolov7t", "export_yolov7", id="yolov7"),
-    pytest.param("yolov9t", "export_yolov9", id="yolov9"),
-    pytest.param("yolov10n", "export_yolov10", id="yolov10"),
-    pytest.param("yolov12n", "export_yolov12", id="yolov12"),
-    pytest.param("yolov13n", "export_yolov13", id="yolov13"),
-    pytest.param("yoloxn", "export_yolox", id="yolox"),
-    pytest.param("rtdetrv1_r18", "export_rtdetrv1", id="rtdetrv1"),
-    pytest.param("rtdetrv2_r18", "export_rtdetrv2", id="rtdetrv2"),
-    pytest.param("rtdetrv3_r18", "export_rtdetrv3", id="rtdetrv3"),
-    pytest.param("dfine_n", "export_dfine", id="dfine"),
-    pytest.param("deim_dfine_n", "export_deim", id="deim"),
-    pytest.param("deimv2_atto", "export_deimv2", id="deimv2"),
-    pytest.param("rfdetr_n", "export_rfdetr", id="rfdetr"),
-    pytest.param("alexnet", "export_torchvision_classifier", id="torchvision"),
-    pytest.param("depth_anything_v1_small", "export_depth_anything_v1", id="depth_anything_v1"),
-    pytest.param("depth_anything_v2_small", "export_depth_anything_v2", id="depth_anything"),
-    pytest.param("depth_anything_v3_mono_large", "export_depth_anything_v3", id="depth_anything_v3"),
-    pytest.param("hoi_detr_vitl", "export_hoi_detr", id="hoi_detr"),
-    pytest.param("hands23_x101", "export_hands23", id="hands23"),
-]
-
-
-@pytest.mark.parametrize(("model", "export_func_name"), _ROUTING_CASES)
+@pytest.mark.parametrize(("model", "export_func_name"), ROUTING_CASES)
 def test_export_routing(tmp_path, fake_venv, model, export_func_name) -> None:
     """download_model routes each model to its corresponding export function."""
     fake_python, fake_bin, fake_output = fake_venv
