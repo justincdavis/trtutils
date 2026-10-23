@@ -109,11 +109,7 @@ def preprocess(
         dst = batch_tensor[i] if scratch is None else scratch
         np.multiply(tensor.transpose(2, 0, 1), scale, out=dst, dtype=np.float32)
         dst += offset
-        if dtype == np.float16:
-            # numpy's half cast is ~30x slower than opencv's, which writes through an int16 view
-            dst16 = batch_tensor[i].view(np.int16).reshape(-1, width)
-            cv2.convertFp16(dst.reshape(-1, width), dst=dst16)
-        elif scratch is not None:
+        if scratch is not None:
             batch_tensor[i] = scratch
 
         if verbose:
