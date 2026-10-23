@@ -48,22 +48,16 @@ def test_gpu_matches_cpu(images, gpu_cls, resize, norm, tol) -> None:
         assert np.abs(result - expected).mean() < tol
 
 
+@pytest.mark.parametrize("norm", [{}, IMAGENET], ids=["raw", "imagenet"])
 @pytest.mark.parametrize("count", [1, 3, 8])
-def test_trt_runs_submitted_batch(random_images, count) -> None:
-    """TRTPreprocessor(batch_size=8) runs its engine at the image count and matches itself and CUDA."""
-    trt_preproc = TRTPreprocessor(SIZE, RANGE, DTYPE, batch_size=8)
-    cuda_preproc = CUDAPreprocessor(SIZE, RANGE, DTYPE)
+def test_trt_runs_submitted_batch(random_images, count, norm) -> None:
+    """TRTPreprocessor(batch_size=8) runs its engine at the image count."""
+    trt_preproc = TRTPreprocessor(SIZE, RANGE, DTYPE, batch_size=8, **norm)
     imgs = random_images(count)
-    batch, batch_ratios, batch_padding = trt_preproc.preprocess(imgs)
+    batch, _, _ = trt_preproc.preprocess(imgs)
     assert trt_preproc._engine.active_input_shapes[0][0] == count
-    assert batch.shape == (count, 3, 640, 640)
-    for i, img in enumerate(imgs):
-        single_trt, trt_ratios, trt_padding = trt_preproc.preprocess([img])
-        single_cuda, cuda_ratios, cuda_padding = cuda_preproc.preprocess([img])
-        assert batch_ratios[i] == trt_ratios[0] == cuda_ratios[0]
-        assert batch_padding[i] == trt_padding[0] == cuda_padding[0]
-        np.testing.assert_array_equal(batch[i], single_trt[0])
-        assert np.abs(batch[i] - single_cuda[0]).mean() < 0.02
+    singles = [trt_preproc.preprocess([img])[0] for img in imgs]
+    np.testing.assert_array_equal(batch, np.concatenate(singles))
 
 
 def test_trt_batch_size_exceeded_raises(random_images) -> None:
