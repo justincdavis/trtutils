@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import cv2
+import numpy as np
 import pytest
 
 from trtutils.image import Detector
@@ -39,3 +41,59 @@ def test_detector_end2end(yolov10_engine, images, preprocessor) -> None:
     strict = model.get_detections(postprocessed, conf_thres=0.5)
     assert len(strict) <= len(via_run)
     assert all(score >= 0.5 for _bbox, score, _cls_id in strict)
+
+
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+def test_detector_end2end_resolution_switch(yolov10_engine, images, preprocessor) -> None:
+    """end2end() handles a new input resolution on every call."""
+    model = Detector(yolov10_engine, preprocessor=preprocessor, warmup=False)
+    horse = images["horse"].array
+    for size in [None, (1280, 720), (640, 480), None]:
+        image = horse if size is None else cv2.resize(horse, size)
+        fresh = Detector(yolov10_engine, preprocessor=preprocessor, warmup=False)
+        assert model.end2end(image) == fresh.end2end(image)
+
+
+@pytest.mark.parametrize("cuda_graph", [True, False])
+def test_detector_static_engine_rejects_batch_mismatch(yolov10_engine, images, cuda_graph) -> None:
+    """A batch-1 engine rejects a batch of 2 on end2end() and run()."""
+    model = Detector(yolov10_engine, preprocessor="cpu", cuda_graph=cuda_graph, warmup=False)
+    batch = [images["horse"].array] * 2
+    with pytest.raises((RuntimeError, ValueError)):
+        model.end2end(batch)
+    with pytest.raises((RuntimeError, ValueError)):
+        model.run(batch)
+
+
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+@pytest.mark.parametrize("cuda_graph", [True, False])
+def test_detector_dynamic_batch_sweep(
+    yolov10_dynamic_engine, yolov10_engine, images, preprocessor, cuda_graph
+) -> None:
+    """A dynamic-batch engine runs a varying batch and matches a batch-1 engine per image."""
+    kw = {"preprocessor": preprocessor, "cuda_graph": cuda_graph, "warmup": False}
+    model = Detector(yolov10_dynamic_engine, **kw)
+    reference = Detector(yolov10_engine, **kw)
+    pool = [img.array for img in images.values()]
+    for batch_size in (8, 2, 8, 4, 1, 8):
+        batch = [pool[i % len(pool)] for i in range(batch_size)]
+        outputs = model.end2end(batch)
+        assert len(outputs) == batch_size
+        for image, dets in zip(batch, outputs):
+            ref_dets = reference.end2end(image)
+            assert len(dets) == len(ref_dets)
+            # separate builds pick different kernels, so allow a pixel on box edges
+            for (bbox, score, cls_id), (ref_bbox, ref_score, ref_cls) in zip(dets, ref_dets):
+                assert all(abs(a - b) <= 1 for a, b in zip(bbox, ref_bbox))
+                assert cls_id == ref_cls
+                assert abs(score - ref_score) < 1e-2
+
+
+def test_detector_run_gpu_matches_cpu(yolov10_engine, images) -> None:
+    """run() with a GPU preprocessor matches the CPU preprocessor path."""
+    horse = images["horse"].array
+    gpu = Detector(yolov10_engine, preprocessor="cuda", warmup=False).run(horse)
+    cpu = Detector(yolov10_engine, preprocessor="cpu", warmup=False).run(horse)
+    np.testing.assert_allclose(gpu[0], cpu[0], atol=0.1)
+    np.testing.assert_allclose(gpu[1], cpu[1], atol=1e-3)
+    np.testing.assert_array_equal(gpu[2], cpu[2])
