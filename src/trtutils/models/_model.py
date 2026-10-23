@@ -93,6 +93,8 @@ class Model:
         Optional. Maps model-name substrings to expected image sizes for
         variant-dependent downloads (e.g. ``{"atto": 320, "femto": 416}``).
         Defaults to ``None``.
+    _fp16 : bool
+        Optional. Whether ``build()`` enables fp16. Defaults to ``True``.
 
     """
 
@@ -104,6 +106,7 @@ class Model:
     _valid_imgszs: ClassVar[list[int] | None] = None
     _imgsz_divisor: ClassVar[int | None] = None
     _model_imgszs: ClassVar[dict[str, int] | None] = None
+    _fp16: ClassVar[bool] = True
 
     @classmethod
     def _validate_imgsz(cls, imgsz: int) -> None:
@@ -265,7 +268,7 @@ class Model:
             onnx=onnx,
             output=output,
             shapes=shapes,
-            fp16=True,
+            fp16=cls._fp16,
             dla_core=dla_core,
             optimization_level=opt_level,
             verbose=verbose,
