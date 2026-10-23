@@ -861,6 +861,15 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         return resize_kernel, resize_args, ratios, padding
 
+    def _stage_image(self: Self, image: np.ndarray) -> None:
+        """Put one image into the device input binding, ahead of its resize kernel."""
+        if self._pagelocked_mem and self._unified_mem:
+            # the kernel for the previous image may still read this mapped buffer
+            stream_synchronize(self._stream)
+            self._input_binding.host_allocation.reshape(-1)[: image.size] = image.reshape(-1)
+        else:
+            memcpy_host_to_device_async(self._input_binding.allocation, image, self._stream)
+
     def _resize_single_image_to_batch(
         self: Self,
         image: np.ndarray,
@@ -882,14 +891,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             batch_buffer_ptr,
             verbose=verbose,
         )
-        if self._pagelocked_mem and self._unified_mem:
-            self._input_binding.host_allocation.reshape(-1)[: image.size] = image.reshape(-1)
-        else:
-            memcpy_host_to_device_async(
-                self._input_binding.allocation,
-                image,
-                self._stream,
-            )
+        self._stage_image(image)
         resize_kernel.call(
             self._num_blocks,
             self._num_threads,
@@ -924,6 +926,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.pop_range()  # reallocate_batch_input
             nvtx.push_range(self._nvtx_tags["pack_batch_buffer"])
 
+        # pinned staging may still feed an earlier copy or kernel on the stream
+        if self._pagelocked_mem:
+            stream_synchronize(self._stream)
         # Pack host batch buffer once; avoid np.stack allocation in hot path.
         for i, image in enumerate(images):
             np.copyto(host_batch[i], image)
@@ -990,17 +995,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 batch_buffer_ptr + (i * single_image_bytes),
                 verbose=verbose,
             )
-            if self._pagelocked_mem and self._unified_mem:
-                # the previous image's kernel reads this mapped buffer
-                if i:
-                    stream_synchronize(self._stream)
-                self._input_binding.host_allocation.reshape(-1)[: image.size] = image.reshape(-1)
-            else:
-                memcpy_host_to_device_async(
-                    self._input_binding.allocation,
-                    image,
-                    self._stream,
-                )
+            self._stage_image(image)
             resize_kernel.call(
                 self._num_blocks,
                 self._num_threads,
