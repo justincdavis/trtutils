@@ -27,6 +27,7 @@ Guides
    :maxdepth: 1
 
    Strongly-Typed Networks <strongly_typed>
+   Jetson Performance <jetson_performance>
 
 API Reference
 -------------
