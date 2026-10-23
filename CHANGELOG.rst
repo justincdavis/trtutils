@@ -53,6 +53,11 @@ Changed
   ``no_copy=True`` now returns a view of a reused buffer, and ``ImageModel`` uses it for its
   own engine input. The affine runs in float32, so outputs can differ from before by a few
   float32 ULP
+* ``image.preprocessors.TRTPreprocessor`` builds its preprocessing engine with a
+  ``1..batch_size`` profile and runs it at the number of images submitted instead of the
+  configured batch: one 1080p image through ``batch_size=32`` drops from 6.0 to 0.96 ms on a
+  Jetson AGX Orin (clocks locked) and from 1.08 to 0.63 ms on an RTX 5080. Cached engines are
+  named ``..._b1-{batch_size}`` so older fixed-batch engines are rebuilt
 * CUDA/TRT preprocessors upload same-sized batches per image instead of packing the whole
   batch on the host first: pageable memory copies straight from the caller's arrays and
   pinned memory overlaps each image's host copy with the previous image's DMA. 8 x 1080p

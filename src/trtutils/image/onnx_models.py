@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -62,8 +62,8 @@ def build_image_preproc(
         output_dtype_str = "float16"
         trt_output_dtype = trt.DataType.HALF
 
-    # resolve the file name - includes batch size
-    name = f"image_preproc_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}_b{batch_size}"
+    # resolve the file name - includes the batch range
+    name = f"image_preproc_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}_b1-{batch_size}"
     if trt_version is not None:
         name += f"_{trt_version}"
 
@@ -83,7 +83,15 @@ def build_image_preproc(
             ],
             output_tensor_formats=[("output", trt_output_dtype, trt.TensorFormat.LINEAR)],
             shapes=[
-                ("input", (batch_size, input_shape[1], input_shape[0], 3)),
+                # any batch up to batch_size runs at its own size
+                (
+                    "input",
+                    (
+                        (1, input_shape[1], input_shape[0], 3),
+                        (batch_size, input_shape[1], input_shape[0], 3),
+                        (batch_size, input_shape[1], input_shape[0], 3),
+                    ),
+                ),
             ],
             fp16=True,
             cache=True,
@@ -126,10 +134,8 @@ def build_image_preproc_imagenet(
         output_dtype_str = "float16"
         trt_output_dtype = trt.DataType.HALF
 
-    # resolve the file name - includes batch size
-    name = (
-        f"image_preproc_imagenet_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}_b{batch_size}"
-    )
+    # resolve the file name - includes the batch range
+    name = f"image_preproc_imagenet_{input_shape[0]}_{input_shape[1]}_{output_dtype_str}_b1-{batch_size}"
     if trt_version is not None:
         name += f"_{trt_version}"
 
@@ -149,7 +155,15 @@ def build_image_preproc_imagenet(
             ],
             output_tensor_formats=[("output", trt_output_dtype, trt.TensorFormat.LINEAR)],
             shapes=[
-                ("input", (batch_size, input_shape[1], input_shape[0], 3)),
+                # any batch up to batch_size runs at its own size
+                (
+                    "input",
+                    (
+                        (1, input_shape[1], input_shape[0], 3),
+                        (batch_size, input_shape[1], input_shape[0], 3),
+                        (batch_size, input_shape[1], input_shape[0], 3),
+                    ),
+                ),
                 ("mean", (1, 3, 1, 1)),
                 ("std", (1, 3, 1, 1)),
             ],
