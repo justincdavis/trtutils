@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+import shutil
 from typing import TYPE_CHECKING
 
 import pytest
@@ -21,6 +22,8 @@ YOLOV10_ONNX = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
 def yolov10_onnx_path() -> Path:
     """Path to the YOLOv10n ONNX model, downloaded if not present."""
     if not YOLOV10_ONNX.exists():
+        if shutil.which("uv") is None:
+            pytest.skip(f"missing {YOLOV10_ONNX}, and downloading it needs uv")
         YOLOV10_ONNX.parent.mkdir(parents=True, exist_ok=True)
         download("yolov10n", YOLOV10_ONNX, imgsz=640, make_static=True)
     return YOLOV10_ONNX

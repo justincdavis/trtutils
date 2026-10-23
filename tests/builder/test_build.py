@@ -19,6 +19,13 @@ _BLACKWELL_WEAK_FAIL_REASON = (
     "Weakly-typed INT8/FP8 mixes require strongly_typed=True on Blackwell "
     "(SM 10.0+); see test_build_strongly_typed_from_qdq for the replacement path."
 )
+# tensorrt 8.6 needs real calibration scales for int8 and q/dq layers for fp8
+_needs_trt10_int8 = pytest.mark.skipif(
+    REAL_FLAGS.TRT_VERSION < (10, 0), reason="int8 without calibration scales needs TensorRT 10"
+)
+_needs_trt10_fp8 = pytest.mark.skipif(
+    REAL_FLAGS.TRT_VERSION < (10, 0), reason="weakly-typed fp8 needs TensorRT 10"
+)
 
 
 @pytest.mark.parametrize(
@@ -31,30 +38,42 @@ _BLACKWELL_WEAK_FAIL_REASON = (
             True,
             False,
             id="int8",
-            marks=pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+            marks=[
+                pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+                _needs_trt10_int8,
+            ],
         ),
-        pytest.param(False, False, True, id="fp8"),
+        pytest.param(False, False, True, id="fp8", marks=_needs_trt10_fp8),
         pytest.param(
             True,
             True,
             False,
             id="fp16-int8",
-            marks=pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+            marks=[
+                pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+                _needs_trt10_int8,
+            ],
         ),
-        pytest.param(True, False, True, id="fp16-fp8"),
+        pytest.param(True, False, True, id="fp16-fp8", marks=_needs_trt10_fp8),
         pytest.param(
             False,
             True,
             True,
             id="int8-fp8",
-            marks=pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+            marks=[
+                pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+                _needs_trt10_fp8,
+            ],
         ),
         pytest.param(
             True,
             True,
             True,
             id="all",
-            marks=pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+            marks=[
+                pytest.mark.skipif(REAL_FLAGS.IS_BLACKWELL, reason=_BLACKWELL_WEAK_FAIL_REASON),
+                _needs_trt10_fp8,
+            ],
         ),
     ],
 )
@@ -85,12 +104,12 @@ def test_build_precision(
 @pytest.mark.parametrize(
     ("precision", "calibration"),
     [
-        pytest.param("int8", "none", id="int8-no-calibration"),
+        pytest.param("int8", "none", id="int8-no-calibration", marks=_needs_trt10_int8),
         pytest.param("int8", "batcher", id="int8-batcher"),
-        pytest.param("int8", "cache", id="int8-cache"),
-        pytest.param("fp8", "none", id="fp8-no-calibration"),
-        pytest.param("fp8", "batcher", id="fp8-batcher"),
-        pytest.param("fp8", "cache", id="fp8-cache"),
+        pytest.param("int8", "cache", id="int8-cache", marks=_needs_trt10_int8),
+        pytest.param("fp8", "none", id="fp8-no-calibration", marks=_needs_trt10_fp8),
+        pytest.param("fp8", "batcher", id="fp8-batcher", marks=_needs_trt10_fp8),
+        pytest.param("fp8", "cache", id="fp8-cache", marks=_needs_trt10_fp8),
     ],
 )
 def test_build_precision_calibration(
@@ -204,6 +223,8 @@ def test_device_variants(onnx_path, output_engine_path, device, valid: bool) -> 
             output_engine_path,
             default_device=device,
             gpu_fallback=is_dla,
+            # dla runs only fp16 or int8 layers
+            fp16=is_dla,
             optimization_level=1,
         )
         assert output_engine_path.exists()
