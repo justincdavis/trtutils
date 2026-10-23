@@ -264,11 +264,11 @@ class TRTPreprocessor(GPUImagePreprocessor):
             verbose=verbose,
         )
 
-        # Run TRT engine on batched intermediate buffer
-        outputs = self._engine.raw_exec(self._engine_inputs)
+        # run the engine on only the images given
+        intermediate, *params = self._engine_inputs
+        outputs = self._engine.raw_exec([intermediate[:batch_size], *params])
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # trt_direct_preproc
 
-        # the engine runs at its configured batch; hand back only the images given
-        return outputs[0][:batch_size], ratios_list, padding_list
+        return outputs[0], ratios_list, padding_list
