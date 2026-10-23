@@ -47,6 +47,10 @@ Added
 
 Changed
 ^^^^^^^
+* CUDA/TRT preprocessors upload same-sized batches per image instead of packing the whole
+  batch on the host first: pageable memory copies straight from the caller's arrays and
+  pinned memory overlaps each image's host copy with the previous image's DMA. 8 x 1080p
+  is ~1.5-1.7x faster on an RTX 5080 and ~2.2x faster on a Jetson AGX Orin
 * **Breaking:** ``TRTEngine`` inputs are ``Buffer`` objects only. ``execute``, ``__call__``,
   ``mock_execute``, ``raw_exec``, and ``QueuedTRTEngine`` / ``ParallelTRTEngines.submit``
   take a list of Buffers; wrap numpy data with ``Buffer.wrap(array)``.

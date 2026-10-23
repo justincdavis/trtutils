@@ -926,21 +926,23 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.pop_range()  # reallocate_batch_input
             nvtx.push_range(self._nvtx_tags["pack_batch_buffer"])
 
-        # pinned staging may still feed an earlier copy or kernel on the stream
+        # earlier copies or kernels may still read the pinned or mapped buffer
         if self._pagelocked_mem:
             stream_synchronize(self._stream)
-        # Pack host batch buffer once; avoid np.stack allocation in hot path.
+        nbytes = host_batch[0].nbytes
         for i, image in enumerate(images):
+            slot = self._batch_input_binding.allocation + i * nbytes
+            if not self._pagelocked_mem:
+                # pageable: copy straight into the device slot, skipping a host pack
+                memcpy_host_to_device_async(slot, np.ascontiguousarray(image), self._stream)
+                continue
             np.copyto(host_batch[i], image)
+            # pinned: start this image's DMA so the next host copy overlaps it;
+            # mapped memory needs no copy, the pack is the transfer
+            if not self._unified_mem:
+                memcpy_host_to_device_async(slot, host_batch[i], self._stream)
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # pack_batch_buffer
-
-        if not (self._pagelocked_mem and self._unified_mem):
-            memcpy_host_to_device_async(
-                self._batch_input_binding.allocation,
-                host_batch,
-                self._stream,
-            )
 
         o_width, o_height = self._o_shape
         in_stride = height * width * _COLOR_CHANNELS

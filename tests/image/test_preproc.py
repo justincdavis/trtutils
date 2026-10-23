@@ -131,3 +131,29 @@ def test_staging_only_grows(gpu_cls) -> None:
     preproc.preprocess([np.zeros((720, 1280, 3), np.uint8)] * 4)
     assert preproc._input_binding is not single
     assert preproc._batch_input_binding is not batch
+
+
+@pytest.mark.parametrize(
+    "gpu_cls",
+    [
+        pytest.param(CUDAPreprocessor, id="cuda"),
+        pytest.param(TRTPreprocessor, id="trt"),
+    ],
+)
+@pytest.mark.parametrize(
+    "memory",
+    [
+        pytest.param({"pagelocked_mem": False}, id="pageable"),
+        pytest.param({"pagelocked_mem": True}, id="pagelocked"),
+        pytest.param({"pagelocked_mem": True, "unified_mem": True}, id="unified"),
+    ],
+)
+def test_homogeneous_batch_accepts_strided_views(gpu_cls, memory) -> None:
+    """A batch of non-contiguous views preprocesses like their contiguous copies."""
+    rng = np.random.default_rng(0)
+    views = [rng.integers(0, 256, (720, 2560, 3), dtype=np.uint8)[:, ::2] for _ in range(4)]
+    kwargs = {"batch_size": 4} if gpu_cls is TRTPreprocessor else {}
+    preproc = gpu_cls(SIZE, RANGE, DTYPE, **memory, **kwargs)
+    expected = preproc.preprocess([np.ascontiguousarray(v) for v in views])
+    result = preproc.preprocess(views)
+    np.testing.assert_array_equal(result[0], expected[0])
