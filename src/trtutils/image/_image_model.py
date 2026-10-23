@@ -490,7 +490,7 @@ class ImageModel:
 
         Parameters
         ----------
-        images : list[np.ndarray | Buffer], optional
+        images : Sequence[np.ndarray | Buffer], optional
             Optional batch of images to use for execution.
             If None, random data will be generated.
 
@@ -632,7 +632,7 @@ class ImageModel:
 
         Parameters
         ----------
-        images : list[np.ndarray | Buffer]
+        images : Sequence[np.ndarray | Buffer]
             The images to preprocess, or a single already preprocessed batch tensor.
         method : str, optional
             The preprocessor to use, as in :meth:`get_preprocessor`.
@@ -697,7 +697,7 @@ class ImageModel:
 
         Parameters
         ----------
-        images : list[np.ndarray | Buffer]
+        images : Sequence[np.ndarray | Buffer]
             The images, or a single already preprocessed batch tensor.
         method : str, optional
             The preprocessor to use, as in :meth:`get_preprocessor`.
@@ -753,7 +753,7 @@ class ImageModel:
         ----------
         image : Buffer
             The preprocessed batch, on the host or the device.
-        _images : list[np.ndarray | Buffer] | None
+        _images : Sequence[np.ndarray | Buffer] | None
             The original input images, or None when the caller passed an
             already preprocessed batch.
         _ratios : list[tuple[float, float]] | None

@@ -18,6 +18,11 @@ SIZE = (640, 640)
 RANGE = (0.0, 1.0)
 DTYPE = np.dtype(np.float32)
 IMAGENET = {"mean": (0.485, 0.456, 0.406), "std": (0.229, 0.224, 0.225)}
+PREPROCS = [
+    pytest.param(CPUPreprocessor, {}, id="cpu"),
+    pytest.param(CUDAPreprocessor, {}, id="cuda"),
+    pytest.param(TRTPreprocessor, {"batch_size": 4}, id="trt"),
+]
 
 
 @pytest.mark.parametrize(
@@ -68,14 +73,7 @@ def test_trt_batch_size_exceeded_raises(random_images) -> None:
         trt_preproc.preprocess(random_images(5))
 
 
-@pytest.mark.parametrize(
-    ("preproc_cls", "kwargs"),
-    [
-        pytest.param(CPUPreprocessor, {}, id="cpu"),
-        pytest.param(CUDAPreprocessor, {}, id="cuda"),
-        pytest.param(TRTPreprocessor, {"batch_size": 4}, id="trt"),
-    ],
-)
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), PREPROCS)
 def test_batch_matches_single(random_images, preproc_cls, kwargs) -> None:
     """Batches of varying size reproduce the single-image tensors, ratios, and padding exactly."""
     preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
@@ -190,14 +188,7 @@ BUFFER_PLACEMENTS = [
 ]
 
 
-@pytest.mark.parametrize(
-    ("preproc_cls", "kwargs"),
-    [
-        pytest.param(CPUPreprocessor, {}, id="cpu"),
-        pytest.param(CUDAPreprocessor, {}, id="cuda"),
-        pytest.param(TRTPreprocessor, {"batch_size": 4}, id="trt"),
-    ],
-)
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), PREPROCS)
 @pytest.mark.parametrize("placement", BUFFER_PLACEMENTS)
 @pytest.mark.parametrize(
     "shapes",
@@ -223,23 +214,15 @@ def test_buffer_input_matches_ndarray(preproc_cls, kwargs, placement, shapes) ->
     np.testing.assert_array_equal(single[0], expected[0][:1])
 
 
-@pytest.mark.parametrize(
-    "gpu_cls",
-    [
-        pytest.param(CUDAPreprocessor, id="cuda"),
-        pytest.param(TRTPreprocessor, id="trt"),
-    ],
-)
+@pytest.mark.parametrize(("gpu_cls", "kwargs"), PREPROCS[1:])
 @pytest.mark.parametrize("count", [1, 2])
 @pytest.mark.parametrize("as_buffer", [False, True], ids=["ndarray", "device"])
-def test_gpu_rejects_non_uint8(gpu_cls, count, as_buffer) -> None:
+def test_gpu_rejects_non_uint8(gpu_cls, kwargs, count, as_buffer) -> None:
     """GPU preprocessors raise on non-uint8 images instead of reading their bytes as uint8."""
     image = np.zeros((480, 640, 3), dtype=np.float32)
     if as_buffer:
         image = Buffer.from_array(image, MemoryLocation.DEVICE)
-    preproc = gpu_cls(
-        SIZE, RANGE, DTYPE, **({"batch_size": 2} if gpu_cls is TRTPreprocessor else {})
-    )
+    preproc = gpu_cls(SIZE, RANGE, DTYPE, **kwargs)
     with pytest.raises(ValueError, match="uint8"):
         preproc.preprocess([image] * count)
 

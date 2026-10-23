@@ -109,8 +109,9 @@ def test_detector_device_buffer_input(yolov10_engine, images, preprocessor, cuda
     small = cv2.resize(horse, (640, 480))
     device = [Buffer.from_array(img, MemoryLocation.DEVICE) for img in (horse, small)]
 
-    assert model.end2end(device[0]) == model.end2end(horse)
-    assert model.get_detections(model.run(device[0])) == model.end2end(horse)
+    expected = model.end2end(horse)
+    assert model.end2end(device[0]) == expected
+    assert model.get_detections(model.run(device[0])) == expected
 
     tensor, ratios, padding = model.preprocess(horse)
     device_tensor, device_ratios, device_padding = model.preprocess(device[0])
@@ -120,7 +121,7 @@ def test_detector_device_buffer_input(yolov10_engine, images, preprocessor, cuda
     # an already preprocessed tensor on the device is bound as is
     preprocessed = Buffer.from_array(tensor, MemoryLocation.DEVICE)
     outputs = model.run(preprocessed, ratios=ratios[0], padding=padding[0], preprocessed=True)
-    assert model.get_detections(outputs) == model.end2end(horse)
+    assert model.get_detections(outputs) == expected
 
 
 def test_detector_mixed_buffer_batch(yolov10_dynamic_engine, images) -> None:

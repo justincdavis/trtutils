@@ -291,7 +291,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray | Buffer]
+        images : Sequence[np.ndarray | Buffer]
             The images to preprocess.
         resize : str
             The method to resize the image with.

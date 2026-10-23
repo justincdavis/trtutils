@@ -569,14 +569,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 f"{self._tag}: Image shape: {img_shape}, Allocated: {self._input_binding.host_allocation.shape}",
             )
 
-        if img_shape[2] != _COLOR_CHANNELS:
-            err_msg = f"{self._tag}: Can only preprocess color images."
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # validate_input
-            raise ValueError(err_msg)
-
-        if image.dtype != np.uint8:
-            err_msg = f"{self._tag}: Image must be uint8, got {image.dtype}"
+        if img_shape[2] != _COLOR_CHANNELS or image.dtype != np.uint8:
+            err_msg = f"{self._tag}: Can only preprocess uint8 color images."
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # validate_input
             raise ValueError(err_msg)
@@ -629,7 +623,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray | Buffer]
+        images : Sequence[np.ndarray | Buffer]
             The images to preprocess (HWC format, uint8).
         resize : str, optional
             The resize method. Options are ['letterbox', 'linear'].
@@ -1036,7 +1030,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray | Buffer]
+        images : Sequence[np.ndarray | Buffer]
             Images to resize.
         batch_buffer_ptr : int
             GPU pointer to batch buffer to copy resized images to.
@@ -1076,8 +1070,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 nvtx.pop_range()  # resize_images_to_batch
             return [ratios], [padding]
 
+        # device buffers are resized in place one at a time, not packed into the batch staging
         first_height, first_width = images[0].shape[:2]
-        homogeneous = True
+        homogeneous = not any(isinstance(img, Buffer) for img in images)
         for image in images[1:]:
             if (
                 image.ndim != _IMAGE_DIMENSIONS
@@ -1088,7 +1083,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # resize_images_to_batch
                 raise ValueError(err_msg)
-            if image.shape[:2] != (first_height, first_width) or isinstance(image, Buffer):
+            if image.shape[:2] != (first_height, first_width):
                 homogeneous = False
 
         if homogeneous:
