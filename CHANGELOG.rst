@@ -108,6 +108,11 @@ Changed
 
 Fixed
 ^^^^^
+* RT-DETR v1/v2, D-FINE, DEIM and DEIMv2 detectors failed on every call: ``Detector`` sent
+  ``orig_target_sizes`` as int32 (the engines bind int64) and as (height, width) instead of
+  (width, height). The size input's dtype now comes from the engine binding
+* ``RTDETRv1`` / ``RTDETRv2`` / ``RTDETRv3`` defaulted to ``input_range=(0, 255)``; the exported
+  models expect ``(0, 1)`` and found nothing on the default
 * CUDA/TRT preprocessors reallocated their staging buffers on every input shape change;
   with ``pagelocked_mem`` each free synchronized the device, making mixed-size batches
   ~3.9x and resolution switches ~3.7x slower than pageable memory. The buffers now only

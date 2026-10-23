@@ -6,8 +6,6 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
@@ -48,11 +46,6 @@ class InputSchema(Enum):
     def uses_scale_factor(self: Self) -> bool:
         """Whether this schema requires a scale factor input."""
         return self == InputSchema.RT_DETR_V3
-
-    @property
-    def orig_size_dtype(self: Self) -> np.dtype:
-        """The dtype for the original size input tensor."""
-        return np.dtype(np.float32) if self == InputSchema.RT_DETR_V3 else np.dtype(np.int32)
 
 
 class OutputSchema(Enum):
