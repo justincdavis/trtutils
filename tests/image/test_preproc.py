@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import pytest
+from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+from trtutils.image.preprocessors._process import preprocess
 
 SIZE = (640, 640)
 RANGE = (0.0, 1.0)
@@ -157,3 +160,67 @@ def test_homogeneous_batch_accepts_strided_views(gpu_cls, memory) -> None:
     expected = preproc.preprocess([np.ascontiguousarray(v) for v in views])
     result = preproc.preprocess(views)
     np.testing.assert_array_equal(result[0], expected[0])
+
+
+def _reference_preprocess(images, input_shape, dtype, input_range, method, mean, std):
+    """Run the previous per-image float64 pipeline, stacked with concatenate."""
+    tensors = []
+    for image in images:
+        if method == "letterbox":
+            tensor, _, _ = letterbox(image, new_shape=input_shape)
+        else:
+            tensor, _ = resize_linear(image, new_shape=input_shape)
+        tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
+        tensor = (tensor / 255.0 - mean) / std if mean is not None else rescale(tensor, input_range)
+        tensors.append(np.transpose(tensor[np.newaxis], (0, 3, 1, 2)).astype(dtype))
+    return np.concatenate(tensors, axis=0)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("method", ["letterbox", "linear"])
+@pytest.mark.parametrize("shape", [(640, 640), (640, 384)], ids=["square", "wide"])
+@pytest.mark.parametrize(
+    ("input_range", "norm", "dtype", "exact"),
+    [
+        pytest.param((0.0, 1.0), {}, np.float32, False, id="scale01"),
+        pytest.param((-1.0, 1.0), {}, np.float32, False, id="scale-1-1"),
+        pytest.param((0.0, 1.0), IMAGENET, np.float32, False, id="imagenet"),
+        pytest.param((0.0, 255.0), {}, np.uint8, True, id="uint8-identity"),
+        pytest.param((0.0, 1.0), {}, np.float16, False, id="fp16"),
+    ],
+)
+def test_preprocess_matches_reference(method, shape, input_range, norm, dtype, exact) -> None:
+    """The single-pass pack matches the previous float64 pipeline."""
+    rng = np.random.default_rng(0)
+    imgs = [rng.integers(0, 256, s, dtype=np.uint8) for s in [(480, 640, 3), (137, 251, 3)]]
+    mean, std = norm.get("mean"), norm.get("std")
+    expected = _reference_preprocess(imgs, shape, dtype, input_range, method, mean, std)
+    result, _, _ = preprocess(imgs, shape, np.dtype(dtype), input_range, method, mean, std)
+    assert result.shape == expected.shape
+    assert result.dtype == expected.dtype
+    if exact:
+        np.testing.assert_array_equal(result, expected)
+    else:
+        np.testing.assert_allclose(result, expected, rtol=1e-3, atol=1e-5)
+
+
+@pytest.mark.cpu
+def test_preprocess_writes_into_matching_out(random_images) -> None:
+    """Out is used only when its shape and dtype match the batch."""
+    imgs = random_images(2)
+    matching = np.empty((2, 3, 640, 640), dtype=np.float32)
+    assert preprocess(imgs, SIZE, DTYPE, RANGE, out=matching)[0] is matching
+    for wrong in (np.empty((3, 3, 640, 640), np.float32), np.empty((2, 3, 640, 640), np.float16)):
+        assert preprocess(imgs, SIZE, DTYPE, RANGE, out=wrong)[0] is not wrong
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("no_copy", [True, False])
+def test_cpu_no_copy_reuses_buffer(random_images, no_copy) -> None:
+    """no_copy returns a reused view the next call overwrites, else a private array."""
+    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE)
+    first, _, _ = cpu.preprocess(random_images(4), no_copy=no_copy)
+    snapshot = first.copy()
+    second, _, _ = cpu.preprocess(random_images(2), no_copy=no_copy)
+    assert np.shares_memory(first, second) == no_copy
+    assert np.array_equal(first, snapshot) != no_copy

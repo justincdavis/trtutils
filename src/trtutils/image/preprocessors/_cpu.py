@@ -4,6 +4,7 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, overload
 
 import numpy as np
@@ -81,6 +82,9 @@ class CPUPreprocessor(ImagePreprocessor):
             }
         )
 
+        # grow-only batch tensor for no_copy calls, saves faulting in fresh pages each call
+        self._batch: np.ndarray = np.empty(0, dtype=self._o_dtype)
+
     def warmup(self: Self) -> None:
         """Compatibility function for CPU/CUDA parity."""
         if FLAGS.NVTX_ENABLED:
@@ -137,7 +141,8 @@ class CPUPreprocessor(ImagePreprocessor):
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
         no_copy : bool, optional
-            Compatibility parameter for CUDA parity.
+            If True, write into a reused buffer and return a view of it,
+            valid until the next call. By default False.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -177,7 +182,7 @@ class CPUPreprocessor(ImagePreprocessor):
         images: np.ndarray | list[np.ndarray],
         resize: str | None = None,
         *,
-        no_copy: bool | None = None,  # noqa: ARG002
+        no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
         """
@@ -191,7 +196,8 @@ class CPUPreprocessor(ImagePreprocessor):
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
         no_copy : bool, optional
-            Compatibility parameter for CUDA parity.
+            If True, write into a reused buffer and return a view of it,
+            valid until the next call. By default False.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -227,6 +233,14 @@ class CPUPreprocessor(ImagePreprocessor):
             std_tuple = tuple(
                 std.reshape(-1) if std.size == _COLOR_CHANNELS else std.flatten()[:_COLOR_CHANNELS]
             )
+        out = None
+        if no_copy:
+            width, height = self._o_shape
+            shape = (len(batch_images), _COLOR_CHANNELS, height, width)
+            size = math.prod(shape)
+            if self._batch.size < size:
+                self._batch = np.empty(size, dtype=self._o_dtype)
+            out = self._batch[:size].reshape(shape)
         result = preprocess(
             batch_images,
             self._o_shape,
@@ -235,6 +249,7 @@ class CPUPreprocessor(ImagePreprocessor):
             resize,
             mean_tuple,
             std_tuple,
+            out,
             verbose=verbose,
         )
 
