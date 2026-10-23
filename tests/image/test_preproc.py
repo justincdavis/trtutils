@@ -224,7 +224,7 @@ def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:
         image = Buffer.from_array(image, MemoryLocation.DEVICE)
     preproc = gpu_cls(SIZE, RANGE, DTYPE, **kwargs)
     with pytest.raises(ValueError, match="uint8"):
-        preproc.preprocess([np.zeros((480, 640, 3), np.uint8), image][-1 - position :])
+        preproc.preprocess([image] if position == 0 else [np.zeros((480, 640, 3), np.uint8), image])
 
 
 def _reference_preprocess(images, input_shape, dtype, input_range, method, mean, std):
