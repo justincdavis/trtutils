@@ -666,7 +666,7 @@ class ImageModel:
             )
         else:
             tensor, ratios, padding = preprocessor(
-                images, resize=self._resize_method, verbose=verbose
+                images, resize=self._resize_method, no_copy=True, verbose=verbose
             )
             image = host_input(tensor)
         self._pre_profile = (t0, time.perf_counter())

@@ -1,91 +1,13 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
 
 import cv2
 import numpy as np
-from cv2ext.image import letterbox, rescale, resize_linear
+from cv2ext.image import letterbox, resize_linear
 
 from trtutils._log import LOG
-
-
-def _preprocess_single(
-    image: np.ndarray,
-    input_shape: tuple[int, int],
-    dtype: np.dtype,
-    input_range: tuple[float, float],
-    method: str,
-    mean: tuple[float, float, float] | None,
-    std: tuple[float, float, float] | None,
-    *,
-    verbose: bool | None = None,
-) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
-    """
-    Preprocess a single image.
-
-    Parameters
-    ----------
-    image : np.ndarray
-        The image to be preprocessed.
-    input_shape : tuple[int, int]
-        The shape to resize the inputs.
-    dtype : np.dtype
-        The datatype of the inputs to the network.
-    input_range : tuple[float, float]
-        The range of the model expects for inputs.
-    method : str
-        The method by which to resize the image.
-    mean : tuple[float, float, float], optional
-        The mean to subtract from the image.
-    std : tuple[float, float, float], optional
-        The standard deviation to divide the image by.
-    verbose : bool, optional
-        Whether or not to log additional information.
-
-    Returns
-    -------
-    tuple[np.ndarray, tuple[float, float], tuple[float, float]]
-        The preprocessed tensor, ratios, and padding.
-
-    Raises
-    ------
-    ValueError
-        If the resize method is unsupported.
-
-    """
-    if verbose:
-        LOG.debug(f"Preprocess input shape: {image.shape}, output: {input_shape}")
-
-    tensor: np.ndarray
-    if method == "letterbox":
-        tensor, ratios, padding = letterbox(image, new_shape=input_shape)
-    elif method == "linear":
-        tensor, ratios = resize_linear(image, new_shape=input_shape)
-        padding = (0.0, 0.0)
-    else:
-        err_msg = "Unknown method for image resizing. Options are ['letterbox', 'linear']"
-        raise ValueError(err_msg)
-
-    tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
-
-    if mean is not None and std is not None:
-        tensor = tensor / 255.0
-        tensor = (tensor - mean) / std
-    else:
-        tensor = rescale(tensor, input_range)
-
-    tensor = tensor[np.newaxis, :]
-    tensor = np.transpose(tensor, (0, 3, 1, 2))
-    # large performance hit to assemble contiguous array
-    if not tensor.flags["C_CONTIGUOUS"]:
-        tensor = np.ascontiguousarray(tensor)
-    tensor = tensor.astype(dtype)
-
-    if verbose:
-        LOG.debug(f"Ratios: {ratios}")
-        LOG.debug(f"Padding: {padding}")
-    return tensor, ratios, padding
 
 
 def preprocess(
@@ -96,6 +18,7 @@ def preprocess(
     method: str = "letterbox",
     mean: tuple[float, float, float] | None = None,
     std: tuple[float, float, float] | None = None,
+    out: np.ndarray | None = None,
     *,
     verbose: bool | None = None,
 ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -123,6 +46,9 @@ def preprocess(
     std : tuple[float, float, float], optional
         The standard deviation to divide the image by.
         By default, None, which will not divide by any standard deviation.
+    out : np.ndarray, optional
+        A batch tensor to write into, used when its shape and dtype match.
+        By default None, which allocates a new tensor.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -147,26 +73,50 @@ def preprocess(
         err_msg = "Std provided but mean is not"
         raise ValueError(err_msg)
 
-    # Process each image
-    tensors: list[np.ndarray] = []
+    if method not in ("letterbox", "linear"):
+        err_msg = "Unknown method for image resizing. Options are ['letterbox', 'linear']"
+        raise ValueError(err_msg)
+
+    # fold the normalization into one float32 multiply-add per pixel
+    if mean is not None and std is not None:
+        std_arr = np.array(std, dtype=np.float32).reshape(3, 1, 1)
+        scale = 1.0 / (255.0 * std_arr)
+        offset = -np.array(mean, dtype=np.float32).reshape(3, 1, 1) / std_arr
+    else:
+        low, high = input_range
+        scale = np.float32((high - low) / 255.0)
+        offset = np.float32(low)
+
+    width, height = input_shape
+    shape = (len(images), 3, height, width)
+    reuse = out is not None and out.shape == shape and out.dtype == dtype and out.flags.c_contiguous
+    batch_tensor = out if reuse else np.empty(shape, dtype=dtype)
+    # other dtypes go through float32 so the affine never rounds twice
+    scratch = None if dtype == np.float32 else np.empty(shape[1:], dtype=np.float32)
+
     ratios_list: list[tuple[float, float]] = []
     padding_list: list[tuple[float, float]] = []
+    for i, image in enumerate(images):
+        if method == "letterbox":
+            tensor, ratios, padding = letterbox(image, new_shape=input_shape)
+        else:
+            tensor, ratios = resize_linear(image, new_shape=input_shape)
+            padding = (0.0, 0.0)
+        tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
 
-    for image in images:
-        tensor, ratios, padding = _preprocess_single(
-            image,
-            input_shape,
-            dtype,
-            input_range,
-            method,
-            mean,
-            std,
-            verbose=verbose,
-        )
-        tensors.append(tensor)
+        # writing the transposed view straight into the slot does HWC->CHW,
+        # the cast and the affine in one pass
+        dst = batch_tensor[i] if scratch is None else scratch
+        np.multiply(tensor.transpose(2, 0, 1), scale, out=dst, dtype=np.float32)
+        dst += offset
+        if scratch is not None:
+            batch_tensor[i] = scratch
+
+        if verbose:
+            LOG.debug(
+                f"Preprocess {image.shape} -> {input_shape}, ratios: {ratios}, padding: {padding}"
+            )
         ratios_list.append(ratios)
         padding_list.append(padding)
 
-    # Stack into batch
-    batch_tensor = np.concatenate(tensors, axis=0)
     return batch_tensor, ratios_list, padding_list

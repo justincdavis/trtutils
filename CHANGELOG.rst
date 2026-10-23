@@ -47,6 +47,12 @@ Added
 
 Changed
 ^^^^^^^
+* ``image.preprocessors.CPUPreprocessor`` packs each image straight into the batch tensor
+  with one float32 multiply-add: 8 x 1080p drops from 83 to 24-34 ms on a Jetson AGX Orin
+  and from 21 to 7-8 ms on an RTX 5080 (imagenet mean/std: 190 to 24-34 ms and 57 to 7-8 ms).
+  ``no_copy=True`` now returns a view of a reused buffer, and ``ImageModel`` uses it for its
+  own engine input. The affine runs in float32, so outputs can differ from before by a few
+  float32 ULP
 * CUDA/TRT preprocessors upload same-sized batches per image instead of packing the whole
   batch on the host first: pageable memory copies straight from the caller's arrays and
   pinned memory overlaps each image's host copy with the previous image's DMA. 8 x 1080p
