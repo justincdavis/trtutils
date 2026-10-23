@@ -6,8 +6,6 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
@@ -48,11 +46,6 @@ class InputSchema(Enum):
     def uses_scale_factor(self: Self) -> bool:
         """Whether this schema requires a scale factor input."""
         return self == InputSchema.RT_DETR_V3
-
-    @property
-    def orig_size_dtype(self: Self) -> np.dtype:
-        """The dtype for the original size input tensor."""
-        return np.dtype(np.float32) if self == InputSchema.RT_DETR_V3 else np.dtype(np.int32)
 
 
 class OutputSchema(Enum):
@@ -115,7 +108,12 @@ def get_detector_io_schema(
             err_msg = f"Expected 1, 2, or 3 inputs, found {len(engine.input_spec)}"
             raise ValueError(err_msg)
 
-    # solve for the output schema
+    # solve for the output schema; tensorrt 8.6 does not keep the onnx output order
+    if output_names not in {schema.value for schema in OutputSchema}:
+        for schema in OutputSchema:
+            if sorted(output_names) == sorted(schema.value):
+                output_names = schema.value
+                break
     output_schema: OutputSchema
     if (
         output_names == OutputSchema.EFFICIENT_NMS.value

@@ -106,7 +106,8 @@ def read_onnx(
         parsed = parser.parse(model_bytes, str(onnx_path))
     else:
         parsed = parser.parse(model_bytes)
-    if not parsed:
+    # tensorrt 8.6 reports success on bytes that are not a model, leaving an empty network
+    if not parsed or network.num_inputs == 0:
         for error in range(parser.num_errors):
             LOG.error(parser.get_error(error))
         err_msg = "Cannot parse ONNX file"

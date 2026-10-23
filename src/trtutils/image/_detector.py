@@ -236,7 +236,18 @@ class Detector(ImageModel, DetectorInterface):
         )
         self._use_image_size = self._input_schema.uses_image_size
         self._use_scale_factor = self._input_schema.uses_scale_factor
-        self._orig_size_dtype = self._input_schema.orig_size_dtype
+        # exports bind the size input as int32, int64 or float32, so read it from the engine;
+        # it comes first, or right after the image when the image is first
+        size_index = 1 if self._image_input_index == 0 else 0
+        self._orig_size_dtype = (
+            self._engine.input_spec[size_index][1] if self._use_image_size else None
+        )
+        # tensorrt 8.6 does not keep the onnx output order, so map the outputs by name
+        names = list(self._engine.output_names)
+        expected = list(self._output_schema.value)
+        self._output_order: list[int] | None = None
+        if names != expected and sorted(names) == sorted(expected):
+            self._output_order = [names.index(name) for name in expected]
 
     def postprocess(
         self: Self,
@@ -283,6 +294,8 @@ class Detector(ImageModel, DetectorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         conf_thres = conf_thres or self._conf_thres
+        if self._output_order is not None:
+            outputs = [outputs[i] for i in self._output_order]
         t0 = time.perf_counter()
         data = self._postprocess_fn(
             outputs,
@@ -757,6 +770,9 @@ class Detector(ImageModel, DetectorInterface):
                 sizes = [(self._input_size[1], self._input_size[0])] * image.shape[0]
             else:
                 sizes = [img.shape[:2] for img in images]
+            if self._input_schema == InputSchema.RT_DETR:
+                # rt-detr scales boxes by (width, height); paddle's im_shape is (height, width)
+                sizes = [(w, h) for h, w in sizes]
             inputs.append(Buffer.wrap(np.array(sizes, dtype=self._orig_size_dtype)))
         if self._use_scale_factor:
             if ratios is None:

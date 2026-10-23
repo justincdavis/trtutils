@@ -113,6 +113,20 @@ Changed
 
 Fixed
 ^^^^^
+* RT-DETR v1/v2, D-FINE, DEIM and DEIMv2 detectors failed on every call: ``Detector`` sent
+  ``orig_target_sizes`` as int32 (the engines bind int64) and as (height, width) instead of
+  (width, height). The size input's dtype now comes from the engine binding
+* ``RTDETRv1`` / ``RTDETRv2`` / ``RTDETRv3`` defaulted to ``input_range=(0, 255)``; the exported
+  models expect ``(0, 1)`` and found nothing on the default
+* ``Detector`` maps engine outputs to its output schema by name. TensorRT 8.6 does not keep
+  the ONNX output order, so D-FINE / DEIM / RT-DETR engines on JetPack 6 postprocessed the
+  wrong arrays; schema auto-detection also ignores output order now
+* ``RTDETRv1.build`` / ``RTDETRv2.build`` build at fp32 below TensorRT 10, where fp16 engines
+  lose the detections (horse 0.38 vs 0.97 at fp32). ``Model`` subclasses can set ``_fp16``
+* ``FLAGS.TRT_VERSION`` was ``(0, 0)`` on JetPack; it now reads the ``tensorrt`` module
+* ``read_onnx`` raises on a file TensorRT 8.6 "parses" into an empty network
+* ``build_engine(default_device="dla")`` without ``dla_core`` uses core 0; TensorRT selected no
+  core, so the build failed
 * CUDA/TRT preprocessors reallocated their staging buffers on every input shape change;
   with ``pagelocked_mem`` each free synchronized the device, making mixed-size batches
   ~3.9x and resolution switches ~3.7x slower than pageable memory. The buffers now only

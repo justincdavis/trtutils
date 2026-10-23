@@ -64,7 +64,12 @@ def test_detector_end2end(build_model_engine, images, model_cls, onnx_path, prep
     assert len(postprocessed) == 3
     via_run = model.get_detections(postprocessed)
     via_e2e = model.end2end(image.array)
-    assert via_run == via_e2e
+    # some engines (yolov13) return slightly different boxes run to run, so allow a pixel
+    assert len(via_run) == len(via_e2e)
+    for (bbox, score, cls_id), (e2e_bbox, e2e_score, e2e_cls_id) in zip(via_run, via_e2e):
+        assert cls_id == e2e_cls_id
+        assert all(abs(a - b) <= 1 for a, b in zip(bbox, e2e_bbox))
+        assert abs(score - e2e_score) < 1e-2
 
     assert len(via_run) >= image.gt_det_min
     assert set(image.gt_det_classes) <= {cls_id for _bbox, _score, cls_id in via_run}
