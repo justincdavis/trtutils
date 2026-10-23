@@ -127,7 +127,7 @@ def build_engine(
         The data batcher to use for calibration.
     dla_core : int, optional
         The DLA core to build the engine for.
-        By default, None or build the engine for GPU.
+        By default, None: core 0 when ``default_device`` is DLA, otherwise the GPU.
     layer_precision : list[tuple[int, trt.DataType | None]], optional
         The precision to use for specific layers.
         By default, None.
@@ -422,7 +422,9 @@ def build_engine(
     # assign the default device
     config.default_device_type = default_device
 
-    # handle DLA assignment
+    # handle DLA assignment; tensorrt leaves no core selected, so a dla device needs one
+    if dla_core is None and default_device == trt.DeviceType.DLA:
+        dla_core = 0
     if dla_core is not None:
         config.DLA_core = dla_core
     if gpu_fallback:
