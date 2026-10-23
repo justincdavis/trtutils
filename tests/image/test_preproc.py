@@ -215,16 +215,16 @@ def test_buffer_input_matches_ndarray(preproc_cls, kwargs, placement, shapes) ->
 
 
 @pytest.mark.parametrize(("gpu_cls", "kwargs"), PREPROCS[1:])
-@pytest.mark.parametrize("count", [1, 2])
+@pytest.mark.parametrize("position", [0, 1], ids=["first", "second"])
 @pytest.mark.parametrize("as_buffer", [False, True], ids=["ndarray", "device"])
-def test_gpu_rejects_non_uint8(gpu_cls, kwargs, count, as_buffer) -> None:
+def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:
     """GPU preprocessors raise on non-uint8 images instead of reading their bytes as uint8."""
     image = np.zeros((480, 640, 3), dtype=np.float32)
     if as_buffer:
         image = Buffer.from_array(image, MemoryLocation.DEVICE)
     preproc = gpu_cls(SIZE, RANGE, DTYPE, **kwargs)
     with pytest.raises(ValueError, match="uint8"):
-        preproc.preprocess([image] * count)
+        preproc.preprocess([np.zeros((480, 640, 3), np.uint8), image][-1 - position :])
 
 
 def _reference_preprocess(images, input_shape, dtype, input_range, method, mean, std):

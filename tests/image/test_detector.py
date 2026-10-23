@@ -106,15 +106,14 @@ def test_detector_device_buffer_input(yolov10_engine, images, preprocessor, cuda
     """Device Buffer images give the same results as arrays from end2end(), run() and preprocess()."""
     model = Detector(yolov10_engine, preprocessor=preprocessor, cuda_graph=cuda_graph, warmup=False)
     horse = images["horse"].array
-    small = cv2.resize(horse, (640, 480))
-    device = [Buffer.from_array(img, MemoryLocation.DEVICE) for img in (horse, small)]
+    device = Buffer.from_array(horse, MemoryLocation.DEVICE)
 
     expected = model.end2end(horse)
-    assert model.end2end(device[0]) == expected
-    assert model.get_detections(model.run(device[0])) == expected
+    assert model.end2end(device) == expected
+    assert model.get_detections(model.run(device)) == expected
 
     tensor, ratios, padding = model.preprocess(horse)
-    device_tensor, device_ratios, device_padding = model.preprocess(device[0])
+    device_tensor, device_ratios, device_padding = model.preprocess(device)
     np.testing.assert_array_equal(device_tensor, tensor)
     assert (device_ratios, device_padding) == (ratios, padding)
 
