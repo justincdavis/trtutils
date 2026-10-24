@@ -294,7 +294,7 @@ class Detector(ImageModel, DetectorInterface):
         if verbose:
             LOG.debug(f"{self._tag}: postprocess")
 
-        conf_thres = conf_thres or self._conf_thres
+        conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         if self._output_order is not None:
             outputs = [outputs[i] for i in self._output_order]
         t0 = time.perf_counter()
@@ -375,7 +375,8 @@ class Detector(ImageModel, DetectorInterface):
             For batch, pass list.
         conf_thres : float, optional
             Optional confidence threshold to filter detections
-            via during postprocessing.
+            via during postprocessing. By default None, which will
+            use value passed during initialization.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -522,7 +523,8 @@ class Detector(ImageModel, DetectorInterface):
             For batch, pass list.
         conf_thres : float, optional
             Optional confidence threshold to filter detections
-            via during postprocessing.
+            via during postprocessing. By default None, which will
+            use value passed during initialization.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -620,10 +622,10 @@ class Detector(ImageModel, DetectorInterface):
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
             By default None, which will use value passed during initialization.
-        nms_iou_thres : float
+        nms_iou_thres : float, optional
             The IOU threshold to use during the optional/additional
-            NMS operation. By default, None which will use value
-            provided during initialization.
+            NMS operation. By default None, which will use value
+            passed during initialization.
         extra_nms : bool, optional
             Whether or not to perform an additional NMS operation.
             By default None, which will use value provided during
@@ -648,8 +650,8 @@ class Detector(ImageModel, DetectorInterface):
         if verbose:
             LOG.debug(f"{self._tag}: get_detections")
 
-        conf_thres = conf_thres or self._conf_thres
-        nms_iou = nms_iou_thres or self._nms_iou
+        conf_thres = conf_thres if conf_thres is not None else self._conf_thres
+        nms_iou = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         use_nms = extra_nms if extra_nms is not None else self._nms
         agnostic = agnostic_nms if agnostic_nms is not None else self._agnostic_nms
 
@@ -719,11 +721,11 @@ class Detector(ImageModel, DetectorInterface):
             A single image (HWC format) or list of images to perform inference with.
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
-            By default None.
-        nms_iou_thres : float
+            By default None, which will use value passed during initialization.
+        nms_iou_thres : float, optional
             The IOU threshold to use during the optional/additional
-            NMS operation. By default, None which will use value
-            provided during initialization.
+            NMS operation. By default None, which will use value
+            passed during initialization.
         extra_nms : bool, optional
             Whether or not to perform an additional NMS operation.
             By default None, which will use value provided during
