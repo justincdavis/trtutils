@@ -172,6 +172,7 @@ def test_memcpy_h2d_d2h_async(dtype, size, cuda_stream) -> None:
         pytest.param(lambda a: a[:, 1::2], id="column-step"),
         pytest.param(lambda a: a[2:7, 3:9], id="crop"),
         pytest.param(lambda a: a.T, id="transpose"),
+        pytest.param(lambda a: a[::-1], id="reversed"),
     ],
 )
 def test_memcpy_h2d_strided(copy, view, cuda_stream) -> None:
@@ -184,6 +185,23 @@ def test_memcpy_h2d_strided(copy, view, cuda_stream) -> None:
     dst = np.zeros(src.shape, dtype=src.dtype)
     memcpy_device_to_host(dst, ptr)
     np.testing.assert_array_equal(dst, src)
+    cuda_free(ptr)
+
+
+@pytest.mark.parametrize(
+    "copy",
+    [
+        pytest.param(lambda arr, ptr, _s: memcpy_device_to_host(arr, ptr), id="sync"),
+        pytest.param(memcpy_device_to_host_async, id="async"),
+    ],
+)
+def test_memcpy_d2h_rejects_strided(copy, cuda_stream) -> None:
+    """D2H copies refuse a strided destination instead of scattering into its parent."""
+    parent = np.zeros((4, 8), dtype=np.float32)
+    ptr = cuda_malloc(parent.nbytes)
+    with pytest.raises(ValueError, match="C-contiguous"):
+        copy(parent[:, ::2], ptr, cuda_stream)
+    assert not parent.any()
     cuda_free(ptr)
 
 
