@@ -243,12 +243,7 @@ class Detector(ImageModel, DetectorInterface):
         self._orig_size_dtype = (
             self._engine.input_spec[size_index][1] if self._use_image_size else None
         )
-        # tensorrt 8.6 does not keep the onnx output order, so map the outputs by name
-        names = list(self._engine.output_names)
-        expected = list(self._output_schema.value)
-        self._output_order: list[int] | None = None
-        if names != expected and sorted(names) == sorted(expected):
-            self._output_order = [names.index(name) for name in expected]
+        self._set_output_order(self._output_schema.value)
 
     def postprocess(
         self: Self,
@@ -295,8 +290,7 @@ class Detector(ImageModel, DetectorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         conf_thres = conf_thres or self._conf_thres
-        if self._output_order is not None:
-            outputs = [outputs[i] for i in self._output_order]
+        outputs = self._order_outputs(outputs)
         t0 = time.perf_counter()
         data = self._postprocess_fn(
             outputs,

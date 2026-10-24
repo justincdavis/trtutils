@@ -5,11 +5,11 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
-import cv2
 import numpy as np
 
-from trtutils._jit import register_jit
 from trtutils._log import LOG
+
+from ._common import nms_indices, unletterbox_boxes
 
 # bbox as (x1, y1, x2, y2) in original image pixels
 Bbox = Tuple[int, int, int, int]
@@ -79,14 +79,15 @@ def postprocess_hand_interactions(
         labels = outputs[2][i].astype(int)
         pair_probs = outputs[3][i]
 
-        remapped, keep = _remap_boxes_core(boxes, scores, ratios[i], padding[i], conf_thres)
+        remapped = unletterbox_boxes(boxes, ratios[i], padding[i])
+        keep = scores >= conf_thres
 
         boxes_f = remapped[keep]
         scores_f = scores[keep]
         labels_f = labels[keep]
         pair_probs_f = pair_probs[keep][:, keep]
 
-        nms_idx = _nms_indices(boxes_f, scores_f, labels_f, conf_thres, nms_iou_thres)
+        nms_idx = nms_indices(boxes_f, scores_f, labels_f, conf_thres, nms_iou_thres)
 
         out_boxes = boxes_f[nms_idx]
         out_scores = scores_f[nms_idx]
@@ -101,55 +102,6 @@ def postprocess_hand_interactions(
 
         results.append([out_boxes, out_scores, out_labels, out_pairs, out_side])
     return results
-
-
-def _nms_indices(
-    boxes: np.ndarray,
-    scores: np.ndarray,
-    labels: np.ndarray,
-    conf_thres: float,
-    nms_iou_thres: float,
-) -> np.ndarray:
-    if boxes.shape[0] == 0:
-        return np.zeros((0,), dtype=int)
-
-    xywh = np.empty_like(boxes, dtype=np.float32)
-    xywh[:, 0] = boxes[:, 0]
-    xywh[:, 1] = boxes[:, 1]
-    xywh[:, 2] = boxes[:, 2] - boxes[:, 0]
-    xywh[:, 3] = boxes[:, 3] - boxes[:, 1]
-
-    raw_idx = cv2.dnn.NMSBoxesBatched(
-        xywh.tolist(),
-        scores.astype(np.float32).tolist(),
-        labels.astype(np.int32).tolist(),
-        conf_thres,
-        nms_iou_thres,
-    )
-    return np.asarray(raw_idx, dtype=int).ravel()
-
-
-@register_jit(nogil=True)
-def _remap_boxes_core(
-    boxes: np.ndarray,
-    scores: np.ndarray,
-    ratios: tuple[float, float],
-    padding: tuple[float, float],
-    conf_thres: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    ratio_width, ratio_height = ratios
-    pad_x, pad_y = padding
-
-    remapped = boxes.copy()
-    remapped[:, 0] = (remapped[:, 0] - pad_x) / ratio_width
-    remapped[:, 1] = (remapped[:, 1] - pad_y) / ratio_height
-    remapped[:, 2] = (remapped[:, 2] - pad_x) / ratio_width
-    remapped[:, 3] = (remapped[:, 3] - pad_y) / ratio_height
-    remapped = np.clip(remapped, 0, None)
-
-    keep = scores >= conf_thres
-
-    return remapped, keep
 
 
 def get_interactions(

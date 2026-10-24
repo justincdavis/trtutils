@@ -1,0 +1,22 @@
+{
+  "yolov8n-cls": {
+    "url": "ultralytics",
+    "name": "yolov8n-cls"
+  },
+  "yolov8s-cls": {
+    "url": "ultralytics",
+    "name": "yolov8s-cls"
+  },
+  "yolov8m-cls": {
+    "url": "ultralytics",
+    "name": "yolov8m-cls"
+  },
+  "yolov8l-cls": {
+    "url": "ultralytics",
+    "name": "yolov8l-cls"
+  },
+  "yolov8x-cls": {
+    "url": "ultralytics",
+    "name": "yolov8x-cls"
+  }
+}

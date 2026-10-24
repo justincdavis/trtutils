@@ -48,6 +48,17 @@ Added
   batch. The CUDA and TRT preprocessors read device and mapped Buffers in place, skipping
   the host-to-device copy (1080p ``Detector.end2end`` on an RTX 5080: 1.22 to 0.88 ms);
   ``Buffer.wrap`` brings in CuPy / PyTorch tensors. An already preprocessed Buffer is bound as is
+* ``image.Segmenter``, ``image.PoseEstimator``, and ``image.OBBDetector`` for instance
+  segmentation, pose estimation, and oriented-bounding-box models, each a small ``Detector``
+  subclass with its own postprocessor and ``get_segmentations`` / ``get_poses`` / ``get_obbs``
+* ``models`` aliases ``YOLOv8Seg``/``YOLOv11Seg``/``YOLOv26Seg``,
+  ``YOLOv8Pose``/``YOLOv11Pose``/``YOLOv26Pose``, and
+  ``YOLOv8OBB``/``YOLOv11OBB``/``YOLOv26OBB``
+* ``models`` classification aliases ``YOLOv8Cls``/``YOLOv11Cls``/``YOLOv26Cls`` and a
+  ``softmax`` flag on ``Classifier`` (and ``postprocess_classifications``) so heads that
+  already softmax inside the ONNX graph are not double-softmaxed
+* Download support for the ``-seg``, ``-cls``, ``-pose``, and ``-obb`` variants of
+  YOLOv8, YOLOv11, and YOLOv26 (YOLOv12 does not publish these task heads upstream)
 
 Changed
 ^^^^^^^
