@@ -28,11 +28,14 @@ def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
     device_ptr : int
         The device pointer to copy to.
     host_arr : np.ndarray
-        The numpy array to copy.
+        The numpy array to copy. Non-contiguous views are gathered into a
+        contiguous copy first.
 
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::memcpy_host_to_device")
+    # the copy reads raw bytes, so gather strided views first
+    host_arr = np.ascontiguousarray(host_arr)
     nbytes = host_arr.size * host_arr.itemsize
     # LOG.debug(f"MemcpyHtoD: {device_ptr} with size: {nbytes}")
     cuda_call(
@@ -54,13 +57,21 @@ def memcpy_device_to_host(host_arr: np.ndarray, device_ptr: int) -> None:
     Parameters
     ----------
     host_arr : np.ndarray
-        The numpy array to copy to.
+        The C-contiguous numpy array to copy to.
     device_ptr : int
         The device pointer to copy.
+
+    Raises
+    ------
+    ValueError
+        If host_arr is not C-contiguous.
 
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::memcpy_device_to_host")
+    if not host_arr.flags.c_contiguous:
+        err_msg = "host_arr must be C-contiguous to copy into"
+        raise ValueError(err_msg)
     nbytes = host_arr.size * host_arr.itemsize
     # LOG.debug(f"MemcpyDtoH: {device_ptr} with size: {nbytes}")
     cuda_call(
@@ -88,13 +99,16 @@ def memcpy_host_to_device_async(
     device_ptr : int
         The device pointer to copy to.
     host_arr : np.ndarray
-        The numpy array to copy.
+        The numpy array to copy. Non-contiguous views are gathered into a
+        contiguous copy first.
     stream : cudart.cudaStream_t
         The stream to utilize.
 
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::memcpy_host_to_device_async")
+    # the copy reads raw bytes, so gather strided views first
+    host_arr = np.ascontiguousarray(host_arr)
     nbytes = host_arr.size * host_arr.itemsize
     # LOG.debug(f"MemcpyHtoD_Async: {device_ptr} with size: {nbytes}")
     cuda_call(
@@ -121,15 +135,23 @@ def memcpy_device_to_host_async(
     Parameters
     ----------
     host_arr : np.ndarray
-        The numpy array to copy to.
+        The C-contiguous numpy array to copy to.
     device_ptr : int
         The device pointer to copy.
     stream : cudart.cudaStream_t
         The stream to utilize.
 
+    Raises
+    ------
+    ValueError
+        If host_arr is not C-contiguous.
+
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::memcpy_device_to_host_async")
+    if not host_arr.flags.c_contiguous:
+        err_msg = "host_arr must be C-contiguous to copy into"
+        raise ValueError(err_msg)
     nbytes = host_arr.size * host_arr.itemsize
     # LOG.debug(f"MemcpyDtoH_Async: {device_ptr} with size: {nbytes}")
     cuda_call(
@@ -226,24 +248,13 @@ def memcpy_host_to_device_offset(
     device_ptr : int
         The base device pointer.
     host_arr : np.ndarray
-        The numpy array to copy.
+        The numpy array to copy. Non-contiguous views are gathered into a
+        contiguous copy first.
     offset_bytes : int
         The byte offset into the device buffer.
 
     """
-    if FLAGS.NVTX_ENABLED:
-        nvtx.push_range("core::memcpy_host_to_device_offset")
-    nbytes = host_arr.size * host_arr.itemsize
-    cuda_call(
-        cudart.cudaMemcpy(
-            device_ptr + offset_bytes,
-            host_arr.ctypes.data,
-            nbytes,
-            cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
-        ),
-    )
-    if FLAGS.NVTX_ENABLED:
-        nvtx.pop_range()
+    memcpy_host_to_device(device_ptr + offset_bytes, host_arr)
 
 
 def memcpy_host_to_device_offset_async(
@@ -260,27 +271,15 @@ def memcpy_host_to_device_offset_async(
     device_ptr : int
         The base device pointer.
     host_arr : np.ndarray
-        The numpy array to copy.
+        The numpy array to copy. Non-contiguous views are gathered into a
+        contiguous copy first.
     offset_bytes : int
         The byte offset into the device buffer.
     stream : cudart.cudaStream_t
         The stream to utilize.
 
     """
-    if FLAGS.NVTX_ENABLED:
-        nvtx.push_range("core::memcpy_host_to_device_offset_async")
-    nbytes = host_arr.size * host_arr.itemsize
-    cuda_call(
-        cudart.cudaMemcpyAsync(
-            device_ptr + offset_bytes,
-            host_arr.ctypes.data,
-            nbytes,
-            cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
-            stream,
-        ),
-    )
-    if FLAGS.NVTX_ENABLED:
-        nvtx.pop_range()
+    memcpy_host_to_device_async(device_ptr + offset_bytes, host_arr, stream)
 
 
 def cuda_malloc(
