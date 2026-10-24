@@ -12,6 +12,7 @@ from ._depth_anything import (
 from ._dfine import export_dfine
 from ._hands23 import export_hands23
 from ._hoi_detr import export_hoi_detr
+from ._ppocr import export_ppocr
 from ._rfdetr import export_rfdetr
 from ._rtdetr import export_rtdetrv1, export_rtdetrv2, export_rtdetrv3
 from ._torchvision import export_torchvision_classifier
@@ -34,6 +35,7 @@ __all__ = [
     "export_dfine",
     "export_hands23",
     "export_hoi_detr",
+    "export_ppocr",
     "export_rfdetr",
     "export_rtdetrv1",
     "export_rtdetrv2",

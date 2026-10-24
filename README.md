@@ -16,7 +16,7 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 - Automatic CUDA memory management, CUDA graphs, and pagelocked/unified memory
 - Support for arbitrary TensorRT engines, on CUDA 11, 12, and 13 with the corresponding TensorRT versions
 - Engine building from ONNX, including strongly typed, DLA, and quantized builds
-- Ready-to-use image models: detection, classification, depth estimation, and hand-object interaction
+- Ready-to-use image models: detection, classification, depth estimation, hand-object interaction, and OCR
 - CPU, CUDA, and TensorRT preprocessing with built-in postprocessing
 - Model download and ONNX export for many popular architectures
 - Benchmarking, profiling, and NVTX instrumentation (with Jetson energy/power metrics)

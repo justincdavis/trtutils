@@ -5,3 +5,4 @@ include src/trtutils/download/patches/*.patch
 include src/trtutils/download/configs/*.json
 include src/trtutils/download/model_deps/*.txt
 include src/trtutils/download/tool_deps/*.txt
+include src/trtutils/models/ocr/*.txt
