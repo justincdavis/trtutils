@@ -1,0 +1,22 @@
+{
+  "yolov11n-pose": {
+    "url": "ultralytics",
+    "name": "yolo11n-pose"
+  },
+  "yolov11s-pose": {
+    "url": "ultralytics",
+    "name": "yolo11s-pose"
+  },
+  "yolov11m-pose": {
+    "url": "ultralytics",
+    "name": "yolo11m-pose"
+  },
+  "yolov11l-pose": {
+    "url": "ultralytics",
+    "name": "yolo11l-pose"
+  },
+  "yolov11x-pose": {
+    "url": "ultralytics",
+    "name": "yolo11x-pose"
+  }
+}

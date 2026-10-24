@@ -34,6 +34,18 @@ _EXPECTED_FAMILIES = [
     "depth_anything_v3",
     "hoi_detr",
     "hands23",
+    "yolov8_seg",
+    "yolov8_cls",
+    "yolov8_pose",
+    "yolov8_obb",
+    "yolov11_seg",
+    "yolov11_cls",
+    "yolov11_pose",
+    "yolov11_obb",
+    "yolov26_seg",
+    "yolov26_cls",
+    "yolov26_pose",
+    "yolov26_obb",
 ]
 
 _EXPECTED_MODELS = [
@@ -66,6 +78,18 @@ _EXPECTED_MODELS = [
     "depth_anything_v3_mono_large",
     "hoi_detr_vitl",
     "hands23_x101",
+    "yolov8n-seg",
+    "yolov8n-cls",
+    "yolov8n-pose",
+    "yolov8n-obb",
+    "yolov11n-seg",
+    "yolov11n-cls",
+    "yolov11n-pose",
+    "yolov11n-obb",
+    "yolov26n-seg",
+    "yolov26n-cls",
+    "yolov26n-pose",
+    "yolov26n-obb",
 ]
 
 

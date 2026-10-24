@@ -97,6 +97,50 @@ Classification
 
    - See: `PyTorch Vision Classification Models <https://docs.pytorch.org/vision/main/models.html#classification>`_
 
+2. **Ultralytics YOLO** - YOLOv8, YOLOv11, and YOLOv26 classification heads
+
+   - YOLOv8: ``yolov8n-cls``, ``yolov8s-cls``, ``yolov8m-cls``, ``yolov8l-cls``, ``yolov8x-cls``
+   - YOLOv11: ``yolov11n-cls``, ``yolov11s-cls``, ``yolov11m-cls``, ``yolov11l-cls``, ``yolov11x-cls``
+   - YOLOv26: ``yolov26n-cls``, ``yolov26s-cls``, ``yolov26m-cls``, ``yolov26l-cls``, ``yolov26x-cls``
+   - GitHub: `ultralytics/ultralytics <https://github.com/ultralytics/ultralytics>`_
+   - AGPL-3.0 and commercial licensed, be aware of license restrictions
+
+Instance Segmentation
+----------------------
+
+1. **Ultralytics YOLO** - YOLOv8, YOLOv11, and YOLOv26 segmentation heads
+
+   - YOLOv8: ``yolov8n-seg``, ``yolov8s-seg``, ``yolov8m-seg``, ``yolov8l-seg``, ``yolov8x-seg``
+   - YOLOv11: ``yolov11n-seg``, ``yolov11s-seg``, ``yolov11m-seg``, ``yolov11l-seg``, ``yolov11x-seg``
+   - YOLOv26: ``yolov26n-seg``, ``yolov26s-seg``, ``yolov26m-seg``, ``yolov26l-seg``, ``yolov26x-seg``
+   - GitHub: `ultralytics/ultralytics <https://github.com/ultralytics/ultralytics>`_
+   - AGPL-3.0 and commercial licensed, be aware of license restrictions
+
+Pose Estimation
+----------------
+
+1. **Ultralytics YOLO** - YOLOv8, YOLOv11, and YOLOv26 pose heads
+
+   - YOLOv8: ``yolov8n-pose``, ``yolov8s-pose``, ``yolov8m-pose``, ``yolov8l-pose``, ``yolov8x-pose``
+   - YOLOv11: ``yolov11n-pose``, ``yolov11s-pose``, ``yolov11m-pose``, ``yolov11l-pose``, ``yolov11x-pose``
+   - YOLOv26: ``yolov26n-pose``, ``yolov26s-pose``, ``yolov26m-pose``, ``yolov26l-pose``, ``yolov26x-pose``
+   - GitHub: `ultralytics/ultralytics <https://github.com/ultralytics/ultralytics>`_
+   - AGPL-3.0 and commercial licensed, be aware of license restrictions
+
+Oriented Bounding Boxes
+-------------------------
+
+1. **Ultralytics YOLO** - YOLOv8, YOLOv11, and YOLOv26 OBB heads
+
+   - YOLOv8: ``yolov8n-obb``, ``yolov8s-obb``, ``yolov8m-obb``, ``yolov8l-obb``, ``yolov8x-obb``
+   - YOLOv11: ``yolov11n-obb``, ``yolov11s-obb``, ``yolov11m-obb``, ``yolov11l-obb``, ``yolov11x-obb``
+   - YOLOv26: ``yolov26n-obb``, ``yolov26s-obb``, ``yolov26m-obb``, ``yolov26l-obb``, ``yolov26x-obb``
+   - GitHub: `ultralytics/ultralytics <https://github.com/ultralytics/ultralytics>`_
+   - AGPL-3.0 and commercial licensed, be aware of license restrictions
+
+Note: YOLOv12 does not publish segmentation, classification, pose, or OBB weights upstream
+(only detection), so it is absent from the three sections above and the classification list.
+
 Hand-Object Interaction
 ------------------------
 
@@ -151,6 +195,27 @@ Hand-Object Interaction Models
 
 - **HOI-DETR**: ``hoi_detr_vitl``
 - **Hands23**: ``hands23_x101``
+
+Instance Segmentation Models
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **YOLOv8-seg**: ``yolov8n-seg``, ``yolov8s-seg``, ``yolov8m-seg``, ``yolov8l-seg``, ``yolov8x-seg`` (via Ultralytics)
+- **YOLOv11-seg**: ``yolov11n-seg``, ``yolov11s-seg``, ``yolov11m-seg``, ``yolov11l-seg``, ``yolov11x-seg`` (via Ultralytics)
+- **YOLOv26-seg**: ``yolov26n-seg``, ``yolov26s-seg``, ``yolov26m-seg``, ``yolov26l-seg``, ``yolov26x-seg`` (via Ultralytics)
+
+Pose Estimation Models
+~~~~~~~~~~~~~~~~~~~~~~~
+
+- **YOLOv8-pose**: ``yolov8n-pose``, ``yolov8s-pose``, ``yolov8m-pose``, ``yolov8l-pose``, ``yolov8x-pose`` (via Ultralytics)
+- **YOLOv11-pose**: ``yolov11n-pose``, ``yolov11s-pose``, ``yolov11m-pose``, ``yolov11l-pose``, ``yolov11x-pose`` (via Ultralytics)
+- **YOLOv26-pose**: ``yolov26n-pose``, ``yolov26s-pose``, ``yolov26m-pose``, ``yolov26l-pose``, ``yolov26x-pose`` (via Ultralytics)
+
+Oriented Bounding Box Models
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **YOLOv8-obb**: ``yolov8n-obb``, ``yolov8s-obb``, ``yolov8m-obb``, ``yolov8l-obb``, ``yolov8x-obb`` (via Ultralytics)
+- **YOLOv11-obb**: ``yolov11n-obb``, ``yolov11s-obb``, ``yolov11m-obb``, ``yolov11l-obb``, ``yolov11x-obb`` (via Ultralytics)
+- **YOLOv26-obb**: ``yolov26n-obb``, ``yolov26s-obb``, ``yolov26m-obb``, ``yolov26l-obb``, ``yolov26x-obb`` (via Ultralytics)
 
 Example Usage
 ~~~~~~~~~~~~~
