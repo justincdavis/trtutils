@@ -15,19 +15,20 @@ import nvtx
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
+from trtutils.core._buffer import Buffer
 from trtutils.core._kernels import Kernel
 from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.core._stream import create_stream, stream_synchronize
 from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from typing import ClassVar
 
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
     from trtutils.core._bindings import Binding
-    from trtutils.core._buffer import Buffer
 
 _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
@@ -178,7 +179,7 @@ class ImagePreprocessor(ABC):
     @overload
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -188,7 +189,7 @@ class ImagePreprocessor(ABC):
     @overload
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -198,7 +199,7 @@ class ImagePreprocessor(ABC):
     @abstractmethod
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -209,7 +210,7 @@ class ImagePreprocessor(ABC):
     @overload
     def preprocess(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -219,7 +220,7 @@ class ImagePreprocessor(ABC):
     @overload
     def preprocess(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -229,7 +230,7 @@ class ImagePreprocessor(ABC):
     @abstractmethod
     def preprocess(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -425,7 +426,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
     @overload
     def __call__(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -435,7 +436,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
     @overload
     def __call__(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -444,7 +445,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
     def __call__(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -455,7 +456,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
             The method to resize the image with.
@@ -534,7 +535,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
     def _validate_input(
         self: Self,
-        image: np.ndarray,
+        image: np.ndarray | Buffer,
         resize: str | None = None,
         *,
         verbose: bool | None = None,
@@ -561,20 +562,23 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 nvtx.pop_range()  # validate_input
             raise ValueError(err_msg)
 
-        img_shape: tuple[int, int, int] = image.shape
+        img_shape = image.shape
 
         if verbose:
             LOG.debug(
                 f"{self._tag}: Image shape: {img_shape}, Allocated: {self._input_binding.host_allocation.shape}",
             )
 
-        if img_shape[2] != _COLOR_CHANNELS:
-            err_msg = f"{self._tag}: Can only preprocess color images."
+        if img_shape[2] != _COLOR_CHANNELS or image.dtype != np.uint8:
+            err_msg = f"{self._tag}: Can only preprocess uint8 color images."
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # validate_input
             raise ValueError(err_msg)
 
-        if image.nbytes > self._input_binding.host_allocation.nbytes:
+        if (
+            not isinstance(image, Buffer)
+            and image.nbytes > self._input_binding.host_allocation.nbytes
+        ):
             self._reallocate_input(image, verbose=verbose)
 
         if FLAGS.NVTX_ENABLED:
@@ -603,7 +607,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
     @abstractmethod
     def direct_preproc(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
         no_warn: bool | None = None,
@@ -619,7 +623,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray]
+        images : Sequence[np.ndarray | Buffer]
             The images to preprocess (HWC format, uint8).
         resize : str, optional
             The resize method. Options are ['letterbox', 'linear'].
@@ -660,7 +664,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
     @overload
     def preprocess(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -670,7 +674,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
     @overload
     def preprocess(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
         no_copy: bool | None = ...,
@@ -679,7 +683,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
     def preprocess(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
         no_copy: bool | None = None,
@@ -690,7 +694,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
             The method to resize the image with.
@@ -717,8 +721,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.push_range(self._nvtx_tags["gpu_preprocess"])
 
         # Handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
+        if isinstance(images, (np.ndarray, Buffer)):
+            batch_images: Sequence[np.ndarray | Buffer] = [images]
         else:
             batch_images = images
 
@@ -861,18 +865,21 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         return resize_kernel, resize_args, ratios, padding
 
-    def _stage_image(self: Self, image: np.ndarray) -> None:
-        """Put one image into the device input binding, ahead of its resize kernel."""
+    def _stage_image(self: Self, image: np.ndarray | Buffer) -> int:
+        """Get a device pointer to one image, staging host images in the input binding."""
+        if isinstance(image, Buffer):
+            return image.device_ptr
         if self._pagelocked_mem and self._unified_mem:
             # the kernel for the previous image may still read this mapped buffer
             stream_synchronize(self._stream)
             self._input_binding.host_allocation.reshape(-1)[: image.size] = image.reshape(-1)
         else:
             memcpy_host_to_device_async(self._input_binding.allocation, image, self._stream)
+        return self._input_binding.allocation
 
     def _resize_single_image_to_batch(
         self: Self,
-        image: np.ndarray,
+        image: np.ndarray | Buffer,
         batch_buffer_ptr: int,
         resize_method: str,
         *,
@@ -887,11 +894,10 @@ class GPUImagePreprocessor(ImagePreprocessor):
             height,
             width,
             resize_method,
-            self._input_binding.allocation,
+            self._stage_image(image),
             batch_buffer_ptr,
             verbose=verbose,
         )
-        self._stage_image(image)
         resize_kernel.call(
             self._num_blocks,
             self._num_threads,
@@ -906,7 +912,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
     def _resize_homogeneous_batch(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         batch_buffer_ptr: int,
         resize_method: str,
         *,
@@ -971,7 +977,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
     def _resize_heterogeneous_batch(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         batch_buffer_ptr: int,
         resize_method: str,
         *,
@@ -993,11 +999,10 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 height,
                 width,
                 resize_method,
-                self._input_binding.allocation,
+                self._stage_image(image),
                 batch_buffer_ptr + (i * single_image_bytes),
                 verbose=verbose,
             )
-            self._stage_image(image)
             resize_kernel.call(
                 self._num_blocks,
                 self._num_threads,
@@ -1014,7 +1019,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
     def _resize_images_to_batch(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         batch_buffer_ptr: int,
         resize: str | None = None,
         *,
@@ -1025,7 +1030,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray]
+        images : Sequence[np.ndarray | Buffer]
             Images to resize.
         batch_buffer_ptr : int
             GPU pointer to batch buffer to copy resized images to.
@@ -1048,6 +1053,11 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 nvtx.pop_range()  # resize_images_to_batch
             return [], []
 
+        # the kernels read device and mapped buffers in place, other host buffers are staged
+        images = [
+            img.array if isinstance(img, Buffer) and not img.device_visible else img
+            for img in images
+        ]
         resize_method = self._validate_input(images[0], resize, verbose=verbose)
         if len(images) == 1:
             ratios, padding = self._resize_single_image_to_batch(
@@ -1060,11 +1070,16 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 nvtx.pop_range()  # resize_images_to_batch
             return [ratios], [padding]
 
+        # device buffers are resized in place one at a time, not packed into the batch staging
         first_height, first_width = images[0].shape[:2]
-        homogeneous = True
+        homogeneous = not any(isinstance(img, Buffer) for img in images)
         for image in images[1:]:
-            if image.ndim != _IMAGE_DIMENSIONS or image.shape[2] != _COLOR_CHANNELS:
-                err_msg = f"{self._tag}: Image must be (height, width, channels=3)"
+            if (
+                image.ndim != _IMAGE_DIMENSIONS
+                or image.shape[2] != _COLOR_CHANNELS
+                or image.dtype != np.uint8
+            ):
+                err_msg = f"{self._tag}: Image must be uint8 (height, width, channels=3)"
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # resize_images_to_batch
                 raise ValueError(err_msg)

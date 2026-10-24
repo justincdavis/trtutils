@@ -20,6 +20,8 @@ from trtutils.image.kernels import IMAGENET_SST, SST_FAST
 from ._image_preproc import GPUImagePreprocessor
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
@@ -278,7 +280,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
     def direct_preproc(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
         no_warn: bool | None = None,
@@ -289,7 +291,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         Parameters
         ----------
-        images : list[np.ndarray]
+        images : Sequence[np.ndarray | Buffer]
             The images to preprocess.
         resize : str
             The method to resize the image with.

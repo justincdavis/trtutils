@@ -44,6 +44,10 @@ Added
   results under ``benchmark/data/perf-series/<device>/`` (tagged with the trtutils git
   SHA) for comparing successive library revisions, plotted by
   ``benchmark/plotting/patch_series.py`` (``run.py plot --patch-series``)
+* Image models and preprocessors take ``Buffer`` images, alone or mixed with arrays in a
+  batch. The CUDA and TRT preprocessors read device and mapped Buffers in place, skipping
+  the host-to-device copy (1080p ``Detector.end2end`` on an RTX 5080: 1.22 to 0.88 ms);
+  ``Buffer.wrap`` brings in CuPy / PyTorch tensors. An already preprocessed Buffer is bound as is
 
 Changed
 ^^^^^^^
@@ -110,6 +114,7 @@ Changed
   of silently using the CPU preprocessor
 * ``Detector`` models with a scale-factor input treat an already preprocessed batch passed
   without ``ratios`` as unscaled, as they already did for its original size
+* GPU preprocessors raise ``ValueError`` for non-uint8 images instead of reading their bytes as uint8
 
 Fixed
 ^^^^^

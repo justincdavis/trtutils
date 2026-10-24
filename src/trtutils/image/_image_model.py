@@ -24,6 +24,8 @@ from .preprocessors import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from typing_extensions import Self
 
 _COLOR_CHANNELS = 3
@@ -39,14 +41,16 @@ _PostFn = Callable[
 T = TypeVar("T")
 
 
-def host_input(array: np.ndarray) -> Buffer:
+def host_input(array: np.ndarray | Buffer) -> Buffer:
     """
-    Wrap host data as an engine input.
+    Wrap data as an engine input.
 
-    ``np.ascontiguousarray`` returns ``array`` itself when it is already
-    C-contiguous, so the common case is zero-copy; only strided or
-    Fortran-ordered data is gathered into a new array.
+    A Buffer is bound as is. ``np.ascontiguousarray`` returns ``array``
+    itself when it is already C-contiguous, so the common case is
+    zero-copy; only strided or Fortran-ordered data is gathered into a new array.
     """
+    if isinstance(array, Buffer):
+        return array
     return Buffer.wrap(np.ascontiguousarray(array))
 
 
@@ -479,14 +483,14 @@ class ImageModel:
 
     def mock_run(
         self: Self,
-        images: list[np.ndarray] | None = None,
+        images: Sequence[np.ndarray | Buffer] | None = None,
     ) -> list[np.ndarray]:
         """
         Mock an execution of the model.
 
         Parameters
         ----------
-        images : list[np.ndarray], optional
+        images : Sequence[np.ndarray | Buffer], optional
             Optional batch of images to use for execution.
             If None, random data will be generated.
 
@@ -520,7 +524,7 @@ class ImageModel:
     @overload
     def preprocess(
         self: Self,
-        images: np.ndarray,
+        images: np.ndarray | Buffer,
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -531,7 +535,7 @@ class ImageModel:
     @overload
     def preprocess(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         method: str | None = ...,
         *,
@@ -541,7 +545,7 @@ class ImageModel:
 
     def preprocess(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         method: str | None = None,
         *,
@@ -553,7 +557,7 @@ class ImageModel:
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the images with.
@@ -588,8 +592,8 @@ class ImageModel:
             nvtx.push_range(self._nvtx_tags["preprocess"])
 
         # Handle single-image input
-        if isinstance(images, np.ndarray):
-            batch_images: list[np.ndarray] = [images]
+        if isinstance(images, (np.ndarray, Buffer)):
+            batch_images: Sequence[np.ndarray | Buffer] = [images]
         else:
             batch_images = images
 
@@ -610,7 +614,7 @@ class ImageModel:
 
     def prepare_inputs(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         method: str | None = None,
         *,
         preprocessed: bool = False,
@@ -628,7 +632,7 @@ class ImageModel:
 
         Parameters
         ----------
-        images : list[np.ndarray]
+        images : Sequence[np.ndarray | Buffer]
             The images to preprocess, or a single already preprocessed batch tensor.
         method : str, optional
             The preprocessor to use, as in :meth:`get_preprocessor`.
@@ -674,7 +678,7 @@ class ImageModel:
 
     def infer(
         self: Self,
-        images: list[np.ndarray],
+        images: Sequence[np.ndarray | Buffer],
         method: str | None = None,
         *,
         preprocessed: bool = False,
@@ -693,7 +697,7 @@ class ImageModel:
 
         Parameters
         ----------
-        images : list[np.ndarray]
+        images : Sequence[np.ndarray | Buffer]
             The images, or a single already preprocessed batch tensor.
         method : str, optional
             The preprocessor to use, as in :meth:`get_preprocessor`.
@@ -735,7 +739,7 @@ class ImageModel:
     def engine_inputs(
         self: Self,
         image: Buffer,
-        _images: list[np.ndarray] | None,
+        _images: Sequence[np.ndarray | Buffer] | None,
         _ratios: list[tuple[float, float]] | None,
         /,
     ) -> list[Buffer]:
@@ -749,7 +753,7 @@ class ImageModel:
         ----------
         image : Buffer
             The preprocessed batch, on the host or the device.
-        _images : list[np.ndarray] | None
+        _images : Sequence[np.ndarray | Buffer] | None
             The original input images, or None when the caller passed an
             already preprocessed batch.
         _ratios : list[tuple[float, float]] | None
@@ -787,7 +791,7 @@ class ImageModel:
 
     def _run_core(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         ratios: tuple[float, float] | list[tuple[float, float]] | None,
         padding: tuple[float, float] | list[tuple[float, float]] | None,
         *,
@@ -807,7 +811,7 @@ class ImageModel:
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image or batch of images to run inference on.
         ratios : tuple[float, float] | list[tuple[float, float]] | None
             Scaling ratios, required when ``preprocessed`` is True and
@@ -855,8 +859,8 @@ class ImageModel:
                 LOG.debug(f"{self._tag}: run")
 
             # handle single-image input
-            is_single = isinstance(images, np.ndarray)
-            batch_images: list[np.ndarray] = [images] if isinstance(images, np.ndarray) else images
+            is_single = isinstance(images, (np.ndarray, Buffer))
+            batch_images: Sequence[np.ndarray | Buffer] = [images] if is_single else images
 
             # normalize ratios/padding to list form
             batch_ratios: list[tuple[float, float]] | None = (
@@ -903,7 +907,7 @@ class ImageModel:
 
     def _end2end_core(
         self: Self,
-        images: np.ndarray | list[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         *,
         verbose: bool | None,
         post: _PostFn,
@@ -918,7 +922,7 @@ class ImageModel:
 
         Parameters
         ----------
-        images : np.ndarray | list[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image or batch of images to run inference on.
         verbose : bool, optional
             Whether to log additional information.
@@ -941,8 +945,8 @@ class ImageModel:
                 LOG.debug(f"{self._tag}: end2end")
 
             # handle single-image input
-            is_single = isinstance(images, np.ndarray)
-            batch_images: list[np.ndarray] = [images] if isinstance(images, np.ndarray) else images
+            is_single = isinstance(images, (np.ndarray, Buffer))
+            batch_images: Sequence[np.ndarray | Buffer] = [images] if is_single else images
 
             # outputs are consumed by get() inside this call, so skip their copies
             no_copy = True
