@@ -46,9 +46,9 @@ def main() -> None:
         print(f"{text!r} ({score:.3f}) at {box.astype(int).tolist()}")
 
     # the stages can also be used on their own
-    boxes, _ = ocr.detector(image)
-    print(f"Detected {len(boxes)} text boxes")
-    print(ocr.recognizer(image[40:100, 20:500]))
+    text_boxes = ocr.detector.end2end(image)
+    print(f"Detected {len(text_boxes)} text boxes")
+    print(ocr.recognizer.end2end(image[40:100, 20:500]))
 
 
 if __name__ == "__main__":

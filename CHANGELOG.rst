@@ -61,16 +61,19 @@ Added
   batch. The CUDA and TRT preprocessors read device and mapped Buffers in place, skipping
   the host-to-device copy (1080p ``Detector.end2end`` on an RTX 5080: 1.22 to 0.88 ms);
   ``Buffer.wrap`` brings in CuPy / PyTorch tensors. An already preprocessed Buffer is bound as is
-* ``image.TextDetector``, ``image.TextRecognizer`` and ``image.OCR`` for PaddleOCR-style
-  DB text detection, CTC text recognition, and the combined two-stage OCR pipeline, running
-  on dynamic-shape engines (any image size / text line width), with PaddleOCR's
-  default detection settings
+* ``image.TextDetector`` and ``image.TextRecognizer``, ``ImageModel`` subclasses for
+  PaddleOCR-style DB text detection and CTC text recognition on dynamic-shape engines (any
+  image size / text line width), with the same ``preprocess`` / ``run`` / ``postprocess`` /
+  ``end2end`` API as the other image models plus ``get_text_boxes`` / ``get_texts``, and
+  PaddleOCR's default settings. ``image.OCR`` runs both as a two-stage pipeline through
+  ``end2end``; ``interfaces.TextDetectorInterface`` and ``interfaces.TextRecognizerInterface``
 * ``models.PPOCRDetector`` and ``models.PPOCRRecognizer`` with dynamic-shape ``build()``
   and the bundled PP-OCR character dictionary, and ``models.PPOCR`` to run both as one pipeline
 * OCR pre/postprocessing functions: ``preprocessors.preprocess_text_detection``,
   ``preprocessors.preprocess_text_recognition``, ``preprocessors.resize_text_detection``,
   ``preprocessors.crop_text_region``, ``postprocessors.postprocess_text_detection``,
-  ``postprocessors.postprocess_text_recognition`` and ``postprocessors.sort_text_boxes``
+  ``postprocessors.postprocess_text_recognition``, ``postprocessors.get_text_boxes``,
+  ``postprocessors.get_texts`` and ``postprocessors.sort_text_boxes``
 * Download support for ``ppocrv4_det`` and ``ppocrv4_rec``
 
 Changed
