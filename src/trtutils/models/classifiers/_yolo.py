@@ -15,12 +15,7 @@ if TYPE_CHECKING:
 
 
 class YOLOv8Cls(Classifier, Model):
-    """
-    Alias of Classifier with default args for YOLOv8-Cls.
-
-    softmax defaults to False since the exported ONNX head already
-    applies softmax internally; re-applying it would flatten the confidences.
-    """
+    """Alias of Classifier with default args for YOLOv8-Cls, softmax off as the head applies it."""
 
     _model_type = "yolov8_cls"
     _friendly_name = "YOLOv8-Cls"
@@ -71,12 +66,7 @@ class YOLOv8Cls(Classifier, Model):
 
 
 class YOLOv11Cls(Classifier, Model):
-    """
-    Alias of Classifier with default args for YOLOv11-Cls.
-
-    softmax defaults to False since the exported ONNX head already
-    applies softmax internally; re-applying it would flatten the confidences.
-    """
+    """Alias of Classifier with default args for YOLOv11-Cls, softmax off as the head applies it."""
 
     _model_type = "yolov11_cls"
     _friendly_name = "YOLOv11-Cls"
@@ -127,12 +117,7 @@ class YOLOv11Cls(Classifier, Model):
 
 
 class YOLOv26Cls(Classifier, Model):
-    """
-    Alias of Classifier with default args for YOLOv26-Cls.
-
-    softmax defaults to False since the exported ONNX head already
-    applies softmax internally; re-applying it would flatten the confidences.
-    """
+    """Alias of Classifier with default args for YOLOv26-Cls, softmax off as the head applies it."""
 
     _model_type = "yolov26_cls"
     _friendly_name = "YOLOv26-Cls"

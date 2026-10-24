@@ -23,19 +23,15 @@ def postprocess_yolo_obb(
     ratios: list[tuple[float, float]],
     padding: list[tuple[float, float]],
     conf_thres: float | None = None,
-    input_size: tuple[int, int] | None = None,  # noqa: ARG001
     nms_iou_thres: float = 0.5,
     *,
-    no_copy: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
     Postprocess YOLO-style OBB engine output.
 
-    Expects a single output ``output0`` of shape ``(batch, 4 + nc + 1, N)`` where the
-    last channel is the rotation angle in radians. Decodes, unletterboxes, and
-    deduplicates with per-class rotated NMS, then derives an axis-aligned enclosing
-    box for each rotated rect.
+    Expects one ``output0`` of shape ``(batch, 4 + nc + 1, N)``, last channel the
+    angle in radians. Per-class rotated NMS, results in original image coordinates.
 
     Parameters
     ----------
@@ -48,13 +44,8 @@ def postprocess_yolo_obb(
     conf_thres : float, optional
         Confidence threshold used both to filter candidates and as the NMS
         score threshold. If not passed, no confidence filtering is applied.
-    input_size : tuple[int, int] | None
-        Unused.
     nms_iou_thres : float
         IoU threshold for the per-class rotated NMS.
-    no_copy : bool, optional
-        Kept for interface symmetry with the other postprocessors. NMS-based
-        indexing always allocates new arrays, so this has no effect.
     verbose : bool, optional
         Whether or not to log additional information.
 

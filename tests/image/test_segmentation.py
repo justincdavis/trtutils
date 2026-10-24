@@ -5,10 +5,15 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import pytest
 
-from trtutils.image.postprocessors._segmentation import get_segmentations, postprocess_yolo_seg
+from trtutils.image.postprocessors._segmentation import (
+    _decode_masks,
+    get_segmentations,
+    postprocess_yolo_seg,
+)
 
 pytestmark = pytest.mark.cpu
 
@@ -190,3 +195,34 @@ def test_get_segmentations_filters_by_conf_thres() -> None:
     result = get_segmentations([[bboxes, scores, class_ids, masks]], conf_thres=0.5)
     assert len(result[0]) == 1
     assert result[0][0][2] == 0
+
+
+def test_box_cropped_masks_match_full_resize_reference() -> None:
+    """Resizing only the box region matches resizing the whole mask then cropping."""
+    rng = np.random.default_rng(0)
+    nm, mh, mw = 4, 40, 40
+    input_size = (160, 160)
+    ratios = (0.25, 0.25)
+    padding = (0.0, 30.0)
+    proto = rng.normal(size=(nm, mh, mw)).astype(np.float32) * 3
+    coeffs = rng.normal(size=(3, nm)).astype(np.float32)
+    boxes = np.array(
+        [[10.0, 5.0, 200.0, 90.0], [300.0, 100.0, 500.0, 300.0], [0.0, 0.0, 640.0, 360.0]],
+        dtype=np.float32,
+    )
+
+    masks = _decode_masks(coeffs, proto, boxes, ratios, padding, input_size, 0.5)
+
+    orig_w, orig_h = 640, 400
+    probs = 1.0 / (1.0 + np.exp(-(coeffs @ proto.reshape(nm, -1)).reshape(-1, mh, mw)))
+    # content region: rows 30..130 of the 160 input -> proto rows 7.5..32.5
+    y0, y1 = 7, 33
+    assert masks.shape == (3, orig_h, orig_w)
+    for idx, (bx1, by1, bx2, by2) in enumerate(boxes):
+        ref = cv2.resize(probs[idx, y0:y1], (orig_w, orig_h), interpolation=cv2.INTER_LINEAR) >= 0.5
+        region = (slice(int(by1), min(int(np.ceil(by2)), orig_h)), slice(int(bx1), int(bx2)))
+        mismatch = np.mean(masks[idx][region] != ref[region])
+        assert mismatch < 0.02
+        outside = masks[idx].copy()
+        outside[region] = 0
+        assert not outside.any()

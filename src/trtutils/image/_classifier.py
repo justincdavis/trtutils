@@ -161,8 +161,7 @@ class Classifier(ImageModel, ClassifierInterface):
         outputs : list[np.ndarray]
             The raw outputs from the engine to postprocess.
         softmax : bool, optional
-            Whether or not to apply softmax to the raw network outputs.
-            If None (default), uses the value passed to the constructor.
+            Overrides the constructor value when not None.
         no_copy : bool, optional
             If True, do not copy the data from the allocated
             memory. If the data is not copied, it WILL BE

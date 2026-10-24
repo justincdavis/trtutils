@@ -10,8 +10,9 @@ from typing import Tuple
 import cv2
 import numpy as np
 
-from trtutils._jit import register_jit
 from trtutils._log import LOG
+
+from ._common import cxcywh_to_xyxy, nms_indices, unletterbox_boxes
 
 # bbox as (x1, y1, x2, y2) in original image pixels
 Bbox = Tuple[int, int, int, int]
@@ -24,11 +25,10 @@ def postprocess_yolo_seg(
     ratios: list[tuple[float, float]],
     padding: list[tuple[float, float]],
     conf_thres: float | None = None,
-    input_size: tuple[int, int] | None = None,
     nms_iou_thres: float = 0.5,
     mask_thres: float = 0.5,
     *,
-    no_copy: bool | None = None,  # noqa: ARG001
+    input_size: tuple[int, int] | None = None,
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
@@ -51,17 +51,14 @@ def postprocess_yolo_seg(
     conf_thres : float, optional
         Confidence threshold used both to filter candidates and as the NMS score
         threshold. If not passed, no confidence filtering is applied.
-    input_size : tuple[int, int] | None
-        The network input (width, height). Used to map the mask prototypes back
-        to the letterboxed content region. If not passed, no letterbox cropping
-        is applied to the masks.
     nms_iou_thres : float
         IoU threshold for the class-aware NMS.
     mask_thres : float
         Threshold applied to the sigmoid mask logits to produce the binary mask.
-    no_copy : bool, optional
-        Kept for interface symmetry with the other postprocessors. NMS-based
-        indexing always allocates new arrays, so this has no effect.
+    input_size : tuple[int, int] | None
+        The network input (width, height). Used to map the mask prototypes back
+        to the letterboxed content region. If not passed, no letterbox cropping
+        is applied to the masks.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -85,13 +82,13 @@ def postprocess_yolo_seg(
             conf_thres,
         )
 
-        keep_idx = _nms_indices(boxes, scores, class_ids, conf_thres, nms_iou_thres)
+        keep_idx = nms_indices(boxes, scores, class_ids, conf_thres, nms_iou_thres)
         boxes = boxes[keep_idx]
         scores = scores[keep_idx]
         class_ids = class_ids[keep_idx]
         coeffs = coeffs[keep_idx]
 
-        boxes = _unletterbox_core(boxes, ratios[i], padding[i])
+        boxes = unletterbox_boxes(boxes, ratios[i], padding[i])
         masks = _decode_masks(coeffs, proto, boxes, ratios[i], padding[i], input_size, mask_thres)
 
         results.append([boxes, scores, class_ids, masks])
@@ -119,53 +116,8 @@ def _decode_seg_core(
         class_ids = class_ids[keep]
         coeffs = coeffs[keep]
 
-    cx, cy, w, h = cxcywh[:, 0], cxcywh[:, 1], cxcywh[:, 2], cxcywh[:, 3]
-    boxes = np.stack((cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), axis=1)
+    boxes = cxcywh_to_xyxy(cxcywh)
     return boxes, scores, class_ids.astype(np.int64), coeffs
-
-
-def _nms_indices(
-    boxes: np.ndarray,
-    scores: np.ndarray,
-    class_ids: np.ndarray,
-    conf_thres: float | None,
-    nms_iou_thres: float,
-) -> np.ndarray:
-    if boxes.shape[0] == 0:
-        return np.zeros((0,), dtype=int)
-    thres = 0.0 if conf_thres is None else conf_thres
-
-    xywh = np.empty_like(boxes, dtype=np.float32)
-    xywh[:, 0] = boxes[:, 0]
-    xywh[:, 1] = boxes[:, 1]
-    xywh[:, 2] = boxes[:, 2] - boxes[:, 0]
-    xywh[:, 3] = boxes[:, 3] - boxes[:, 1]
-
-    raw_idx = cv2.dnn.NMSBoxesBatched(
-        xywh.tolist(),
-        scores.astype(np.float32).tolist(),
-        class_ids.astype(np.int32).tolist(),
-        thres,
-        nms_iou_thres,
-    )
-    return np.asarray(raw_idx, dtype=int).ravel()
-
-
-@register_jit(nogil=True)
-def _unletterbox_core(
-    boxes: np.ndarray,
-    ratios: tuple[float, float],
-    padding: tuple[float, float],
-) -> np.ndarray:
-    ratio_width, ratio_height = ratios
-    pad_x, pad_y = padding
-
-    out = boxes.copy()
-    out[:, 0] = (out[:, 0] - pad_x) / ratio_width
-    out[:, 1] = (out[:, 1] - pad_y) / ratio_height
-    out[:, 2] = (out[:, 2] - pad_x) / ratio_width
-    out[:, 3] = (out[:, 3] - pad_y) / ratio_height
-    return np.clip(out, 0, None)
 
 
 def _decode_masks(
@@ -177,7 +129,7 @@ def _decode_masks(
     input_size: tuple[int, int] | None,
     mask_thres: float,
 ) -> np.ndarray:
-    nm, mh, mw = proto.shape
+    _, mh, mw = proto.shape
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
 
@@ -194,34 +146,54 @@ def _decode_masks(
     if coeffs.shape[0] == 0:
         return np.zeros((0, orig_h, orig_w), dtype=np.uint8)
 
-    proto_flat = proto.reshape(nm, -1)
-    logits = coeffs @ proto_flat
-    mask_probs = (1.0 / (1.0 + np.exp(-logits))).reshape(-1, mh, mw)
-
     # map the letterbox content region into proto-grid coordinates
     stride_x = input_w / mw
     stride_y = input_h / mh
     x0 = max(int(np.floor(pad_x / stride_x)), 0)
     y0 = max(int(np.floor(pad_y / stride_y)), 0)
-    x1 = min(int(np.ceil((input_w - pad_x) / stride_x)), mw)
-    y1 = min(int(np.ceil((input_h - pad_y) / stride_y)), mh)
-    x1 = max(x1, x0 + 1)
-    y1 = max(y1, y0 + 1)
+    x1 = max(min(int(np.ceil((input_w - pad_x) / stride_x)), mw), x0 + 1)
+    y1 = max(min(int(np.ceil((input_h - pad_y) / stride_y)), mh), y0 + 1)
+
+    # original pixel -> proto cell index, as an exact resize of the content region
+    scale_x = (x1 - x0) / orig_w
+    scale_y = (y1 - y0) / orig_h
+    off_x = x0 + 0.5 * scale_x - 0.5
+    off_y = y0 + 0.5 * scale_y - 0.5
 
     masks = np.zeros((coeffs.shape[0], orig_h, orig_w), dtype=np.uint8)
     for idx in range(coeffs.shape[0]):
-        cropped = mask_probs[idx, y0:y1, x0:x1]
-        # O(N*H*W) cpu resize per detection; upgrade to a CUDA kernel if it's slow
-        resized = cv2.resize(cropped, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
-        binary = (resized >= mask_thres).astype(np.uint8)
+        bx1 = max(int(np.floor(boxes[idx, 0])), 0)
+        by1 = max(int(np.floor(boxes[idx, 1])), 0)
+        bx2 = min(int(np.ceil(boxes[idx, 2])), orig_w)
+        by2 = min(int(np.ceil(boxes[idx, 3])), orig_h)
+        if bx2 <= bx1 or by2 <= by1:
+            continue
 
-        x1b, y1b, x2b, y2b = boxes[idx]
-        bx1 = max(int(np.floor(x1b)), 0)
-        by1 = max(int(np.floor(y1b)), 0)
-        bx2 = min(int(np.ceil(x2b)), orig_w)
-        by2 = min(int(np.ceil(y2b)), orig_h)
-        if bx2 > bx1 and by2 > by1:
-            masks[idx, by1:by2, bx1:bx2] = binary[by1:by2, bx1:bx2]
+        # proto cells the box samples from, with one cell of bilinear margin
+        cx1 = max(int(np.floor(scale_x * bx1 + off_x)), 0)
+        cx2 = min(int(np.ceil(scale_x * (bx2 - 1) + off_x)) + 1, mw)
+        cy1 = max(int(np.floor(scale_y * by1 + off_y)), 0)
+        cy2 = min(int(np.ceil(scale_y * (by2 - 1) + off_y)) + 1, mh)
+        if cx2 <= cx1 or cy2 <= cy1:
+            continue
+
+        logits = np.tensordot(coeffs[idx], proto[:, cy1:cy2, cx1:cx2], axes=1)
+        probs = 1.0 / (1.0 + np.exp(-logits))
+        affine = np.array(
+            [
+                [scale_x, 0.0, scale_x * bx1 + off_x - cx1],
+                [0.0, scale_y, scale_y * by1 + off_y - cy1],
+            ],
+            dtype=np.float32,
+        )
+        resized = cv2.warpAffine(
+            probs.astype(np.float32),
+            affine,
+            (bx2 - bx1, by2 - by1),
+            flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+        masks[idx, by1:by2, bx1:bx2] = resized >= mask_thres
 
     return masks
 

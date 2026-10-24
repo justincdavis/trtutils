@@ -24,10 +24,7 @@ def postprocess_classifications(
     outputs : list[np.ndarray]
         The outputs from a classification network with batch dimension.
     softmax : bool, optional
-        Whether or not to apply softmax to the outputs to convert logits to
-        probabilities. Default is True. Some networks already apply softmax
-        inside the ONNX graph, in which case this should be False to avoid a
-        double softmax which flattens the returned confidences.
+        Whether to apply softmax to the outputs. Default is True.
     no_copy : bool, optional
         If True, the outputs will not be copied out
         from the cuda allocated host memory. Instead,

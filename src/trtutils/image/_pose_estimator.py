@@ -3,13 +3,10 @@
 # MIT License
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING, overload
 
-from trtutils._log import LOG
-
-from ._detector import Detector
-from .postprocessors import Pose, get_poses, postprocess_yolo_pose
+from ._yolo_task_model import _YoloTaskModel
+from .postprocessors import get_poses, postprocess_yolo_pose
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -19,61 +16,15 @@ if TYPE_CHECKING:
 
     from trtutils.core._buffer import Buffer
 
+    from .postprocessors import Pose
 
-class PoseEstimator(Detector):
+
+class PoseEstimator(_YoloTaskModel):
     """Implementation of pose estimation models (YOLO-style pose heads)."""
 
-    def postprocess(
-        self: Self,
-        outputs: list[np.ndarray],
-        ratios: list[tuple[float, float]],
-        padding: list[tuple[float, float]],
-        conf_thres: float | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> list[list[np.ndarray]]:
-        """
-        Postprocess the raw engine outputs.
-
-        Parameters
-        ----------
-        outputs : list[np.ndarray]
-            The raw outputs from the engine to postprocess.
-        ratios : list[tuple[float, float]]
-            The rescale ratios used during preprocessing for each image.
-        padding : list[tuple[float, float]]
-            The padding values used during preprocessing for each image.
-        conf_thres : float, optional
-            The confidence threshold to filter by.
-            If not passed, will use value from constructor.
-        no_copy : bool, optional
-            Kept for interface symmetry, results are always new arrays.
-        verbose : bool, optional
-            Whether or not to log additional information.
-
-        Returns
-        -------
-        list[list[np.ndarray]]
-            The postprocessed outputs per image, each containing
-            [bboxes, scores, class_ids, keypoints (N, K, 3)].
-
-        """
-        if verbose:
-            LOG.debug(f"{self._tag}: postprocess")
-        t0 = time.perf_counter()
-        data = postprocess_yolo_pose(
-            outputs,
-            ratios,
-            padding,
-            conf_thres or self._conf_thres,
-            self._input_size,
-            self._nms_iou,
-            no_copy=no_copy,
-            verbose=verbose,
-        )
-        self._post_profile = (t0, time.perf_counter())
-        return data
+    _output_names = ("output0",)
+    _postprocess_fn = staticmethod(postprocess_yolo_pose)
+    _get_fn = staticmethod(get_poses)
 
     @overload
     def get_poses(
@@ -115,14 +66,11 @@ class PoseEstimator(Detector):
         Returns
         -------
         list[Pose] | list[list[Pose]]
-            For single image: the poses of that image.
-            For batch: the poses per image.
+            The poses of the image, or per image for a batch.
             Each is (bbox, score, keypoints).
 
         """
-        batch, single = self._as_batch(outputs)
-        result = get_poses(batch, conf_thres or self._conf_thres, verbose=verbose)
-        return result[0] if single else result
+        return self._get(outputs, conf_thres, verbose=verbose)
 
     @overload
     def end2end(
@@ -140,7 +88,7 @@ class PoseEstimator(Detector):
         *,
         verbose: bool | None = ...,
     ) -> list[list[Pose]]: ...
-    def end2end(  # ty: ignore[invalid-method-override]
+    def end2end(
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         conf_thres: float | None = None,
@@ -166,13 +114,7 @@ class PoseEstimator(Detector):
         Returns
         -------
         list[Pose] | list[list[Pose]]
-            For single image: the poses of that image.
-            For batch: the poses per image.
+            The poses of the image, or per image for a batch.
 
         """
-        return self._end2end_core(
-            images,
-            verbose=verbose,
-            post=self._post_fn(conf_thres, verbose=verbose),
-            get=lambda pp: self.get_poses(pp, conf_thres, verbose=verbose),
-        )
+        return self._end2end(images, conf_thres, verbose=verbose)
