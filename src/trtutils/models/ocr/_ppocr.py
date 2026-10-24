@@ -59,7 +59,8 @@ class PPOCRDetector(TextDetector, Model):
         imgsz : int, optional
             The height/width the engine is tuned for. Default is 736.
         batch_size : int
-            Batch size of the engine. Default is 1.
+            Maximum batch size of the engine; the profile starts at batch 1, which
+            is what TextDetector submits. Default is 1.
         dla_core : int | None
             The DLA core to build the engine for.
         opt_level : int
@@ -71,8 +72,8 @@ class PPOCRDetector(TextDetector, Model):
             to fit at inference time. Default is 2048.
         fp16 : bool
             Whether to build with FP16 precision enabled. Default is False, which
-            reproduces the reference FP32 outputs exactly; FP16 can change a
-            small fraction of recognized lines.
+            stays within float rounding of the FP32 reference (TensorRT may still
+            use TF32); FP16 can change a small fraction of recognized lines.
         verbose : bool | None
             Enable verbose builder output.
         **kwargs : Any
@@ -87,8 +88,8 @@ class PPOCRDetector(TextDetector, Model):
                 (
                     cls._input_tensors[0][0],
                     (
-                        (batch_size, 3, min_imgsz, min_imgsz),
-                        (batch_size, 3, imgsz, imgsz),
+                        (1, 3, min_imgsz, min_imgsz),
+                        (1, 3, imgsz, imgsz),
                         (batch_size, 3, max_imgsz, max_imgsz),
                     ),
                 ),
@@ -123,6 +124,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         backend: str = "auto",
         device: int | None = None,
         *,
+        dla_core: int | None = None,
         use_space_char: bool = True,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
@@ -137,6 +139,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
             warmup_iterations=warmup_iterations,
             backend=backend,
             device=device,
+            dla_core=dla_core,
             use_space_char=use_space_char,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
@@ -185,8 +188,8 @@ class PPOCRRecognizer(TextRecognizer, Model):
             at inference time. Default is 3200.
         fp16 : bool
             Whether to build with FP16 precision enabled. Default is False, which
-            reproduces the reference FP32 outputs exactly; FP16 can change a
-            small fraction of recognized lines.
+            stays within float rounding of the FP32 reference (TensorRT may still
+            use TF32); FP16 can change a small fraction of recognized lines.
         verbose : bool | None
             Enable verbose builder output.
         **kwargs : Any
@@ -216,17 +219,29 @@ class PPOCRRecognizer(TextRecognizer, Model):
 
 
 class PPOCR(OCR):
-    """Alias of OCR combining a PPOCRDetector and a PPOCRRecognizer."""
+    """
+    Alias of OCR combining a PPOCRDetector and a PPOCRRecognizer.
+
+    For custom detector or recognizer settings, build them directly and pass
+    them to :class:`~trtutils.image.OCR`.
+    """
 
     def __init__(
         self: Self,
         det_engine: Path | str,
         rec_engine: Path | str,
-        character_dict: Path | str | Sequence[str] = PPOCR_KEYS_V1,
         text_score: float = 0.5,
-        device: int | None = None,
+        min_height: int = 30,
+        width_height_ratio: float = 8,
+        max_side_len: int = 2000,
+        min_side_len: int = 30,
         *,
+        character_dict: Path | str | Sequence[str] = PPOCR_KEYS_V1,
+        backend: str = "auto",
+        device: int | None = None,
         warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -239,14 +254,29 @@ class PPOCR(OCR):
             Path to the text detection engine (see :meth:`PPOCRDetector.build`).
         rec_engine : Path | str
             Path to the text recognition engine (see :meth:`PPOCRRecognizer.build`).
-        character_dict : Path | str | Sequence[str]
-            The recognizer's character dictionary. Default is ``ppocr_keys_v1.txt``.
         text_score : float
             Minimum recognition confidence for a line to be returned. Default is 0.5.
+        min_height : int
+            Images at most this tall are padded vertically before detection. Default is 30.
+        width_height_ratio : float
+            Images wider than this aspect ratio are padded vertically before
+            detection. Set to -1 to disable. Default is 8.
+        max_side_len : int
+            Images with a longer side above this are downscaled first. Default is 2000.
+        min_side_len : int
+            Images with a shorter side below this are upscaled first. Default is 30.
+        character_dict : Path | str | Sequence[str]
+            The recognizer's character dictionary. Default is ``ppocr_keys_v1.txt``.
+        backend : str
+            The execution backend to use. Default is 'auto'.
         device : int, optional
             The CUDA device index to use. Default is None (current device).
         warmup : bool, optional
             Whether or not to perform warmup iterations.
+        pagelocked_mem : bool, optional
+            Whether or not to use pagelocked memory.
+        unified_mem : bool, optional
+            Whether or not the system has unified memory.
         no_warn : bool, optional
             Suppress TensorRT warnings during engine deserialization.
         verbose : bool, optional
@@ -255,16 +285,30 @@ class PPOCR(OCR):
         """
         OCR.__init__(
             self,
-            detector=PPOCRDetector(
-                det_engine, device=device, warmup=warmup, no_warn=no_warn, verbose=verbose
-            ),
-            recognizer=PPOCRRecognizer(
-                rec_engine,
-                character_dict,
+            PPOCRDetector(
+                det_engine,
+                backend=backend,
                 device=device,
                 warmup=warmup,
+                pagelocked_mem=pagelocked_mem,
+                unified_mem=unified_mem,
                 no_warn=no_warn,
                 verbose=verbose,
             ),
-            text_score=text_score,
+            PPOCRRecognizer(
+                rec_engine,
+                character_dict,
+                backend=backend,
+                device=device,
+                warmup=warmup,
+                pagelocked_mem=pagelocked_mem,
+                unified_mem=unified_mem,
+                no_warn=no_warn,
+                verbose=verbose,
+            ),
+            text_score,
+            min_height,
+            width_height_ratio,
+            max_side_len,
+            min_side_len,
         )

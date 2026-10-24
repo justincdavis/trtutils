@@ -1,6 +1,19 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+"""
+PaddleOCR (PP-OCR) style text detection, text recognition and two-stage OCR.
+
+Classes
+-------
+:class:`TextDetector`
+    DB text detector on a dynamic-shape engine.
+:class:`TextRecognizer`
+    CTC text line recognizer on a dynamic-shape engine.
+:class:`OCR`
+    Detection followed by recognition of every detected line.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,9 +28,12 @@ from trtutils.core._buffer import Buffer
 
 from .postprocessors._ocr import postprocess_text_detection, postprocess_text_recognition
 from .preprocessors._ocr import (
+    _IMAGENET_MEAN,
+    _IMAGENET_STD,
     crop_text_region,
     preprocess_text_detection,
     preprocess_text_recognition,
+    resize_text_detection,
 )
 
 if TYPE_CHECKING:
@@ -32,6 +48,7 @@ def _make_engine(
     backend: str,
     device: int | None,
     *,
+    dla_core: int | None,
     warmup: bool | None,
     pagelocked_mem: bool | None,
     unified_mem: bool | None,
@@ -43,6 +60,7 @@ def _make_engine(
         engine_path=engine_path,
         warmup_iterations=warmup_iterations,
         backend=backend,
+        dla_core=dla_core,
         device=device,
         warmup=warmup,
         pagelocked_mem=pagelocked_mem,
@@ -52,8 +70,11 @@ def _make_engine(
         no_warn=no_warn,
         verbose=verbose,
     )
-    max_shape = tuple(engine.engine.get_tensor_profile_shape(engine.input_names[0], 0)[2])
-    return engine, max_shape
+    return engine, engine.input_bindings[0].max_shape
+
+
+def _host_image(image: np.ndarray | Buffer) -> np.ndarray:
+    return image.numpy() if isinstance(image, Buffer) else image
 
 
 class TextDetector:
@@ -62,24 +83,26 @@ class TextDetector:
 
     The engine should be built with a dynamic (min, opt, max) profile over the
     input height and width, see :meth:`trtutils.models.PPOCRDetector.build`.
+    CUDA graphs are not used since the input shape changes on almost every call.
     """
 
     def __init__(
         self: Self,
         engine_path: Path | str,
-        limit_side_len: int = 736,
-        limit_type: str = "min",
+        limit_side_len: int = 960,
+        limit_type: str = "max",
         thresh: float = 0.3,
-        box_thresh: float = 0.5,
+        box_thresh: float = 0.6,
         max_candidates: int = 1000,
-        unclip_ratio: float = 1.6,
-        mean: tuple[float, float, float] = (0.5, 0.5, 0.5),
-        std: tuple[float, float, float] = (0.5, 0.5, 0.5),
+        unclip_ratio: float = 1.5,
+        mean: tuple[float, float, float] = _IMAGENET_MEAN,
+        std: tuple[float, float, float] = _IMAGENET_STD,
         warmup_iterations: int = 1,
         backend: str = "auto",
         device: int | None = None,
         *,
-        use_dilation: bool = True,
+        dla_core: int | None = None,
+        use_dilation: bool = False,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
@@ -89,35 +112,43 @@ class TextDetector:
         """
         Create a TextDetector.
 
+        The defaults are PaddleOCR's (``tools/infer/utility.py``): longer side
+        limited to 960, ImageNet normalization, box threshold 0.6, unclip 1.5,
+        no dilation. RapidOCR instead uses ``limit_side_len=736, limit_type="min"``,
+        mean/std 0.5, ``box_thresh=0.5``, ``unclip_ratio=1.6`` and dilation.
+
         Parameters
         ----------
         engine_path : Path | str
             The path to the compiled TensorRT engine.
         limit_side_len : int
             Images are resized so their shorter (``limit_type="min"``) or longer
-            (``limit_type="max"``) side matches this length. Default is 736.
+            (``limit_type="max"``) side matches this length. Default is 960.
         limit_type : str
-            ``"min"`` or ``"max"``. Default is ``"min"``.
+            ``"min"`` or ``"max"``. Default is ``"max"``.
         thresh : float
             Binarization threshold of the probability map. Default is 0.3.
         box_thresh : float
-            Minimum mean probability inside a box to keep it. Default is 0.5.
+            Minimum mean probability inside a box to keep it. Default is 0.6.
         max_candidates : int
             Maximum number of candidate regions. Default is 1000.
         unclip_ratio : float
-            How far to expand detected text kernels. Default is 1.6.
+            How far to expand detected text kernels. Default is 1.5.
         mean : tuple[float, float, float]
-            Normalization mean. Default is (0.5, 0.5, 0.5).
+            Normalization mean. Default is the ImageNet mean (0.485, 0.456, 0.406).
         std : tuple[float, float, float]
-            Normalization standard deviation. Default is (0.5, 0.5, 0.5).
+            Normalization standard deviation. Default is the ImageNet std
+            (0.229, 0.224, 0.225).
         warmup_iterations : int
             The number of warmup iterations to perform. Default is 1.
         backend : str
             The execution backend to use. Default is 'auto'.
         device : int, optional
             The CUDA device index to use. Default is None (current device).
+        dla_core : int, optional
+            The DLA core the engine was built for. Default is None.
         use_dilation : bool
-            Whether to dilate the binarized map before extracting boxes. Default is True.
+            Whether to dilate the binarized map before extracting boxes. Default is False.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
         pagelocked_mem : bool, optional
@@ -135,6 +166,7 @@ class TextDetector:
             warmup_iterations,
             backend,
             device,
+            dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
@@ -152,7 +184,8 @@ class TextDetector:
         self._unclip_ratio = unclip_ratio
         self._use_dilation = use_dilation
         self._verbose = verbose if verbose is not None else False
-        LOG.debug(f"Created TextDetector: {self.name}, max input {self._max_hw}")
+        if self._verbose:
+            LOG.debug(f"Created TextDetector: {self.name}, max input {self._max_hw}")
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -164,13 +197,13 @@ class TextDetector:
         """Get the name of the engine."""
         return self._engine.name
 
-    def preprocess(self: Self, image: np.ndarray) -> np.ndarray:
+    def preprocess(self: Self, image: np.ndarray | Buffer) -> np.ndarray:
         """
         Preprocess an image for the detector.
 
         Parameters
         ----------
-        image : np.ndarray
+        image : np.ndarray | Buffer
             The image in HWC, BGR, uint8 format.
 
         Returns
@@ -180,7 +213,7 @@ class TextDetector:
 
         """
         return preprocess_text_detection(
-            image,
+            _host_image(image),
             self._limit_side_len,
             self._limit_type,
             self._mean,
@@ -219,13 +252,13 @@ class TextDetector:
             use_dilation=self._use_dilation,
         )
 
-    def run(self: Self, image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def run(self: Self, image: np.ndarray | Buffer) -> tuple[np.ndarray, np.ndarray]:
         """
         Detect text in an image.
 
         Parameters
         ----------
-        image : np.ndarray
+        image : np.ndarray | Buffer
             The image in HWC, BGR, uint8 format.
 
         Returns
@@ -237,15 +270,16 @@ class TextDetector:
         """
         tensor = self.preprocess(image)
         output = self._engine.execute([Buffer.wrap(tensor)])[0]
-        return self.postprocess(output, image.shape[:2])
+        h, w = image.shape[:2]
+        return self.postprocess(output, (h, w))
 
-    def __call__(self: Self, image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def __call__(self: Self, image: np.ndarray | Buffer) -> tuple[np.ndarray, np.ndarray]:
         """
         Detect text in an image, see :meth:`run`.
 
         Parameters
         ----------
-        image : np.ndarray
+        image : np.ndarray | Buffer
             The image in HWC, BGR, uint8 format.
 
         Returns
@@ -263,6 +297,7 @@ class TextRecognizer:
 
     The engine should be built with a dynamic (min, opt, max) profile over the
     batch size and input width, see :meth:`trtutils.models.PPOCRRecognizer.build`.
+    CUDA graphs are not used since the input shape changes on almost every call.
     """
 
     def __init__(
@@ -273,6 +308,7 @@ class TextRecognizer:
         backend: str = "auto",
         device: int | None = None,
         *,
+        dla_core: int | None = None,
         use_space_char: bool = True,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
@@ -296,6 +332,8 @@ class TextRecognizer:
             The execution backend to use. Default is 'auto'.
         device : int, optional
             The CUDA device index to use. Default is None (current device).
+        dla_core : int, optional
+            The DLA core the engine was built for. Default is None.
         use_space_char : bool
             Whether the model has an extra trailing class for the space character.
             Default is True.
@@ -321,6 +359,7 @@ class TextRecognizer:
             warmup_iterations,
             backend,
             device,
+            dla_core=dla_core,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
@@ -349,7 +388,8 @@ class TextRecognizer:
             )
             raise ValueError(err_msg)
         self._verbose = verbose if verbose is not None else False
-        LOG.debug(f"Created TextRecognizer: {self.name}, max input {max_shape}")
+        if self._verbose:
+            LOG.debug(f"Created TextRecognizer: {self.name}, max input {max_shape}")
 
     @property
     def engine(self: Self) -> TRTEngine:
@@ -366,13 +406,13 @@ class TextRecognizer:
         """Get the class labels, index 0 is the CTC blank."""
         return self._characters
 
-    def preprocess(self: Self, images: Sequence[np.ndarray]) -> np.ndarray:
+    def preprocess(self: Self, images: Sequence[np.ndarray | Buffer]) -> np.ndarray:
         """
         Preprocess a batch of text line images.
 
         Parameters
         ----------
-        images : Sequence[np.ndarray]
+        images : Sequence[np.ndarray | Buffer]
             Text line images in HWC, BGR, uint8 format, at most the engine's
             max batch size.
 
@@ -382,7 +422,9 @@ class TextRecognizer:
             The input tensor of shape (N, 3, H, W).
 
         """
-        return preprocess_text_recognition(images, self._image_height, max_width=self._max_width)
+        return preprocess_text_recognition(
+            [_host_image(img) for img in images], self._image_height, max_width=self._max_width
+        )
 
     def postprocess(self: Self, output: np.ndarray) -> list[tuple[str, float]]:
         """
@@ -403,7 +445,7 @@ class TextRecognizer:
 
     def run(
         self: Self,
-        images: np.ndarray | Sequence[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
     ) -> list[tuple[str, float]]:
         """
         Recognize the text in one or more text line images.
@@ -413,7 +455,7 @@ class TextRecognizer:
 
         Parameters
         ----------
-        images : np.ndarray | Sequence[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A text line image, or a list of them, in HWC, BGR, uint8 format.
 
         Returns
@@ -422,13 +464,12 @@ class TextRecognizer:
             The text and confidence of each line, in input order.
 
         """
-        if isinstance(images, np.ndarray):
-            images = [images]
-        order = np.argsort([img.shape[1] / img.shape[0] for img in images])
-        results: list[tuple[str, float]] = [("", 0.0)] * len(images)
+        lines = [images] if isinstance(images, (np.ndarray, Buffer)) else images
+        order = np.argsort([img.shape[1] / img.shape[0] for img in lines])
+        results: list[tuple[str, float]] = [("", 0.0)] * len(lines)
         for start in range(0, len(order), self._batch_size):
             batch_idx = order[start : start + self._batch_size]
-            tensor = self.preprocess([images[i] for i in batch_idx])
+            tensor = self.preprocess([lines[i] for i in batch_idx])
             output = self._engine.execute([Buffer.wrap(tensor)])[0]
             for i, res in zip(batch_idx, self.postprocess(output)):
                 results[i] = res
@@ -436,14 +477,14 @@ class TextRecognizer:
 
     def __call__(
         self: Self,
-        images: np.ndarray | Sequence[np.ndarray],
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
     ) -> list[tuple[str, float]]:
         """
         Recognize text line images, see :meth:`run`.
 
         Parameters
         ----------
-        images : np.ndarray | Sequence[np.ndarray]
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A text line image, or a list of them.
 
         Returns
@@ -460,10 +501,8 @@ def _fit_side(image: np.ndarray, side: int, *, shrink: bool) -> tuple[np.ndarray
     h, w = image.shape[:2]
     if (shrink and max(h, w) <= side) or (not shrink and min(h, w) >= side):
         return image, 1.0, 1.0
-    ratio = side / (max(h, w) if shrink else min(h, w))
-    new_h = max(32, int(round(int(h * ratio) / 32) * 32))
-    new_w = max(32, int(round(int(w * ratio) / 32) * 32))
-    return cv2.resize(image, (new_w, new_h)), h / new_h, w / new_w
+    resized = resize_text_detection(image, side, "max" if shrink else "min")
+    return resized, h / resized.shape[0], w / resized.shape[1]
 
 
 class OCR:
@@ -471,7 +510,8 @@ class OCR:
     Two-stage OCR pipeline: text detection followed by text line recognition.
 
     Detected regions are cropped (perspective-corrected), recognized in
-    batches, and low-confidence lines are dropped.
+    batches, and low-confidence lines are dropped. Before detection, very
+    large, small or thin images are resized and padded the way RapidOCR does.
     """
 
     def __init__(
@@ -525,13 +565,13 @@ class OCR:
         """Get the text recognizer."""
         return self._recognizer
 
-    def run(self: Self, image: np.ndarray) -> list[tuple[np.ndarray, str, float]]:
+    def run(self: Self, image: np.ndarray | Buffer) -> list[tuple[np.ndarray, str, float]]:
         """
         Detect and recognize all text in an image.
 
         Parameters
         ----------
-        image : np.ndarray
+        image : np.ndarray | Buffer
             The image in HWC, BGR, uint8 format.
 
         Returns
@@ -542,6 +582,7 @@ class OCR:
             coordinates of ``image``.
 
         """
+        image = _host_image(image)
         raw_h, raw_w = image.shape[:2]
         img, ratio_h, ratio_w = _fit_side(image, self._max_side_len, shrink=True)
         if min(img.shape[:2]) < self._min_side_len:
@@ -574,13 +615,13 @@ class OCR:
             if score >= self._text_score
         ]
 
-    def __call__(self: Self, image: np.ndarray) -> list[tuple[np.ndarray, str, float]]:
+    def __call__(self: Self, image: np.ndarray | Buffer) -> list[tuple[np.ndarray, str, float]]:
         """
         Detect and recognize all text in an image, see :meth:`run`.
 
         Parameters
         ----------
-        image : np.ndarray
+        image : np.ndarray | Buffer
             The image in HWC, BGR, uint8 format.
 
         Returns

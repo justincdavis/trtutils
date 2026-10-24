@@ -65,8 +65,8 @@ Added
   DB text detection, CTC text recognition, and the combined two-stage OCR pipeline, running
   on dynamic-shape engines (any image size / text line width), with PaddleOCR's
   default detection settings
-* ``models.PPOCRDetector``, ``models.PPOCRRecognizer`` and ``models.PPOCR`` aliases with
-  dynamic-shape ``build()`` and the bundled PP-OCR character dictionary
+* ``models.PPOCRDetector`` and ``models.PPOCRRecognizer`` with dynamic-shape ``build()``
+  and the bundled PP-OCR character dictionary, and ``models.PPOCR`` to run both as one pipeline
 * OCR pre/postprocessing functions: ``preprocessors.preprocess_text_detection``,
   ``preprocessors.preprocess_text_recognition``, ``preprocessors.resize_text_detection``,
   ``preprocessors.crop_text_region``, ``postprocessors.postprocess_text_detection``,
