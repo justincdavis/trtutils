@@ -375,7 +375,8 @@ class Detector(ImageModel, DetectorInterface):
             For batch, pass list.
         conf_thres : float, optional
             Optional confidence threshold to filter detections
-            via during postprocessing.
+            via during postprocessing. By default None, which will
+            use value passed during initialization.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -522,7 +523,8 @@ class Detector(ImageModel, DetectorInterface):
             For batch, pass list.
         conf_thres : float, optional
             Optional confidence threshold to filter detections
-            via during postprocessing.
+            via during postprocessing. By default None, which will
+            use value passed during initialization.
         preprocessed : bool, optional
             Whether or not the inputs have been preprocessed.
             If None, will preprocess inputs.
@@ -620,10 +622,10 @@ class Detector(ImageModel, DetectorInterface):
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
             By default None, which will use value passed during initialization.
-        nms_iou_thres : float
+        nms_iou_thres : float, optional
             The IOU threshold to use during the optional/additional
-            NMS operation. By default, None which will use value
-            provided during initialization.
+            NMS operation. By default None, which will use value
+            passed during initialization.
         extra_nms : bool, optional
             Whether or not to perform an additional NMS operation.
             By default None, which will use value provided during
@@ -719,11 +721,11 @@ class Detector(ImageModel, DetectorInterface):
             A single image (HWC format) or list of images to perform inference with.
         conf_thres : float, optional
             The confidence threshold with which to retrieve bounding boxes.
-            By default None.
-        nms_iou_thres : float
+            By default None, which will use value passed during initialization.
+        nms_iou_thres : float, optional
             The IOU threshold to use during the optional/additional
-            NMS operation. By default, None which will use value
-            provided during initialization.
+            NMS operation. By default None, which will use value
+            passed during initialization.
         extra_nms : bool, optional
             Whether or not to perform an additional NMS operation.
             By default None, which will use value provided during
