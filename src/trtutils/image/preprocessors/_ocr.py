@@ -4,8 +4,8 @@
 """
 Preprocessing for PaddleOCR (PP-OCR) style text detection and recognition models.
 
-The logic mirrors the reference PP-OCR inference pipeline so that the outputs
-match the original models.
+The resize and normalization follow PaddleOCR's inference pipeline
+(``tools/infer/predict_det.py`` / ``predict_rec.py``) and its defaults.
 """
 
 from __future__ import annotations
@@ -20,16 +20,19 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 _ROTATE_ASPECT = 1.5
+_IMAGENET_MEAN = (0.485, 0.456, 0.406)
+_IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
 def _round32(value: float) -> int:
-    return int(round(value / 32) * 32)
+    # paddleocr floors each side at 32 so tiny or thin images never resize to nothing
+    return max(32, int(round(value / 32) * 32))
 
 
 def resize_text_detection(
     image: np.ndarray,
-    limit_side_len: int = 736,
-    limit_type: str = "min",
+    limit_side_len: int = 960,
+    limit_type: str = "max",
     max_shape: tuple[int, int] | None = None,
 ) -> np.ndarray:
     """
@@ -37,18 +40,18 @@ def resize_text_detection(
 
     The image is scaled so that its shorter (``limit_type="min"``) or longer
     (``limit_type="max"``) side matches ``limit_side_len``, then both sides are
-    rounded to a multiple of 32 as required by the network.
+    rounded to a multiple of 32 (at least 32) as required by the network.
 
     Parameters
     ----------
     image : np.ndarray
         The image in HWC format.
     limit_side_len : int
-        The target side length. Default is 736.
+        The target side length. Default is 960.
     limit_type : str
         Either ``"min"`` (upscale until the shorter side is at least
         ``limit_side_len``) or ``"max"`` (downscale until the longer side is at
-        most ``limit_side_len``). Default is ``"min"``.
+        most ``limit_side_len``). Default is ``"max"``.
     max_shape : tuple[int, int], optional
         The largest (height, width) the engine accepts. If the resized image would
         exceed it, the image is scaled down further (keeping its aspect ratio).
@@ -61,7 +64,7 @@ def resize_text_detection(
     Raises
     ------
     ValueError
-        If ``limit_type`` is not valid, or the image resizes to an empty shape.
+        If ``limit_type`` is not valid.
 
     """
     h, w = image.shape[:2]
@@ -81,18 +84,15 @@ def resize_text_detection(
         fit = min(max_shape[0] / resize_h, max_shape[1] / resize_w)
         resize_h = min(_round32(resize_h * fit), max_shape[0] // 32 * 32)
         resize_w = min(_round32(resize_w * fit), max_shape[1] // 32 * 32)
-    if resize_h <= 0 or resize_w <= 0:
-        err_msg = f"Image of shape {image.shape} resizes to an empty image"
-        raise ValueError(err_msg)
     return cv2.resize(image, (resize_w, resize_h))
 
 
 def preprocess_text_detection(
     image: np.ndarray,
-    limit_side_len: int = 736,
-    limit_type: str = "min",
-    mean: tuple[float, float, float] = (0.5, 0.5, 0.5),
-    std: tuple[float, float, float] = (0.5, 0.5, 0.5),
+    limit_side_len: int = 960,
+    limit_type: str = "max",
+    mean: tuple[float, float, float] = _IMAGENET_MEAN,
+    std: tuple[float, float, float] = _IMAGENET_STD,
     max_shape: tuple[int, int] | None = None,
 ) -> np.ndarray:
     """
@@ -103,13 +103,15 @@ def preprocess_text_detection(
     image : np.ndarray
         The image in HWC, BGR, uint8 format.
     limit_side_len : int
-        The target side length, see :func:`resize_text_detection`. Default is 736.
+        The target side length, see :func:`resize_text_detection`. Default is 960.
     limit_type : str
-        ``"min"`` or ``"max"``, see :func:`resize_text_detection`. Default is ``"min"``.
+        ``"min"`` or ``"max"``, see :func:`resize_text_detection`. Default is ``"max"``.
     mean : tuple[float, float, float]
-        The per-channel mean (on the [0, 1] scale). Default is (0.5, 0.5, 0.5).
+        The per-channel mean (on the [0, 1] scale, BGR order as PaddleOCR applies it).
+        Default is the ImageNet mean (0.485, 0.456, 0.406), as in PaddleOCR.
     std : tuple[float, float, float]
-        The per-channel standard deviation. Default is (0.5, 0.5, 0.5).
+        The per-channel standard deviation. Default is the ImageNet std
+        (0.229, 0.224, 0.225), as in PaddleOCR.
     max_shape : tuple[int, int], optional
         The largest (height, width) the engine accepts.
 

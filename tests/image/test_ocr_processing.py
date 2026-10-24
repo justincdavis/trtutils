@@ -31,6 +31,8 @@ pytestmark = pytest.mark.cpu
         pytest.param((1080, 1920), "min", (1088, 1920), id="min-noop-round32"),
         pytest.param((1080, 1920), "max", (544, 960), id="max-downscale"),
         pytest.param((300, 500), "max", (288, 512), id="max-noop-round32"),
+        pytest.param((15, 15), "max", (32, 32), id="tiny-floor32"),
+        pytest.param((30, 4000), "max", (32, 960), id="thin-strip-floor32"),
     ],
 )
 def test_resize_text_detection(shape, limit_type, expected) -> None:
@@ -42,7 +44,9 @@ def test_resize_text_detection(shape, limit_type, expected) -> None:
 
 def test_resize_text_detection_fits_max_shape() -> None:
     """A resize larger than the engine's max shape is shrunk to fit, keeping multiples of 32."""
-    out = resize_text_detection(np.zeros((100, 400, 3), np.uint8), max_shape=(2048, 2048))
+    out = resize_text_detection(
+        np.zeros((100, 400, 3), np.uint8), 736, "min", max_shape=(2048, 2048)
+    )
     h, w = out.shape[:2]
     assert h <= 2048
     assert w <= 2048
@@ -58,13 +62,16 @@ def test_resize_text_detection_invalid_limit_type() -> None:
 
 
 def test_preprocess_text_detection() -> None:
-    """Output is a contiguous (1, 3, H, W) float32 tensor normalized to [-1, 1]."""
+    """Output is a contiguous (1, 3, H, W) float32 tensor, ImageNet-normalized by default."""
     img = np.zeros((64, 96, 3), np.uint8)
     img[..., 2] = 255
-    x = preprocess_text_detection(img, limit_side_len=64)
+    x = preprocess_text_detection(img)
     assert x.shape == (1, 3, 64, 96)
     assert x.dtype == np.float32
     assert x.flags["C_CONTIGUOUS"]
+    np.testing.assert_allclose(x[0, 0], -0.485 / 0.229, rtol=1e-6)
+    np.testing.assert_allclose(x[0, 2], (1 - 0.406) / 0.225, rtol=1e-6)
+    x = preprocess_text_detection(img, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
     np.testing.assert_allclose(x[0, 0], -1.0)
     np.testing.assert_allclose(x[0, 2], 1.0)
 
@@ -102,14 +109,16 @@ def _prob_map() -> np.ndarray:
     m[20:40, 30:150] = 0.9
     m[22:38, 180:300] = 0.8
     pts = cv2.boxPoints(((160, 110), (200, 18), -10)).astype(np.int32)
-    cv2.fillPoly(m, [pts], 0.95)
+    cv2.fillPoly(m, [pts], (0.95,))
     m[140:142, 10:20] = 0.9  # too thin to be text
     return m
 
 
 def test_postprocess_text_detection_matches_reference() -> None:
     """Boxes match the reference PP-OCR DB postprocess (incl. unclip rounding) exactly."""
-    boxes, scores = postprocess_text_detection(_prob_map()[None, None], (480, 640))
+    boxes, scores = postprocess_text_detection(
+        _prob_map()[None, None], (480, 640), 0.3, 0.5, 1000, 1.6, use_dilation=True
+    )
     expected = [
         [[32, 18], [328, 18], [328, 162], [32, 162]],
         [[338, 33], [622, 33], [622, 147], [338, 147]],

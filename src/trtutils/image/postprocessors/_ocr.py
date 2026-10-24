@@ -4,8 +4,8 @@
 """
 Postprocessing for PaddleOCR (PP-OCR) style text detection and recognition models.
 
-The logic mirrors the reference PP-OCR inference pipeline (DB box extraction and
-CTC greedy decoding) so that the outputs match the original models.
+DB box extraction and CTC greedy decoding follow PaddleOCR's ``DBPostProcess`` and
+``CTCLabelDecode`` (including the Clipper round-join unclip), with PaddleOCR's defaults.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def _box_score(pred: np.ndarray, box: np.ndarray) -> float:
     ymax = int(np.clip(np.ceil(box[:, 1].max()), 0, h - 1))
     mask = np.zeros((ymax - ymin + 1, xmax - xmin + 1), dtype=np.uint8)
     shifted = box - np.array([xmin, ymin], dtype=box.dtype)
-    cv2.fillPoly(mask, shifted.reshape(1, -1, 2).astype(np.int32), 1)
+    cv2.fillPoly(mask, [shifted.reshape(-1, 2).astype(np.int32)], (1,))
     return cv2.mean(pred[ymin : ymax + 1, xmin : xmax + 1], mask)[0]
 
 
@@ -157,11 +157,11 @@ def postprocess_text_detection(
     output: np.ndarray,
     image_shape: tuple[int, int],
     thresh: float = 0.3,
-    box_thresh: float = 0.5,
+    box_thresh: float = 0.6,
     max_candidates: int = 1000,
-    unclip_ratio: float = 1.6,
+    unclip_ratio: float = 1.5,
     *,
-    use_dilation: bool = True,
+    use_dilation: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Extract text boxes from the probability map of a DB text detection model.
@@ -175,13 +175,13 @@ def postprocess_text_detection(
     thresh : float
         Binarization threshold for the probability map. Default is 0.3.
     box_thresh : float
-        Minimum mean probability inside a box to keep it. Default is 0.5.
+        Minimum mean probability inside a box to keep it. Default is 0.6.
     max_candidates : int
         Maximum number of contours to consider. Default is 1000.
     unclip_ratio : float
-        How far to expand each shrunk text kernel. Default is 1.6.
+        How far to expand each shrunk text kernel. Default is 1.5.
     use_dilation : bool
-        Whether to dilate the binary map with a 2x2 kernel. Default is True.
+        Whether to dilate the binary map with a 2x2 kernel. Default is False.
 
     Returns
     -------
