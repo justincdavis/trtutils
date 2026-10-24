@@ -33,6 +33,8 @@ def memcpy_host_to_device(device_ptr: int, host_arr: np.ndarray) -> None:
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::memcpy_host_to_device")
+    # the copy reads raw bytes, so gather strided views first
+    host_arr = np.ascontiguousarray(host_arr)
     nbytes = host_arr.size * host_arr.itemsize
     # LOG.debug(f"MemcpyHtoD: {device_ptr} with size: {nbytes}")
     cuda_call(
@@ -95,6 +97,8 @@ def memcpy_host_to_device_async(
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::memcpy_host_to_device_async")
+    # the copy reads raw bytes, so gather strided views first
+    host_arr = np.ascontiguousarray(host_arr)
     nbytes = host_arr.size * host_arr.itemsize
     # LOG.debug(f"MemcpyHtoD_Async: {device_ptr} with size: {nbytes}")
     cuda_call(
@@ -233,6 +237,8 @@ def memcpy_host_to_device_offset(
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::memcpy_host_to_device_offset")
+    # the copy reads raw bytes, so gather strided views first
+    host_arr = np.ascontiguousarray(host_arr)
     nbytes = host_arr.size * host_arr.itemsize
     cuda_call(
         cudart.cudaMemcpy(
@@ -269,6 +275,8 @@ def memcpy_host_to_device_offset_async(
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::memcpy_host_to_device_offset_async")
+    # the copy reads raw bytes, so gather strided views first
+    host_arr = np.ascontiguousarray(host_arr)
     nbytes = host_arr.size * host_arr.itemsize
     cuda_call(
         cudart.cudaMemcpyAsync(
