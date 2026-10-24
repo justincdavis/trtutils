@@ -1,117 +1,151 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""
-PaddleOCR (PP-OCR) style text detection, text recognition and two-stage OCR.
-
-Classes
--------
-:class:`TextDetector`
-    DB text detector on a dynamic-shape engine.
-:class:`TextRecognizer`
-    CTC text line recognizer on a dynamic-shape engine.
-:class:`OCR`
-    Detection followed by recognition of every detected line.
-"""
-
 from __future__ import annotations
 
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, List, Tuple, overload
 
 import cv2
 import numpy as np
+import nvtx
+from typing_extensions import Literal
 
-from trtutils._engine import TRTEngine
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 
-from .postprocessors._ocr import postprocess_text_detection, postprocess_text_recognition
-from .preprocessors._ocr import (
-    _IMAGENET_MEAN,
-    _IMAGENET_STD,
+from ._image_model import _PREPROCESSOR_METHODS, ImageModel
+from .interfaces import TextDetectorInterface, TextRecognizerInterface
+from .postprocessors import (
+    get_text_boxes,
+    get_texts,
+    postprocess_text_detection,
+    postprocess_text_recognition,
+)
+from .preprocessors import (
+    CPUPreprocessor,
     crop_text_region,
     preprocess_text_detection,
     preprocess_text_recognition,
     resize_text_detection,
 )
+from .preprocessors._ocr import _IMAGENET_MEAN, _IMAGENET_STD, _REC_MEAN, _REC_STD
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from typing_extensions import Self
 
+    from ._image_model import _PostFn
 
-def _make_engine(
-    engine_path: Path | str,
-    warmup_iterations: int,
-    backend: str,
-    device: int | None,
-    *,
-    dla_core: int | None,
-    warmup: bool | None,
-    pagelocked_mem: bool | None,
-    unified_mem: bool | None,
-    no_warn: bool | None,
-    verbose: bool | None,
-) -> tuple[TRTEngine, tuple[int, ...]]:
-    """Load an engine and return it with the max shape of its (dynamic) input profile."""
-    engine = TRTEngine(
-        engine_path=engine_path,
-        warmup_iterations=warmup_iterations,
-        backend=backend,
-        dla_core=dla_core,
-        device=device,
-        warmup=warmup,
-        pagelocked_mem=pagelocked_mem,
-        unified_mem=unified_mem,
-        # input shapes change on every call, so a captured graph would never be reused
-        cuda_graph=False,
-        no_warn=no_warn,
-        verbose=verbose,
-    )
-    return engine, engine.input_bindings[0].max_shape
+# (images, *, verbose) -> (batch tensor, ratios, padding)
+_PreFn = Callable[..., Tuple[np.ndarray, List[Tuple[float, float]], List[Tuple[float, float]]]]
 
 
-def _host_image(image: np.ndarray | Buffer) -> np.ndarray:
-    return image.numpy() if isinstance(image, Buffer) else image
+class _FunctionPreprocessor(CPUPreprocessor):
+    """CPUPreprocessor running a model's own preprocessing function, for dynamic input shapes."""
+
+    def __init__(
+        self: Self,
+        fn: _PreFn,
+        output_shape: tuple[int, int],
+        output_range: tuple[float, float],
+        dtype: np.dtype,
+        tag: str | None = None,
+    ) -> None:
+        super().__init__(output_shape, output_range, dtype, resize="linear", tag=tag)
+        self._fn = fn
+
+    def preprocess(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        resize: str | None = None,  # noqa: ARG002
+        *,
+        no_copy: bool | None = None,  # noqa: ARG002
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cpu_preprocess"])
+
+        if isinstance(images, (np.ndarray, Buffer)):
+            images = [images]
+        batch_images = [img.numpy() if isinstance(img, Buffer) else img for img in images]
+        tensor, ratios, padding = self._fn(batch_images, verbose=verbose)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # cpu_preprocess
+
+        return tensor.astype(self._o_dtype, copy=False), ratios, padding
 
 
-class TextDetector:
-    """
-    DB (Differentiable Binarization) text detector, as used by PaddleOCR (PP-OCR).
+class _TextModel(ImageModel):
+    """ImageModel on a dynamic-shape engine, preprocessed on the CPU by ``_preprocess_fn``."""
 
-    The engine should be built with a dynamic (min, opt, max) profile over the
-    input height and width, see :meth:`trtutils.models.PPOCRDetector.build`.
-    CUDA graphs are not used since the input shape changes on almost every call.
-    """
+    def _preprocess_fn(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        verbose: bool | None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        raise NotImplementedError
+
+    def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
+        return _FunctionPreprocessor(
+            self._preprocess_fn,
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            tag=self._tag,
+        )
+
+    def _resolve_method(self: Self, method: str) -> str:
+        if method not in _PREPROCESSOR_METHODS:
+            err_msg = f"Invalid preprocessing method {method!r}, options are: {list(_PREPROCESSOR_METHODS)}"
+            raise ValueError(err_msg)
+        if method != "cpu":
+            LOG.warning(
+                f"{self._tag}: Preprocessing method set to {method}, but only cpu supports dynamic input shapes, fallback to cpu."
+            )
+        return "cpu"
+
+
+class TextDetector(_TextModel, TextDetectorInterface):
+    """Implementation of DB (Differentiable Binarization) text detectors, as used by PaddleOCR."""
 
     def __init__(
         self: Self,
         engine_path: Path | str,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0.0, 1.0),
+        preprocessor: str = "cpu",
+        resize_method: str = "linear",
         limit_side_len: int = 960,
         limit_type: str = "max",
         thresh: float = 0.3,
         box_thresh: float = 0.6,
         max_candidates: int = 1000,
         unclip_ratio: float = 1.5,
-        mean: tuple[float, float, float] = _IMAGENET_MEAN,
-        std: tuple[float, float, float] = _IMAGENET_STD,
-        warmup_iterations: int = 1,
-        backend: str = "auto",
-        device: int | None = None,
-        *,
+        mean: tuple[float, float, float] | None = _IMAGENET_MEAN,
+        std: tuple[float, float, float] | None = _IMAGENET_STD,
         dla_core: int | None = None,
-        use_dilation: bool = False,
+        device: int | None = None,
+        backend: str = "auto",
+        *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,  # noqa: ARG002
+        use_dilation: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
-        Create a TextDetector.
+        Create a TextDetector object.
 
+        The engine should be built with a dynamic (min, opt, max) profile over
+        the input height and width, see :meth:`trtutils.models.PPOCRDetector.build`.
         The defaults are PaddleOCR's (``tools/infer/utility.py``): longer side
         limited to 960, ImageNet normalization, box threshold 0.6, unclip 1.5,
         no dilation. RapidOCR instead uses ``limit_side_len=736, limit_type="min"``,
@@ -119,257 +153,665 @@ class TextDetector:
 
         Parameters
         ----------
-        engine_path : Path | str
-            The path to the compiled TensorRT engine.
+        engine_path : Path, str
+            The Path or str to the compiled TensorRT engine.
+        warmup_iterations : int
+            The number of warmup iterations to perform.
+            The default is 10.
+        input_range : tuple[float, float]
+            The range of input values which should be passed to
+            the model, used when mean and std are None. By default [0.0, 1.0].
+        preprocessor : str
+            The type of preprocessor to use. Only 'cpu' supports the
+            dynamic input shapes, 'cuda' and 'trt' fall back to it.
+            The options are ['cpu', 'cuda', 'trt'], default is 'cpu'.
+        resize_method : str
+            Unused, images are resized by ``limit_side_len`` and ``limit_type``.
+            Kept for parity with the other image models, default is 'linear'.
         limit_side_len : int
             Images are resized so their shorter (``limit_type="min"``) or longer
-            (``limit_type="max"``) side matches this length. Default is 960.
+            (``limit_type="max"``) side matches this length, then both sides are
+            rounded to a multiple of 32. Images resizing beyond the engine's max
+            shape are scaled down to fit it. By default 960.
         limit_type : str
-            ``"min"`` or ``"max"``. Default is ``"max"``.
+            The options are ['min', 'max'], default is 'max'.
         thresh : float
-            Binarization threshold of the probability map. Default is 0.3.
+            The binarization threshold of the probability map. By default 0.3.
         box_thresh : float
-            Minimum mean probability inside a box to keep it. Default is 0.6.
+            The minimum mean probability inside a box to keep it. By default 0.6.
         max_candidates : int
-            Maximum number of candidate regions. Default is 1000.
+            The maximum number of candidate regions. By default 1000.
         unclip_ratio : float
-            How far to expand detected text kernels. Default is 1.5.
-        mean : tuple[float, float, float]
-            Normalization mean. Default is the ImageNet mean (0.485, 0.456, 0.406).
-        std : tuple[float, float, float]
-            Normalization standard deviation. Default is the ImageNet std
-            (0.229, 0.224, 0.225).
-        warmup_iterations : int
-            The number of warmup iterations to perform. Default is 1.
-        backend : str
-            The execution backend to use. Default is 'auto'.
-        device : int, optional
-            The CUDA device index to use. Default is None (current device).
+            How far to expand detected text kernels. By default 1.5.
+        mean : tuple[float, float, float] | None, optional
+            The mean values to use for the normalization, in BGR order.
+            By default the ImageNet mean (0.485, 0.456, 0.406).
+        std : tuple[float, float, float] | None, optional
+            The standard deviation values to use for the normalization, in BGR
+            order. By default the ImageNet std (0.229, 0.224, 0.225).
         dla_core : int, optional
-            The DLA core the engine was built for. Default is None.
-        use_dilation : bool
-            Whether to dilate the binarized map before extracting boxes. Default is False.
+            The DLA core to assign DLA layers of the engine to. Default is None.
+            If None, any DLA layers will be assigned to DLA core 0.
+        device : int, optional
+            The CUDA device index to use for this detector. Default is None,
+            which uses the current device.
+        backend : str
+            The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
+            Default is 'auto', which selects the best available backend.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
         pagelocked_mem : bool, optional
-            Whether or not to use pagelocked memory.
+            Whether or not to use pagelocked memory for underlying CUDA operations.
+            By default, pagelocked memory will be used.
         unified_mem : bool, optional
             Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which means the default host allocation will be used.
+        cuda_graph : bool, optional
+            Unused, CUDA graphs are always disabled since the input shape
+            changes on almost every call.
+        use_dilation : bool, optional
+            Whether or not to dilate the binarized map before extracting boxes.
+            By default None, which means no dilation.
         no_warn : bool, optional
-            Suppress TensorRT warnings during engine deserialization.
+            If True, suppresses warnings from TensorRT during engine deserialization.
+            Default is None, which means warnings will be shown.
         verbose : bool, optional
             Whether or not to log additional information.
+            Only covers the initialization phase.
 
         """
-        self._engine, max_shape = _make_engine(
-            engine_path,
-            warmup_iterations,
-            backend,
-            device,
-            dla_core=dla_core,
-            warmup=warmup,
-            pagelocked_mem=pagelocked_mem,
-            unified_mem=unified_mem,
-            no_warn=no_warn,
-            verbose=verbose,
-        )
-        self._max_hw: tuple[int, int] = (max_shape[2], max_shape[3])
         self._limit_side_len = limit_side_len
         self._limit_type = limit_type
-        self._mean = mean
-        self._std = std
         self._thresh = thresh
         self._box_thresh = box_thresh
         self._max_candidates = max_candidates
         self._unclip_ratio = unclip_ratio
-        self._use_dilation = use_dilation
-        self._verbose = verbose if verbose is not None else False
-        if self._verbose:
-            LOG.debug(f"Created TextDetector: {self.name}, max input {self._max_hw}")
+        self._use_dilation = bool(use_dilation)
 
-    @property
-    def engine(self: Self) -> TRTEngine:
-        """Get the underlying TRTEngine."""
-        return self._engine
+        super().__init__(
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            input_range=input_range,
+            preprocessor=preprocessor,
+            resize_method=resize_method,
+            mean=mean,
+            std=std,
+            dla_core=dla_core,
+            device=device,
+            backend=backend,
+            warmup=warmup,
+            pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
+            cuda_graph=False,
+            no_warn=no_warn,
+            verbose=verbose,
+        )
 
-    @property
-    def name(self: Self) -> str:
-        """Get the name of the engine."""
-        return self._engine.name
+        # prepend with 'tdet_' to avoid conflicts with ImageModel._nvtx_tags
+        self._nvtx_tags.update(
+            {
+                "tdet_postprocess": f"text_detector::postprocess [{self._tag}]",
+                "tdet_get_text_boxes": f"text_detector::get_text_boxes [{self._tag}]",
+            }
+        )
 
-    def preprocess(self: Self, image: np.ndarray | Buffer) -> np.ndarray:
-        """
-        Preprocess an image for the detector.
-
-        Parameters
-        ----------
-        image : np.ndarray | Buffer
-            The image in HWC, BGR, uint8 format.
-
-        Returns
-        -------
-        np.ndarray
-            The input tensor of shape (1, 3, H, W).
-
-        """
+    def _preprocess_fn(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        verbose: bool | None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        width, height = self._input_size
         return preprocess_text_detection(
-            _host_image(image),
+            images,
             self._limit_side_len,
             self._limit_type,
+            self._input_range,
             self._mean,
             self._std,
-            self._max_hw,
+            (height, width),
+            verbose=verbose,
         )
 
     def postprocess(
         self: Self,
-        output: np.ndarray,
-        image_shape: tuple[int, int],
-    ) -> tuple[np.ndarray, np.ndarray]:
+        outputs: list[np.ndarray],
+        ratios: list[tuple[float, float]],
+        padding: list[tuple[float, float]],
+        box_thresh: float | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[list[np.ndarray]]:
         """
-        Extract text boxes from the detector output.
+        Postprocess the outputs.
 
         Parameters
         ----------
-        output : np.ndarray
-            The probability map output by the engine.
-        image_shape : tuple[int, int]
-            The (height, width) of the original image.
+        outputs : list[np.ndarray]
+            The raw outputs from the engine to postprocess.
+        ratios : list[tuple[float, float]]
+            The rescale ratios used during preprocessing for each image.
+        padding : list[tuple[float, float]]
+            The padding values used during preprocessing for each image.
+        box_thresh : float, optional
+            The minimum mean probability inside a box to keep it.
+            If not passed, will use value from constructor.
+        no_copy : bool, optional
+            Unused, the boxes are always new arrays.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray]
-            The boxes (N, 4, 2) in reading order and their scores (N,).
+        list[list[np.ndarray]]
+            The postprocessed outputs per image, each containing
+            [boxes, scores].
 
         """
-        return postprocess_text_detection(
-            output,
-            image_shape,
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["tdet_postprocess"])
+
+        if verbose:
+            LOG.debug(f"{self._tag}: postprocess")
+
+        box_thresh = box_thresh if box_thresh is not None else self._box_thresh
+        t0 = time.perf_counter()
+        data = postprocess_text_detection(
+            outputs,
+            ratios,
+            padding,
             self._thresh,
-            self._box_thresh,
+            box_thresh,
             self._max_candidates,
             self._unclip_ratio,
             use_dilation=self._use_dilation,
+            no_copy=no_copy,
+            verbose=verbose,
+        )
+        t1 = time.perf_counter()
+        self._post_profile = (t0, t1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # postprocess
+
+        return data
+
+    def _post_fn(self: Self, box_thresh: float | None, *, verbose: bool | None) -> _PostFn:
+        """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""
+        return lambda o, r, p, nc: self.postprocess(o, r, p, box_thresh, no_copy=nc, verbose=verbose)
+
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        box_thresh: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def __call__(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        box_thresh: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
+        box_thresh: float | None = None,
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """
+        Run the model on input.
+
+        Parameters
+        ----------
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
+            A single image (HWC format) or list of images to run the model on.
+        ratios : tuple[float, float] | list[tuple[float, float]], optional
+            The ratios generated during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        padding : tuple[float, float] | list[tuple[float, float]], optional
+            The padding values used during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        box_thresh : float, optional
+            The minimum mean probability inside a box to keep it during
+            postprocessing. By default None, which will use value passed
+            during initialization.
+        preprocessed : bool, optional
+            Whether or not the inputs have been preprocessed.
+            If None, will preprocess inputs.
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs.
+            If None, will postprocess outputs.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE by
+            future inferences.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        list[np.ndarray] | list[list[np.ndarray]]
+            The outputs. For single image with postprocess=True,
+            returns list[np.ndarray]. For batch, returns batch results.
+
+        """
+        return self._run_core(
+            images,
+            ratios,
+            padding,
+            preprocessed=preprocessed,
+            postprocess=postprocess,
+            no_copy=no_copy,
+            verbose=verbose,
+            post=self._post_fn(box_thresh, verbose=verbose),
         )
 
-    def run(self: Self, image: np.ndarray | Buffer) -> tuple[np.ndarray, np.ndarray]:
+    # run overloads - batch input (3 overloads)
+    @overload
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        box_thresh: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        box_thresh: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        box_thresh: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        box_thresh: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        box_thresh: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        box_thresh: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
+        box_thresh: float | None = None,
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """
-        Detect text in an image.
+        Run the model on input.
 
         Parameters
         ----------
-        image : np.ndarray | Buffer
-            The image in HWC, BGR, uint8 format.
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
+            A single image (HWC format) or list of images to run the model on.
+        ratios : tuple[float, float] | list[tuple[float, float]], optional
+            The ratios generated during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        padding : tuple[float, float] | list[tuple[float, float]], optional
+            The padding values used during preprocessing. For single image, pass tuple.
+            For batch, pass list.
+        box_thresh : float, optional
+            The minimum mean probability inside a box to keep it during
+            postprocessing. By default None, which will use value passed
+            during initialization.
+        preprocessed : bool, optional
+            Whether or not the inputs have been preprocessed.
+            If None, will preprocess inputs.
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs.
+            If None, will postprocess outputs.
+            If postprocessing will occur and the inputs were
+            passed already preprocessed, then the ratios and
+            padding must be passed for postprocessing.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE by
+            future inferences.
+            In special case where, preprocessing and
+            postprocessing will occur during run and no_copy
+            was not passed (is None), then no_copy will be used
+            for preprocessing and inference stages.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray]
-            The boxes, shape (N, 4, 2) float32 corner points (TL, TR, BR, BL)
-            in image coordinates and reading order, and their scores, shape (N,).
+        list[np.ndarray] | list[list[np.ndarray]]
+            For single image with postprocess=True: list[np.ndarray] (single image outputs).
+            For batch with postprocess=True: list[list[np.ndarray]] (per-image outputs).
+            For postprocess=False: list[np.ndarray] (raw outputs).
+
+        Raises
+        ------
+        RuntimeError
+            If postprocessing is running, but ratios/padding not found
+        ValueError
+            If preprocessed inputs are not a single batch tensor.
 
         """
-        tensor = self.preprocess(image)
-        output = self._engine.execute([Buffer.wrap(tensor)])[0]
-        h, w = image.shape[:2]
-        return self.postprocess(output, (h, w))
+        return self._run_core(
+            images,
+            ratios,
+            padding,
+            preprocessed=preprocessed,
+            postprocess=postprocess,
+            no_copy=no_copy,
+            verbose=verbose,
+            post=self._post_fn(box_thresh, verbose=verbose),
+        )
 
-    def __call__(self: Self, image: np.ndarray | Buffer) -> tuple[np.ndarray, np.ndarray]:
+    # get_text_boxes overloads
+    @overload
+    def get_text_boxes(
+        self: Self,
+        outputs: list[np.ndarray],
+        *,
+        verbose: bool | None = ...,
+    ) -> list[tuple[np.ndarray, float]]: ...
+
+    @overload
+    def get_text_boxes(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[np.ndarray, float]]]: ...
+
+    def get_text_boxes(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+        *,
+        verbose: bool | None = None,
+    ) -> list[tuple[np.ndarray, float]] | list[list[tuple[np.ndarray, float]]]:
         """
-        Detect text in an image, see :meth:`run`.
+        Get the text boxes from postprocessed outputs.
 
         Parameters
         ----------
-        image : np.ndarray | Buffer
-            The image in HWC, BGR, uint8 format.
+        outputs : list[np.ndarray] | list[list[np.ndarray]]
+            For single image: list[np.ndarray] (single image's postprocessed outputs).
+            For batch: list[list[np.ndarray]] (postprocessed outputs per image).
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray]
-            The boxes and their scores.
+        list[tuple[np.ndarray, float]] | list[list[tuple[np.ndarray, float]]]
+            For single image: list[tuple[np.ndarray, float]] (text boxes for single image).
+            For batch: list[list[tuple[np.ndarray, float]]] (text boxes per image).
+            Each entry is (box, score) in reading order, where box is the (4, 2)
+            float32 corner points (TL, TR, BR, BL) in original image coordinates.
 
         """
-        return self.run(image)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["tdet_get_text_boxes"])
+
+        if verbose:
+            LOG.debug(f"{self._tag}: get_text_boxes")
+
+        batch, single = self._as_batch(outputs)
+        result = get_text_boxes(batch, verbose=verbose)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # get_text_boxes
+
+        return result[0] if single else result
+
+    # end2end overloads
+    @overload
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer,
+        box_thresh: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[tuple[np.ndarray, float]]: ...
+
+    @overload
+    def end2end(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        box_thresh: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[np.ndarray, float]]]: ...
+
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        box_thresh: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[tuple[np.ndarray, float]] | list[list[tuple[np.ndarray, float]]]:
+        """
+        Perform end to end inference for a batch of images.
+
+        Equivalent to running preprocess, run, postprocess, and
+        get_text_boxes in that order. Makes some memory transfer
+        optimizations under the hood to improve performance.
+
+        Parameters
+        ----------
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
+            A single image (HWC format) or list of images to perform inference with.
+        box_thresh : float, optional
+            The minimum mean probability inside a box to keep it.
+            By default None, which will use value passed during initialization.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        list[tuple[np.ndarray, float]] | list[list[tuple[np.ndarray, float]]]
+            For single image: list[tuple[np.ndarray, float]] (text boxes).
+            For batch: list[list[tuple[np.ndarray, float]]] (text boxes per image).
+
+        """
+        return self._end2end_core(
+            images,
+            verbose=verbose,
+            post=self._post_fn(box_thresh, verbose=verbose),
+            get=lambda pp: self.get_text_boxes(pp, verbose=verbose),
+        )
 
 
-class TextRecognizer:
-    """
-    CTC text line recognizer, as used by PaddleOCR (PP-OCR).
-
-    The engine should be built with a dynamic (min, opt, max) profile over the
-    batch size and input width, see :meth:`trtutils.models.PPOCRRecognizer.build`.
-    CUDA graphs are not used since the input shape changes on almost every call.
-    """
+class TextRecognizer(_TextModel, TextRecognizerInterface):
+    """Implementation of CTC text line recognizers, as used by PaddleOCR."""
 
     def __init__(
         self: Self,
         engine_path: Path | str,
-        character_dict: Path | str | Sequence[str],
-        warmup_iterations: int = 1,
-        backend: str = "auto",
-        device: int | None = None,
-        *,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0.0, 1.0),
+        preprocessor: str = "cpu",
+        resize_method: str = "linear",
+        character_dict: Path | str | Sequence[str] | None = None,
+        mean: tuple[float, float, float] | None = _REC_MEAN,
+        std: tuple[float, float, float] | None = _REC_STD,
         dla_core: int | None = None,
-        use_space_char: bool = True,
+        device: int | None = None,
+        backend: str = "auto",
+        *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,  # noqa: ARG002
+        use_space_char: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         """
-        Create a TextRecognizer.
+        Create a TextRecognizer object.
+
+        The engine should be built with a dynamic (min, opt, max) profile over
+        the batch size and input width, see :meth:`trtutils.models.PPOCRRecognizer.build`.
+        Text lines are resized to the engine's input height keeping their aspect
+        ratio and right-padded to the widest line of the batch.
 
         Parameters
         ----------
-        engine_path : Path | str
-            The path to the compiled TensorRT engine.
-        character_dict : Path | str | Sequence[str]
+        engine_path : Path, str
+            The Path or str to the compiled TensorRT engine.
+        warmup_iterations : int
+            The number of warmup iterations to perform.
+            The default is 10.
+        input_range : tuple[float, float]
+            The range of input values which should be passed to
+            the model, used when mean and std are None. By default [0.0, 1.0].
+        preprocessor : str
+            The type of preprocessor to use. Only 'cpu' supports the
+            dynamic input shapes, 'cuda' and 'trt' fall back to it.
+            The options are ['cpu', 'cuda', 'trt'], default is 'cpu'.
+        resize_method : str
+            Unused, lines are resized to the input height keeping their aspect ratio.
+            Kept for parity with the other image models, default is 'linear'.
+        character_dict : Path, str, Sequence[str]
             The model's character dictionary: a text file with one character
             per line, or the list of characters itself (excluding the CTC blank).
-        warmup_iterations : int
-            The number of warmup iterations to perform. Default is 1.
-        backend : str
-            The execution backend to use. Default is 'auto'.
-        device : int, optional
-            The CUDA device index to use. Default is None (current device).
+            Required, the default of None raises.
+        mean : tuple[float, float, float] | None, optional
+            The mean values to use for the normalization.
+            By default (0.5, 0.5, 0.5).
+        std : tuple[float, float, float] | None, optional
+            The standard deviation values to use for the normalization.
+            By default (0.5, 0.5, 0.5).
         dla_core : int, optional
-            The DLA core the engine was built for. Default is None.
-        use_space_char : bool
-            Whether the model has an extra trailing class for the space character.
-            Default is True.
+            The DLA core to assign DLA layers of the engine to. Default is None.
+            If None, any DLA layers will be assigned to DLA core 0.
+        device : int, optional
+            The CUDA device index to use for this recognizer. Default is None,
+            which uses the current device.
+        backend : str
+            The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
+            Default is 'auto', which selects the best available backend.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
         pagelocked_mem : bool, optional
-            Whether or not to use pagelocked memory.
+            Whether or not to use pagelocked memory for underlying CUDA operations.
+            By default, pagelocked memory will be used.
         unified_mem : bool, optional
             Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which means the default host allocation will be used.
+        cuda_graph : bool, optional
+            Unused, CUDA graphs are always disabled since the input shape
+            changes on almost every call.
+        use_space_char : bool, optional
+            Whether or not the model has an extra trailing class for the space
+            character. By default None, which means True.
         no_warn : bool, optional
-            Suppress TensorRT warnings during engine deserialization.
+            If True, suppresses warnings from TensorRT during engine deserialization.
+            Default is None, which means warnings will be shown.
         verbose : bool, optional
             Whether or not to log additional information.
+            Only covers the initialization phase.
 
         Raises
         ------
         ValueError
-            If the character dictionary does not match the engine's number of classes.
+            If no character dictionary is given, or it does not match the
+            engine's number of classes.
 
         """
-        self._engine, max_shape = _make_engine(
-            engine_path,
-            warmup_iterations,
-            backend,
-            device,
-            dla_core=dla_core,
-            warmup=warmup,
-            pagelocked_mem=pagelocked_mem,
-            unified_mem=unified_mem,
-            no_warn=no_warn,
-            verbose=verbose,
-        )
-        self._batch_size: int = max_shape[0]
-        self._image_height: int = max_shape[2]
-        self._max_width: int = max_shape[3]
-
+        if character_dict is None:
+            err_msg = "TextRecognizer requires a character_dict"
+            raise ValueError(err_msg)
         if isinstance(character_dict, (str, Path)):
             with Path(character_dict).open(encoding="utf-8") as f:
                 chars = [line.rstrip("\r\n") for line in f]
@@ -378,7 +820,27 @@ class TextRecognizer:
                 chars.pop()
         else:
             chars = list(character_dict)
+        use_space_char = use_space_char if use_space_char is not None else True
         self._characters: list[str] = ["blank", *chars] + ([" "] if use_space_char else [])
+
+        super().__init__(
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            input_range=input_range,
+            preprocessor=preprocessor,
+            resize_method=resize_method,
+            mean=mean,
+            std=std,
+            dla_core=dla_core,
+            device=device,
+            backend=backend,
+            warmup=warmup,
+            pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
+            cuda_graph=False,
+            no_warn=no_warn,
+            verbose=verbose,
+        )
 
         num_classes = self._engine.output_spec[0][0][-1]
         if num_classes > 0 and num_classes != len(self._characters):
@@ -387,113 +849,406 @@ class TextRecognizer:
                 f"{' and space' if use_space_char else ''}), engine outputs {num_classes}"
             )
             raise ValueError(err_msg)
-        self._verbose = verbose if verbose is not None else False
-        if self._verbose:
-            LOG.debug(f"Created TextRecognizer: {self.name}, max input {max_shape}")
 
-    @property
-    def engine(self: Self) -> TRTEngine:
-        """Get the underlying TRTEngine."""
-        return self._engine
-
-    @property
-    def name(self: Self) -> str:
-        """Get the name of the engine."""
-        return self._engine.name
+        # prepend with 'trec_' to avoid conflicts with ImageModel._nvtx_tags
+        self._nvtx_tags.update(
+            {
+                "trec_postprocess": f"text_recognizer::postprocess [{self._tag}]",
+                "trec_get_texts": f"text_recognizer::get_texts [{self._tag}]",
+            }
+        )
 
     @property
     def characters(self: Self) -> list[str]:
         """Get the class labels, index 0 is the CTC blank."""
         return self._characters
 
-    def preprocess(self: Self, images: Sequence[np.ndarray | Buffer]) -> np.ndarray:
-        """
-        Preprocess a batch of text line images.
-
-        Parameters
-        ----------
-        images : Sequence[np.ndarray | Buffer]
-            Text line images in HWC, BGR, uint8 format, at most the engine's
-            max batch size.
-
-        Returns
-        -------
-        np.ndarray
-            The input tensor of shape (N, 3, H, W).
-
-        """
+    def _preprocess_fn(
+        self: Self,
+        images: list[np.ndarray],
+        *,
+        verbose: bool | None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        width, height = self._input_size
         return preprocess_text_recognition(
-            [_host_image(img) for img in images], self._image_height, max_width=self._max_width
+            images,
+            height,
+            max_width=width,
+            input_range=self._input_range,
+            mean=self._mean,
+            std=self._std,
+            verbose=verbose,
         )
 
-    def postprocess(self: Self, output: np.ndarray) -> list[tuple[str, float]]:
-        """
-        Decode the recognizer output.
-
-        Parameters
-        ----------
-        output : np.ndarray
-            The per-timestep class probabilities, shape (N, T, C).
-
-        Returns
-        -------
-        list[tuple[str, float]]
-            The text and confidence of each line.
-
-        """
-        return postprocess_text_recognition(output, self._characters)
-
-    def run(
+    def postprocess(
         self: Self,
-        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-    ) -> list[tuple[str, float]]:
+        outputs: list[np.ndarray],
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[list[np.ndarray]]:
         """
-        Recognize the text in one or more text line images.
-
-        Lines are grouped by aspect ratio into batches of the engine's max
-        batch size, so similar widths share padding.
+        Postprocess the outputs.
 
         Parameters
         ----------
-        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
-            A text line image, or a list of them, in HWC, BGR, uint8 format.
+        outputs : list[np.ndarray]
+            The raw outputs from the engine to postprocess.
+        no_copy : bool, optional
+            Unused, the results are always new arrays.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
-        list[tuple[str, float]]
-            The text and confidence of each line, in input order.
+        list[list[np.ndarray]]
+            The postprocessed outputs per image, each containing
+            [indices, probs] of the best class per timestep.
 
         """
-        lines = [images] if isinstance(images, (np.ndarray, Buffer)) else images
-        order = np.argsort([img.shape[1] / img.shape[0] for img in lines])
-        results: list[tuple[str, float]] = [("", 0.0)] * len(lines)
-        for start in range(0, len(order), self._batch_size):
-            batch_idx = order[start : start + self._batch_size]
-            tensor = self.preprocess([lines[i] for i in batch_idx])
-            output = self._engine.execute([Buffer.wrap(tensor)])[0]
-            for i, res in zip(batch_idx, self.postprocess(output)):
-                results[i] = res
-        return results
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["trec_postprocess"])
+
+        if verbose:
+            LOG.debug(f"{self._tag}: postprocess")
+
+        t0 = time.perf_counter()
+        data = postprocess_text_recognition(outputs, no_copy=no_copy, verbose=verbose)
+        t1 = time.perf_counter()
+        self._post_profile = (t0, t1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # postprocess
+
+        return data
+
+    def _post_fn(self: Self, *, verbose: bool | None) -> _PostFn:
+        """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""
+        return lambda o, _r, _p, nc: self.postprocess(o, no_copy=nc, verbose=verbose)
+
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def __call__(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
 
     def __call__(
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-    ) -> list[tuple[str, float]]:
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """
-        Recognize text line images, see :meth:`run`.
+        Run the model on input.
 
         Parameters
         ----------
         images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
-            A text line image, or a list of them.
+            A single text line image (HWC format) or list of them to run the
+            model on, at most the engine's max batch size.
+        preprocessed : bool, optional
+            Whether or not the inputs have been preprocessed.
+            If None, will preprocess inputs.
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs.
+            If None, will postprocess outputs.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE by
+            future inferences.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
-        list[tuple[str, float]]
-            The text and confidence of each line.
+        list[np.ndarray] | list[list[np.ndarray]]
+            The outputs. For single image with postprocess=True,
+            returns list[np.ndarray]. For batch input, returns batch results.
 
         """
-        return self.run(images)
+        return self.run(
+            images,
+            preprocessed=preprocessed,
+            postprocess=postprocess,
+            no_copy=no_copy,
+            verbose=verbose,
+        )
+
+    # run overloads - batch input (3 overloads)
+    @overload
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """
+        Run the model on input.
+
+        Parameters
+        ----------
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
+            A single text line image (HWC format) or list of them to run the
+            model on, at most the engine's max batch size.
+        preprocessed : bool, optional
+            Whether or not the inputs have been preprocessed.
+            If None, will preprocess inputs.
+        postprocess : bool, optional
+            Whether or not to postprocess the outputs.
+            If None, will postprocess outputs.
+        no_copy : bool, optional
+            If True, the outputs will not be copied out
+            from the cuda allocated host memory. Instead,
+            the host memory will be returned directly.
+            This memory WILL BE OVERWRITTEN INPLACE by
+            future inferences.
+            In special case where, preprocessing and
+            postprocessing will occur during run and no_copy
+            was not passed (is None), then no_copy will be used
+            for preprocessing and inference stages.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        list[np.ndarray] | list[list[np.ndarray]]
+            For single image with postprocess=True: list[np.ndarray] (single image outputs).
+            For batch with postprocess=True: list[list[np.ndarray]] (per-image outputs).
+            For postprocess=False: list[np.ndarray] (raw outputs).
+
+        Raises
+        ------
+        ValueError
+            If preprocessed inputs are not a single batch tensor.
+
+        """
+        return self._run_core(
+            images,
+            None,
+            None,
+            preprocessed=preprocessed,
+            postprocess=postprocess,
+            no_copy=no_copy,
+            verbose=verbose,
+            post=self._post_fn(verbose=verbose),
+            needs_ratios=False,
+        )
+
+    # get_texts overloads
+    @overload
+    def get_texts(
+        self: Self,
+        outputs: list[np.ndarray],
+        *,
+        verbose: bool | None = ...,
+    ) -> tuple[str, float]: ...
+
+    @overload
+    def get_texts(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+        *,
+        verbose: bool | None = ...,
+    ) -> list[tuple[str, float]]: ...
+
+    def get_texts(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[str, float] | list[tuple[str, float]]:
+        """
+        Get the texts from postprocessed outputs.
+
+        Parameters
+        ----------
+        outputs : list[np.ndarray] | list[list[np.ndarray]]
+            For single image: list[np.ndarray] (single image's postprocessed outputs).
+            For batch: list[list[np.ndarray]] (postprocessed outputs per image).
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        tuple[str, float] | list[tuple[str, float]]
+            For single image: tuple[str, float] (text and confidence).
+            For batch: list[tuple[str, float]] (text and confidence per image).
+
+        """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["trec_get_texts"])
+
+        if verbose:
+            LOG.debug(f"{self._tag}: get_texts")
+
+        batch, single = self._as_batch(outputs)
+        result = get_texts(batch, self._characters, verbose=verbose)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # get_texts
+
+        return result[0] if single else result
+
+    # end2end overloads
+    @overload
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer,
+        *,
+        verbose: bool | None = ...,
+    ) -> tuple[str, float]: ...
+
+    @overload
+    def end2end(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        *,
+        verbose: bool | None = ...,
+    ) -> list[tuple[str, float]]: ...
+
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[str, float] | list[tuple[str, float]]:
+        """
+        Perform end to end inference for a batch of images.
+
+        Equivalent to running preprocess, run, postprocess, and
+        get_texts in that order. Any number of lines is accepted: they are
+        grouped by aspect ratio into batches of the engine's max batch size,
+        so similar widths share padding.
+
+        Parameters
+        ----------
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
+            A single text line image (HWC format) or list of them to perform
+            inference with.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        tuple[str, float] | list[tuple[str, float]]
+            For single image: tuple[str, float] (text and confidence).
+            For batch: list[tuple[str, float]] (text and confidence per image,
+            in input order).
+
+        """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["end2end"])
+
+        if verbose:
+            LOG.debug(f"{self._tag}: end2end")
+
+        is_single = isinstance(images, (np.ndarray, Buffer))
+        lines: Sequence[np.ndarray | Buffer] = [images] if is_single else images
+        order = np.argsort([img.shape[1] / img.shape[0] for img in lines])
+        results: list[tuple[str, float]] = [("", 0.0)] * len(lines)
+        for start in range(0, len(order), self._batch_size):
+            batch_idx = order[start : start + self._batch_size]
+            # outputs are consumed by get_texts() inside this call, so skip their copies
+            outputs, _, _ = self.infer([lines[i] for i in batch_idx], no_copy=True, verbose=verbose)
+            batch = self.postprocess(outputs, no_copy=True, verbose=verbose)
+            for i, text in zip(batch_idx, self.get_texts(batch, verbose=verbose)):
+                results[i] = text
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # end2end
+
+        return results[0] if is_single else results
 
 
 class OCR:
@@ -507,37 +1262,48 @@ class OCR:
 
     def __init__(
         self: Self,
-        detector: TextDetector,
-        recognizer: TextRecognizer,
+        detector: TextDetectorInterface,
+        recognizer: TextRecognizerInterface,
         text_score: float = 0.5,
         min_height: int = 30,
         width_height_ratio: float = 8,
         max_side_len: int = 2000,
         min_side_len: int = 30,
+        *,
+        verbose: bool | None = None,
     ) -> None:
         """
-        Create an OCR pipeline.
+        Create an OCR object.
 
         Parameters
         ----------
-        detector : TextDetector
+        detector : TextDetectorInterface
             The text detector.
-        recognizer : TextRecognizer
+        recognizer : TextRecognizerInterface
             The text recognizer.
         text_score : float
-            Minimum recognition confidence for a line to be returned. Default is 0.5.
+            The minimum recognition confidence for a line to be returned.
+            By default 0.5.
         min_height : int
             Images at most this tall are padded vertically before detection,
-            which helps the detector on single text lines. Default is 30.
+            which helps the detector on single text lines. By default 30.
         width_height_ratio : float
             Images wider than this aspect ratio are padded vertically before
-            detection. Set to -1 to disable. Default is 8.
+            detection. Set to -1 to disable. By default 8.
         max_side_len : int
-            Images with a longer side above this are downscaled first. Default is 2000.
+            Images with a longer side above this are downscaled first.
+            By default 2000.
         min_side_len : int
-            Images with a shorter side below this are upscaled first. Default is 30.
+            Images with a shorter side below this are upscaled first.
+            By default 30.
+        verbose : bool, optional
+            Whether or not to log additional information.
+            Only covers the initialization phase.
 
         """
+        self._nvtx_tags = {
+            "end2end": "ocr::end2end",
+        }
         self._detector = detector
         self._recognizer = recognizer
         self._text_score = text_score
@@ -545,35 +1311,27 @@ class OCR:
         self._width_height_ratio = width_height_ratio
         self._max_side_len = max_side_len
         self._min_side_len = min_side_len
+        if verbose:
+            LOG.debug(f"Creating OCR: {detector.name} + {recognizer.name}")
 
     @property
-    def detector(self: Self) -> TextDetector:
+    def detector(self: Self) -> TextDetectorInterface:
         """Get the text detector."""
         return self._detector
 
     @property
-    def recognizer(self: Self) -> TextRecognizer:
+    def recognizer(self: Self) -> TextRecognizerInterface:
         """Get the text recognizer."""
         return self._recognizer
 
-    def run(self: Self, image: np.ndarray | Buffer) -> list[tuple[np.ndarray, str, float]]:
-        """
-        Detect and recognize all text in an image.
-
-        Parameters
-        ----------
-        image : np.ndarray | Buffer
-            The image in HWC, BGR, uint8 format.
-
-        Returns
-        -------
-        list[tuple[np.ndarray, str, float]]
-            ``(box, text, score)`` per text line in reading order, where ``box``
-            is the (4, 2) float32 corner points (TL, TR, BR, BL) in the
-            coordinates of ``image``.
-
-        """
-        img = _host_image(image)
+    def _ocr_image(
+        self: Self,
+        image: np.ndarray | Buffer,
+        text_score: float,
+        *,
+        verbose: bool | None,
+    ) -> list[tuple[np.ndarray, str, float]]:
+        img = image.numpy() if isinstance(image, Buffer) else image
         raw_h, raw_w = img.shape[:2]
         if max(raw_h, raw_w) > self._max_side_len:
             img = resize_text_detection(img, self._max_side_len, "max")
@@ -590,32 +1348,128 @@ class OCR:
             pad = int(abs(new_h - h) / 2)
             img = cv2.copyMakeBorder(img, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
-        boxes, _ = self._detector.run(img)
-        if len(boxes) == 0:
+        text_boxes = self._detector.end2end(img, verbose=verbose)
+        if not text_boxes:
             return []
-        lines = self._recognizer.run([crop_text_region(img, box) for box in boxes])
+        boxes = np.stack([box for box, _ in text_boxes])
+        lines = self._recognizer.end2end(
+            [crop_text_region(img, box) for box in boxes], verbose=verbose
+        )
 
         out_boxes = (boxes - np.array([0, pad], np.float32)) * scale
         out_boxes = np.clip(out_boxes, 0, np.array([raw_w, raw_h], np.float32))
         return [
-            (box, text, score)
-            for box, (text, score) in zip(out_boxes, lines)
-            if score >= self._text_score
+            (box, text, score) for box, (text, score) in zip(out_boxes, lines) if score >= text_score
         ]
 
-    def __call__(self: Self, image: np.ndarray | Buffer) -> list[tuple[np.ndarray, str, float]]:
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer,
+        text_score: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[tuple[np.ndarray, str, float]]: ...
+
+    @overload
+    def __call__(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        text_score: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[np.ndarray, str, float]]]: ...
+
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        text_score: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[tuple[np.ndarray, str, float]] | list[list[tuple[np.ndarray, str, float]]]:
         """
-        Detect and recognize all text in an image, see :meth:`run`.
+        Detect and recognize all text in images, see :meth:`end2end`.
 
         Parameters
         ----------
-        image : np.ndarray | Buffer
-            The image in HWC, BGR, uint8 format.
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
+            A single image (HWC format) or list of images to perform inference with.
+        text_score : float, optional
+            The minimum recognition confidence for a line to be returned.
+            By default None, which will use value passed during initialization.
+        verbose : bool, optional
+            Whether or not to log additional information.
 
         Returns
         -------
-        list[tuple[np.ndarray, str, float]]
-            ``(box, text, score)`` per text line.
+        list[tuple[np.ndarray, str, float]] | list[list[tuple[np.ndarray, str, float]]]
+            For single image: list[tuple[np.ndarray, str, float]] (text lines).
+            For batch: list[list[tuple[np.ndarray, str, float]]] (text lines per image).
 
         """
-        return self.run(image)
+        return self.end2end(images, text_score, verbose=verbose)
+
+    # end2end overloads
+    @overload
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer,
+        text_score: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[tuple[np.ndarray, str, float]]: ...
+
+    @overload
+    def end2end(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        text_score: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[tuple[np.ndarray, str, float]]]: ...
+
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        text_score: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[tuple[np.ndarray, str, float]] | list[list[tuple[np.ndarray, str, float]]]:
+        """
+        Detect and recognize all text in images.
+
+        Parameters
+        ----------
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
+            A single image (HWC format) or list of images to perform inference with.
+        text_score : float, optional
+            The minimum recognition confidence for a line to be returned.
+            By default None, which will use value passed during initialization.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        list[tuple[np.ndarray, str, float]] | list[list[tuple[np.ndarray, str, float]]]
+            For single image: list[tuple[np.ndarray, str, float]] (text lines).
+            For batch: list[list[tuple[np.ndarray, str, float]]] (text lines per image).
+            Each entry is (box, text, score) in reading order, where box is the
+            (4, 2) float32 corner points (TL, TR, BR, BL) in image coordinates.
+
+        """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["end2end"])
+
+        if verbose:
+            LOG.debug("OCR: end2end")
+
+        text_score = text_score if text_score is not None else self._text_score
+        is_single = isinstance(images, (np.ndarray, Buffer))
+        batch_images: Sequence[np.ndarray | Buffer] = [images] if is_single else images
+        results = [self._ocr_image(img, text_score, verbose=verbose) for img in batch_images]
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # end2end
+
+        return results[0] if is_single else results

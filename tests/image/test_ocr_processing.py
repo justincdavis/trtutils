@@ -1,15 +1,19 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for the OCR (PP-OCR) pre/postprocessing in src/trtutils/image/{pre,post}processors/_ocr.py."""
+"""Tests for src/trtutils/image/{pre,post}processors/_ocr.py -- PP-OCR pre/postprocessing."""
 
 from __future__ import annotations
+
+import contextlib
 
 import cv2
 import numpy as np
 import pytest
 
 from trtutils.image.postprocessors import (
+    get_text_boxes,
+    get_texts,
     postprocess_text_detection,
     postprocess_text_recognition,
     sort_text_boxes,
@@ -23,85 +27,15 @@ from trtutils.image.preprocessors import (
 
 pytestmark = pytest.mark.cpu
 
-
-@pytest.mark.parametrize(
-    ("shape", "limit_type", "expected"),
+# expected boxes of the reference pp-ocr db postprocess on _prob_map() at (480, 640)
+REFERENCE_BOXES = np.array(
     [
-        pytest.param((100, 400), "min", (736, 2944), id="min-upscale"),
-        pytest.param((1080, 1920), "min", (1088, 1920), id="min-noop-round32"),
-        pytest.param((1080, 1920), "max", (544, 960), id="max-downscale"),
-        pytest.param((300, 500), "max", (288, 512), id="max-noop-round32"),
-        pytest.param((15, 15), "max", (32, 32), id="tiny-floor32"),
-        pytest.param((30, 4000), "max", (32, 960), id="thin-strip-floor32"),
+        [[32, 18], [328, 18], [328, 162], [32, 162]],
+        [[338, 33], [622, 33], [622, 147], [338, 147]],
+        [[80, 314], [541, 193], [558, 343], [97, 464]],
     ],
+    np.float32,
 )
-def test_resize_text_detection(shape, limit_type, expected) -> None:
-    """Images resize by the limit rule, then round each side to a multiple of 32."""
-    limit = 736 if limit_type == "min" else 960
-    out = resize_text_detection(np.zeros((*shape, 3), np.uint8), limit, limit_type)
-    assert out.shape[:2] == expected
-
-
-def test_resize_text_detection_fits_max_shape() -> None:
-    """A resize larger than the engine's max shape is shrunk to fit, keeping multiples of 32."""
-    out = resize_text_detection(
-        np.zeros((100, 400, 3), np.uint8), 736, "min", max_shape=(2048, 2048)
-    )
-    h, w = out.shape[:2]
-    assert h <= 2048
-    assert w <= 2048
-    assert h % 32 == 0
-    assert w % 32 == 0
-    assert w / h == pytest.approx(4, rel=0.05)
-
-
-def test_resize_text_detection_invalid_limit_type() -> None:
-    """An unknown limit_type raises."""
-    with pytest.raises(ValueError, match="limit_type"):
-        resize_text_detection(np.zeros((32, 32, 3), np.uint8), limit_type="avg")
-
-
-def test_preprocess_text_detection() -> None:
-    """Output is a contiguous (1, 3, H, W) float32 tensor, ImageNet-normalized by default."""
-    img = np.zeros((64, 96, 3), np.uint8)
-    img[..., 2] = 255
-    x = preprocess_text_detection(img)
-    assert x.shape == (1, 3, 64, 96)
-    assert x.dtype == np.float32
-    assert x.flags["C_CONTIGUOUS"]
-    np.testing.assert_allclose(x[0, 0], -0.485 / 0.229, rtol=1e-6)
-    np.testing.assert_allclose(x[0, 2], (1 - 0.406) / 0.225, rtol=1e-6)
-    x = preprocess_text_detection(img, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
-    np.testing.assert_allclose(x[0, 0], -1.0)
-    np.testing.assert_allclose(x[0, 2], 1.0)
-
-
-def test_preprocess_text_recognition_pads_to_widest() -> None:
-    """Lines resize to the model height, keep aspect ratio and right-pad to the widest one."""
-    narrow = np.full((24, 48, 3), 255, np.uint8)  # ratio 2 -> 96 px wide at height 48
-    wide = np.full((10, 500, 3), 255, np.uint8)  # ratio 50 -> 2400 px wide
-    x = preprocess_text_recognition([narrow, wide])
-    assert x.shape == (2, 3, 48, 2400)
-    np.testing.assert_allclose(x[0, :, :, :96], 1.0)
-    np.testing.assert_allclose(x[0, :, :, 96:], 0.0)
-    np.testing.assert_allclose(x[1], 1.0)
-
-
-def test_preprocess_text_recognition_min_and_max_width() -> None:
-    """The batch is at least min_width wide and wide lines are squeezed to max_width."""
-    line = np.zeros((48, 48, 3), np.uint8)
-    assert preprocess_text_recognition([line]).shape == (1, 3, 48, 320)
-    long_line = np.zeros((10, 2000, 3), np.uint8)
-    assert preprocess_text_recognition([long_line], max_width=1024).shape == (1, 3, 48, 1024)
-
-
-def test_crop_text_region() -> None:
-    """Axis-aligned boxes crop exactly; tall crops are rotated to horizontal."""
-    img = np.arange(100 * 200 * 3, dtype=np.uint32).reshape(100, 200, 3).astype(np.uint8)
-    box = np.array([[20, 10], [120, 10], [120, 40], [20, 40]], np.float32)
-    assert crop_text_region(img, box).shape == (30, 100, 3)
-    tall = np.array([[10, 10], [30, 10], [30, 90], [10, 90]], np.float32)
-    assert crop_text_region(img, tall).shape == (20, 80, 3)
 
 
 def _prob_map() -> np.ndarray:
@@ -114,26 +48,117 @@ def _prob_map() -> np.ndarray:
     return m
 
 
-def test_postprocess_text_detection_matches_reference() -> None:
-    """Boxes match the reference PP-OCR DB postprocess (incl. unclip rounding) exactly."""
-    boxes, scores = postprocess_text_detection(
-        _prob_map()[None, None], (480, 640), 0.3, 0.5, 1000, 1.6, use_dilation=True
+@pytest.mark.parametrize(
+    ("shape", "limit", "limit_type", "max_shape", "expected"),
+    [
+        pytest.param((100, 400), 736, "min", None, (736, 2944), id="min-upscale"),
+        pytest.param((1080, 1920), 736, "min", None, (1088, 1920), id="min-noop-round32"),
+        pytest.param((1080, 1920), 960, "max", None, (544, 960), id="max-downscale"),
+        pytest.param((300, 500), 960, "max", None, (288, 512), id="max-noop-round32"),
+        pytest.param((15, 15), 960, "max", None, (32, 32), id="tiny-floor32"),
+        pytest.param((30, 4000), 960, "max", None, (32, 960), id="thin-strip-floor32"),
+        pytest.param((100, 400), 736, "min", (2048, 2048), (512, 2048), id="fit-max-shape"),
+        pytest.param((100, 400), 736, "min", (320, 320), (64, 320), id="fit-small-max-shape"),
+        pytest.param((32, 32), 960, "avg", None, None, id="invalid-limit-type"),
+    ],
+)
+def test_resize_text_detection(shape, limit, limit_type, max_shape, expected) -> None:
+    """Images resize by the limit rule, round to multiples of 32 and fit the engine's max shape."""
+    ctx = (
+        pytest.raises(ValueError, match="limit_type")
+        if expected is None
+        else contextlib.nullcontext()
     )
-    expected = [
-        [[32, 18], [328, 18], [328, 162], [32, 162]],
-        [[338, 33], [622, 33], [622, 147], [338, 147]],
-        [[80, 314], [541, 193], [558, 343], [97, 464]],
-    ]
-    np.testing.assert_array_equal(boxes, np.array(expected, np.float32))
-    assert scores.shape == (3,)
+    with ctx:
+        out = resize_text_detection(np.zeros((*shape, 3), np.uint8), limit, limit_type, max_shape)
+        assert out.shape[:2] == expected
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "low", "high"),
+    [
+        pytest.param({}, -0.485 / 0.229, (1 - 0.406) / 0.225, id="imagenet-default"),
+        pytest.param({"mean": (0.5,) * 3, "std": (0.5,) * 3}, -1.0, 1.0, id="half-mean-std"),
+        pytest.param(
+            {"mean": None, "std": None, "input_range": (0.0, 255.0)}, 0.0, 255.0, id="input-range"
+        ),
+    ],
+)
+def test_preprocess_text_detection(kwargs, low, high) -> None:
+    """A mixed-size batch is normalized per channel and zero-padded to its largest image."""
+    small = np.zeros((64, 96, 3), np.uint8)
+    small[..., 2] = 255
+    large = np.zeros((128, 64, 3), np.uint8)
+    tensor, ratios, padding = preprocess_text_detection([small, large], **kwargs)
+    assert tensor.shape == (2, 3, 128, 96)
+    assert tensor.dtype == np.float32
+    assert tensor.flags["C_CONTIGUOUS"]
+    np.testing.assert_allclose(tensor[0, 0, :64], low, rtol=1e-6)
+    np.testing.assert_allclose(tensor[0, 2, :64], high, rtol=1e-6)
+    np.testing.assert_array_equal(tensor[0, :, 64:], 0.0)
+    np.testing.assert_array_equal(tensor[1, :, :, 64:], 0.0)
+    assert ratios == [(1.0, 1.0), (1.0, 1.0)]
+    assert padding == [(0.0, 64.0), (32.0, 0.0)]
+
+
+@pytest.mark.parametrize(
+    ("shapes", "max_width", "expected_width", "expected_resized"),
+    [
+        # ratio 2 -> 96 px wide at height 48, ratio 50 -> 2400 px
+        pytest.param([(24, 48), (10, 500)], None, 2400, [96, 2400], id="pads-to-widest"),
+        pytest.param([(48, 48)], None, 320, [48], id="min-width"),
+        pytest.param([(10, 2000)], 1024, 1024, [1024], id="squeeze-to-max-width"),
+    ],
+)
+def test_preprocess_text_recognition(shapes, max_width, expected_width, expected_resized) -> None:
+    """Lines resize to the model height and right-pad to a width within [min_width, max_width]."""
+    lines = [np.full((*shape, 3), 255, np.uint8) for shape in shapes]
+    tensor, ratios, padding = preprocess_text_recognition(lines, max_width=max_width)
+    assert tensor.shape == (len(lines), 3, 48, expected_width)
+    for i, (resized_w, (h, w)) in enumerate(zip(expected_resized, shapes)):
+        np.testing.assert_allclose(tensor[i, :, :, :resized_w], 1.0)
+        np.testing.assert_array_equal(tensor[i, :, :, resized_w:], 0.0)
+        assert ratios[i] == (resized_w / w, 48 / h)
+        assert padding[i] == (expected_width - resized_w, 0.0)
+
+
+@pytest.mark.parametrize(
+    ("box", "expected"),
+    [
+        pytest.param([[20, 10], [120, 10], [120, 40], [20, 40]], (30, 100, 3), id="axis-aligned"),
+        pytest.param([[10, 10], [30, 10], [30, 90], [10, 90]], (20, 80, 3), id="tall-rotated"),
+    ],
+)
+def test_crop_text_region(box, expected) -> None:
+    """Axis-aligned boxes crop exactly and tall crops are rotated to horizontal."""
+    img = np.arange(100 * 200 * 3, dtype=np.uint32).reshape(100, 200, 3).astype(np.uint8)
+    assert crop_text_region(img, np.array(box, np.float32)).shape == expected
+
+
+@pytest.mark.parametrize(
+    ("prob_map", "pad", "expected"),
+    [
+        pytest.param(_prob_map(), (0, 0), REFERENCE_BOXES, id="reference"),
+        pytest.param(_prob_map(), (64, 32), REFERENCE_BOXES, id="batch-padded"),
+        pytest.param(np.zeros((160, 320), np.float32), (0, 0), np.zeros((0, 4, 2)), id="empty"),
+    ],
+)
+def test_postprocess_text_detection(prob_map, pad, expected) -> None:
+    """Postprocess -> get_text_boxes matches the reference PP-OCR DB postprocess, ignoring padding."""
+    pad_x, pad_y = pad
+    padded = np.pad(prob_map, ((0, pad_y), (0, pad_x)))[None, None]
+    ratios = [(320 / 640, 160 / 480)]
+    outputs = postprocess_text_detection(
+        [padded], ratios, [(float(pad_x), float(pad_y))], 0.3, 0.5, 1000, 1.6, use_dilation=True
+    )
+    boxes, scores = outputs[0]
+    np.testing.assert_array_equal(boxes, expected.astype(np.float32))
+    assert scores.shape == (len(expected),)
     assert np.all((scores > 0.5) & (scores <= 1.0))
-
-
-def test_postprocess_text_detection_empty() -> None:
-    """An empty probability map yields no boxes."""
-    boxes, scores = postprocess_text_detection(np.zeros((1, 1, 64, 64), np.float32), (64, 64))
-    assert boxes.shape == (0, 4, 2)
-    assert scores.shape == (0,)
+    text_boxes = get_text_boxes(outputs)[0]
+    assert [float(s) for s in scores] == [score for _box, score in text_boxes]
+    for (box, _score), ref in zip(text_boxes, boxes):
+        np.testing.assert_array_equal(box, ref)
 
 
 def test_sort_text_boxes_reading_order() -> None:
@@ -149,7 +174,7 @@ def test_sort_text_boxes_reading_order() -> None:
 
 
 def test_postprocess_text_recognition_ctc() -> None:
-    """Greedy CTC: collapse repeats, drop blanks, score is the mean kept probability."""
+    """Postprocess -> get_texts collapses repeats, drops blanks and scores the mean kept probability."""
     chars = ["blank", "a", "b", " "]
     seq = [1, 1, 0, 1, 2, 2, 0, 3]  # -> "aab "
     probs = np.full((1, len(seq), len(chars)), 0.0, np.float32)
@@ -157,7 +182,9 @@ def test_postprocess_text_recognition_ctc() -> None:
         probs[0, t, c] = 0.5 + 0.05 * t
     empty = np.zeros((1, len(seq), len(chars)), np.float32)
     empty[0, :, 0] = 1.0
-    res = postprocess_text_recognition(np.concatenate([probs, empty]), chars)
+    outputs = postprocess_text_recognition([np.concatenate([probs, empty])])
+    np.testing.assert_array_equal(outputs[0][0], seq)
+    res = get_texts(outputs, chars)
     assert res[0][0] == "aab "
     assert res[0][1] == pytest.approx(np.mean([0.5, 0.65, 0.7, 0.85]))
     assert res[1] == ("", 0.0)

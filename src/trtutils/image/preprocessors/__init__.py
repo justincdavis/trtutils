@@ -22,7 +22,7 @@ Functions
 :func:`preprocess`
     Preprocess an image for a model.
 :func:`preprocess_text_detection`
-    Preprocess an image for a DB text detection model.
+    Preprocess images for a DB text detection model.
 :func:`preprocess_text_recognition`
     Preprocess text line images for a CTC text recognition model.
 :func:`resize_text_detection`

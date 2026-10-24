@@ -1,13 +1,6 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""
-Preprocessing for PaddleOCR (PP-OCR) style text detection and recognition models.
-
-The resize and normalization follow PaddleOCR's inference pipeline
-(``tools/infer/predict_det.py`` / ``predict_rec.py``) and its defaults.
-"""
-
 from __future__ import annotations
 
 import math
@@ -16,12 +9,16 @@ from typing import TYPE_CHECKING
 import cv2
 import numpy as np
 
+from trtutils._log import LOG
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 _ROTATE_ASPECT = 1.5
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
+_REC_MEAN = (0.5, 0.5, 0.5)
+_REC_STD = (0.5, 0.5, 0.5)
 
 
 def _round32(value: float) -> int:
@@ -88,48 +85,76 @@ def resize_text_detection(
 
 
 def preprocess_text_detection(
-    image: np.ndarray,
+    images: Sequence[np.ndarray],
     limit_side_len: int = 960,
     limit_type: str = "max",
-    mean: tuple[float, float, float] = _IMAGENET_MEAN,
-    std: tuple[float, float, float] = _IMAGENET_STD,
+    input_range: tuple[float, float] = (0.0, 1.0),
+    mean: tuple[float, float, float] | None = _IMAGENET_MEAN,
+    std: tuple[float, float, float] | None = _IMAGENET_STD,
     max_shape: tuple[int, int] | None = None,
-) -> np.ndarray:
+    *,
+    verbose: bool | None = None,
+) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
     """
-    Preprocess an image for a DB text detection model.
+    Preprocess images for a DB text detection model.
+
+    Follows PaddleOCR's ``tools/infer/predict_det.py``: each image is resized
+    with :func:`resize_text_detection` and normalized in BGR order. Images of a
+    batch which resize to different shapes are zero-padded on the right and
+    bottom to the largest one.
 
     Parameters
     ----------
-    image : np.ndarray
-        The image in HWC, BGR, uint8 format.
+    images : Sequence[np.ndarray]
+        The images in HWC, BGR, uint8 format.
     limit_side_len : int
         The target side length, see :func:`resize_text_detection`. Default is 960.
     limit_type : str
         ``"min"`` or ``"max"``, see :func:`resize_text_detection`. Default is ``"max"``.
-    mean : tuple[float, float, float]
-        The per-channel mean (on the [0, 1] scale, BGR order as PaddleOCR applies it).
-        Default is the ImageNet mean (0.485, 0.456, 0.406), as in PaddleOCR.
-    std : tuple[float, float, float]
+    input_range : tuple[float, float]
+        The range of input values the model expects, used when mean and std
+        are None. By default [0.0, 1.0].
+    mean : tuple[float, float, float] | None, optional
+        The per-channel mean on the [0, 1] scale. Default is the ImageNet mean
+        (0.485, 0.456, 0.406), as in PaddleOCR.
+    std : tuple[float, float, float] | None, optional
         The per-channel standard deviation. Default is the ImageNet std
         (0.229, 0.224, 0.225), as in PaddleOCR.
     max_shape : tuple[int, int], optional
         The largest (height, width) the engine accepts.
+    verbose : bool, optional
+        Whether or not to log additional information.
 
     Returns
     -------
-    np.ndarray
-        The float32 input tensor of shape (1, 3, H, W).
+    tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+        The float32 batch tensor of shape (N, 3, H, W), the (width, height)
+        resize ratio per image, and the (right, bottom) padding per image.
 
     """
-    resized = resize_text_detection(image, limit_side_len, limit_type, max_shape)
+    resized = [resize_text_detection(img, limit_side_len, limit_type, max_shape) for img in images]
+    height = max(r.shape[0] for r in resized)
+    width = max(r.shape[1] for r in resized)
     # uint8 -> normalized float32 through a 256-entry table per channel: same values as
     # normalizing in float, without the per-pixel float64 math (large on big inputs)
     levels = np.arange(256, dtype=np.float32)[:, None] * (1 / 255.0)
-    lut = ((levels - np.array(mean)) / np.array(std)).astype(np.float32)
-    out = np.empty((1, 3, *resized.shape[:2]), dtype=np.float32)
-    for c, plane in enumerate(cv2.split(resized)):
-        cv2.LUT(plane, lut[:, c], dst=out[0, c])
-    return out
+    if mean is not None and std is not None:
+        lut = ((levels - np.array(mean)) / np.array(std)).astype(np.float32)
+    else:
+        low, high = input_range
+        lut = np.repeat(levels * (high - low) + low, 3, axis=1).astype(np.float32)
+    batch = np.zeros((len(resized), 3, height, width), dtype=np.float32)
+    ratios: list[tuple[float, float]] = []
+    padding: list[tuple[float, float]] = []
+    for i, (image, img) in enumerate(zip(images, resized)):
+        h, w = img.shape[:2]
+        for c, plane in enumerate(cv2.split(img)):
+            cv2.LUT(plane, lut[:, c], dst=batch[i, c, :h, :w])
+        ratios.append((w / image.shape[1], h / image.shape[0]))
+        padding.append((float(width - w), float(height - h)))
+        if verbose:
+            LOG.debug(f"Text detection preprocess {image.shape} -> {(h, w)}")
+    return batch, ratios, padding
 
 
 def crop_text_region(image: np.ndarray, box: np.ndarray) -> np.ndarray:
@@ -173,13 +198,19 @@ def preprocess_text_recognition(
     image_height: int = 48,
     min_width: int = 320,
     max_width: int | None = None,
-) -> np.ndarray:
+    input_range: tuple[float, float] = (0.0, 1.0),
+    mean: tuple[float, float, float] | None = _REC_MEAN,
+    std: tuple[float, float, float] | None = _REC_STD,
+    *,
+    verbose: bool | None = None,
+) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
     """
-    Preprocess a batch of text line images for a CTC text recognition model.
+    Preprocess text line images for a CTC text recognition model.
 
-    Every image is resized to ``image_height`` keeping its aspect ratio,
-    normalized to [-1, 1] and right-padded with zeros to a common width: the
-    widest aspect ratio in the batch (at least ``min_width``).
+    Follows PaddleOCR's ``tools/infer/predict_rec.py``: every image is resized
+    to ``image_height`` keeping its aspect ratio, normalized (to [-1, 1] by
+    default) and right-padded with zeros to a common width: the widest aspect
+    ratio in the batch (at least ``min_width``).
 
     Parameters
     ----------
@@ -191,11 +222,22 @@ def preprocess_text_recognition(
         The minimum padded batch width. Default is 320.
     max_width : int, optional
         The largest width the engine accepts. Wider lines are squeezed to fit.
+    input_range : tuple[float, float]
+        The range of input values the model expects, used when mean and std
+        are None. By default [0.0, 1.0].
+    mean : tuple[float, float, float] | None, optional
+        The per-channel mean on the [0, 1] scale. Default is (0.5, 0.5, 0.5).
+    std : tuple[float, float, float] | None, optional
+        The per-channel standard deviation. Default is (0.5, 0.5, 0.5).
+    verbose : bool, optional
+        Whether or not to log additional information.
 
     Returns
     -------
-    np.ndarray
-        The float32 input tensor of shape (N, 3, image_height, W).
+    tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+        The float32 batch tensor of shape (N, 3, image_height, W), the
+        (width, height) resize ratio per image, and the (right, bottom)
+        padding per image.
 
     """
     max_wh_ratio = max(
@@ -204,9 +246,22 @@ def preprocess_text_recognition(
     batch_width = int(image_height * max_wh_ratio)
     if max_width is not None:
         batch_width = min(batch_width, max_width)
+    if mean is not None and std is not None:
+        shift = np.array(mean, dtype=np.float32).reshape(3, 1, 1)
+        scale = np.array(std, dtype=np.float32).reshape(3, 1, 1)
+    else:
+        low, high = input_range
+        scale = np.float32(1 / (high - low))
+        shift = np.float32(-low * scale)
     batch = np.zeros((len(images), 3, image_height, batch_width), dtype=np.float32)
+    ratios: list[tuple[float, float]] = []
+    padding: list[tuple[float, float]] = []
     for i, img in enumerate(images):
         resized_w = min(batch_width, math.ceil(image_height * img.shape[1] / img.shape[0]))
         resized = cv2.resize(img, (resized_w, image_height)).astype(np.float32)
-        batch[i, :, :, :resized_w] = (resized.transpose(2, 0, 1) / 255 - 0.5) / 0.5
-    return batch
+        batch[i, :, :, :resized_w] = (resized.transpose(2, 0, 1) / 255 - shift) / scale
+        ratios.append((resized_w / img.shape[1], image_height / img.shape[0]))
+        padding.append((float(batch_width - resized_w), 0.0))
+        if verbose:
+            LOG.debug(f"Text recognition preprocess {img.shape} -> {(image_height, resized_w)}")
+    return batch, ratios, padding

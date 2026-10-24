@@ -1,13 +1,6 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""
-Postprocessing for PaddleOCR (PP-OCR) style text detection and recognition models.
-
-DB box extraction and CTC greedy decoding follow PaddleOCR's ``DBPostProcess`` and
-``CTCLabelDecode`` (including the Clipper round-join unclip), with PaddleOCR's defaults.
-"""
-
 from __future__ import annotations
 
 import math
@@ -15,6 +8,8 @@ from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
+
+from trtutils._log import LOG
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -152,45 +147,18 @@ def sort_text_boxes(
     return boxes[idx].reshape(-1, 4, 2), np.asarray(scores)[idx]
 
 
-def postprocess_text_detection(
-    output: np.ndarray,
+def _text_boxes(
+    pred: np.ndarray,
     image_shape: tuple[int, int],
-    thresh: float = 0.3,
-    box_thresh: float = 0.6,
-    max_candidates: int = 1000,
-    unclip_ratio: float = 1.5,
+    thresh: float,
+    box_thresh: float,
+    max_candidates: int,
+    unclip_ratio: float,
     *,
-    use_dilation: bool = False,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Extract text boxes from the probability map of a DB text detection model.
-
-    Parameters
-    ----------
-    output : np.ndarray
-        The model output probability map, shape (1, 1, H, W) or (H, W).
-    image_shape : tuple[int, int]
-        The (height, width) of the original image the boxes are scaled to.
-    thresh : float
-        Binarization threshold for the probability map. Default is 0.3.
-    box_thresh : float
-        Minimum mean probability inside a box to keep it. Default is 0.6.
-    max_candidates : int
-        Maximum number of contours to consider. Default is 1000.
-    unclip_ratio : float
-        How far to expand each shrunk text kernel. Default is 1.5.
-    use_dilation : bool
-        Whether to dilate the binary map with a 2x2 kernel. Default is False.
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray]
-        The boxes, shape (N, 4, 2) float32 corner points (TL, TR, BR, BL) in
-        reading order, and their scores, shape (N,).
-
-    """
-    height, width = int(output.shape[-2]), int(output.shape[-1])
-    pred = output.reshape(height, width)
+    use_dilation: bool,
+) -> list[np.ndarray]:
+    """Boxes (N, 4, 2) and scores (N,) in reading order from one (H, W) probability map."""
+    height, width = pred.shape
     src_h, src_w = image_shape
     bitmap = (pred > thresh).astype(np.uint8)
     if use_dilation:
@@ -223,36 +191,186 @@ def postprocess_text_detection(
         scores.append(score)
 
     if not boxes:
-        return np.zeros((0, 4, 2), dtype=np.float32), np.zeros(0, dtype=np.float32)
-    return sort_text_boxes(np.stack(boxes), np.array(scores, dtype=np.float32))
+        return [np.zeros((0, 4, 2), dtype=np.float32), np.zeros(0, dtype=np.float32)]
+    return list(sort_text_boxes(np.stack(boxes), np.array(scores, dtype=np.float32)))
 
 
-def postprocess_text_recognition(
-    output: np.ndarray,
-    characters: Sequence[str],
-) -> list[tuple[str, float]]:
+def postprocess_text_detection(
+    outputs: list[np.ndarray],
+    ratios: list[tuple[float, float]],
+    padding: list[tuple[float, float]],
+    thresh: float = 0.3,
+    box_thresh: float = 0.6,
+    max_candidates: int = 1000,
+    unclip_ratio: float = 1.5,
+    *,
+    use_dilation: bool = False,
+    no_copy: bool | None = None,  # noqa: ARG001
+    verbose: bool | None = None,
+) -> list[list[np.ndarray]]:
     """
-    Greedy CTC decode the output of a text recognition model.
+    Postprocess outputs from a DB text detection network.
+
+    Follows PaddleOCR's ``DBPostProcess`` (including the Clipper round-join
+    unclip, reproduced pixel-for-pixel) with PaddleOCR's defaults.
 
     Parameters
     ----------
-    output : np.ndarray
-        The per-timestep class probabilities, shape (N, T, C).
+    outputs : list[np.ndarray]
+        The outputs from a DB text detection network, the first being the
+        probability map of shape (B, 1, H, W).
+    ratios : list[tuple[float, float]]
+        The (width, height) resize ratio of each image from preprocessing.
+    padding : list[tuple[float, float]]
+        The (right, bottom) padding of each image from preprocessing.
+    thresh : float
+        Binarization threshold for the probability map. Default is 0.3.
+    box_thresh : float
+        Minimum mean probability inside a box to keep it. Default is 0.6.
+    max_candidates : int
+        Maximum number of contours to consider. Default is 1000.
+    unclip_ratio : float
+        How far to expand each shrunk text kernel. Default is 1.5.
+    use_dilation : bool
+        Whether to dilate the binary map with a 2x2 kernel. Default is False.
+    no_copy : bool, optional
+        Unused, the boxes are always new arrays.
+    verbose : bool, optional
+        Whether or not to log additional information.
+
+    Returns
+    -------
+    list[list[np.ndarray]]
+        The postprocessed outputs per image, each containing [boxes, scores]:
+        boxes of shape (N, 4, 2) float32 corner points (TL, TR, BR, BL) in
+        original image coordinates and reading order, and scores of shape (N,).
+
+    """
+    if verbose:
+        LOG.debug(f"Text detection postprocess, output shape: {outputs[0].shape}")
+
+    maps = outputs[0]
+    height, width = int(maps.shape[-2]), int(maps.shape[-1])
+    results = []
+    for i, ((ratio_w, ratio_h), (pad_x, pad_y)) in enumerate(zip(ratios, padding)):
+        valid_h, valid_w = height - int(pad_y), width - int(pad_x)
+        pred = maps[i].reshape(height, width)[:valid_h, :valid_w]
+        image_shape = (round(valid_h / ratio_h), round(valid_w / ratio_w))
+        results.append(
+            _text_boxes(
+                pred,
+                image_shape,
+                thresh,
+                box_thresh,
+                max_candidates,
+                unclip_ratio,
+                use_dilation=use_dilation,
+            )
+        )
+    return results
+
+
+def get_text_boxes(
+    outputs: list[list[np.ndarray]],
+    *,
+    verbose: bool | None = None,
+) -> list[list[tuple[np.ndarray, float]]]:
+    """
+    Get the text boxes from postprocessed text detection outputs.
+
+    Parameters
+    ----------
+    outputs : list[list[np.ndarray]]
+        The postprocessed outputs per image from a text detection network.
+    verbose : bool, optional
+        Whether or not to log additional information.
+
+    Returns
+    -------
+    list[list[tuple[np.ndarray, float]]]
+        The text boxes per image in reading order, where each entry is
+        (box, score) and box is the (4, 2) float32 corner points
+        (TL, TR, BR, BL) in original image coordinates.
+
+    """
+    if verbose:
+        LOG.debug("Getting text boxes")
+
+    return [[(box, float(score)) for box, score in zip(boxes, scores)] for boxes, scores in outputs]
+
+
+def postprocess_text_recognition(
+    outputs: list[np.ndarray],
+    *,
+    no_copy: bool | None = None,  # noqa: ARG001
+    verbose: bool | None = None,
+) -> list[list[np.ndarray]]:
+    """
+    Postprocess outputs from a CTC text recognition network.
+
+    Takes the greedy (best path) class and its probability at every timestep,
+    as PaddleOCR's ``CTCLabelDecode`` does.
+
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        The outputs from a CTC text recognition network, the first being the
+        per-timestep class probabilities of shape (B, T, C).
+    no_copy : bool, optional
+        Unused, the results are always new arrays.
+    verbose : bool, optional
+        Whether or not to log additional information.
+
+    Returns
+    -------
+    list[list[np.ndarray]]
+        The postprocessed outputs per image, each containing [indices, probs]:
+        the best class index and its probability per timestep, of shape (T,).
+
+    """
+    if verbose:
+        LOG.debug(f"Text recognition postprocess, output shape: {outputs[0].shape}")
+
+    indices = outputs[0].argmax(axis=2)
+    probs = np.take_along_axis(outputs[0], indices[..., None], axis=2)[..., 0]
+    return [[idx, prob] for idx, prob in zip(indices, probs)]
+
+
+def get_texts(
+    outputs: list[list[np.ndarray]],
+    characters: Sequence[str],
+    *,
+    verbose: bool | None = None,
+) -> list[tuple[str, float]]:
+    """
+    Get the texts from postprocessed text recognition outputs by CTC decoding.
+
+    Repeated classes are collapsed and blanks dropped.
+
+    Parameters
+    ----------
+    outputs : list[list[np.ndarray]]
+        The postprocessed outputs per image from a text recognition network.
     characters : Sequence[str]
         The class labels, where index 0 is the CTC blank.
+    verbose : bool, optional
+        Whether or not to log additional information.
 
     Returns
     -------
     list[tuple[str, float]]
-        The decoded text and its mean character confidence for each batch item.
-        An empty prediction has confidence 0.0.
+        The text per image, where each entry is (text, confidence) and the
+        confidence is the mean probability of the kept characters
+        (0.0 for an empty text).
 
     """
-    indices = output.argmax(axis=2)
-    probs = np.take_along_axis(output, indices[..., None], axis=2)[..., 0]
-    keep = indices != 0
-    keep[:, 1:] &= indices[:, 1:] != indices[:, :-1]
-    return [
-        ("".join(characters[i] for i in idx[k]), float(prob[k].mean()) if k.any() else 0.0)
-        for idx, prob, k in zip(indices, probs, keep)
-    ]
+    if verbose:
+        LOG.debug("Getting texts")
+
+    results = []
+    for idx, prob in outputs:
+        keep = idx != 0
+        keep[1:] &= idx[1:] != idx[:-1]
+        text = "".join(characters[i] for i in idx[keep])
+        results.append((text, float(prob[keep].mean()) if keep.any() else 0.0))
+    return results

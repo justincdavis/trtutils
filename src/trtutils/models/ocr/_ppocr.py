@@ -19,17 +19,66 @@ PPOCR_KEYS_V1 = Path(__file__).parent / "ppocr_keys_v1.txt"
 
 
 class PPOCRDetector(TextDetector, Model):
-    """
-    Alias of TextDetector for PaddleOCR (PP-OCR) DB text detection models.
-
-    Download with ``PPOCRDetector.download("ppocrv4_det", ...)`` and build with
-    :meth:`build`, which creates a dynamic-shape engine.
-    """
+    """Alias of TextDetector with default args for PP-OCR detection."""
 
     _model_type = "ppocr_det"
     _friendly_name = "PP-OCR detection"
     _default_imgsz = 736
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("x", "image")]
+
+    def __init__(
+        self: Self,
+        engine_path: Path | str,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0.0, 1.0),
+        preprocessor: str = "cpu",
+        resize_method: str = "linear",
+        limit_side_len: int = 960,
+        limit_type: str = "max",
+        thresh: float = 0.3,
+        box_thresh: float = 0.6,
+        max_candidates: int = 1000,
+        unclip_ratio: float = 1.5,
+        mean: tuple[float, float, float] | None = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] | None = (0.229, 0.224, 0.225),
+        dla_core: int | None = None,
+        device: int | None = None,
+        backend: str = "auto",
+        *,
+        warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,
+        use_dilation: bool | None = None,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
+    ) -> None:
+        TextDetector.__init__(
+            self,
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            input_range=input_range,
+            preprocessor=preprocessor,
+            resize_method=resize_method,
+            limit_side_len=limit_side_len,
+            limit_type=limit_type,
+            thresh=thresh,
+            box_thresh=box_thresh,
+            max_candidates=max_candidates,
+            unclip_ratio=unclip_ratio,
+            mean=mean,
+            std=std,
+            dla_core=dla_core,
+            device=device,
+            backend=backend,
+            warmup=warmup,
+            pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
+            cuda_graph=cuda_graph,
+            use_dilation=use_dilation,
+            no_warn=no_warn,
+            verbose=verbose,
+        )
 
     @classmethod
     def build(
@@ -103,13 +152,7 @@ class PPOCRDetector(TextDetector, Model):
 
 
 class PPOCRRecognizer(TextRecognizer, Model):
-    """
-    Alias of TextRecognizer for PaddleOCR (PP-OCR) CTC text recognition models.
-
-    Defaults to the PP-OCR Chinese/English character dictionary (``ppocr_keys_v1.txt``).
-    Download with ``PPOCRRecognizer.download("ppocrv4_rec", ...)`` and build with
-    :meth:`build`, which creates a dynamic-shape engine.
-    """
+    """Alias of TextRecognizer with default args for PP-OCR recognition."""
 
     _model_type = "ppocr_rec"
     _friendly_name = "PP-OCR recognition"
@@ -119,31 +162,43 @@ class PPOCRRecognizer(TextRecognizer, Model):
     def __init__(
         self: Self,
         engine_path: Path | str,
-        character_dict: Path | str | Sequence[str] = PPOCR_KEYS_V1,
-        warmup_iterations: int = 1,
-        backend: str = "auto",
-        device: int | None = None,
-        *,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0.0, 1.0),
+        preprocessor: str = "cpu",
+        resize_method: str = "linear",
+        character_dict: Path | str | Sequence[str] | None = PPOCR_KEYS_V1,
+        mean: tuple[float, float, float] | None = (0.5, 0.5, 0.5),
+        std: tuple[float, float, float] | None = (0.5, 0.5, 0.5),
         dla_core: int | None = None,
-        use_space_char: bool = True,
+        device: int | None = None,
+        backend: str = "auto",
+        *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,
+        use_space_char: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
         TextRecognizer.__init__(
             self,
             engine_path=engine_path,
-            character_dict=character_dict,
             warmup_iterations=warmup_iterations,
-            backend=backend,
-            device=device,
+            input_range=input_range,
+            preprocessor=preprocessor,
+            resize_method=resize_method,
+            character_dict=character_dict,
+            mean=mean,
+            std=std,
             dla_core=dla_core,
-            use_space_char=use_space_char,
+            device=device,
+            backend=backend,
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            cuda_graph=cuda_graph,
+            use_space_char=use_space_char,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -219,12 +274,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
 
 
 class PPOCR(OCR):
-    """
-    Alias of OCR combining a PPOCRDetector and a PPOCRRecognizer.
-
-    For custom detector or recognizer settings, build them directly and pass
-    them to :class:`~trtutils.image.OCR`.
-    """
+    """Alias of OCR combining a PPOCRDetector and a PPOCRRecognizer."""
 
     def __init__(
         self: Self,
@@ -235,10 +285,12 @@ class PPOCR(OCR):
         width_height_ratio: float = 8,
         max_side_len: int = 2000,
         min_side_len: int = 30,
-        *,
-        character_dict: Path | str | Sequence[str] = PPOCR_KEYS_V1,
-        backend: str = "auto",
+        warmup_iterations: int = 10,
+        character_dict: Path | str | Sequence[str] | None = PPOCR_KEYS_V1,
+        dla_core: int | None = None,
         device: int | None = None,
+        backend: str = "auto",
+        *,
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
@@ -246,49 +298,71 @@ class PPOCR(OCR):
         verbose: bool | None = None,
     ) -> None:
         """
-        Create a PP-OCR pipeline from a detection and a recognition engine.
+        Create a PPOCR object from a detection and a recognition engine.
+
+        For custom detector or recognizer settings, create them directly and
+        pass them to :class:`~trtutils.image.OCR`.
 
         Parameters
         ----------
-        det_engine : Path | str
-            Path to the text detection engine (see :meth:`PPOCRDetector.build`).
-        rec_engine : Path | str
-            Path to the text recognition engine (see :meth:`PPOCRRecognizer.build`).
+        det_engine : Path, str
+            The Path or str to the text detection engine, see :meth:`PPOCRDetector.build`.
+        rec_engine : Path, str
+            The Path or str to the text recognition engine, see :meth:`PPOCRRecognizer.build`.
         text_score : float
-            Minimum recognition confidence for a line to be returned. Default is 0.5.
+            The minimum recognition confidence for a line to be returned.
+            By default 0.5.
         min_height : int
-            Images at most this tall are padded vertically before detection. Default is 30.
+            Images at most this tall are padded vertically before detection.
+            By default 30.
         width_height_ratio : float
             Images wider than this aspect ratio are padded vertically before
-            detection. Set to -1 to disable. Default is 8.
+            detection. Set to -1 to disable. By default 8.
         max_side_len : int
-            Images with a longer side above this are downscaled first. Default is 2000.
+            Images with a longer side above this are downscaled first.
+            By default 2000.
         min_side_len : int
-            Images with a shorter side below this are upscaled first. Default is 30.
-        character_dict : Path | str | Sequence[str]
-            The recognizer's character dictionary. Default is ``ppocr_keys_v1.txt``.
-        backend : str
-            The execution backend to use. Default is 'auto'.
+            Images with a shorter side below this are upscaled first.
+            By default 30.
+        warmup_iterations : int
+            The number of warmup iterations to perform.
+            The default is 10.
+        character_dict : Path, str, Sequence[str]
+            The recognizer's character dictionary. By default ``ppocr_keys_v1.txt``.
+        dla_core : int, optional
+            The DLA core to assign DLA layers of the engines to. Default is None.
+            If None, any DLA layers will be assigned to DLA core 0.
         device : int, optional
-            The CUDA device index to use. Default is None (current device).
+            The CUDA device index to use. Default is None,
+            which uses the current device.
+        backend : str
+            The execution backend to use. Options are ['auto', 'async_v3', 'async_v2'].
+            Default is 'auto', which selects the best available backend.
         warmup : bool, optional
             Whether or not to perform warmup iterations.
         pagelocked_mem : bool, optional
-            Whether or not to use pagelocked memory.
+            Whether or not to use pagelocked memory for underlying CUDA operations.
+            By default, pagelocked memory will be used.
         unified_mem : bool, optional
             Whether or not the system has unified memory.
+            If True, use cudaHostAllocMapped to take advantage of unified memory.
+            By default None, which means the default host allocation will be used.
         no_warn : bool, optional
-            Suppress TensorRT warnings during engine deserialization.
+            If True, suppresses warnings from TensorRT during engine deserialization.
+            Default is None, which means warnings will be shown.
         verbose : bool, optional
             Whether or not to log additional information.
+            Only covers the initialization phase.
 
         """
         OCR.__init__(
             self,
             PPOCRDetector(
                 det_engine,
-                backend=backend,
+                warmup_iterations=warmup_iterations,
+                dla_core=dla_core,
                 device=device,
+                backend=backend,
                 warmup=warmup,
                 pagelocked_mem=pagelocked_mem,
                 unified_mem=unified_mem,
@@ -297,9 +371,11 @@ class PPOCR(OCR):
             ),
             PPOCRRecognizer(
                 rec_engine,
-                character_dict,
-                backend=backend,
+                character_dict=character_dict,
+                warmup_iterations=warmup_iterations,
+                dla_core=dla_core,
                 device=device,
+                backend=backend,
                 warmup=warmup,
                 pagelocked_mem=pagelocked_mem,
                 unified_mem=unified_mem,
@@ -311,4 +387,5 @@ class PPOCR(OCR):
             width_height_ratio,
             max_side_len,
             min_side_len,
+            verbose=verbose,
         )

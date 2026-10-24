@@ -16,6 +16,10 @@ Functions
     Postprocess the output of a depth estimation model.
 :func:`get_detections`
     Get the detections from unified postprocessed outputs.
+:func:`get_text_boxes`
+    Get the text boxes from the output of a text detection model.
+:func:`get_texts`
+    Get the texts from the output of a text recognition model.
 :func:`get_interactions`
     Pair hands with objects from postprocessed hand-object interaction outputs.
 :func:`postprocess_hand_interactions`
@@ -33,9 +37,9 @@ Functions
 :func:`postprocess_efficient_nms`
     Postprocess the output of an EfficientNMS model.
 :func:`postprocess_text_detection`
-    Extract text boxes from the output of a DB text detection model.
+    Postprocess the output of a DB text detection model.
 :func:`postprocess_text_recognition`
-    CTC decode the output of a text recognition model.
+    Postprocess the output of a CTC text recognition model.
 :func:`sort_text_boxes`
     Sort text boxes in reading order.
 
@@ -58,6 +62,13 @@ from ._detection import (
 )
 from ._hand_interaction import get_interactions, postprocess_hand_interactions
 from ._ocr import postprocess_text_detection, postprocess_text_recognition, sort_text_boxes
+from ._ocr import (
+    get_text_boxes,
+    get_texts,
+    postprocess_text_detection,
+    postprocess_text_recognition,
+    sort_text_boxes,
+)
 
 __all__ = [
     "HandInteraction",
@@ -65,6 +76,8 @@ __all__ = [
     "get_depth_maps",
     "get_detections",
     "get_interactions",
+    "get_text_boxes",
+    "get_texts",
     "postprocess_classifications",
     "postprocess_depth",
     "postprocess_detr",
