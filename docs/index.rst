@@ -11,7 +11,7 @@ Features
 - Support for arbitrary TensorRT engines on CUDA 11, 12, and 13
 - Engine building from ONNX, including strongly typed, DLA, and quantized builds
 - Built-in preprocessing and postprocessing capabilities
-- End-to-end image models for detection, classification, depth estimation, and hand-object interaction
+- End-to-end image models for detection, classification, depth estimation, hand-object interaction, and OCR
 - Model download and ONNX export for many popular architectures
 - Comprehensive type hints and documentation
 - Performance benchmarking, profiling, and monitoring

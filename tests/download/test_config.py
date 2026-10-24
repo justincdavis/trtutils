@@ -34,6 +34,8 @@ _EXPECTED_FAMILIES = [
     "depth_anything_v3",
     "hoi_detr",
     "hands23",
+    "ppocr_det",
+    "ppocr_rec",
 ]
 
 _EXPECTED_MODELS = [
@@ -66,6 +68,8 @@ _EXPECTED_MODELS = [
     "depth_anything_v3_mono_large",
     "hoi_detr_vitl",
     "hands23_x101",
+    "ppocrv4_det",
+    "ppocrv4_rec",
 ]
 
 

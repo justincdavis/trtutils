@@ -29,6 +29,12 @@ Classes
     Wrapper around detection models.
 :class:`HandInteractionDetector`
     Wrapper around hand-object interaction models.
+:class:`TextDetector`
+    Wrapper around DB text detection models (e.g. PP-OCR).
+:class:`TextRecognizer`
+    Wrapper around CTC text recognition models (e.g. PP-OCR).
+:class:`OCR`
+    Two-stage OCR pipeline of a TextDetector and a TextRecognizer.
 :class:`SAHI`
     SAHI wrapper for slicing aided inference.
 :class:`ImageModel`
@@ -51,15 +57,19 @@ from ._depth_estimator import DepthEstimator
 from ._detector import Detector
 from ._hand_interaction import HandInteractionDetector
 from ._image_model import ImageModel
+from ._ocr import OCR, TextDetector, TextRecognizer
 from .sahi import SAHI
 
 __all__ = [
+    "OCR",
     "SAHI",
     "Classifier",
     "DepthEstimator",
     "Detector",
     "HandInteractionDetector",
     "ImageModel",
+    "TextDetector",
+    "TextRecognizer",
     "interfaces",
     "kernels",
     "onnx_models",

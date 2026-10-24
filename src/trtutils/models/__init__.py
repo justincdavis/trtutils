@@ -98,6 +98,12 @@ Classes
     Alias for the HandInteractionDetector class with args preset for Hands23.
 :class:`DepthAnythingV3`
     Alias for the DepthEstimator class with args preset for Depth-Anything-V3.
+:class:`PPOCRDetector`
+    Alias for the TextDetector class with args preset for PaddleOCR (PP-OCR) detection.
+:class:`PPOCRRecognizer`
+    Alias for the TextRecognizer class with args preset for PaddleOCR (PP-OCR) recognition.
+:class:`PPOCR`
+    Alias for the OCR class combining PPOCRDetector and PPOCRRecognizer.
 
 """
 
@@ -150,12 +156,14 @@ from .detectors import (
     YOLOv26,
 )
 from .hand_interaction import HOIDETR, Hands23
+from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
 
 __all__ = [
     "DEIM",
     "DETR",
     "DFINE",
     "HOIDETR",
+    "PPOCR",
     "RFDETR",
     "VGG",
     "YOLO",
@@ -176,6 +184,8 @@ __all__ = [
     "MaxViT",
     "MobileNetV2",
     "MobileNetV3",
+    "PPOCRDetector",
+    "PPOCRRecognizer",
     "RTDETRv1",
     "RTDETRv2",
     "RTDETRv3",

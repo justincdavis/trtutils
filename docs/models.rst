@@ -108,6 +108,17 @@ Hand-Object Interaction
 
    - GitHub: `EvaCheng-cty/hands23_detector <https://github.com/EvaCheng-cty/hands23_detector>`_
 
+Text Detection and Recognition (OCR)
+------------------------------------
+
+1. **PaddleOCR (PP-OCR)** - DB text detection, CTC text recognition, and the combined
+   two-stage pipeline (``models.PPOCRDetector``, ``models.PPOCRRecognizer``, ``models.PPOCR``).
+   Engines are built with dynamic input shapes, so any image size and text line width
+   can be processed without rebuilding. The bundled default character dictionary
+   (``ppocr_keys_v1.txt``) and the model weights are from PaddleOCR (Apache-2.0).
+
+   - GitHub: `PaddlePaddle/PaddleOCR <https://github.com/PaddlePaddle/PaddleOCR>`_
+
 Model Download Support
 ----------------------
 
@@ -151,6 +162,11 @@ Hand-Object Interaction Models
 
 - **HOI-DETR**: ``hoi_detr_vitl``
 - **Hands23**: ``hands23_x101``
+
+OCR Models
+~~~~~~~~~~
+
+- **PP-OCR**: ``ppocrv4_det``, ``ppocrv4_rec`` (PP-OCRv4 Chinese/English, ready-made ONNX)
 
 Example Usage
 ~~~~~~~~~~~~~
