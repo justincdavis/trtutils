@@ -332,7 +332,7 @@ def postprocess_text_recognition(
         LOG.debug(f"Text recognition postprocess, output shape: {outputs[0].shape}")
 
     indices = outputs[0].argmax(axis=2)
-    probs = np.take_along_axis(outputs[0], indices[..., None], axis=2)[..., 0]
+    probs = outputs[0].max(axis=2)
     return [[idx, prob] for idx, prob in zip(indices, probs)]
 
 

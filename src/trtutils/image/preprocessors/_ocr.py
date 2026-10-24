@@ -258,8 +258,11 @@ def preprocess_text_recognition(
     padding: list[tuple[float, float]] = []
     for i, img in enumerate(images):
         resized_w = min(batch_width, math.ceil(image_height * img.shape[1] / img.shape[0]))
-        resized = cv2.resize(img, (resized_w, image_height)).astype(np.float32)
-        batch[i, :, :, :resized_w] = (resized.transpose(2, 0, 1) / 255 - shift) / scale
+        resized = cv2.resize(img, (resized_w, image_height))
+        dst = batch[i, :, :, :resized_w]
+        np.divide(resized.transpose(2, 0, 1), np.float32(255), out=dst)
+        dst -= shift
+        dst /= scale
         ratios.append((resized_w / img.shape[1], image_height / img.shape[0]))
         padding.append((float(batch_width - resized_w), 0.0))
         if verbose:
