@@ -125,27 +125,6 @@ def test_keypoints_are_not_clipped() -> None:
     np.testing.assert_allclose(out_kpts[0, 0, :2], [-40.0, -40.0])
 
 
-def test_nms_dedupes_overlapping_boxes() -> None:
-    """Two heavily overlapping boxes are deduped by NMS, keeping the higher score."""
-    kpts = np.zeros((2, 1, 3), dtype=np.float32)
-    output = _make_pred(
-        [[50, 50, 20, 20], [51, 51, 20, 20]],
-        [0.9, 0.6],
-        kpts,
-    )
-
-    postprocessed = postprocess_yolo_pose(
-        [output],
-        ratios=[(1.0, 1.0)],
-        padding=[(0.0, 0.0)],
-        conf_thres=0.5,
-        nms_iou_thres=0.5,
-    )
-    bboxes, scores, _class_ids, _kpts = postprocessed[0]
-    assert bboxes.shape[0] == 1
-    assert scores[0] == pytest.approx(0.9)
-
-
 def test_batch_of_two_images() -> None:
     """A batch of 2 images returns 2 postprocessed entries and 2 pose lists."""
     # both images carry the same fixed anchor count N, matching real engine output

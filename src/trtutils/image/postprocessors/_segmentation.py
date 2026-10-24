@@ -28,7 +28,7 @@ def postprocess_yolo_seg(
     nms_iou_thres: float = 0.5,
     mask_thres: float = 0.5,
     *,
-    input_size: tuple[int, int] | None = None,
+    input_size: tuple[int, int],
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
@@ -55,10 +55,9 @@ def postprocess_yolo_seg(
         IoU threshold for the class-aware NMS.
     mask_thres : float
         Threshold applied to the sigmoid mask logits to produce the binary mask.
-    input_size : tuple[int, int] | None
-        The network input (width, height). Used to map the mask prototypes back
-        to the letterboxed content region. If not passed, no letterbox cropping
-        is applied to the masks.
+    input_size : tuple[int, int]
+        The network input (width, height), used to map the mask prototypes back
+        to the letterboxed content region.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -126,19 +125,14 @@ def _decode_masks(
     boxes: np.ndarray,
     ratios: tuple[float, float],
     padding: tuple[float, float],
-    input_size: tuple[int, int] | None,
+    input_size: tuple[int, int],
     mask_thres: float,
 ) -> np.ndarray:
     _, mh, mw = proto.shape
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
 
-    if input_size is not None:
-        input_w, input_h = input_size
-    else:
-        # no input_size: treat the whole proto as the content region
-        input_w, input_h = mw, mh
-        pad_x = pad_y = 0.0
+    input_w, input_h = input_size
 
     orig_w = max(round((input_w - 2 * pad_x) / ratio_width), 1)
     orig_h = max(round((input_h - 2 * pad_y) / ratio_height), 1)

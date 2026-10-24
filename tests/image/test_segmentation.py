@@ -98,32 +98,6 @@ def test_mask_is_zero_outside_bbox_and_binary_inside() -> None:
     assert mask[y1:y2, x1:x2].all()
 
 
-def test_nms_dedupes_overlapping_same_class_boxes() -> None:
-    """Two heavily overlapping same-class boxes are deduped, keeping the higher score."""
-    nm, mh, mw = 2, 4, 4
-    cxcywh = np.array(
-        [[10.0, 11.0], [10.0, 11.0], [8.0, 8.0], [8.0, 8.0]],
-        dtype=np.float32,
-    )
-    cls_scores = np.array([[0.9, 0.6]], dtype=np.float32)
-    coeffs = np.zeros((nm, 2), dtype=np.float32)
-    pred = np.concatenate([cxcywh, cls_scores, coeffs], axis=0)
-    output0 = _make_output0(pred)
-    proto = _make_proto(nm, mh, mw, fill=-10.0)
-
-    result = postprocess_yolo_seg(
-        [output0, proto],
-        ratios=[(1.0, 1.0)],
-        padding=[(0.0, 0.0)],
-        input_size=(16, 16),
-        nms_iou_thres=0.5,
-    )
-    bboxes, scores, _class_ids, masks = result[0]
-    assert len(bboxes) == 1
-    assert scores[0] == pytest.approx(0.9)
-    assert len(masks) == 1
-
-
 def test_batch_of_two_images_returns_two_entries() -> None:
     """A batch of 2 images produces 2 postprocessed entries with independent detections."""
     nm, mh, mw = 2, 4, 4

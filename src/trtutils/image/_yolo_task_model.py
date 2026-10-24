@@ -147,15 +147,13 @@ class _YoloTaskModel(ImageModel):
         self._nvtx_tags["task_postprocess"] = f"{type(self).__name__}::postprocess [{self._tag}]"
 
     def _configure_model(self: Self) -> None:
-        """Validate the engine outputs and map them by name (TensorRT 8.6 reorders them)."""
+        """Validate the engine outputs and map them by name."""
         names = list(self._engine.output_names)
         expected = list(self._output_names)
         if sorted(names) != sorted(expected):
             err_msg = f"Expected engine outputs {expected}, found: {names}"
             raise ValueError(err_msg)
-        self._output_order: list[int] | None = None
-        if names != expected:
-            self._output_order = [names.index(name) for name in expected]
+        self._set_output_order(expected)
 
     def postprocess(
         self: Self,
@@ -197,8 +195,7 @@ class _YoloTaskModel(ImageModel):
             nvtx.push_range(self._nvtx_tags["task_postprocess"])
         if verbose:
             LOG.debug(f"{self._tag}: postprocess")
-        if self._output_order is not None:
-            outputs = [outputs[i] for i in self._output_order]
+        outputs = self._order_outputs(outputs)
         extra = {"input_size": self._input_size} if self._needs_input_size else {}
         t0 = time.perf_counter()
         data = self._postprocess_fn(
