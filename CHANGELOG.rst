@@ -118,6 +118,9 @@ Changed
 
 Fixed
 ^^^^^
+* Host-to-device copies (``memcpy_host_to_device*``) gather non-contiguous arrays first; they
+  copied the raw bytes, so the CUDA and TRT preprocessors read crops and other strided views
+  as garbage for single images and mixed-size batches unless unified memory was on
 * RT-DETR v1/v2, D-FINE, DEIM and DEIMv2 detectors failed on every call: ``Detector`` sent
   ``orig_target_sizes`` as int32 (the engines bind int64) and as (height, width) instead of
   (width, height). The size input's dtype now comes from the engine binding

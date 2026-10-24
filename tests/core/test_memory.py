@@ -155,6 +155,39 @@ def test_memcpy_h2d_d2h_async(dtype, size, cuda_stream) -> None:
 
 
 @pytest.mark.parametrize(
+    "copy",
+    [
+        pytest.param(lambda ptr, arr, _s: memcpy_host_to_device(ptr, arr), id="sync"),
+        pytest.param(memcpy_host_to_device_async, id="async"),
+        pytest.param(lambda ptr, arr, _s: memcpy_host_to_device_offset(ptr, arr, 0), id="offset"),
+        pytest.param(
+            lambda ptr, arr, s: memcpy_host_to_device_offset_async(ptr, arr, 0, s),
+            id="offset-async",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "view",
+    [
+        pytest.param(lambda a: a[:, 1::2], id="column-step"),
+        pytest.param(lambda a: a[2:7, 3:9], id="crop"),
+        pytest.param(lambda a: a.T, id="transpose"),
+    ],
+)
+def test_memcpy_h2d_strided(copy, view, cuda_stream) -> None:
+    """H2D copies of non-contiguous views transfer the viewed elements, not the raw bytes."""
+    src = view(np.arange(12 * 16, dtype=np.float32).reshape(12, 16))
+    assert not src.flags.c_contiguous
+    ptr = cuda_malloc(src.nbytes)
+    copy(ptr, src, cuda_stream)
+    stream_synchronize(cuda_stream)
+    dst = np.zeros(src.shape, dtype=src.dtype)
+    memcpy_device_to_host(dst, ptr)
+    np.testing.assert_array_equal(dst, src)
+    cuda_free(ptr)
+
+
+@pytest.mark.parametrize(
     "use_async",
     [pytest.param(False, id="sync"), pytest.param(True, id="async")],
 )
