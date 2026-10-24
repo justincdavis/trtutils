@@ -44,6 +44,27 @@ def test_detector_end2end(yolov10_engine, images, preprocessor) -> None:
     assert all(score >= 0.5 for _bbox, score, _cls_id in strict)
 
 
+@pytest.mark.parametrize("method", ["end2end", "get_detections"])
+def test_detector_conf_thres_zero_overrides_default(yolov10_engine, images, method) -> None:
+    """An explicit conf_thres=0.0 is honored instead of falling back to the constructor value."""
+    model = Detector(yolov10_engine, conf_thres=0.5, warmup=False)
+    image = images["horse"].array
+    if method == "end2end":
+        dets = model.end2end(image, conf_thres=0.0)
+    else:
+        dets = model.get_detections(model.run(image, conf_thres=0.0), conf_thres=0.0)
+    assert any(score < 0.5 for _bbox, score, _cls_id in dets)
+
+
+def test_detector_nms_iou_thres_zero_overrides_default(yolov10_engine, images) -> None:
+    """An explicit nms_iou_thres=0.0 is honored instead of falling back to the constructor value."""
+    model = Detector(yolov10_engine, conf_thres=0.0, nms_iou_thres=1.0, warmup=False)
+    outputs = model.run(images["horse"].array, conf_thres=0.0)
+    default = model.get_detections(outputs, extra_nms=True)
+    zero = model.get_detections(outputs, extra_nms=True, nms_iou_thres=0.0)
+    assert len(zero) < len(default)
+
+
 @pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
 def test_detector_end2end_resolution_switch(yolov10_engine, images, preprocessor) -> None:
     """end2end() handles a new input resolution on every call."""

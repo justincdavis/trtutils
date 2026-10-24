@@ -123,6 +123,8 @@ Fixed
   as garbage for single images and mixed-size batches unless unified memory was on
 * Device-to-host copies (``memcpy_device_to_host*``) raise ``ValueError`` on a non-contiguous
   destination instead of writing raw bytes over its parent array
+* ``Detector.postprocess`` / ``get_detections`` / ``end2end`` treated an explicit
+  ``conf_thres=0.0`` or ``nms_iou_thres=0.0`` as unset and fell back to the constructor value
 * RT-DETR v1/v2, D-FINE, DEIM and DEIMv2 detectors failed on every call: ``Detector`` sent
   ``orig_target_sizes`` as int32 (the engines bind int64) and as (height, width) instead of
   (width, height). The size input's dtype now comes from the engine binding

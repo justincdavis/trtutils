@@ -294,7 +294,7 @@ class Detector(ImageModel, DetectorInterface):
         if verbose:
             LOG.debug(f"{self._tag}: postprocess")
 
-        conf_thres = conf_thres or self._conf_thres
+        conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         if self._output_order is not None:
             outputs = [outputs[i] for i in self._output_order]
         t0 = time.perf_counter()
@@ -648,8 +648,8 @@ class Detector(ImageModel, DetectorInterface):
         if verbose:
             LOG.debug(f"{self._tag}: get_detections")
 
-        conf_thres = conf_thres or self._conf_thres
-        nms_iou = nms_iou_thres or self._nms_iou
+        conf_thres = conf_thres if conf_thres is not None else self._conf_thres
+        nms_iou = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         use_nms = extra_nms if extra_nms is not None else self._nms
         agnostic = agnostic_nms if agnostic_nms is not None else self._agnostic_nms
 
