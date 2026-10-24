@@ -11,6 +11,7 @@ Subpackages
    trtutils.models.depth_estimators
    trtutils.models.detectors
    trtutils.models.hand_interaction
+   trtutils.models.ocr
 
 Module contents
 ---------------

@@ -217,5 +217,6 @@ trtutils = [
     "src/trtutils/download/configs/*.json",
     "src/trtutils/download/model_deps/*.txt",
     "src/trtutils/download/tool_deps/*.txt",
+    "src/trtutils/models/ocr/*.txt",
     "src/trtutils/py.typed",
 ]

@@ -32,6 +32,12 @@ Functions
     Postprocess the output of an RT-DETR v3 model.
 :func:`postprocess_efficient_nms`
     Postprocess the output of an EfficientNMS model.
+:func:`postprocess_text_detection`
+    Extract text boxes from the output of a DB text detection model.
+:func:`postprocess_text_recognition`
+    CTC decode the output of a text recognition model.
+:func:`sort_text_boxes`
+    Sort text boxes in reading order.
 
 """
 
@@ -49,6 +55,7 @@ from ._detection import (
     postprocess_yolov10,
 )
 from ._hand_interaction import HandInteraction, get_interactions, postprocess_hand_interactions
+from ._ocr import postprocess_text_detection, postprocess_text_recognition, sort_text_boxes
 
 __all__ = [
     "HandInteraction",
@@ -64,5 +71,8 @@ __all__ = [
     "postprocess_hand_interactions",
     "postprocess_rfdetr",
     "postprocess_rtdetrv3",
+    "postprocess_text_detection",
+    "postprocess_text_recognition",
     "postprocess_yolov10",
+    "sort_text_boxes",
 ]
