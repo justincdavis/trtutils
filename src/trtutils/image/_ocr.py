@@ -101,14 +101,12 @@ class _TextModel(ImageModel):
         )
 
     def _resolve_method(self: Self, method: str) -> str:
-        if method not in _PREPROCESSOR_METHODS:
-            err_msg = f"Invalid preprocessing method {method!r}, options are: {list(_PREPROCESSOR_METHODS)}"
-            raise ValueError(err_msg)
-        if method != "cpu":
+        if method != "cpu" and method in _PREPROCESSOR_METHODS:
             LOG.warning(
                 f"{self._tag}: Preprocessing method set to {method}, but only cpu supports dynamic input shapes, fallback to cpu."
             )
-        return "cpu"
+            method = "cpu"
+        return super()._resolve_method(method)
 
 
 class TextDetector(_TextModel, TextDetectorInterface):

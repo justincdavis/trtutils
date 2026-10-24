@@ -134,7 +134,7 @@ def test_text_detector_batch(small_det_engine) -> None:
 
 
 def test_text_recognizer_end2end(rec_engine) -> None:
-    """run(), get_texts() and end2end() agree, and more lines than the batch size decode in input order."""
+    """run(), get_texts() and end2end() agree on arrays and Buffers; extra lines keep input order."""
     model = PPOCRRecognizer(rec_engine)
     crops = [_line(t) for t in LINES]
 
@@ -153,6 +153,9 @@ def test_text_recognizer_end2end(rec_engine) -> None:
     assert (text, score) == model.get_texts(model.run(crops[0]))
     assert _words(text) == _words(LINES[0])
     assert 0.9 < score <= 1.0
+
+    for buf in (Buffer.wrap(crops[1]), Buffer.from_array(crops[1], MemoryLocation.DEVICE)):
+        assert model.end2end([buf, crops[1]]) == model.end2end([crops[1], crops[1]])
 
 
 @pytest.mark.parametrize(
@@ -192,12 +195,3 @@ def test_ppocr_pipeline(det_engine, rec_engine, image, expected) -> None:
         assert [t for _, t, _ in ocr(buf)] == texts
         for (box, _), (ref_box, _) in zip(ocr.detector.end2end(buf), ocr.detector.end2end(image)):
             np.testing.assert_array_equal(box, ref_box)
-
-
-def test_ppocr_recognizer_buffer_input(det_engine, rec_engine) -> None:
-    """Host and device Buffer text lines give the same texts as numpy arrays."""
-    ocr = PPOCR(det_engine, rec_engine)
-    line = _line(LINES[1])
-    expected = ocr.recognizer.end2end([line, line])
-    for buf in (Buffer.wrap(line), Buffer.from_array(line, MemoryLocation.DEVICE)):
-        assert ocr.recognizer.end2end([buf, line]) == expected
