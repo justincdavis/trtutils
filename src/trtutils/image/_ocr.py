@@ -496,15 +496,6 @@ class TextRecognizer:
         return self.run(images)
 
 
-def _fit_side(image: np.ndarray, side: int, *, shrink: bool) -> tuple[np.ndarray, float, float]:
-    """Resize so the longer side is <= side (shrink) or the shorter side >= side, to multiples of 32."""
-    h, w = image.shape[:2]
-    if (shrink and max(h, w) <= side) or (not shrink and min(h, w) >= side):
-        return image, 1.0, 1.0
-    resized = resize_text_detection(image, side, "max" if shrink else "min")
-    return resized, h / resized.shape[0], w / resized.shape[1]
-
-
 class OCR:
     """
     Two-stage OCR pipeline: text detection followed by text line recognition.
@@ -582,13 +573,15 @@ class OCR:
             coordinates of ``image``.
 
         """
-        image = _host_image(image)
-        raw_h, raw_w = image.shape[:2]
-        img, ratio_h, ratio_w = _fit_side(image, self._max_side_len, shrink=True)
+        img = _host_image(image)
+        raw_h, raw_w = img.shape[:2]
+        if max(raw_h, raw_w) > self._max_side_len:
+            img = resize_text_detection(img, self._max_side_len, "max")
         if min(img.shape[:2]) < self._min_side_len:
-            img, ratio_h, ratio_w = _fit_side(img, self._min_side_len, shrink=False)
+            img = resize_text_detection(img, self._min_side_len, "min")
 
         h, w = img.shape[:2]
+        scale = np.array([raw_w / w, raw_h / h], np.float32)
         pad = 0
         if h <= self._min_height or (
             self._width_height_ratio != -1 and w / h > self._width_height_ratio
@@ -602,13 +595,8 @@ class OCR:
             return []
         lines = self._recognizer.run([crop_text_region(img, box) for box in boxes])
 
-        out_boxes = boxes.copy()
-        out_boxes[:, :, 1] -= pad
-        out_boxes[:, :, 0] *= ratio_w
-        out_boxes[:, :, 1] *= ratio_h
-        out_boxes = np.maximum(out_boxes, 0)
-        out_boxes[:, :, 0] = np.minimum(out_boxes[:, :, 0], raw_w)
-        out_boxes[:, :, 1] = np.minimum(out_boxes[:, :, 1], raw_h)
+        out_boxes = (boxes - np.array([0, pad], np.float32)) * scale
+        out_boxes = np.clip(out_boxes, 0, np.array([raw_w, raw_h], np.float32))
         return [
             (box, text, score)
             for box, (text, score) in zip(out_boxes, lines)

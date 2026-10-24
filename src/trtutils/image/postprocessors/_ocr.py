@@ -39,8 +39,7 @@ def _box_score(pred: np.ndarray, box: np.ndarray) -> float:
     ymin = int(np.clip(np.floor(box[:, 1].min()), 0, h - 1))
     ymax = int(np.clip(np.ceil(box[:, 1].max()), 0, h - 1))
     mask = np.zeros((ymax - ymin + 1, xmax - xmin + 1), dtype=np.uint8)
-    shifted = box - np.array([xmin, ymin], dtype=box.dtype)
-    cv2.fillPoly(mask, [shifted.reshape(-1, 2).astype(np.int32)], (1,))
+    cv2.fillPoly(mask, [(box - (xmin, ymin)).astype(np.int32)], (1,))
     return cv2.mean(pred[ymin : ymax + 1, xmin : xmax + 1], mask)[0]
 
 
@@ -198,6 +197,8 @@ def postprocess_text_detection(
         bitmap = cv2.dilate(bitmap, np.ones((2, 2), dtype=np.uint8))
     contours = cv2.findContours(bitmap * 255, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
+    size = np.array([width, height], np.float32)
+    limit = np.array([src_w, src_h], np.float32)
     boxes: list[np.ndarray] = []
     scores: list[float] = []
     for contour in contours[:max_candidates]:
@@ -210,11 +211,9 @@ def postprocess_text_detection(
         box, short_side = _mini_box(_unclip(points, unclip_ratio))
         if short_side < _MIN_BOX_SIDE + 2:
             continue
-        box[:, 0] = np.clip(np.round(box[:, 0] / width * src_w), 0, src_w)
-        box[:, 1] = np.clip(np.round(box[:, 1] / height * src_h), 0, src_h)
-        box = _order_clockwise(box.astype(np.int32).astype(np.float32))
-        box[:, 0] = np.clip(box[:, 0], 0, src_w - 1).astype(np.int32)
-        box[:, 1] = np.clip(box[:, 1], 0, src_h - 1).astype(np.int32)
+        # rounded and clipped, so already integral like the reference's int32 boxes
+        box = np.clip(np.round(box / size * limit), 0, limit)
+        box = np.clip(_order_clockwise(box), 0, limit - 1)
         if (
             int(np.linalg.norm(box[0] - box[1])) <= _MIN_BOX_SIDE
             or int(np.linalg.norm(box[0] - box[3])) <= _MIN_BOX_SIDE
@@ -250,13 +249,10 @@ def postprocess_text_recognition(
 
     """
     indices = output.argmax(axis=2)
-    probs = output.max(axis=2)
-    results: list[tuple[str, float]] = []
-    for idx, prob in zip(indices, probs):
-        keep = np.ones(len(idx), dtype=bool)
-        keep[1:] = idx[1:] != idx[:-1]
-        keep &= idx != 0
-        text = "".join(characters[i] for i in idx[keep])
-        score = float(np.mean(prob[keep])) if keep.any() else 0.0
-        results.append((text, score))
-    return results
+    probs = np.take_along_axis(output, indices[..., None], axis=2)[..., 0]
+    keep = indices != 0
+    keep[:, 1:] &= indices[:, 1:] != indices[:, :-1]
+    return [
+        ("".join(characters[i] for i in idx[k]), float(prob[k].mean()) if k.any() else 0.0)
+        for idx, prob, k in zip(indices, probs, keep)
+    ]
