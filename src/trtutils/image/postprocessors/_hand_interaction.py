@@ -3,7 +3,7 @@
 # MIT License
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
@@ -11,16 +11,8 @@ import numpy as np
 from trtutils._jit import register_jit
 from trtutils._log import LOG
 
-# bbox as (x1, y1, x2, y2) in original image pixels
-Bbox = Tuple[int, int, int, int]
-# (hand, first object | None, second object | None, side, contact)
-HandInteraction = Tuple[
-    Tuple[Bbox, float],
-    Optional[Tuple[Bbox, float]],
-    Optional[Tuple[Bbox, float]],
-    Optional[int],
-    Optional[int],
-]
+if TYPE_CHECKING:
+    from trtutils.image.types import Bbox, HandInteraction
 
 
 def postprocess_hand_interactions(
@@ -182,7 +174,7 @@ def get_interactions(
     Returns
     -------
     list[list[HandInteraction]]
-        One list of interactions per image, one entry per hand.
+        Interactions per image, one HandInteraction (hand, first, second, side, contact) per hand.
 
     """
     if second_pair_thres is None:

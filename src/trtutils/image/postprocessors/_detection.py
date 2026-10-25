@@ -3,11 +3,16 @@
 # MIT License
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 from cv2ext.bboxes import nms
 
 from trtutils._jit import register_jit
 from trtutils._log import LOG
+
+if TYPE_CHECKING:
+    from trtutils.image.types import Detection
 
 
 def postprocess_yolov10(
@@ -110,7 +115,7 @@ def get_detections(
     extra_nms: bool | None = None,
     agnostic_nms: bool | None = None,
     verbose: bool | None = None,
-) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+) -> list[list[Detection]]:
     """
     Convert postprocessed unified outputs to human-friendly detections.
 
@@ -134,8 +139,8 @@ def get_detections(
 
     Returns
     -------
-    list[list[tuple[tuple[int, int, int, int], float, int]]]
-        One list per image; each detection is ((x1, y1, x2, y2), score, class_id).
+    list[list[Detection]]
+        Detections per image, each Detection is (bbox, score, class_id).
 
     """
     all_results = []
@@ -157,7 +162,7 @@ def get_detections(
 def _get_detections_core(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,
-) -> list[tuple[tuple[int, int, int, int], float, int]]:
+) -> list[Detection]:
     if conf_thres is None:
         conf_thres = 0.0
 
@@ -165,7 +170,7 @@ def _get_detections_core(
     scores = outputs[1]
     class_ids = outputs[2]
 
-    results: list[tuple[tuple[int, int, int, int], float, int]] = []
+    results: list[Detection] = []
     for idx in range(len(bboxes)):
         if scores[idx] >= conf_thres:
             x1, y1, x2, y2 = bboxes[idx]

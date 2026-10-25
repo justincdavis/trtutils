@@ -57,6 +57,12 @@ source_suffix = {
 
 autodoc_mock_imports = ["tensorrt", "cuda", "cuda-python"]
 
+# show result aliases by name in signatures
+autodoc_type_aliases = {
+    name: f"trtutils.image.types.{name}"
+    for name in ("Bbox", "Classification", "Detection", "HandInteraction")
+}
+
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
     "sphinx": ("https://www.sphinx-doc.org/en/master/", None),

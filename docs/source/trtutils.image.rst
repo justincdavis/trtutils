@@ -20,6 +20,7 @@ Submodules
    trtutils.image.interfaces
    trtutils.image.kernels
    trtutils.image.onnx_models
+   trtutils.image.types
 
 Module contents
 ---------------
