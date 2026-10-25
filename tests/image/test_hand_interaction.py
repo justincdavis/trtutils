@@ -121,7 +121,6 @@ def test_postprocess_remaps_and_filters(
     np.testing.assert_allclose(out_scores, scores)
     np.testing.assert_array_equal(out_labels, labels)
     assert out_pairs.shape == (len(boxes), len(boxes), 2)
-    assert out_side.shape == side.shape
     np.testing.assert_array_equal(out_side, side)
 
 
