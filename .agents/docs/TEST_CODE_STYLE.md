@@ -94,9 +94,9 @@ def test_allocate_managed_memory(stream_source, request) -> None:
 - `yield` for resource cleanup; the teardown after `yield` frees the resource.
 - Session-scoped for expensive operations (engine builds, image loading).
 - Function-scoped for test-local CUDA resources (`cuda_context`, `cuda_stream`, `device_ptr`).
-- Prefix autouse/internal fixtures with `_`: `_nvrtc_cache_clear`, `_skip_jetson_tests`.
+- Prefix autouse/internal fixtures with `_` (e.g. `_skip_if_cannot_build` in `tests/builder/_gpu_fixtures.py`).
 - No type hints on fixture parameters (pytest provides them).
-- Remove unused fixtures. Do not keep fixtures like `engine_verbose` or `engine_with_warmup` if no test uses them.
+- Remove unused fixtures.
 
 ## Round-Trip Validation
 
