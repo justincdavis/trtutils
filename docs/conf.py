@@ -10,6 +10,9 @@
 import os
 import re
 import sys
+
+from sphinx.ext.autodoc.mock import _MockModule
+
 sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
 
 # -- Project information -----------------------------------------------------
@@ -56,6 +59,11 @@ source_suffix = {
 }
 
 autodoc_mock_imports = ["tensorrt", "cuda", "cuda-python"]
+
+# trtutils parses trt.__version__ at import, a bare mock attribute breaks int()
+_trt_mock = _MockModule("tensorrt")
+_trt_mock.__version__ = "10.0.0"
+sys.modules["tensorrt"] = _trt_mock
 
 # show result aliases by name in signatures
 autodoc_type_aliases = {
