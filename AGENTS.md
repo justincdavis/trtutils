@@ -103,7 +103,7 @@ provides `download()` / `build()` from class attributes (`_model_type`, `_defaul
 ## Workflow Rules
 
 - One git worktree per PR; never edit another agent's worktree or the main checkout
-  (`trtutils-worktree` skill).
+  (`worktree` skill).
 - After every change: `make fix` then `make typecheck`, without being asked.
 - Full suite before reporting: `PYTHONPATH=src python -m pytest -q -p no:cacheprovider tests`.
   Compare failures against `main` on the same machine and data before calling one a regression.
@@ -114,7 +114,7 @@ provides `download()` / `build()` from class attributes (`_model_type`, `_defaul
 
 ## Testing Standard
 
-All tests follow [docs/TEST_CODE_STYLE.md](docs/TEST_CODE_STYLE.md) (`trtutils-test-style`
+All tests follow [docs/TEST_CODE_STYLE.md](docs/TEST_CODE_STYLE.md) (`test-style`
 skill): flat functions, `pytest.param(..., id="kebab-case")` matrices, real CUDA over mocks,
 registered markers only (see `pytest.ini`).
 
@@ -124,12 +124,12 @@ Reusable workflows live in `.agents/skills/<name>/SKILL.md` (`.claude/skills` li
 
 | Skill | Use it to |
 | --- | --- |
-| [trtutils-worktree](.agents/skills/trtutils-worktree/SKILL.md) | Set up a runnable PR worktree (PYTHONPATH, data symlinks, .venv-ci) |
-| [trtutils-pr-pipeline](.agents/skills/trtutils-pr-pipeline/SKILL.md) | Take a PR through review, fix, simplify, test, report, merge; rebuild stale PRs on main |
-| [trtutils-new-model-family](.agents/skills/trtutils-new-model-family/SKILL.md) | Add a model family with API parity to Detector/Classifier |
-| [trtutils-accuracy-validation](.agents/skills/trtutils-accuracy-validation/SKILL.md) | Check trtutils outputs against the reference implementation |
-| [trtutils-jetson-testing](.agents/skills/trtutils-jetson-testing/SKILL.md) | Run tests/benchmarks on a remote Jetson Orin over SSH |
-| [trtutils-benchmarking](.agents/skills/trtutils-benchmarking/SKILL.md) | Make fair branch-vs-main perf comparisons |
-| [trtutils-test-style](.agents/skills/trtutils-test-style/SKILL.md) | Write tests per docs/TEST_CODE_STYLE.md |
-| [trtutils-docker-ci](.agents/skills/trtutils-docker-ci/SKILL.md) | Run the CUDA 11/12/13 Docker test containers |
-| [trtutils-memcheck](.agents/skills/trtutils-memcheck/SKILL.md) | Compare compute-sanitizer memcheck errors against main |
+| [worktree](.agents/skills/worktree/SKILL.md) | Set up a runnable PR worktree (PYTHONPATH, data symlinks, .venv-ci) |
+| [pr-pipeline](.agents/skills/pr-pipeline/SKILL.md) | Take a PR through review, fix, simplify, test, report, merge; rebuild stale PRs on main |
+| [new-model-family](.agents/skills/new-model-family/SKILL.md) | Add a model family with API parity to Detector/Classifier |
+| [accuracy-validation](.agents/skills/accuracy-validation/SKILL.md) | Check trtutils outputs against the reference implementation |
+| [jetson-testing](.agents/skills/jetson-testing/SKILL.md) | Run tests/benchmarks on a remote Jetson Orin over SSH |
+| [benchmarking](.agents/skills/benchmarking/SKILL.md) | Make fair branch-vs-main perf comparisons |
+| [test-style](.agents/skills/test-style/SKILL.md) | Write tests per docs/TEST_CODE_STYLE.md |
+| [docker-ci](.agents/skills/docker-ci/SKILL.md) | Run the CUDA 11/12/13 Docker test containers |
+| [memcheck](.agents/skills/memcheck/SKILL.md) | Compare compute-sanitizer memcheck errors against main |

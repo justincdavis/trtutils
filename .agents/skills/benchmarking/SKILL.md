@@ -1,5 +1,5 @@
 ---
-name: trtutils-benchmarking
+name: benchmarking
 description: Use when measuring or comparing trtutils performance - "is this faster", "benchmark branch vs main", "perf regression", "measure latency", "benchmark on Jetson", "lock clocks", before claiming a perf win or loss in a PR.
 ---
 
@@ -52,4 +52,4 @@ discarded and noise reported.
 
 - Lost: threaded batch packing, in-graph CUDA rescale postprocess, pinned staging for a
   single image.
-- On the Orin, pageable / pinned / unified memory are within ~10% once clocks are locked.
+- On a Jetson AGX Orin, pageable / pinned / unified memory are within ~10% once clocks are locked.

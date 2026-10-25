@@ -1,5 +1,5 @@
 ---
-name: trtutils-docker-ci
+name: docker-ci
 description: Use when testing trtutils across CUDA/TensorRT versions in Docker - "run the cu11/cu12/cu13 tests", "make test-cu12", "test in the CUDA container", "docker CI", "container can't see the GPU", "WSL2 cuInit fails in docker".
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: trtutils-test-style
+name: test-style
 description: Use when writing, reviewing or refactoring trtutils tests - "add tests", "write tests for", "make the tests thorough", "parametrize this", "skip on Blackwell/Jetson", "add a test marker". Summarizes docs/TEST_CODE_STYLE.md.
 ---
 

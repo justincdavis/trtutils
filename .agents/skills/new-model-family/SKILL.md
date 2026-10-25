@@ -1,5 +1,5 @@
 ---
-name: trtutils-new-model-family
+name: new-model-family
 description: Use when adding a new model family or task type to trtutils - "add support for <model>", "new ImageModel subclass", "add a segmentation/pose/OCR model", "add download/export for <model>", "add a models/ wrapper". Checklist for API parity, postprocessors, wrappers, download configs, docs, and tests.
 ---
 
@@ -61,9 +61,9 @@ Follow `models/detectors/_yolo.py`: `class X(<Task>, Model)` with `_model_type`,
 ## 6. Accuracy
 
 Validate against the reference implementation on the same ONNX
-(`trtutils-accuracy-validation` skill) before writing tests that pin numbers.
+(`accuracy-validation` skill) before writing tests that pin numbers.
 
-## 7. Tests (`trtutils-test-style` skill)
+## 7. Tests (`test-style` skill)
 
 - Postprocessor unit tests with synthetic outputs (`@pytest.mark.cpu` where no GPU is used).
 - GPU tests in `tests/models/` via `build_model_engine`, which skips when the ONNX is missing.

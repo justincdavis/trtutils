@@ -1,5 +1,5 @@
 ---
-name: trtutils-memcheck
+name: memcheck
 description: Use when checking a trtutils change for CUDA memory errors - "run compute-sanitizer", "memcheck this PR", "use-after-free", "invalid device pointer", "check for leaks", after touching Buffer, memory copies, streams or CUDA graphs.
 ---
 
@@ -12,7 +12,7 @@ tests.
 
 ## Steps
 
-1. Have a `main` tree next to the branch (`trtutils-worktree` skill, or
+1. Have a `main` tree next to the branch (`worktree` skill, or
    `git worktree add <main-wt> origin/main`) sharing the same `data/`.
 
 2. Pick the tests the change touches (memory code: `tests/core/`; image paths:

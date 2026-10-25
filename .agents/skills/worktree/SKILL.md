@@ -1,5 +1,5 @@
 ---
-name: trtutils-worktree
+name: worktree
 description: Use when starting work on a trtutils PR or branch and you need an isolated, runnable checkout - "set up a worktree", "new branch for PR", "make this worktree runnable", "tests import the wrong trtutils", "missing ONNX/engines in the worktree".
 ---
 

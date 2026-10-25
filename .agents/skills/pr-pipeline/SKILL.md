@@ -1,12 +1,12 @@
 ---
-name: trtutils-pr-pipeline
+name: pr-pipeline
 description: Use when taking a trtutils PR from implementation to merge, or reviving an old one - "run the PR pipeline", "review and fix this PR", "get PR #N ready to merge", "rebuild this stale PR on main", "simplify loop", "test on 5080 and Orin then report".
 ---
 
 # trtutils PR pipeline
 
 Review -> fix -> simplify -> test -> report -> merge (on the user's word only).
-Work in a dedicated worktree (`trtutils-worktree` skill).
+Work in a dedicated worktree (`worktree` skill).
 
 ## 0. Stale PRs: rebuild, don't rebase
 
@@ -46,8 +46,8 @@ Run the affected tests after every round.
 ## 4. Test
 
 - RTX 5080 (local): `PYTHONPATH=src <main>/.venv/bin/python -m pytest -q -p no:cacheprovider tests`
-- Jetson AGX Orin (TRT 8.6): same suite via the `trtutils-jetson-testing` skill
-- Perf-sensitive changes: `trtutils-benchmarking`; memory-sensitive: `trtutils-memcheck`
+- Jetson AGX Orin (TRT 8.6): same suite via the `jetson-testing` skill
+- Perf-sensitive changes: `benchmarking`; memory-sensitive: `memcheck`
 
 Compare every failure against `main` on the same machine and data; only differences count.
 

@@ -1,5 +1,5 @@
 ---
-name: trtutils-accuracy-validation
+name: accuracy-validation
 description: Use when checking that a trtutils model's outputs match the original implementation - "validate accuracy", "compare against ultralytics/onnxruntime", "does the TRT output match the reference", "verify the new model family", after changing a postprocessor or preprocessor.
 ---
 
