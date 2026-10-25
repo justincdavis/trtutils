@@ -116,4 +116,4 @@ Reusable workflows live in `.agents/skills/<name>/SKILL.md` (`.claude/skills` li
 | [benchmarking](.agents/skills/benchmarking/SKILL.md) | Make fair branch-vs-main perf comparisons |
 | [test-style](.agents/skills/test-style/SKILL.md) | Write tests per .agents/docs/TEST_CODE_STYLE.md |
 | [docker-ci](.agents/skills/docker-ci/SKILL.md) | Run the CUDA 11/12/13 Docker test containers |
-| [memcheck](.agents/skills/memcheck/SKILL.md) | Compare compute-sanitizer memcheck errors against main |
+| [memcheck](.agents/skills/memcheck/SKILL.md) | Run `make memcheck` and compare compute-sanitizer errors against main |

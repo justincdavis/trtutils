@@ -3,47 +3,41 @@ name: memcheck
 description: Use when checking a trtutils change for CUDA memory errors - "run compute-sanitizer", "memcheck this PR", "use-after-free", "invalid device pointer", "check for leaks", after touching Buffer, memory copies, streams or CUDA graphs.
 ---
 
-# compute-sanitizer memcheck vs main
+# compute-sanitizer memcheck
 
-`main` is not clean: tests that run `Detector` with `cuda_graph=True` already report
-use-after-free and `cudaGraphDestroy` / `cudaGraphExecDestroy` invalid-argument errors.
-So never read a nonzero count as a regression; compare counts against `main` on the same
-tests.
+`make memcheck` (`ci/run_memcheck.sh`) runs pytest under `compute-sanitizer --tool memcheck`,
+prints the error total and a count per error kind, and exits 1 on any error.
 
 ## Steps
 
-1. Have a `main` tree next to the branch (`worktree` skill, or
-   `git worktree add <main-wt> origin/main`) sharing the same `data/`.
+1. Build engines once without the sanitizer (a normal pytest run on the same tests), so engine
+   builds are not sanitized.
 
-2. Pick the tests the change touches (memory code: `tests/core/`; image paths:
-   `tests/image/test_detector.py`, `tests/image/test_preproc.py`). Build engines once
-   without the sanitizer (a normal pytest run) so build time is not sanitized.
-
-3. Run the same command in both trees:
+2. Pick the tests the change touches: memory code `tests/core/` (the default), image paths
+   `tests/image/test_detector.py` / `tests/image/test_preproc.py`. Then:
 
    ```bash
-   PYTHONPATH=src compute-sanitizer --tool memcheck --print-limit 0 \
-     --log-file memcheck.log \
-     <python> -m pytest -q -p no:cacheprovider <tests> > pytest.log 2>&1
+   PYTHONPATH=src make memcheck MEMCHECK_ARGS="tests/core/test_graph.py tests/image/test_preproc.py"
+   # or directly: PYTHONPATH=src ci/run_memcheck.sh <pytest args>
    ```
 
-   `compute-sanitizer` is under `/usr/local/cuda/bin/` if it is not on PATH. Use the same
-   `<python>` for both trees. Expect 10-100x slowdown; run long sets detached.
+   `PYTHON=<interpreter>` picks the python, `MEMCHECK_LOG=<path>` the log file (default
+   `memcheck.log`). Expect a 10-100x slowdown; run long sets detached.
 
-4. Count and classify:
+3. If the branch reports errors, run the same command on a `main` tree with the same `data/`
+   (`worktree` skill) before calling them a regression. Only new error kinds, or counts that
+   grow on tests the change touches, are findings.
 
-   ```bash
-   grep -c '^========= [A-Z]' memcheck.log
-   grep '^========= [A-Z]' memcheck.log | sed 's/ at .*//' | sort | uniq -c | sort -rn
-   ```
+4. Attribute errors to tests by running per test file, or read the backtraces in the log.
 
-   To attribute errors to tests, run per test file or add `-v` and match timestamps.
+5. Optional extra tools, run by hand: `--tool racecheck` for kernels, `--leak-check full`
+   with `--tool memcheck` for leaks at exit.
 
-5. Compare branch vs main per error kind and per test. Only new kinds, or counts that grow
-   on tests the change touches, are findings. Check that graph-off tests stay at 0.
+6. Report: command, test set, error totals by kind (branch and, if nonzero, main), and any new
+   error with its backtrace.
 
-6. Optional extra tools: `--tool racecheck` for kernels, `--leak-check full` with
-   `--tool memcheck` for leaks at exit.
+## Baseline
 
-7. Report: command, test set, error totals by kind for main and branch, and any new error
-   with its backtrace.
+Since #244, `tests/core/` and the cuda_graph engine tests report 0 errors on `main`. Before it,
+every engine deleted with `cuda_graph=True` logged `cudaGraphDestroy` /
+`cudaGraphExecDestroy` invalid-argument errors.
