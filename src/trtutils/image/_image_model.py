@@ -57,7 +57,7 @@ def host_input(array: np.ndarray | Buffer) -> Buffer:
 class ImageModel:
     """Abstract base class for image models."""
 
-    def __init__(  # noqa: C901, PLR0912, PLR0915
+    def __init__(  # noqa: PLR0915
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
@@ -157,101 +157,93 @@ class ImageModel:
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["init"])
-
-        if self._verbose:
-            LOG.debug(f"Creating ImageModel: {self._tag}")
-
-        self._device = device
-        self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
-        self._engine = TRTEngine(
-            engine_path=engine_path,
-            warmup_iterations=warmup_iterations,
-            backend=backend,
-            warmup=warmup,
-            dla_core=dla_core,
-            device=device,
-            pagelocked_mem=self._pagelocked_mem,
-            unified_mem=unified_mem,
-            cuda_graph=cuda_graph,
-            no_warn=no_warn,
-            verbose=verbose,
-        )
-        self._unified_mem = self._engine.unified_mem
-        self._resize_method: str = resize_method
-        # Find the image input: 4D tensor with 3 channels (batch, 3, H, W)
-        input_size: tuple[int, ...] | None = None
-        input_spec = self._engine.input_spec[0]
-        # position of the image among the engine inputs; other inputs go around it
-        self._image_input_index = 0
-        expected_input_size = 4
-        for index, spec in enumerate(self._engine.input_spec):
-            shape = tuple(spec[0])
-            if len(shape) == expected_input_size and shape[1] == _COLOR_CHANNELS:
-                input_size = shape
-                input_spec = spec
-                self._image_input_index = index
-                break
-
-        if input_size is None:
-            # Fallback: use first input with original validation
-            input_size = tuple(self._engine.input_spec[0][0])
-            expected_input_size = 4
-            if len(input_size) != expected_input_size:
-                err_msg = (
-                    "Expected model to have input size of form: (batch, channels, height, width)"
-                )
-                err_msg += f", found {input_size}"
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # init
-                raise ValueError(err_msg)
-            rgb_channels = 3
-            if input_size[1] != rgb_channels:
-                err_msg = (
-                    f"Expected model to take {rgb_channels} channel input, found {input_size[1]}"
-                )
-                if FLAGS.NVTX_ENABLED:
-                    nvtx.pop_range()  # init
-                raise ValueError(err_msg)
-
-        # Extract batch size from engine (the max profile batch for a
-        # dynamic-batch engine, which bounds what the preprocessors accept)
-        self._batch_size: int = input_size[0]
-
-        self._input_size: tuple[int, int] = (input_size[3], input_size[2])
-        self._dtype = input_spec[1]
-        self._input_range = input_range
-        self._mean = mean
-        self._std = std
-
-        # Hook for subclasses to configure model-specific state
-        # after engine is loaded but before preprocessors are created.
-        self._configure_model()
-
-        # set up the preprocessor; the default is kept as a resolved method so
-        # get_preprocessor() always returns the current instance
-        # (update_input_range/update_mean_std rebuild them)
         try:
+            if self._verbose:
+                LOG.debug(f"Creating ImageModel: {self._tag}")
+
+            self._device = device
+            self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+            self._engine = TRTEngine(
+                engine_path=engine_path,
+                warmup_iterations=warmup_iterations,
+                backend=backend,
+                warmup=warmup,
+                dla_core=dla_core,
+                device=device,
+                pagelocked_mem=self._pagelocked_mem,
+                unified_mem=unified_mem,
+                cuda_graph=cuda_graph,
+                no_warn=no_warn,
+                verbose=verbose,
+            )
+            self._unified_mem = self._engine.unified_mem
+            self._resize_method: str = resize_method
+            # Find the image input: 4D tensor with 3 channels (batch, 3, H, W)
+            input_size: tuple[int, ...] | None = None
+            input_spec = self._engine.input_spec[0]
+            # position of the image among the engine inputs; other inputs go around it
+            self._image_input_index = 0
+            expected_input_size = 4
+            for index, spec in enumerate(self._engine.input_spec):
+                shape = tuple(spec[0])
+                if len(shape) == expected_input_size and shape[1] == _COLOR_CHANNELS:
+                    input_size = shape
+                    input_spec = spec
+                    self._image_input_index = index
+                    break
+
+            if input_size is None:
+                # Fallback: use first input with original validation
+                input_size = tuple(self._engine.input_spec[0][0])
+                expected_input_size = 4
+                if len(input_size) != expected_input_size:
+                    err_msg = (
+                        "Expected model to have input size of form: (batch, channels, height, width)"
+                    )
+                    err_msg += f", found {input_size}"
+                    raise ValueError(err_msg)
+                rgb_channels = 3
+                if input_size[1] != rgb_channels:
+                    err_msg = (
+                        f"Expected model to take {rgb_channels} channel input, found {input_size[1]}"
+                    )
+                    raise ValueError(err_msg)
+
+            # Extract batch size from engine (the max profile batch for a
+            # dynamic-batch engine, which bounds what the preprocessors accept)
+            self._batch_size: int = input_size[0]
+
+            self._input_size: tuple[int, int] = (input_size[3], input_size[2])
+            self._dtype = input_spec[1]
+            self._input_range = input_range
+            self._mean = mean
+            self._std = std
+
+            # Hook for subclasses to configure model-specific state
+            # after engine is loaded but before preprocessors are created.
+            self._configure_model()
+
+            # set up the preprocessor; the default is kept as a resolved method so
+            # get_preprocessor() always returns the current instance
+            # (update_input_range/update_mean_std rebuild them)
             self._preprocessor_method: str = self._resolve_method(preprocessor)
-        except ValueError:
+            self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
+            self._preproc_cuda: CUDAPreprocessor | None = None
+            self._preproc_trt: TRTPreprocessor | None = None
+            default_preprocessor = self.get_preprocessor()
+
+            # basic profiler setup
+            self._pre_profile: tuple[float, float] = (0.0, 0.0)
+            self._infer_profile: tuple[float, float] = (0.0, 0.0)
+            self._post_profile: tuple[float, float] = (0.0, 0.0)
+
+            # if warmup, warmup the preprocessors
+            if warmup:
+                default_preprocessor.warmup()
+
+        finally:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # init
-            raise
-        self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
-        self._preproc_cuda: CUDAPreprocessor | None = None
-        self._preproc_trt: TRTPreprocessor | None = None
-        default_preprocessor = self.get_preprocessor()
-
-        # basic profiler setup
-        self._pre_profile: tuple[float, float] = (0.0, 0.0)
-        self._infer_profile: tuple[float, float] = (0.0, 0.0)
-        self._post_profile: tuple[float, float] = (0.0, 0.0)
-
-        # if warmup, warmup the preprocessors
-        if warmup:
-            default_preprocessor.warmup()
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # init
 
     def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
         if FLAGS.NVTX_ENABLED:

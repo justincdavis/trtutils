@@ -5,8 +5,12 @@
 
 from __future__ import annotations
 
+from unittest import mock
+
+import nvtx
 import pytest
 
+from trtutils._flags import FLAGS
 from trtutils.image import ImageModel
 
 
@@ -31,3 +35,15 @@ def test_get_random_input_and_mock_run(yolov10_engine) -> None:
     assert [(list(a.shape), a.dtype) for a in rand_input] == model.engine.input_spec
     outputs = model.mock_run()
     assert [(list(o.shape), o.dtype) for o in outputs] == model.engine.output_spec
+
+
+def test_init_failure_balances_nvtx_ranges(yolov10_engine, monkeypatch) -> None:
+    """A constructor that raises still pops every NVTX range it pushed."""
+    depth = []
+    monkeypatch.setattr(FLAGS, "NVTX_ENABLED", True)
+    monkeypatch.setattr(nvtx, "push_range", depth.append)
+    monkeypatch.setattr(nvtx, "pop_range", depth.pop)
+    monkeypatch.setattr(ImageModel, "_configure_model", mock.Mock(side_effect=ValueError("bad")))
+    with pytest.raises(ValueError, match="bad"):
+        ImageModel(yolov10_engine, warmup=False)
+    assert depth == []
