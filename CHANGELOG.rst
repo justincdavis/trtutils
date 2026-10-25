@@ -120,6 +120,8 @@ Changed
 
 Fixed
 ^^^^^
+* ``register_jit`` functions now run Numba-compiled (the ``jit`` extra previously had no
+  effect), and ``with JIT:`` restores the previous JIT state on exit
 * ``CUDAGraph.invalidate`` no longer calls ``cudaGraphDestroy`` / ``cudaGraphExecDestroy`` on
   null or already-destroyed handles (invalid-argument errors under compute-sanitizer when an
   engine with ``cuda_graph=True`` is deleted)

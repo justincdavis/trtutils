@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from trtutils._jit import register_jit
 from trtutils._log import LOG
 
 
@@ -52,7 +51,6 @@ def postprocess_depth(
     return results
 
 
-@register_jit(nogil=True)
 def _postprocess_depth_core(
     outputs: list[np.ndarray],
     *,
