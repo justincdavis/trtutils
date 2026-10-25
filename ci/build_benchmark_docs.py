@@ -20,20 +20,20 @@ def run_benchmark_scripts():
     """Run the benchmark scripts to generate tables and plots."""
     print("Generating benchmark tables...")
     skip_devices_arg = ",".join(SKIP_DEVICES) if SKIP_DEVICES else ""
-    table_cmd = ["python3", str(BENCHMARK_DIR / "table.py"), "--overwrite"]
+    table_cmd = ["python3", str(BENCHMARK_DIR / "run.py"), "table", "--overwrite"]
     if skip_devices_arg:
         table_cmd.extend(["--skip-devices", skip_devices_arg])
     result = subprocess.run(table_cmd, check=False)
     if result.returncode != 0:
-        print(f"Warning: table.py exited with code {result.returncode}, continuing...")
+        print(f"Warning: run.py table exited with code {result.returncode}, continuing...")
 
     print("Generating benchmark plots...")
-    plot_cmd = ["python3", str(BENCHMARK_DIR / "plot.py")]
+    plot_cmd = ["python3", str(BENCHMARK_DIR / "run.py"), "plot", "--latency", "--pareto"]
     if skip_devices_arg:
         plot_cmd.extend(["--skip-devices", skip_devices_arg])
     result = subprocess.run(plot_cmd, check=False)
     if result.returncode != 0:
-        print(f"Warning: plot.py exited with code {result.returncode}, continuing...")
+        print(f"Warning: run.py plot exited with code {result.returncode}, continuing...")
 
 
 def generate_rst_docs():

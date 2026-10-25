@@ -32,7 +32,7 @@ clean:
 	rm -rf .ruff_cache
 
 benchmark-bootstrap:
-	python3 benchmark/run.py --bootstrap --model all
+	python3 benchmark/run.py bootstrap --model all
 
 docs:
 	./ci/make_docs.sh
