@@ -82,6 +82,9 @@ Each task model provides the same API surface, in this order:
   inputs: a single image returns that image's result, a list returns a list of results.
 - `run(..., preprocessed=, postprocess=, no_copy=, verbose=)` keyword semantics match
   `Detector`.
+- Per-call thresholds on `postprocess` / `end2end` follow
+  `(inputs, conf_thres, nms_iou_thres, *, <task-specific thresholds>, verbose)`; the shared
+  thresholds are positional, task-specific ones (`mask_thres`, `pair_thres`, ...) keyword-only.
 
 ### Schemas
 

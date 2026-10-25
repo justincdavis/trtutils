@@ -19,7 +19,6 @@ MODELS = [
     pytest.param(HOIDETR, HOI_DETR_ONNX, id="hoi-detr"),
     pytest.param(Hands23, HANDS23_ONNX, id="hands23"),
 ]
-THRES_NAMES = ("conf_thres", "pair_thres", "second_pair_thres", "nms_iou_thres")
 
 
 def test_output_contract_validation(build_test_engine) -> None:
@@ -146,13 +145,19 @@ def test_per_call_thresholds_match_constructor(
     base,
     override,
 ) -> None:
-    """Positional per-call thresholds in end2end() equal passing them to the constructor."""
+    """Per-call thresholds in end2end() (conf and NMS IoU positional) equal passing them to the constructor."""
     engine = build_model_engine(model_cls, onnx_path)
     model = model_cls(engine, **base, warmup=False)
     reference = model_cls(engine, **base, **override, warmup=False)
 
     img = images["people"].array
-    per_call = model.end2end(img, *(override.get(name) for name in THRES_NAMES))
+    per_call = model.end2end(
+        img,
+        override.get("conf_thres"),
+        override.get("nms_iou_thres"),
+        pair_thres=override.get("pair_thres"),
+        second_pair_thres=override.get("second_pair_thres"),
+    )
 
     assert per_call == reference.end2end(img)
     assert per_call != model.end2end(img)

@@ -821,10 +821,10 @@ class HandInteractionDetectorInterface(ABC):
         self: Self,
         images: np.ndarray | Buffer,
         conf_thres: float | None = ...,
-        pair_thres: float | None = ...,
-        second_pair_thres: float | None = ...,
         nms_iou_thres: float | None = ...,
         *,
+        pair_thres: float | None = ...,
+        second_pair_thres: float | None = ...,
         verbose: bool | None = ...,
     ) -> list[HandInteraction]: ...
 
@@ -834,10 +834,10 @@ class HandInteractionDetectorInterface(ABC):
         self: Self,
         images: Sequence[np.ndarray | Buffer],
         conf_thres: float | None = ...,
-        pair_thres: float | None = ...,
-        second_pair_thres: float | None = ...,
         nms_iou_thres: float | None = ...,
         *,
+        pair_thres: float | None = ...,
+        second_pair_thres: float | None = ...,
         verbose: bool | None = ...,
     ) -> list[list[HandInteraction]]: ...
 
@@ -846,10 +846,10 @@ class HandInteractionDetectorInterface(ABC):
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         conf_thres: float | None = None,
-        pair_thres: float | None = None,
-        second_pair_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
+        pair_thres: float | None = None,
+        second_pair_thres: float | None = None,
         verbose: bool | None = None,
     ) -> list[HandInteraction] | list[list[HandInteraction]]:
         """Perform end to end inference for a batch of images."""

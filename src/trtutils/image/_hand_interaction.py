@@ -609,10 +609,10 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         self: Self,
         images: np.ndarray | Buffer,
         conf_thres: float | None = ...,
-        pair_thres: float | None = ...,
-        second_pair_thres: float | None = ...,
         nms_iou_thres: float | None = ...,
         *,
+        pair_thres: float | None = ...,
+        second_pair_thres: float | None = ...,
         verbose: bool | None = ...,
     ) -> list[HandInteraction]: ...
 
@@ -621,10 +621,10 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         self: Self,
         images: Sequence[np.ndarray | Buffer],
         conf_thres: float | None = ...,
-        pair_thres: float | None = ...,
-        second_pair_thres: float | None = ...,
         nms_iou_thres: float | None = ...,
         *,
+        pair_thres: float | None = ...,
+        second_pair_thres: float | None = ...,
         verbose: bool | None = ...,
     ) -> list[list[HandInteraction]]: ...
 
@@ -632,10 +632,10 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         conf_thres: float | None = None,
-        pair_thres: float | None = None,
-        second_pair_thres: float | None = None,
         nms_iou_thres: float | None = None,
         *,
+        pair_thres: float | None = None,
+        second_pair_thres: float | None = None,
         verbose: bool | None = None,
     ) -> list[HandInteraction] | list[list[HandInteraction]]:
         """
@@ -652,15 +652,15 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         conf_thres : float, optional
             The confidence threshold to filter candidates by.
             By default None, which uses the value from the constructor.
+        nms_iou_thres : float, optional
+            The IOU threshold to use for the class-aware NMS operation.
+            By default None, which uses the value from the constructor.
         pair_thres : float, optional
             The minimum link probability to link a hand to a first object.
             By default None, which uses the value from the constructor.
         second_pair_thres : float, optional
             The minimum link probability to link a first object to a second
             object. By default None, which uses the value from the constructor.
-        nms_iou_thres : float, optional
-            The IOU threshold to use for the class-aware NMS operation.
-            By default None, which uses the value from the constructor.
         verbose : bool, optional
             Whether or not to log additional information.
 

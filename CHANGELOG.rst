@@ -8,8 +8,8 @@ Added
 * ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``
 * ``image.types``: public ``TypeAlias``\ es for image model results (``Bbox``,
   ``Detection``, ``Classification``, ``HandInteraction``), used in all image model signatures
-* ``HandInteractionDetector.end2end`` thresholds are positional like ``Detector``, and
-  ``postprocess`` / ``end2end`` take a per-call ``nms_iou_thres``
+* ``HandInteractionDetector.postprocess`` / ``end2end`` take ``conf_thres`` and a per-call
+  ``nms_iou_thres`` positionally like ``Detector``; the pair thresholds are keyword-only
 * ``HandInteractionDetector`` takes an ``output_schema`` override (``HandInteractionOutputSchema``
   member or name) and exposes an ``output_schema`` property; outputs are matched by name, so
   TensorRT 8.6 engines that reorder outputs work
