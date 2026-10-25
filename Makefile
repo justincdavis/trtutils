@@ -1,4 +1,4 @@
-.PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test test-cpu test-cov release \
+.PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test test-cpu test-cov memcheck release \
        test-cu11 test-cu12 test-cu13 ci-cu11 ci-cu12 ci-cu13 dockers
 
 help:
@@ -13,6 +13,7 @@ help:
 	@echo "  test                to run the tests"
 	@echo "  test-cpu            to run CPU-only tests"
 	@echo "  test-cov            to run tests with coverage"
+	@echo "  memcheck            to run tests under compute-sanitizer (MEMCHECK_ARGS=<pytest args>)"
 	@echo "  release             to perform all actions required for a release"
 	@echo "  dockers             to build all project Docker images (see docker/build.sh --help)"
 	@echo "  test-cu11           to run tests in CUDA 11 Docker container"
@@ -55,6 +56,9 @@ ci:
 
 typecheck:
 	./ci/run_ci.sh --typecheck
+
+memcheck:
+	./ci/run_memcheck.sh $(MEMCHECK_ARGS)
 
 release: clean ci test docs
 

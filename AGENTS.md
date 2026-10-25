@@ -17,6 +17,7 @@ make typecheck       # ty static type checker (ci/run_ci.sh --typecheck)
 make test            # ci/run_tests.sh: python3 -m pytest -rP -v tests/
 make test-cpu        # pytest -m cpu
 make test-cov        # branch coverage report
+make memcheck        # ci/run_memcheck.sh: pytest under compute-sanitizer (MEMCHECK_ARGS=...)
 
 # single file / test
 python3 -m pytest tests/engine/test_engine.py -v
