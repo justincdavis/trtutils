@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from trtutils.image._schema import HandInteractionOutputSchema
+
 
 class HOIDETR(HandInteractionDetector, Model):
     """Alias of HandInteractionDetector with default args for HOI-DETR."""
@@ -36,6 +38,7 @@ class HOIDETR(HandInteractionDetector, Model):
         nms_iou_thres: float = 0.5,
         mean: tuple[float, float, float] | None = (0.485, 0.456, 0.406),
         std: tuple[float, float, float] | None = (0.229, 0.224, 0.225),
+        output_schema: HandInteractionOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -60,6 +63,7 @@ class HOIDETR(HandInteractionDetector, Model):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            output_schema=output_schema,
             dla_core=dla_core,
             device=device,
             backend=backend,

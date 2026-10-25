@@ -10,6 +10,7 @@ import pytest
 
 from tests.conftest import DATA_DIR
 from trtutils.image._hand_interaction import HandInteractionDetector
+from trtutils.image._schema import HandInteractionOutputSchema
 from trtutils.models import HOIDETR, Hands23
 
 HOI_DETR_ONNX = DATA_DIR / "hoi_detr" / "hoi_detr_vitl_640.onnx"
@@ -22,10 +23,33 @@ THRES_NAMES = ("conf_thres", "pair_thres", "second_pair_thres", "nms_iou_thres")
 
 
 def test_output_contract_validation(build_test_engine) -> None:
-    """An engine that does not follow the unified output contract raises ValueError."""
+    """An engine matching no hand interaction schema raises, naming the valid outputs."""
     engine = build_test_engine(DATA_DIR / "simple.onnx")
-    with pytest.raises(ValueError, match="boxes"):
+    with pytest.raises(ValueError, match=r"match no HandInteractionOutputSchema.*pair_probs"):
         HandInteractionDetector(engine, warmup=False)
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "onnx_path", "expected"),
+    [
+        pytest.param(HOIDETR, HOI_DETR_ONNX, HandInteractionOutputSchema.HOI_DETR, id="hoi-detr"),
+        pytest.param(Hands23, HANDS23_ONNX, HandInteractionOutputSchema.HANDS23, id="hands23"),
+    ],
+)
+@pytest.mark.parametrize(
+    "override",
+    [
+        pytest.param(None, id="auto"),
+        pytest.param("enum", id="enum"),
+        pytest.param("str", id="str"),
+    ],
+)
+def test_output_schema(build_model_engine, model_cls, onnx_path, expected, override) -> None:
+    """output_schema is auto-detected and accepts an enum member or its name as override."""
+    engine = build_model_engine(model_cls, onnx_path)
+    schema = {None: None, "enum": expected, "str": expected.name}[override]
+    model = model_cls(engine, output_schema=schema, warmup=False)
+    assert model.output_schema is expected
 
 
 def _assert_interactions_close(left, right) -> None:

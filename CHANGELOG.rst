@@ -10,6 +10,9 @@ Added
   ``Detection``, ``Classification``, ``HandInteraction``), used in all image model signatures
 * ``HandInteractionDetector.end2end`` thresholds are positional like ``Detector``, and
   ``postprocess`` / ``end2end`` take a per-call ``nms_iou_thres``
+* ``HandInteractionDetector`` takes an ``output_schema`` override (``HandInteractionOutputSchema``
+  member or name) and exposes an ``output_schema`` property; outputs are matched by name, so
+  TensorRT 8.6 engines that reorder outputs work
 * Download support for ``hoi_detr_vitl`` and ``hands23_x101``
 * ``models.DepthAnythingV1`` and ``models.DepthAnythingV3`` aliases for the
   ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``

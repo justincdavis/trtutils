@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from trtutils.image._schema import HandInteractionOutputSchema
+
 
 class Hands23(HandInteractionDetector, Model):
     """
@@ -45,6 +47,7 @@ class Hands23(HandInteractionDetector, Model):
         nms_iou_thres: float = 0.5,
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
+        output_schema: HandInteractionOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -69,6 +72,7 @@ class Hands23(HandInteractionDetector, Model):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
+            output_schema=output_schema,
             dla_core=dla_core,
             device=device,
             backend=backend,

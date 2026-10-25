@@ -13,6 +13,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
+from ._schema import HandInteractionOutputSchema, resolve_output_schema
 from .interfaces import HandInteractionDetectorInterface
 from .postprocessors import get_interactions, postprocess_hand_interactions
 
@@ -27,8 +28,6 @@ if TYPE_CHECKING:
 
     from ._image_model import _PostFn
     from .types import HandInteraction
-
-_EXPECTED_OUTPUT_PREFIX = ["boxes", "scores", "labels", "pair_probs"]
 
 
 class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
@@ -60,6 +59,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         nms_iou_thres: float = 0.5,
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
+        output_schema: HandInteractionOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -108,6 +108,12 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         std : tuple[float, float, float] | None, optional
             The standard deviation values to use for normalization.
             By default, None, which means no normalization will be applied.
+        output_schema : HandInteractionOutputSchema, str, optional
+            Manually specify the output schema instead of auto-detection.
+            Can be a HandInteractionOutputSchema enum value or a string matching
+            the enum name (e.g., "HOI_DETR", "HANDS23").
+            By default None, which means the schema will be auto-detected from
+            the engine's output names.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -143,10 +149,12 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         Raises
         ------
         ValueError
-            If the engine outputs do not follow the unified hand-object
-            interaction output contract.
+            If the output schema string is invalid, or the engine outputs
+            match no HandInteractionOutputSchema.
 
         """
+        # parent creates the engine and calls _configure_model(), which sets the schema
+        self._output_schema_override = output_schema
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -179,16 +187,17 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             }
         )
 
+    @property
+    def output_schema(self: Self) -> HandInteractionOutputSchema:
+        """Get the output schema used by this detector."""
+        return self._output_schema
+
     def _configure_model(self: Self) -> None:
-        """Validate the engine follows the unified hand-object interaction contract."""
-        names = list(self._engine.output_names)
-        if names[:4] != _EXPECTED_OUTPUT_PREFIX or names[4:] not in ([], ["side"]):
-            err_msg = (
-                "Expected hand interaction engine outputs to start with "
-                f"{_EXPECTED_OUTPUT_PREFIX} and optionally be followed by 'side', "
-                f"found: {names}"
-            )
-            raise ValueError(err_msg)
+        """Auto-detect or apply the output schema from the loaded engine."""
+        self._output_schema = resolve_output_schema(
+            self._engine, HandInteractionOutputSchema, self._output_schema_override
+        )
+        self._set_output_order(self._output_schema.value)
 
     def postprocess(
         self: Self,
@@ -241,7 +250,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         nms_iou = nms_iou_thres if nms_iou_thres is not None else self._nms_iou_thres
         t0 = time.perf_counter()
         data = postprocess_hand_interactions(
-            outputs,
+            self._order_outputs(outputs),
             ratios,
             padding,
             conf_thres,

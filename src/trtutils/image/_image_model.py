@@ -319,6 +319,19 @@ class ImageModel:
     def _configure_model(self: Self) -> None:
         """Configure model-specific state after engine load, before preprocessor creation."""
 
+    def _set_output_order(self: Self, expected: Sequence[str]) -> None:
+        """Map outputs by name, as tensorrt 8.6 does not keep the onnx output order."""
+        names = list(self._engine.output_names)
+        self._output_order: list[int] | None = None
+        if names != list(expected) and sorted(names) == sorted(expected):
+            self._output_order = [names.index(name) for name in expected]
+
+    def _order_outputs(self: Self, outputs: list[np.ndarray]) -> list[np.ndarray]:
+        """Reorder raw outputs to the expected names, see :meth:`_set_output_order`."""
+        if self._output_order is None:
+            return outputs
+        return [outputs[i] for i in self._output_order]
+
     @property
     def engine(self: Self) -> TRTEngine:
         """Get the underlying TRTEngine."""
