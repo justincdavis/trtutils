@@ -1123,29 +1123,12 @@ class TextRecognizer(_TextModel, TextRecognizerInterface):
             needs_ratios=False,
         )
 
-    # get_texts overloads
-    @overload
-    def get_texts(
-        self: Self,
-        outputs: list[np.ndarray],
-        *,
-        verbose: bool | None = ...,
-    ) -> tuple[str, float]: ...
-
-    @overload
-    def get_texts(
-        self: Self,
-        outputs: list[list[np.ndarray]],
-        *,
-        verbose: bool | None = ...,
-    ) -> list[tuple[str, float]]: ...
-
     def get_texts(
         self: Self,
         outputs: list[np.ndarray] | list[list[np.ndarray]],
         *,
         verbose: bool | None = None,
-    ) -> tuple[str, float] | list[tuple[str, float]]:
+    ) -> list[tuple[str, float]]:
         """
         Get the texts from postprocessed outputs.
 
@@ -1159,9 +1142,8 @@ class TextRecognizer(_TextModel, TextRecognizerInterface):
 
         Returns
         -------
-        tuple[str, float] | list[tuple[str, float]]
-            For single image: tuple[str, float] (text and confidence).
-            For batch: list[tuple[str, float]] (text and confidence per image).
+        list[tuple[str, float]]
+            The text and confidence per image, a list of one for a single image.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -1170,37 +1152,20 @@ class TextRecognizer(_TextModel, TextRecognizerInterface):
         if verbose:
             LOG.debug(f"{self._tag}: get_texts")
 
-        batch, single = self._as_batch(outputs)
+        batch, _ = self._as_batch(outputs)
         result = get_texts(batch, self._characters, verbose=verbose)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # get_texts
 
-        return result[0] if single else result
-
-    # end2end overloads
-    @overload
-    def end2end(
-        self: Self,
-        images: np.ndarray | Buffer,
-        *,
-        verbose: bool | None = ...,
-    ) -> tuple[str, float]: ...
-
-    @overload
-    def end2end(
-        self: Self,
-        images: Sequence[np.ndarray | Buffer],
-        *,
-        verbose: bool | None = ...,
-    ) -> list[tuple[str, float]]: ...
+        return result
 
     def end2end(
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         *,
         verbose: bool | None = None,
-    ) -> tuple[str, float] | list[tuple[str, float]]:
+    ) -> list[tuple[str, float]]:
         """
         Perform end to end inference for a batch of images.
 
@@ -1219,10 +1184,9 @@ class TextRecognizer(_TextModel, TextRecognizerInterface):
 
         Returns
         -------
-        tuple[str, float] | list[tuple[str, float]]
-            For single image: tuple[str, float] (text and confidence).
-            For batch: list[tuple[str, float]] (text and confidence per image,
-            in input order).
+        list[tuple[str, float]]
+            The text and confidence per image in input order, a list of one
+            for a single image.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -1231,8 +1195,9 @@ class TextRecognizer(_TextModel, TextRecognizerInterface):
         if verbose:
             LOG.debug(f"{self._tag}: end2end")
 
-        is_single = isinstance(images, (np.ndarray, Buffer))
-        lines: Sequence[np.ndarray | Buffer] = [images] if is_single else images
+        lines: Sequence[np.ndarray | Buffer] = (
+            [images] if isinstance(images, (np.ndarray, Buffer)) else images
+        )
         order = np.argsort([img.shape[1] / img.shape[0] for img in lines])
         results: list[tuple[str, float]] = [("", 0.0)] * len(lines)
         for start in range(0, len(order), self._batch_size):
@@ -1246,7 +1211,7 @@ class TextRecognizer(_TextModel, TextRecognizerInterface):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # end2end
 
-        return results[0] if is_single else results
+        return results
 
 
 class OCR:

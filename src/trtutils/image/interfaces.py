@@ -1655,52 +1655,14 @@ class TextRecognizerInterface(ABC):
     ) -> list[np.ndarray] | list[list[np.ndarray]]:
         """Run the model on input."""
 
-    # get_texts overloads
-    @overload
-    @abstractmethod
-    def get_texts(
-        self: Self,
-        outputs: list[np.ndarray],
-        *,
-        verbose: bool | None = ...,
-    ) -> tuple[str, float]: ...
-
-    @overload
-    @abstractmethod
-    def get_texts(
-        self: Self,
-        outputs: list[list[np.ndarray]],
-        *,
-        verbose: bool | None = ...,
-    ) -> list[tuple[str, float]]: ...
-
     @abstractmethod
     def get_texts(
         self: Self,
         outputs: list[np.ndarray] | list[list[np.ndarray]],
         *,
         verbose: bool | None = None,
-    ) -> tuple[str, float] | list[tuple[str, float]]:
+    ) -> list[tuple[str, float]]:
         """Get the text for each image."""
-
-    # end2end overloads
-    @overload
-    @abstractmethod
-    def end2end(
-        self: Self,
-        images: np.ndarray | Buffer,
-        *,
-        verbose: bool | None = ...,
-    ) -> tuple[str, float]: ...
-
-    @overload
-    @abstractmethod
-    def end2end(
-        self: Self,
-        images: Sequence[np.ndarray | Buffer],
-        *,
-        verbose: bool | None = ...,
-    ) -> list[tuple[str, float]]: ...
 
     @abstractmethod
     def end2end(
@@ -1708,5 +1670,5 @@ class TextRecognizerInterface(ABC):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         *,
         verbose: bool | None = None,
-    ) -> tuple[str, float] | list[tuple[str, float]]:
+    ) -> list[tuple[str, float]]:
         """Perform end to end inference for a batch of images."""

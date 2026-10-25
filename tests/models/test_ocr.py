@@ -149,8 +149,8 @@ def test_text_recognizer_end2end(rec_engine) -> None:
     assert len(many) > model.batch_size
     assert [_words(t) for t, _ in model.end2end(many)] == [_words(t) for t in LINES * 3]
 
-    text, score = model.end2end(crops[0])
-    assert (text, score) == model.get_texts(model.run(crops[0]))
+    [(text, score)] = model.end2end(crops[0])
+    assert [(text, score)] == model.get_texts(model.run(crops[0]))
     assert _words(text) == _words(LINES[0])
     assert 0.9 < score <= 1.0
 

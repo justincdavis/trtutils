@@ -23,7 +23,7 @@ class PPOCRDetector(TextDetector, Model):
 
     _model_type = "ppocr_det"
     _friendly_name = "PP-OCR detection"
-    _default_imgsz = 736
+    _default_imgsz = 960
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("x", "image")]
 
     def __init__(
@@ -106,7 +106,8 @@ class PPOCRDetector(TextDetector, Model):
         output : Path | str
             Output path for the built engine.
         imgsz : int, optional
-            The height/width the engine is tuned for. Default is 736.
+            The height/width the engine is tuned for. Default is 960,
+            the long side images are resized to.
         batch_size : int
             Maximum batch size of the engine; the profile starts at batch 1, which
             is what TextDetector submits. Default is 1.
