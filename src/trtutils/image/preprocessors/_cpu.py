@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, Callable, List, Tuple, overload
 
 import numpy as np
 import nvtx
@@ -23,6 +23,12 @@ if TYPE_CHECKING:
 
 _COLOR_CHANNELS = 3
 
+# images -> (batch tensor, ratios, padding)
+PreprocessFn = Callable[
+    [List[np.ndarray]],
+    Tuple[np.ndarray, List[Tuple[float, float]], List[Tuple[float, float]]],
+]
+
 
 class CPUPreprocessor(ImagePreprocessor):
     """CPU-based preprocessor for image processing models."""
@@ -32,7 +38,7 @@ class CPUPreprocessor(ImagePreprocessor):
         output_shape: tuple[int, int],
         output_range: tuple[float, float],
         dtype: np.dtype,
-        resize: str = "letterbox",
+        resize: str | PreprocessFn = "letterbox",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
         tag: str | None = None,
@@ -51,10 +57,15 @@ class CPUPreprocessor(ImagePreprocessor):
         dtype : np.dtype
             The datatype of the image.
             Examples: np.float32, np.float16, np.uint8
-        resize : str, optional
+        resize : str | Callable, optional
             The method to resize the image with.
             Options are [letterbox, linear], will use method
             provided in constructor by default.
+            Can also be a function doing the whole preprocessing,
+            images -> (batch tensor, ratios, padding), for models whose
+            input shape changes per batch. The function normalizes itself,
+            so output_range, mean and std only apply to letterbox and linear,
+            and per-call resize and no_copy are not supported.
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -68,11 +79,13 @@ class CPUPreprocessor(ImagePreprocessor):
 
         """
         tag = "CPUPreprocessor" if tag is None else f"{tag}.CPUPreprocessor"
+        self._preprocess_fn: PreprocessFn | None = None if isinstance(resize, str) else resize
         super().__init__(
             output_shape=output_shape,
             output_range=output_range,
             dtype=dtype,
-            resize=resize,
+            # unused when a function is set
+            resize=resize if isinstance(resize, str) else "letterbox",
             mean=mean,
             std=std,
             tag=tag,
@@ -87,6 +100,11 @@ class CPUPreprocessor(ImagePreprocessor):
 
         # grow-only batch tensor for no_copy calls, saves faulting in fresh pages each call
         self._batch: np.ndarray = np.empty(0, dtype=self._o_dtype)
+
+    @property
+    def dynamic(self: Self) -> bool:
+        """Whether a preprocessing function sizes each batch, see ``resize``."""
+        return self._preprocess_fn is not None
 
     def warmup(self: Self) -> None:
         """Compatibility function for CPU/CUDA parity."""
@@ -143,9 +161,11 @@ class CPUPreprocessor(ImagePreprocessor):
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
+            Not supported when the preprocessor was built with a function.
         no_copy : bool, optional
             If True, write into a reused buffer and return a view of it,
             valid until the next call. By default False.
+            Not supported when the preprocessor was built with a function.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -198,9 +218,11 @@ class CPUPreprocessor(ImagePreprocessor):
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear]
+            Not supported when the preprocessor was built with a function.
         no_copy : bool, optional
             If True, write into a reused buffer and return a view of it,
             valid until the next call. By default False.
+            Not supported when the preprocessor was built with a function.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -211,7 +233,18 @@ class CPUPreprocessor(ImagePreprocessor):
         tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
             The preprocessed batch tensor, list of ratios, and list of padding per image.
 
+        Raises
+        ------
+        ValueError
+            If resize or no_copy is given while a preprocessing function is set.
+
         """
+        if self._preprocess_fn is not None and (resize is not None or no_copy):
+            err_msg = (
+                f"{self._tag}: resize and no_copy are not supported with a preprocessing function"
+            )
+            raise ValueError(err_msg)
+
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["cpu_preprocess"])
 
@@ -219,6 +252,12 @@ class CPUPreprocessor(ImagePreprocessor):
         if isinstance(images, (np.ndarray, Buffer)):
             images = [images]
         batch_images = [img.numpy() if isinstance(img, Buffer) else img for img in images]
+
+        if self._preprocess_fn is not None:
+            tensor, ratios, padding = self._preprocess_fn(batch_images)
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # cpu_preprocess
+            return tensor.astype(self._o_dtype, copy=False), ratios, padding
 
         resize = resize if resize is not None else self._resize
         mean = self._mean

@@ -325,3 +325,62 @@ def test_cpu_no_copy_reuses_buffer(random_images, no_copy) -> None:
     second, _, _ = cpu.preprocess(random_images(2), no_copy=no_copy)
     assert np.shares_memory(first, second) == no_copy
     assert np.array_equal(first, snapshot) != no_copy
+
+
+def _half_size_fn(images):
+    """Halve each image and zero-pad the batch bottom/right to the largest one."""
+    resized = [cv2.resize(img, (img.shape[1] // 2, img.shape[0] // 2)) for img in images]
+    height = max(r.shape[0] for r in resized)
+    width = max(r.shape[1] for r in resized)
+    batch = np.zeros((len(resized), 3, height, width), dtype=np.float32)
+    for i, r in enumerate(resized):
+        batch[i, :, : r.shape[0], : r.shape[1]] = r.transpose(2, 0, 1) / 255.0
+    ratios = [
+        (r.shape[1] / img.shape[1], r.shape[0] / img.shape[0]) for r, img in zip(resized, images)
+    ]
+    padding = [(float(width - r.shape[1]), float(height - r.shape[0])) for r in resized]
+    return batch, ratios, padding
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("dtype", [np.float32, np.float16], ids=["fp32", "fp16"])
+@pytest.mark.parametrize("placement", [None, *BUFFER_PLACEMENTS[1:]])
+@pytest.mark.parametrize(
+    "shapes",
+    [
+        pytest.param([(480, 640)], id="single"),
+        pytest.param([(480, 640), (480, 640)], id="homogeneous"),
+        pytest.param([(480, 640), (720, 320), (101, 99)], id="mixed"),
+    ],
+)
+def test_cpu_preprocess_fn(dtype, placement, shapes) -> None:
+    """A resize function preprocesses each batch at its own shape, cast to the dtype."""
+    rng = np.random.default_rng(0)
+    imgs = [rng.integers(0, 256, (*s, 3), dtype=np.uint8) for s in shapes]
+    inputs = [Buffer.from_array(img, **placement) for img in imgs] if placement else imgs
+    cpu = CPUPreprocessor(SIZE, RANGE, np.dtype(dtype), resize=_half_size_fn)
+    assert cpu.dynamic
+    assert not CPUPreprocessor(SIZE, RANGE, DTYPE).dynamic
+    cpu.warmup()
+    expected, ratios, padding = _half_size_fn(imgs)
+    for result in (cpu.preprocess(inputs), cpu(inputs)):
+        assert result[0].dtype == dtype
+        np.testing.assert_array_equal(result[0], expected.astype(dtype))
+        assert result[1:] == (ratios, padding)
+    single = cpu.preprocess(inputs[0])
+    np.testing.assert_array_equal(single[0], _half_size_fn(imgs[:1])[0].astype(dtype))
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"resize": "linear"}, id="resize"),
+        pytest.param({"no_copy": True}, id="no-copy"),
+    ],
+)
+def test_cpu_preprocess_fn_rejects_fixed_options(kwargs) -> None:
+    """Per-call resize and no_copy raise when a resize function is set."""
+    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=_half_size_fn)
+    with pytest.raises(ValueError, match="not supported with a preprocessing function"):
+        cpu.preprocess(np.zeros((64, 64, 3), np.uint8), **kwargs)
