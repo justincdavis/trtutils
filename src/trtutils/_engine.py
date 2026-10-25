@@ -118,61 +118,60 @@ class TRTEngine(TRTEngineInterface):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(f"engine::init [{self.name}]")
+        try:
+            super().__init__(
+                engine_path,
+                stream=stream,
+                dla_core=dla_core,
+                device=device,
+                pagelocked_mem=pagelocked_mem,
+                unified_mem=unified_mem,
+                no_warn=no_warn,
+                verbose=verbose,
+            )
 
-        super().__init__(
-            engine_path,
-            stream=stream,
-            dla_core=dla_core,
-            device=device,
-            pagelocked_mem=pagelocked_mem,
-            unified_mem=unified_mem,
-            no_warn=no_warn,
-            verbose=verbose,
-        )
+            self._nvtx_tags.update(
+                {
+                    "graph_capture": f"engine::graph_capture [{self.name}]",
+                    "execute": f"engine::execute [{self.name}]",
+                    "graph_exec": f"engine::graph_exec [{self.name}]",
+                    "raw_exec": f"engine::raw_exec [{self.name}]",
+                }
+            )
 
-        self._nvtx_tags.update(
-            {
-                "graph_capture": f"engine::graph_capture [{self.name}]",
-                "execute": f"engine::execute [{self.name}]",
-                "graph_exec": f"engine::graph_exec [{self.name}]",
-                "raw_exec": f"engine::raw_exec [{self.name}]",
-            }
-        )
+            # solve for execution method
+            # only care about v2 or v3 async
+            if backend not in TRTEngine._backends:
+                err_msg = f"Invalid backend {backend}, options are: {TRTEngine._backends}"
+                raise ValueError(err_msg)
+            if (backend == "async_v2" and not FLAGS.EXEC_ASYNC_V2) or (
+                backend == "async_v3" and not FLAGS.EXEC_ASYNC_V3
+            ):
+                err_msg = f"Backend {backend} is not available in TensorRT {FLAGS.TRT_VERSION}"
+                raise ValueError(err_msg)
 
-        # solve for execution method
-        # only care about v2 or v3 async
-        if backend not in TRTEngine._backends:
-            err_msg = f"Invalid backend {backend}, options are: {TRTEngine._backends}"
+            self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (backend == "async_v3" or backend == "auto")
+
+            self._init_io_state(cuda_graph=cuda_graph)
+
+            # store timing variable for sleep call before stream_sync
+            self._sync_t: float = 0.0
+
+            # store verbose info
+            self._verbose = verbose if verbose is not None else False
+
+            if FLAGS.NVTX_ENABLED:
+                nvtx.push_range(self._nvtx_tags["warmup"])
+
+            try:
+                if warmup:
+                    self.warmup(warmup_iterations, verbose=self._verbose)
+            finally:
+                if FLAGS.NVTX_ENABLED:
+                    nvtx.pop_range()  # warmup
+        finally:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # init
-            raise ValueError(err_msg)
-        if (backend == "async_v2" and not FLAGS.EXEC_ASYNC_V2) or (
-            backend == "async_v3" and not FLAGS.EXEC_ASYNC_V3
-        ):
-            err_msg = f"Backend {backend} is not available in TensorRT {FLAGS.TRT_VERSION}"
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # init
-            raise ValueError(err_msg)
-
-        self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (backend == "async_v3" or backend == "auto")
-
-        self._init_io_state(cuda_graph=cuda_graph)
-
-        # store timing variable for sleep call before stream_sync
-        self._sync_t: float = 0.0
-
-        # store verbose info
-        self._verbose = verbose if verbose is not None else False
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["warmup"])
-
-        if warmup:
-            self.warmup(warmup_iterations, verbose=self._verbose)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # warmup
-            nvtx.pop_range()  # init
 
         LOG.debug(f"Created TRTEngine: {self.name}")
 

@@ -78,65 +78,67 @@ class TRTEngineInterface(ABC):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(f"engine_interface::init [{self.name}]")
-        self._dla_core = dla_core
-        self._device = device
-        self._device_guard = Device(device)
-        self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
-        self._unified_mem = unified_mem if unified_mem is not None else FLAGS.IS_JETSON
-        self._verbose = verbose
+        try:
+            self._dla_core = dla_core
+            self._device = device
+            self._device_guard = Device(device)
+            self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+            self._unified_mem = unified_mem if unified_mem is not None else FLAGS.IS_JETSON
+            self._verbose = verbose
 
-        with self._device_guard:
-            # engine, context, logger, and CUDA stream
-            self._engine, self._context, self._logger, self._stream = create_engine(
-                engine_path,
-                stream=stream,
-                dla_core=dla_core,
-                device=device,
-                no_warn=no_warn,
-            )
+            with self._device_guard:
+                # engine, context, logger, and CUDA stream
+                self._engine, self._context, self._logger, self._stream = create_engine(
+                    engine_path,
+                    stream=stream,
+                    dla_core=dla_core,
+                    device=device,
+                    no_warn=no_warn,
+                )
 
-            # get the input and output names
-            self._input_names, self._output_names = get_engine_names(self._engine)
+                # get the input and output names
+                self._input_names, self._output_names = get_engine_names(self._engine)
 
-            # allocate memory for inputs and outputs
-            self._inputs, self._outputs, self._allocations = allocate_bindings(
-                self._engine,
-                self._context,
-                pagelocked_mem=self._pagelocked_mem,
-                unified_mem=self._unified_mem,
-            )
+                # allocate memory for inputs and outputs
+                self._inputs, self._outputs, self._allocations = allocate_bindings(
+                    self._engine,
+                    self._context,
+                    pagelocked_mem=self._pagelocked_mem,
+                    unified_mem=self._unified_mem,
+                )
 
-        # store useful properties about the engine
-        self._memsize: int = 0
-        if FLAGS.MEMSIZE_V2:
-            self._memsize = self._engine.device_memory_size_v2
-        else:
-            self._memsize = self._engine.device_memory_size
+            # store useful properties about the engine
+            self._memsize: int = 0
+            if FLAGS.MEMSIZE_V2:
+                self._memsize = self._engine.device_memory_size_v2
+            else:
+                self._memsize = self._engine.device_memory_size
 
-        # additional verbose output about loaded engine information
-        if self._verbose:
-            LOG.info(f"Loaded engine: {self._name}")
-            LOG.info(f"\tDevice: {self._device}")
-            LOG.info(f"\tDLA Core: {self._dla_core}")
-            LOG.info(f"\tPagelocked Mem: {self._pagelocked_mem}")
-            LOG.info(f"\tUnified Mem: {self._unified_mem}")
-            LOG.info(f"\tMemsize: {self._memsize}")
-            for i_binding in self._inputs:
-                LOG.info(f"\tInput: {i_binding.name} {i_binding.shape} {i_binding.dtype}")
-            for o_binding in self._outputs:
-                LOG.info(f"\tOutput: {o_binding.name} {o_binding.shape} {o_binding.dtype}")
+            # additional verbose output about loaded engine information
+            if self._verbose:
+                LOG.info(f"Loaded engine: {self._name}")
+                LOG.info(f"\tDevice: {self._device}")
+                LOG.info(f"\tDLA Core: {self._dla_core}")
+                LOG.info(f"\tPagelocked Mem: {self._pagelocked_mem}")
+                LOG.info(f"\tUnified Mem: {self._unified_mem}")
+                LOG.info(f"\tMemsize: {self._memsize}")
+                for i_binding in self._inputs:
+                    LOG.info(f"\tInput: {i_binding.name} {i_binding.shape} {i_binding.dtype}")
+                for o_binding in self._outputs:
+                    LOG.info(f"\tOutput: {o_binding.name} {o_binding.shape} {o_binding.dtype}")
 
-        # store cache random data
-        self._rand_input: list[Buffer] | None = None
+            # store cache random data
+            self._rand_input: list[Buffer] | None = None
 
-        # setup the nvtx tags
-        self._nvtx_tags: dict[str, str] = {
-            "warmup": f"engine_interface::warmup [{self.name}]",
-            "mock_execute": f"engine_interface::mock_execute [{self.name}]",
-        }
+            # setup the nvtx tags
+            self._nvtx_tags: dict[str, str] = {
+                "warmup": f"engine_interface::warmup [{self.name}]",
+                "mock_execute": f"engine_interface::mock_execute [{self.name}]",
+            }
 
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # init
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # init
 
     @property
     def name(self: Self) -> str:

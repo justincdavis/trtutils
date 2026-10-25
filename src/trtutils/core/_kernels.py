@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -133,19 +133,21 @@ class Kernel:
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(f"kernel::init [{name}]")
-        kernel_file = kernel_file if isinstance(kernel_file, Path) else Path(kernel_file)
-        with kernel_file.open("r") as f:
-            kernel_code: str = f.read()
-        self._name = name
-        self._nvtx_tag_call = f"kernel::call [{name}]"
-        self._module, self._kernel = compile_and_load_kernel(
-            kernel_code,
-            name,
-            verbose=verbose,
-        )
-        self._freed = False
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
+        try:
+            kernel_file = kernel_file if isinstance(kernel_file, Path) else Path(kernel_file)
+            with kernel_file.open("r") as f:
+                kernel_code: str = f.read()
+            self._name = name
+            self._nvtx_tag_call = f"kernel::call [{name}]"
+            self._module, self._kernel = compile_and_load_kernel(
+                kernel_code,
+                name,
+                verbose=verbose,
+            )
+            self._freed = False
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
 
     def free(self: Self) -> None:
         """Free the memory of the loaded kernel."""
