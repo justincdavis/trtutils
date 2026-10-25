@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # ruff: noqa: PLW0603, PERF203
@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING
 
 import cv2
 import cv2ext
-from trtutils.impls.yolo import YOLO
+
+from trtutils.models import YOLOX
 
 if TYPE_CHECKING:
     import numpy as np
@@ -61,7 +62,7 @@ def _feed_frames(
 
 
 def _process_frames(
-    yolo: YOLO,
+    yolo: YOLOX,
     in_queue: Queue[tuple[int, int, np.ndarray]],
     out_queue: Queue[
         tuple[int, int, np.ndarray, list[tuple[tuple[int, int, int, int], float, int]]]
@@ -87,7 +88,7 @@ def _main() -> None:
     args = parser.parse_args()
 
     yolos = [
-        YOLO(
+        YOLOX(
             ENGINE_FILES["gpu"],
             input_range=(0, 255),
             conf_thres=0.1,
@@ -97,7 +98,7 @@ def _main() -> None:
     ]
     if args.dla0:
         yolos.append(
-            YOLO(
+            YOLOX(
                 ENGINE_FILES["dla"],
                 dla_core=0,
                 input_range=(0, 255),
@@ -108,7 +109,7 @@ def _main() -> None:
         )
     if args.dla1:
         yolos.append(
-            YOLO(
+            YOLOX(
                 ENGINE_FILES["dla"],
                 dla_core=1,
                 input_range=(0, 255),
