@@ -23,11 +23,8 @@ if TYPE_CHECKING:
 
 _COLOR_CHANNELS = 3
 
-# images -> (batch tensor, ratios, padding)
-PreprocessFn = Callable[
-    [List[np.ndarray]],
-    Tuple[np.ndarray, List[Tuple[float, float]], List[Tuple[float, float]]],
-]
+# (images, *, verbose) -> (batch tensor, ratios, padding)
+PreprocessFn = Callable[..., Tuple[np.ndarray, List[Tuple[float, float]], List[Tuple[float, float]]]]
 
 
 class CPUPreprocessor(ImagePreprocessor):
@@ -62,7 +59,7 @@ class CPUPreprocessor(ImagePreprocessor):
             Options are [letterbox, linear], will use method
             provided in constructor by default.
             Can also be a function doing the whole preprocessing,
-            images -> (batch tensor, ratios, padding), for models whose
+            (images, *, verbose) -> (batch tensor, ratios, padding), for models whose
             input shape changes per batch. The function normalizes itself,
             so output_range, mean and std only apply to letterbox and linear,
             and per-call resize and no_copy are not supported.
@@ -254,7 +251,7 @@ class CPUPreprocessor(ImagePreprocessor):
         batch_images = [img.numpy() if isinstance(img, Buffer) else img for img in images]
 
         if self._preprocess_fn is not None:
-            tensor, ratios, padding = self._preprocess_fn(batch_images)
+            tensor, ratios, padding = self._preprocess_fn(batch_images, verbose=verbose)
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # cpu_preprocess
             return tensor.astype(self._o_dtype, copy=False), ratios, padding

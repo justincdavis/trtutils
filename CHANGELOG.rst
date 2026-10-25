@@ -4,7 +4,7 @@ Unreleased
 Added
 ^^^^^
 * ``CPUPreprocessor(resize=fn)`` takes a function doing the whole preprocessing,
-  ``images -> (tensor, ratios, padding)``, for models whose input shape changes per batch
+  ``(images, *, verbose) -> (tensor, ratios, padding)``, for models whose input shape changes per batch
 * ``image.HandInteractionDetector`` for hand-object interaction models with a unified,
   fixed-K output contract shared across model families
 * ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``

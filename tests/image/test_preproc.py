@@ -327,7 +327,7 @@ def test_cpu_no_copy_reuses_buffer(random_images, no_copy) -> None:
     assert np.array_equal(first, snapshot) != no_copy
 
 
-def _half_size_fn(images):
+def _half_size_fn(images, *, verbose=None):
     """Halve each image and zero-pad the batch bottom/right to the largest one."""
     resized = [cv2.resize(img, (img.shape[1] // 2, img.shape[0] // 2)) for img in images]
     height = max(r.shape[0] for r in resized)
