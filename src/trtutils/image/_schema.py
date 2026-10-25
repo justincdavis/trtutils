@@ -57,6 +57,21 @@ class HandInteractionOutputSchema(Enum):
     HANDS23 = ("boxes", "scores", "labels", "pair_probs", "side")
 
 
+# "*" matches any output name; wildcard members go last so named members win
+class ClassifierOutputSchema(Enum):
+    # torchvision classifiers, logits (B, C)
+    TORCHVISION = ("output",)
+    # any single-output engine, e.g. custom exports
+    GENERIC = ("*",)
+
+
+class DepthEstimatorOutputSchema(Enum):
+    # Depth-Anything v1/v2 (B, H, W) and v3 (B, 1, H, W)
+    DEPTH_ANYTHING = ("output",)
+    # any single-output engine, e.g. custom exports
+    GENERIC = ("*",)
+
+
 class OutputSchema(Enum):
     # YOLO-X, v7, v8, v9, v11, v12, v13
     EFFICIENT_NMS = ("num_dets", "det_boxes", "det_scores", "det_classes")
@@ -251,6 +266,8 @@ def resolve_output_schema(
         since TensorRT 8.6 does not keep the ONNX output order.
     schema_cls : type[Enum]
         The schema enum, each member's value is a tuple of output names.
+        A member whose names are all ``"*"`` matches any engine with that many
+        outputs; auto-detection tries members in definition order.
     override : Enum, str, optional
         A member or member name to use instead of auto-detection.
         The engine outputs must still match it.
@@ -276,7 +293,7 @@ def resolve_output_schema(
     candidates = list(schema_cls) if override is None else [override]
     outputs = sorted(engine.output_names)
     for member in candidates:
-        if sorted(member.value) == outputs:
+        if sorted(member.value) == outputs or member.value == ("*",) * len(outputs):
             return member
     err_msg = f"Engine outputs {list(engine.output_names)} match no {schema_cls.__name__}. "
     err_msg += f"Valid options: { {m.name: m.value for m in candidates} }"

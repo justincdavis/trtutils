@@ -7,10 +7,14 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import onnx
 import pytest
 
-from trtutils.image import ImageModel
+from tests.conftest import DATA_DIR
+from trtutils.image import Classifier, DepthEstimator, ImageModel
 from trtutils.image._schema import (
+    ClassifierOutputSchema,
+    DepthEstimatorOutputSchema,
     HandInteractionOutputSchema,
     InputSchema,
     OutputSchema,
@@ -61,6 +65,8 @@ def _engine(*output_names: str) -> SimpleNamespace:
 
 
 _HOI = HandInteractionOutputSchema
+_CLS = ClassifierOutputSchema
+_DEPTH = DepthEstimatorOutputSchema
 
 
 @pytest.mark.cpu
@@ -74,6 +80,21 @@ _HOI = HandInteractionOutputSchema
             _HOI, _HOI.HOI_DETR.value, _HOI.HOI_DETR, "HOI_DETR", id="hoi-detr-enum-override"
         ),
         pytest.param(_HOI, _HOI.HANDS23.value, "HANDS23", "HANDS23", id="hands23-str-override"),
+        pytest.param(_CLS, ("output",), None, "TORCHVISION", id="torchvision-auto"),
+        pytest.param(_CLS, ("output",), _CLS.TORCHVISION, "TORCHVISION", id="torchvision-enum"),
+        pytest.param(_CLS, ("output",), "TORCHVISION", "TORCHVISION", id="torchvision-str"),
+        pytest.param(_CLS, ("logits",), None, "GENERIC", id="cls-generic-fallback"),
+        pytest.param(_CLS, ("output0",), "GENERIC", "GENERIC", id="cls-generic-str"),
+        pytest.param(_CLS, ("output",), _CLS.GENERIC, "GENERIC", id="cls-generic-forced"),
+        pytest.param(_DEPTH, ("output",), None, "DEPTH_ANYTHING", id="depth-anything-auto"),
+        pytest.param(
+            _DEPTH, ("output",), _DEPTH.DEPTH_ANYTHING, "DEPTH_ANYTHING", id="depth-anything-enum"
+        ),
+        pytest.param(
+            _DEPTH, ("output",), "DEPTH_ANYTHING", "DEPTH_ANYTHING", id="depth-anything-str"
+        ),
+        pytest.param(_DEPTH, ("depth",), None, "GENERIC", id="depth-generic-fallback"),
+        pytest.param(_DEPTH, ("depth",), _DEPTH.GENERIC, "GENERIC", id="depth-generic-enum"),
     ],
 )
 def test_resolve_output_schema(schema_cls, outputs, override, expected) -> None:
@@ -89,13 +110,19 @@ def test_resolve_output_schema(schema_cls, outputs, override, expected) -> None:
         pytest.param(_HOI, ("boxes", "scores", "labels"), None, "match no", id="missing-pairs"),
         pytest.param(_HOI, _HOI.HOI_DETR.value, _HOI.HANDS23, "match no", id="enum"),
         pytest.param(_HOI, _HOI.HOI_DETR.value, "NOPE", "NOPE", id="bad-str"),
+        pytest.param(_CLS, _HOI.HOI_DETR.value, None, "match no", id="cls-on-multi-output"),
+        pytest.param(_CLS, ("output", "aux"), None, "match no", id="cls-two-outputs"),
+        pytest.param(_CLS, ("logits",), _CLS.TORCHVISION, "match no", id="cls-named-override"),
+        pytest.param(_CLS, ("output",), "NOPE", "NOPE", id="cls-bad-str"),
+        pytest.param(_DEPTH, ("depth", "conf"), None, "match no", id="depth-two-outputs"),
+        pytest.param(_DEPTH, ("depth",), "DEPTH_ANYTHING", "match no", id="depth-named-override"),
     ],
 )
 def test_resolve_output_schema_rejects(schema_cls, outputs, override, match) -> None:
     """A wrong engine or schema name raises, listing the valid options."""
     with pytest.raises(ValueError, match=match) as exc:
         resolve_output_schema(_engine(*outputs), schema_cls, override)
-    assert "HANDS23" in str(exc.value)
+    assert any(name in str(exc.value) for name in schema_cls.__members__)
 
 
 @pytest.mark.cpu
@@ -105,3 +132,27 @@ def test_output_order_maps_by_name() -> None:
     ImageModel._set_output_order(model, _HOI.HANDS23.value)  # ty: ignore[invalid-argument-type]
     reordered = ImageModel._order_outputs(model, ["s", "p", "l", "c", "b"])  # ty: ignore[invalid-argument-type]
     assert reordered == ["b", "c", "l", "p", "s"]
+
+
+@pytest.fixture(scope="session")
+def renamed_simple_engine(build_test_engine, tmp_path_factory):
+    """Build simple.onnx with its single output renamed to a name no schema lists."""
+    model = onnx.load(str(DATA_DIR / "simple.onnx"))
+    model.graph.node[-1].output[0] = "custom_head"
+    model.graph.output[0].name = "custom_head"
+    onnx_path = tmp_path_factory.mktemp("renamed") / "simple_custom_head.onnx"
+    onnx.save(model, str(onnx_path))
+    return build_test_engine(onnx_path)
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "expected"),
+    [
+        pytest.param(Classifier, _CLS.GENERIC, id="classifier"),
+        pytest.param(DepthEstimator, _DEPTH.GENERIC, id="depth-estimator"),
+    ],
+)
+def test_generic_fallback_engine(renamed_simple_engine, model_cls, expected) -> None:
+    """An arbitrary-named single-output engine still loads, under the GENERIC schema."""
+    model = model_cls(renamed_simple_engine, preprocessor="cpu", warmup=False)
+    assert model.output_schema is expected
