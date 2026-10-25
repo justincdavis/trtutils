@@ -66,7 +66,11 @@ Added
   image size / text line width), with the same ``preprocess`` / ``run`` / ``postprocess`` /
   ``end2end`` API as the other image models plus ``get_text_boxes`` / ``get_texts``, and
   PaddleOCR's default settings. ``image.OCR`` runs both as a two-stage pipeline through
-  ``end2end``; ``interfaces.TextDetectorInterface`` and ``interfaces.TextRecognizerInterface``
+  ``end2end``; ``interfaces.TextDetectorInterface`` and ``interfaces.TextRecognizerInterface``.
+  ``TextDetector`` and ``OCR`` take a positional ``conf_thres`` (box score / recognition
+  confidence) per call, both models take an ``output_schema`` override
+  (``TextDetectorOutputSchema`` / ``TextRecognizerOutputSchema``: ``PADDLE`` or ``GENERIC``), and
+  results use the ``image.types`` aliases ``TextBox``, ``Text`` and ``TextLine``
 * ``models.PPOCRDetector`` and ``models.PPOCRRecognizer`` with dynamic-shape ``build()``
   and the bundled PP-OCR character dictionary, and ``models.PPOCR`` to run both as one pipeline
 * OCR pre/postprocessing functions: ``preprocessors.preprocess_text_detection``,

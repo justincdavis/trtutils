@@ -72,6 +72,20 @@ class DepthEstimatorOutputSchema(Enum):
     GENERIC = ("*",)
 
 
+class TextDetectorOutputSchema(Enum):
+    # PP-OCRv4 DB detection, probability map (B, 1, H, W)
+    PADDLE = ("sigmoid_0.tmp_0",)
+    # any other engine, e.g. custom exports
+    GENERIC = ("*",)
+
+
+class TextRecognizerOutputSchema(Enum):
+    # PP-OCRv4 CTC recognition, per-timestep class probabilities (B, T, C)
+    PADDLE = ("softmax_11.tmp_0",)
+    # any other engine, e.g. custom exports
+    GENERIC = ("*",)
+
+
 class OutputSchema(Enum):
     # YOLO-X, v7, v8, v9, v11, v12, v13
     EFFICIENT_NMS = ("num_dets", "det_boxes", "det_scores", "det_classes")

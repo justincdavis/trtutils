@@ -10,13 +10,15 @@ from types import SimpleNamespace
 import onnx
 import pytest
 
-from trtutils.image import Classifier, DepthEstimator, ImageModel
+from trtutils.image import Classifier, DepthEstimator, ImageModel, TextDetector, TextRecognizer
 from trtutils.image._schema import (
     ClassifierOutputSchema,
     DepthEstimatorOutputSchema,
     HandInteractionOutputSchema,
     InputSchema,
     OutputSchema,
+    TextDetectorOutputSchema,
+    TextRecognizerOutputSchema,
     get_detector_io_schema,
     resolve_output_schema,
 )
@@ -66,6 +68,8 @@ def _engine(*output_names: str) -> SimpleNamespace:
 _HOI = HandInteractionOutputSchema
 _CLS = ClassifierOutputSchema
 _DEPTH = DepthEstimatorOutputSchema
+_TDET = TextDetectorOutputSchema
+_TREC = TextRecognizerOutputSchema
 
 
 @pytest.mark.cpu
@@ -89,6 +93,12 @@ _DEPTH = DepthEstimatorOutputSchema
         pytest.param(_DEPTH, ("depth",), None, "GENERIC", id="depth-generic-fallback"),
         pytest.param(_DEPTH, ("depth",), _DEPTH.GENERIC, "GENERIC", id="depth-generic-enum"),
         pytest.param(_DEPTH, ("depth", "conf"), None, "GENERIC", id="depth-generic-two-outputs"),
+        pytest.param(_TDET, ("sigmoid_0.tmp_0",), None, "PADDLE", id="text-det-paddle-auto"),
+        pytest.param(_TDET, ("maps",), None, "GENERIC", id="text-det-generic-fallback"),
+        pytest.param(_TDET, ("sigmoid_0.tmp_0",), "GENERIC", "GENERIC", id="text-det-generic-str"),
+        pytest.param(_TREC, ("softmax_11.tmp_0",), None, "PADDLE", id="text-rec-paddle-auto"),
+        pytest.param(_TREC, ("logits",), None, "GENERIC", id="text-rec-generic-fallback"),
+        pytest.param(_TREC, ("softmax_11.tmp_0",), _TREC.PADDLE, "PADDLE", id="text-rec-enum"),
     ],
 )
 def test_resolve_output_schema(schema_cls, outputs, override, expected) -> None:
@@ -106,6 +116,8 @@ def test_resolve_output_schema(schema_cls, outputs, override, expected) -> None:
         pytest.param(_HOI, _HOI.HOI_DETR.value, "NOPE", "NOPE", id="bad-str"),
         pytest.param(_CLS, ("logits",), _CLS.TORCHVISION, "match no", id="cls-named-override"),
         pytest.param(_DEPTH, ("depth",), "DEPTH_ANYTHING", "match no", id="depth-named-override"),
+        pytest.param(_TDET, ("maps",), "PADDLE", "match no", id="text-det-named-override"),
+        pytest.param(_TREC, ("logits",), _TREC.PADDLE, "match no", id="text-rec-named-override"),
     ],
 )
 def test_resolve_output_schema_rejects(schema_cls, outputs, override, match) -> None:
@@ -135,14 +147,25 @@ def renamed_simple_engine(build_test_engine, simple_onnx_path, tmp_path_factory)
     return build_test_engine(onnx_path)
 
 
+# simple.onnx outputs (1, 3, 160, 160): the recognizer reads 160 classes (blank + 158 + space)
+_REC_KWARGS = {"character_dict": [str(i) for i in range(158)]}
+
+
 @pytest.mark.parametrize(
-    ("model_cls", "expected"),
+    ("model_cls", "kwargs", "expected"),
     [
-        pytest.param(Classifier, _CLS.GENERIC, id="classifier"),
-        pytest.param(DepthEstimator, _DEPTH.GENERIC, id="depth-estimator"),
+        pytest.param(Classifier, {}, _CLS.GENERIC, id="classifier"),
+        pytest.param(DepthEstimator, {}, _DEPTH.GENERIC, id="depth-estimator"),
+        pytest.param(TextDetector, {}, _TDET.GENERIC, id="text-detector"),
+        pytest.param(TextRecognizer, _REC_KWARGS, _TREC.GENERIC, id="text-recognizer"),
     ],
 )
-def test_generic_fallback_engine(renamed_simple_engine, model_cls, expected) -> None:
-    """An engine with an arbitrary output name still loads, under the GENERIC schema."""
-    model = model_cls(renamed_simple_engine, preprocessor="cpu", warmup=False)
+def test_generic_fallback_engine(renamed_simple_engine, model_cls, kwargs, expected) -> None:
+    """An engine with an arbitrary output name loads under GENERIC and rejects a named override."""
+    model = model_cls(renamed_simple_engine, preprocessor="cpu", warmup=False, **kwargs)
     assert model.output_schema is expected
+    named = next(m for m in type(expected) if m is not expected)
+    with pytest.raises(ValueError, match="match no"):
+        model_cls(
+            renamed_simple_engine, preprocessor="cpu", warmup=False, output_schema=named, **kwargs
+        )

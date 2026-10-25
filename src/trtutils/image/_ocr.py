@@ -18,6 +18,7 @@ from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
+from ._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema, resolve_output_schema
 from .interfaces import TextDetectorInterface, TextRecognizerInterface
 from .postprocessors import (
     get_text_boxes,
@@ -39,7 +40,18 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from trtutils.image.types import Text, TextBox, TextLine
+
     from ._image_model import _PostFn
+
+_DET_POSTPROCESS = {
+    TextDetectorOutputSchema.PADDLE: postprocess_text_detection,
+    TextDetectorOutputSchema.GENERIC: postprocess_text_detection,
+}
+_REC_POSTPROCESS = {
+    TextRecognizerOutputSchema.PADDLE: postprocess_text_recognition,
+    TextRecognizerOutputSchema.GENERIC: postprocess_text_recognition,
+}
 
 
 class TextDetector(ImageModel, TextDetectorInterface):
@@ -52,14 +64,15 @@ class TextDetector(ImageModel, TextDetectorInterface):
         input_range: tuple[float, float] = (0.0, 1.0),
         preprocessor: str = "cpu",
         resize_method: str = "linear",
+        conf_thres: float = 0.6,
         limit_side_len: int = 960,
         limit_type: str = "max",
         thresh: float = 0.3,
-        box_thresh: float = 0.6,
         max_candidates: int = 1000,
         unclip_ratio: float = 1.5,
         mean: tuple[float, float, float] | None = _IMAGENET_MEAN,
         std: tuple[float, float, float] | None = _IMAGENET_STD,
+        output_schema: TextDetectorOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -80,7 +93,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         The defaults are PaddleOCR's (``tools/infer/utility.py``): longer side
         limited to 960, ImageNet normalization, box threshold 0.6, unclip 1.5,
         no dilation. RapidOCR instead uses ``limit_side_len=736, limit_type="min"``,
-        mean/std 0.5, ``box_thresh=0.5``, ``unclip_ratio=1.6`` and dilation.
+        mean/std 0.5, ``conf_thres=0.5``, ``unclip_ratio=1.6`` and dilation.
 
         Parameters
         ----------
@@ -98,6 +111,8 @@ class TextDetector(ImageModel, TextDetectorInterface):
         resize_method : str
             Unused, images are resized by ``limit_side_len`` and ``limit_type``.
             Kept for parity with the other image models, default is 'linear'.
+        conf_thres : float
+            The minimum mean probability inside a box to keep it. By default 0.6.
         limit_side_len : int
             Images are resized so their shorter (``limit_type="min"``) or longer
             (``limit_type="max"``) side matches this length, then both sides are
@@ -107,8 +122,6 @@ class TextDetector(ImageModel, TextDetectorInterface):
             The options are ['min', 'max'], default is 'max'.
         thresh : float
             The binarization threshold of the probability map. By default 0.3.
-        box_thresh : float
-            The minimum mean probability inside a box to keep it. By default 0.6.
         max_candidates : int
             The maximum number of candidate regions. By default 1000.
         unclip_ratio : float
@@ -119,6 +132,12 @@ class TextDetector(ImageModel, TextDetectorInterface):
         std : tuple[float, float, float] | None, optional
             The standard deviation values to use for the normalization, in BGR
             order. By default the ImageNet std (0.229, 0.224, 0.225).
+        output_schema : TextDetectorOutputSchema, str, optional
+            Manually specify the output schema instead of auto-detection.
+            Can be a TextDetectorOutputSchema enum value or a string matching
+            the enum name (e.g., "PADDLE", "GENERIC").
+            By default None, which means the schema will be auto-detected from
+            the engine's output names, falling back to GENERIC for any other engine.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -153,16 +172,19 @@ class TextDetector(ImageModel, TextDetectorInterface):
         Raises
         ------
         ValueError
-            If preprocessor is not 'cpu'.
+            If preprocessor is not 'cpu', the output schema string is invalid,
+            or the engine outputs do not match the requested schema.
 
         """
         self._limit_side_len = limit_side_len
         self._limit_type = limit_type
         self._thresh = thresh
-        self._box_thresh = box_thresh
+        self._conf_thres = conf_thres
         self._max_candidates = max_candidates
         self._unclip_ratio = unclip_ratio
         self._use_dilation = bool(use_dilation)
+        # parent creates the engine and calls _configure_model(), which sets the schema
+        self._output_schema_override = output_schema
 
         super().__init__(
             engine_path=engine_path,
@@ -191,6 +213,18 @@ class TextDetector(ImageModel, TextDetectorInterface):
             }
         )
 
+    @property
+    def output_schema(self: Self) -> TextDetectorOutputSchema:
+        """Get the output schema used by this text detector."""
+        return self._output_schema
+
+    def _configure_model(self: Self) -> None:
+        """Auto-detect or apply the output schema from the loaded engine."""
+        self._output_schema = resolve_output_schema(
+            self._engine, TextDetectorOutputSchema, self._output_schema_override
+        )
+        self._set_output_order(self._output_schema.value)
+
     def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
         width, height = self._input_size
         fn = partial(
@@ -217,7 +251,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         outputs: list[np.ndarray],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
-        box_thresh: float | None = None,
+        conf_thres: float | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -233,7 +267,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
             The rescale ratios used during preprocessing for each image.
         padding : list[tuple[float, float]]
             The padding values used during preprocessing for each image.
-        box_thresh : float, optional
+        conf_thres : float, optional
             The minimum mean probability inside a box to keep it.
             If not passed, will use value from constructor.
         no_copy : bool, optional
@@ -254,14 +288,14 @@ class TextDetector(ImageModel, TextDetectorInterface):
         if verbose:
             LOG.debug(f"{self._tag}: postprocess")
 
-        box_thresh = box_thresh if box_thresh is not None else self._box_thresh
+        conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         t0 = time.perf_counter()
-        data = postprocess_text_detection(
-            outputs,
+        data = _DET_POSTPROCESS[self._output_schema](
+            self._order_outputs(outputs),
             ratios,
             padding,
             self._thresh,
-            box_thresh,
+            conf_thres,
             self._max_candidates,
             self._unclip_ratio,
             use_dilation=self._use_dilation,
@@ -276,9 +310,9 @@ class TextDetector(ImageModel, TextDetectorInterface):
 
         return data
 
-    def _post_fn(self: Self, box_thresh: float | None, *, verbose: bool | None) -> _PostFn:
+    def _post_fn(self: Self, conf_thres: float | None, *, verbose: bool | None) -> _PostFn:
         """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""
-        return lambda o, r, p, nc: self.postprocess(o, r, p, box_thresh, no_copy=nc, verbose=verbose)
+        return lambda o, r, p, nc: self.postprocess(o, r, p, conf_thres, no_copy=nc, verbose=verbose)
 
     # __call__ overloads
     @overload
@@ -287,7 +321,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -301,7 +335,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -314,7 +348,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
-        box_thresh: float | None = None,
+        conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -334,7 +368,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         padding : tuple[float, float] | list[tuple[float, float]], optional
             The padding values used during preprocessing. For single image, pass tuple.
             For batch, pass list.
-        box_thresh : float, optional
+        conf_thres : float, optional
             The minimum mean probability inside a box to keep it during
             postprocessing. By default None, which will use value passed
             during initialization.
@@ -368,7 +402,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
-            post=self._post_fn(box_thresh, verbose=verbose),
+            post=self._post_fn(conf_thres, verbose=verbose),
         )
 
     # run overloads - batch input (3 overloads)
@@ -378,7 +412,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -392,7 +426,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -406,7 +440,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -421,7 +455,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -435,7 +469,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -449,7 +483,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -462,7 +496,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
-        box_thresh: float | None = None,
+        conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -482,7 +516,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         padding : tuple[float, float] | list[tuple[float, float]], optional
             The padding values used during preprocessing. For single image, pass tuple.
             For batch, pass list.
-        box_thresh : float, optional
+        conf_thres : float, optional
             The minimum mean probability inside a box to keep it during
             postprocessing. By default None, which will use value passed
             during initialization.
@@ -531,7 +565,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
             postprocess=postprocess,
             no_copy=no_copy,
             verbose=verbose,
-            post=self._post_fn(box_thresh, verbose=verbose),
+            post=self._post_fn(conf_thres, verbose=verbose),
         )
 
     # get_text_boxes overloads
@@ -541,7 +575,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         outputs: list[np.ndarray],
         *,
         verbose: bool | None = ...,
-    ) -> list[tuple[np.ndarray, float]]: ...
+    ) -> list[TextBox]: ...
 
     @overload
     def get_text_boxes(
@@ -549,14 +583,14 @@ class TextDetector(ImageModel, TextDetectorInterface):
         outputs: list[list[np.ndarray]],
         *,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[np.ndarray, float]]]: ...
+    ) -> list[list[TextBox]]: ...
 
     def get_text_boxes(
         self: Self,
         outputs: list[np.ndarray] | list[list[np.ndarray]],
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[np.ndarray, float]] | list[list[tuple[np.ndarray, float]]]:
+    ) -> list[TextBox] | list[list[TextBox]]:
         """
         Get the text boxes from postprocessed outputs.
 
@@ -570,10 +604,10 @@ class TextDetector(ImageModel, TextDetectorInterface):
 
         Returns
         -------
-        list[tuple[np.ndarray, float]] | list[list[tuple[np.ndarray, float]]]
-            For single image: list[tuple[np.ndarray, float]] (text boxes for single image).
-            For batch: list[list[tuple[np.ndarray, float]]] (text boxes per image).
-            Each entry is (box, score) in reading order, where box is the (4, 2)
+        list[TextBox] | list[list[TextBox]]
+            For single image: list[TextBox] (text boxes for single image).
+            For batch: list[list[TextBox]] (text boxes per image).
+            Each TextBox is (box, score) in reading order, where box is the (4, 2)
             float32 corner points (TL, TR, BR, BL) in original image coordinates.
 
         """
@@ -596,27 +630,27 @@ class TextDetector(ImageModel, TextDetectorInterface):
     def end2end(
         self: Self,
         images: np.ndarray | Buffer,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[tuple[np.ndarray, float]]: ...
+    ) -> list[TextBox]: ...
 
     @overload
     def end2end(
         self: Self,
         images: Sequence[np.ndarray | Buffer],
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[np.ndarray, float]]]: ...
+    ) -> list[list[TextBox]]: ...
 
     def end2end(
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        box_thresh: float | None = None,
+        conf_thres: float | None = None,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[np.ndarray, float]] | list[list[tuple[np.ndarray, float]]]:
+    ) -> list[TextBox] | list[list[TextBox]]:
         """
         Perform end to end inference for a batch of images.
 
@@ -628,7 +662,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         ----------
         images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to perform inference with.
-        box_thresh : float, optional
+        conf_thres : float, optional
             The minimum mean probability inside a box to keep it.
             By default None, which will use value passed during initialization.
         verbose : bool, optional
@@ -636,15 +670,16 @@ class TextDetector(ImageModel, TextDetectorInterface):
 
         Returns
         -------
-        list[tuple[np.ndarray, float]] | list[list[tuple[np.ndarray, float]]]
-            For single image: list[tuple[np.ndarray, float]] (text boxes).
-            For batch: list[list[tuple[np.ndarray, float]]] (text boxes per image).
+        list[TextBox] | list[list[TextBox]]
+            For single image: list[TextBox] (text boxes).
+            For batch: list[list[TextBox]] (text boxes per image).
+            Each TextBox is (box, score), see :meth:`get_text_boxes`.
 
         """
         return self._end2end_core(
             images,
             verbose=verbose,
-            post=self._post_fn(box_thresh, verbose=verbose),
+            post=self._post_fn(conf_thres, verbose=verbose),
             get=lambda pp: self.get_text_boxes(pp, verbose=verbose),
         )
 
@@ -662,6 +697,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         character_dict: Path | str | Sequence[str] | None = None,
         mean: tuple[float, float, float] | None = _REC_MEAN,
         std: tuple[float, float, float] | None = _REC_STD,
+        output_schema: TextRecognizerOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -708,6 +744,12 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         std : tuple[float, float, float] | None, optional
             The standard deviation values to use for the normalization.
             By default (0.5, 0.5, 0.5).
+        output_schema : TextRecognizerOutputSchema, str, optional
+            Manually specify the output schema instead of auto-detection.
+            Can be a TextRecognizerOutputSchema enum value or a string matching
+            the enum name (e.g., "PADDLE", "GENERIC").
+            By default None, which means the schema will be auto-detected from
+            the engine's output names, falling back to GENERIC for any other engine.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -743,7 +785,9 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         ------
         ValueError
             If no character dictionary is given, it does not match the
-            engine's number of classes, or preprocessor is not 'cpu'.
+            engine's number of classes, preprocessor is not 'cpu', the output
+            schema string is invalid, or the engine outputs do not match the
+            requested schema.
 
         """
         if character_dict is None:
@@ -759,6 +803,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             chars = list(character_dict)
         use_space_char = use_space_char if use_space_char is not None else True
         self._characters: list[str] = ["blank", *chars] + ([" "] if use_space_char else [])
+        # parent creates the engine and calls _configure_model(), which sets the schema
+        self._output_schema_override = output_schema
 
         super().__init__(
             engine_path=engine_path,
@@ -799,6 +845,18 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
     def characters(self: Self) -> list[str]:
         """Get the class labels, index 0 is the CTC blank."""
         return self._characters
+
+    @property
+    def output_schema(self: Self) -> TextRecognizerOutputSchema:
+        """Get the output schema used by this text recognizer."""
+        return self._output_schema
+
+    def _configure_model(self: Self) -> None:
+        """Auto-detect or apply the output schema from the loaded engine."""
+        self._output_schema = resolve_output_schema(
+            self._engine, TextRecognizerOutputSchema, self._output_schema_override
+        )
+        self._set_output_order(self._output_schema.value)
 
     def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
         width, height = self._input_size
@@ -853,7 +911,9 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        data = postprocess_text_recognition(outputs, no_copy=no_copy, verbose=verbose)
+        data = _REC_POSTPROCESS[self._output_schema](
+            self._order_outputs(outputs), no_copy=no_copy, verbose=verbose
+        )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
@@ -1070,7 +1130,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         outputs: list[np.ndarray] | list[list[np.ndarray]],
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[str, float]]:
+    ) -> list[Text]:
         """
         Get the texts from postprocessed outputs.
 
@@ -1084,8 +1144,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
 
         Returns
         -------
-        list[tuple[str, float]]
-            The text and confidence per image, a list of one for a single image.
+        list[Text]
+            One Text (text, confidence) per image, a list of one for a single image.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -1107,7 +1167,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[str, float]]:
+    ) -> list[Text]:
         """
         Perform end to end inference for a batch of images.
 
@@ -1126,8 +1186,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
 
         Returns
         -------
-        list[tuple[str, float]]
-            The text and confidence per image in input order, a list of one
+        list[Text]
+            One Text (text, confidence) per image in input order, a list of one
             for a single image.
 
         """
@@ -1141,7 +1201,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             [images] if isinstance(images, (np.ndarray, Buffer)) else images
         )
         order = np.argsort([img.shape[1] / img.shape[0] for img in lines])
-        results: list[tuple[str, float]] = [("", 0.0)] * len(lines)
+        results: list[Text] = [("", 0.0)] * len(lines)
         for start in range(0, len(order), self._batch_size):
             batch_idx = order[start : start + self._batch_size]
             # outputs are consumed by get_texts() inside this call, so skip their copies
@@ -1169,7 +1229,7 @@ class OCR:
         self: Self,
         detector: TextDetectorInterface,
         recognizer: TextRecognizerInterface,
-        text_score: float = 0.5,
+        conf_thres: float = 0.5,
         min_height: int = 30,
         width_height_ratio: float = 8,
         max_side_len: int = 2000,
@@ -1186,7 +1246,7 @@ class OCR:
             The text detector.
         recognizer : TextRecognizerInterface
             The text recognizer.
-        text_score : float
+        conf_thres : float
             The minimum recognition confidence for a line to be returned.
             By default 0.5.
         min_height : int
@@ -1211,7 +1271,7 @@ class OCR:
         }
         self._detector = detector
         self._recognizer = recognizer
-        self._text_score = text_score
+        self._conf_thres = conf_thres
         self._min_height = min_height
         self._width_height_ratio = width_height_ratio
         self._max_side_len = max_side_len
@@ -1232,10 +1292,10 @@ class OCR:
     def _ocr_image(
         self: Self,
         image: np.ndarray | Buffer,
-        text_score: float,
+        conf_thres: float,
         *,
         verbose: bool | None,
-    ) -> list[tuple[np.ndarray, str, float]]:
+    ) -> list[TextLine]:
         img = image.numpy() if isinstance(image, Buffer) else image
         raw_h, raw_w = img.shape[:2]
         if max(raw_h, raw_w) > self._max_side_len:
@@ -1264,7 +1324,7 @@ class OCR:
         out_boxes = (boxes - np.array([0, pad], np.float32)) * scale
         out_boxes = np.clip(out_boxes, 0, np.array([raw_w, raw_h], np.float32))
         return [
-            (box, text, score) for box, (text, score) in zip(out_boxes, lines) if score >= text_score
+            (box, text, score) for box, (text, score) in zip(out_boxes, lines) if score >= conf_thres
         ]
 
     # __call__ overloads
@@ -1272,27 +1332,27 @@ class OCR:
     def __call__(
         self: Self,
         images: np.ndarray | Buffer,
-        text_score: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[tuple[np.ndarray, str, float]]: ...
+    ) -> list[TextLine]: ...
 
     @overload
     def __call__(
         self: Self,
         images: Sequence[np.ndarray | Buffer],
-        text_score: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[np.ndarray, str, float]]]: ...
+    ) -> list[list[TextLine]]: ...
 
     def __call__(
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        text_score: float | None = None,
+        conf_thres: float | None = None,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[np.ndarray, str, float]] | list[list[tuple[np.ndarray, str, float]]]:
+    ) -> list[TextLine] | list[list[TextLine]]:
         """
         Detect and recognize all text in images, see :meth:`end2end`.
 
@@ -1300,7 +1360,7 @@ class OCR:
         ----------
         images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to perform inference with.
-        text_score : float, optional
+        conf_thres : float, optional
             The minimum recognition confidence for a line to be returned.
             By default None, which will use value passed during initialization.
         verbose : bool, optional
@@ -1308,39 +1368,40 @@ class OCR:
 
         Returns
         -------
-        list[tuple[np.ndarray, str, float]] | list[list[tuple[np.ndarray, str, float]]]
-            For single image: list[tuple[np.ndarray, str, float]] (text lines).
-            For batch: list[list[tuple[np.ndarray, str, float]]] (text lines per image).
+        list[TextLine] | list[list[TextLine]]
+            For single image: list[TextLine] (text lines).
+            For batch: list[list[TextLine]] (text lines per image).
+            Each TextLine is (box, text, score), see :meth:`end2end`.
 
         """
-        return self.end2end(images, text_score, verbose=verbose)
+        return self.end2end(images, conf_thres, verbose=verbose)
 
     # end2end overloads
     @overload
     def end2end(
         self: Self,
         images: np.ndarray | Buffer,
-        text_score: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[tuple[np.ndarray, str, float]]: ...
+    ) -> list[TextLine]: ...
 
     @overload
     def end2end(
         self: Self,
         images: Sequence[np.ndarray | Buffer],
-        text_score: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[np.ndarray, str, float]]]: ...
+    ) -> list[list[TextLine]]: ...
 
     def end2end(
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        text_score: float | None = None,
+        conf_thres: float | None = None,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[np.ndarray, str, float]] | list[list[tuple[np.ndarray, str, float]]]:
+    ) -> list[TextLine] | list[list[TextLine]]:
         """
         Detect and recognize all text in images.
 
@@ -1348,7 +1409,7 @@ class OCR:
         ----------
         images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to perform inference with.
-        text_score : float, optional
+        conf_thres : float, optional
             The minimum recognition confidence for a line to be returned.
             By default None, which will use value passed during initialization.
         verbose : bool, optional
@@ -1356,10 +1417,10 @@ class OCR:
 
         Returns
         -------
-        list[tuple[np.ndarray, str, float]] | list[list[tuple[np.ndarray, str, float]]]
-            For single image: list[tuple[np.ndarray, str, float]] (text lines).
-            For batch: list[list[tuple[np.ndarray, str, float]]] (text lines per image).
-            Each entry is (box, text, score) in reading order, where box is the
+        list[TextLine] | list[list[TextLine]]
+            For single image: list[TextLine] (text lines).
+            For batch: list[list[TextLine]] (text lines per image).
+            Each TextLine is (box, text, score) in reading order, where box is the
             (4, 2) float32 corner points (TL, TR, BR, BL) in image coordinates.
 
         """
@@ -1369,10 +1430,10 @@ class OCR:
         if verbose:
             LOG.debug("OCR: end2end")
 
-        text_score = text_score if text_score is not None else self._text_score
+        conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         is_single = isinstance(images, (np.ndarray, Buffer))
         batch_images: Sequence[np.ndarray | Buffer] = [images] if is_single else images
-        results = [self._ocr_image(img, text_score, verbose=verbose) for img in batch_images]
+        results = [self._ocr_image(img, conf_thres, verbose=verbose) for img in batch_images]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # end2end

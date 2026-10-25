@@ -37,7 +37,13 @@ if TYPE_CHECKING:
     from trtutils._engine import TRTEngine
     from trtutils.core._buffer import Buffer
     from trtutils.image._schema import InputSchema, OutputSchema
-    from trtutils.image.types import Classification, Detection, HandInteraction
+    from trtutils.image.types import (
+        Classification,
+        Detection,
+        HandInteraction,
+        Text,
+        TextBox,
+    )
 
 
 class ClassifierInterface(ABC):
@@ -1242,7 +1248,7 @@ class TextDetectorInterface(ABC):
         outputs: list[np.ndarray],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
-        box_thresh: float | None = None,
+        conf_thres: float | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -1257,7 +1263,7 @@ class TextDetectorInterface(ABC):
         images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -1272,7 +1278,7 @@ class TextDetectorInterface(ABC):
         images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -1287,7 +1293,7 @@ class TextDetectorInterface(ABC):
         images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -1303,7 +1309,7 @@ class TextDetectorInterface(ABC):
         images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[False],
@@ -1318,7 +1324,7 @@ class TextDetectorInterface(ABC):
         images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: Literal[True] | None = ...,
@@ -1333,7 +1339,7 @@ class TextDetectorInterface(ABC):
         images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -1347,7 +1353,7 @@ class TextDetectorInterface(ABC):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
-        box_thresh: float | None = None,
+        conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -1364,7 +1370,7 @@ class TextDetectorInterface(ABC):
         images: np.ndarray | Buffer,
         ratios: tuple[float, float] | None = ...,
         padding: tuple[float, float] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -1379,7 +1385,7 @@ class TextDetectorInterface(ABC):
         images: Sequence[np.ndarray | Buffer],
         ratios: list[tuple[float, float]] | None = ...,
         padding: list[tuple[float, float]] | None = ...,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         preprocessed: bool | None = ...,
         postprocess: bool | None = ...,
@@ -1393,7 +1399,7 @@ class TextDetectorInterface(ABC):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
         padding: tuple[float, float] | list[tuple[float, float]] | None = None,
-        box_thresh: float | None = None,
+        conf_thres: float | None = None,
         *,
         preprocessed: bool | None = None,
         postprocess: bool | None = None,
@@ -1410,7 +1416,7 @@ class TextDetectorInterface(ABC):
         outputs: list[np.ndarray],
         *,
         verbose: bool | None = ...,
-    ) -> list[tuple[np.ndarray, float]]: ...
+    ) -> list[TextBox]: ...
 
     @overload
     @abstractmethod
@@ -1419,7 +1425,7 @@ class TextDetectorInterface(ABC):
         outputs: list[list[np.ndarray]],
         *,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[np.ndarray, float]]]: ...
+    ) -> list[list[TextBox]]: ...
 
     @abstractmethod
     def get_text_boxes(
@@ -1427,7 +1433,7 @@ class TextDetectorInterface(ABC):
         outputs: list[np.ndarray] | list[list[np.ndarray]],
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[np.ndarray, float]] | list[list[tuple[np.ndarray, float]]]:
+    ) -> list[TextBox] | list[list[TextBox]]:
         """Get the text boxes for each image."""
 
     # end2end overloads
@@ -1436,29 +1442,29 @@ class TextDetectorInterface(ABC):
     def end2end(
         self: Self,
         images: np.ndarray | Buffer,
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[tuple[np.ndarray, float]]: ...
+    ) -> list[TextBox]: ...
 
     @overload
     @abstractmethod
     def end2end(
         self: Self,
         images: Sequence[np.ndarray | Buffer],
-        box_thresh: float | None = ...,
+        conf_thres: float | None = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[np.ndarray, float]]]: ...
+    ) -> list[list[TextBox]]: ...
 
     @abstractmethod
     def end2end(
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        box_thresh: float | None = None,
+        conf_thres: float | None = None,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[np.ndarray, float]] | list[list[tuple[np.ndarray, float]]]:
+    ) -> list[TextBox] | list[list[TextBox]]:
         """Perform end to end inference for a batch of images."""
 
 
@@ -1661,7 +1667,7 @@ class TextRecognizerInterface(ABC):
         outputs: list[np.ndarray] | list[list[np.ndarray]],
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[str, float]]:
+    ) -> list[Text]:
         """Get the text for each image."""
 
     @abstractmethod
@@ -1670,5 +1676,5 @@ class TextRecognizerInterface(ABC):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[str, float]]:
+    ) -> list[Text]:
         """Perform end to end inference for a batch of images."""

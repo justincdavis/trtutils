@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from trtutils.image._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
+
 PPOCR_KEYS_V1 = Path(__file__).parent / "ppocr_keys_v1.txt"
 
 
@@ -33,14 +35,15 @@ class PPOCRDetector(TextDetector, Model):
         input_range: tuple[float, float] = (0.0, 1.0),
         preprocessor: str = "cpu",
         resize_method: str = "linear",
+        conf_thres: float = 0.6,
         limit_side_len: int = 960,
         limit_type: str = "max",
         thresh: float = 0.3,
-        box_thresh: float = 0.6,
         max_candidates: int = 1000,
         unclip_ratio: float = 1.5,
         mean: tuple[float, float, float] | None = (0.485, 0.456, 0.406),
         std: tuple[float, float, float] | None = (0.229, 0.224, 0.225),
+        output_schema: TextDetectorOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -60,14 +63,15 @@ class PPOCRDetector(TextDetector, Model):
             input_range=input_range,
             preprocessor=preprocessor,
             resize_method=resize_method,
+            conf_thres=conf_thres,
             limit_side_len=limit_side_len,
             limit_type=limit_type,
             thresh=thresh,
-            box_thresh=box_thresh,
             max_candidates=max_candidates,
             unclip_ratio=unclip_ratio,
             mean=mean,
             std=std,
+            output_schema=output_schema,
             dla_core=dla_core,
             device=device,
             backend=backend,
@@ -170,6 +174,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         character_dict: Path | str | Sequence[str] | None = PPOCR_KEYS_V1,
         mean: tuple[float, float, float] | None = (0.5, 0.5, 0.5),
         std: tuple[float, float, float] | None = (0.5, 0.5, 0.5),
+        output_schema: TextRecognizerOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -192,6 +197,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
             character_dict=character_dict,
             mean=mean,
             std=std,
+            output_schema=output_schema,
             dla_core=dla_core,
             device=device,
             backend=backend,
@@ -281,7 +287,7 @@ class PPOCR(OCR):
         self: Self,
         det_engine: Path | str,
         rec_engine: Path | str,
-        text_score: float = 0.5,
+        conf_thres: float = 0.5,
         min_height: int = 30,
         width_height_ratio: float = 8,
         max_side_len: int = 2000,
@@ -310,7 +316,7 @@ class PPOCR(OCR):
             The Path or str to the text detection engine, see :meth:`PPOCRDetector.build`.
         rec_engine : Path, str
             The Path or str to the text recognition engine, see :meth:`PPOCRRecognizer.build`.
-        text_score : float
+        conf_thres : float
             The minimum recognition confidence for a line to be returned.
             By default 0.5.
         min_height : int
@@ -383,7 +389,7 @@ class PPOCR(OCR):
                 no_warn=no_warn,
                 verbose=verbose,
             ),
-            text_score,
+            conf_thres,
             min_height,
             width_height_ratio,
             max_side_len,

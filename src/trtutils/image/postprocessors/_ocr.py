@@ -14,6 +14,8 @@ from trtutils._log import LOG
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from trtutils.image.types import Text, TextBox
+
 _MIN_BOX_SIDE = 3
 _SAME_LINE_PX = 10
 
@@ -274,7 +276,7 @@ def get_text_boxes(
     outputs: list[list[np.ndarray]],
     *,
     verbose: bool | None = None,
-) -> list[list[tuple[np.ndarray, float]]]:
+) -> list[list[TextBox]]:
     """
     Get the text boxes from postprocessed text detection outputs.
 
@@ -287,10 +289,10 @@ def get_text_boxes(
 
     Returns
     -------
-    list[list[tuple[np.ndarray, float]]]
-        The text boxes per image in reading order, where each entry is
-        (box, score) and box is the (4, 2) float32 corner points
-        (TL, TR, BR, BL) in original image coordinates.
+    list[list[TextBox]]
+        The text boxes per image in reading order, one TextBox (box, score) per
+        region, where box is the (4, 2) float32 corner points (TL, TR, BR, BL)
+        in original image coordinates.
 
     """
     if verbose:
@@ -341,7 +343,7 @@ def get_texts(
     characters: Sequence[str],
     *,
     verbose: bool | None = None,
-) -> list[tuple[str, float]]:
+) -> list[Text]:
     """
     Get the texts from postprocessed text recognition outputs by CTC decoding.
 
@@ -358,9 +360,9 @@ def get_texts(
 
     Returns
     -------
-    list[tuple[str, float]]
-        The text per image, where each entry is (text, confidence) and the
-        confidence is the mean probability of the kept characters
+    list[Text]
+        One Text (text, confidence) per image, where the confidence is the
+        mean probability of the kept characters
         (0.0 for an empty text).
 
     """

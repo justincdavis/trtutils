@@ -12,6 +12,7 @@ import tensorrt as trt
 
 from tests.conftest import DATA_DIR, ENGINES_DIR
 from trtutils.core import Buffer, MemoryLocation
+from trtutils.image._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
 from trtutils.models import PPOCR, PPOCRDetector, PPOCRRecognizer
 
 DET_ONNX = DATA_DIR / "ppocr" / "ppocrv4_det_736.onnx"
@@ -115,7 +116,7 @@ def test_text_detector_end2end(request, engine, image, rows) -> None:
         assert np.all(box[:, 0] <= width)
         assert np.all(box[:, 1] <= height)
         assert 0.6 <= score <= 1.0
-    assert model.end2end(image, box_thresh=1.0) == []
+    assert model.end2end(image, 1.0) == []
 
 
 def test_text_detector_batch(small_det_engine) -> None:
@@ -177,6 +178,44 @@ def test_ocr_rejects_gpu_preprocessor(request, model_cls, engine, name, preproce
 
 
 @pytest.mark.parametrize(
+    ("model_cls", "engine", "override", "expected"),
+    [
+        pytest.param(
+            PPOCRDetector, "det_engine", None, TextDetectorOutputSchema.PADDLE, id="det-auto"
+        ),
+        pytest.param(
+            PPOCRDetector, "det_engine", "GENERIC", TextDetectorOutputSchema.GENERIC, id="det-str"
+        ),
+        pytest.param(
+            PPOCRRecognizer, "rec_engine", None, TextRecognizerOutputSchema.PADDLE, id="rec-auto"
+        ),
+        pytest.param(
+            PPOCRRecognizer,
+            "rec_engine",
+            TextRecognizerOutputSchema.GENERIC,
+            TextRecognizerOutputSchema.GENERIC,
+            id="rec-enum",
+        ),
+    ],
+)
+def test_ocr_output_schema(request, model_cls, engine, override, expected) -> None:
+    """PP-OCRv4 engines resolve to PADDLE, overrides apply, and both decode the same."""
+    path = request.getfixturevalue(engine)
+    model = model_cls(path, output_schema=override, warmup=False)
+    assert model.output_schema is expected
+    image = _line(LINES[0]) if model_cls is PPOCRRecognizer else _render(LINES)
+    np.testing.assert_equal(model.end2end(image), model_cls(path, warmup=False).end2end(image))
+
+
+def test_ocr_output_schema_mismatch(det_engine, rec_engine) -> None:
+    """A PADDLE override on the other stage's engine raises, naming the valid options."""
+    with pytest.raises(ValueError, match="PADDLE"):
+        PPOCRDetector(rec_engine, output_schema="PADDLE", warmup=False)
+    with pytest.raises(ValueError, match="PADDLE"):
+        PPOCRRecognizer(det_engine, output_schema=TextRecognizerOutputSchema.PADDLE, warmup=False)
+
+
+@pytest.mark.parametrize(
     ("character_dict", "match"),
     [
         pytest.param(list("abc"), "classes", id="mismatch"),
@@ -204,7 +243,7 @@ def test_ppocr_pipeline(det_engine, rec_engine, image, expected) -> None:
     for box, _, score in results:
         assert box.shape == (4, 2)
         assert score >= 0.5
-    assert ocr.end2end(image, text_score=1.1) == []
+    assert ocr.end2end(image, 1.1) == []
 
     texts = [t for _, t, _ in results]
     batch = ocr.end2end([image, image])
