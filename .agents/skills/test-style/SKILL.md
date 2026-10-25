@@ -1,11 +1,11 @@
 ---
 name: test-style
-description: Use when writing, reviewing or refactoring trtutils tests - "add tests", "write tests for", "make the tests thorough", "parametrize this", "skip on Blackwell/Jetson", "add a test marker". Summarizes docs/TEST_CODE_STYLE.md.
+description: Use when writing, reviewing or refactoring trtutils tests - "add tests", "write tests for", "make the tests thorough", "parametrize this", "skip on Blackwell/Jetson", "add a test marker". Summarizes .agents/docs/TEST_CODE_STYLE.md.
 ---
 
 # trtutils test style
 
-The full standard is `docs/TEST_CODE_STYLE.md`; read it before writing tests. The rules
+The full standard is `.agents/docs/TEST_CODE_STYLE.md`; read it before writing tests. The rules
 that matter most:
 
 ## Structure

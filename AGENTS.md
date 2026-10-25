@@ -114,7 +114,7 @@ provides `download()` / `build()` from class attributes (`_model_type`, `_defaul
 
 ## Testing Standard
 
-All tests follow [docs/TEST_CODE_STYLE.md](docs/TEST_CODE_STYLE.md) (`test-style`
+All tests follow [.agents/docs/TEST_CODE_STYLE.md](.agents/docs/TEST_CODE_STYLE.md) (`test-style`
 skill): flat functions, `pytest.param(..., id="kebab-case")` matrices, real CUDA over mocks,
 registered markers only (see `pytest.ini`).
 
@@ -130,6 +130,6 @@ Reusable workflows live in `.agents/skills/<name>/SKILL.md` (`.claude/skills` li
 | [accuracy-validation](.agents/skills/accuracy-validation/SKILL.md) | Check trtutils outputs against the reference implementation |
 | [jetson-testing](.agents/skills/jetson-testing/SKILL.md) | Run tests/benchmarks on a remote Jetson Orin over SSH |
 | [benchmarking](.agents/skills/benchmarking/SKILL.md) | Make fair branch-vs-main perf comparisons |
-| [test-style](.agents/skills/test-style/SKILL.md) | Write tests per docs/TEST_CODE_STYLE.md |
+| [test-style](.agents/skills/test-style/SKILL.md) | Write tests per .agents/docs/TEST_CODE_STYLE.md |
 | [docker-ci](.agents/skills/docker-ci/SKILL.md) | Run the CUDA 11/12/13 Docker test containers |
 | [memcheck](.agents/skills/memcheck/SKILL.md) | Compare compute-sanitizer memcheck errors against main |
