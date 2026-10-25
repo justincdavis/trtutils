@@ -68,7 +68,7 @@ void letterboxResize(
                 inputBase[inputIdx10 + c] * w10 +
                 inputBase[inputIdx11 + c] * w11;
 
-            outputBase[outputIdx + c] = static_cast<unsigned char>(interpolatedValue);
+            outputBase[outputIdx + c] = static_cast<unsigned char>(interpolatedValue + 0.5f);
         }
     }
 }

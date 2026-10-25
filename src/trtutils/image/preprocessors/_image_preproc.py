@@ -817,12 +817,14 @@ class GPUImagePreprocessor(ImagePreprocessor):
                     LOG.debug(f"{self._tag}: Making letterbox args")
 
                 scale = min(scale_x, scale_y)
-                new_width = int(width * scale)
-                new_height = int(height * scale)
-                padding_x = int((o_width - new_width) / 2)
-                padding_y = int((o_height - new_height) / 2)
+                new_width = round(width * scale)
+                new_height = round(height * scale)
+                pad_w = (o_width - new_width) / 2
+                pad_h = (o_height - new_height) / 2
+                padding_x = round(pad_w - 0.1)
+                padding_y = round(pad_h - 0.1)
                 ratios = (scale, scale)
-                padding = (padding_x, padding_y)
+                padding = (pad_w, pad_h)
                 resize_kernel = self._letterbox_kernel
                 geometry_args = (
                     width,
