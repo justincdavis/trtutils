@@ -149,6 +149,8 @@ Changed
 
 Fixed
 ^^^^^
+* ``DepthEstimator`` always returns depth shaped ``(batch, H, W)``; models that output a
+  ``(B, 1, H, W)`` channel axis (``DepthAnythingV3``) no longer keep the extra axis
 * ``register_jit`` functions now run Numba-compiled (the ``jit`` extra previously had no
   effect), and ``with JIT:`` restores the previous JIT state on exit
 * ``CUDAGraph.invalidate`` no longer calls ``cudaGraphDestroy`` / ``cudaGraphExecDestroy`` on

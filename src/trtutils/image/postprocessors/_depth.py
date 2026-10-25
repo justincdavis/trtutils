@@ -42,6 +42,8 @@ def postprocess_depth(
     if verbose:
         LOG.debug(f"Depth postprocess, output shape: {outputs[0].shape}")
 
+    # drop the channel axis so every depth model yields (B, H, W)
+    outputs = [out[:, 0] if out.ndim == 4 and out.shape[1] == 1 else out for out in outputs]  # noqa: PLR2004
     batch_size = outputs[0].shape[0]
     results = []
     for i in range(batch_size):
