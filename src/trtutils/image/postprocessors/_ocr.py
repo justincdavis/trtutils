@@ -333,7 +333,7 @@ def postprocess_text_recognition(
 
     indices = outputs[0].argmax(axis=2)
     probs = np.take_along_axis(outputs[0], indices[..., None], 2)[..., 0]
-    return [[idx, prob] for idx, prob in zip(indices, probs)]
+    return [[np.asarray(idx), np.asarray(prob)] for idx, prob in zip(indices, probs)]
 
 
 def get_texts(
