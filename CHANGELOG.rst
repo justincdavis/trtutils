@@ -125,6 +125,9 @@ Fixed
   size, ``round(pad - 0.1)`` offsets, float padding), which was off by a row or column on
   images whose fitted size is fractional (1920x1280 to 640: mean pixel error 9.7 to 0.08 of
   255), shifting OBB centers by up to 28 px; resize kernels round instead of truncating
+* ``TRTEngine(backend="async_v2")`` (and ``async_v3``) raises ``ValueError`` at construction when
+  the backend is missing from the installed TensorRT, instead of failing at the first execute
+  (``execute_async_v2`` was removed in TensorRT 10)
 * Host-to-device copies (``memcpy_host_to_device*``) gather non-contiguous arrays first; they
   copied the raw bytes, so the CUDA and TRT preprocessors read crops and other strided views
   as garbage for single images and mixed-size batches unless unified memory was on
