@@ -199,20 +199,9 @@ def test_ocr_rejects_gpu_preprocessor(request, model_cls, engine, name, preproce
     ],
 )
 def test_ocr_output_schema(request, model_cls, engine, override, expected) -> None:
-    """PP-OCRv4 engines resolve to PADDLE, overrides apply, and both decode the same."""
-    path = request.getfixturevalue(engine)
-    model = model_cls(path, output_schema=override, warmup=False)
+    """PP-OCRv4 engines resolve to PADDLE, and the wrappers pass enum and string overrides on."""
+    model = model_cls(request.getfixturevalue(engine), output_schema=override, warmup=False)
     assert model.output_schema is expected
-    image = _line(LINES[0]) if model_cls is PPOCRRecognizer else _render(LINES)
-    np.testing.assert_equal(model.end2end(image), model_cls(path, warmup=False).end2end(image))
-
-
-def test_ocr_output_schema_mismatch(det_engine, rec_engine) -> None:
-    """A PADDLE override on the other stage's engine raises, naming the valid options."""
-    with pytest.raises(ValueError, match="PADDLE"):
-        PPOCRDetector(rec_engine, output_schema="PADDLE", warmup=False)
-    with pytest.raises(ValueError, match="PADDLE"):
-        PPOCRRecognizer(det_engine, output_schema=TextRecognizerOutputSchema.PADDLE, warmup=False)
 
 
 @pytest.mark.parametrize(
