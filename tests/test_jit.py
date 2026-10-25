@@ -20,41 +20,33 @@ pytestmark = [
 
 
 @pytest.fixture(autouse=True)
-def _restore_jit():
-    was_on = FLAGS.JIT
-    yield
-    if was_on:
-        trtutils.enable_jit()
-    else:
-        trtutils.disable_jit()
+def _restore_jit(monkeypatch):
+    monkeypatch.setattr(FLAGS, "JIT", FLAGS.JIT)
 
 
-def _remap_args(num: int, seed: int) -> tuple:
-    rng = np.random.default_rng(seed)
+@pytest.mark.parametrize(
+    "num",
+    [
+        pytest.param(100, id="boxes-100"),
+        pytest.param(300, id="boxes-300"),
+        pytest.param(1, id="boxes-1"),
+        pytest.param(0, id="boxes-empty"),
+    ],
+)
+def test_remap_boxes_core_jit_matches_python(num) -> None:
+    """_remap_boxes_core runs compiled only while JIT is on, with identical outputs."""
+    core = _remap_boxes_core
+    rng = np.random.default_rng(num)
     boxes = rng.random((num, 4), dtype=np.float32) * 700 - 20
     scores = rng.random(num, dtype=np.float32)
-    return boxes, scores, (0.5, 0.75), (0.0, 80.0), 0.25
-
-
-JITTED_CORES = [
-    pytest.param(_remap_boxes_core, _remap_args(100, 0), id="remap-boxes-100"),
-    pytest.param(_remap_boxes_core, _remap_args(300, 1), id="remap-boxes-300"),
-    pytest.param(_remap_boxes_core, _remap_args(1, 2), id="remap-boxes-1"),
-    pytest.param(_remap_boxes_core, _remap_args(0, 3), id="remap-boxes-empty"),
-]
-
-
-@pytest.mark.parametrize(("core", "args"), JITTED_CORES)
-def test_jitted_core_matches_python(core, args) -> None:
-    """A registered core runs compiled only while JIT is on, with identical outputs."""
+    args = (boxes, scores, (0.5, 0.75), (0.0, 80.0), 0.25)
     expected = core.__wrapped__(*args)
 
-    trtutils.enable_jit()
-    compiled = core(*args)
+    with trtutils.JIT:
+        compiled = core(*args)
     num_sigs = len(core.jitted.signatures)
     assert num_sigs >= 1
 
-    trtutils.disable_jit()
     plain = core(*args)
     assert len(core.jitted.signatures) == num_sigs
 

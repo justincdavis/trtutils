@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+import contextlib
 import functools
 from typing import TYPE_CHECKING
 
@@ -19,23 +20,10 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
-try:
+with contextlib.suppress(ImportError):
     from numba import jit as _jit
 
     FLAGS.FOUND_NUMBA = True
-except ImportError:
-
-    def _jit(
-        func: Callable[..., _R],
-        *,
-        nopython: bool,  # noqa: ARG001
-        fastmath: bool,  # noqa: ARG001
-        parallel: bool,  # noqa: ARG001
-        nogil: bool,  # noqa: ARG001
-        cache: bool,  # noqa: ARG001
-        inline: str = "never",  # noqa: ARG001
-    ) -> Callable[..., _R]:
-        return func
 
 
 def register_jit(
@@ -86,7 +74,8 @@ def register_jit(
     """
 
     def decorator(func: Callable[..., _R]) -> Callable[..., _R]:
-        # numba compiles lazily on the first call
+        if not FLAGS.FOUND_NUMBA:
+            return func
         jitted = _jit(
             func,
             nopython=True,
