@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from ._image_model import _PostFn
+    from .types import Detection
 
 
 class Detector(ImageModel, DetectorInterface):
@@ -584,7 +585,7 @@ class Detector(ImageModel, DetectorInterface):
         extra_nms: bool | None = ...,
         agnostic_nms: bool | None = ...,
         verbose: bool | None = ...,
-    ) -> list[tuple[tuple[int, int, int, int], float, int]]: ...
+    ) -> list[Detection]: ...
 
     @overload
     def get_detections(
@@ -596,7 +597,7 @@ class Detector(ImageModel, DetectorInterface):
         extra_nms: bool | None = ...,
         agnostic_nms: bool | None = ...,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]: ...
+    ) -> list[list[Detection]]: ...
 
     def get_detections(
         self: Self,
@@ -607,10 +608,7 @@ class Detector(ImageModel, DetectorInterface):
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> (
-        list[tuple[tuple[int, int, int, int], float, int]]
-        | list[list[tuple[tuple[int, int, int, int], float, int]]]
-    ):
+    ) -> list[Detection] | list[list[Detection]]:
         """
         Get the bounding boxes from postprocessed outputs.
 
@@ -639,9 +637,9 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[tuple[...]] | list[list[tuple[...]]]
-            For single image: list[tuple[...]] (detections for single image).
-            For batch: list[list[tuple[...]]] (detections per image).
+        list[Detection] | list[list[Detection]]
+            For single image: list[Detection] — (bbox, score, class_id) per detection.
+            For batch: list[list[Detection]] — detections per image.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -681,7 +679,7 @@ class Detector(ImageModel, DetectorInterface):
         extra_nms: bool | None = ...,
         agnostic_nms: bool | None = ...,
         verbose: bool | None = ...,
-    ) -> list[tuple[tuple[int, int, int, int], float, int]]: ...
+    ) -> list[Detection]: ...
 
     @overload
     def end2end(
@@ -693,7 +691,7 @@ class Detector(ImageModel, DetectorInterface):
         extra_nms: bool | None = ...,
         agnostic_nms: bool | None = ...,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]: ...
+    ) -> list[list[Detection]]: ...
 
     def end2end(
         self: Self,
@@ -704,10 +702,7 @@ class Detector(ImageModel, DetectorInterface):
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> (
-        list[tuple[tuple[int, int, int, int], float, int]]
-        | list[list[tuple[tuple[int, int, int, int], float, int]]]
-    ):
+    ) -> list[Detection] | list[list[Detection]]:
         """
         Perform end to end inference for a batch of images.
 
@@ -739,9 +734,9 @@ class Detector(ImageModel, DetectorInterface):
 
         Returns
         -------
-        list[tuple[...]] | list[list[tuple[...]]]
-            For single image: list[tuple[...]] (detections).
-            For batch: list[list[tuple[...]]] (detections per image).
+        list[Detection] | list[list[Detection]]
+            For single image: list[Detection] — (bbox, score, class_id) per detection.
+            For batch: list[list[Detection]] — detections per image.
 
         """
         return self._end2end_core(

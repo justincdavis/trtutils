@@ -18,6 +18,8 @@ Submodules
     Base ONNX models for creating 'micro-engines' for image processing.
 :mod:`sahi`
     SAHI (Slicing Aided Hyper Inference) for object detection.
+:mod:`types`
+    Type aliases for image model results.
 
 Classes
 -------

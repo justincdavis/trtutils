@@ -37,6 +37,8 @@ Functions
 
 from __future__ import annotations
 
+from trtutils.image.types import HandInteraction
+
 from ._classifier import get_classifications, postprocess_classifications
 from ._depth import get_depth_maps, postprocess_depth
 from ._detection import (
@@ -48,7 +50,7 @@ from ._detection import (
     postprocess_rtdetrv3,
     postprocess_yolov10,
 )
-from ._hand_interaction import HandInteraction, get_interactions, postprocess_hand_interactions
+from ._hand_interaction import get_interactions, postprocess_hand_interactions
 
 __all__ = [
     "HandInteraction",

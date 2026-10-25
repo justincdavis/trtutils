@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from trtutils._engine import TRTEngine
     from trtutils.core._buffer import Buffer
     from trtutils.image._schema import InputSchema, OutputSchema
-    from trtutils.image.postprocessors._hand_interaction import HandInteraction
+    from trtutils.image.types import Classification, Detection, HandInteraction
 
 
 class ClassifierInterface(ABC):
@@ -238,7 +238,7 @@ class ClassifierInterface(ABC):
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[tuple[int, float]]: ...
+    ) -> list[Classification]: ...
 
     @overload
     @abstractmethod
@@ -248,7 +248,7 @@ class ClassifierInterface(ABC):
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[int, float]]]: ...
+    ) -> list[list[Classification]]: ...
 
     @abstractmethod
     def get_classifications(
@@ -257,7 +257,7 @@ class ClassifierInterface(ABC):
         top_k: int = 5,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[int, float]] | list[list[tuple[int, float]]]:
+    ) -> list[Classification] | list[list[Classification]]:
         """Get the classifications for each image."""
 
     # end2end overloads
@@ -269,7 +269,7 @@ class ClassifierInterface(ABC):
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[tuple[int, float]]: ...
+    ) -> list[Classification]: ...
 
     @overload
     @abstractmethod
@@ -279,7 +279,7 @@ class ClassifierInterface(ABC):
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[int, float]]]: ...
+    ) -> list[list[Classification]]: ...
 
     @abstractmethod
     def end2end(
@@ -288,7 +288,7 @@ class ClassifierInterface(ABC):
         top_k: int = 5,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[int, float]] | list[list[tuple[int, float]]]:
+    ) -> list[Classification] | list[list[Classification]]:
         """Perform end to end inference for a batch of images."""
 
 
@@ -1099,7 +1099,7 @@ class DetectorInterface(ABC):
         extra_nms: bool | None = ...,
         agnostic_nms: bool | None = ...,
         verbose: bool | None = ...,
-    ) -> list[tuple[tuple[int, int, int, int], float, int]]: ...
+    ) -> list[Detection]: ...
 
     @overload
     @abstractmethod
@@ -1112,7 +1112,7 @@ class DetectorInterface(ABC):
         extra_nms: bool | None = ...,
         agnostic_nms: bool | None = ...,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]: ...
+    ) -> list[list[Detection]]: ...
 
     @abstractmethod
     def get_detections(
@@ -1124,10 +1124,7 @@ class DetectorInterface(ABC):
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> (
-        list[tuple[tuple[int, int, int, int], float, int]]
-        | list[list[tuple[tuple[int, int, int, int], float, int]]]
-    ):
+    ) -> list[Detection] | list[list[Detection]]:
         """Get the detections for each image."""
 
     # end2end overloads
@@ -1142,7 +1139,7 @@ class DetectorInterface(ABC):
         extra_nms: bool | None = ...,
         agnostic_nms: bool | None = ...,
         verbose: bool | None = ...,
-    ) -> list[tuple[tuple[int, int, int, int], float, int]]: ...
+    ) -> list[Detection]: ...
 
     @overload
     @abstractmethod
@@ -1155,7 +1152,7 @@ class DetectorInterface(ABC):
         extra_nms: bool | None = ...,
         agnostic_nms: bool | None = ...,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]: ...
+    ) -> list[list[Detection]]: ...
 
     @abstractmethod
     def end2end(
@@ -1167,8 +1164,5 @@ class DetectorInterface(ABC):
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> (
-        list[tuple[tuple[int, int, int, int], float, int]]
-        | list[list[tuple[tuple[int, int, int, int], float, int]]]
-    ):
+    ) -> list[Detection] | list[list[Detection]]:
         """Perform end to end inference for a batch of images."""

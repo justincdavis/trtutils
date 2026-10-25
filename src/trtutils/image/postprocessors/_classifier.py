@@ -3,10 +3,15 @@
 # MIT License
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from trtutils._jit import register_jit
 from trtutils._log import LOG
+
+if TYPE_CHECKING:
+    from trtutils.image.types import Classification
 
 
 def postprocess_classifications(
@@ -71,7 +76,7 @@ def get_classifications(
     top_k: int = 5,
     *,
     verbose: bool | None = None,
-) -> list[list[tuple[int, float]]]:
+) -> list[list[Classification]]:
     """
     Get the classifications from the output of a classification network.
 
@@ -86,8 +91,8 @@ def get_classifications(
 
     Returns
     -------
-    list[list[tuple[int, float]]]
-        The classifications per image, where each entry is (class_id, confidence).
+    list[list[Classification]]
+        Classifications per image, each Classification is (class_id, confidence).
 
     """
     if verbose:
@@ -100,7 +105,7 @@ def get_classifications(
 def _get_classifications_core(
     outputs: list[np.ndarray],
     top_k: int = 5,
-) -> list[tuple[int, float]]:
+) -> list[Classification]:
     # Normalize to a 1D probability vector regardless of model output rank.
     probs = outputs[0]
     if probs.ndim == 0:

@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from types import SimpleNamespace
 
     from ._benchmark import Metric
+    from .image.types import Bbox, Classification, Detection
 
 
 def _to_float_pair(
@@ -713,7 +714,7 @@ def _detect(args: SimpleNamespace) -> None:
 
     def run(
         img: np.ndarray,
-    ) -> tuple[list[tuple[tuple[int, int, int, int], float, int]], float, float, float, float]:
+    ) -> tuple[list[Detection], float, float, float, float]:
         t0 = time.perf_counter()
         tensor, ratios, pads = detector.preprocess([img], no_copy=True, verbose=args.verbose)
         t1 = time.perf_counter()
@@ -730,9 +731,7 @@ def _detect(args: SimpleNamespace) -> None:
             raise RuntimeError(err_msg)
         p_results = detector.postprocess(results, ratios, pads, no_copy=True, verbose=args.verbose)
         t3 = time.perf_counter()
-        dets: list[tuple[tuple[int, int, int, int], float, int]] = detector.get_detections(
-            p_results, verbose=args.verbose
-        )[0]
+        dets: list[Detection] = detector.get_detections(p_results, verbose=args.verbose)[0]
         t4 = time.perf_counter()
         return (
             dets,
@@ -743,7 +742,7 @@ def _detect(args: SimpleNamespace) -> None:
         )
 
     def log(
-        dets: list[tuple[tuple[int, int, int, int], float, int]],
+        dets: list[Detection],
         pre_t: float,
         run_t: float,
         post_t: float,
@@ -758,7 +757,7 @@ def _detect(args: SimpleNamespace) -> None:
     def process_image(
         img: np.ndarray,
     ) -> tuple[
-        list[tuple[int, int, int, int]],
+        list[Bbox],
         list[float],
         list[int],
         float,
@@ -779,7 +778,7 @@ def _detect(args: SimpleNamespace) -> None:
 
     def draw(
         img: np.ndarray,
-        bboxes: list[tuple[int, int, int, int]],
+        bboxes: list[Bbox],
         scores: list[float],
         classes: list[int],
         pre_t: float,
@@ -908,7 +907,7 @@ def _classify(args: SimpleNamespace) -> None:
 
     def run(
         img: np.ndarray,
-    ) -> tuple[tuple[int, float], float, float, float, float]:
+    ) -> tuple[Classification, float, float, float, float]:
         t0 = time.perf_counter()
         tensor, _, _ = classifier.preprocess([img], no_copy=True)
         t1 = time.perf_counter()
@@ -919,7 +918,7 @@ def _classify(args: SimpleNamespace) -> None:
             raise RuntimeError(err_msg)
         p_results = classifier.postprocess(results, no_copy=True)
         t3 = time.perf_counter()
-        cls_results: list[tuple[int, float]] = classifier.get_classifications(p_results, top_k=1)[0]
+        cls_results: list[Classification] = classifier.get_classifications(p_results, top_k=1)[0]
         t4 = time.perf_counter()
         return (
             cls_results[0],
@@ -930,7 +929,7 @@ def _classify(args: SimpleNamespace) -> None:
         )
 
     def log(
-        cls_results: tuple[int, float],
+        cls_results: Classification,
         pre_t: float,
         run_t: float,
         post_t: float,
@@ -945,7 +944,7 @@ def _classify(args: SimpleNamespace) -> None:
     def process_image(
         img: np.ndarray,
     ) -> tuple[
-        tuple[int, float],
+        Classification,
         float,
         float,
         float,
@@ -961,7 +960,7 @@ def _classify(args: SimpleNamespace) -> None:
 
     def draw(
         img: np.ndarray,
-        cls_results: tuple[int, float],
+        cls_results: Classification,
         pre_t: float,
         run_t: float,
         post_t: float,

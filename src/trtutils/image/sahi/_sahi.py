@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils.image.interfaces import DetectorInterface
+    from trtutils.image.types import Detection
 
 
 class SAHI:
@@ -97,7 +98,7 @@ class SAHI:
         *,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
-    ) -> list[tuple[tuple[int, int, int, int], float, int]]:
+    ) -> list[Detection]:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["execute"])
         if not patch.flags.c_contiguous:
@@ -141,7 +142,7 @@ class SAHI:
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[tuple[tuple[int, int, int, int], float, int]]:
+    ) -> list[Detection]:
         """
         Perform end to end inference using detection model and SAHI.
 
@@ -169,8 +170,8 @@ class SAHI:
 
         Returns
         -------
-        list[tuple[tuple[int, int, int, int], float, int]]
-            The detections where each entry is bbox, conf, class_id
+        list[Detection]
+            Detections, each Detection is (bbox, score, class_id).
 
         """
         if FLAGS.NVTX_ENABLED:

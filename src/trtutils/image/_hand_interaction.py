@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from trtutils.core._buffer import Buffer
 
     from ._image_model import _PostFn
-    from .postprocessors import HandInteraction
+    from .types import HandInteraction
 
 _EXPECTED_OUTPUT_PREFIX = ["boxes", "scores", "labels", "pair_probs"]
 
@@ -561,8 +561,8 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         Returns
         -------
         list[HandInteraction] | list[list[HandInteraction]]
-            For single image: list[HandInteraction] (interactions for single image).
-            For batch: list[list[HandInteraction]] (interactions per image).
+            For single image: list[HandInteraction] — (hand, first, second, side, contact) per hand.
+            For batch: list[list[HandInteraction]] — interactions per image.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -642,8 +642,8 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         Returns
         -------
         list[HandInteraction] | list[list[HandInteraction]]
-            For single image: list[HandInteraction] (interactions).
-            For batch: list[list[HandInteraction]] (interactions per image).
+            For single image: list[HandInteraction] — (hand, first, second, side, contact) per hand.
+            For batch: list[list[HandInteraction]] — interactions per image.
 
         """
         return self._end2end_core(

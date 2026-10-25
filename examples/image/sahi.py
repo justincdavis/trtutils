@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """File showcasing the Detector class."""
@@ -8,12 +8,16 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import cv2ext
 
 from trtutils import set_log_level
 from trtutils.image import SAHI, Detector
+
+if TYPE_CHECKING:
+    from trtutils.image.types import Detection
 
 
 def main() -> None:
@@ -42,13 +46,13 @@ def main() -> None:
     detector = Detector(engine_path, warmup=True, preprocessor="trt", verbose=args.verbose)
 
     t0 = time.perf_counter()
-    bboxes: list[tuple[tuple[int, int, int, int], float, int]] = detector.end2end([img])[0]
+    bboxes: list[Detection] = detector.end2end([img])[0]
     t1 = time.perf_counter()
     standalone_time = t1 - t0
 
     sahi = SAHI(detector)
     t0 = time.perf_counter()
-    sahi_bboxes: list[tuple[tuple[int, int, int, int], float, int]] = sahi.end2end(img)
+    sahi_bboxes: list[Detection] = sahi.end2end(img)
     t1 = time.perf_counter()
     sahi_time = t1 - t0
 

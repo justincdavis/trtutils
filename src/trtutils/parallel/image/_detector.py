@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from trtutils.image.types import Detection
+
 
 def _is_postprocessed_batches(
     outputs: list[list[list[np.ndarray]] | list[np.ndarray]],
@@ -602,7 +604,7 @@ class ParallelDetector:
         outputs: list[list[list[np.ndarray]]],
         *,
         verbose: bool | None = None,
-    ) -> list[list[list[tuple[tuple[int, int, int, int], float, int]]]]:
+    ) -> list[list[list[Detection]]]:
         """
         Get the detections of the YOLO models.
 
@@ -615,8 +617,8 @@ class ParallelDetector:
 
         Returns
         -------
-        list[list[list[tuple[tuple[int, int, int, int], float, int]]]]
-            The detections per image per model.
+        list[list[list[Detection]]]
+            Detections per image per model, each Detection is (bbox, score, class_id).
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -635,7 +637,7 @@ class ParallelDetector:
         modelid: int,
         *,
         verbose: bool | None = None,
-    ) -> list[list[tuple[tuple[int, int, int, int], float, int]]]:
+    ) -> list[list[Detection]]:
         """
         Get the detections for a batch from a single model.
 
@@ -650,8 +652,8 @@ class ParallelDetector:
 
         Returns
         -------
-        list[list[tuple[tuple[int, int, int, int], float, int]]]
-            The detections per image.
+        list[list[Detection]]
+            Detections per image, each Detection is (bbox, score, class_id).
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -980,7 +982,7 @@ class ParallelDetector:
         postprocess: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
-    ) -> list[list[list[tuple[tuple[int, int, int, int], float, int]]]]:
+    ) -> list[list[list[Detection]]]:
         """
         Perform end-to-end inference for all models.
 
@@ -1005,8 +1007,8 @@ class ParallelDetector:
 
         Returns
         -------
-        list[list[list[tuple[tuple[int, int, int, int], float, int]]]]
-            The detections per image per model.
+        list[list[list[Detection]]]
+            Detections per image per model, each Detection is (bbox, score, class_id).
 
         Raises
         ------

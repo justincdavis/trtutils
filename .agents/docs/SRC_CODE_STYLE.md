@@ -70,6 +70,8 @@ Every task model is a peer subclass of `ImageModel` plus its interface in `inter
 (`Detector`, `Classifier`, `DepthEstimator`, ...). Do not subclass another task model, and do
 not add private intermediate bases between `ImageModel` and a task model.
 
+Result types are `TypeAlias`es defined once in `image/types.py` and used in all signatures.
+
 Each task model provides the same API surface, in this order:
 
 - `__init__(engine_path, warmup_iterations, input_range, preprocessor, resize_method, <task

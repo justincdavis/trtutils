@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils.core._buffer import Buffer
+    from trtutils.image.types import Classification
 
     from ._image_model import _PostFn
 
@@ -388,7 +389,7 @@ class Classifier(ImageModel, ClassifierInterface):
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[tuple[int, float]]: ...
+    ) -> list[Classification]: ...
 
     @overload
     def get_classifications(
@@ -397,7 +398,7 @@ class Classifier(ImageModel, ClassifierInterface):
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[int, float]]]: ...
+    ) -> list[list[Classification]]: ...
 
     def get_classifications(
         self: Self,
@@ -405,7 +406,7 @@ class Classifier(ImageModel, ClassifierInterface):
         top_k: int = 5,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[int, float]] | list[list[tuple[int, float]]]:
+    ) -> list[Classification] | list[list[Classification]]:
         """
         Get the classifications from postprocessed outputs.
 
@@ -421,9 +422,9 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[tuple[int, float]] | list[list[tuple[int, float]]]
-            For single image: list[tuple[int, float]] (classifications for single image).
-            For batch: list[list[tuple[int, float]]] (classifications per image).
+        list[Classification] | list[list[Classification]]
+            For single image: list[Classification] — (class_id, confidence) per class.
+            For batch: list[list[Classification]] — classifications per image.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -448,7 +449,7 @@ class Classifier(ImageModel, ClassifierInterface):
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[tuple[int, float]]: ...
+    ) -> list[Classification]: ...
 
     @overload
     def end2end(
@@ -457,7 +458,7 @@ class Classifier(ImageModel, ClassifierInterface):
         top_k: int = ...,
         *,
         verbose: bool | None = ...,
-    ) -> list[list[tuple[int, float]]]: ...
+    ) -> list[list[Classification]]: ...
 
     def end2end(
         self: Self,
@@ -465,7 +466,7 @@ class Classifier(ImageModel, ClassifierInterface):
         top_k: int = 5,
         *,
         verbose: bool | None = None,
-    ) -> list[tuple[int, float]] | list[list[tuple[int, float]]]:
+    ) -> list[Classification] | list[list[Classification]]:
         """
         Perform end to end inference for a batch of images.
 
@@ -484,9 +485,9 @@ class Classifier(ImageModel, ClassifierInterface):
 
         Returns
         -------
-        list[tuple[int, float]] | list[list[tuple[int, float]]]
-            For single image: list[tuple[int, float]] (classifications).
-            For batch: list[list[tuple[int, float]]] (classifications per image).
+        list[Classification] | list[list[Classification]]
+            For single image: list[Classification] — (class_id, confidence) per class.
+            For batch: list[list[Classification]] — classifications per image.
 
         """
         return self._end2end_core(
