@@ -261,6 +261,7 @@ class ImageModel:
             self._input_size,
             self._input_range,
             self._dtype,
+            resize=self._resize_method,
             mean=self._mean,
             std=self._std,
             tag=self._tag,
@@ -610,10 +611,9 @@ class ImageModel:
         else:
             batch_images = images
 
-        resize = resize if resize is not None else self._resize_method
         if verbose:
             LOG.debug(
-                f"{self._tag}: Running preprocess, batch_size: {len(batch_images)}, with method: {resize}",
+                f"{self._tag}: Running preprocess, batch_size: {len(batch_images)}, with resize: {resize if resize is not None else self._resize_method}",
             )
             LOG.debug(f"{self._tag}: Using device: {method}")
         t0 = time.perf_counter()
@@ -683,7 +683,7 @@ class ImageModel:
             )
         else:
             tensor, ratios, padding = preprocessor(
-                images, resize=self._resize_method, no_copy=True, verbose=verbose
+                images, no_copy=not preprocessor.dynamic, verbose=verbose
             )
             image = host_input(tensor)
         self._pre_profile = (t0, time.perf_counter())
