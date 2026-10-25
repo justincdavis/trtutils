@@ -20,5 +20,6 @@ Examples
     examples/sahi.rst
     examples/depth_estimator.rst
     examples/hand_interaction.rst
+    examples/ocr.rst
     examples/dla.rst
     examples/jetson.rst

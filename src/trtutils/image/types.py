@@ -14,6 +14,12 @@ Aliases
     One classification as (class_id, confidence).
 :data:`HandInteraction`
     One hand-object interaction as (hand, first, second, side, contact).
+:data:`TextBox`
+    One detected text region as (box, score).
+:data:`Text`
+    One recognized text line as (text, confidence).
+:data:`TextLine`
+    One detected and recognized text line as (box, text, score).
 
 Examples
 --------
@@ -26,6 +32,7 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
+import numpy as np
 from typing_extensions import TypeAlias
 
 #: bounding box as (x1, y1, x2, y2) in original image pixels
@@ -47,9 +54,21 @@ HandInteraction: TypeAlias = Tuple[
     Optional[int],
 ]
 
+#: text region as (box, score), box is the (4, 2) float32 corner points (TL, TR, BR, BL)
+TextBox: TypeAlias = Tuple[np.ndarray, float]
+
+#: recognized text as (text, confidence)
+Text: TypeAlias = Tuple[str, float]
+
+#: text line as (box, text, score), box as in :data:`TextBox`
+TextLine: TypeAlias = Tuple[np.ndarray, str, float]
+
 __all__ = [
     "Bbox",
     "Classification",
     "Detection",
     "HandInteraction",
+    "Text",
+    "TextBox",
+    "TextLine",
 ]

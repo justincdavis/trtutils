@@ -34,6 +34,8 @@ ROUTING_CASES = [
     pytest.param("depth_anything_v3_mono_large", "export_depth_anything_v3", id="depth_anything_v3"),
     pytest.param("hoi_detr_vitl", "export_hoi_detr", id="hoi_detr"),
     pytest.param("hands23_x101", "export_hands23", id="hands23"),
+    pytest.param("ppocrv4_det", "export_ppocr", id="ppocr_det"),
+    pytest.param("ppocrv4_rec", "export_ppocr", id="ppocr_rec"),
 ]
 
 

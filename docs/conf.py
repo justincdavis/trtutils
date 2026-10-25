@@ -60,7 +60,15 @@ autodoc_mock_imports = ["tensorrt", "cuda", "cuda-python"]
 # show result aliases by name in signatures
 autodoc_type_aliases = {
     name: f"trtutils.image.types.{name}"
-    for name in ("Bbox", "Classification", "Detection", "HandInteraction")
+    for name in (
+        "Bbox",
+        "Classification",
+        "Detection",
+        "HandInteraction",
+        "Text",
+        "TextBox",
+        "TextLine",
+    )
 }
 
 intersphinx_mapping = {

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
+import numpy as np
 import pytest
 
 import trtutils.image.postprocessors
@@ -29,6 +30,9 @@ _SCORED = Tuple[_BBOX, float]
             Tuple[_SCORED, Optional[_SCORED], Optional[_SCORED], Optional[int], Optional[int]],
             id="hand-interaction",
         ),
+        pytest.param("TextBox", Tuple[np.ndarray, float], id="text-box"),
+        pytest.param("Text", Tuple[str, float], id="text"),
+        pytest.param("TextLine", Tuple[np.ndarray, str, float], id="text-line"),
     ],
 )
 def test_alias(name, expected) -> None:

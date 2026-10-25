@@ -22,6 +22,7 @@ from ._models import (
     export_dfine,
     export_hands23,
     export_hoi_detr,
+    export_ppocr,
     export_rfdetr,
     export_rtdetrv1,
     export_rtdetrv2,
@@ -207,6 +208,8 @@ def download_model(  # noqa: C901, PLR0912, PLR0915
         export_func = export_hands23
     elif "depth_anything_v3" in model:
         export_func = export_depth_anything_v3
+    elif "ppocr" in model:
+        export_func = export_ppocr
 
     # Single call site
     if export_func is None:
