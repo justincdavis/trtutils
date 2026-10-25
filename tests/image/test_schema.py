@@ -83,9 +83,12 @@ _DEPTH = DepthEstimatorOutputSchema
         pytest.param(_CLS, ("logits",), None, "GENERIC", id="cls-generic-fallback"),
         pytest.param(_CLS, ("output0",), "GENERIC", "GENERIC", id="cls-generic-str"),
         pytest.param(_CLS, ("output",), _CLS.GENERIC, "GENERIC", id="cls-generic-forced"),
+        pytest.param(_CLS, ("output", "aux"), None, "GENERIC", id="cls-generic-two-outputs"),
+        pytest.param(_CLS, _HOI.HOI_DETR.value, None, "GENERIC", id="cls-generic-detector"),
         pytest.param(_DEPTH, ("output",), None, "DEPTH_ANYTHING", id="depth-anything-auto"),
         pytest.param(_DEPTH, ("depth",), None, "GENERIC", id="depth-generic-fallback"),
         pytest.param(_DEPTH, ("depth",), _DEPTH.GENERIC, "GENERIC", id="depth-generic-enum"),
+        pytest.param(_DEPTH, ("depth", "conf"), None, "GENERIC", id="depth-generic-two-outputs"),
     ],
 )
 def test_resolve_output_schema(schema_cls, outputs, override, expected) -> None:
@@ -101,9 +104,7 @@ def test_resolve_output_schema(schema_cls, outputs, override, expected) -> None:
         pytest.param(_HOI, ("boxes", "scores", "labels"), None, "match no", id="missing-pairs"),
         pytest.param(_HOI, _HOI.HOI_DETR.value, _HOI.HANDS23, "match no", id="enum"),
         pytest.param(_HOI, _HOI.HOI_DETR.value, "NOPE", "NOPE", id="bad-str"),
-        pytest.param(_CLS, ("output", "aux"), None, "match no", id="cls-two-outputs"),
         pytest.param(_CLS, ("logits",), _CLS.TORCHVISION, "match no", id="cls-named-override"),
-        pytest.param(_DEPTH, ("depth", "conf"), None, "match no", id="depth-two-outputs"),
         pytest.param(_DEPTH, ("depth",), "DEPTH_ANYTHING", "match no", id="depth-named-override"),
     ],
 )
@@ -142,6 +143,6 @@ def renamed_simple_engine(build_test_engine, simple_onnx_path, tmp_path_factory)
     ],
 )
 def test_generic_fallback_engine(renamed_simple_engine, model_cls, expected) -> None:
-    """An arbitrary-named single-output engine still loads, under the GENERIC schema."""
+    """An engine with an arbitrary output name still loads, under the GENERIC schema."""
     model = model_cls(renamed_simple_engine, preprocessor="cpu", warmup=False)
     assert model.output_schema is expected

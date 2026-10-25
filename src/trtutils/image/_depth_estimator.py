@@ -90,8 +90,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             Can be a DepthEstimatorOutputSchema enum value or a string matching
             the enum name (e.g., "DEPTH_ANYTHING", "GENERIC").
             By default None, which means the schema will be auto-detected from
-            the engine's output names, falling back to GENERIC for any other
-            single-output engine.
+            the engine's output names, falling back to GENERIC for any other engine.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -128,7 +127,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
         ------
         ValueError
             If the output schema string is invalid, or the engine outputs
-            match no DepthEstimatorOutputSchema.
+            do not match the requested schema.
 
         """
         # parent creates the engine and calls _configure_model(), which sets the schema
