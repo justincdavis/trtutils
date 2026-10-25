@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import cv2
 import numpy as np
 
-from trtutils._jit import register_jit
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
@@ -121,7 +120,6 @@ def _nms_indices(
     return np.asarray(raw_idx, dtype=int).ravel()
 
 
-@register_jit(nogil=True, cache=True)
 def _remap_boxes_core(
     boxes: np.ndarray,
     scores: np.ndarray,

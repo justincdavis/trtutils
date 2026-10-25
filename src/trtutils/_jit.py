@@ -116,9 +116,10 @@ def disable_jit() -> None:
 
 class _JIT:
     def __init__(self: Self) -> None:
-        pass
+        self._was_on = False
 
     def __enter__(self: Self) -> Self:
+        self._was_on = FLAGS.JIT
         enable_jit()
         return self
 
@@ -128,7 +129,8 @@ class _JIT:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        disable_jit()
+        if not self._was_on:
+            disable_jit()
 
 
 JIT = _JIT()

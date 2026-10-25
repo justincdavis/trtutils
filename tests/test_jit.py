@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/_jit.py -- register_jit dispatch and the jitted postprocess cores."""
+"""Tests for src/trtutils/_jit.py -- register_jit dispatch and the JIT switches."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import pytest
 import trtutils
 from trtutils._flags import FLAGS
 from trtutils._jit import register_jit
-from trtutils.image.postprocessors._hand_interaction import _remap_boxes_core
 
 pytestmark = [
     pytest.mark.cpu,
@@ -25,39 +24,6 @@ def _restore_jit(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "num",
-    [
-        pytest.param(100, id="boxes-100"),
-        pytest.param(300, id="boxes-300"),
-        pytest.param(1, id="boxes-1"),
-        pytest.param(0, id="boxes-empty"),
-    ],
-)
-def test_remap_boxes_core_jit_matches_python(num) -> None:
-    """_remap_boxes_core runs compiled only while JIT is on, with identical outputs."""
-    core = _remap_boxes_core
-    rng = np.random.default_rng(num)
-    boxes = rng.random((num, 4), dtype=np.float32) * 700 - 20
-    scores = rng.random(num, dtype=np.float32)
-    args = (boxes, scores, (0.5, 0.75), (0.0, 80.0), 0.25)
-    expected = core.__wrapped__(*args)
-
-    with trtutils.JIT:
-        compiled = core(*args)
-    num_sigs = len(core.jitted.signatures)
-    assert num_sigs >= 1
-
-    plain = core(*args)
-    assert len(core.jitted.signatures) == num_sigs
-
-    for got in (compiled, plain):
-        assert len(got) == len(expected)
-        for out, ref in zip(got, expected):
-            assert out.dtype == ref.dtype
-            np.testing.assert_array_equal(out, ref)
-
-
-@pytest.mark.parametrize(
     "options",
     [
         pytest.param({}, id="defaults"),
@@ -68,23 +34,56 @@ def test_remap_boxes_core_jit_matches_python(num) -> None:
         pytest.param({"nogil": True, "fastmath": True}, id="nogil-fastmath"),
     ],
 )
-def test_register_jit_options(options) -> None:
-    """register_jit forwards its options to numba and enable/disable_jit switch at any time."""
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pytest.param(np.float64, id="float64"),
+        pytest.param(np.int64, id="int64"),
+    ],
+)
+def test_register_jit_dispatch(options, dtype) -> None:
+    """register_jit forwards its options and runs compiled only while JIT is on, same outputs."""
 
     @register_jit(**options)
-    def scale(x: np.ndarray) -> np.ndarray:
-        return x * 2.0
+    def remap(boxes: np.ndarray, pad: float, ratio: float) -> np.ndarray:
+        out = (boxes - pad) / ratio
+        return np.clip(out, 0, None)
 
-    x = np.arange(8, dtype=np.float64)
-    target = scale.jitted.targetoptions
+    target = remap.jitted.targetoptions
     assert target["nopython"] is True
     for name, value in options.items():
         assert target[name] == value
 
+    boxes = (np.arange(40).reshape(10, 4) * 7 - 30).astype(dtype)
+    expected = remap.__wrapped__(boxes, 5.0, 0.5)
+
     trtutils.disable_jit()
-    np.testing.assert_array_equal(scale(x), x * 2.0)
-    assert scale.jitted.signatures == []
+    plain = remap(boxes, 5.0, 0.5)
+    assert remap.jitted.signatures == []
 
     trtutils.enable_jit()
-    np.testing.assert_array_equal(scale(x), x * 2.0)
-    assert len(scale.jitted.signatures) == 1
+    compiled = remap(boxes, 5.0, 0.5)
+    assert len(remap.jitted.signatures) == 1
+
+    for out in (plain, compiled):
+        assert out.dtype == expected.dtype
+        np.testing.assert_array_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    "start_on",
+    [
+        pytest.param(True, id="start-on"),
+        pytest.param(False, id="start-off"),
+    ],
+)
+def test_jit_context_restores_state(start_on) -> None:
+    """The JIT context manager enables JIT inside the block and restores the prior state."""
+    if start_on:
+        trtutils.enable_jit()
+    else:
+        trtutils.disable_jit()
+
+    with trtutils.JIT:
+        assert FLAGS.JIT is True
+    assert FLAGS.JIT is start_on
