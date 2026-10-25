@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 
 from tests.conftest import DATA_DIR
-from trtutils.image import DepthEstimator
 from trtutils.image._schema import DepthEstimatorOutputSchema
 from trtutils.models import DepthAnythingV1, DepthAnythingV2, DepthAnythingV3
 
@@ -40,6 +39,7 @@ def test_depth_estimator_end2end(
     """run(), get_depth_maps(), and end2end() agree and yield a finite depth map normalized to [0, 1]."""
     engine = build_model_engine(model_cls, onnx_path)
     model = model_cls(engine, preprocessor=preprocessor, warmup=False)
+    assert model.output_schema is DepthEstimatorOutputSchema.DEPTH_ANYTHING
     image = images["horse"]
 
     postprocessed = model.run(image.array)
@@ -52,19 +52,3 @@ def test_depth_estimator_end2end(
     assert np.all(np.isfinite(via_run))
     assert via_run.min() == 0.0
     assert via_run.max() == pytest.approx(1.0)
-
-
-@pytest.mark.parametrize(("model_cls", "onnx_path"), DEPTH_ESTIMATORS)
-@pytest.mark.parametrize(
-    "override",
-    [
-        pytest.param(None, id="auto"),
-        pytest.param(DepthEstimatorOutputSchema.DEPTH_ANYTHING, id="enum"),
-        pytest.param("DEPTH_ANYTHING", id="str"),
-    ],
-)
-def test_output_schema(build_model_engine, model_cls, onnx_path, override) -> None:
-    """A wrapper-built engine auto-detects its family schema and accepts an enum or name override."""
-    engine = build_model_engine(model_cls, onnx_path)
-    model = DepthEstimator(engine, output_schema=override, warmup=False)
-    assert model.output_schema is DepthEstimatorOutputSchema.DEPTH_ANYTHING

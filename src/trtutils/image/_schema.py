@@ -57,7 +57,7 @@ class HandInteractionOutputSchema(Enum):
     HANDS23 = ("boxes", "scores", "labels", "pair_probs", "side")
 
 
-# "*" matches any output name; wildcard members go last so named members win
+# "*" matches any output name, named members win over it
 class ClassifierOutputSchema(Enum):
     # torchvision classifiers, logits (B, C)
     TORCHVISION = ("output",)
@@ -267,7 +267,7 @@ def resolve_output_schema(
     schema_cls : type[Enum]
         The schema enum, each member's value is a tuple of output names.
         A member whose names are all ``"*"`` matches any engine with that many
-        outputs; auto-detection tries members in definition order.
+        outputs, named members are tried first.
     override : Enum, str, optional
         A member or member name to use instead of auto-detection.
         The engine outputs must still match it.
@@ -291,6 +291,7 @@ def resolve_output_schema(
             raise ValueError(err_msg)
         override = schema_cls[override]
     candidates = list(schema_cls) if override is None else [override]
+    candidates.sort(key=lambda m: "*" in m.value)
     outputs = sorted(engine.output_names)
     for member in candidates:
         if sorted(member.value) == outputs or member.value == ("*",) * len(outputs):

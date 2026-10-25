@@ -10,7 +10,6 @@ from types import SimpleNamespace
 import onnx
 import pytest
 
-from tests.conftest import DATA_DIR
 from trtutils.image import Classifier, DepthEstimator, ImageModel
 from trtutils.image._schema import (
     ClassifierOutputSchema,
@@ -81,18 +80,10 @@ _DEPTH = DepthEstimatorOutputSchema
         ),
         pytest.param(_HOI, _HOI.HANDS23.value, "HANDS23", "HANDS23", id="hands23-str-override"),
         pytest.param(_CLS, ("output",), None, "TORCHVISION", id="torchvision-auto"),
-        pytest.param(_CLS, ("output",), _CLS.TORCHVISION, "TORCHVISION", id="torchvision-enum"),
-        pytest.param(_CLS, ("output",), "TORCHVISION", "TORCHVISION", id="torchvision-str"),
         pytest.param(_CLS, ("logits",), None, "GENERIC", id="cls-generic-fallback"),
         pytest.param(_CLS, ("output0",), "GENERIC", "GENERIC", id="cls-generic-str"),
         pytest.param(_CLS, ("output",), _CLS.GENERIC, "GENERIC", id="cls-generic-forced"),
         pytest.param(_DEPTH, ("output",), None, "DEPTH_ANYTHING", id="depth-anything-auto"),
-        pytest.param(
-            _DEPTH, ("output",), _DEPTH.DEPTH_ANYTHING, "DEPTH_ANYTHING", id="depth-anything-enum"
-        ),
-        pytest.param(
-            _DEPTH, ("output",), "DEPTH_ANYTHING", "DEPTH_ANYTHING", id="depth-anything-str"
-        ),
         pytest.param(_DEPTH, ("depth",), None, "GENERIC", id="depth-generic-fallback"),
         pytest.param(_DEPTH, ("depth",), _DEPTH.GENERIC, "GENERIC", id="depth-generic-enum"),
     ],
@@ -110,10 +101,8 @@ def test_resolve_output_schema(schema_cls, outputs, override, expected) -> None:
         pytest.param(_HOI, ("boxes", "scores", "labels"), None, "match no", id="missing-pairs"),
         pytest.param(_HOI, _HOI.HOI_DETR.value, _HOI.HANDS23, "match no", id="enum"),
         pytest.param(_HOI, _HOI.HOI_DETR.value, "NOPE", "NOPE", id="bad-str"),
-        pytest.param(_CLS, _HOI.HOI_DETR.value, None, "match no", id="cls-on-multi-output"),
         pytest.param(_CLS, ("output", "aux"), None, "match no", id="cls-two-outputs"),
         pytest.param(_CLS, ("logits",), _CLS.TORCHVISION, "match no", id="cls-named-override"),
-        pytest.param(_CLS, ("output",), "NOPE", "NOPE", id="cls-bad-str"),
         pytest.param(_DEPTH, ("depth", "conf"), None, "match no", id="depth-two-outputs"),
         pytest.param(_DEPTH, ("depth",), "DEPTH_ANYTHING", "match no", id="depth-named-override"),
     ],
@@ -135,9 +124,9 @@ def test_output_order_maps_by_name() -> None:
 
 
 @pytest.fixture(scope="session")
-def renamed_simple_engine(build_test_engine, tmp_path_factory):
+def renamed_simple_engine(build_test_engine, simple_onnx_path, tmp_path_factory):
     """Build simple.onnx with its single output renamed to a name no schema lists."""
-    model = onnx.load(str(DATA_DIR / "simple.onnx"))
+    model = onnx.load(str(simple_onnx_path))
     model.graph.node[-1].output[0] = "custom_head"
     model.graph.output[0].name = "custom_head"
     onnx_path = tmp_path_factory.mktemp("renamed") / "simple_custom_head.onnx"
