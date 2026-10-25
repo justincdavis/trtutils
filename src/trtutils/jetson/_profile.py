@@ -92,7 +92,7 @@ class JetsonProfilerResult(ProfilerResult):
 
     """
 
-    layers: Sequence[JetsonLayerInfo]
+    layers: Sequence[JetsonLayerInfo]  # ty: ignore[invalid-mutable-override]
     power_draw: Metric
     energy: Metric
 

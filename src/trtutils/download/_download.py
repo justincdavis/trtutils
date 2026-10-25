@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from functools import lru_cache
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from trtutils._log import LOG
 
@@ -225,7 +225,7 @@ def download_model(
         export_yolov13,
     )
     batch, dynamic = handle_batch(batch, model, dynamic=dynamic, supported=supported)
-    batch_kwargs = {"batch": batch, "dynamic": dynamic} if supported else {}
+    batch_kwargs: dict[str, Any] = {"batch": batch, "dynamic": dynamic} if supported else {}
 
     python_path, bin_path = make_venv(directory, no_cache=no_uv_cache, verbose=verbose)
     requirements_export_path = Path(requirements_export) if requirements_export is not None else None
