@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generic
 
 from typing_extensions import TypeVar
 
@@ -26,6 +26,20 @@ with contextlib.suppress(ImportError):
     FLAGS.FOUND_NUMBA = True
 
 
+class _JitFunction(Generic[_R]):
+    """A function that runs ``jitted`` while ``FLAGS.JIT`` is on and ``py_func`` otherwise."""
+
+    def __init__(self: Self, py_func: Callable[..., _R], jitted: Callable[..., _R]) -> None:
+        functools.update_wrapper(self, py_func)
+        self.py_func = py_func
+        self.jitted = jitted
+
+    def __call__(self: Self, *args: object, **kwargs: object) -> _R:
+        if FLAGS.JIT:
+            return self.jitted(*args, **kwargs)
+        return self.py_func(*args, **kwargs)
+
+
 def register_jit(
     *,
     fastmath: bool = False,
@@ -33,7 +47,7 @@ def register_jit(
     nogil: bool = False,
     cache: bool = False,
     inline: str = "never",
-) -> Callable[[Callable[..., _R]], Callable[..., _R]]:
+) -> Callable[[Callable[..., _R]], _JitFunction[_R]]:
     """
     Decorate a function to run Numba-compiled while JIT is enabled.
 
@@ -62,8 +76,9 @@ def register_jit(
 
     Returns
     -------
-    Callable[[Callable[_P, _R]], Callable[_P, _R]]
-        A decorator returning the JIT-switchable function.
+    Callable[[Callable[_P, _R]], _JitFunction[_R]]
+        A decorator returning the JIT-switchable function; ``py_func`` and ``jitted``
+        hold the plain and Numba versions (the same function without Numba).
 
     Examples
     --------
@@ -73,9 +88,9 @@ def register_jit(
 
     """
 
-    def decorator(func: Callable[..., _R]) -> Callable[..., _R]:
+    def decorator(func: Callable[..., _R]) -> _JitFunction[_R]:
         if not FLAGS.FOUND_NUMBA:
-            return func
+            return _JitFunction(func, func)
         jitted = _jit(
             func,
             nopython=True,
@@ -85,15 +100,7 @@ def register_jit(
             cache=cache,
             inline=inline,
         )
-
-        @functools.wraps(func)
-        def dispatch(*args: object, **kwargs: object) -> _R:
-            if FLAGS.JIT:
-                return jitted(*args, **kwargs)
-            return func(*args, **kwargs)
-
-        dispatch.jitted = jitted  # ty: ignore[unresolved-attribute]
-        return dispatch
+        return _JitFunction(func, jitted)
 
     return decorator
 

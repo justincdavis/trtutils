@@ -12,10 +12,9 @@ import trtutils
 from trtutils._flags import FLAGS
 from trtutils._jit import register_jit
 
-pytestmark = [
-    pytest.mark.cpu,
-    pytest.mark.skipif(not FLAGS.FOUND_NUMBA, reason="numba is not installed"),
-]
+numba = pytest.importorskip("numba")
+
+pytestmark = pytest.mark.cpu
 
 
 @pytest.fixture(autouse=True)
@@ -49,21 +48,23 @@ def test_register_jit_dispatch(options, dtype) -> None:
         out = (boxes - pad) / ratio
         return np.clip(out, 0, None)
 
-    target = remap.jitted.targetoptions
+    dispatcher = remap.jitted
+    assert isinstance(dispatcher, numba.core.registry.CPUDispatcher)
+    target = dispatcher.targetoptions
     assert target["nopython"] is True
     for name, value in options.items():
         assert target[name] == value
 
     boxes = (np.arange(40).reshape(10, 4) * 7 - 30).astype(dtype)
-    expected = remap.__wrapped__(boxes, 5.0, 0.5)
+    expected = remap.py_func(boxes, 5.0, 0.5)
 
     trtutils.disable_jit()
     plain = remap(boxes, 5.0, 0.5)
-    assert remap.jitted.signatures == []
+    assert dispatcher.signatures == []
 
     trtutils.enable_jit()
     compiled = remap(boxes, 5.0, 0.5)
-    assert len(remap.jitted.signatures) == 1
+    assert len(dispatcher.signatures) == 1
 
     for out in (plain, compiled):
         assert out.dtype == expected.dtype
