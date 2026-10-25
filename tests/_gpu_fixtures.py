@@ -78,7 +78,7 @@ def images() -> dict[str, TestImage]:
             gt_det_classes=[17],
             gt_det_min=1,
             gt_det_max=2,
-            gt_cls_id=603,
+            gt_cls_id=339,
         )
 
     people_path = DATA_DIR / "people.jpeg"
