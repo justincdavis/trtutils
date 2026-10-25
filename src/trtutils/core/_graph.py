@@ -235,12 +235,13 @@ class CUDAGraph:
 
     def invalidate(self: Self) -> None:
         """Destroy the graph and graph executable, resetting state."""
-        with contextlib.suppress(AttributeError, RuntimeError):
-            cuda_graph_exec_destroy(self._graph_exec)
-            self._graph_exec = None
-        with contextlib.suppress(AttributeError, RuntimeError):
-            cuda_graph_destroy(self._graph)
-            self._graph = None
+        graph_exec, self._graph_exec = self._graph_exec, None
+        graph, self._graph = self._graph, None
+        with contextlib.suppress(RuntimeError):
+            if graph_exec is not None:
+                cuda_graph_exec_destroy(graph_exec)
+            if graph is not None:
+                cuda_graph_destroy(graph)
 
     @property
     def is_captured(self: Self) -> bool:

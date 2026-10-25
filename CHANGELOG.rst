@@ -118,6 +118,9 @@ Changed
 
 Fixed
 ^^^^^
+* ``CUDAGraph.invalidate`` no longer calls ``cudaGraphDestroy`` / ``cudaGraphExecDestroy`` on
+  null or already-destroyed handles (invalid-argument errors under compute-sanitizer when an
+  engine with ``cuda_graph=True`` is deleted)
 * Host-to-device copies (``memcpy_host_to_device*``) gather non-contiguous arrays first; they
   copied the raw bytes, so the CUDA and TRT preprocessors read crops and other strided views
   as garbage for single images and mixed-size batches unless unified memory was on
