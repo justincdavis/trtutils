@@ -107,10 +107,9 @@ class TestExecute:
         for o1, o2 in zip(out_default, out_unified):
             assert np.allclose(o1, o2)
 
+    @pytest.mark.skipif(not FLAGS.EXEC_ASYNC_V2, reason="async_v2 not available")
     def test_execute_async_v2_backend(self, make_engine) -> None:
         """Execute succeeds with explicit async_v2 backend."""
-        if not FLAGS.EXEC_ASYNC_V2:
-            pytest.skip("async_v2 not available in this TensorRT version")
         eng = make_engine(backend="async_v2")
         assert eng._async_v3 is False
         rand_input = eng.get_random_input()
@@ -118,10 +117,9 @@ class TestExecute:
         assert isinstance(outputs, list)
         assert len(outputs) >= 1
 
+    @pytest.mark.skipif(not FLAGS.EXEC_ASYNC_V2, reason="async_v2 not available")
     def test_execute_async_v2_parity(self, make_engine) -> None:
         """async_v2 and auto backends produce equivalent outputs."""
-        if not FLAGS.EXEC_ASYNC_V2:
-            pytest.skip("async_v2 not available in this TensorRT version")
         eng_auto = make_engine(backend="auto", cuda_graph=False)
         eng_v2 = make_engine(backend="async_v2")
         rand_input = eng_auto.get_random_input()

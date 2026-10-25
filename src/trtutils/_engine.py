@@ -111,7 +111,7 @@ class TRTEngine(TRTEngineInterface):
         Raises
         ------
         ValueError
-            If the backend is not valid.
+            If the backend is not valid or not available in this TensorRT version.
 
         """
         self._name = Path(engine_path).stem
@@ -143,6 +143,13 @@ class TRTEngine(TRTEngineInterface):
         # only care about v2 or v3 async
         if backend not in TRTEngine._backends:
             err_msg = f"Invalid backend {backend}, options are: {TRTEngine._backends}"
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # init
+            raise ValueError(err_msg)
+        if (backend == "async_v2" and not FLAGS.EXEC_ASYNC_V2) or (
+            backend == "async_v3" and not FLAGS.EXEC_ASYNC_V3
+        ):
+            err_msg = f"Backend {backend} is not available in TensorRT {FLAGS.TRT_VERSION}"
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # init
             raise ValueError(err_msg)

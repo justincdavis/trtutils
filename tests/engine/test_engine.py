@@ -157,6 +157,7 @@ def test_engine_bindings_bound_by_default(engine) -> None:
     assert engine.active_output_shapes == [tuple(b.shape) for b in engine.output_bindings]
 
 
+@pytest.mark.skipif(not FLAGS.EXEC_ASYNC_V2, reason="async_v2 not available")
 def test_async_v2_backend_init(make_engine) -> None:
     """backend='async_v2' sets _async_v3=False and disables CUDA graph."""
     eng = make_engine(backend="async_v2")
@@ -164,15 +165,21 @@ def test_async_v2_backend_init(make_engine) -> None:
     assert eng._cuda_graph_enabled is False
 
 
+@pytest.mark.skipif(not FLAGS.EXEC_ASYNC_V2, reason="async_v2 not available")
 def test_async_v2_backend_execute(make_engine) -> None:
     """Execute with backend='async_v2' exercises execute_async_v2 path."""
-    if not FLAGS.EXEC_ASYNC_V2:
-        pytest.skip("async_v2 not available")
     eng = make_engine(backend="async_v2")
     data = eng.get_random_input()
     outputs = eng.execute(data)
     assert isinstance(outputs, list)
     assert len(outputs) > 0
+
+
+@pytest.mark.skipif(FLAGS.EXEC_ASYNC_V2, reason="async_v2 available")
+def test_async_v2_backend_unavailable_raises(engine_path) -> None:
+    """backend='async_v2' raises at init when execute_async_v2 is missing."""
+    with pytest.raises(ValueError, match="not available"):
+        TRTEngine(engine_path, backend="async_v2")
 
 
 @pytest.mark.cuda_graph
