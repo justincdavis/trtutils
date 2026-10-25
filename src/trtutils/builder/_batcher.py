@@ -105,7 +105,7 @@ class AbstractBatcher(ABC):
 class ImageBatcher(AbstractBatcher):
     """Creates image batches for calibrating TensorRT engines."""
 
-    def __init__(
+    def __init__(  # noqa: C901, PLR0912, PLR0915
         self: Self,
         image_dir: Path | str,
         shape: tuple[int, int, int],

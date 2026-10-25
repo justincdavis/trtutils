@@ -291,7 +291,7 @@ class JetsonLayerProfiler(trt.IProfiler):
         self._current_layer_start_time = 0.0
 
 
-def profile_engine(
+def profile_engine(  # noqa: C901, PLR0915
     engine: Path | str | TRTEngine,
     iterations: int = 10000,
     warmup_iterations: int = 10,

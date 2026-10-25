@@ -37,7 +37,7 @@ def strip_myelin_suffix(layer_name: str) -> str:
     return _myl_suffix_pattern().sub("", layer_name)
 
 
-def build_fused_layer_map(
+def build_fused_layer_map(  # noqa: C901
     profiled_layer_names: Sequence[str],
     onnx_layer_names: list[str] | None = None,
 ) -> dict[str, tuple[str, int]]:

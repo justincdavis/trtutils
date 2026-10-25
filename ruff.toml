@@ -31,8 +31,14 @@ exclude = [
 ]
 
 [lint]
-select = ["ALL", "PLR2004"]
-ignore = ["PLR", "C901", "E501", "D203", "D212", "ERA", "COM812"]
+# PLR is ignored wholesale except the rules re-selected here: magic values and
+# the function complexity family (mccabe C901, too-many-branches PLR0912,
+# too-many-statements PLR0915) at ruff's default thresholds. Functions that
+# already exceeded them when the rules were enabled carry a `# noqa` so the
+# gate ratchets: remove the noqa when a function is simplified, never add one
+# to a new function.
+select = ["ALL", "PLR2004", "PLR0912", "PLR0915"]
+ignore = ["PLR", "E501", "D203", "D212", "ERA", "COM812"]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
@@ -41,7 +47,10 @@ unfixable = []
 per-file-ignores = {
     "demos/**/*.py" = ["INP001", "T201"],
     "examples/**/*.py" = ["INP001", "T201", "D103"],
-    "tests/**/*.py" = ["S101", "D100", "D104", "PLR2004", "T201", "PLC0415", "BLE001", "FBT001", "TRY300", "D401", "SLF001", "D102", "ANN001", "ANN201", "ANN202", "ARG001", "ARG002", "N806", "SIM117"],
+    # argparse wiring and research code are long by nature, not complex
+    "src/trtutils/__main__.py" = ["C901", "PLR0912", "PLR0915"],
+    "src/trtutils/research/**/*.py" = ["C901", "PLR0912", "PLR0915"],
+    "tests/**/*.py" = ["C901", "PLR0912", "PLR0915", "S101", "D100", "D104", "PLR2004", "T201", "PLC0415", "BLE001", "FBT001", "TRY300", "D401", "SLF001", "D102", "ANN001", "ANN201", "ANN202", "ARG001", "ARG002", "N806", "SIM117"],
     "tests/conftest.py" = ["E402"],
     "tests/core/test_cuda.py" = ["N802"],
     "ci/**/*.py" = ["INP001", "T201", "S603", "S607", "PLR2004"],

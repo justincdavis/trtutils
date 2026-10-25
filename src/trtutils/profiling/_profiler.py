@@ -162,7 +162,7 @@ class LayerProfiler(trt.IProfiler):
         self._current_iteration.clear()
 
 
-def profile_engine(
+def profile_engine(  # noqa: C901
     engine: Path | str | TRTEngine,
     iterations: int = 100,
     warmup_iterations: int = 10,

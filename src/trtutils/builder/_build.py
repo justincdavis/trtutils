@@ -41,7 +41,7 @@ _PROFILE_TRIPLE = 3
 _MAX_OPTIM_LEVEL = 5
 
 
-def build_engine(
+def build_engine(  # noqa: C901, PLR0912, PLR0915
     onnx: Path | str,
     output: Path | str,
     default_device: trt.DeviceType | str = trt.DeviceType.GPU,

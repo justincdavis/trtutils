@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 
@@ -98,7 +98,7 @@ class ParallelDetector:
     inside of this class.
     """
 
-    def __init__(
+    def __init__(  # noqa: C901
         self: Self,
         engines: Sequence[EngineInfo],
         warmup_iterations: int = 10,

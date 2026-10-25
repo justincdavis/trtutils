@@ -51,7 +51,7 @@ class TRTDetectionModel(DetectionModel):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()
 
-    def _create_object_prediction_list_from_original_predictions(
+    def _create_object_prediction_list_from_original_predictions(  # noqa: C901, PLR0912
         self,
         shift_amount_list: list[list[int]] | list[int] | None = [[0, 0]],
         full_shape_list: list[list[int]] | list[int] | None = None,
