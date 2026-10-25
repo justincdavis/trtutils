@@ -104,8 +104,10 @@ def test_detector_dynamic_batch_sweep(
         for image, dets in zip(batch, outputs):
             ref_dets = reference.end2end(image)
             assert len(dets) == len(ref_dets)
-            # separate builds pick different kernels, so allow a pixel on box edges
-            for (bbox, score, cls_id), (ref_bbox, ref_score, ref_cls) in zip(dets, ref_dets):
+            # separate builds pick different kernels: near-tied scores swap order, boxes shift a pixel
+            for (bbox, score, cls_id), (ref_bbox, ref_score, ref_cls) in zip(
+                sorted(dets), sorted(ref_dets)
+            ):
                 assert all(abs(a - b) <= 1 for a, b in zip(bbox, ref_bbox))
                 assert cls_id == ref_cls
                 assert abs(score - ref_score) < 1e-2
