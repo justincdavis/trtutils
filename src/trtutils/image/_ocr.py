@@ -80,36 +80,7 @@ class _FunctionPreprocessor(CPUPreprocessor):
         return tensor.astype(self._o_dtype, copy=False), ratios, padding
 
 
-class _TextModel(ImageModel):
-    """ImageModel on a dynamic-shape engine, preprocessed on the CPU by ``_preprocess_fn``."""
-
-    def _preprocess_fn(
-        self: Self,
-        images: list[np.ndarray],
-        *,
-        verbose: bool | None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        raise NotImplementedError
-
-    def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
-        return _FunctionPreprocessor(
-            self._preprocess_fn,
-            self._input_size,
-            self._input_range,
-            self._dtype,
-            tag=self._tag,
-        )
-
-    def _resolve_method(self: Self, method: str) -> str:
-        if method != "cpu" and method in _PREPROCESSOR_METHODS:
-            LOG.warning(
-                f"{self._tag}: Preprocessing method set to {method}, but only cpu supports dynamic input shapes, fallback to cpu."
-            )
-            method = "cpu"
-        return super()._resolve_method(method)
-
-
-class TextDetector(_TextModel, TextDetectorInterface):
+class TextDetector(ImageModel, TextDetectorInterface):
     """Implementation of DB (Differentiable Binarization) text detectors, as used by PaddleOCR."""
 
     def __init__(
@@ -271,6 +242,23 @@ class TextDetector(_TextModel, TextDetectorInterface):
             (height, width),
             verbose=verbose,
         )
+
+    def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
+        return _FunctionPreprocessor(
+            self._preprocess_fn,
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            tag=self._tag,
+        )
+
+    def _resolve_method(self: Self, method: str) -> str:
+        if method != "cpu" and method in _PREPROCESSOR_METHODS:
+            LOG.warning(
+                f"{self._tag}: Preprocessing method set to {method}, but only cpu supports dynamic input shapes, fallback to cpu."
+            )
+            method = "cpu"
+        return super()._resolve_method(method)
 
     def postprocess(
         self: Self,
@@ -709,7 +697,7 @@ class TextDetector(_TextModel, TextDetectorInterface):
         )
 
 
-class TextRecognizer(_TextModel, TextRecognizerInterface):
+class TextRecognizer(ImageModel, TextRecognizerInterface):
     """Implementation of CTC text line recognizers, as used by PaddleOCR."""
 
     def __init__(
@@ -877,6 +865,23 @@ class TextRecognizer(_TextModel, TextRecognizerInterface):
             std=self._std,
             verbose=verbose,
         )
+
+    def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
+        return _FunctionPreprocessor(
+            self._preprocess_fn,
+            self._input_size,
+            self._input_range,
+            self._dtype,
+            tag=self._tag,
+        )
+
+    def _resolve_method(self: Self, method: str) -> str:
+        if method != "cpu" and method in _PREPROCESSOR_METHODS:
+            LOG.warning(
+                f"{self._tag}: Preprocessing method set to {method}, but only cpu supports dynamic input shapes, fallback to cpu."
+            )
+            method = "cpu"
+        return super()._resolve_method(method)
 
     def postprocess(
         self: Self,
