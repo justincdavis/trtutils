@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from trtutils.compat._libs import cudart
+from trtutils.core import _graph
 from trtutils.core._graph import (
     CUDAGraph,
     cuda_graph_destroy,
@@ -66,6 +67,21 @@ def test_cuda_graph_invalidate_idempotent(cuda_stream) -> None:
         pass
     graph.invalidate()
     graph.invalidate()
+
+
+def test_cuda_graph_invalidate_destroys_each_handle_once(cuda_stream, monkeypatch) -> None:
+    """Repeated invalidate() and __del__ never destroy a null or already-destroyed handle."""
+    destroyed = []
+    monkeypatch.setattr(_graph, "cuda_graph_destroy", destroyed.append)
+    monkeypatch.setattr(_graph, "cuda_graph_exec_destroy", destroyed.append)
+    graph = CUDAGraph(cuda_stream)
+    graph.invalidate()
+    assert destroyed == []
+    graph._graph, graph._graph_exec = "graph", "exec"
+    graph.invalidate()
+    graph.invalidate()
+    graph.__del__()
+    assert destroyed == ["exec", "graph"]
 
 
 @pytest.mark.parametrize(
