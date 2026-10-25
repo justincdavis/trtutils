@@ -92,53 +92,26 @@ def test_hand_interaction_end2end(
         assert isinstance(contact, attr_type)
 
 
+OVERRIDES = [
+    ({}, {"conf_thres": 0.0}, "conf-zero"),
+    ({"conf_thres": 0.1}, {"pair_thres": 0.0}, "pair-zero"),
+    ({"conf_thres": 0.0}, {"second_pair_thres": 0.0}, "second-pair-zero"),
+    ({"conf_thres": 0.0}, {"nms_iou_thres": 0.0}, "nms-iou-zero"),
+    ({}, {"conf_thres": 0.9, "pair_thres": 0.9}, "conf-pair-strict"),
+]
+
+
 @pytest.mark.parametrize(
     ("model_cls", "onnx_path", "base", "override"),
     [
-        pytest.param(HOIDETR, HOI_DETR_ONNX, {}, {"conf_thres": 0.0}, id="hoi-detr-conf-zero"),
-        pytest.param(Hands23, HANDS23_ONNX, {}, {"conf_thres": 0.0}, id="hands23-conf-zero"),
-        pytest.param(
-            HOIDETR, HOI_DETR_ONNX, {"conf_thres": 0.1}, {"pair_thres": 0.0}, id="hoi-detr-pair-zero"
-        ),
-        pytest.param(
-            Hands23, HANDS23_ONNX, {"conf_thres": 0.1}, {"pair_thres": 0.0}, id="hands23-pair-zero"
-        ),
-        # hands23 finds no second objects in this image, so only hoi-detr can show the override
-        pytest.param(
-            HOIDETR,
-            HOI_DETR_ONNX,
-            {"conf_thres": 0.0},
-            {"second_pair_thres": 0.0},
-            id="hoi-detr-second-pair-zero",
-        ),
-        pytest.param(
-            HOIDETR,
-            HOI_DETR_ONNX,
-            {"conf_thres": 0.0},
-            {"nms_iou_thres": 0.0},
-            id="hoi-detr-nms-iou-zero",
-        ),
-        pytest.param(
-            Hands23,
-            HANDS23_ONNX,
-            {"conf_thres": 0.0},
-            {"nms_iou_thres": 0.0},
-            id="hands23-nms-iou-zero",
-        ),
-        pytest.param(
-            HOIDETR,
-            HOI_DETR_ONNX,
-            {},
-            {"conf_thres": 0.9, "pair_thres": 0.9},
-            id="hoi-detr-conf-pair-strict",
-        ),
-        pytest.param(
-            Hands23,
-            HANDS23_ONNX,
-            {},
-            {"conf_thres": 0.9, "pair_thres": 0.9},
-            id="hands23-conf-pair-strict",
-        ),
+        pytest.param(model_cls, onnx_path, base, override, id=f"{model_id}-{case_id}")
+        for model_cls, onnx_path, model_id in (
+            (HOIDETR, HOI_DETR_ONNX, "hoi-detr"),
+            (Hands23, HANDS23_ONNX, "hands23"),
+        )
+        for base, override, case_id in OVERRIDES
+        # hands23 finds no second objects in this image, so the override cannot show
+        if not (model_cls is Hands23 and "second_pair_thres" in override)
     ],
 )
 def test_per_call_thresholds_match_constructor(

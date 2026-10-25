@@ -61,6 +61,8 @@ def _overlap_case(labels: list[int]) -> list[np.ndarray]:
 
 
 _REMAPPED = [[20, 40, 60, 80], [180, 240, 220, 280], [580, 640, 620, 680], [980, 1040, 1020, 1080]]
+_REMAPPED_SCORES = [0.9, 0.9, 0.5, 0.4]
+_REMAPPED_LABELS = [0, 1, 2, 1]
 
 
 @pytest.mark.parametrize(
@@ -71,8 +73,8 @@ _REMAPPED = [[20, 40, 60, 80], [180, 240, 220, 280], [580, 640, 620, 680], [980,
             (0.5, 0.5),
             (10.0, 20.0),
             _REMAPPED,
-            [0.9, 0.9, 0.5, 0.4],
-            [0, 1, 2, 1],
+            _REMAPPED_SCORES,
+            _REMAPPED_LABELS,
             np.array([[0], [1], [1], [0]]),
             id="remap-with-side",
         ),
@@ -81,8 +83,8 @@ _REMAPPED = [[20, 40, 60, 80], [180, 240, 220, 280], [580, 640, 620, 680], [980,
             (0.5, 0.5),
             (10.0, 20.0),
             _REMAPPED,
-            [0.9, 0.9, 0.5, 0.4],
-            [0, 1, 2, 1],
+            _REMAPPED_SCORES,
+            _REMAPPED_LABELS,
             np.zeros((4, 0), dtype=int),
             id="remap-no-side",
         ),
