@@ -111,7 +111,7 @@ def can_run_on_dla(
     return full_dla, chunks
 
 
-def build_dla_engine(
+def build_dla_engine(  # noqa: C901, PLR0912, PLR0915
     onnx: Path | str,
     output_path: Path | str,
     data_batcher: AbstractBatcher | None = None,

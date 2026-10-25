@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def inspect_onnx_layers(
+def inspect_onnx_layers(  # noqa: C901
     onnx: trt.INetworkDefinition | Path | str,
     config: trt.IBuilderConfig | None = None,
     *,

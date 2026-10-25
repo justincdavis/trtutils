@@ -57,7 +57,7 @@ def host_input(array: np.ndarray | Buffer) -> Buffer:
 class ImageModel:
     """Abstract base class for image models."""
 
-    def __init__(
+    def __init__(  # noqa: C901, PLR0912, PLR0915
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
