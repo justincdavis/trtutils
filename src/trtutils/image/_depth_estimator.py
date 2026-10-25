@@ -13,6 +13,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
+from ._schema import DepthEstimatorOutputSchema, resolve_output_schema
 from .interfaces import DepthEstimatorInterface
 from .postprocessors import get_depth_maps, postprocess_depth
 
@@ -27,6 +28,11 @@ if TYPE_CHECKING:
 
     from ._image_model import _PostFn
 
+_POSTPROCESS = {
+    DepthEstimatorOutputSchema.DEPTH_ANYTHING: postprocess_depth,
+    DepthEstimatorOutputSchema.GENERIC: postprocess_depth,
+}
+
 
 class DepthEstimator(ImageModel, DepthEstimatorInterface):
     """Implementation of depth estimators."""
@@ -40,6 +46,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
         resize_method: str = "linear",
         mean: tuple[float, float, float] | None = (0.485, 0.456, 0.406),
         std: tuple[float, float, float] | None = (0.229, 0.224, 0.225),
+        output_schema: DepthEstimatorOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -78,6 +85,12 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             The standard deviation values to use for the imagenet normalization.
             By default, (0.229, 0.224, 0.225) (ImageNet std).
             Pass None to disable normalization.
+        output_schema : DepthEstimatorOutputSchema, str, optional
+            Manually specify the output schema instead of auto-detection.
+            Can be a DepthEstimatorOutputSchema enum value or a string matching
+            the enum name (e.g., "DEPTH_ANYTHING", "GENERIC").
+            By default None, which means the schema will be auto-detected from
+            the engine's output names, falling back to GENERIC for any other engine.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -110,7 +123,15 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             Whether or not to log additional information.
             Only covers the initialization phase.
 
+        Raises
+        ------
+        ValueError
+            If the output schema string is invalid, or the engine outputs
+            do not match the requested schema.
+
         """
+        # parent creates the engine and calls _configure_model(), which sets the schema
+        self._output_schema_override = output_schema
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -137,6 +158,18 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
                 "depth_get_depth_maps": f"depth_estimator::get_depth_maps [{self._tag}]",
             }
         )
+
+    @property
+    def output_schema(self: Self) -> DepthEstimatorOutputSchema:
+        """Get the output schema used by this depth estimator."""
+        return self._output_schema
+
+    def _configure_model(self: Self) -> None:
+        """Auto-detect or apply the output schema from the loaded engine."""
+        self._output_schema = resolve_output_schema(
+            self._engine, DepthEstimatorOutputSchema, self._output_schema_override
+        )
+        self._set_output_order(self._output_schema.value)
 
     def postprocess(
         self: Self,
@@ -172,7 +205,9 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        data = postprocess_depth(outputs, no_copy=no_copy, verbose=verbose)
+        data = _POSTPROCESS[self._output_schema](
+            self._order_outputs(outputs), no_copy=no_copy, verbose=verbose
+        )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 

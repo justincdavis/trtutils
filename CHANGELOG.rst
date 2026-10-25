@@ -13,6 +13,10 @@ Added
 * ``HandInteractionDetector`` takes an ``output_schema`` override (``HandInteractionOutputSchema``
   member or name) and exposes an ``output_schema`` property; outputs are matched by name, so
   TensorRT 8.6 engines that reorder outputs work
+* ``Classifier`` and ``DepthEstimator`` take an ``output_schema`` override
+  (``ClassifierOutputSchema`` / ``DepthEstimatorOutputSchema`` member or name, positionally
+  before ``dla_core``) and expose an ``output_schema`` property; any other engine still loads
+  as ``GENERIC``
 * Download support for ``hoi_detr_vitl`` and ``hands23_x101``
 * ``models.DepthAnythingV1`` and ``models.DepthAnythingV3`` aliases for the
   ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``

@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils.image._schema import ClassifierOutputSchema
 from trtutils.models import EfficientNet, MobileNetV3, ResNet
 
 CLASSIFIERS = [
@@ -29,6 +30,7 @@ def test_classifier_end2end(build_model_engine, images, model_cls, onnx_path, pr
     """run(), get_classifications(), and end2end() agree and rank the ground-truth class in the top 5."""
     engine = build_model_engine(model_cls, onnx_path)
     model = model_cls(engine, preprocessor=preprocessor, warmup=False)
+    assert model.output_schema is ClassifierOutputSchema.TORCHVISION
     image = images["horse"]
 
     postprocessed = model.run(image.array)

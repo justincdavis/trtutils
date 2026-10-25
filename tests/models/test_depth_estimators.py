@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils.image._schema import DepthEstimatorOutputSchema
 from trtutils.models import DepthAnythingV1, DepthAnythingV2, DepthAnythingV3
 
 DEPTH_ESTIMATORS = [
@@ -38,6 +39,7 @@ def test_depth_estimator_end2end(
     """run(), get_depth_maps(), and end2end() agree and yield a finite depth map normalized to [0, 1]."""
     engine = build_model_engine(model_cls, onnx_path)
     model = model_cls(engine, preprocessor=preprocessor, warmup=False)
+    assert model.output_schema is DepthEstimatorOutputSchema.DEPTH_ANYTHING
     image = images["horse"]
 
     postprocessed = model.run(image.array)

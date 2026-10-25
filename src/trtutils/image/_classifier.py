@@ -13,6 +13,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
+from ._schema import ClassifierOutputSchema, resolve_output_schema
 from .interfaces import ClassifierInterface
 from .postprocessors import get_classifications, postprocess_classifications
 
@@ -28,6 +29,11 @@ if TYPE_CHECKING:
 
     from ._image_model import _PostFn
 
+_POSTPROCESS = {
+    ClassifierOutputSchema.TORCHVISION: postprocess_classifications,
+    ClassifierOutputSchema.GENERIC: postprocess_classifications,
+}
+
 
 class Classifier(ImageModel, ClassifierInterface):
     """Implementation of image classifiers."""
@@ -41,6 +47,7 @@ class Classifier(ImageModel, ClassifierInterface):
         resize_method: str = "linear",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
+        output_schema: ClassifierOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -77,6 +84,12 @@ class Classifier(ImageModel, ClassifierInterface):
         std : tuple[float, float, float] | None, optional
             The standard deviation values to use for the imagenet normalization.
             By default, None, which means no normalization will be applied.
+        output_schema : ClassifierOutputSchema, str, optional
+            Manually specify the output schema instead of auto-detection.
+            Can be a ClassifierOutputSchema enum value or a string matching
+            the enum name (e.g., "TORCHVISION", "GENERIC").
+            By default None, which means the schema will be auto-detected from
+            the engine's output names, falling back to GENERIC for any other engine.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -109,7 +122,15 @@ class Classifier(ImageModel, ClassifierInterface):
             Whether or not to log additional information.
             Only covers the initialization phase.
 
+        Raises
+        ------
+        ValueError
+            If the output schema string is invalid, or the engine outputs
+            do not match the requested schema.
+
         """
+        # parent creates the engine and calls _configure_model(), which sets the schema
+        self._output_schema_override = output_schema
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -136,6 +157,18 @@ class Classifier(ImageModel, ClassifierInterface):
                 "cls_get_classifications": f"classifier::get_classifications [{self._tag}]",
             }
         )
+
+    @property
+    def output_schema(self: Self) -> ClassifierOutputSchema:
+        """Get the output schema used by this classifier."""
+        return self._output_schema
+
+    def _configure_model(self: Self) -> None:
+        """Auto-detect or apply the output schema from the loaded engine."""
+        self._output_schema = resolve_output_schema(
+            self._engine, ClassifierOutputSchema, self._output_schema_override
+        )
+        self._set_output_order(self._output_schema.value)
 
     def postprocess(
         self: Self,
@@ -171,7 +204,9 @@ class Classifier(ImageModel, ClassifierInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        data = postprocess_classifications(outputs, no_copy=no_copy, verbose=verbose)
+        data = _POSTPROCESS[self._output_schema](
+            self._order_outputs(outputs), no_copy=no_copy, verbose=verbose
+        )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
