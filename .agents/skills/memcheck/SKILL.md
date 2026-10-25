@@ -36,8 +36,3 @@ prints the error total and a count per error kind, and exits 1 on any error.
 6. Report: command, test set, error totals by kind (branch and, if nonzero, main), and any new
    error with its backtrace.
 
-## Baseline
-
-Since #244, `tests/core/` and the cuda_graph engine tests report 0 errors on `main`. Before it,
-every engine deleted with `cuda_graph=True` logged `cudaGraphDestroy` /
-`cudaGraphExecDestroy` invalid-argument errors.

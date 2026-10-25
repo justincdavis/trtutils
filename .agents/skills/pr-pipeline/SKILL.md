@@ -74,6 +74,5 @@ gh pr merge <N> --squash --delete-branch
 
 - PR body: `## What`, `## Why`, `## Tests` (new tests, which fail without the fix, suite
   counts, `make fix`/`make typecheck` clean), ending with the Claude Code footer and session url.
-  See `gh pr view 241 --json body` for an example.
 - Delegating implementation to subagents: give each one the worktree path, exact test
   command, the files it may touch, and the commit command; review every diff yourself.

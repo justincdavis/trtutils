@@ -37,7 +37,7 @@ difference comes from trtutils (preprocessing, engine, postprocessing), not the 
    detection with its score. Small differences near the confidence threshold are expected;
    explain any unmatched high-score detection before calling the port correct.
 
-## Pitfalls seen before
+## Pitfalls
 
 - Input range: some exports want `(0, 1)`, others `(0, 255)`; a wrong `input_range`
   usually shows as zero or garbage detections, not a small drift.
