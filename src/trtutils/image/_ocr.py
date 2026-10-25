@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import time
+from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, List, Tuple, overload
+from typing import TYPE_CHECKING, overload
 
 import cv2
 import numpy as np
@@ -16,7 +17,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 
-from ._image_model import _PREPROCESSOR_METHODS, ImageModel
+from ._image_model import ImageModel
 from .interfaces import TextDetectorInterface, TextRecognizerInterface
 from .postprocessors import (
     get_text_boxes,
@@ -39,45 +40,6 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from ._image_model import _PostFn
-
-# (images, *, verbose) -> (batch tensor, ratios, padding)
-_PreFn = Callable[..., Tuple[np.ndarray, List[Tuple[float, float]], List[Tuple[float, float]]]]
-
-
-class _FunctionPreprocessor(CPUPreprocessor):
-    """CPUPreprocessor running a model's own preprocessing function, for dynamic input shapes."""
-
-    def __init__(
-        self: Self,
-        fn: _PreFn,
-        output_shape: tuple[int, int],
-        output_range: tuple[float, float],
-        dtype: np.dtype,
-        tag: str | None = None,
-    ) -> None:
-        super().__init__(output_shape, output_range, dtype, resize="linear", tag=tag)
-        self._fn = fn
-
-    def preprocess(
-        self: Self,
-        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        resize: str | None = None,  # noqa: ARG002
-        *,
-        no_copy: bool | None = None,  # noqa: ARG002
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["cpu_preprocess"])
-
-        if isinstance(images, (np.ndarray, Buffer)):
-            images = [images]
-        batch_images = [img.numpy() if isinstance(img, Buffer) else img for img in images]
-        tensor, ratios, padding = self._fn(batch_images, verbose=verbose)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # cpu_preprocess
-
-        return tensor.astype(self._o_dtype, copy=False), ratios, padding
 
 
 class TextDetector(ImageModel, TextDetectorInterface):
@@ -113,7 +75,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         """
         Create a TextDetector object.
 
-        The engine should be built with a dynamic (min, opt, max) profile over
+        The engine should be built with a (min, opt, max) optimization profile over
         the input height and width, see :meth:`trtutils.models.PPOCRDetector.build`.
         The defaults are PaddleOCR's (``tools/infer/utility.py``): longer side
         limited to 960, ImageNet normalization, box threshold 0.6, unclip 1.5,
@@ -131,9 +93,8 @@ class TextDetector(ImageModel, TextDetectorInterface):
             The range of input values which should be passed to
             the model, used when mean and std are None. By default [0.0, 1.0].
         preprocessor : str
-            The type of preprocessor to use. Only 'cpu' supports the
-            dynamic input shapes, 'cuda' and 'trt' fall back to it.
-            The options are ['cpu', 'cuda', 'trt'], default is 'cpu'.
+            The type of preprocessor to use. Only 'cpu' is supported,
+            any other value raises a ValueError. Default is 'cpu'.
         resize_method : str
             Unused, images are resized by ``limit_side_len`` and ``limit_type``.
             Kept for parity with the other image models, default is 'linear'.
@@ -189,6 +150,11 @@ class TextDetector(ImageModel, TextDetectorInterface):
             Whether or not to log additional information.
             Only covers the initialization phase.
 
+        Raises
+        ------
+        ValueError
+            If preprocessor is not 'cpu'.
+
         """
         self._limit_side_len = limit_side_len
         self._limit_type = limit_type
@@ -225,40 +191,26 @@ class TextDetector(ImageModel, TextDetectorInterface):
             }
         )
 
-    def _preprocess_fn(
-        self: Self,
-        images: list[np.ndarray],
-        *,
-        verbose: bool | None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        width, height = self._input_size
-        return preprocess_text_detection(
-            images,
-            self._limit_side_len,
-            self._limit_type,
-            self._input_range,
-            self._mean,
-            self._std,
-            (height, width),
-            verbose=verbose,
-        )
-
     def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
-        return _FunctionPreprocessor(
-            self._preprocess_fn,
-            self._input_size,
-            self._input_range,
-            self._dtype,
-            tag=self._tag,
+        width, height = self._input_size
+        fn = partial(
+            preprocess_text_detection,
+            limit_side_len=self._limit_side_len,
+            limit_type=self._limit_type,
+            input_range=self._input_range,
+            mean=self._mean,
+            std=self._std,
+            max_shape=(height, width),
+        )
+        return CPUPreprocessor(
+            self._input_size, self._input_range, self._dtype, resize=fn, tag=self._tag
         )
 
     def _resolve_method(self: Self, method: str) -> str:
-        if method != "cpu" and method in _PREPROCESSOR_METHODS:
-            LOG.warning(
-                f"{self._tag}: Preprocessing method set to {method}, but only cpu supports dynamic input shapes, fallback to cpu."
-            )
-            method = "cpu"
-        return super()._resolve_method(method)
+        if method != "cpu":
+            err_msg = "TextDetector only supports cpu preprocessing"
+            raise ValueError(err_msg)
+        return method
 
     def postprocess(
         self: Self,
@@ -725,7 +677,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         """
         Create a TextRecognizer object.
 
-        The engine should be built with a dynamic (min, opt, max) profile over
+        The engine should be built with a (min, opt, max) optimization profile over
         the batch size and input width, see :meth:`trtutils.models.PPOCRRecognizer.build`.
         Text lines are resized to the engine's input height keeping their aspect
         ratio and right-padded to the widest line of the batch.
@@ -741,9 +693,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             The range of input values which should be passed to
             the model, used when mean and std are None. By default [0.0, 1.0].
         preprocessor : str
-            The type of preprocessor to use. Only 'cpu' supports the
-            dynamic input shapes, 'cuda' and 'trt' fall back to it.
-            The options are ['cpu', 'cuda', 'trt'], default is 'cpu'.
+            The type of preprocessor to use. Only 'cpu' is supported,
+            any other value raises a ValueError. Default is 'cpu'.
         resize_method : str
             Unused, lines are resized to the input height keeping their aspect ratio.
             Kept for parity with the other image models, default is 'linear'.
@@ -791,8 +742,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         Raises
         ------
         ValueError
-            If no character dictionary is given, or it does not match the
-            engine's number of classes.
+            If no character dictionary is given, it does not match the
+            engine's number of classes, or preprocessor is not 'cpu'.
 
         """
         if character_dict is None:
@@ -849,39 +800,25 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         """Get the class labels, index 0 is the CTC blank."""
         return self._characters
 
-    def _preprocess_fn(
-        self: Self,
-        images: list[np.ndarray],
-        *,
-        verbose: bool | None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+    def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
         width, height = self._input_size
-        return preprocess_text_recognition(
-            images,
-            height,
+        fn = partial(
+            preprocess_text_recognition,
+            image_height=height,
             max_width=width,
             input_range=self._input_range,
             mean=self._mean,
             std=self._std,
-            verbose=verbose,
         )
-
-    def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
-        return _FunctionPreprocessor(
-            self._preprocess_fn,
-            self._input_size,
-            self._input_range,
-            self._dtype,
-            tag=self._tag,
+        return CPUPreprocessor(
+            self._input_size, self._input_range, self._dtype, resize=fn, tag=self._tag
         )
 
     def _resolve_method(self: Self, method: str) -> str:
-        if method != "cpu" and method in _PREPROCESSOR_METHODS:
-            LOG.warning(
-                f"{self._tag}: Preprocessing method set to {method}, but only cpu supports dynamic input shapes, fallback to cpu."
-            )
-            method = "cpu"
-        return super()._resolve_method(method)
+        if method != "cpu":
+            err_msg = "TextRecognizer only supports cpu preprocessing"
+            raise ValueError(err_msg)
+        return method
 
     def postprocess(
         self: Self,

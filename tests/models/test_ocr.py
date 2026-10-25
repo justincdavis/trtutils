@@ -71,20 +71,19 @@ def rec_engine(build_model_engine):
 
 
 @pytest.mark.parametrize(
-    ("engine", "preprocessor", "image", "rows"),
+    ("engine", "image", "rows"),
     [
-        pytest.param("det_engine", "cpu", _render(LINES), 3, id="lines"),
-        pytest.param("det_engine", "trt", _render(LINES), 3, id="lines-trt-falls-back-to-cpu"),
-        pytest.param("det_engine", "cpu", _render(LINES[:1], 500), 1, id="one-line-narrow"),
-        pytest.param("det_engine", "cpu", _render(LINES[:2], 1400), 2, id="two-lines-wide"),
-        pytest.param("det_engine", "cpu", _blank(15, 15), 0, id="tiny"),
-        pytest.param("det_engine", "cpu", _blank(30, 4000), 0, id="thin-strip"),
-        pytest.param("small_det_engine", "cpu", _render(LINES, 1400), 3, id="limited-profile"),
+        pytest.param("det_engine", _render(LINES), 3, id="lines"),
+        pytest.param("det_engine", _render(LINES[:1], 500), 1, id="one-line-narrow"),
+        pytest.param("det_engine", _render(LINES[:2], 1400), 2, id="two-lines-wide"),
+        pytest.param("det_engine", _blank(15, 15), 0, id="tiny"),
+        pytest.param("det_engine", _blank(30, 4000), 0, id="thin-strip"),
+        pytest.param("small_det_engine", _render(LINES, 1400), 3, id="limited-profile"),
     ],
 )
-def test_text_detector_end2end(request, engine, preprocessor, image, rows) -> None:
+def test_text_detector_end2end(request, engine, image, rows) -> None:
     """run(), get_text_boxes() and end2end() agree and box every line in reading order inside the image."""
-    model = PPOCRDetector(request.getfixturevalue(engine), preprocessor=preprocessor)
+    model = PPOCRDetector(request.getfixturevalue(engine))
     height, width = image.shape[:2]
     max_w, max_h = model.input_shape
 
@@ -156,6 +155,25 @@ def test_text_recognizer_end2end(rec_engine) -> None:
 
     for buf in (Buffer.wrap(crops[1]), Buffer.from_array(crops[1], MemoryLocation.DEVICE)):
         assert model.end2end([buf, crops[1]]) == model.end2end([crops[1], crops[1]])
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "engine", "name"),
+    [
+        pytest.param(PPOCRDetector, "det_engine", "TextDetector", id="detector"),
+        pytest.param(PPOCRRecognizer, "rec_engine", "TextRecognizer", id="recognizer"),
+    ],
+)
+@pytest.mark.parametrize("preprocessor", ["cuda", "trt"])
+def test_ocr_rejects_gpu_preprocessor(request, model_cls, engine, name, preprocessor) -> None:
+    """Requesting a cuda or trt preprocessor raises, at construction and per call."""
+    path = request.getfixturevalue(engine)
+    match = f"{name} only supports cpu preprocessing"
+    with pytest.raises(ValueError, match=match):
+        model_cls(path, preprocessor=preprocessor, warmup=False)
+    model = model_cls(path, warmup=False)
+    with pytest.raises(ValueError, match=match):
+        model.preprocess(_line(LINES[0]), method=preprocessor)
 
 
 @pytest.mark.parametrize(
