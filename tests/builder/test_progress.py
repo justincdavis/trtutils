@@ -18,7 +18,6 @@ if not FLAGS.BUILD_PROGRESS:
 from trtutils.builder._progress import ProgressBar
 
 
-@pytest.mark.gpu
 def test_progress_bar_lifecycle() -> None:
     """ProgressBar handles nested phases and step updates without error."""
     pb = ProgressBar()
