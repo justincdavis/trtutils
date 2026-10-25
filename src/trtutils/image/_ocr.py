@@ -1293,6 +1293,7 @@ class OCR:
         self: Self,
         image: np.ndarray | Buffer,
         conf_thres: float,
+        box_conf_thres: float | None,
         *,
         verbose: bool | None,
     ) -> list[TextLine]:
@@ -1313,7 +1314,7 @@ class OCR:
             pad = int(abs(new_h - h) / 2)
             img = cv2.copyMakeBorder(img, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
-        text_boxes = self._detector.end2end(img, verbose=verbose)
+        text_boxes = self._detector.end2end(img, box_conf_thres, verbose=verbose)
         if not text_boxes:
             return []
         boxes = np.stack([box for box, _ in text_boxes])
@@ -1334,6 +1335,7 @@ class OCR:
         images: np.ndarray | Buffer,
         conf_thres: float | None = ...,
         *,
+        box_conf_thres: float | None = ...,
         verbose: bool | None = ...,
     ) -> list[TextLine]: ...
 
@@ -1343,6 +1345,7 @@ class OCR:
         images: Sequence[np.ndarray | Buffer],
         conf_thres: float | None = ...,
         *,
+        box_conf_thres: float | None = ...,
         verbose: bool | None = ...,
     ) -> list[list[TextLine]]: ...
 
@@ -1351,6 +1354,7 @@ class OCR:
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         conf_thres: float | None = None,
         *,
+        box_conf_thres: float | None = None,
         verbose: bool | None = None,
     ) -> list[TextLine] | list[list[TextLine]]:
         """
@@ -1363,6 +1367,9 @@ class OCR:
         conf_thres : float, optional
             The minimum recognition confidence for a line to be returned.
             By default None, which will use value passed during initialization.
+        box_conf_thres : float, optional
+            The detector's minimum text box score for this call.
+            By default None, which will use the detector's own conf_thres.
         verbose : bool, optional
             Whether or not to log additional information.
 
@@ -1374,7 +1381,7 @@ class OCR:
             Each TextLine is (box, text, score), see :meth:`end2end`.
 
         """
-        return self.end2end(images, conf_thres, verbose=verbose)
+        return self.end2end(images, conf_thres, box_conf_thres=box_conf_thres, verbose=verbose)
 
     # end2end overloads
     @overload
@@ -1383,6 +1390,7 @@ class OCR:
         images: np.ndarray | Buffer,
         conf_thres: float | None = ...,
         *,
+        box_conf_thres: float | None = ...,
         verbose: bool | None = ...,
     ) -> list[TextLine]: ...
 
@@ -1392,6 +1400,7 @@ class OCR:
         images: Sequence[np.ndarray | Buffer],
         conf_thres: float | None = ...,
         *,
+        box_conf_thres: float | None = ...,
         verbose: bool | None = ...,
     ) -> list[list[TextLine]]: ...
 
@@ -1400,6 +1409,7 @@ class OCR:
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         conf_thres: float | None = None,
         *,
+        box_conf_thres: float | None = None,
         verbose: bool | None = None,
     ) -> list[TextLine] | list[list[TextLine]]:
         """
@@ -1412,6 +1422,9 @@ class OCR:
         conf_thres : float, optional
             The minimum recognition confidence for a line to be returned.
             By default None, which will use value passed during initialization.
+        box_conf_thres : float, optional
+            The detector's minimum text box score for this call.
+            By default None, which will use the detector's own conf_thres.
         verbose : bool, optional
             Whether or not to log additional information.
 
@@ -1433,7 +1446,9 @@ class OCR:
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         is_single = isinstance(images, (np.ndarray, Buffer))
         batch_images: Sequence[np.ndarray | Buffer] = [images] if is_single else images
-        results = [self._ocr_image(img, conf_thres, verbose=verbose) for img in batch_images]
+        results = [
+            self._ocr_image(img, conf_thres, box_conf_thres, verbose=verbose) for img in batch_images
+        ]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # end2end

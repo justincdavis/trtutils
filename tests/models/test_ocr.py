@@ -233,6 +233,7 @@ def test_ppocr_pipeline(det_engine, rec_engine, image, expected) -> None:
         assert box.shape == (4, 2)
         assert score >= 0.5
     assert ocr.end2end(image, 1.1) == []
+    assert ocr.end2end(image, box_conf_thres=1.0) == []
 
     texts = [t for _, t, _ in results]
     batch = ocr.end2end([image, image])
