@@ -29,11 +29,6 @@ if TYPE_CHECKING:
     from ._image_model import _PostFn
 
 
-_POSTPROCESS_FNS = {
-    OBBDetectorOutputSchema.YOLO: postprocess_yolo_obb,
-}
-
-
 class OBBDetector(ImageModel, OBBDetectorInterface):
     """Implementation of oriented bounding box detectors (YOLO-style OBB heads)."""
 
@@ -175,8 +170,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         if self._verbose:
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
 
-        self._postprocess_fn = _POSTPROCESS_FNS[self._output_schema]
-
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # init
 
@@ -243,7 +236,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         outputs = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        data = self._postprocess_fn(
+        data = postprocess_yolo_obb(
             outputs,
             ratios,
             padding,

@@ -29,11 +29,6 @@ if TYPE_CHECKING:
     from ._image_model import _PostFn
 
 
-_POSTPROCESS_FNS = {
-    PoseEstimatorOutputSchema.YOLO: postprocess_yolo_pose,
-}
-
-
 class PoseEstimator(ImageModel, PoseEstimatorInterface):
     """Implementation of pose estimation models (YOLO-style pose heads)."""
 
@@ -175,8 +170,6 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         if self._verbose:
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
 
-        self._postprocess_fn = _POSTPROCESS_FNS[self._output_schema]
-
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # init
 
@@ -243,7 +236,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         outputs = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        data = self._postprocess_fn(
+        data = postprocess_yolo_pose(
             outputs,
             ratios,
             padding,

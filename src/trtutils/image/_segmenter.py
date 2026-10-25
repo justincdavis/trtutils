@@ -29,11 +29,6 @@ if TYPE_CHECKING:
     from ._image_model import _PostFn
 
 
-_POSTPROCESS_FNS = {
-    SegmenterOutputSchema.YOLO: postprocess_yolo_seg,
-}
-
-
 class Segmenter(ImageModel, SegmenterInterface):
     """Implementation of instance segmentation models (YOLO-style ``output0`` + ``output1`` prototypes)."""
 
@@ -180,8 +175,6 @@ class Segmenter(ImageModel, SegmenterInterface):
         if self._verbose:
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
 
-        self._postprocess_fn = _POSTPROCESS_FNS[self._output_schema]
-
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # init
 
@@ -253,7 +246,7 @@ class Segmenter(ImageModel, SegmenterInterface):
         mask_thres = mask_thres if mask_thres is not None else self._mask_thres
         outputs = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        data = self._postprocess_fn(
+        data = postprocess_yolo_seg(
             outputs,
             ratios,
             padding,

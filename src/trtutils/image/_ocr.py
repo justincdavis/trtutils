@@ -44,15 +44,6 @@ if TYPE_CHECKING:
 
     from ._image_model import _PostFn
 
-_DET_POSTPROCESS = {
-    TextDetectorOutputSchema.PADDLE: postprocess_text_detection,
-    TextDetectorOutputSchema.GENERIC: postprocess_text_detection,
-}
-_REC_POSTPROCESS = {
-    TextRecognizerOutputSchema.PADDLE: postprocess_text_recognition,
-    TextRecognizerOutputSchema.GENERIC: postprocess_text_recognition,
-}
-
 
 class TextDetector(ImageModel, TextDetectorInterface):
     """Implementation of DB (Differentiable Binarization) text detectors, as used by PaddleOCR."""
@@ -290,7 +281,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         t0 = time.perf_counter()
-        data = _DET_POSTPROCESS[self._output_schema](
+        data = postprocess_text_detection(
             self._order_outputs(outputs),
             ratios,
             padding,
@@ -911,7 +902,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        data = _REC_POSTPROCESS[self._output_schema](
+        data = postprocess_text_recognition(
             self._order_outputs(outputs), no_copy=no_copy, verbose=verbose
         )
         t1 = time.perf_counter()

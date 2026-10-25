@@ -29,11 +29,6 @@ if TYPE_CHECKING:
 
     from ._image_model import _PostFn
 
-_POSTPROCESS = {
-    ClassifierOutputSchema.TORCHVISION: postprocess_classifications,
-    ClassifierOutputSchema.GENERIC: postprocess_classifications,
-}
-
 
 class Classifier(ImageModel, ClassifierInterface):
     """Implementation of image classifiers."""
@@ -213,7 +208,7 @@ class Classifier(ImageModel, ClassifierInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        data = _POSTPROCESS[self._output_schema](
+        data = postprocess_classifications(
             self._order_outputs(outputs), softmax=self._softmax, no_copy=no_copy, verbose=verbose
         )
         t1 = time.perf_counter()

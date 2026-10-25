@@ -28,11 +28,6 @@ if TYPE_CHECKING:
 
     from ._image_model import _PostFn
 
-_POSTPROCESS = {
-    DepthEstimatorOutputSchema.DEPTH_ANYTHING: postprocess_depth,
-    DepthEstimatorOutputSchema.GENERIC: postprocess_depth,
-}
-
 
 class DepthEstimator(ImageModel, DepthEstimatorInterface):
     """Implementation of depth estimators."""
@@ -205,9 +200,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        data = _POSTPROCESS[self._output_schema](
-            self._order_outputs(outputs), no_copy=no_copy, verbose=verbose
-        )
+        data = postprocess_depth(self._order_outputs(outputs), no_copy=no_copy, verbose=verbose)
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
