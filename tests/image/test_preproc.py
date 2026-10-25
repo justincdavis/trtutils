@@ -54,6 +54,37 @@ def test_gpu_matches_cpu(images, gpu_cls, resize, norm, tol) -> None:
         assert np.abs(result - expected).mean() < tol
 
 
+@pytest.mark.parametrize(
+    "gpu_cls",
+    [
+        pytest.param(CUDAPreprocessor, id="cuda"),
+        pytest.param(TRTPreprocessor, id="trt"),
+    ],
+)
+@pytest.mark.parametrize("resize", ["linear", "letterbox"])
+@pytest.mark.parametrize("out_size", [640, 1024])
+@pytest.mark.parametrize(
+    "shape",
+    [
+        pytest.param((1280, 1920), id="1920x1280"),
+        pytest.param((3000, 4000), id="4000x3000"),
+        pytest.param((1999, 3001), id="3001x1999"),
+    ],
+)
+def test_gpu_large_downscale_matches_cpu(gpu_cls, resize, out_size, shape) -> None:
+    """Large downscales with fractional letterbox sizes match cv2 pixels and padding."""
+    rng = np.random.default_rng(0)
+    image = cv2.GaussianBlur(rng.integers(0, 255, (*shape, 3), dtype=np.uint8), (0, 0), 1.5)
+    size = (out_size, out_size)
+    cpu = CPUPreprocessor(size, RANGE, DTYPE, resize=resize)
+    gpu = gpu_cls(size, RANGE, DTYPE, resize=resize)
+    expected, ratios, padding = cpu.preprocess([image])
+    result, gpu_ratios, gpu_padding = gpu.preprocess([image])
+    assert gpu_ratios == ratios
+    assert gpu_padding == padding
+    assert np.abs(result - expected).mean() < 0.002
+
+
 @pytest.mark.parametrize("norm", [{}, IMAGENET], ids=["raw", "imagenet"])
 @pytest.mark.parametrize("count", [1, 3, 8])
 def test_trt_runs_submitted_batch(random_images, count, norm) -> None:
