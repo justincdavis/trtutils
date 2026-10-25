@@ -121,7 +121,7 @@ def _nms_indices(
     return np.asarray(raw_idx, dtype=int).ravel()
 
 
-@register_jit(nogil=True)
+@register_jit(nogil=True, cache=True)
 def _remap_boxes_core(
     boxes: np.ndarray,
     scores: np.ndarray,

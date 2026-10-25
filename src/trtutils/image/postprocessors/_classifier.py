@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils._jit import register_jit
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
@@ -54,7 +53,6 @@ def postprocess_classifications(
     return results
 
 
-@register_jit(nogil=True)
 def _postprocess_classifications_core(
     outputs: list[np.ndarray],
     *,
@@ -101,7 +99,6 @@ def get_classifications(
     return [_get_classifications_core(image_outputs, top_k) for image_outputs in outputs]
 
 
-@register_jit(nogil=True)
 def _get_classifications_core(
     outputs: list[np.ndarray],
     top_k: int = 5,

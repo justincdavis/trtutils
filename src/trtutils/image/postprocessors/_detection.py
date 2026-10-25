@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from cv2ext.bboxes import nms
 
-from trtutils._jit import register_jit
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
@@ -72,7 +71,6 @@ def postprocess_yolov10(
     return results
 
 
-@register_jit(nogil=True)
 def _postprocess_yolov10_core(
     outputs: list[np.ndarray],
     ratios: tuple[float, float],
@@ -158,7 +156,6 @@ def get_detections(
     return all_results
 
 
-@register_jit(nogil=True)
 def _get_detections_core(
     outputs: list[np.ndarray],
     conf_thres: float | None = None,
@@ -246,7 +243,6 @@ def postprocess_efficient_nms(
     return results
 
 
-@register_jit(nogil=True)
 def _postprocess_efficient_nms_core(
     outputs: list[np.ndarray],
     ratios: tuple[float, float],
@@ -342,7 +338,6 @@ def postprocess_rfdetr(
     return results
 
 
-@register_jit(nogil=True)
 def _postprocess_rfdetr_core(
     outputs: list[np.ndarray],
     ratios: tuple[float, float],
@@ -461,7 +456,6 @@ def postprocess_detr(
     return results
 
 
-@register_jit(nogil=True)
 def _postprocess_detr_core(
     outputs: list[np.ndarray],
     ratios: tuple[float, float],  # noqa: ARG001
@@ -615,7 +609,6 @@ def postprocess_rtdetrv3(
     return results
 
 
-@register_jit(nogil=True)
 def _postprocess_rtdetrv3_core(
     combined_dets: np.ndarray,
     start_idx: int,
