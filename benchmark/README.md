@@ -10,13 +10,13 @@ Download all models upfront before benchmarking:
 
 ```bash
 # Download all models for all sizes
-python benchmark/run.py --bootstrap --model all
+python benchmark/run.py bootstrap --model all
 
 # Or use make
 make benchmark-bootstrap
 
 # Then run benchmarks
-python benchmark/run.py --device YourDevice --model yolov10n --trtutils
+python benchmark/run.py models --device YourDevice --model yolov10n --trtutils
 ```
 
 ### Option 2: Auto-Download On Demand
@@ -24,7 +24,7 @@ python benchmark/run.py --device YourDevice --model yolov10n --trtutils
 Run benchmarks directly - models download automatically as needed:
 
 ```bash
-python benchmark/run.py --device YourDevice --model yolov10n --trtutils
+python benchmark/run.py models --device YourDevice --model yolov10n --trtutils
 ```
 
 ## Usage
@@ -48,13 +48,11 @@ At least one framework flag is required when running benchmarks:
 |------|-------------|
 | `--trtutils` | Benchmark using trtutils framework (tests cpu, cuda, trt, and graph modes) |
 | `--ultralytics` | Benchmark using ultralytics framework |
-| `--sahi` | Benchmark SAHI (Slicing Aided Hyper Inference) comparison |
 
 #### Optional Flags
 
 | Flag | Description |
 |------|-------------|
-| `--bootstrap` | Download all models for specified sizes upfront, then exit (no benchmarking) |
 | `--imgsz SIZE` | Benchmark only a specific image size (e.g., `640`). If omitted, all sizes are tested |
 | `--overwrite` | Re-run benchmarks even if data already exists for the model/size |
 | `--warmup N` | Number of warmup iterations before timing (default: 100) |
@@ -64,25 +62,25 @@ At least one framework flag is required when running benchmarks:
 
 ```bash
 # Bootstrap all models (download only, no benchmarking)
-python benchmark/run.py --bootstrap --model all
+python benchmark/run.py bootstrap --model all
 
 # Bootstrap a single model
-python benchmark/run.py --bootstrap --model yolov10n
+python benchmark/run.py bootstrap --model yolov10n
 
 # Benchmark single model with trtutils
-python benchmark/run.py --device MyDevice --model yolov10n --trtutils
+python benchmark/run.py models --device MyDevice --model yolov10n --trtutils
 
 # Benchmark all models with multiple frameworks
-python benchmark/run.py --device MyDevice --model all --trtutils --ultralytics
+python benchmark/run.py models --device MyDevice --model all --trtutils --ultralytics
 
 # Benchmark specific image size only
-python benchmark/run.py --device MyDevice --model yolov10n --trtutils --imgsz 640
+python benchmark/run.py models --device MyDevice --model yolov10n --trtutils --imgsz 640
 
 # Re-run and overwrite existing results
-python benchmark/run.py --device MyDevice --model yolov10n --trtutils --overwrite
+python benchmark/run.py models --device MyDevice --model yolov10n --trtutils --overwrite
 
 # SAHI comparison benchmarks
-python benchmark/run.py --device MyDevice --model yolov10n --sahi
+python benchmark/run.py sahi --device MyDevice --model yolov10n
 ```
 
 Output: Results are saved to `data/models/{device}.json`
@@ -129,23 +127,23 @@ The benchmark system uses `trtutils.download` to automatically download and expo
 
 ### Files
 
-- **`run.py`**: Main benchmark script comparing trtutils against ultralytics and SAHI frameworks. Supports automatic model downloading with `--bootstrap` and benchmarks across multiple image sizes.
+- **`run.py`**: Main benchmark script comparing trtutils against ultralytics and SAHI frameworks. Supports automatic model downloading with the `bootstrap` subcommand and benchmarks across multiple image sizes.
 - **`model_utils.py`**: Helper functions for model management including downloading ONNX models and building TensorRT engines.
 - **`optimizations.py`**: Benchmarks different Detector optimization combinations (preprocessor type, cuda_graph, pagelocked_mem, unified_mem). Requires `--device`; results are written to `data/optimizations/{device}.json`. Useful for finding the fastest configuration for your hardware.
-- **`plot.py`**: Generates latency and Pareto plots from `data/models/`; use `--optimizations` to generate per-device optimization speedup bar charts from `data/optimizations/`.
+- **`run.py plot`**: Generates latency and Pareto plots from `data/models/`; use `--optimizations` to generate per-device optimization speedup bar charts from `data/optimizations/`.
 - **`data/`**: Benchmark data directory:
   - **`data/models/`**: Device benchmark results (one JSON per device, e.g. `3080Ti.json`). Written by `run.py`.
   - **`data/optimizations/`**: Optimization benchmark results (one JSON per device). Written by `optimizations.py`.
 
 ### How It Works
 
-1. **Bootstrap mode** (`--bootstrap`): Downloads all specified models upfront
+1. **Bootstrap** (`run.py bootstrap`): Downloads all specified models upfront
 2. **Auto-download**: During benchmarking, missing models are downloaded automatically
 3. **Storage**: Models saved as `data/{model_type}/{model}_{size}.onnx`
 
 ### Generating Plots
 
-The `plot.py` script generates visualizations from benchmark data. It supports three types of plots:
+The `run.py plot` subcommand generates visualizations from benchmark data. It supports three types of plots:
 
 #### `--latency`: Per-Model Latency Bar Charts
 
@@ -153,13 +151,13 @@ Generates bar charts comparing latency across different image sizes (160-1280) a
 
 ```bash
 # All devices
-python benchmark/plot.py --latency
+python benchmark/run.py plot --latency
 
 # Single device
-python benchmark/plot.py --latency --device MyDevice
+python benchmark/run.py plot --latency --device MyDevice
 
 # Overwrite existing plots
-python benchmark/plot.py --latency --device MyDevice --overwrite
+python benchmark/run.py plot --latency --device MyDevice --overwrite
 ```
 
 Output: `plots/{device}/{model}.png` for each model.
@@ -170,10 +168,10 @@ Generates scatter plots showing the trade-off between model accuracy (COCO mAP@5
 
 ```bash
 # Default framework (trtutils(trt))
-python benchmark/plot.py --pareto --device MyDevice
+python benchmark/run.py plot --pareto --device MyDevice
 
 # Specify framework
-python benchmark/plot.py --pareto --device MyDevice --framework "trtutils(graph)"
+python benchmark/run.py plot --pareto --device MyDevice --framework "trtutils(graph)"
 ```
 
 Output: `plots/{device}/pareto.png`
@@ -184,10 +182,10 @@ Generates bar charts showing speedup relative to CPU baseline for different opti
 
 ```bash
 # All devices that have data in data/optimizations/
-python benchmark/plot.py --optimizations
+python benchmark/run.py plot --optimizations
 
 # Single device
-python benchmark/plot.py --optimizations --device MyDevice
+python benchmark/run.py plot --optimizations --device MyDevice
 ```
 
 Output: `plots/{device}/optimizations.png`
