@@ -1,0 +1,27 @@
+{
+  "yolov26n-pose": {
+    "url": "ultralytics",
+    "name": "yolo26n-pose",
+    "end2end": "False"
+  },
+  "yolov26s-pose": {
+    "url": "ultralytics",
+    "name": "yolo26s-pose",
+    "end2end": "False"
+  },
+  "yolov26m-pose": {
+    "url": "ultralytics",
+    "name": "yolo26m-pose",
+    "end2end": "False"
+  },
+  "yolov26l-pose": {
+    "url": "ultralytics",
+    "name": "yolo26l-pose",
+    "end2end": "False"
+  },
+  "yolov26x-pose": {
+    "url": "ultralytics",
+    "name": "yolo26x-pose",
+    "end2end": "False"
+  }
+}

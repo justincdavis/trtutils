@@ -1,0 +1,32 @@
+{
+  "yolov26n-obb": {
+    "url": "ultralytics",
+    "name": "yolo26n-obb",
+    "imgsz": "1024",
+    "end2end": "False"
+  },
+  "yolov26s-obb": {
+    "url": "ultralytics",
+    "name": "yolo26s-obb",
+    "imgsz": "1024",
+    "end2end": "False"
+  },
+  "yolov26m-obb": {
+    "url": "ultralytics",
+    "name": "yolo26m-obb",
+    "imgsz": "1024",
+    "end2end": "False"
+  },
+  "yolov26l-obb": {
+    "url": "ultralytics",
+    "name": "yolo26l-obb",
+    "imgsz": "1024",
+    "end2end": "False"
+  },
+  "yolov26x-obb": {
+    "url": "ultralytics",
+    "name": "yolo26x-obb",
+    "imgsz": "1024",
+    "end2end": "False"
+  }
+}

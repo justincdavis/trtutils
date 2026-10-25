@@ -36,6 +36,18 @@ _EXPECTED_FAMILIES = [
     "hands23",
     "ppocr_det",
     "ppocr_rec",
+    "yolov8_seg",
+    "yolov8_cls",
+    "yolov8_pose",
+    "yolov8_obb",
+    "yolov11_seg",
+    "yolov11_cls",
+    "yolov11_pose",
+    "yolov11_obb",
+    "yolov26_seg",
+    "yolov26_cls",
+    "yolov26_pose",
+    "yolov26_obb",
 ]
 
 _EXPECTED_MODELS = [
@@ -70,6 +82,18 @@ _EXPECTED_MODELS = [
     "hands23_x101",
     "ppocrv4_det",
     "ppocrv4_rec",
+    "yolov8n-seg",
+    "yolov8n-cls",
+    "yolov8n-pose",
+    "yolov8n-obb",
+    "yolov11n-seg",
+    "yolov11n-cls",
+    "yolov11n-pose",
+    "yolov11n-obb",
+    "yolov26n-seg",
+    "yolov26n-cls",
+    "yolov26n-pose",
+    "yolov26n-obb",
 ]
 
 
@@ -99,3 +123,20 @@ def test_supported_model_present(supported_models, model_name) -> None:
 def test_supported_models_unique(supported_models) -> None:
     """get_supported_models returns no duplicate names."""
     assert len(supported_models) == len(set(supported_models))
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        pytest.param("yolov8", id="yolov8"),
+        pytest.param("yolov11", id="yolov11"),
+        pytest.param("yolov26", id="yolov26"),
+    ],
+)
+def test_task_config_export_args(model_configs, version) -> None:
+    """Task heads export at their trained size, and YOLOv26 task heads export raw (no end2end)."""
+    for task, imgsz in [("seg", None), ("pose", None), ("obb", "1024"), ("cls", "224")]:
+        for config in model_configs[f"{version}_{task}"].values():
+            assert config.get("imgsz") == imgsz
+            raw_head = version == "yolov26" and task != "cls"
+            assert config.get("end2end") == ("False" if raw_head else None)

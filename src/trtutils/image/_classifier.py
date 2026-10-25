@@ -56,6 +56,7 @@ class Classifier(ImageModel, ClassifierInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        softmax: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -115,6 +116,12 @@ class Classifier(ImageModel, ClassifierInterface):
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        softmax : bool, optional
+            Whether or not to apply softmax to the raw network outputs during
+            postprocessing. Default is True. Some networks already apply
+            softmax inside their ONNX graph, in which case this should be False
+            to avoid a double softmax which would flatten the returned
+            confidences.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -149,6 +156,8 @@ class Classifier(ImageModel, ClassifierInterface):
             no_warn=no_warn,
             verbose=verbose,
         )
+
+        self._softmax = softmax
 
         # prepend with 'cls_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
@@ -205,7 +214,7 @@ class Classifier(ImageModel, ClassifierInterface):
 
         t0 = time.perf_counter()
         data = _POSTPROCESS[self._output_schema](
-            self._order_outputs(outputs), no_copy=no_copy, verbose=verbose
+            self._order_outputs(outputs), softmax=self._softmax, no_copy=no_copy, verbose=verbose
         )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)

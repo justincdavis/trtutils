@@ -1,0 +1,27 @@
+{
+  "yolov11n-obb": {
+    "url": "ultralytics",
+    "name": "yolo11n-obb",
+    "imgsz": "1024"
+  },
+  "yolov11s-obb": {
+    "url": "ultralytics",
+    "name": "yolo11s-obb",
+    "imgsz": "1024"
+  },
+  "yolov11m-obb": {
+    "url": "ultralytics",
+    "name": "yolo11m-obb",
+    "imgsz": "1024"
+  },
+  "yolov11l-obb": {
+    "url": "ultralytics",
+    "name": "yolo11l-obb",
+    "imgsz": "1024"
+  },
+  "yolov11x-obb": {
+    "url": "ultralytics",
+    "name": "yolo11x-obb",
+    "imgsz": "1024"
+  }
+}
