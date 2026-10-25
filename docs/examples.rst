@@ -19,5 +19,6 @@ Examples
     examples/classifier.rst
     examples/sahi.rst
     examples/depth_estimator.rst
+    examples/hand_interaction.rst
     examples/dla.rst
     examples/jetson.rst

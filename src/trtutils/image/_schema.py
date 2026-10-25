@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from trtutils._log import LOG
 
@@ -12,6 +12,8 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils._engine import TRTEngine
+
+_SchemaT = TypeVar("_SchemaT", bound=Enum)
 
 
 class InputSchema(Enum):
@@ -46,6 +48,13 @@ class InputSchema(Enum):
     def uses_scale_factor(self: Self) -> bool:
         """Whether this schema requires a scale factor input."""
         return self == InputSchema.RT_DETR_V3
+
+
+class HandInteractionOutputSchema(Enum):
+    # HOI-DETR
+    HOI_DETR = ("boxes", "scores", "labels", "pair_probs")
+    # Hands23, adds the hand side head
+    HANDS23 = ("boxes", "scores", "labels", "pair_probs", "side")
 
 
 class OutputSchema(Enum):
@@ -225,3 +234,50 @@ def resolve_detector_schemas(
         resolved_output = output_schema
 
     return (resolved_input, resolved_output)
+
+
+def resolve_output_schema(
+    engine: TRTEngine,
+    schema_cls: type[_SchemaT],
+    override: _SchemaT | str | None = None,
+) -> _SchemaT:
+    """
+    Resolve the output schema of an engine against the members of a schema enum.
+
+    Parameters
+    ----------
+    engine : TRTEngine
+        The loaded TensorRT engine, its output names are matched ignoring order
+        since TensorRT 8.6 does not keep the ONNX output order.
+    schema_cls : type[Enum]
+        The schema enum, each member's value is a tuple of output names.
+    override : Enum, str, optional
+        A member or member name to use instead of auto-detection.
+        The engine outputs must still match it.
+
+    Returns
+    -------
+    Enum
+        The matching member of ``schema_cls``.
+
+    Raises
+    ------
+    ValueError
+        If the override is not a member name, or the engine outputs match no
+        candidate member.
+
+    """
+    if isinstance(override, str):
+        if override not in schema_cls.__members__:
+            err_msg = f"Invalid output_schema string: {override}. "
+            err_msg += f"Valid options: {list(schema_cls.__members__)}"
+            raise ValueError(err_msg)
+        override = schema_cls[override]
+    candidates = list(schema_cls) if override is None else [override]
+    outputs = sorted(engine.output_names)
+    for member in candidates:
+        if sorted(member.value) == outputs:
+            return member
+    err_msg = f"Engine outputs {list(engine.output_names)} match no {schema_cls.__name__}. "
+    err_msg += f"Valid options: { {m.name: m.value for m in candidates} }"
+    raise ValueError(err_msg)

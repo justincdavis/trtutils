@@ -13,6 +13,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
+from ._schema import HandInteractionOutputSchema, resolve_output_schema
 from .interfaces import HandInteractionDetectorInterface
 from .postprocessors import get_interactions, postprocess_hand_interactions
 
@@ -27,8 +28,6 @@ if TYPE_CHECKING:
 
     from ._image_model import _PostFn
     from .types import HandInteraction
-
-_EXPECTED_OUTPUT_PREFIX = ["boxes", "scores", "labels", "pair_probs"]
 
 
 class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
@@ -60,6 +59,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         nms_iou_thres: float = 0.5,
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
+        output_schema: HandInteractionOutputSchema | str | None = None,
         dla_core: int | None = None,
         device: int | None = None,
         backend: str = "auto",
@@ -108,6 +108,12 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         std : tuple[float, float, float] | None, optional
             The standard deviation values to use for normalization.
             By default, None, which means no normalization will be applied.
+        output_schema : HandInteractionOutputSchema, str, optional
+            Manually specify the output schema instead of auto-detection.
+            Can be a HandInteractionOutputSchema enum value or a string matching
+            the enum name (e.g., "HOI_DETR", "HANDS23").
+            By default None, which means the schema will be auto-detected from
+            the engine's output names.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
@@ -143,17 +149,12 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         Raises
         ------
         ValueError
-            If the engine outputs do not follow the unified hand-object
-            interaction output contract.
+            If the output schema string is invalid, or the engine outputs
+            match no HandInteractionOutputSchema.
 
         """
-        # stored before super().__init__ alongside the other model-specific state,
-        # matching how Detector stashes its schema overrides before engine creation
-        self._conf_thres: float = conf_thres
-        self._pair_thres: float = pair_thres
-        self._second_pair_thres: float | None = second_pair_thres
-        self._nms_iou_thres: float = nms_iou_thres
-
+        # parent creates the engine and calls _configure_model(), which sets the schema
+        self._output_schema_override = output_schema
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -173,6 +174,11 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             verbose=verbose,
         )
 
+        self._conf_thres: float = conf_thres
+        self._pair_thres: float = pair_thres
+        self._second_pair_thres: float | None = second_pair_thres
+        self._nms_iou_thres: float = nms_iou_thres
+
         # prepend with 'hoi_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
             {
@@ -181,17 +187,17 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             }
         )
 
+    @property
+    def output_schema(self: Self) -> HandInteractionOutputSchema:
+        """Get the output schema used by this detector."""
+        return self._output_schema
+
     def _configure_model(self: Self) -> None:
-        """Validate the engine follows the unified hand-object interaction contract."""
-        names = list(self._engine.output_names)
-        if names[:4] != _EXPECTED_OUTPUT_PREFIX or names[4:] not in ([], ["side"]):
-            err_msg = (
-                "Expected hand interaction engine outputs to start with "
-                f"{_EXPECTED_OUTPUT_PREFIX} and optionally be followed by 'side', "
-                f"found: {names}"
-            )
-            raise ValueError(err_msg)
-        self._has_side: bool = names[4:] == ["side"]
+        """Auto-detect or apply the output schema from the loaded engine."""
+        self._output_schema = resolve_output_schema(
+            self._engine, HandInteractionOutputSchema, self._output_schema_override
+        )
+        self._set_output_order(self._output_schema.value)
 
     def postprocess(
         self: Self,
@@ -199,6 +205,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -216,6 +223,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             The padding values used during preprocessing for each image.
         conf_thres : float, optional
             The confidence threshold to filter candidates by.
+            If not passed, will use the value from the constructor.
+        nms_iou_thres : float, optional
+            The IOU threshold to use for the class-aware NMS operation.
             If not passed, will use the value from the constructor.
         no_copy : bool, optional
             Kept for interface symmetry with the other postprocessors.
@@ -237,13 +247,14 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
+        nms_iou = nms_iou_thres if nms_iou_thres is not None else self._nms_iou_thres
         t0 = time.perf_counter()
         data = postprocess_hand_interactions(
-            outputs,
+            self._order_outputs(outputs),
             ratios,
             padding,
             conf_thres,
-            self._nms_iou_thres,
+            nms_iou,
             no_copy=no_copy,
             verbose=verbose,
         )
@@ -255,9 +266,17 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
         return data
 
-    def _post_fn(self: Self, conf_thres: float | None, *, verbose: bool | None) -> _PostFn:
+    def _post_fn(
+        self: Self,
+        conf_thres: float | None,
+        nms_iou_thres: float | None = None,
+        *,
+        verbose: bool | None,
+    ) -> _PostFn:
         """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""
-        return lambda o, r, p, nc: self.postprocess(o, r, p, conf_thres, no_copy=nc, verbose=verbose)
+        return lambda o, r, p, nc: self.postprocess(
+            o, r, p, conf_thres, nms_iou_thres, no_copy=nc, verbose=verbose
+        )
 
     # __call__ overloads
     @overload
@@ -589,8 +608,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     def end2end(
         self: Self,
         images: np.ndarray | Buffer,
-        *,
         conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
         pair_thres: float | None = ...,
         second_pair_thres: float | None = ...,
         verbose: bool | None = ...,
@@ -600,8 +620,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     def end2end(
         self: Self,
         images: Sequence[np.ndarray | Buffer],
-        *,
         conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
         pair_thres: float | None = ...,
         second_pair_thres: float | None = ...,
         verbose: bool | None = ...,
@@ -610,8 +631,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     def end2end(
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        *,
         conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
         pair_thres: float | None = None,
         second_pair_thres: float | None = None,
         verbose: bool | None = None,
@@ -629,6 +651,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             A single image (HWC format) or list of images to perform inference with.
         conf_thres : float, optional
             The confidence threshold to filter candidates by.
+            By default None, which uses the value from the constructor.
+        nms_iou_thres : float, optional
+            The IOU threshold to use for the class-aware NMS operation.
             By default None, which uses the value from the constructor.
         pair_thres : float, optional
             The minimum link probability to link a hand to a first object.
@@ -649,6 +674,6 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         return self._end2end_core(
             images,
             verbose=verbose,
-            post=self._post_fn(conf_thres, verbose=verbose),
+            post=self._post_fn(conf_thres, nms_iou_thres, verbose=verbose),
             get=lambda pp: self.get_interactions(pp, pair_thres, second_pair_thres, verbose=verbose),
         )

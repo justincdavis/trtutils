@@ -1,22 +1,54 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Engine-level tests for the HOIDETR and Hands23 model wrappers."""
+"""Tests for src/trtutils/image/_hand_interaction.py -- HOIDETR and Hands23 engines end to end."""
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from tests.conftest import DATA_DIR
 from trtutils.image._hand_interaction import HandInteractionDetector
+from trtutils.image._schema import HandInteractionOutputSchema
 from trtutils.models import HOIDETR, Hands23
+
+HOI_DETR_ONNX = DATA_DIR / "hoi_detr" / "hoi_detr_vitl_640.onnx"
+HANDS23_ONNX = DATA_DIR / "hands23" / "hands23_x101_800.onnx"
+MODELS = [
+    pytest.param(HOIDETR, HOI_DETR_ONNX, id="hoi-detr"),
+    pytest.param(Hands23, HANDS23_ONNX, id="hands23"),
+]
 
 
 def test_output_contract_validation(build_test_engine) -> None:
-    """An engine that does not follow the unified output contract raises ValueError."""
+    """An engine matching no hand interaction schema raises, naming the valid outputs."""
     engine = build_test_engine(DATA_DIR / "simple.onnx")
-    with pytest.raises(ValueError, match="boxes"):
+    with pytest.raises(ValueError, match=r"match no HandInteractionOutputSchema.*pair_probs"):
         HandInteractionDetector(engine, warmup=False)
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "onnx_path", "expected"),
+    [
+        pytest.param(HOIDETR, HOI_DETR_ONNX, HandInteractionOutputSchema.HOI_DETR, id="hoi-detr"),
+        pytest.param(Hands23, HANDS23_ONNX, HandInteractionOutputSchema.HANDS23, id="hands23"),
+    ],
+)
+@pytest.mark.parametrize(
+    "override",
+    [
+        pytest.param(None, id="auto"),
+        pytest.param("enum", id="enum"),
+        pytest.param("str", id="str"),
+    ],
+)
+def test_output_schema(build_model_engine, model_cls, onnx_path, expected, override) -> None:
+    """output_schema is auto-detected and accepts an enum member or its name as override."""
+    engine = build_model_engine(model_cls, onnx_path)
+    schema = {None: None, "enum": expected, "str": expected.name}[override]
+    model = model_cls(engine, output_schema=schema, warmup=False)
+    assert model.output_schema is expected
 
 
 def _assert_interactions_close(left, right) -> None:
@@ -32,25 +64,31 @@ def _assert_interactions_close(left, right) -> None:
 
 
 @pytest.mark.parametrize(
-    ("model_cls", "onnx_path"),
+    ("model_cls", "onnx_path", "attr_type"),
     [
-        pytest.param(HOIDETR, DATA_DIR / "hoi_detr" / "hoi_detr_vitl_640.onnx", id="hoi-detr"),
-        pytest.param(Hands23, DATA_DIR / "hands23" / "hands23_x101_800.onnx", id="hands23"),
+        # hoi-detr has no side head and two pair classes, so side and contact stay None
+        pytest.param(HOIDETR, HOI_DETR_ONNX, type(None), id="hoi-detr"),
+        pytest.param(Hands23, HANDS23_ONNX, int, id="hands23"),
     ],
 )
-@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+@pytest.mark.parametrize(
+    "preprocessor",
+    [
+        pytest.param("cpu", id="cpu"),
+        pytest.param("cuda", id="cuda"),
+        pytest.param("trt", id="trt"),
+    ],
+)
 def test_hand_interaction_end2end(
-    build_test_engine,
+    build_model_engine,
     images,
     model_cls,
     onnx_path,
+    attr_type,
     preprocessor,
 ) -> None:
     """run(), get_interactions(), and end2end() agree and produce valid interactions."""
-    if not onnx_path.exists():
-        pytest.skip(f"missing {onnx_path}")
-
-    engine = build_test_engine(onnx_path)
+    engine = build_model_engine(model_cls, onnx_path)
     model = model_cls(engine, preprocessor=preprocessor, warmup=False)
 
     img = images["people"].array
@@ -64,22 +102,81 @@ def test_hand_interaction_end2end(
 
     via_run = model.get_interactions(raw)
     via_e2e = model.end2end(img)
+    assert len(via_run) > 0
     _assert_interactions_close(via_run, via_e2e)
 
     for hand, obj, second, side, contact in via_run:
         for bbox, _score in (b for b in (hand, obj, second) if b is not None):
             x1, y1, x2, y2 = bbox
             assert all(isinstance(coord, int) for coord in bbox)
-            assert 0 <= x1 <= width
-            assert 0 <= x2 <= width
-            assert 0 <= y1 <= height
-            assert 0 <= y2 <= height
-            assert x1 <= x2
-            assert y1 <= y2
+            assert 0 <= x1 <= x2 <= width
+            assert 0 <= y1 <= y2 <= height
+        assert isinstance(side, attr_type)
+        assert isinstance(contact, attr_type)
 
-        if model_cls is HOIDETR:
-            assert side is None
-            assert contact is None
-        else:
-            assert isinstance(side, int)
-            assert isinstance(contact, int)
+
+OVERRIDES = [
+    ({}, {"conf_thres": 0.0}, "conf-zero"),
+    ({"conf_thres": 0.1}, {"pair_thres": 0.0}, "pair-zero"),
+    ({"conf_thres": 0.0}, {"second_pair_thres": 0.0}, "second-pair-zero"),
+    ({"conf_thres": 0.0}, {"nms_iou_thres": 0.0}, "nms-iou-zero"),
+    ({}, {"conf_thres": 0.9, "pair_thres": 0.9}, "conf-pair-strict"),
+]
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "onnx_path", "base", "override"),
+    [
+        pytest.param(model_cls, onnx_path, base, override, id=f"{model_id}-{case_id}")
+        for model_cls, onnx_path, model_id in (
+            (HOIDETR, HOI_DETR_ONNX, "hoi-detr"),
+            (Hands23, HANDS23_ONNX, "hands23"),
+        )
+        for base, override, case_id in OVERRIDES
+        # hands23 finds no second objects in this image, so the override cannot show
+        if not (model_cls is Hands23 and "second_pair_thres" in override)
+    ],
+)
+def test_per_call_thresholds_match_constructor(
+    build_model_engine,
+    images,
+    model_cls,
+    onnx_path,
+    base,
+    override,
+) -> None:
+    """Per-call thresholds in end2end() (conf and NMS IoU positional) equal passing them to the constructor."""
+    engine = build_model_engine(model_cls, onnx_path)
+    model = model_cls(engine, **base, warmup=False)
+    reference = model_cls(engine, **base, **override, warmup=False)
+
+    img = images["people"].array
+    per_call = model.end2end(
+        img,
+        override.get("conf_thres"),
+        override.get("nms_iou_thres"),
+        pair_thres=override.get("pair_thres"),
+        second_pair_thres=override.get("second_pair_thres"),
+    )
+
+    assert per_call == reference.end2end(img)
+    assert per_call != model.end2end(img)
+
+
+@pytest.mark.parametrize(("model_cls", "onnx_path"), MODELS)
+def test_batch_input(build_model_engine, images, model_cls, onnx_path) -> None:
+    """List input returns per-image results equal to the single-image calls."""
+    engine = build_model_engine(model_cls, onnx_path)
+    model = model_cls(engine, warmup=False)
+
+    img = images["people"].array
+    single = model.end2end(img)
+    assert len(single) > 0
+    assert model.end2end([img]) == [single]
+
+    raw = model.run(img)
+    raw_batch = model.run([img])
+    assert len(raw_batch) == 1
+    for a, b in zip(raw_batch[0], raw):
+        np.testing.assert_array_equal(a, b)
+    assert model.get_interactions(raw_batch) == [model.get_interactions(raw)]

@@ -133,7 +133,7 @@ For detailed documentation, including advanced usage, examples, and API referenc
 
 Check out our [examples directory](examples/) for more detailed usage examples, including:
 - Basic engine usage
-- End-to-end image models (detection, classification, depth estimation)
+- End-to-end image models (detection, classification, depth estimation, hand-object interaction)
 - Engine building and quantization
 - Benchmarking and profiling utilities
 

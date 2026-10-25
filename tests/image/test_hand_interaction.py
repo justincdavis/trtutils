@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for the hand-object interaction postprocessor."""
+"""Tests for src/trtutils/image/postprocessors/_hand_interaction.py -- box remap, NMS and pairing."""
 
 from __future__ import annotations
 
@@ -27,9 +27,8 @@ def _pair_probs(k: int, num_classes: int, default_p0: float = 0.9) -> np.ndarray
     return probs
 
 
-@pytest.mark.parametrize("with_side", [True, False], ids=["with-side", "no-side"])
-def test_postprocess_remaps_and_filters(with_side: bool) -> None:
-    """Boxes are remapped and low-confidence rows are dropped, with side optional."""
+def _remap_case(*, with_side: bool) -> list[np.ndarray]:
+    """Six candidates with two below conf_thres, optionally with a side output."""
     k = 6
     boxes = np.zeros((1, k, 4), dtype=np.float32)
     boxes[0, 0] = [20, 40, 40, 60]  # hand, kept
@@ -38,67 +37,91 @@ def test_postprocess_remaps_and_filters(with_side: bool) -> None:
     boxes[0, 3] = [300, 340, 320, 360]  # second object, kept
     boxes[0, 4] = [400, 440, 420, 460]  # hand, below threshold
     boxes[0, 5] = [500, 540, 520, 560]  # first object, kept
-
     scores = np.array([[0.9, 0.9, 0.1, 0.5, 0.05, 0.4]], dtype=np.float32)
     labels = np.array([[0, 1, 1, 2, 0, 1]], dtype=np.int64)
-    pair_probs = _pair_probs(k, num_classes=2)[None]
-    side = np.array([[0, 1, 0, 1, 1, 0]], dtype=np.int64)
-
-    outputs = [boxes, scores, labels, pair_probs]
+    outputs = [boxes, scores, labels, _pair_probs(k, num_classes=2)[None]]
     if with_side:
-        outputs.append(side)
-
-    result = postprocess_hand_interactions(
-        outputs,
-        ratios=[(0.5, 0.5)],
-        padding=[(10.0, 20.0)],
-    )[0]
-    out_boxes, out_scores, out_labels, out_pairs, out_side = result
-
-    expected_boxes = np.array(
-        [
-            [20, 40, 60, 80],
-            [180, 240, 220, 280],
-            [580, 640, 620, 680],
-            [980, 1040, 1020, 1080],
-        ],
-        dtype=np.float32,
-    )
-    np.testing.assert_allclose(out_boxes, expected_boxes)
-    np.testing.assert_allclose(out_scores, [0.9, 0.9, 0.5, 0.4])
-    np.testing.assert_array_equal(out_labels, [0, 1, 2, 1])
-    assert out_pairs.shape == (4, 4, 2)
-
-    if with_side:
-        assert out_side.shape == (4, 1)
-        np.testing.assert_array_equal(out_side.ravel(), [0, 1, 1, 0])
-    else:
-        assert out_side.shape == (4, 0)
+        outputs.append(np.array([[0, 1, 0, 1, 1, 0]], dtype=np.int64))
+    return outputs
 
 
-def test_postprocess_nms_dedupes_same_class() -> None:
-    """Overlapping same-class boxes are deduped, keeping the higher-scoring one."""
-    k = 3
+def _overlap_case(labels: list[int]) -> list[np.ndarray]:
+    """Two heavily overlapping boxes plus one far away box."""
     boxes = np.array(
         [[[10, 10, 50, 50], [12, 12, 52, 52], [200, 200, 240, 240]]],
         dtype=np.float32,
     )
     scores = np.array([[0.9, 0.6, 0.8]], dtype=np.float32)
-    labels = np.array([[0, 0, 1]], dtype=np.int64)
-    pair_probs = _pair_probs(k, num_classes=2)[None]
+    return [
+        boxes,
+        scores,
+        np.array([labels], dtype=np.int64),
+        _pair_probs(3, num_classes=2)[None],
+    ]
 
-    result = postprocess_hand_interactions(
-        [boxes, scores, labels, pair_probs],
-        ratios=[(1.0, 1.0)],
-        padding=[(0.0, 0.0)],
-    )[0]
+
+_REMAPPED = [[20, 40, 60, 80], [180, 240, 220, 280], [580, 640, 620, 680], [980, 1040, 1020, 1080]]
+_REMAPPED_SCORES = [0.9, 0.9, 0.5, 0.4]
+_REMAPPED_LABELS = [0, 1, 2, 1]
+
+
+@pytest.mark.parametrize(
+    ("outputs", "ratios", "padding", "boxes", "scores", "labels", "side"),
+    [
+        pytest.param(
+            _remap_case(with_side=True),
+            (0.5, 0.5),
+            (10.0, 20.0),
+            _REMAPPED,
+            _REMAPPED_SCORES,
+            _REMAPPED_LABELS,
+            np.array([[0], [1], [1], [0]]),
+            id="remap-with-side",
+        ),
+        pytest.param(
+            _remap_case(with_side=False),
+            (0.5, 0.5),
+            (10.0, 20.0),
+            _REMAPPED,
+            _REMAPPED_SCORES,
+            _REMAPPED_LABELS,
+            np.zeros((4, 0), dtype=int),
+            id="remap-no-side",
+        ),
+        pytest.param(
+            _overlap_case([0, 0, 1]),
+            (1.0, 1.0),
+            (0.0, 0.0),
+            [[10, 10, 50, 50], [200, 200, 240, 240]],
+            [0.9, 0.8],
+            [0, 1],
+            np.zeros((2, 0), dtype=int),
+            id="nms-dedupes-same-class",
+        ),
+        pytest.param(
+            _overlap_case([0, 1, 1]),
+            (1.0, 1.0),
+            (0.0, 0.0),
+            [[10, 10, 50, 50], [200, 200, 240, 240], [12, 12, 52, 52]],
+            [0.9, 0.8, 0.6],
+            [0, 1, 1],
+            np.zeros((3, 0), dtype=int),
+            id="nms-keeps-other-class",
+        ),
+    ],
+)
+def test_postprocess_remaps_and_filters(
+    outputs, ratios, padding, boxes, scores, labels, side
+) -> None:
+    """Boxes are remapped, low-confidence rows dropped and same-class overlaps deduped."""
+    result = postprocess_hand_interactions(outputs, ratios=[ratios], padding=[padding])[0]
     out_boxes, out_scores, out_labels, out_pairs, out_side = result
 
-    np.testing.assert_allclose(out_boxes, [[10, 10, 50, 50], [200, 200, 240, 240]])
-    np.testing.assert_allclose(out_scores, [0.9, 0.8])
-    np.testing.assert_array_equal(out_labels, [0, 1])
-    assert out_pairs.shape == (2, 2, 2)
-    assert out_side.shape == (2, 0)
+    np.testing.assert_allclose(out_boxes, boxes)
+    np.testing.assert_allclose(out_scores, scores)
+    np.testing.assert_array_equal(out_labels, labels)
+    assert out_pairs.shape == (len(boxes), len(boxes), 2)
+    np.testing.assert_array_equal(out_side, side)
 
 
 def _postprocessed(
@@ -302,6 +325,33 @@ def _pairing_cases() -> list[pytest.param]:
             id="no-contact-c2",
         ),
     )
+
+    # obj->second link of 0.6 clears pair_thres but not an explicit stricter second_pair_thres
+    strict_second = _hand_obj_second_pairs(num_classes=2)
+    strict_second[1, 2, 0] = 0.4
+    # obj->second link of 0.4 misses pair_thres but clears an explicit looser second_pair_thres
+    loose_second = _hand_obj_second_pairs(num_classes=2)
+    loose_second[1, 2, 0] = 0.6
+    hand_obj = (((0, 0, 10, 10), _f32(0.875)), ((20, 20, 30, 30), _f32(0.75)))
+    second = ((40, 40, 50, 50), _f32(0.625))
+    for probs, second_thres, expected_second, case_id in (
+        (strict_second, 0.7, None, "second-thres-stricter"),
+        (loose_second, 0.3, second, "second-thres-looser"),
+    ):
+        cases.append(
+            pytest.param(
+                _postprocessed(
+                    [[0, 0, 10, 10], [20, 20, 30, 30], [40, 40, 50, 50]],
+                    [0.875, 0.75, 0.625],
+                    [0, 1, 2],
+                    probs,
+                ),
+                0.5,
+                second_thres,
+                [(*hand_obj, expected_second, None, None)],
+                id=case_id,
+            ),
+        )
 
     return cases
 
