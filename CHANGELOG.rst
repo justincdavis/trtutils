@@ -8,6 +8,8 @@ Added
 * ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``
 * ``image.types``: public ``TypeAlias``\ es for image model results (``Bbox``,
   ``Detection``, ``Classification``, ``HandInteraction``), used in all image model signatures
+* ``HandInteractionDetector.end2end`` thresholds are positional like ``Detector``, and
+  ``postprocess`` / ``end2end`` take a per-call ``nms_iou_thres``
 * Download support for ``hoi_detr_vitl`` and ``hands23_x101``
 * ``models.DepthAnythingV1`` and ``models.DepthAnythingV3`` aliases for the
   ``DepthEstimator`` pipeline, mirroring the existing ``DepthAnythingV2``

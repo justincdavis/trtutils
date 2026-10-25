@@ -13,7 +13,7 @@ import cv2
 from trtutils import set_log_level
 from trtutils.models import HOIDETR
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
 
 def main() -> None:

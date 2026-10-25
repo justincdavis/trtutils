@@ -147,13 +147,6 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             interaction output contract.
 
         """
-        # stored before super().__init__ alongside the other model-specific state,
-        # matching how Detector stashes its schema overrides before engine creation
-        self._conf_thres: float = conf_thres
-        self._pair_thres: float = pair_thres
-        self._second_pair_thres: float | None = second_pair_thres
-        self._nms_iou_thres: float = nms_iou_thres
-
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -173,6 +166,11 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             verbose=verbose,
         )
 
+        self._conf_thres: float = conf_thres
+        self._pair_thres: float = pair_thres
+        self._second_pair_thres: float | None = second_pair_thres
+        self._nms_iou_thres: float = nms_iou_thres
+
         # prepend with 'hoi_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
             {
@@ -191,7 +189,6 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
                 f"found: {names}"
             )
             raise ValueError(err_msg)
-        self._has_side: bool = names[4:] == ["side"]
 
     def postprocess(
         self: Self,
@@ -199,6 +196,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -216,6 +214,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             The padding values used during preprocessing for each image.
         conf_thres : float, optional
             The confidence threshold to filter candidates by.
+            If not passed, will use the value from the constructor.
+        nms_iou_thres : float, optional
+            The IOU threshold to use for the class-aware NMS operation.
             If not passed, will use the value from the constructor.
         no_copy : bool, optional
             Kept for interface symmetry with the other postprocessors.
@@ -237,13 +238,14 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
+        nms_iou = nms_iou_thres if nms_iou_thres is not None else self._nms_iou_thres
         t0 = time.perf_counter()
         data = postprocess_hand_interactions(
             outputs,
             ratios,
             padding,
             conf_thres,
-            self._nms_iou_thres,
+            nms_iou,
             no_copy=no_copy,
             verbose=verbose,
         )
@@ -255,9 +257,17 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
         return data
 
-    def _post_fn(self: Self, conf_thres: float | None, *, verbose: bool | None) -> _PostFn:
+    def _post_fn(
+        self: Self,
+        conf_thres: float | None,
+        nms_iou_thres: float | None = None,
+        *,
+        verbose: bool | None,
+    ) -> _PostFn:
         """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""
-        return lambda o, r, p, nc: self.postprocess(o, r, p, conf_thres, no_copy=nc, verbose=verbose)
+        return lambda o, r, p, nc: self.postprocess(
+            o, r, p, conf_thres, nms_iou_thres, no_copy=nc, verbose=verbose
+        )
 
     # __call__ overloads
     @overload
@@ -589,10 +599,11 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     def end2end(
         self: Self,
         images: np.ndarray | Buffer,
-        *,
         conf_thres: float | None = ...,
         pair_thres: float | None = ...,
         second_pair_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
         verbose: bool | None = ...,
     ) -> list[HandInteraction]: ...
 
@@ -600,20 +611,22 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     def end2end(
         self: Self,
         images: Sequence[np.ndarray | Buffer],
-        *,
         conf_thres: float | None = ...,
         pair_thres: float | None = ...,
         second_pair_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
         verbose: bool | None = ...,
     ) -> list[list[HandInteraction]]: ...
 
     def end2end(
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        *,
         conf_thres: float | None = None,
         pair_thres: float | None = None,
         second_pair_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
         verbose: bool | None = None,
     ) -> list[HandInteraction] | list[list[HandInteraction]]:
         """
@@ -636,6 +649,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         second_pair_thres : float, optional
             The minimum link probability to link a first object to a second
             object. By default None, which uses the value from the constructor.
+        nms_iou_thres : float, optional
+            The IOU threshold to use for the class-aware NMS operation.
+            By default None, which uses the value from the constructor.
         verbose : bool, optional
             Whether or not to log additional information.
 
@@ -649,6 +665,6 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         return self._end2end_core(
             images,
             verbose=verbose,
-            post=self._post_fn(conf_thres, verbose=verbose),
+            post=self._post_fn(conf_thres, nms_iou_thres, verbose=verbose),
             get=lambda pp: self.get_interactions(pp, pair_thres, second_pair_thres, verbose=verbose),
         )
