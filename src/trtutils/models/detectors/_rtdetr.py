@@ -22,7 +22,7 @@ class RTDETRv1(Detector, Model):
     _model_type = "rtdetrv1"
     _friendly_name = "RT-DETRv1"
     _default_imgsz = 640
-    _valid_imgszs: ClassVar[list[int]] = [640]
+    _valid_imgszs: ClassVar[list[int] | None] = [640]
     # tensorrt 8.6 fp16 engines lose the detections (horse 0.38 vs 0.97 at fp32)
     _fp16: ClassVar[bool] = FLAGS.TRT_VERSION >= (10, 0)
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
@@ -87,7 +87,7 @@ class RTDETRv2(Detector, Model):
     _model_type = "rtdetrv2"
     _friendly_name = "RT-DETRv2"
     _default_imgsz = 640
-    _valid_imgszs: ClassVar[list[int]] = [640]
+    _valid_imgszs: ClassVar[list[int] | None] = [640]
     # tensorrt 8.6 fp16 engines lose the detections (horse 0.38 vs 0.97 at fp32)
     _fp16: ClassVar[bool] = FLAGS.TRT_VERSION >= (10, 0)
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
@@ -152,7 +152,7 @@ class RTDETRv3(Detector, Model):
     _model_type = "rtdetrv3"
     _friendly_name = "RT-DETRv3"
     _default_imgsz = 640
-    _valid_imgszs: ClassVar[list[int]] = [640]
+    _valid_imgszs: ClassVar[list[int] | None] = [640]
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
         ("image", "image"),
         ("im_shape", "size"),

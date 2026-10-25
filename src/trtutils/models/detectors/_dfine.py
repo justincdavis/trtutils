@@ -21,7 +21,7 @@ class DFINE(Detector, Model):
     _model_type = "dfine"
     _friendly_name = "D-FINE"
     _default_imgsz = 640
-    _valid_imgszs: ClassVar[list[int]] = [640]
+    _valid_imgszs: ClassVar[list[int] | None] = [640]
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
         ("images", "image"),
         ("orig_target_sizes", "size"),

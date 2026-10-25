@@ -21,7 +21,7 @@ class DEIM(Detector, Model):
     _model_type = "deim"
     _friendly_name = "DEIM"
     _default_imgsz = 640
-    _valid_imgszs: ClassVar[list[int]] = [640]
+    _valid_imgszs: ClassVar[list[int] | None] = [640]
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
         ("images", "image"),
         ("orig_target_sizes", "size"),
@@ -84,8 +84,8 @@ class DEIMv2(Detector, Model):
     _model_type = "deimv2"
     _friendly_name = "DEIMv2"
     _default_imgsz = 640
-    _valid_imgszs: ClassVar[list[int]] = [320, 416, 640]
-    _model_imgszs: ClassVar[dict[str, int]] = {"atto": 320, "femto": 416}
+    _valid_imgszs: ClassVar[list[int] | None] = [320, 416, 640]
+    _model_imgszs: ClassVar[dict[str, int] | None] = {"atto": 320, "femto": 416}
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
         ("images", "image"),
         ("orig_target_sizes", "size"),
