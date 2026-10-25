@@ -236,11 +236,10 @@ class CPUPreprocessor(ImagePreprocessor):
             If resize or no_copy is given while a preprocessing function is set.
 
         """
-        if self._preprocess_fn is not None and (resize is not None or no_copy):
-            err_msg = (
-                f"{self._tag}: resize and no_copy are not supported with a preprocessing function"
+        if self._preprocess_fn is not None:
+            return self._preprocess_with_fn(
+                self._preprocess_fn, images, resize, no_copy=no_copy, verbose=verbose
             )
-            raise ValueError(err_msg)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["cpu_preprocess"])
@@ -249,12 +248,6 @@ class CPUPreprocessor(ImagePreprocessor):
         if isinstance(images, (np.ndarray, Buffer)):
             images = [images]
         batch_images = [img.numpy() if isinstance(img, Buffer) else img for img in images]
-
-        if self._preprocess_fn is not None:
-            tensor, ratios, padding = self._preprocess_fn(batch_images, verbose=verbose)
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # cpu_preprocess
-            return tensor.astype(self._o_dtype, copy=False), ratios, padding
 
         resize = resize if resize is not None else self._resize
         mean = self._mean
@@ -295,3 +288,27 @@ class CPUPreprocessor(ImagePreprocessor):
             nvtx.pop_range()  # cpu_preprocess
 
         return result
+
+    def _preprocess_with_fn(
+        self: Self,
+        fn: PreprocessFn,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        resize: str | None,
+        *,
+        no_copy: bool | None,
+        verbose: bool | None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        if resize is not None or no_copy:
+            err_msg = (
+                f"{self._tag}: resize and no_copy are not supported with a preprocessing function"
+            )
+            raise ValueError(err_msg)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cpu_preprocess"])
+        if isinstance(images, (np.ndarray, Buffer)):
+            images = [images]
+        batch_images = [img.numpy() if isinstance(img, Buffer) else img for img in images]
+        tensor, ratios, padding = fn(batch_images, verbose=verbose)
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # cpu_preprocess
+        return tensor.astype(self._o_dtype, copy=False), ratios, padding
