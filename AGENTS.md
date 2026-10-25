@@ -31,24 +31,14 @@ python3 -m pytest tests/engine/test_engine.py::test_init_default_args -v
 
 ## Code Style
 
-- **Line length**: 101 (`ruff.toml`)
-- **Target Python**: 3.8 (all code must be compatible)
-- **Linter**: ruff (`ruff.toml`); **type checker**: ty, not mypy (`ty.toml`)
-- **All modules use** `from __future__ import annotations`
-- **Copyright header** on every Python file (`ci/check_copyright.sh` pre-commit hook)
-- **Simple**: write code as simply as possible, with minimal exception handling / try-except
-- **Tidy comments**: minimal, only where names and flow cannot explain; lowercase, short, casual
-- **Logging**: no prints ever; use `trtutils.LOG`, log only in `if verbose` blocks or for
-  warnings/errors in exceptions we must handle
-- **Imports**: at file level, no lazy imports inside functions (tests included)
-- **Defaults**: per-call overrides fall back with `x if x is not None else self._x`, never
-  `x or self._x` (0.0 / False are valid values)
+Library code follows [.agents/docs/SRC_CODE_STYLE.md](.agents/docs/SRC_CODE_STYLE.md) and tests
+follow [.agents/docs/TEST_CODE_STYLE.md](.agents/docs/TEST_CODE_STYLE.md). The essentials:
 
-## Documentation
-
-- **NumPy docstrings** for all public functions; re-check them when you change a signature.
-- **Module docstrings** on modules that export public APIs.
-- User-facing changes get a `CHANGELOG.rst` entry under `Unreleased`.
+- Python 3.8, line length 101, ruff + ty; `from __future__ import annotations` everywhere.
+- Simple code, minimal try/except, short lowercase comments, no prints (`trtutils.LOG`).
+- File-level imports only; per-call defaults use `is not None`, never `or`.
+- NumPy docstrings on public APIs; user-facing changes get a `CHANGELOG.rst` entry.
+- Task models are peer `ImageModel` subclasses with schema-based postprocess dispatch.
 
 ## Architecture
 
@@ -112,12 +102,6 @@ provides `download()` / `build()` from class attributes (`_model_type`, `_defaul
 - Never commit credentials, hostnames, IPs, or user-specific absolute paths.
 - Follow-up plans are delta-only: point at the prior plan instead of restating it.
 
-## Testing Standard
-
-All tests follow [.agents/docs/TEST_CODE_STYLE.md](.agents/docs/TEST_CODE_STYLE.md) (`test-style`
-skill): flat functions, `pytest.param(..., id="kebab-case")` matrices, real CUDA over mocks,
-registered markers only (see `pytest.ini`).
-
 ## Skills
 
 Reusable workflows live in `.agents/skills/<name>/SKILL.md` (`.claude/skills` links there).
@@ -128,7 +112,7 @@ Reusable workflows live in `.agents/skills/<name>/SKILL.md` (`.claude/skills` li
 | [pr-pipeline](.agents/skills/pr-pipeline/SKILL.md) | Take a PR through review, fix, simplify, test, report, merge; rebuild stale PRs on main |
 | [new-model-family](.agents/skills/new-model-family/SKILL.md) | Add a model family with API parity to Detector/Classifier |
 | [accuracy-validation](.agents/skills/accuracy-validation/SKILL.md) | Check trtutils outputs against the reference implementation |
-| [jetson-testing](.agents/skills/jetson-testing/SKILL.md) | Run tests/benchmarks on a remote Jetson Orin over SSH |
+| [jetson-testing](.agents/skills/jetson-testing/SKILL.md) | Run tests/benchmarks on a remote Jetson over SSH |
 | [benchmarking](.agents/skills/benchmarking/SKILL.md) | Make fair branch-vs-main perf comparisons |
 | [test-style](.agents/skills/test-style/SKILL.md) | Write tests per .agents/docs/TEST_CODE_STYLE.md |
 | [docker-ci](.agents/skills/docker-ci/SKILL.md) | Run the CUDA 11/12/13 Docker test containers |
