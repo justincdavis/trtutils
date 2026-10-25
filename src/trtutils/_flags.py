@@ -156,6 +156,15 @@ def _get_version(package: str) -> tuple[int, int]:
     return (major, minor)
 
 
+def _get_trt_version() -> tuple[int, int]:
+    # read the module, jetpack's tensorrt is not the pip tensorrt_cu* package
+    try:
+        major, minor = [int(x) for x in trt.__version__.split(".")[:2]]
+    except (TypeError, ValueError):  # docs build mocks tensorrt
+        major, minor = 0, 0
+    return (major, minor)
+
+
 FLAGS = Flags()
 
 # Set CUDA flags
@@ -165,8 +174,7 @@ FLAGS.CUDA_12 = FLAGS.CUDA_VERSION[0] == 12  # noqa: PLR2004
 FLAGS.CUDA_13 = FLAGS.CUDA_VERSION[0] == 13  # noqa: PLR2004
 
 # Set TensorRT flags
-# read the module, jetpack's tensorrt is not the pip tensorrt_cu* package
-FLAGS.TRT_VERSION = (int(trt.__version__.split(".")[0]), int(trt.__version__.split(".")[1]))
+FLAGS.TRT_VERSION = _get_trt_version()
 FLAGS.TRT_10 = hasattr(trt.ICudaEngine, "num_io_tensors")
 FLAGS.TRT_HAS_UINT8 = hasattr(trt.DataType, "UINT8")
 FLAGS.TRT_HAS_INT64 = hasattr(trt.DataType, "INT64")
