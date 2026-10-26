@@ -5,11 +5,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from trtutils.builder._onnx import read_onnx
-from trtutils.compat._libs import trt
 from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
-from trtutils.models._model import Model, nms_build_hook
+from trtutils.models._model import Model, depthwise_fp32_build_hook, nms_build_hook
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -362,38 +360,6 @@ class YOLOv9(Detector, Model):
             no_warn=no_warn,
             verbose=verbose,
         )
-
-
-def depthwise_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]:  # noqa: ANN401
-    """
-    Build hook that forces FP32 for the depthwise convolutions.
-
-    In FP16 the builder sometimes picks depthwise kernels that break the output (seen on
-    TensorRT 10.15, RTX 5080): YOLOv10 loses large objects in about one build in seven,
-    YOLOv13 detects nothing in about one in fifty. Depthwise convolutions are cheap, so
-    FP32 costs little.
-
-    Parameters
-    ----------
-    onnx : Path | str
-        Path to the ONNX model.
-
-    Returns
-    -------
-    dict[str, Any]
-        Build engine overrides containing the layer_precision list.
-
-    """
-    network, _, _, _ = read_onnx(onnx)
-    layer_precision = []
-    for idx in range(network.num_layers):
-        layer = network.get_layer(idx)
-        if layer.type != trt.LayerType.CONVOLUTION:
-            continue
-        layer.__class__ = trt.IConvolutionLayer
-        if layer.num_groups > 1:
-            layer_precision.append((idx, trt.DataType.FLOAT))
-    return {"layer_precision": layer_precision or None, "prefer_precision_constraints": True}
 
 
 class YOLOv10(Detector, Model):

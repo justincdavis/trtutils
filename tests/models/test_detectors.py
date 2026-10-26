@@ -31,7 +31,7 @@ from trtutils.models import (
     YOLOv13,
     YOLOv26,
 )
-from trtutils.models.detectors._yolo import depthwise_fp32_build_hook
+from trtutils.models._model import depthwise_fp32_build_hook
 
 DETECTORS = [
     pytest.param(YOLOv3, DATA_DIR / "yolov3" / "yolov3t_640.onnx", id="yolov3"),
