@@ -146,12 +146,49 @@ def test_postprocess_detections(batch_size, postprocess, make_output, remaps) ->
         for full, part in zip(results[i], single):
             np.testing.assert_array_equal(full, part)
 
-        # detr models receive the original image size and already emit original coordinates
-        expected_remap = (bboxes - 10.0) / 2.0 if remaps else bboxes
+        # detr models receive the original image size and already emit original coordinates,
+        # which the scaled case clips to its 310 px image
+        expected_remap = (bboxes - 10.0) / 2.0 if remaps else np.minimum(bboxes, 310.0)
         np.testing.assert_allclose(remapped[i][0], expected_remap, atol=1e-3)
 
         assert 0 < len(filtered[i][1]) < NUM_DETS
         assert np.all(filtered[i][1] >= 0.8)
+
+
+@pytest.mark.parametrize(
+    ("postprocess", "make_output"),
+    [
+        pytest.param(postprocess_yolov10, _yolov10_output, id="yolov10"),
+        pytest.param(postprocess_efficient_nms, _efficient_nms_output, id="efficient-nms"),
+        pytest.param(postprocess_rfdetr, _rfdetr_output, id="rfdetr"),
+        pytest.param(postprocess_detr, _detr_output, id="detr"),
+    ],
+)
+def test_postprocess_detections_clipped_to_image(postprocess, make_output) -> None:
+    """Boxes overshooting the original image are clipped to [0, width] x [0, height]."""
+    # 320x240 image letterboxed into 640x640: ratio 2, padding (0, 80), so the image is
+    # (640 - 0) / 2 = 320 wide and (640 - 160) / 2 = 240 tall
+    outputs = make_output(1)
+    outputs_big = [o.copy() for o in outputs]
+    if postprocess is postprocess_rfdetr:
+        outputs_big[0][:, :NUM_DETS] = 1.0  # boxes reaching past the input corner
+    elif postprocess is postprocess_efficient_nms:
+        outputs_big[1][:, :NUM_DETS, 2:] = 640.0
+    elif postprocess is postprocess_yolov10:
+        outputs_big[0][:, :NUM_DETS, 2:4] = 640.0
+    else:
+        outputs_big[2][:, :NUM_DETS, 2:] = [999.0, 999.0]
+
+    bboxes = postprocess(
+        outputs_big, [(2.0, 2.0)], [(0.0, 80.0)], conf_thres=0.1, input_size=INPUT_SIZE
+    )[0][0]
+
+    assert bboxes.shape == (NUM_DETS, 4)
+    assert bboxes.min() >= 0
+    assert bboxes[:, 0::2].max() <= 320
+    assert bboxes[:, 1::2].max() <= 240
+    assert bboxes[:, 2].max() == 320
+    assert bboxes[:, 3].max() == 240
 
 
 @pytest.mark.parametrize("batch_size", BATCH_SIZES)

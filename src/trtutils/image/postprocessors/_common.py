@@ -57,12 +57,33 @@ def cxcywh_to_xyxy(cxcywh: np.ndarray) -> np.ndarray:
     return np.concatenate((cxcywh[:, :2] - half, cxcywh[:, :2] + half), axis=1)
 
 
+def clip_boxes(
+    boxes: np.ndarray,
+    ratios: tuple[float, float],
+    padding: tuple[float, float],
+    input_size: tuple[int, int] | None,
+) -> np.ndarray:
+    """
+    Clip xyxy boxes in original image coordinates to [0, width] / [0, height].
+
+    The original size is recovered from the preprocessing, (input - 2 * padding) / ratio, so it
+    can be off by under half a model pixel when the image was letterboxed. Without
+    ``input_size`` boxes are only clipped at 0.
+    """
+    if input_size is None:
+        return np.clip(boxes, 0, None)
+    width = round((input_size[0] - 2 * padding[0]) / ratios[0])
+    height = round((input_size[1] - 2 * padding[1]) / ratios[1])
+    return np.clip(boxes, 0, [width, height, width, height])
+
+
 def unletterbox_boxes(
     boxes: np.ndarray,
     ratios: tuple[float, float],
     padding: tuple[float, float],
+    input_size: tuple[int, int] | None = None,
 ) -> np.ndarray:
-    """Map xyxy boxes out of letterboxed coordinates, clipped at 0."""
+    """Map xyxy boxes out of letterboxed coordinates, clipped to the original image."""
     ratio_width, ratio_height = ratios
     pad_x, pad_y = padding
 
@@ -71,4 +92,4 @@ def unletterbox_boxes(
     out[:, 1] = (out[:, 1] - pad_y) / ratio_height
     out[:, 2] = (out[:, 2] - pad_x) / ratio_width
     out[:, 3] = (out[:, 3] - pad_y) / ratio_height
-    return np.clip(out, 0, None)
+    return clip_boxes(out, ratios, padding, input_size)
