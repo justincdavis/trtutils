@@ -128,7 +128,7 @@ class OBBDetectorOutputSchema(Enum):
     YOLO = ("output0",)
 
 
-def resolve_output_schema(
+def resolve_schema(
     engine: TRTEngine,
     schema_cls: type[_SchemaT],
     override: _SchemaT | str | None = None,
@@ -136,7 +136,7 @@ def resolve_output_schema(
     inputs: bool = False,
 ) -> _SchemaT:
     """
-    Resolve the output (or input) schema of an engine against the members of a schema enum.
+    Resolve the input or output schema of an engine against the members of a schema enum.
 
     Parameters
     ----------

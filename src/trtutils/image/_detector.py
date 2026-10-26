@@ -15,7 +15,7 @@ from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
-from ._schema import InputSchema, OutputSchema, resolve_output_schema
+from ._schema import InputSchema, OutputSchema, resolve_schema
 from .interfaces import DetectorInterface
 from .postprocessors import (
     get_detections,
@@ -231,7 +231,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def _configure_model(self: Self) -> None:
         """Resolve the input schema from the loaded engine."""
-        self._input_schema = resolve_output_schema(
+        self._input_schema = resolve_schema(
             self._engine, InputSchema, self._input_schema_override, inputs=True
         )
         self._use_image_size = self._input_schema.uses_image_size

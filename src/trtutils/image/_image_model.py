@@ -16,7 +16,7 @@ from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 from trtutils.core._device import Device
 
-from ._schema import resolve_output_schema
+from ._schema import resolve_schema
 from .preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
@@ -229,7 +229,7 @@ class ImageModel:
             self._mean = mean
             self._std = std
 
-            self._resolve_output_schema(output_schema)
+            self._resolve_schema(output_schema)
 
             # Hook for subclasses to configure model-specific state
             # after engine is loaded but before preprocessors are created.
@@ -321,12 +321,10 @@ class ImageModel:
 
         return result
 
-    def _resolve_output_schema(self: Self, override: Enum | str | None) -> None:
+    def _resolve_schema(self: Self, override: Enum | str | None) -> None:
         """Resolve the output schema from the engine, and set the output order to match."""
         if self._OUTPUT_SCHEMA is not None:
-            self._output_schema: Any = resolve_output_schema(
-                self._engine, self._OUTPUT_SCHEMA, override
-            )
+            self._output_schema: Any = resolve_schema(self._engine, self._OUTPUT_SCHEMA, override)
             self._set_output_order(self._output_schema.value)
 
     def _configure_model(self: Self) -> None:
