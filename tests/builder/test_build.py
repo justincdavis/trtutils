@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -147,6 +148,22 @@ def test_build_cache(onnx_path, output_engine_path) -> None:
         build_engine(onnx_path, output_engine_path, cache=True, optimization_level=1)
         mock_read.assert_not_called()
     assert output_engine_path.exists()
+
+
+def test_build_writes_engine_atomically(onnx_path, output_engine_path) -> None:
+    """Final path only appears once complete, via replace from a same-dir temp file."""
+    seen = []
+    real_replace = Path.replace
+
+    def spy_replace(self, target):
+        seen.append((self.parent, self.stat().st_size, Path(target).exists()))
+        return real_replace(self, target)
+
+    with patch.object(Path, "replace", spy_replace):
+        build_engine(onnx_path, output_engine_path, optimization_level=1)
+
+    assert seen == [(output_engine_path.parent, output_engine_path.stat().st_size, False)]
+    assert [p.name for p in output_engine_path.parent.iterdir()] == [output_engine_path.name]
 
 
 @pytest.mark.parametrize(
