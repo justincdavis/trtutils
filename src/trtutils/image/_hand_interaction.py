@@ -250,6 +250,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             conf_thres,
             nms_iou,
             no_copy=no_copy,
+            input_size=self._input_size,
             verbose=verbose,
         )
         t1 = time.perf_counter()

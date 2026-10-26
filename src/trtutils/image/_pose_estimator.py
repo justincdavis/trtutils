@@ -235,6 +235,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
             conf_thres,
             nms_iou_thres,
             max_det=self._max_det,
+            input_size=self._input_size,
             verbose=verbose,
         )
         t1 = time.perf_counter()

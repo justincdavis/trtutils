@@ -103,3 +103,26 @@ def test_batch_of_two_images() -> None:
     assert len(poses) == 2
     assert len(poses[0]) == 1
     assert len(poses[1]) == 2
+
+
+@pytest.mark.parametrize(
+    ("ratio", "padding", "bbox", "kpt_xy"),
+    [
+        pytest.param(1.0, (0.0, 0.0), [85, 85, 100, 100], [100.0, 0.0], id="identity"),
+        # original image is 200 x 160
+        pytest.param(0.5, (0.0, 10.0), [170, 150, 200, 160], [200.0, 0.0], id="letterboxed"),
+    ],
+)
+def test_input_size_clips_boxes_and_keypoints(ratio, padding, bbox, kpt_xy) -> None:
+    """Overshooting boxes and keypoints are clipped to the original image like ultralytics."""
+    kpts = np.array([[[1000.0, -50.0, 0.9]]], dtype=np.float32)
+    output = _make_pred([[95, 95, 20, 20]], [0.9], kpts)
+    bboxes, _, _, out_kpts = postprocess_yolo_pose(
+        [output],
+        ratios=[(ratio, ratio)],
+        padding=[padding],
+        conf_thres=0.5,
+        input_size=(100, 100),
+    )[0]
+    np.testing.assert_allclose(bboxes[0], bbox)
+    np.testing.assert_allclose(out_kpts[0, 0], [*kpt_xy, 0.9], rtol=1e-6)

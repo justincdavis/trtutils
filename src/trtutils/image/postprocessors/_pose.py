@@ -21,7 +21,7 @@ import numpy as np
 
 from trtutils._log import LOG
 
-from ._common import cxcywh_to_xyxy, nms_indices, unletterbox_boxes
+from ._common import clip_boxes, cxcywh_to_xyxy, nms_indices, unletterbox_boxes
 from ._detection import _get_detections_core
 
 if TYPE_CHECKING:
@@ -36,6 +36,7 @@ def postprocess_yolo_pose(
     nms_iou_thres: float = 0.5,
     *,
     max_det: int = 300,
+    input_size: tuple[int, int] | None = None,
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
@@ -60,6 +61,9 @@ def postprocess_yolo_pose(
     max_det : int
         Maximum number of detections kept per image, highest scores first.
         By default 300.
+    input_size : tuple[int, int] | None
+        Model input (width, height), used with ratios/padding to clip boxes and keypoints to
+        the image. Without it boxes are only clipped at 0 and keypoints are not clipped.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -88,14 +92,17 @@ def postprocess_yolo_pose(
 
         labels = np.zeros(len(scores), dtype=int)
         keep_idx = nms_indices(boxes, scores, labels, conf_thres, nms_iou_thres, max_det)
-        boxes = unletterbox_boxes(boxes[keep_idx], ratios[i], padding[i])
+        boxes = unletterbox_boxes(boxes[keep_idx], ratios[i], padding[i], input_size)
         scores = scores[keep_idx]
         kpts = pred[keep_idx, 5:].reshape(-1, num_kpts, 3)
 
-        # keypoints are not clipped, occluded ones can land outside the frame
         ratio_width, ratio_height = ratios[i]
         kpts[:, :, 0] = (kpts[:, :, 0] - padding[i][0]) / ratio_width
         kpts[:, :, 1] = (kpts[:, :, 1] - padding[i][1]) / ratio_height
+        if input_size is not None:
+            # ultralytics clips keypoints to the image like boxes
+            xy = clip_boxes(kpts[:, :, [0, 1, 0, 1]], ratios[i], padding[i], input_size)
+            kpts[:, :, :2] = xy[:, :, :2]
         results.append([boxes, scores, labels[keep_idx], kpts])
     return results
 
