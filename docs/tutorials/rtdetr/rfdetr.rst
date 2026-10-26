@@ -20,10 +20,11 @@ RF-DETR models can be automatically downloaded and converted to ONNX format usin
 
     # Download and convert RF-DETR models to ONNX
     # Available models: rfdetr_n, rfdetr_s, rfdetr_m
-    $ python3 -m trtutils download --model rfdetr_n --output rfdetr_n.onnx --imgsz 640 --opset 17
+    $ python3 -m trtutils download --model rfdetr_n --output rfdetr_n.onnx --imgsz 384 --opset 17
 
-    # For other RF-DETR variants
-    $ python3 -m trtutils download --model rfdetr_s --output rfdetr_s.onnx --imgsz 640 --opset 17
+    # For other RF-DETR variants (rfdetr_m uses --imgsz 576); each variant
+    # only exports at its native size
+    $ python3 -m trtutils download --model rfdetr_s --output rfdetr_s.onnx --imgsz 512 --opset 17
 
 Building TensorRT Engine
 ------------------------

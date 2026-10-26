@@ -13,7 +13,7 @@ from trtutils.inspect._onnx import inspect_onnx_layers
 from trtutils.models._model import Model
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
     from pathlib import Path
 
     from typing_extensions import Self
@@ -44,7 +44,12 @@ def rfdetr_precision_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]
 
 
 class RFDETR(Detector, Model):
-    """Alias of DETR with default args for RF-DETR."""
+    """
+    Alias of DETR with default args for RF-DETR.
+
+    Resizes with a plain square resize (``resize_method="linear"``) like upstream RF-DETR, and
+    returns the model's own class index (stock COCO weights use COCO category ids, horse is 19).
+    """
 
     _model_type = "rfdetr"
     _friendly_name = "RF-DETR"
@@ -61,7 +66,7 @@ class RFDETR(Detector, Model):
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0, 1),
         preprocessor: str = "trt",
-        resize_method: str = "letterbox",
+        resize_method: str = "linear",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
         mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
@@ -76,6 +81,7 @@ class RFDETR(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -101,6 +107,7 @@ class RFDETR(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )

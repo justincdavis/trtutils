@@ -28,7 +28,7 @@ from .postprocessors import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from typing_extensions import Self
@@ -65,6 +65,7 @@ class Detector(ImageModel, DetectorInterface):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -142,6 +143,9 @@ class Detector(ImageModel, DetectorInterface):
         agnostic_nms : bool, optional
             Whether or not the optional/additional NMS operation
             should perform class agnostic NMS.
+        class_map : Mapping[int, int], optional
+            Translates the model's class IDs to output class IDs after postprocessing.
+            IDs not in the map pass through unchanged. By default no translation is done.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -193,6 +197,7 @@ class Detector(ImageModel, DetectorInterface):
         self._nms_iou: float = nms_iou_thres
         self._nms: bool | None = extra_nms
         self._agnostic_nms: bool | None = agnostic_nms
+        self._class_map: dict[int, int] | None = dict(class_map) if class_map else None
 
         if self._verbose:
             LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
@@ -301,6 +306,10 @@ class Detector(ImageModel, DetectorInterface):
             no_copy=no_copy,
             verbose=verbose,
         )
+        if self._class_map is not None:
+            for result in data:
+                ids = result[2]
+                result[2] = np.array([self._class_map.get(int(c), int(c)) for c in ids], ids.dtype)
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 

@@ -154,3 +154,20 @@ def test_detector_mixed_buffer_batch(yolov10_dynamic_engine, images) -> None:
         Buffer.from_array(img, MemoryLocation.DEVICE) if i % 2 else img for i, img in enumerate(pool)
     ]
     assert model.end2end(batch) == model.end2end(pool)
+
+
+@pytest.mark.parametrize(
+    "class_map",
+    [
+        pytest.param({17: 200}, id="partial-passthrough"),
+        pytest.param({0: 100, 17: 200, 5: 105}, id="multiple"),
+        pytest.param({999: 1}, id="unused-key"),
+    ],
+)
+def test_detector_class_map(yolov10_engine, images, class_map) -> None:
+    """class_map translates ids after postprocessing and passes unmapped ids through."""
+    image = images["horse"].array
+    plain = Detector(yolov10_engine, warmup=False)
+    mapped = Detector(yolov10_engine, class_map=class_map, warmup=False)
+    expected = [(b, s, class_map.get(c, c)) for b, s, c in plain.end2end(image, conf_thres=0.0)]
+    assert mapped.end2end(image, conf_thres=0.0) == expected

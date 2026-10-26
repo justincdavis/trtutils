@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils.image import COCO91_TO_COCO80
 from trtutils.models import (
     DEIM,
     DFINE,
@@ -50,6 +51,9 @@ DETECTORS = [
     pytest.param(RFDETR, DATA_DIR / "rfdetr" / "rfdetr_n_384.onnx", id="rfdetr"),
 ]
 
+# models that return their own class index instead of the 80-class COCO index
+CLASS_ID_OVERRIDES = {RFDETR: {17: 19}}
+
 
 @pytest.mark.parametrize(("model_cls", "onnx_path"), DETECTORS)
 @pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
@@ -72,8 +76,19 @@ def test_detector_end2end(build_model_engine, images, model_cls, onnx_path, prep
         assert abs(score - e2e_score) < 1e-2
 
     assert len(via_run) >= image.gt_det_min
-    assert set(image.gt_det_classes) <= {cls_id for _bbox, _score, cls_id in via_run}
+    overrides = CLASS_ID_OVERRIDES.get(model_cls, {})
+    expected = {overrides.get(cls_id, cls_id) for cls_id in image.gt_det_classes}
+    assert expected <= {cls_id for _bbox, _score, cls_id in via_run}
     for (x1, y1, x2, y2), score, _cls_id in via_run:
         assert 0 <= x1 <= x2 <= width
         assert 0 <= y1 <= y2 <= height
         assert 0.0 <= score <= 1.0
+
+
+def test_rfdetr_class_map_horse(build_model_engine, images) -> None:
+    """COCO91_TO_COCO80 turns RF-DETR's horse (19) into the 80-class index (17)."""
+    engine = build_model_engine(RFDETR, DATA_DIR / "rfdetr" / "rfdetr_n_384.onnx")
+    model = RFDETR(engine, class_map=COCO91_TO_COCO80, warmup=False)
+    classes = {cls_id for _bbox, _score, cls_id in model.end2end(images["horse"].array)}
+    assert images["horse"].gt_det_classes[0] in classes
+    assert 19 not in classes

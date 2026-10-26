@@ -293,8 +293,8 @@ def postprocess_rfdetr(
     Postprocess RF-DETR output.
 
     Expects [dets, labels]: dets (batch, num_queries, 4) in normalized [cx, cy, w, h];
-    labels (batch, num_queries, num_classes) as logits (class IDs 1-indexed). Converts
-    to unified format in original coords.
+    labels (batch, num_queries, num_classes) as logits; the class ID is the logit index,
+    unchanged. Converts to unified format in original coords.
 
     Parameters
     ----------
@@ -368,8 +368,6 @@ def _postprocess_rfdetr_core(
         selected_bboxes = selected_bboxes[mask]
         topk_scores = topk_scores[mask]
         topk_class_ids = topk_class_ids[mask]
-
-    topk_class_ids = topk_class_ids - 1  # 1-indexed in model
 
     if input_size is not None:
         input_w, input_h = input_size

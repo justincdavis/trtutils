@@ -9,6 +9,7 @@ from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
     from typing_extensions import Self
@@ -38,6 +39,7 @@ class YOLO(Detector):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -59,6 +61,7 @@ class YOLO(Detector):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -88,6 +91,7 @@ class DETR(Detector):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -110,6 +114,7 @@ class DETR(Detector):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )

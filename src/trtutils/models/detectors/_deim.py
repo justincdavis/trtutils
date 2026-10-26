@@ -10,6 +10,7 @@ from trtutils.image._schema import InputSchema, OutputSchema
 from trtutils.models._model import Model
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
     from typing_extensions import Self
@@ -48,6 +49,7 @@ class DEIM(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -73,6 +75,7 @@ class DEIM(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -112,6 +115,7 @@ class DEIMv2(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -137,6 +141,7 @@ class DEIMv2(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
