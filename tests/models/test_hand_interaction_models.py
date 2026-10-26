@@ -9,15 +9,22 @@ import numpy as np
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils._flags import FLAGS
 from trtutils.image._hand_interaction import HandInteractionDetector
 from trtutils.image._schema import HandInteractionOutputSchema
 from trtutils.models import HOIDETR, Hands23
 
 HOI_DETR_ONNX = DATA_DIR / "hoi_detr" / "hoi_detr_vitl_640.onnx"
 HANDS23_ONNX = DATA_DIR / "hands23" / "hands23_x101_800.onnx"
+_trt86_hoi = pytest.mark.skipif(
+    FLAGS.TRT_VERSION < (10, 0), reason="TensorRT 8.6 cannot build HOI-DETR (Einsum ellipsis)"
+)
+_trt86_hands23 = pytest.mark.skipif(
+    FLAGS.TRT_VERSION < (10, 0), reason="TensorRT 8.6 cannot build Hands23 (OneHot shape tensor)"
+)
 MODELS = [
-    pytest.param(HOIDETR, HOI_DETR_ONNX, id="hoi-detr"),
-    pytest.param(Hands23, HANDS23_ONNX, id="hands23"),
+    pytest.param(HOIDETR, HOI_DETR_ONNX, id="hoi-detr", marks=_trt86_hoi),
+    pytest.param(Hands23, HANDS23_ONNX, id="hands23", marks=_trt86_hands23),
 ]
 
 
@@ -31,8 +38,20 @@ def test_output_contract_validation(build_test_engine) -> None:
 @pytest.mark.parametrize(
     ("model_cls", "onnx_path", "expected"),
     [
-        pytest.param(HOIDETR, HOI_DETR_ONNX, HandInteractionOutputSchema.HOI_DETR, id="hoi-detr"),
-        pytest.param(Hands23, HANDS23_ONNX, HandInteractionOutputSchema.HANDS23, id="hands23"),
+        pytest.param(
+            HOIDETR,
+            HOI_DETR_ONNX,
+            HandInteractionOutputSchema.HOI_DETR,
+            id="hoi-detr",
+            marks=_trt86_hoi,
+        ),
+        pytest.param(
+            Hands23,
+            HANDS23_ONNX,
+            HandInteractionOutputSchema.HANDS23,
+            id="hands23",
+            marks=_trt86_hands23,
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -67,8 +86,8 @@ def _assert_interactions_close(left, right) -> None:
     ("model_cls", "onnx_path", "attr_type"),
     [
         # hoi-detr has no side head and two pair classes, so side and contact stay None
-        pytest.param(HOIDETR, HOI_DETR_ONNX, type(None), id="hoi-detr"),
-        pytest.param(Hands23, HANDS23_ONNX, int, id="hands23"),
+        pytest.param(HOIDETR, HOI_DETR_ONNX, type(None), id="hoi-detr", marks=_trt86_hoi),
+        pytest.param(Hands23, HANDS23_ONNX, int, id="hands23", marks=_trt86_hands23),
     ],
 )
 @pytest.mark.parametrize(
@@ -127,10 +146,10 @@ OVERRIDES = [
 @pytest.mark.parametrize(
     ("model_cls", "onnx_path", "base", "override"),
     [
-        pytest.param(model_cls, onnx_path, base, override, id=f"{model_id}-{case_id}")
-        for model_cls, onnx_path, model_id in (
-            (HOIDETR, HOI_DETR_ONNX, "hoi-detr"),
-            (Hands23, HANDS23_ONNX, "hands23"),
+        pytest.param(model_cls, onnx_path, base, override, id=f"{model_id}-{case_id}", marks=mark)
+        for model_cls, onnx_path, model_id, mark in (
+            (HOIDETR, HOI_DETR_ONNX, "hoi-detr", _trt86_hoi),
+            (Hands23, HANDS23_ONNX, "hands23", _trt86_hands23),
         )
         for base, override, case_id in OVERRIDES
         # hands23 finds no second objects in this image, so the override cannot show
@@ -190,6 +209,7 @@ def test_batch_input(build_model_engine, images, model_cls, onnx_path) -> None:
         pytest.param(("horse", "people"), ("horse", "people"), id="swapped"),
     ],
 )
+@_trt86_hoi
 def test_batch_slots_match_single(build_model_engine, images, names, ref_names) -> None:
     """Every slot of a batch-2 engine matches the batch-1 result for its image."""
     single = HOIDETR(build_model_engine(HOIDETR, HOI_DETR_ONNX), warmup=False)
