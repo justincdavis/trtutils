@@ -10,7 +10,7 @@ from cv2ext.bboxes import nms
 
 from trtutils._log import LOG
 
-from ._common import clip_boxes
+from ._common import clip_boxes, unletterbox_boxes
 
 if TYPE_CHECKING:
     from trtutils.image.types import Detection
@@ -559,21 +559,20 @@ def postprocess_rtdetrv3(
     Postprocess RT-DETR v3 (PaddlePaddle export) output.
 
     Two tensors: combined_dets (total_N, 6) with rows (class_id, score, x1, y1, x2,
-    y2) in original image coords, and num_dets_per_image [batch_size]. No coordinate
-    transform is applied.
+    y2) in model input (letterboxed) coords, and num_dets_per_image [batch_size].
 
     Parameters
     ----------
     outputs : list[np.ndarray]
         [combined_dets, num_dets_per_image].
     ratios : list[tuple[float, float]]
-        Used with input_size to clip boxes to the image.
+        Used to map boxes out of the letterbox.
     padding : list[tuple[float, float]]
-        Used with input_size to clip boxes to the image.
+        Used to map boxes out of the letterbox.
     conf_thres : float, optional
         Confidence threshold to filter detections.
     input_size : tuple[int, int] | None
-        Model input (width, height), used with ratios/padding to clip boxes to the image.
+        Model input (width, height), used with ratios/padding to clip boxes.
     no_copy : bool, optional
         If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
@@ -642,7 +641,7 @@ def _postprocess_rtdetrv3_core(
         scores = scores[finite_mask]
         class_ids = class_ids[finite_mask]
 
-    adjusted_bboxes = clip_boxes(bboxes, ratios, padding, input_size)
+    adjusted_bboxes = unletterbox_boxes(bboxes, ratios, padding, input_size)
 
     if no_copy:
         return [adjusted_bboxes, scores, class_ids]

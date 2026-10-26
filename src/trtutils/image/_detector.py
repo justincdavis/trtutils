@@ -765,8 +765,8 @@ class Detector(ImageModel, DetectorInterface):
         """Build engine inputs, adding per-image orig size / scale factor arrays per input schema."""
         extras: list[Buffer] = []
         if self._use_image_size:
-            if images is None:
-                # an already preprocessed batch: the original sizes are unknown
+            if images is None or self._input_schema == InputSchema.RT_DETR_V3:
+                # the model input size: paddle boxes come back in this canvas, postprocess unletterboxes
                 sizes = [(self._input_size[1], self._input_size[0])] * image.shape[0]
             else:
                 sizes = [img.shape[:2] for img in images]
@@ -775,8 +775,8 @@ class Detector(ImageModel, DetectorInterface):
                 sizes = [(w, h) for h, w in sizes]
             extras.append(Buffer.wrap(np.array(sizes, dtype=self._orig_size_dtype)))
         if self._use_scale_factor:
-            if ratios is None:
-                # an already preprocessed batch without ratios is taken as unscaled
+            if ratios is None or self._input_schema == InputSchema.RT_DETR_V3:
+                # unscaled: v3 divides by scale_factor, and postprocess undoes the letterbox
                 ratios = [(1.0, 1.0)] * image.shape[0]
             extras.append(Buffer.wrap(np.array(ratios, dtype=np.float32)))
         # map by name, as the engine input order can differ from the schema order

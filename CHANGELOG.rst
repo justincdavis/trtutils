@@ -185,6 +185,9 @@ Changed
 
 Fixed
 ^^^^^
+* ``RTDETRv3`` returned garbage boxes (coordinates in the thousands, clipped to image corners) on
+  images larger than the model input: it is now fed the model input size and a unit scale factor, and
+  boxes are unletterboxed like the other detectors
 * Detection postprocessors clip boxes to the original image, ``[0, width]`` x ``[0, height]``, so
   e.g. D-FINE no longer returns ``x2 = 448`` on a 447 px wide image
 * Engine files (``build_engine`` output and engine cache copies) are written atomically (temp file
