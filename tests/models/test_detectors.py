@@ -54,12 +54,42 @@ DETECTORS = [
 # models that return their own class index instead of the 80-class COCO index
 CLASS_ID_OVERRIDES = {RFDETR: {17: 19}}
 
+# builder opt level 1 miscompiles these (horse 0.10 / absent vs 0.93 in onnxruntime, random per
+# build); the default level 3 matches onnxruntime in every build (0.85-0.93 over 8 builds)
+OPT_LEVELS = {DFINE: 3, DEIM: 3}
+
+
+def _iou(a, b) -> float:
+    iw = min(a[2], b[2]) - max(a[0], b[0])
+    ih = min(a[3], b[3]) - max(a[1], b[1])
+    inter = max(iw, 0) * max(ih, 0)
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _assert_same_detections(left, right) -> None:
+    # EfficientNMS breaks exact fp16 score ties nondeterministically (a different equivalent box
+    # can survive, equal scores can swap order), so match by class + IoU, not by position
+    assert len(left) == len(right)
+    unmatched = list(right)
+    for bbox, score, cls_id in left:
+        match = next(
+            (
+                d
+                for d in unmatched
+                if d[2] == cls_id and _iou(bbox, d[0]) >= 0.9 and abs(score - d[1]) < 1e-2
+            ),
+            None,
+        )
+        assert match is not None, f"no match for {cls_id} {bbox} {score}"
+        unmatched.remove(match)
+
 
 @pytest.mark.parametrize(("model_cls", "onnx_path"), DETECTORS)
 @pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
 def test_detector_end2end(build_model_engine, images, model_cls, onnx_path, preprocessor) -> None:
     """run(), get_detections(), and end2end() agree and find the ground-truth classes in bounds."""
-    engine = build_model_engine(model_cls, onnx_path)
+    engine = build_model_engine(model_cls, onnx_path, opt_level=OPT_LEVELS.get(model_cls, 1))
     model = model_cls(engine, preprocessor=preprocessor, warmup=False)
     image = images["horse"]
     height, width = image.array.shape[:2]
@@ -68,12 +98,7 @@ def test_detector_end2end(build_model_engine, images, model_cls, onnx_path, prep
     assert len(postprocessed) == 3
     via_run = model.get_detections(postprocessed)
     via_e2e = model.end2end(image.array)
-    # some engines (yolov13) return slightly different boxes run to run, so allow a pixel
-    assert len(via_run) == len(via_e2e)
-    for (bbox, score, cls_id), (e2e_bbox, e2e_score, e2e_cls_id) in zip(via_run, via_e2e):
-        assert cls_id == e2e_cls_id
-        assert all(abs(a - b) <= 1 for a, b in zip(bbox, e2e_bbox))
-        assert abs(score - e2e_score) < 1e-2
+    _assert_same_detections(via_run, via_e2e)
 
     assert len(via_run) >= image.gt_det_min
     overrides = CLASS_ID_OVERRIDES.get(model_cls, {})
