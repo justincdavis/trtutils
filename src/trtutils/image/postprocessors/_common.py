@@ -71,19 +71,11 @@ def _nms_indices_numpy(
         if len(keep) == max_det:
             break
         rest = slice(i + 1, None)
-        inter = np.prod(
-            np.clip(
-                np.minimum(boxes[i, 2:], boxes[rest, 2:])
-                - np.maximum(boxes[i, :2], boxes[rest, :2]),
-                0,
-                None,
-            ),
-            axis=1,
-        )
+        wh = np.minimum(boxes[i, 2:], boxes[rest, 2:]) - np.maximum(boxes[i, :2], boxes[rest, :2])
+        inter = np.clip(wh, 0, None).prod(axis=1)
         union = areas[i] + areas[rest] - inter
         # opencv scores a zero-area pair as iou 1
-        zero = union <= 0
-        iou = np.where(zero, 1.0, inter / np.where(zero, 1.0, union))
+        iou = np.divide(inter, union, out=np.ones_like(inter), where=union > 0)
         alive[rest] &= iou <= nms_iou_thres
     return order[keep].astype(int)
 

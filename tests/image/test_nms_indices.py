@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import cv2
 import numpy as np
 import pytest
 
@@ -21,27 +20,12 @@ def _numpy_nms(monkeypatch) -> None:
     monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
 
 
-def _cv2_nms(
-    boxes: np.ndarray,
-    scores: np.ndarray,
-    labels: np.ndarray,
-    conf_thres: float | None,
-    iou_thres: float,
-    max_det: int | None,
-) -> np.ndarray:
-    if boxes.shape[0] == 0:
-        return np.zeros((0,), dtype=int)
-    xywh = np.empty_like(boxes, dtype=np.float32)
-    xywh[:, :2] = boxes[:, :2]
-    xywh[:, 2:] = boxes[:, 2:] - boxes[:, :2]
-    raw = cv2.dnn.NMSBoxesBatched(
-        xywh.tolist(),
-        scores.astype(np.float32).tolist(),
-        labels.astype(np.int32).tolist(),
-        0.0 if conf_thres is None else conf_thres,
-        iou_thres,
-    )
-    return np.asarray(raw, dtype=int).ravel()[:max_det]
+def _cv2_nms(*args: object) -> np.ndarray:
+    """Reference result: nms_indices' own cv2.dnn.NMSBoxesBatched branch."""
+    FLAGS.FOUND_CV2 = True
+    expected = nms_indices(*args)
+    FLAGS.FOUND_CV2 = False
+    return expected
 
 
 def _make(
@@ -158,11 +142,3 @@ def test_nms_indices_offset_is_max_coordinate_plus_one() -> None:
     expected = _cv2_nms(boxes, scores, labels, 0.1, 0.0, None)
     assert expected.tolist() == [0]
     assert np.array_equal(nms_indices(boxes, scores, labels, 0.1, 0.0, None), expected)
-
-
-def test_nms_indices_uses_cv2_when_found() -> None:
-    """With cv2 installed the fast path gives the same indices."""
-    boxes, scores, labels = _make(300, 80, seed=0, clustered=True)
-    numpy_idx = nms_indices(boxes, scores, labels, 0.25, 0.45, None)
-    FLAGS.FOUND_CV2 = True
-    assert np.array_equal(nms_indices(boxes, scores, labels, 0.25, 0.45, None), numpy_idx)

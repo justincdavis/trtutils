@@ -77,11 +77,7 @@ def _resize_bilinear(image: np.ndarray, width: int, height: int) -> np.ndarray:
         fy = yf.astype(ftype)[:, None, None]
         wide = src.astype(ftype)
         cols = wide[:, x0] * (1 - fx) + wide[:, x1] * fx
-        out = cols[y0] * (1 - fy) + cols[y1] * fy
-        if np.issubdtype(src.dtype, np.integer):
-            info = np.iinfo(src.dtype)
-            out = np.clip(np.rint(out), info.min, info.max)
-        out = out.astype(src.dtype)
+        out = (cols[y0] * (1 - fy) + cols[y1] * fy).astype(src.dtype)
 
     return out[:, :, 0] if out.shape[2] == 1 else out  # cv2 drops a single channel axis
 
@@ -154,7 +150,12 @@ def letterbox(
 
     h, w = image.shape[:2]
     canvas = np.empty((h + top + bottom, w + left + right, *image.shape[2:]), dtype=image.dtype)
-    canvas[...] = color if image.ndim == _HWC else color[0]
+    # fill one row and broadcast it, a tuple over the channel axis is ~70x slower
+    canvas[...] = (
+        np.array(color, image.dtype)[None].repeat(canvas.shape[1], 0)
+        if image.ndim == _HWC
+        else color[0]
+    )
     canvas[top : top + h, left : left + w] = image
     return canvas, (r, r), (dw, dh)
 

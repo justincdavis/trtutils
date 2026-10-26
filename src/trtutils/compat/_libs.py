@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     nvrtc: ModuleType
     cudart_bindings: ModuleType
     import cv2
+    import cv2ext
 
 # if we are not type checking, actually import the modules
 # we handle the behavior of cuda.bindings vs. cuda in the _import_or_attr function
@@ -63,6 +64,7 @@ else:
     nvrtc = _import_or_attr("cuda.bindings.nvrtc", "nvrtc", "nvrtc")
     cudart_bindings = _import_or_attr("cuda.bindings.cudart", "cudart_bindings", "cudart")
     cv2 = _import_or_attr("cv2", "cv2", hint=", install with: pip install trtutils[cv2]")
+    cv2ext = _import_or_attr("cv2ext", "cv2ext", hint=", install with: pip install trtutils[cv2]")
 
 
-__all__ = ["cuda", "cudart", "cudart_bindings", "cv2", "nvrtc", "trt"]
+__all__ = ["cuda", "cudart", "cudart_bindings", "cv2", "cv2ext", "nvrtc", "trt"]

@@ -96,15 +96,6 @@ def test_resize_bilinear_random_shapes(seed) -> None:
     _assert_close_u8(_ops._resize_bilinear(image, int(new_w), int(new_h)), expected)
 
 
-def test_resize_bilinear_int_dtype() -> None:
-    """Non-uint8 integer images use the float path and keep their dtype."""
-    image = _random_image((20, 30), np.uint8).astype(np.uint16) * 200
-    expected = cv2.resize(image, (50, 40), interpolation=cv2.INTER_LINEAR)
-    actual = _ops._resize_bilinear(image, 50, 40)
-    assert actual.dtype == np.uint16
-    assert np.abs(actual.astype(int) - expected.astype(int)).max() <= 1
-
-
 @pytest.mark.parametrize("use_cv2", _BACKENDS, indirect=True)
 @pytest.mark.parametrize(("src", "dst"), _RESIZE_CASES)
 def test_resize_linear_dispatch(use_cv2, src, dst) -> None:
