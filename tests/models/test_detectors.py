@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import cv2
 import pytest
 
 from tests.conftest import DATA_DIR
@@ -117,3 +118,20 @@ def test_rfdetr_class_map_horse(build_model_engine, images) -> None:
     classes = {cls_id for _bbox, _score, cls_id in model.end2end(images["horse"].array)}
     assert images["horse"].gt_det_classes[0] in classes
     assert 19 not in classes
+
+
+@pytest.mark.parametrize("name", ["street.jpg", "cars.jpeg"])
+def test_rtdetrv3_large_image_boxes(build_model_engine, name) -> None:
+    """RT-DETRv3 boxes on large images are real boxes, not garbage clipped to the image edge."""
+    engine = build_model_engine(RTDETRv3, DATA_DIR / "rtdetrv3" / "rtdetrv3_r18_640.onnx")
+    model = RTDETRv3(engine, warmup=False)
+    image = cv2.imread(str(DATA_DIR / name))
+    height, width = image.shape[:2]
+
+    detections = model.end2end(image)
+    assert detections
+    for (x1, y1, x2, y2), _score, _cls_id in detections:
+        assert 0 <= x1 < x2 <= width
+        assert 0 <= y1 < y2 <= height
+        # a garbage box would be clipped to a sliver or to the whole image corner
+        assert (x2 - x1) * (y2 - y1) < 0.5 * width * height
