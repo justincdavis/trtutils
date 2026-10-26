@@ -104,6 +104,30 @@ Classes
     Alias for the TextRecognizer class with args preset for PaddleOCR (PP-OCR) recognition.
 :class:`PPOCR`
     Alias for the OCR class combining PPOCRDetector and PPOCRRecognizer.
+:class:`YOLOv8Seg`
+    Alias for the Segmenter class with args preset for YOLOv8-Seg.
+:class:`YOLOv11Seg`
+    Alias for the Segmenter class with args preset for YOLOv11-Seg.
+:class:`YOLOv26Seg`
+    Alias for the Segmenter class with args preset for YOLOv26-Seg.
+:class:`YOLOv8Pose`
+    Alias for the PoseEstimator class with args preset for YOLOv8-Pose.
+:class:`YOLOv11Pose`
+    Alias for the PoseEstimator class with args preset for YOLOv11-Pose.
+:class:`YOLOv26Pose`
+    Alias for the PoseEstimator class with args preset for YOLOv26-Pose.
+:class:`YOLOv8OBB`
+    Alias for the OBBDetector class with args preset for YOLOv8-OBB.
+:class:`YOLOv11OBB`
+    Alias for the OBBDetector class with args preset for YOLOv11-OBB.
+:class:`YOLOv26OBB`
+    Alias for the OBBDetector class with args preset for YOLOv26-OBB.
+:class:`YOLOv8Cls`
+    Alias for the Classifier class with args preset for YOLOv8-Cls.
+:class:`YOLOv11Cls`
+    Alias for the Classifier class with args preset for YOLOv11-Cls.
+:class:`YOLOv26Cls`
+    Alias for the Classifier class with args preset for YOLOv26-Cls.
 
 """
 
@@ -131,6 +155,9 @@ from .classifiers import (
     SwinTransformerV2,
     ViT,
     WideResNet,
+    YOLOv8Cls,
+    YOLOv11Cls,
+    YOLOv26Cls,
 )
 from .depth_estimators import DepthAnythingV1, DepthAnythingV2, DepthAnythingV3
 from .detectors import (
@@ -156,7 +183,10 @@ from .detectors import (
     YOLOv26,
 )
 from .hand_interaction import HOIDETR, Hands23
+from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
+from .pose_estimators import YOLOv8Pose, YOLOv11Pose, YOLOv26Pose
+from .segmenters import YOLOv8Seg, YOLOv11Seg, YOLOv26Seg
 
 __all__ = [
     "DEIM",
@@ -202,10 +232,22 @@ __all__ = [
     "YOLOv5",
     "YOLOv7",
     "YOLOv8",
+    "YOLOv8Cls",
+    "YOLOv8OBB",
+    "YOLOv8Pose",
+    "YOLOv8Seg",
     "YOLOv9",
     "YOLOv10",
     "YOLOv11",
+    "YOLOv11Cls",
+    "YOLOv11OBB",
+    "YOLOv11Pose",
+    "YOLOv11Seg",
     "YOLOv12",
     "YOLOv13",
     "YOLOv26",
+    "YOLOv26Cls",
+    "YOLOv26OBB",
+    "YOLOv26Pose",
+    "YOLOv26Seg",
 ]

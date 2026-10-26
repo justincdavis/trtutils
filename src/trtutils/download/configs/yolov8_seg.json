@@ -1,0 +1,22 @@
+{
+  "yolov8n-seg": {
+    "url": "ultralytics",
+    "name": "yolov8n-seg"
+  },
+  "yolov8s-seg": {
+    "url": "ultralytics",
+    "name": "yolov8s-seg"
+  },
+  "yolov8m-seg": {
+    "url": "ultralytics",
+    "name": "yolov8m-seg"
+  },
+  "yolov8l-seg": {
+    "url": "ultralytics",
+    "name": "yolov8l-seg"
+  },
+  "yolov8x-seg": {
+    "url": "ultralytics",
+    "name": "yolov8x-seg"
+  }
+}

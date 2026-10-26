@@ -14,6 +14,12 @@ DetectorInterface
     Interface for image detectors.
 HandInteractionDetectorInterface
     Interface for hand-object interaction detectors.
+OBBDetectorInterface
+    Interface for oriented bounding box detectors.
+PoseEstimatorInterface
+    Interface for pose estimators.
+SegmenterInterface
+    Interface for instance segmentation models.
 TextDetectorInterface
     Interface for text detectors.
 TextRecognizerInterface
@@ -41,6 +47,9 @@ if TYPE_CHECKING:
         Classification,
         Detection,
         HandInteraction,
+        OBBDetection,
+        Pose,
+        Segmentation,
         Text,
         TextBox,
     )
@@ -1677,4 +1686,640 @@ class TextRecognizerInterface(ABC):
         *,
         verbose: bool | None = None,
     ) -> list[Text]:
+        """Perform end to end inference for a batch of images."""
+
+
+class _TaskModelInterface(ABC):
+    """Shared contract of the YOLO task model interfaces."""
+
+    @property
+    @abstractmethod
+    def engine(self: Self) -> TRTEngine:
+        """Get the underlying TRTEngine."""
+
+    @property
+    @abstractmethod
+    def name(self: Self) -> str:
+        """Get the name of the engine."""
+
+    @property
+    @abstractmethod
+    def input_shape(self: Self) -> tuple[int, int]:
+        """Get the input shape of the model."""
+
+    @property
+    @abstractmethod
+    def dtype(self: Self) -> np.dtype:
+        """Get the dtype required by the model."""
+
+    # preprocess overloads
+    @overload
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray | Buffer,
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        resize: str | None = None,
+        method: str | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        """Preprocess the input images."""
+
+    @abstractmethod
+    def postprocess(
+        self: Self,
+        outputs: list[np.ndarray],
+        ratios: list[tuple[float, float]],
+        padding: list[tuple[float, float]],
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Postprocess the outputs."""
+
+    # run overloads - batch input (3 overloads)
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Run the model on input."""
+
+    # __call__ overloads
+    @overload
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Run the model on input."""
+
+
+class OBBDetectorInterface(_TaskModelInterface):
+    """Interface for oriented bounding box detectors."""
+
+    # get_obbs overloads
+    @overload
+    @abstractmethod
+    def get_obbs(
+        self: Self,
+        outputs: list[np.ndarray],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[OBBDetection]: ...
+
+    @overload
+    @abstractmethod
+    def get_obbs(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[OBBDetection]]: ...
+
+    @abstractmethod
+    def get_obbs(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+        conf_thres: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[OBBDetection] | list[list[OBBDetection]]:
+        """Get the oriented boxes for each image."""
+
+    # end2end overloads
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[OBBDetection]: ...
+
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[OBBDetection]]: ...
+
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[OBBDetection] | list[list[OBBDetection]]:
+        """Perform end to end inference for a batch of images."""
+
+
+class PoseEstimatorInterface(_TaskModelInterface):
+    """Interface for pose estimators."""
+
+    # get_poses overloads
+    @overload
+    @abstractmethod
+    def get_poses(
+        self: Self,
+        outputs: list[np.ndarray],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[Pose]: ...
+
+    @overload
+    @abstractmethod
+    def get_poses(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[Pose]]: ...
+
+    @abstractmethod
+    def get_poses(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+        conf_thres: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[Pose] | list[list[Pose]]:
+        """Get the poses for each image."""
+
+    # end2end overloads
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[Pose]: ...
+
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[Pose]]: ...
+
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[Pose] | list[list[Pose]]:
+        """Perform end to end inference for a batch of images."""
+
+
+class SegmenterInterface(_TaskModelInterface):
+    """Interface for instance segmentation models."""
+
+    @abstractmethod
+    def postprocess(
+        self: Self,
+        outputs: list[np.ndarray],
+        ratios: list[tuple[float, float]],
+        padding: list[tuple[float, float]],
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        mask_thres: float | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Postprocess the outputs."""
+
+    # run overloads - batch input (3 overloads)
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        mask_thres: float | None = ...,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        mask_thres: float | None = ...,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        mask_thres: float | None = ...,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        mask_thres: float | None = ...,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        mask_thres: float | None = ...,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        mask_thres: float | None = ...,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        mask_thres: float | None = None,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Run the model on input."""
+
+    # __call__ overloads
+    @overload
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer,
+        ratios: tuple[float, float] | None = ...,
+        padding: tuple[float, float] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        mask_thres: float | None = ...,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        ratios: list[tuple[float, float]] | None = ...,
+        padding: list[tuple[float, float]] | None = ...,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        mask_thres: float | None = ...,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        ratios: tuple[float, float] | list[tuple[float, float]] | None = None,
+        padding: tuple[float, float] | list[tuple[float, float]] | None = None,
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        mask_thres: float | None = None,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Run the model on input."""
+
+    # get_segmentations overloads
+    @overload
+    @abstractmethod
+    def get_segmentations(
+        self: Self,
+        outputs: list[np.ndarray],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[Segmentation]: ...
+
+    @overload
+    @abstractmethod
+    def get_segmentations(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+        conf_thres: float | None = ...,
+        *,
+        verbose: bool | None = ...,
+    ) -> list[list[Segmentation]]: ...
+
+    @abstractmethod
+    def get_segmentations(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+        conf_thres: float | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> list[Segmentation] | list[list[Segmentation]]:
+        """Get the segmentations for each image."""
+
+    # end2end overloads
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer,
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        mask_thres: float | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[Segmentation]: ...
+
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        conf_thres: float | None = ...,
+        nms_iou_thres: float | None = ...,
+        *,
+        mask_thres: float | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[Segmentation]]: ...
+
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        conf_thres: float | None = None,
+        nms_iou_thres: float | None = None,
+        *,
+        mask_thres: float | None = None,
+        verbose: bool | None = None,
+    ) -> list[Segmentation] | list[list[Segmentation]]:
         """Perform end to end inference for a batch of images."""

@@ -79,6 +79,31 @@ Added
   ``postprocessors.postprocess_text_recognition``, ``postprocessors.get_text_boxes``,
   ``postprocessors.get_texts`` and ``postprocessors.sort_text_boxes``
 * Download support for ``ppocrv4_det`` and ``ppocrv4_rec``
+* ``image.Segmenter``, ``image.PoseEstimator``, and ``image.OBBDetector`` for instance
+  segmentation, pose estimation, and oriented-bounding-box models (YOLO-style heads), each an
+  ``ImageModel`` with its own postprocessor and ``get_segmentations`` / ``get_poses`` / ``get_obbs``
+* ``models`` aliases ``YOLOv8Seg``/``YOLOv11Seg``/``YOLOv26Seg``,
+  ``YOLOv8Pose``/``YOLOv11Pose``/``YOLOv26Pose``, and
+  ``YOLOv8OBB``/``YOLOv11OBB``/``YOLOv26OBB``
+* ``models`` classification aliases ``YOLOv8Cls``/``YOLOv11Cls``/``YOLOv26Cls`` and a
+  ``softmax`` flag on ``Classifier`` (and ``postprocess_classifications``) so heads that
+  already softmax inside the ONNX graph are not double-softmaxed
+* Download support for the ``-seg``, ``-cls``, ``-pose``, and ``-obb`` variants of
+  YOLOv8, YOLOv11, and YOLOv26 (YOLOv12 does not publish these task heads upstream); OBB
+  exports default to 1024 and classification to 224, and YOLOv26 task heads export raw
+  (``end2end=False``) for the trtutils decoders
+* ``max_det`` (default 300) on the segmentation, pose, and OBB postprocessors and task models;
+  OBB NMS uses ultralytics' probiou fast-NMS so results match ultralytics on the same export
+* ``image.interfaces.SegmenterInterface``, ``PoseEstimatorInterface``, and
+  ``OBBDetectorInterface``, implemented by the task models. ``postprocess`` / ``run`` / ``__call__``
+  / ``end2end`` take ``(conf_thres, nms_iou_thres, *, mask_thres, ...)`` per call, with
+  ``mask_thres`` (default 0.5, also a ``Segmenter`` constructor argument) only on the segmenter
+* ``SegmenterOutputSchema``, ``PoseEstimatorOutputSchema``, and ``OBBDetectorOutputSchema``
+  (``YOLO``): ``Segmenter``, ``PoseEstimator``, and ``OBBDetector`` are ``ImageModel`` peers of
+  ``Detector`` that take ``output_schema`` (enum or name) and expose ``output_schema``; the schema
+  is matched against the engine's output names in any order, and a wrong engine raises
+  ``ValueError``
+* ``image.types`` aliases ``Segmentation``, ``Pose``, ``OBBDetection`` and ``RBox``
 
 Changed
 ^^^^^^^

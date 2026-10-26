@@ -14,6 +14,7 @@ from tests.conftest import DATA_DIR, ENGINES_DIR
 from trtutils.builder import build_engine
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 YOLOV10_ONNX = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
@@ -44,3 +45,17 @@ def yolov10_dynamic_engine() -> Path:
             shapes=[("images", ((1, *shape), (4, *shape), (8, *shape)))],
         )
     return engine_path
+
+
+@pytest.fixture(scope="session")
+def task_engine(build_test_engine) -> Callable[[str], Path]:
+    """Build and cache a YOLOv11n task engine ("seg", "pose", "obb", "cls"), skipping if missing."""
+
+    def _get(task: str, batch_size: int = 1) -> Path:
+        suffix = f"-b{batch_size}" if batch_size > 1 else ""
+        onnx_path = DATA_DIR / "yolov11_tasks" / f"yolov11n-{task}{suffix}.onnx"
+        if not onnx_path.exists():
+            pytest.skip(f"missing {onnx_path} (export with `trtutils download`)")
+        return build_test_engine(onnx_path, batch_size=batch_size)
+
+    return _get

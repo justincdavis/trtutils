@@ -1,0 +1,27 @@
+{
+  "yolov26n-seg": {
+    "url": "ultralytics",
+    "name": "yolo26n-seg",
+    "end2end": "False"
+  },
+  "yolov26s-seg": {
+    "url": "ultralytics",
+    "name": "yolo26s-seg",
+    "end2end": "False"
+  },
+  "yolov26m-seg": {
+    "url": "ultralytics",
+    "name": "yolo26m-seg",
+    "end2end": "False"
+  },
+  "yolov26l-seg": {
+    "url": "ultralytics",
+    "name": "yolo26l-seg",
+    "end2end": "False"
+  },
+  "yolov26x-seg": {
+    "url": "ultralytics",
+    "name": "yolo26x-seg",
+    "end2end": "False"
+  }
+}

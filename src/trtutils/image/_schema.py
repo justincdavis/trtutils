@@ -115,6 +115,21 @@ class OutputSchema(Enum):
         return list(cls.__members__.keys())
 
 
+class SegmenterOutputSchema(Enum):
+    # ultralytics segmentation heads: detections + mask prototypes
+    YOLO = ("output0", "output1")
+
+
+class PoseEstimatorOutputSchema(Enum):
+    # ultralytics pose heads
+    YOLO = ("output0",)
+
+
+class OBBDetectorOutputSchema(Enum):
+    # ultralytics oriented bounding box heads
+    YOLO = ("output0",)
+
+
 def get_detector_io_schema(  # noqa: C901, PLR0912, PLR0915
     engine: TRTEngine,
 ) -> tuple[InputSchema, OutputSchema]:

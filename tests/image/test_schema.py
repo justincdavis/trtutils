@@ -16,7 +16,10 @@ from trtutils.image._schema import (
     DepthEstimatorOutputSchema,
     HandInteractionOutputSchema,
     InputSchema,
+    OBBDetectorOutputSchema,
     OutputSchema,
+    PoseEstimatorOutputSchema,
+    SegmenterOutputSchema,
     TextDetectorOutputSchema,
     TextRecognizerOutputSchema,
     get_detector_io_schema,
@@ -99,6 +102,20 @@ _TREC = TextRecognizerOutputSchema
         pytest.param(_TREC, ("softmax_11.tmp_0",), None, "PADDLE", id="text-rec-paddle-auto"),
         pytest.param(_TREC, ("logits",), None, "GENERIC", id="text-rec-generic-fallback"),
         pytest.param(_TREC, ("softmax_11.tmp_0",), _TREC.PADDLE, "PADDLE", id="text-rec-enum"),
+        pytest.param(SegmenterOutputSchema, ("output0", "output1"), None, "YOLO", id="seg-auto"),
+        pytest.param(
+            SegmenterOutputSchema, ("output1", "output0"), None, "YOLO", id="seg-order-swapped"
+        ),
+        pytest.param(PoseEstimatorOutputSchema, ("output0",), None, "YOLO", id="pose-auto"),
+        pytest.param(OBBDetectorOutputSchema, ("output0",), None, "YOLO", id="obb-auto"),
+        pytest.param(
+            PoseEstimatorOutputSchema,
+            ("output0",),
+            PoseEstimatorOutputSchema.YOLO,
+            "YOLO",
+            id="pose-enum-override",
+        ),
+        pytest.param(OBBDetectorOutputSchema, ("output0",), "YOLO", "YOLO", id="obb-str-override"),
     ],
 )
 def test_resolve_output_schema(schema_cls, outputs, override, expected) -> None:
@@ -118,6 +135,14 @@ def test_resolve_output_schema(schema_cls, outputs, override, expected) -> None:
         pytest.param(_DEPTH, ("depth",), "DEPTH_ANYTHING", "match no", id="depth-named-override"),
         pytest.param(_TDET, ("maps",), "PADDLE", "match no", id="text-det-named-override"),
         pytest.param(_TREC, ("logits",), _TREC.PADDLE, "match no", id="text-rec-named-override"),
+        pytest.param(
+            PoseEstimatorOutputSchema, ("output0", "output1"), None, "match no", id="pose-on-seg"
+        ),
+        pytest.param(SegmenterOutputSchema, ("output0",), None, "match no", id="seg-on-pose"),
+        pytest.param(
+            SegmenterOutputSchema, ("output0",), SegmenterOutputSchema.YOLO, "match no", id="enum"
+        ),
+        pytest.param(SegmenterOutputSchema, ("output0", "output1"), "NOPE", "NOPE", id="bad-str"),
     ],
 )
 def test_resolve_output_schema_rejects(schema_cls, outputs, override, match) -> None:

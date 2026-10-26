@@ -39,7 +39,7 @@ def export_ultralytics(
         LOG.warning(
             "Ultralytics is a AGPL-3.0 and commercial licensed model, be aware of license restrictions"
         )
-    imgsz = handle_imgsz(imgsz, _640, "Ultralytics")
+    imgsz = handle_imgsz(imgsz, int(config.get("imgsz", _640)), "Ultralytics")
     run_uv_pip_install(
         directory,
         bin_path.parent,
@@ -62,21 +62,21 @@ def export_ultralytics(
         shutil.copy(cached_pt_file, target_pt_file)
         modelname = f"model={pt_filename}"
 
-    run_cmd(
-        [
-            str(bin_path / "yolo"),
-            "export",
-            modelname,
-            "format=onnx",
-            f"opset={opset}",
-            f"imgsz={imgsz}",
-            f"batch={batch}",
-            f"dynamic={dynamic}",
-            "simplify=True",
-        ],
-        cwd=directory,
-        verbose=verbose,
-    )
+    cmd = [
+        str(bin_path / "yolo"),
+        "export",
+        modelname,
+        "format=onnx",
+        f"opset={opset}",
+        f"imgsz={imgsz}",
+        f"batch={batch}",
+        f"dynamic={dynamic}",
+        "simplify=True",
+    ]
+    # yolo26 task heads export end-to-end by default; the task decoders want the raw head
+    if "end2end" in config:
+        cmd.append(f"end2end={config['end2end']}")
+    run_cmd(cmd, cwd=directory, verbose=verbose)
 
     # Cache the .pt file if it was downloaded and not already cached
     if target_pt_file.exists() and not cached_pt_file.exists():
