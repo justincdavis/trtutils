@@ -174,6 +174,10 @@ Changed
 
 Fixed
 ^^^^^
+* Hands23 export squared pixel distances, overflowing fp16 and turning ``pair_probs`` into NaN
+  (every NaN pair was linked, contact always 1); HOI-DETR export baked batch 1 into the head's
+  padding mask, so batch slots after the first returned garbage. Existing ``hands23_x101`` and
+  ``hoi_detr_vitl`` ONNX files must be re-exported with ``trtutils download``
 * ``DepthEstimator`` always returns depth shaped ``(batch, H, W)``; models that output a
   ``(B, 1, H, W)`` channel axis (``DepthAnythingV3``) no longer keep the extra axis
 * ``register_jit`` functions now run Numba-compiled (the ``jit`` extra previously had no

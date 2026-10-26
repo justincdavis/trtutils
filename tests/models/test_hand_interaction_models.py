@@ -180,3 +180,28 @@ def test_batch_input(build_model_engine, images, model_cls, onnx_path) -> None:
     for a, b in zip(raw_batch[0], raw):
         np.testing.assert_array_equal(a, b)
     assert model.get_interactions(raw_batch) == [model.get_interactions(raw)]
+
+
+@pytest.mark.parametrize(
+    ("names", "ref_names"),
+    [
+        pytest.param(("people", "people"), ("people", "people"), id="duplicate"),
+        pytest.param(("people", "horse"), ("people", "horse"), id="mixed"),
+        pytest.param(("horse", "people"), ("horse", "people"), id="swapped"),
+    ],
+)
+def test_batch_slots_match_single(build_model_engine, images, names, ref_names) -> None:
+    """Every slot of a batch-2 engine matches the batch-1 result for its image."""
+    single = HOIDETR(build_model_engine(HOIDETR, HOI_DETR_ONNX), warmup=False)
+    batched = HOIDETR(build_model_engine(HOIDETR, HOI_DETR_ONNX, batch_size=2), warmup=False)
+
+    # low thresholds so objects and links show up, people has none at the defaults
+    kwargs = {"conf_thres": 0.1, "pair_thres": 0.3}
+    results = batched.end2end([images[n].array for n in names], **kwargs)
+    assert len(results) == 2
+    for result, ref_name in zip(results, ref_names):
+        expected = single.end2end(images[ref_name].array, **kwargs)
+        # fp16 near-ties can reorder equal scores between engines
+        _assert_interactions_close(
+            sorted(result, key=lambda t: t[0][0]), sorted(expected, key=lambda t: t[0][0])
+        )
