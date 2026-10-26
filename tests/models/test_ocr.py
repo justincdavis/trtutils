@@ -67,8 +67,8 @@ def small_det_engine(det_engine):  # det_engine skips when the onnx is missing
 
 @pytest.fixture(scope="module")
 def rec_engine(build_model_engine):
-    """Dynamic-shape PP-OCR recognition engine."""
-    return build_model_engine(PPOCRRecognizer, REC_ONNX)
+    """Dynamic-shape PP-OCR recognition engine, batch 3 so the three LINES crops fit one run."""
+    return build_model_engine(PPOCRRecognizer, REC_ONNX, batch_size=len(LINES))
 
 
 @pytest.mark.parametrize(
