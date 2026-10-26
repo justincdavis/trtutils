@@ -435,3 +435,27 @@ def test_batch_round_trip_through_both_functions() -> None:
         ],
     ]
     assert interactions == expected
+
+
+@pytest.mark.parametrize(
+    ("ratios", "padding", "expected"),
+    [
+        pytest.param((1.0, 1.0), (0.0, 0.0), [90, 90, 100, 100], id="identity"),
+        # original image is 200 x 160
+        pytest.param((0.5, 0.5), (0.0, 10.0), [180, 160, 200, 160], id="letterboxed"),
+    ],
+)
+def test_input_size_clips_boxes(ratios, padding, expected) -> None:
+    """A box overshooting the original image is clipped to it when input_size is given."""
+    boxes = np.array([[[90, 90, 105, 105]]], dtype=np.float32)
+    outputs = [
+        boxes,
+        np.array([[0.9]], dtype=np.float32),
+        np.array([[0]], dtype=np.int64),
+        _pair_probs(1, num_classes=2)[None],
+    ]
+    kwargs = {"ratios": [ratios], "padding": [padding], "input_size": (100, 100)}
+    clipped = postprocess_hand_interactions(outputs, **kwargs)[0][0]
+    np.testing.assert_allclose(clipped[0], expected)
+    unclipped = postprocess_hand_interactions(outputs, ratios=[ratios], padding=[padding])[0][0]
+    assert unclipped[0, 2] > clipped[0, 2]

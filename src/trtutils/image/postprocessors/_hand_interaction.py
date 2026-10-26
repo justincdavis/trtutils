@@ -23,6 +23,7 @@ def postprocess_hand_interactions(
     nms_iou_thres: float = 0.5,
     *,
     no_copy: bool | None = None,  # noqa: ARG001
+    input_size: tuple[int, int] | None = None,
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
@@ -49,6 +50,8 @@ def postprocess_hand_interactions(
     no_copy : bool, optional
         Kept for interface symmetry with the other postprocessors. NMS-based
         indexing always allocates new arrays, so this has no effect.
+    input_size : tuple[int, int] | None
+        Model input (width, height), used with ratios/padding to clip boxes to the image.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -71,7 +74,7 @@ def postprocess_hand_interactions(
         labels = outputs[2][i].astype(int)
         pair_probs = outputs[3][i]
 
-        remapped = unletterbox_boxes(boxes, ratios[i], padding[i])
+        remapped = unletterbox_boxes(boxes, ratios[i], padding[i], input_size)
         keep = scores >= conf_thres
 
         boxes_f = remapped[keep]
