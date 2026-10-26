@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.14t", "3.15", "3.15t"]
     name: Python ${{ matrix.python-version }}
     env:
       VIRTUAL_ENV: .venv-${{ matrix.python-version }}
@@ -22,5 +22,7 @@ jobs:
           echo "$PWD/$VIRTUAL_ENV/bin" >> $GITHUB_PATH
       - name: Install dependencies
         run: uv pip install -e ".[pytest]"
+      - name: Smoke import
+        run: python -c "from tests._cpu_stubs import inject; inject(); import trtutils, trtutils.image, trtutils.models; from trtutils._flags import FLAGS; print(FLAGS.FOUND_CV2)"
       - name: Run CPU tests
         run: ./ci/run_cpu_tests.sh

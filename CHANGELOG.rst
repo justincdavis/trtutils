@@ -112,6 +112,12 @@ Added
 
 Changed
 ^^^^^^^
+* **Breaking:** OpenCV and ``cv2ext`` moved from the base dependencies to the new ``cv2`` extra.
+  The plain install is numpy-only and installs on free-threaded CPython (3.14t, 3.15t). Without
+  OpenCV, OCR (``image.OCR`` models), the ``trtutils`` CLI, and image-file loading in the calibration
+  batcher raise an ``AttributeError`` with an install hint; everything else runs on numpy ops.
+  ``preprocessor="cpu"`` resize is ~100x slower (about 10 ms per 1080p frame) and pose, OBB and
+  segmentation NMS about 10x slower. To keep the old behaviour: ``pip install "trtutils[cv2]"``
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``

@@ -50,8 +50,6 @@ classifiers = [
 ]
 requires-python=">=3.8, <3.16"
 dependencies = [
-    "cv2ext>=0.1.0",
-    "opencv-python>=4.8.0,<6.0.0",
     "numpy>=1.19.0,<3.0.0",
     "nvtx==0.2.14; python_version == '3.8'",
     "nvtx>=0.2.14; python_version >= '3.9'",
@@ -93,6 +91,11 @@ cu13 = [
 jp7 = [
     "cuda-python==13.*",
 ]
+# OpenCV: OCR, the CLI, calibration from image files, faster cpu resize and NMS
+cv2 = [
+    "opencv-python>=4.8.0,<6.0.0",
+    "cv2ext>=0.1.0",
+]
 # ONNX support
 onnx = [
     "onnx>=1.17.0,<2.0.0",
@@ -114,6 +117,7 @@ torch = [
     "torchvision>=0.15.0",
 ]
 sahi = [
+    "trtutils[cv2]",
     "trtutils[torch]",
     "ultralytics>=8.3.100",
     "sahi>=0.11.31",
@@ -134,6 +138,7 @@ axonn = [
 # OR
 # Deps for compatiblity integrations in the trtutils.compat module
 benchmark = [
+    "trtutils[cv2]",
     "trtutils[torch]",
     "trtutils[sahi]",
 ]
@@ -155,11 +160,12 @@ pytest = [
     "pytest-timeout>=2.0",
 ]
 test = [
+    "trtutils[cv2]",
     "trtutils[onnx]",
     "trtutils[pytest]",
 ]
 dev = [
-    "trtutils[cpu]",
+    "trtutils[cv2]",
     "trtutils[jit]",
     "trtutils[quantize]",
     "trtutils[axonn]",
