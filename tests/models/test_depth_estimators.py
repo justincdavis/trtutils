@@ -9,14 +9,23 @@ import numpy as np
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils._flags import FLAGS
 from trtutils.image._schema import DepthEstimatorOutputSchema
 from trtutils.models import DepthAnythingV1, DepthAnythingV2, DepthAnythingV3
+
+_trt86_v1 = pytest.mark.skipif(
+    FLAGS.TRT_VERSION < (10, 0), reason="TensorRT 8.6 cannot build the /If conditional shapes"
+)
+_trt86_v3 = pytest.mark.skipif(
+    FLAGS.TRT_VERSION < (10, 0), reason="TensorRT 8.6 has no Gelu plugin for the v3 ONNX"
+)
 
 DEPTH_ESTIMATORS = [
     pytest.param(
         DepthAnythingV1,
         DATA_DIR / "depth_anything_v1" / "depth_anything_v1_small_518.onnx",
         id="depth-anything-v1-small",
+        marks=_trt86_v1,
     ),
     pytest.param(
         DepthAnythingV2,
@@ -27,6 +36,7 @@ DEPTH_ESTIMATORS = [
         DepthAnythingV3,
         DATA_DIR / "depth_anything_v3" / "depth_anything_v3_mono_large_518.onnx",
         id="depth-anything-v3-mono-large",
+        marks=_trt86_v3,
     ),
 ]
 
