@@ -8,9 +8,9 @@ from __future__ import annotations
 import cv2
 import numpy as np
 import pytest
-import tensorrt as trt
 
-from tests.conftest import DATA_DIR, ENGINES_DIR
+from tests._gpu_fixtures import engine_cache_path
+from tests.conftest import DATA_DIR
 from trtutils.core import Buffer, MemoryLocation
 from trtutils.image._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
 from trtutils.models import PPOCR, PPOCRDetector, PPOCRRecognizer
@@ -59,7 +59,7 @@ def det_engine(build_model_engine):
 @pytest.fixture(scope="module")
 def small_det_engine(det_engine):  # det_engine skips when the onnx is missing
     """Detection engine whose profile tops out at batch 2 and 320x320."""
-    path = ENGINES_DIR / f"ppocrv4_det_max320_b2_PPOCRDetector_{trt.__version__}.engine"
+    path = engine_cache_path(f"{DET_ONNX.stem}_PPOCRDetector_img320_max320", 2)
     if not path.exists():
         PPOCRDetector.build(DET_ONNX, path, imgsz=320, batch_size=2, max_imgsz=320, opt_level=1)
     return path

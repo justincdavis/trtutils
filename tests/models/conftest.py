@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable
 
 import pytest
-import tensorrt as trt
 
+from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import ENGINES_DIR
 
 if TYPE_CHECKING:
@@ -28,10 +28,7 @@ def build_model_engine() -> Callable[..., Path]:
         if not onnx_path.exists():
             pytest.skip(f"missing {onnx_path}")
         ENGINES_DIR.mkdir(parents=True, exist_ok=True)
-        suffix = f"_b{batch_size}" if batch_size > 1 else ""
-        engine_path = (
-            ENGINES_DIR / f"{onnx_path.stem}_{model_cls.__name__}{suffix}_{trt.__version__}.engine"
-        )
+        engine_path = engine_cache_path(f"{onnx_path.stem}_{model_cls.__name__}", batch_size)
         if not engine_path.exists():
             imgsz = int(onnx_path.stem.rsplit("_", 1)[1])
             model_cls.build(onnx_path, engine_path, imgsz=imgsz, batch_size=batch_size, opt_level=1)
