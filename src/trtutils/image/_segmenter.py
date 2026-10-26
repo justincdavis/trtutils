@@ -14,7 +14,7 @@ from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
-from ._schema import SegmenterOutputSchema, resolve_output_schema
+from ._schema import SegmenterOutputSchema
 from .interfaces import SegmenterInterface
 from .postprocessors import get_segmentations, postprocess_yolo_seg
 
@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 
 class Segmenter(ImageModel, SegmenterInterface):
     """Implementation of instance segmentation models (YOLO-style ``output0`` + ``output1`` prototypes)."""
+
+    _OUTPUT_SCHEMA = SegmenterOutputSchema
 
     def __init__(
         self: Self,
@@ -132,10 +134,6 @@ class Segmenter(ImageModel, SegmenterInterface):
             not match the output schema.
 
         """
-        # store the user-provided schema override for _configure_model to use
-        self._output_schema_override = output_schema
-
-        # parent creates the engine and calls _configure_model(), which sets the schema
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -153,6 +151,7 @@ class Segmenter(ImageModel, SegmenterInterface):
             cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
+            output_schema=output_schema,
         )
 
         # prepend with 'seg_' to avoid conflicts with ImageModel._nvtx_tags
@@ -182,13 +181,6 @@ class Segmenter(ImageModel, SegmenterInterface):
     def output_schema(self: Self) -> SegmenterOutputSchema:
         """Get the output schema used by this model."""
         return self._output_schema
-
-    def _configure_model(self: Self) -> None:
-        """Auto-detect or apply the output schema from the loaded engine."""
-        self._output_schema = resolve_output_schema(
-            self._engine, SegmenterOutputSchema, self._output_schema_override
-        )
-        self._set_output_order(self._output_schema.value)
 
     def postprocess(
         self: Self,

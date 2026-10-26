@@ -12,7 +12,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
-from ._schema import OBBDetectorOutputSchema, resolve_output_schema
+from ._schema import OBBDetectorOutputSchema
 from .interfaces import OBBDetectorInterface
 from .postprocessors import get_obb_detections, postprocess_yolo_obb
 
@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 
 class OBBDetector(ImageModel, OBBDetectorInterface):
     """Implementation of oriented bounding box detectors (YOLO-style OBB heads)."""
+
+    _OUTPUT_SCHEMA = OBBDetectorOutputSchema
 
     def __init__(
         self: Self,
@@ -128,10 +130,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             not match the output schema.
 
         """
-        # store the user-provided schema override for _configure_model to use
-        self._output_schema_override = output_schema
-
-        # parent creates the engine and calls _configure_model(), which sets the schema
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -149,6 +147,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
+            output_schema=output_schema,
         )
 
         # prepend with 'obb_' to avoid conflicts with ImageModel._nvtx_tags
@@ -177,13 +176,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
     def output_schema(self: Self) -> OBBDetectorOutputSchema:
         """Get the output schema used by this model."""
         return self._output_schema
-
-    def _configure_model(self: Self) -> None:
-        """Auto-detect or apply the output schema from the loaded engine."""
-        self._output_schema = resolve_output_schema(
-            self._engine, OBBDetectorOutputSchema, self._output_schema_override
-        )
-        self._set_output_order(self._output_schema.value)
 
     def postprocess(
         self: Self,

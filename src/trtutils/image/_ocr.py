@@ -18,7 +18,7 @@ from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
-from ._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema, resolve_output_schema
+from ._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
 from .interfaces import TextDetectorInterface, TextRecognizerInterface
 from .postprocessors import (
     get_text_boxes,
@@ -47,6 +47,8 @@ if TYPE_CHECKING:
 
 class TextDetector(ImageModel, TextDetectorInterface):
     """Implementation of DB (Differentiable Binarization) text detectors, as used by PaddleOCR."""
+
+    _OUTPUT_SCHEMA = TextDetectorOutputSchema
 
     def __init__(
         self: Self,
@@ -174,8 +176,6 @@ class TextDetector(ImageModel, TextDetectorInterface):
         self._max_candidates = max_candidates
         self._unclip_ratio = unclip_ratio
         self._use_dilation = bool(use_dilation)
-        # parent creates the engine and calls _configure_model(), which sets the schema
-        self._output_schema_override = output_schema
 
         super().__init__(
             engine_path=engine_path,
@@ -194,6 +194,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
             cuda_graph=False,
             no_warn=no_warn,
             verbose=verbose,
+            output_schema=output_schema,
         )
 
         # prepend with 'tdet_' to avoid conflicts with ImageModel._nvtx_tags
@@ -208,13 +209,6 @@ class TextDetector(ImageModel, TextDetectorInterface):
     def output_schema(self: Self) -> TextDetectorOutputSchema:
         """Get the output schema used by this text detector."""
         return self._output_schema
-
-    def _configure_model(self: Self) -> None:
-        """Auto-detect or apply the output schema from the loaded engine."""
-        self._output_schema = resolve_output_schema(
-            self._engine, TextDetectorOutputSchema, self._output_schema_override
-        )
-        self._set_output_order(self._output_schema.value)
 
     def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
         width, height = self._input_size
@@ -678,6 +672,8 @@ class TextDetector(ImageModel, TextDetectorInterface):
 class TextRecognizer(ImageModel, TextRecognizerInterface):
     """Implementation of CTC text line recognizers, as used by PaddleOCR."""
 
+    _OUTPUT_SCHEMA = TextRecognizerOutputSchema
+
     def __init__(
         self: Self,
         engine_path: Path | str,
@@ -794,8 +790,6 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             chars = list(character_dict)
         use_space_char = use_space_char if use_space_char is not None else True
         self._characters: list[str] = ["blank", *chars] + ([" "] if use_space_char else [])
-        # parent creates the engine and calls _configure_model(), which sets the schema
-        self._output_schema_override = output_schema
 
         super().__init__(
             engine_path=engine_path,
@@ -814,6 +808,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             cuda_graph=False,
             no_warn=no_warn,
             verbose=verbose,
+            output_schema=output_schema,
         )
 
         num_classes = self._engine.output_spec[0][0][-1]
@@ -841,13 +836,6 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
     def output_schema(self: Self) -> TextRecognizerOutputSchema:
         """Get the output schema used by this text recognizer."""
         return self._output_schema
-
-    def _configure_model(self: Self) -> None:
-        """Auto-detect or apply the output schema from the loaded engine."""
-        self._output_schema = resolve_output_schema(
-            self._engine, TextRecognizerOutputSchema, self._output_schema_override
-        )
-        self._set_output_order(self._output_schema.value)
 
     def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
         width, height = self._input_size

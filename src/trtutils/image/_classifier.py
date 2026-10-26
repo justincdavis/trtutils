@@ -13,7 +13,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
-from ._schema import ClassifierOutputSchema, resolve_output_schema
+from ._schema import ClassifierOutputSchema
 from .interfaces import ClassifierInterface
 from .postprocessors import get_classifications, postprocess_classifications
 
@@ -32,6 +32,8 @@ if TYPE_CHECKING:
 
 class Classifier(ImageModel, ClassifierInterface):
     """Implementation of image classifiers."""
+
+    _OUTPUT_SCHEMA = ClassifierOutputSchema
 
     def __init__(
         self: Self,
@@ -131,8 +133,6 @@ class Classifier(ImageModel, ClassifierInterface):
             do not match the requested schema.
 
         """
-        # parent creates the engine and calls _configure_model(), which sets the schema
-        self._output_schema_override = output_schema
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -150,6 +150,7 @@ class Classifier(ImageModel, ClassifierInterface):
             cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
+            output_schema=output_schema,
         )
 
         self._softmax = softmax
@@ -166,13 +167,6 @@ class Classifier(ImageModel, ClassifierInterface):
     def output_schema(self: Self) -> ClassifierOutputSchema:
         """Get the output schema used by this classifier."""
         return self._output_schema
-
-    def _configure_model(self: Self) -> None:
-        """Auto-detect or apply the output schema from the loaded engine."""
-        self._output_schema = resolve_output_schema(
-            self._engine, ClassifierOutputSchema, self._output_schema_override
-        )
-        self._set_output_order(self._output_schema.value)
 
     def postprocess(
         self: Self,
