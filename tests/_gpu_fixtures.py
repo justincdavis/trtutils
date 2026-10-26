@@ -31,12 +31,15 @@ if TYPE_CHECKING:
 # since creating an engine implicitly calls cuInit, we should call it here
 init_cuda()
 
-TRT_VERSION = trt.__version__
 
-
-def version_engine_path(path: Path) -> Path:
-    """Insert TRT version into engine filename for caching."""
-    return path.with_name(f"{path.stem}_{TRT_VERSION}{path.suffix}")
+def engine_cache_path(
+    stem: str,
+    batch: int | str = 1,
+    opt_level: int = 1,
+    engine_dir: Path = ENGINES_DIR,
+) -> Path:
+    """Cache path <stem>_b<batch>_o<opt_level>_<trt version>.engine; put every other varied setting in stem."""
+    return engine_dir / f"{stem}_b{batch}_o{opt_level}_{trt.__version__}.engine"
 
 
 @dataclass(frozen=True)
@@ -141,7 +144,7 @@ def build_test_engine() -> Callable[..., Path]:
             engine_dir = ENGINES_DIR
         engine_dir.mkdir(parents=True, exist_ok=True)
 
-        engine_path = version_engine_path(engine_dir / f"{onnx_path.stem}_b{batch_size}.engine")
+        engine_path = engine_cache_path(onnx_path.stem, batch_size, optimization_level, engine_dir)
 
         if not engine_path.exists():
             # dynamic dims need an optimization profile even at batch 1
@@ -199,7 +202,7 @@ def build_dynamic_engine() -> Callable[..., Path]:
     def _build(onnx_path: Path, profile: tuple[tuple[int, ...], ...]) -> Path:
         lo, _, hi = profile
         tag = "-".join("x".join(map(str, shape)) for shape in profile)
-        engine_path = version_engine_path(ENGINES_DIR / f"{onnx_path.stem}_dyn_{tag}.engine")
+        engine_path = engine_cache_path(f"{onnx_path.stem}_dyn", tag)
         if engine_path.exists():
             return engine_path
 

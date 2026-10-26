@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-import tensorrt as trt
 
+from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR, ENGINES_DIR, SIMPLE_DYNAMIC_PROFILES
 from trtutils import TRTEngine
 from trtutils.builder import build_engine
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 def _build_test_engine(onnx_name: str) -> Path:
     """Build and cache an engine from an ONNX file in DATA_DIR."""
     onnx_path = DATA_DIR / f"{onnx_name}.onnx"
-    engine_path = ENGINES_DIR / f"{onnx_name}_b1_{trt.__version__}.engine"
+    engine_path = engine_cache_path(onnx_name)
     if not engine_path.exists():
         ENGINES_DIR.mkdir(parents=True, exist_ok=True)
         build_engine(onnx_path, engine_path, optimization_level=1)
