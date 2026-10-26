@@ -9,6 +9,7 @@ import cv2
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils.compat._libs import trt
 from trtutils.image import COCO91_TO_COCO80
 from trtutils.models import (
     DEIM,
@@ -30,6 +31,7 @@ from trtutils.models import (
     YOLOv13,
     YOLOv26,
 )
+from trtutils.models.detectors._yolo import depthwise_fp32_build_hook
 
 DETECTORS = [
     pytest.param(YOLOv3, DATA_DIR / "yolov3" / "yolov3t_640.onnx", id="yolov3"),
@@ -109,6 +111,18 @@ def test_detector_end2end(build_model_engine, images, model_cls, onnx_path, prep
         assert 0 <= x1 <= x2 <= width
         assert 0 <= y1 <= y2 <= height
         assert 0.0 <= score <= 1.0
+
+
+def test_yolov10_build_pins_depthwise_convs_fp32() -> None:
+    """YOLOv10 builds force FP32 on its 13 depthwise convs and make TensorRT obey it."""
+    onnx_path = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
+    if not onnx_path.exists():
+        pytest.skip(f"missing {onnx_path}")
+    assert depthwise_fp32_build_hook in YOLOv10._build_hooks
+    overrides = depthwise_fp32_build_hook(onnx=onnx_path)
+    assert overrides["prefer_precision_constraints"] is True
+    assert len(overrides["layer_precision"]) == 13
+    assert {dtype for _idx, dtype in overrides["layer_precision"]} == {trt.DataType.FLOAT}
 
 
 def test_rfdetr_class_map_horse(build_model_engine, images) -> None:

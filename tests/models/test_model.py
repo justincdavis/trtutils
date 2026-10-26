@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 import trtutils.models as models
-from trtutils.models import RFDETR, DEIMv2, RTDETRv1, YOLOv10
+from trtutils.models import RFDETR, DEIMv2, RTDETRv1, YOLOv8, YOLOv10
 from trtutils.models._model import Model
 
 pytestmark = pytest.mark.cpu
@@ -117,5 +117,6 @@ def test_download_rejects(tmp_path, model_cls, model, imgsz, match) -> None:
 
 def test_build_unknown_kwargs_raises(tmp_path) -> None:
     """build() raises TypeError for keyword arguments no build hook accepts."""
+    # yolov8's hook doesn't read the onnx, so the fake path is never opened
     with pytest.raises(TypeError, match="unexpected keyword argument"):
-        YOLOv10.build(tmp_path / "fake.onnx", tmp_path / "out.engine", totally_fake_kwarg=True)
+        YOLOv8.build(tmp_path / "fake.onnx", tmp_path / "out.engine", totally_fake_kwarg=True)
