@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from trtutils.compat._libs import cv2
-
 
 def nms_indices(
     boxes: np.ndarray,
@@ -22,19 +20,47 @@ def nms_indices(
     if boxes.shape[0] == 0:
         return np.zeros((0,), dtype=int)
 
+    # opencv takes float32 xywh, so rebuild x2/y2 from it to round the same way
     xywh = np.empty_like(boxes, dtype=np.float32)
     xywh[:, :2] = boxes[:, :2]
     xywh[:, 2:] = boxes[:, 2:] - boxes[:, :2]
+    xywh = xywh.astype(np.float64)
+    offset = labels.astype(np.float64) * (np.max(xywh[:, :2] + xywh[:, 2:]) + 1)
+    xywh[:, :2] += offset[:, None]
+    boxes = np.concatenate((xywh[:, :2], xywh[:, :2] + xywh[:, 2:]), axis=1)
+    scores = scores.astype(np.float32).astype(np.float64)
+    thres = 0.0 if conf_thres is None else conf_thres
 
-    raw_idx = cv2.dnn.NMSBoxesBatched(
-        xywh.tolist(),
-        scores.astype(np.float32).tolist(),
-        labels.astype(np.int32).tolist(),
-        0.0 if conf_thres is None else conf_thres,
-        nms_iou_thres,
-    )
-    # opencv returns the kept indices sorted by score
-    return np.asarray(raw_idx, dtype=int).ravel()[:max_det]
+    # stable descending sort over the strictly passing scores, like opencv
+    cand = np.flatnonzero(scores > thres)
+    order = cand[np.argsort(-scores[cand], kind="stable")]
+    boxes = boxes[order]
+    areas = np.maximum(boxes[:, 2] - boxes[:, 0], 0) * np.maximum(boxes[:, 3] - boxes[:, 1], 0)
+
+    alive = np.ones(order.shape[0], dtype=bool)
+    keep: list[int] = []
+    for i in range(order.shape[0]):
+        if not alive[i]:
+            continue
+        keep.append(i)
+        if len(keep) == max_det:
+            break
+        rest = slice(i + 1, None)
+        inter = np.prod(
+            np.clip(
+                np.minimum(boxes[i, 2:], boxes[rest, 2:])
+                - np.maximum(boxes[i, :2], boxes[rest, :2]),
+                0,
+                None,
+            ),
+            axis=1,
+        )
+        union = areas[i] + areas[rest] - inter
+        # opencv scores a zero-area pair as iou 1
+        zero = union <= 0
+        iou = np.where(zero, 1.0, inter / np.where(zero, 1.0, union))
+        alive[rest] &= iou <= nms_iou_thres
+    return order[keep].astype(int)
 
 
 # not jitted: numba rejects axis= on max/argmax
