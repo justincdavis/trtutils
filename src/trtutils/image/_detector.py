@@ -15,7 +15,7 @@ from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
-from ._schema import InputSchema, OutputSchema, resolve_detector_schemas
+from ._schema import InputSchema, OutputSchema, resolve_output_schema
 from .interfaces import DetectorInterface
 from .postprocessors import (
     get_detections,
@@ -39,6 +39,8 @@ if TYPE_CHECKING:
 
 class Detector(ImageModel, DetectorInterface):
     """Implementation of object detectors."""
+
+    _OUTPUT_SCHEMA = OutputSchema
 
     def __init__(
         self: Self,
@@ -153,11 +155,8 @@ class Detector(ImageModel, DetectorInterface):
             If an input or output schema string is invalid.
 
         """
-        # store user-provided schema overrides for _configure_model to use
+        # stored for _configure_model, which runs during the parent init
         self._input_schema_override = input_schema
-        self._output_schema_override = output_schema
-
-        # parent creates the engine and calls _configure_model(), which sets the schemas
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -175,6 +174,7 @@ class Detector(ImageModel, DetectorInterface):
             cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
+            output_schema=output_schema,
         )
 
         # prepend with 'det_' to avoid conflicts with ImageModel._nvtx_tags
@@ -230,26 +230,21 @@ class Detector(ImageModel, DetectorInterface):
         return self._output_schema
 
     def _configure_model(self: Self) -> None:
-        """Auto-detect or apply input/output schemas from the loaded engine."""
-        self._input_schema, self._output_schema = resolve_detector_schemas(
-            self._engine,
-            self._input_schema_override,
-            self._output_schema_override,
+        """Resolve the input schema from the loaded engine."""
+        self._input_schema = resolve_output_schema(
+            self._engine, InputSchema, self._input_schema_override, inputs=True
         )
         self._use_image_size = self._input_schema.uses_image_size
         self._use_scale_factor = self._input_schema.uses_scale_factor
-        # exports bind the size input as int32, int64 or float32, so read it from the engine;
-        # it comes first, or right after the image when the image is first
-        size_index = 1 if self._image_input_index == 0 else 0
-        self._orig_size_dtype = (
-            self._engine.input_spec[size_index][1] if self._use_image_size else None
-        )
-        # tensorrt 8.6 does not keep the onnx output order, so map the outputs by name
-        names = list(self._engine.output_names)
-        expected = list(self._output_schema.value)
-        self._output_order: list[int] | None = None
-        if names != expected and sorted(names) == sorted(expected):
-            self._output_order = [names.index(name) for name in expected]
+        # exports bind the size input as int32, int64 or float32, so read it from the engine
+        self._orig_size_dtype = None
+        if self._use_image_size:
+            size_index = self._engine.input_names.index(self._input_names_without_image()[0])
+            self._orig_size_dtype = self._engine.input_spec[size_index][1]
+
+    def _input_names_without_image(self: Self) -> list[str]:
+        image_name = self._engine.input_names[self._image_input_index]
+        return [name for name in self._input_schema.value if name != image_name]
 
     def postprocess(
         self: Self,
@@ -296,11 +291,9 @@ class Detector(ImageModel, DetectorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
-        if self._output_order is not None:
-            outputs = [outputs[i] for i in self._output_order]
         t0 = time.perf_counter()
         data = self._postprocess_fn(
-            outputs,
+            self._order_outputs(outputs),
             ratios=ratios,
             padding=padding,
             conf_thres=conf_thres,
@@ -761,7 +754,7 @@ class Detector(ImageModel, DetectorInterface):
         /,
     ) -> list[Buffer]:
         """Build engine inputs, adding per-image orig size / scale factor arrays per input schema."""
-        inputs: list[Buffer] = []
+        extras: list[Buffer] = []
         if self._use_image_size:
             if images is None:
                 # an already preprocessed batch: the original sizes are unknown
@@ -771,12 +764,13 @@ class Detector(ImageModel, DetectorInterface):
             if self._input_schema == InputSchema.RT_DETR:
                 # rt-detr scales boxes by (width, height); paddle's im_shape is (height, width)
                 sizes = [(w, h) for h, w in sizes]
-            inputs.append(Buffer.wrap(np.array(sizes, dtype=self._orig_size_dtype)))
+            extras.append(Buffer.wrap(np.array(sizes, dtype=self._orig_size_dtype)))
         if self._use_scale_factor:
             if ratios is None:
                 # an already preprocessed batch without ratios is taken as unscaled
                 ratios = [(1.0, 1.0)] * image.shape[0]
-            inputs.append(Buffer.wrap(np.array(ratios, dtype=np.float32)))
-        # every schema lists its size input before its scale factor input
-        inputs.insert(self._image_input_index, image)
-        return inputs
+            extras.append(Buffer.wrap(np.array(ratios, dtype=np.float32)))
+        # map by name, as the engine input order can differ from the schema order
+        named = dict(zip(self._input_names_without_image(), extras))
+        named[self._engine.input_names[self._image_input_index]] = image
+        return [named[name] for name in self._engine.input_names]

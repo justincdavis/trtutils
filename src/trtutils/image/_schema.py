@@ -6,8 +6,6 @@ from __future__ import annotations
 from enum import Enum
 from typing import TYPE_CHECKING, TypeVar
 
-from trtutils._log import LOG
-
 if TYPE_CHECKING:
     from typing_extensions import Self
 
@@ -130,163 +128,15 @@ class OBBDetectorOutputSchema(Enum):
     YOLO = ("output0",)
 
 
-def get_detector_io_schema(  # noqa: C901, PLR0912, PLR0915
-    engine: TRTEngine,
-) -> tuple[InputSchema, OutputSchema]:
-    input_names = tuple(engine.input_names)
-    output_names = tuple(engine.output_names)
-    # solve for the input scheme
-    input_schema: InputSchema
-    if input_names == InputSchema.YOLO.value:
-        input_schema = InputSchema.YOLO
-    elif input_names == InputSchema.RF_DETR.value:
-        input_schema = InputSchema.RF_DETR
-    elif input_names == InputSchema.RT_DETR.value:
-        input_schema = InputSchema.RT_DETR
-    elif input_names == InputSchema.RT_DETR_V3.value:
-        input_schema = InputSchema.RT_DETR_V3
-    else:
-        warn_msg = "Could not determine input schema directly from input names. "
-        warn_msg += f"Input names: {engine.input_names}, "
-        warn_msg += f"Input scheme: {engine.input_spec}. "
-        warn_msg += "Attemping input schema solve from input spec length."
-        LOG.warning(warn_msg)
-        if len(engine.input_spec) == len(InputSchema.YOLO.value):
-            input_schema = InputSchema.YOLO
-        elif len(engine.input_spec) == len(InputSchema.RT_DETR.value):
-            input_schema = InputSchema.RT_DETR
-        elif len(engine.input_spec) == len(InputSchema.RT_DETR_V3.value):
-            input_schema = InputSchema.RT_DETR_V3
-        else:
-            err_msg = f"Expected 1, 2, or 3 inputs, found {len(engine.input_spec)}"
-            raise ValueError(err_msg)
-
-    # solve for the output schema; tensorrt 8.6 does not keep the onnx output order
-    if output_names not in {schema.value for schema in OutputSchema}:
-        for schema in OutputSchema:
-            if sorted(output_names) == sorted(schema.value):
-                output_names = schema.value
-                break
-    output_schema: OutputSchema
-    if (
-        output_names == OutputSchema.EFFICIENT_NMS.value
-        or output_names == OutputSchema.EFFICIENT_NMS_2.value
-    ):
-        output_schema = OutputSchema.EFFICIENT_NMS
-    elif output_names == OutputSchema.YOLO_V10.value:
-        output_schema = OutputSchema.YOLO_V10
-    elif output_names == OutputSchema.RF_DETR.value:
-        output_schema = OutputSchema.RF_DETR
-    elif output_names == OutputSchema.DETR.value:
-        output_schema = OutputSchema.DETR
-    elif output_names == OutputSchema.DETR_LBS.value:
-        output_schema = OutputSchema.DETR_LBS
-    elif output_names == OutputSchema.RT_DETR_V3.value:
-        output_schema = OutputSchema.RT_DETR_V3
-    else:
-        err_msg = "Could not determine output schema directly from output names. "
-        err_msg += f"Output names: {engine.output_names}, "
-        err_msg += f"Output scheme: {engine.output_spec}. "
-        err_msg += "Attemping output schema solve from output spec length."
-        LOG.warning(err_msg)
-        if len(engine.output_spec) == len(OutputSchema.EFFICIENT_NMS.value):
-            output_schema = OutputSchema.EFFICIENT_NMS
-        elif len(engine.output_spec) == len(OutputSchema.YOLO_V10.value):
-            output_schema = OutputSchema.YOLO_V10
-        elif len(engine.output_spec) == len(OutputSchema.RF_DETR.value):
-            # Distinguish RT_DETR_V3 from RF_DETR by checking for PaddlePaddle naming
-            if any("scale" in name for name in output_names):
-                output_schema = OutputSchema.RT_DETR_V3
-            else:
-                output_schema = OutputSchema.RF_DETR
-        elif len(engine.output_spec) == len(OutputSchema.DETR.value):
-            output_schema = OutputSchema.DETR
-        else:
-            err_msg = f"Expected 1, 2, 3, or 4 outputs, found {len(engine.output_spec)}"
-            raise ValueError(err_msg)
-
-    return (input_schema, output_schema)
-
-
-def resolve_detector_schemas(
-    engine: TRTEngine,
-    input_schema: InputSchema | str | None = None,
-    output_schema: OutputSchema | str | None = None,
-) -> tuple[InputSchema, OutputSchema]:
-    """
-    Resolve input/output schemas from overrides or auto-detection.
-
-    Parameters
-    ----------
-    engine : TRTEngine
-        The loaded TensorRT engine to auto-detect schemas from.
-    input_schema : InputSchema, str, optional
-        Override for the input schema. Can be an enum value, a string
-        matching the enum name, or None for auto-detection.
-    output_schema : OutputSchema, str, optional
-        Override for the output schema. Can be an enum value, a string
-        matching the enum name, or None for auto-detection.
-
-    Returns
-    -------
-    tuple[InputSchema, OutputSchema]
-        The resolved input and output schemas.
-
-    Raises
-    ------
-    ValueError
-        If an input or output schema string is invalid.
-
-    """
-    # auto-detect schemas from engine if not provided
-    if input_schema is None or output_schema is None:
-        auto_input, auto_output = get_detector_io_schema(engine)
-    else:
-        auto_input = None
-        auto_output = None
-
-    # resolve input schema
-    resolved_input: InputSchema
-    if input_schema is None:
-        if auto_input is None:
-            err_msg = "Input schema could not be determined from the engine."
-            raise ValueError(err_msg)
-        resolved_input = auto_input
-    elif isinstance(input_schema, str):
-        if input_schema not in InputSchema.names():
-            err_msg = f"Invalid input_schema string: {input_schema}. "
-            err_msg += f"Valid options: {InputSchema.names()}"
-            raise ValueError(err_msg)
-        resolved_input = InputSchema[input_schema]
-    else:
-        resolved_input = input_schema
-
-    # resolve output schema
-    resolved_output: OutputSchema
-    if output_schema is None:
-        if auto_output is None:
-            err_msg = "Output schema could not be determined from the engine."
-            raise ValueError(err_msg)
-        resolved_output = auto_output
-    elif isinstance(output_schema, str):
-        if output_schema not in OutputSchema.names():
-            err_msg = f"Invalid output_schema string: {output_schema}. "
-            err_msg += f"Valid options: {OutputSchema.names()}"
-            raise ValueError(err_msg)
-        resolved_output = OutputSchema[output_schema]
-    else:
-        resolved_output = output_schema
-
-    return (resolved_input, resolved_output)
-
-
 def resolve_output_schema(
     engine: TRTEngine,
     schema_cls: type[_SchemaT],
     override: _SchemaT | str | None = None,
+    *,
+    inputs: bool = False,
 ) -> _SchemaT:
     """
-    Resolve the output schema of an engine against the members of a schema enum.
+    Resolve the output (or input) schema of an engine against the members of a schema enum.
 
     Parameters
     ----------
@@ -299,7 +149,9 @@ def resolve_output_schema(
         engine; members without one are tried first.
     override : Enum, str, optional
         A member or member name to use instead of auto-detection.
-        The engine outputs must still match it.
+        The engine names must still match it.
+    inputs : bool, optional
+        Match the engine input names instead of the output names.
 
     Returns
     -------
@@ -309,23 +161,25 @@ def resolve_output_schema(
     Raises
     ------
     ValueError
-        If the override is not a member name, or the engine outputs match no
+        If the override is not a member name, or the engine names match no
         candidate member.
 
     """
+    kind = "input" if inputs else "output"
     if isinstance(override, str):
         if override not in schema_cls.__members__:
-            err_msg = f"Invalid output_schema string: {override}. "
+            err_msg = f"Invalid {kind}_schema string: {override}. "
             err_msg += f"Valid options: {list(schema_cls.__members__)}"
             raise ValueError(err_msg)
         override = schema_cls[override]
     candidates = list(schema_cls) if override is None else [override]
     candidates.sort(key=lambda m: "*" in m.value)
-    outputs = sorted(engine.output_names)
+    names = engine.input_names if inputs else engine.output_names
+    outputs = sorted(names)
     for member in candidates:
         named = set(member.value) - {"*"}
         if sorted(member.value) == outputs or ("*" in member.value and named <= set(outputs)):
             return member
-    err_msg = f"Engine outputs {list(engine.output_names)} match no {schema_cls.__name__}. "
+    err_msg = f"Engine {kind}s {list(names)} match no {schema_cls.__name__}. "
     err_msg += f"Valid options: { {m.name: m.value for m in candidates} }"
     raise ValueError(err_msg)

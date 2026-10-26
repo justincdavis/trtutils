@@ -22,7 +22,6 @@ from trtutils.image._schema import (
     SegmenterOutputSchema,
     TextDetectorOutputSchema,
     TextRecognizerOutputSchema,
-    get_detector_io_schema,
     resolve_output_schema,
 )
 
@@ -40,8 +39,8 @@ from trtutils.image._schema import (
         pytest.param(
             InputSchema.RT_DETR.value,
             OutputSchema.DETR_LBS.value,
-            (OutputSchema.DETR_LBS,),
-            id="detr-lbs-exact",
+            (OutputSchema.DETR,),
+            id="detr-lbs-names-resolve-to-detr",
         ),
         pytest.param(
             InputSchema.RT_DETR_V3.value,
@@ -58,10 +57,9 @@ from trtutils.image._schema import (
     ],
 )
 def test_output_schema_ignores_output_order(inputs, outputs, expected) -> None:
-    """TensorRT 8.6 reorders engine outputs; detection matches on names, not order."""
+    """TensorRT 8.6 reorders engine outputs; resolution matches on names, not order."""
     engine = SimpleNamespace(input_names=list(inputs), output_names=list(outputs))
-    _, output_schema = get_detector_io_schema(engine)
-    assert output_schema in expected
+    assert resolve_output_schema(engine, OutputSchema) in expected
 
 
 def _engine(*output_names: str) -> SimpleNamespace:
@@ -194,3 +192,31 @@ def test_generic_fallback_engine(renamed_simple_engine, model_cls, kwargs, expec
         model_cls(
             renamed_simple_engine, preprocessor="cpu", warmup=False, output_schema=named, **kwargs
         )
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("inputs", "expected"),
+    [
+        pytest.param(("images",), InputSchema.YOLO, id="yolo"),
+        pytest.param(("input",), InputSchema.RF_DETR, id="rf-detr"),
+        pytest.param(("orig_target_sizes", "images"), InputSchema.RT_DETR, id="rt-detr-reordered"),
+        pytest.param(
+            ("scale_factor", "image", "im_shape"), InputSchema.RT_DETR_V3, id="rtdetrv3-reordered"
+        ),
+    ],
+)
+def test_resolve_input_schema(inputs, expected) -> None:
+    """Input names are matched ignoring order, like the outputs."""
+    engine = SimpleNamespace(input_names=list(inputs))
+    assert resolve_output_schema(engine, InputSchema, inputs=True) is expected
+
+
+@pytest.mark.cpu
+def test_resolve_input_schema_rejects_unknown_names() -> None:
+    """Unknown input names raise instead of being guessed from the input count."""
+    engine = SimpleNamespace(input_names=["x"])
+    with pytest.raises(ValueError, match="match no InputSchema"):
+        resolve_output_schema(engine, InputSchema, inputs=True)
+    with pytest.raises(ValueError, match="Invalid input_schema"):
+        resolve_output_schema(engine, InputSchema, "NOPE", inputs=True)

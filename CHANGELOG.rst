@@ -107,6 +107,12 @@ Added
 
 Changed
 ^^^^^^^
+* ``Detector`` resolves its input and output schemas with the same name-matching as the other
+  task models: an engine with unknown input or output names now raises a ``ValueError`` listing
+  the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``
+  for engines named ``labels``/``boxes``/``scores`` (outputs are reordered by name, results are
+  unchanged; pass ``DETR_LBS`` to keep the old value) and ``EFFICIENT_NMS_2`` for
+  ``num``/``boxes``/``scores``/``classes`` engines
 * ``image.preprocessors.CPUPreprocessor`` packs each image straight into the batch tensor
   with one float32 multiply-add: 8 x 1080p drops from 83 to 24-34 ms on a Jetson AGX Orin
   and from 21 to 7-8 ms on an RTX 5080 (imagenet mean/std: 190 to 24-34 ms and 57 to 7-8 ms).
