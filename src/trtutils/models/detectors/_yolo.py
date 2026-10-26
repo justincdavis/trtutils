@@ -368,9 +368,10 @@ def depthwise_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]: 
     """
     Build hook that forces FP32 for the depthwise convolutions.
 
-    In FP16 the builder sometimes picks a depthwise kernel for YOLOv10's stride-2
-    downsample that breaks the large-object head (seen on TensorRT 10.15, RTX 5080,
-    about one build in seven). Depthwise convolutions are cheap, so FP32 costs little.
+    In FP16 the builder sometimes picks depthwise kernels that break the output (seen on
+    TensorRT 10.15, RTX 5080): YOLOv10 loses large objects in about one build in seven,
+    YOLOv13 detects nothing in about one in fifty. Depthwise convolutions are cheap, so
+    FP32 costs little.
 
     Parameters
     ----------
@@ -576,7 +577,10 @@ class YOLOv13(Detector, Model):
     _friendly_name = "YOLOv13"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
-    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [nms_build_hook]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [
+        nms_build_hook,
+        depthwise_fp32_build_hook,
+    ]
 
     def __init__(
         self: Self,

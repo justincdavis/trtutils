@@ -185,9 +185,10 @@ Changed
 
 Fixed
 ^^^^^
-* ``YOLOv10.build`` keeps the depthwise convolutions in FP32: in FP16 the builder sometimes picked a
-  depthwise kernel (seen on TensorRT 10.15, RTX 5080, about one build in seven) that dropped large
-  objects, e.g. no horse on ``horse.jpg`` instead of 0.96. Rebuild YOLOv10 engines built before this
+* ``YOLOv10.build`` and ``YOLOv13.build`` keep the depthwise convolutions in FP32: in FP16 the
+  builder sometimes picked depthwise kernels (seen on TensorRT 10.15, RTX 5080) that broke the
+  output. YOLOv10 lost large objects in about one build in seven (no horse on ``horse.jpg``
+  instead of 0.96), YOLOv13 detected nothing in about one in fifty. Rebuild engines built before this
 * ``RTDETRv3`` returned garbage boxes (coordinates in the thousands, clipped to image corners) on
   images larger than the model input: it is now fed the model input size and a unit scale factor, and
   boxes are unletterboxed like the other detectors
