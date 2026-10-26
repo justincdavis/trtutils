@@ -63,12 +63,13 @@ def export_rfdetr(
         LOG.info(f"Using cached rfdetr weights: {config['weights']}")
         shutil.copy(cached_pth_file, target_pth_file)
 
+    # rfdetr's own simplify step fails its strict random-input check on ~1e-4 float drift
     program = f"""
 import rfdetr
 model = rfdetr.{config["class"]}(resolution={imgsz})
 model.export(
     opset_version={opset},
-    simplify=True,
+    simplify=False,
 )
     """
     run_cmd(
@@ -86,7 +87,7 @@ model.export(
         shutil.copy(target_pth_file, cached_pth_file)
         LOG.info(f"Cached rfdetr weights: {config['weights']}")
 
-    model_path = directory / "output" / "inference_model.sim.onnx"
+    model_path = directory / "output" / "inference_model.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path

@@ -180,6 +180,8 @@ Changed
 
 Fixed
 ^^^^^
+* ``trtutils download`` of ``rfdetr_n`` / ``rfdetr_s`` / ``rfdetr_m`` failed with "Failed to simplify ONNX
+  model": rfdetr's own simplify check rejects ~1e-4 float drift, so the exporter now skips it
 * Hands23 export squared pixel distances, overflowing fp16 and turning ``pair_probs`` into NaN
   (every NaN pair was linked, contact always 1); HOI-DETR export baked batch 1 into the head's
   padding mask, so batch slots after the first returned garbage. Existing ``hands23_x101`` and

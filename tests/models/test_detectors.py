@@ -47,7 +47,7 @@ DETECTORS = [
     pytest.param(DFINE, DATA_DIR / "dfine" / "dfine_n_640.onnx", id="dfine"),
     pytest.param(DEIM, DATA_DIR / "deim" / "deim_dfine_n_640.onnx", id="deim"),
     pytest.param(DEIMv2, DATA_DIR / "deimv2" / "deimv2_atto_320.onnx", id="deimv2"),
-    pytest.param(RFDETR, DATA_DIR / "rfdetr" / "rfdetr_n_576.onnx", id="rfdetr"),
+    pytest.param(RFDETR, DATA_DIR / "rfdetr" / "rfdetr_n_384.onnx", id="rfdetr"),
 ]
 
 
