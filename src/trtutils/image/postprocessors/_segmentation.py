@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils._log import LOG
-from trtutils.compat._libs import cv2
+from trtutils.image._ops import warp_scale
 
 from ._common import cxcywh_to_xyxy, filter_class_scores, nms_indices, unletterbox_boxes
 from ._detection import _get_detections_core
@@ -160,19 +160,11 @@ def _decode_masks(
 
         logits = np.tensordot(coeffs[idx], proto[:, cy1:cy2, cx1:cx2], axes=1)
         probs = 1.0 / (1.0 + np.exp(-logits))
-        affine = np.array(
-            [
-                [scale_x, 0.0, scale_x * bx1 + off_x - cx1],
-                [0.0, scale_y, scale_y * by1 + off_y - cy1],
-            ],
-            dtype=np.float32,
-        )
-        resized = cv2.warpAffine(
+        resized = warp_scale(
             probs.astype(np.float32, copy=False),
-            affine,
+            (scale_x, scale_y),
+            (scale_x * bx1 + off_x - cx1, scale_y * by1 + off_y - cy1),
             (bx2 - bx1, by2 - by1),
-            flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
-            borderMode=cv2.BORDER_REPLICATE,
         )
         masks[idx, by1:by2, bx1:bx2] = resized >= mask_thres
 

@@ -4,10 +4,9 @@
 from __future__ import annotations
 
 import numpy as np
-from cv2ext.image import letterbox, resize_linear
 
 from trtutils._log import LOG
-from trtutils.compat._libs import cv2
+from trtutils.image._ops import letterbox, resize_linear
 
 
 def preprocess(
@@ -102,7 +101,7 @@ def preprocess(
         else:
             tensor, ratios = resize_linear(image, new_shape=input_shape)
             padding = (0.0, 0.0)
-        tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
+        tensor = tensor[..., ::-1]
 
         # writing the transposed view straight into the slot does HWC->CHW,
         # the cast and the affine in one pass
