@@ -145,7 +145,9 @@ def pair_features(f, boxes, classes):
     \"\"\"Vectorized re-derivation of hodetector.roi_heads.hoRCNNROIHeads.get_PF.\"\"\"
     k = f.shape[0]
     x1, y1, x2, y2 = boxes.unbind(-1)
-    diag = torch.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+    # square in units of the image size: raw pixel squares exceed the fp16 max (65504)
+    # past ~256 px and turn the pair probabilities into NaN in fp16 engines
+    diag = torch.sqrt(((x2 - x1) / S) ** 2 + ((y2 - y1) / S) ** 2) * S
 
     # hand -> first-object and first-object -> second-object are the only scored pairs
     hand_first = (classes[:, None] == 0) & (classes[None, :] == 1)
@@ -163,7 +165,7 @@ def pair_features(f, boxes, classes):
 
     vx = (x1_j + x2_j - x1_i - x2_i) / 2
     vy = (y1_j + y2_j - y1_i - y2_i) / 2
-    v_norm = torch.sqrt(vx**2 + vy**2)
+    v_norm = torch.sqrt((vx / S) ** 2 + (vy / S) ** 2) * S
     v_norm_safe = torch.where(v_norm > 0, v_norm, torch.ones_like(v_norm))
 
     diag_i = diag[:, None]

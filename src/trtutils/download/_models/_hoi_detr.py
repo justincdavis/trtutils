@@ -76,6 +76,20 @@ def export_hoi_detr(
 
     run_download(repo_dir, config, python_path, no_cache=no_cache, verbose=verbose)
 
+    # the head zeroes the padding mask in a python loop over the batch, which tracing unrolls
+    # at export batch 1 and leaves every other slot fully masked. patch to a batch-agnostic
+    # slice (inputs are always one fixed letterboxed size, so img_metas[0] covers all slots).
+    head_path = repo_dir / "projects" / "models" / "co_dino_head_w_interaction.py"
+    head_src = head_path.read_text()
+    head_src = head_src.replace(
+        "        for img_id in range(batch_size):\n"
+        "            img_h, img_w, _ = img_metas[img_id]['img_shape']\n"
+        "            img_masks[img_id, :img_h, :img_w] = 0\n",
+        "        img_h, img_w, _ = img_metas[0]['img_shape']\n"
+        "        img_masks[:, :img_h, :img_w] = 0\n",
+    )
+    head_path.write_text(head_src)
+
     onnx_name = f"{model}.onnx"
     program = f"""
 import onnx
