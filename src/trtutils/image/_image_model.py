@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, List, Optional, Tuple, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, Optional, Tuple, TypeVar, overload
 
 import numpy as np
 import nvtx
@@ -16,6 +16,7 @@ from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 from trtutils.core._device import Device
 
+from ._schema import resolve_schema
 from .preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
@@ -25,6 +26,7 @@ from .preprocessors import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from enum import Enum
 
     from typing_extensions import Self
 
@@ -57,6 +59,9 @@ def host_input(array: np.ndarray | Buffer) -> Buffer:
 class ImageModel:
     """Abstract base class for image models."""
 
+    # task models set the enum used to resolve and order the engine outputs
+    _OUTPUT_SCHEMA: ClassVar[type[Enum] | None] = None
+
     def __init__(  # noqa: PLR0915
         self: Self,
         engine_path: Path | str,
@@ -76,6 +81,7 @@ class ImageModel:
         cuda_graph: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
+        output_schema: Enum | str | None = None,
     ) -> None:
         """
         Create an ImageModel object.
@@ -133,6 +139,10 @@ class ImageModel:
         verbose : bool, optional
             Whether or not to log additional information.
             Only covers the initialization phase.
+        output_schema : Enum, str, optional
+            Override for the output schema, a member or member name of the
+            subclass's schema enum. Ignored by models without one.
+            Default is None, which auto-detects the schema from the engine.
 
         Raises
         ------
@@ -218,6 +228,8 @@ class ImageModel:
             self._input_range = input_range
             self._mean = mean
             self._std = std
+
+            self._resolve_schema(output_schema)
 
             # Hook for subclasses to configure model-specific state
             # after engine is loaded but before preprocessors are created.
@@ -308,6 +320,12 @@ class ImageModel:
             nvtx.pop_range()  # setup_trt_preproc
 
         return result
+
+    def _resolve_schema(self: Self, override: Enum | str | None) -> None:
+        """Resolve the output schema from the engine, and set the output order to match."""
+        if self._OUTPUT_SCHEMA is not None:
+            self._output_schema: Any = resolve_schema(self._engine, self._OUTPUT_SCHEMA, override)
+            self._set_output_order(self._output_schema.value)
 
     def _configure_model(self: Self) -> None:
         """Configure model-specific state after engine load, before preprocessor creation."""

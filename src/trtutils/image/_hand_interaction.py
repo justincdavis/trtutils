@@ -13,7 +13,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
-from ._schema import HandInteractionOutputSchema, resolve_output_schema
+from ._schema import HandInteractionOutputSchema
 from .interfaces import HandInteractionDetectorInterface
 from .postprocessors import get_interactions, postprocess_hand_interactions
 
@@ -45,6 +45,8 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     model in the family. Letterbox padding is centered and is undone by
     the postprocessor using the ratios/padding returned from preprocessing.
     """
+
+    _OUTPUT_SCHEMA = HandInteractionOutputSchema
 
     def __init__(
         self: Self,
@@ -153,8 +155,6 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             match no HandInteractionOutputSchema.
 
         """
-        # parent creates the engine and calls _configure_model(), which sets the schema
-        self._output_schema_override = output_schema
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -172,6 +172,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
+            output_schema=output_schema,
         )
 
         self._conf_thres: float = conf_thres
@@ -191,13 +192,6 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     def output_schema(self: Self) -> HandInteractionOutputSchema:
         """Get the output schema used by this detector."""
         return self._output_schema
-
-    def _configure_model(self: Self) -> None:
-        """Auto-detect or apply the output schema from the loaded engine."""
-        self._output_schema = resolve_output_schema(
-            self._engine, HandInteractionOutputSchema, self._output_schema_override
-        )
-        self._set_output_order(self._output_schema.value)
 
     def postprocess(
         self: Self,

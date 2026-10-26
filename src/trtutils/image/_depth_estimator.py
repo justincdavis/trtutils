@@ -13,7 +13,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 
 from ._image_model import ImageModel
-from ._schema import DepthEstimatorOutputSchema, resolve_output_schema
+from ._schema import DepthEstimatorOutputSchema
 from .interfaces import DepthEstimatorInterface
 from .postprocessors import get_depth_maps, postprocess_depth
 
@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 
 class DepthEstimator(ImageModel, DepthEstimatorInterface):
     """Implementation of depth estimators."""
+
+    _OUTPUT_SCHEMA = DepthEstimatorOutputSchema
 
     def __init__(
         self: Self,
@@ -125,8 +127,6 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             do not match the requested schema.
 
         """
-        # parent creates the engine and calls _configure_model(), which sets the schema
-        self._output_schema_override = output_schema
         super().__init__(
             engine_path=engine_path,
             warmup_iterations=warmup_iterations,
@@ -144,6 +144,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             cuda_graph=cuda_graph,
             no_warn=no_warn,
             verbose=verbose,
+            output_schema=output_schema,
         )
 
         # prepend with 'depth_' to avoid conflicts with ImageModel._nvtx_tags
@@ -158,13 +159,6 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
     def output_schema(self: Self) -> DepthEstimatorOutputSchema:
         """Get the output schema used by this depth estimator."""
         return self._output_schema
-
-    def _configure_model(self: Self) -> None:
-        """Auto-detect or apply the output schema from the loaded engine."""
-        self._output_schema = resolve_output_schema(
-            self._engine, DepthEstimatorOutputSchema, self._output_schema_override
-        )
-        self._set_output_order(self._output_schema.value)
 
     def postprocess(
         self: Self,
