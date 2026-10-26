@@ -3,6 +3,11 @@ Unreleased
 
 Added
 ^^^^^
+* ``Detector(class_map=...)`` (and every detector wrapper): optional ``Mapping[int, int]`` that
+  translates model class ids to output ids after postprocessing; unmapped ids pass through. Off
+  by default
+* ``image.COCO91_TO_COCO80``: COCO category ids (1-90) to 80-class indices, e.g.
+  ``RFDETR(engine, class_map=COCO91_TO_COCO80)`` reports horse as 17
 * ``CPUPreprocessor(resize=fn)`` takes a function doing the whole preprocessing,
   ``(images, *, verbose) -> (tensor, ratios, padding)``, for models whose input shape changes per batch
 * ``image.HandInteractionDetector`` for hand-object interaction models with a unified,
@@ -180,6 +185,13 @@ Changed
 
 Fixed
 ^^^^^
+* ``RFDETR`` now defaults to ``resize_method="linear"`` (plain square resize, as upstream RF-DETR
+  is trained); letterbox missed or shifted many detections
+* RF-DETR class ids are now the model's own ids, matching upstream ``rfdetr`` (stock COCO weights:
+  horse is 19); they were previously shifted by -1. Use ``class_map=COCO91_TO_COCO80`` for 80-class
+  indices
+* ``trtutils download`` of ``rfdetr_n`` / ``rfdetr_s`` / ``rfdetr_m`` failed with "Failed to simplify ONNX
+  model": rfdetr's own simplify check rejects ~1e-4 float drift, so the exporter now skips it
 * Hands23 export squared pixel distances, overflowing fp16 and turning ``pair_probs`` into NaN
   (every NaN pair was linked, contact always 1); HOI-DETR export baked batch 1 into the head's
   padding mask, so batch slots after the first returned garbage. Existing ``hands23_x101`` and

@@ -68,9 +68,9 @@ def _efficient_nms_output(batch_size: int) -> list[np.ndarray]:
 
 
 def _rfdetr_output(batch_size: int) -> list[np.ndarray]:
-    """RF-DETR outputs: dets (B, 300, 4) normalized cxcywh and 1-indexed logits (B, 300, 81)."""
+    """RF-DETR outputs: dets (B, 300, 4) normalized cxcywh and logits (B, 300, 80)."""
     dets = np.zeros((batch_size, 300, 4), dtype=np.float32)
-    logits = np.full((batch_size, 300, 81), -10.0, dtype=np.float32)
+    logits = np.full((batch_size, 300, 80), -10.0, dtype=np.float32)
     boxes = _boxes(batch_size)
     dets[:, :NUM_DETS, 0] = (boxes[..., 0] + boxes[..., 2]) / 2 / INPUT_SIZE[0]
     dets[:, :NUM_DETS, 1] = (boxes[..., 1] + boxes[..., 3]) / 2 / INPUT_SIZE[1]
@@ -78,7 +78,7 @@ def _rfdetr_output(batch_size: int) -> list[np.ndarray]:
     dets[:, :NUM_DETS, 3] = (boxes[..., 3] - boxes[..., 1]) / INPUT_SIZE[1]
     for b in range(batch_size):
         for i in range(NUM_DETS):
-            logits[b, i, i + 1] = 3.0 - i * 0.5
+            logits[b, i, i] = 3.0 - i * 0.5
     return [dets, logits]
 
 

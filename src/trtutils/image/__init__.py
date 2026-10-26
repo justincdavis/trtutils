@@ -48,6 +48,11 @@ Classes
 :class:`ImageModel`
     Base class for models which process images.
 
+Constants
+---------
+:data:`COCO91_TO_COCO80`
+    COCO category ids (1-90) to 80-class indices, for use as a detector ``class_map``.
+
 """
 
 from __future__ import annotations
@@ -60,6 +65,7 @@ from . import (
     preprocessors,
     sahi,
 )
+from ._class_maps import COCO91_TO_COCO80
 from ._classifier import Classifier
 from ._depth_estimator import DepthEstimator
 from ._detector import Detector
@@ -72,6 +78,7 @@ from ._segmenter import Segmenter
 from .sahi import SAHI
 
 __all__ = [
+    "COCO91_TO_COCO80",
     "OCR",
     "SAHI",
     "Classifier",

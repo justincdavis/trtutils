@@ -10,7 +10,7 @@ from trtutils.image._schema import InputSchema, OutputSchema
 from trtutils.models._model import Model, nms_build_hook
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
     from pathlib import Path
 
     from typing_extensions import Self
@@ -44,6 +44,7 @@ class YOLOX(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -67,6 +68,7 @@ class YOLOX(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -100,6 +102,7 @@ class YOLOv3(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -123,6 +126,7 @@ class YOLOv3(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -156,6 +160,7 @@ class YOLOv5(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -179,6 +184,7 @@ class YOLOv5(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -211,6 +217,7 @@ class YOLOv7(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -234,6 +241,7 @@ class YOLOv7(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -267,6 +275,7 @@ class YOLOv8(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -290,6 +299,7 @@ class YOLOv8(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -322,6 +332,7 @@ class YOLOv9(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -345,6 +356,7 @@ class YOLOv9(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -377,6 +389,7 @@ class YOLOv10(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -400,6 +413,7 @@ class YOLOv10(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -433,6 +447,7 @@ class YOLOv11(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -456,6 +471,7 @@ class YOLOv11(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -489,6 +505,7 @@ class YOLOv12(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -512,6 +529,7 @@ class YOLOv12(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -545,6 +563,7 @@ class YOLOv13(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -568,6 +587,7 @@ class YOLOv13(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -600,6 +620,7 @@ class YOLOv26(Detector, Model):
         cuda_graph: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -623,6 +644,7 @@ class YOLOv26(Detector, Model):
             cuda_graph=cuda_graph,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
+            class_map=class_map,
             no_warn=no_warn,
             verbose=verbose,
         )
