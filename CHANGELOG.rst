@@ -185,6 +185,8 @@ Changed
 
 Fixed
 ^^^^^
+* Engine files (``build_engine`` output and engine cache copies) are written atomically (temp file
+  then replace), so concurrent readers never see a half-written engine
 * ``RFDETR`` now defaults to ``resize_method="linear"`` (plain square resize, as upstream RF-DETR
   is trained); letterbox missed or shifted many detections
 * RF-DETR class ids are now the model's own ids, matching upstream ``rfdetr`` (stock COCO weights:

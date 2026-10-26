@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import contextlib
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -239,7 +238,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     if cache:
         exists, location = caching_tools.query(output_path.stem)
         if exists:
-            shutil.copy(location, output_path)
+            caching_tools.write_atomic(output_path, location.read_bytes())
             return
 
     # validate and handle timing_cache parameter
@@ -511,8 +510,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         err_msg = "Failed to build engine."
         raise RuntimeError(err_msg)
 
-    with output_path.open("wb") as f:
-        f.write(engine_bytes)
+    caching_tools.write_atomic(output_path, memoryview(engine_bytes))
 
     if cache:
         caching_tools.store(output_path, overwrite=False, delete_source=False)

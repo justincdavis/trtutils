@@ -40,7 +40,7 @@ Functions
 
 from __future__ import annotations
 
-import shutil
+import os
 import tempfile
 from pathlib import Path
 from typing import Protocol
@@ -54,6 +54,25 @@ class _TimingCache(Protocol):
 
 # Known valid cache file extensions
 _VALID_EXTENSIONS = {"engine", "onnx", "cache"}
+
+
+def write_atomic(path: Path, data: bytes | memoryview) -> None:
+    """
+    Write bytes to a file so readers never see a partial file.
+
+    Writes to a temp file in the same directory, then replaces the target.
+
+    Parameters
+    ----------
+    path : Path
+        The final path of the file.
+    data : bytes | memoryview
+        The bytes to write.
+
+    """
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp_path.write_bytes(data)
+    tmp_path.replace(path)
 
 
 def _get_cache_file_path(filename: str, extension: str) -> Path:
@@ -193,7 +212,7 @@ def store_file(
 
     # otherwise we write the file
     get_cache_dir().mkdir(parents=True, exist_ok=True)
-    shutil.copy(filepath, new_file_path)
+    write_atomic(new_file_path, filepath.read_bytes())
     if delete_source:
         filepath.unlink()
     return new_file_path
