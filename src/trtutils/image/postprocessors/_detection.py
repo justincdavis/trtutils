@@ -10,6 +10,8 @@ from cv2ext.bboxes import nms
 
 from trtutils._log import LOG
 
+from ._common import clip_boxes
+
 if TYPE_CHECKING:
     from trtutils.image.types import Detection
 
@@ -19,7 +21,7 @@ def postprocess_yolov10(
     ratios: list[tuple[float, float]],
     padding: list[tuple[float, float]],
     conf_thres: float | None = None,
-    input_size: tuple[int, int] | None = None,  # noqa: ARG001
+    input_size: tuple[int, int] | None = None,
     *,
     no_copy: bool | None = None,
     verbose: bool | None = None,
@@ -41,7 +43,7 @@ def postprocess_yolov10(
     conf_thres : float, optional
         Optional extra confidence filter (use if model used a low cutoff).
     input_size : tuple[int, int] | None
-        Unused.
+        Model input (width, height), used with ratios/padding to clip boxes to the image.
     no_copy : bool, optional
         If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
@@ -65,6 +67,7 @@ def postprocess_yolov10(
             ratios[i],
             padding[i],
             conf_thres=conf_thres,
+            input_size=input_size,
             no_copy=no_copy,
         )
         results.append(result)
@@ -76,6 +79,7 @@ def _postprocess_yolov10_core(
     ratios: tuple[float, float],
     padding: tuple[float, float],
     conf_thres: float | None = None,
+    input_size: tuple[int, int] | None = None,
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
@@ -98,7 +102,7 @@ def _postprocess_yolov10_core(
     adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height
     adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width
     adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height
-    adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
+    adjusted_bboxes = clip_boxes(adjusted_bboxes, ratios, padding, input_size)
 
     if no_copy:
         return [adjusted_bboxes, scores, class_ids]
@@ -186,7 +190,7 @@ def postprocess_efficient_nms(
     ratios: list[tuple[float, float]],
     padding: list[tuple[float, float]],
     conf_thres: float | None = None,
-    input_size: tuple[int, int] | None = None,  # noqa: ARG001
+    input_size: tuple[int, int] | None = None,
     *,
     no_copy: bool | None = None,
     verbose: bool | None = None,
@@ -208,7 +212,7 @@ def postprocess_efficient_nms(
     conf_thres : float, optional
         Optional extra confidence filter (use if plugin used a low cutoff).
     input_size : tuple[int, int] | None
-        Unused.
+        Model input (width, height), used with ratios/padding to clip boxes to the image.
     no_copy : bool, optional
         If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
@@ -237,6 +241,7 @@ def postprocess_efficient_nms(
             ratios[i],
             padding[i],
             conf_thres,
+            input_size,
             no_copy=no_copy,
         )
         results.append(result)
@@ -248,6 +253,7 @@ def _postprocess_efficient_nms_core(
     ratios: tuple[float, float],
     padding: tuple[float, float],
     conf_thres: float | None = None,
+    input_size: tuple[int, int] | None = None,
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
@@ -272,7 +278,7 @@ def _postprocess_efficient_nms_core(
     adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width
     adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height
 
-    adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
+    adjusted_bboxes = clip_boxes(adjusted_bboxes, ratios, padding, input_size)
 
     if no_copy:
         return [adjusted_bboxes, scores, class_ids]
@@ -388,7 +394,7 @@ def _postprocess_rfdetr_core(
     adjusted_x2 = (x2 - pad_x) / ratio_width
     adjusted_y2 = (y2 - pad_y) / ratio_height
     adjusted_bboxes = np.stack([adjusted_x1, adjusted_y1, adjusted_x2, adjusted_y2], axis=1)
-    adjusted_bboxes = np.clip(adjusted_bboxes, 0, None)
+    adjusted_bboxes = clip_boxes(adjusted_bboxes, ratios, padding, (input_w, input_h))
 
     if no_copy:
         return [adjusted_bboxes, topk_scores, topk_class_ids.astype(int)]
@@ -423,7 +429,7 @@ def postprocess_detr(
     conf_thres : float, optional
         Confidence threshold to filter detections.
     input_size : tuple[int, int] | None
-        Unused for standard DETR.
+        Model input (width, height), used with ratios/padding to clip boxes to the image.
     no_copy : bool, optional
         If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
@@ -456,10 +462,10 @@ def postprocess_detr(
 
 def _postprocess_detr_core(
     outputs: list[np.ndarray],
-    ratios: tuple[float, float],  # noqa: ARG001
-    padding: tuple[float, float],  # noqa: ARG001
+    ratios: tuple[float, float],
+    padding: tuple[float, float],
     conf_thres: float | None = None,
-    input_size: tuple[int, int] | None = None,  # noqa: ARG001
+    input_size: tuple[int, int] | None = None,
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
@@ -482,7 +488,7 @@ def _postprocess_detr_core(
         scores_arr = scores_arr[finite_mask]
         class_ids = class_ids[finite_mask]
 
-    adjusted_bboxes = np.clip(bboxes, 0, None)
+    adjusted_bboxes = clip_boxes(bboxes, ratios, padding, input_size)
 
     if no_copy:
         return [adjusted_bboxes, scores_arr, class_ids]
@@ -515,7 +521,7 @@ def postprocess_detr_lbs(
     conf_thres : float, optional
         Confidence threshold to filter detections.
     input_size : tuple[int, int] | None
-        Unused.
+        Model input (width, height), used with ratios/padding to clip boxes to the image.
     no_copy : bool, optional
         If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
@@ -544,7 +550,7 @@ def postprocess_rtdetrv3(
     ratios: list[tuple[float, float]],
     padding: list[tuple[float, float]],
     conf_thres: float | None = None,
-    input_size: tuple[int, int] | None = None,  # noqa: ARG001
+    input_size: tuple[int, int] | None = None,
     *,
     no_copy: bool | None = None,
     verbose: bool | None = None,
@@ -561,13 +567,13 @@ def postprocess_rtdetrv3(
     outputs : list[np.ndarray]
         [combined_dets, num_dets_per_image].
     ratios : list[tuple[float, float]]
-        Unused (boxes already in image coords).
+        Used with input_size to clip boxes to the image.
     padding : list[tuple[float, float]]
-        Unused.
+        Used with input_size to clip boxes to the image.
     conf_thres : float, optional
         Confidence threshold to filter detections.
     input_size : tuple[int, int] | None
-        Unused.
+        Model input (width, height), used with ratios/padding to clip boxes to the image.
     no_copy : bool, optional
         If True, return buffers without copying (overwritten by later preprocessing).
     verbose : bool, optional
@@ -599,6 +605,7 @@ def postprocess_rtdetrv3(
             ratios[i],
             padding[i],
             conf_thres=conf_thres,
+            input_size=input_size,
             no_copy=no_copy,
         )
         results.append(result)
@@ -611,9 +618,10 @@ def _postprocess_rtdetrv3_core(
     combined_dets: np.ndarray,
     start_idx: int,
     num_det: int,
-    ratios: tuple[float, float],  # noqa: ARG001
-    padding: tuple[float, float],  # noqa: ARG001
+    ratios: tuple[float, float],
+    padding: tuple[float, float],
     conf_thres: float | None = None,
+    input_size: tuple[int, int] | None = None,
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
@@ -634,7 +642,7 @@ def _postprocess_rtdetrv3_core(
         scores = scores[finite_mask]
         class_ids = class_ids[finite_mask]
 
-    adjusted_bboxes = np.clip(bboxes, 0, None)
+    adjusted_bboxes = clip_boxes(bboxes, ratios, padding, input_size)
 
     if no_copy:
         return [adjusted_bboxes, scores, class_ids]

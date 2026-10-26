@@ -185,6 +185,8 @@ Changed
 
 Fixed
 ^^^^^
+* Detection postprocessors clip boxes to the original image, ``[0, width]`` x ``[0, height]``, so
+  e.g. D-FINE no longer returns ``x2 = 448`` on a 447 px wide image
 * Engine files (``build_engine`` output and engine cache copies) are written atomically (temp file
   then replace), so concurrent readers never see a half-written engine
 * ``RFDETR`` now defaults to ``resize_method="linear"`` (plain square resize, as upstream RF-DETR

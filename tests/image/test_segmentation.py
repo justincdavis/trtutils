@@ -43,7 +43,7 @@ def _single_det(nm: int, cls_scores: list[float], logit: float, mh: int = 8, mw:
     ("ratio", "padding", "input_size", "bbox"),
     [
         pytest.param(0.5, 4.0, (32, 32), [16.0, 16.0, 32.0, 32.0], id="letterboxed"),
-        pytest.param(1.0, 0.0, (16, 16), [12.0, 12.0, 20.0, 20.0], id="identity"),
+        pytest.param(1.0, 0.0, (32, 32), [12.0, 12.0, 20.0, 20.0], id="identity"),
     ],
 )
 def test_postprocess_round_trip_to_get_segmentations(ratio, padding, input_size, bbox) -> None:

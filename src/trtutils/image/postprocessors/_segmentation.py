@@ -90,7 +90,7 @@ def postprocess_yolo_seg(
         class_ids = class_ids[keep_idx]
         coeffs = coeffs[keep_idx]
 
-        boxes = unletterbox_boxes(boxes, ratios[i], padding[i])
+        boxes = unletterbox_boxes(boxes, ratios[i], padding[i], input_size)
         masks = _decode_masks(coeffs, proto, boxes, ratios[i], padding[i], input_size, mask_thres)
 
         results.append([boxes, scores, class_ids, masks])
