@@ -6,10 +6,10 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-import cv2
 import numpy as np
 
 from trtutils._log import LOG
+from trtutils.compat._libs import cv2
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

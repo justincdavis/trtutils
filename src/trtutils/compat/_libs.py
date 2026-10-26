@@ -11,16 +11,22 @@ from typing import TYPE_CHECKING
 class _EmptyModule(ModuleType):
     """Empty module used as fallback when library is not installed."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, hint: str = "") -> None:
         super().__init__(name)
         self.__name__ = name
+        self._hint = hint
 
     def __getattr__(self, name: str) -> object:
-        err_msg = f"{self.__name__} is not installed. Cannot access {name}"
+        err_msg = f"{self.__name__} is not installed{self._hint}. Cannot access {name}"
         raise AttributeError(err_msg)
 
 
-def _import_or_attr(module_name: str, fallback_name: str, attr_name: str | None = None) -> object:
+def _import_or_attr(
+    module_name: str,
+    fallback_name: str,
+    attr_name: str | None = None,
+    hint: str = "",
+) -> object:
     try:
         return importlib.import_module(module_name)
     except (ImportError, ModuleNotFoundError):
@@ -36,7 +42,7 @@ def _import_or_attr(module_name: str, fallback_name: str, attr_name: str | None 
                 return getattr(base, attr_name)
             except (ImportError, ModuleNotFoundError, AttributeError):
                 return _EmptyModule(fallback_name)
-        return _EmptyModule(fallback_name)
+        return _EmptyModule(fallback_name, hint)
 
 
 # define the types for the modules
@@ -46,6 +52,7 @@ if TYPE_CHECKING:
     cudart: ModuleType
     nvrtc: ModuleType
     cudart_bindings: ModuleType
+    import cv2
 
 # if we are not type checking, actually import the modules
 # we handle the behavior of cuda.bindings vs. cuda in the _import_or_attr function
@@ -55,6 +62,7 @@ else:
     cudart = _import_or_attr("cuda.bindings.runtime", "cudart", "cudart")
     nvrtc = _import_or_attr("cuda.bindings.nvrtc", "nvrtc", "nvrtc")
     cudart_bindings = _import_or_attr("cuda.bindings.cudart", "cudart_bindings", "cudart")
+    cv2 = _import_or_attr("cv2", "cv2", hint=", install with: pip install trtutils[cv2]")
 
 
-__all__ = ["cuda", "cudart", "cudart_bindings", "nvrtc", "trt"]
+__all__ = ["cuda", "cudart", "cudart_bindings", "cv2", "nvrtc", "trt"]

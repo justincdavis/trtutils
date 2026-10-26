@@ -3,11 +3,11 @@
 # MIT License
 from __future__ import annotations
 
-import cv2
 import numpy as np
 from cv2ext.image import letterbox, resize_linear
 
 from trtutils._log import LOG
+from trtutils.compat._libs import cv2
 
 
 def preprocess(

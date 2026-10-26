@@ -11,13 +11,13 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import cv2
 import cv2ext
 import numpy as np
 from typing_extensions import TypeGuard
 
 import trtutils
 from trtutils._log import LOG
+from trtutils.compat._libs import cv2
 from trtutils.core import cache as caching_tools
 from trtutils.research import discover_submodules
 from trtutils.research import register_cli as research_register_cli

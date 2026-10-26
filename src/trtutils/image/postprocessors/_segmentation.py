@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import cv2
 import numpy as np
 
 from trtutils._log import LOG
+from trtutils.compat._libs import cv2
 
 from ._common import cxcywh_to_xyxy, filter_class_scores, nms_indices, unletterbox_boxes
 from ._detection import _get_detections_core

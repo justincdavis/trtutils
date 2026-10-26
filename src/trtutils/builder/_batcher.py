@@ -13,11 +13,11 @@ from queue import Empty, Full, Queue
 from threading import Event, Thread
 from typing import TYPE_CHECKING
 
-import cv2
 import numpy as np
 from cv2ext.image import letterbox, rescale
 
 from trtutils._log import LOG
+from trtutils.compat._libs import cv2
 
 if TYPE_CHECKING:
     from typing_extensions import Self

@@ -8,13 +8,13 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, overload
 
-import cv2
 import numpy as np
 import nvtx
 from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.compat._libs import cv2
 from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
