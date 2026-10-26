@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for nms_indices in postprocessors/_common.py -- parity with cv2.dnn.NMSBoxesBatched."""
+"""Tests for nms_indices in postprocessors/_common.py -- numpy path parity with cv2."""
 
 from __future__ import annotations
 
@@ -9,9 +9,16 @@ import cv2
 import numpy as np
 import pytest
 
+from trtutils._flags import FLAGS
 from trtutils.image.postprocessors._common import nms_indices
 
 pytestmark = pytest.mark.cpu
+
+
+@pytest.fixture(autouse=True)
+def _numpy_nms(monkeypatch) -> None:
+    """Run the numpy path so every test compares it against cv2."""
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
 
 
 def _cv2_nms(
@@ -151,3 +158,11 @@ def test_nms_indices_offset_is_max_coordinate_plus_one() -> None:
     expected = _cv2_nms(boxes, scores, labels, 0.1, 0.0, None)
     assert expected.tolist() == [0]
     assert np.array_equal(nms_indices(boxes, scores, labels, 0.1, 0.0, None), expected)
+
+
+def test_nms_indices_uses_cv2_when_found() -> None:
+    """With cv2 installed the fast path gives the same indices."""
+    boxes, scores, labels = _make(300, 80, seed=0, clustered=True)
+    numpy_idx = nms_indices(boxes, scores, labels, 0.25, 0.45, None)
+    FLAGS.FOUND_CV2 = True
+    assert np.array_equal(nms_indices(boxes, scores, labels, 0.25, 0.45, None), numpy_idx)

@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import numpy as np
 
+from trtutils._flags import FLAGS
+from trtutils.compat._libs import cv2
+
 
 def nms_indices(
     boxes: np.ndarray,
@@ -20,10 +23,32 @@ def nms_indices(
     if boxes.shape[0] == 0:
         return np.zeros((0,), dtype=int)
 
-    # opencv takes float32 xywh, so rebuild x2/y2 from it to round the same way
     xywh = np.empty_like(boxes, dtype=np.float32)
     xywh[:, :2] = boxes[:, :2]
     xywh[:, 2:] = boxes[:, 2:] - boxes[:, :2]
+    if not FLAGS.FOUND_CV2:
+        return _nms_indices_numpy(xywh, scores, labels, conf_thres, nms_iou_thres, max_det)
+
+    raw_idx = cv2.dnn.NMSBoxesBatched(
+        xywh.tolist(),
+        scores.astype(np.float32).tolist(),
+        labels.astype(np.int32).tolist(),
+        0.0 if conf_thres is None else conf_thres,
+        nms_iou_thres,
+    )
+    # opencv returns the kept indices sorted by score
+    return np.asarray(raw_idx, dtype=int).ravel()[:max_det]
+
+
+def _nms_indices_numpy(
+    xywh: np.ndarray,
+    scores: np.ndarray,
+    labels: np.ndarray,
+    conf_thres: float | None,
+    nms_iou_thres: float,
+    max_det: int | None,
+) -> np.ndarray:
+    # same result as cv2.dnn.NMSBoxesBatched, ~10x slower
     xywh = xywh.astype(np.float64)
     offset = labels.astype(np.float64) * (np.max(xywh[:, :2] + xywh[:, 2:]) + 1)
     xywh[:, :2] += offset[:, None]
