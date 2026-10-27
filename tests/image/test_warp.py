@@ -5,11 +5,10 @@
 
 from __future__ import annotations
 
-import time
-
 import numpy as np
 import pytest
 
+from tests.conftest import DATA_DIR
 from trtutils._flags import FLAGS
 from trtutils.compat._libs import cv2
 from trtutils.image import _warp
@@ -213,31 +212,29 @@ def test_cubic_table_rows_sum_to_one() -> None:
 
 
 @_needs_cv2
-@_needs_numba
 @pytest.mark.parametrize(
-    ("out_size", "label"),
-    [pytest.param((320, 40), "ocr-crop", id="ocr-crop"), pytest.param((1200, 200), "big", id="big")],
+    "name", [pytest.param(n, id=n) for n in ("horse.jpg", "street.jpg", "people.jpeg", "cars.jpeg")]
 )
-def test_timing(
-    no_cv2: None, monkeypatch: pytest.MonkeyPatch, out_size: tuple[int, int], label: str
-) -> None:
-    """Print numba vs cv2 timing."""
-    monkeypatch.setattr(FLAGS, "JIT", True)
-    image = _image((1080, 1920), 3, seed=3)
-    width, height = out_size
-    quad = np.array([[100, 300], [100 + width, 310], [96 + width, 310 + height], [98, 300 + height]])
-    quad = quad.astype(np.float32)
-    _warp.perspective_crop(image, quad, width, height)
-
-    def best(fn: object) -> float:
-        times = []
-        for _ in range(10):
-            t0 = time.perf_counter()
-            fn()  # type: ignore[operator]
-            times.append(time.perf_counter() - t0)
-        return min(times) * 1e3
-
-    ours = best(lambda: _warp.perspective_crop(image, quad, width, height))
-    monkeypatch.setattr(FLAGS, "FOUND_CV2", True)
-    theirs = best(lambda: _warp.perspective_crop(image, quad, width, height))
-    print(f"{label} {width}x{height}: numba {ours:.3f} ms, cv2 {theirs:.3f} ms")
+def test_cv2_crops_close_on_photos(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    """On real photos cv2 (4.x exact, 5.x within a few levels) and the numba port agree."""
+    image = cv2.imread(str(DATA_DIR / name))
+    height, width = image.shape[:2]
+    rng = np.random.default_rng(5)
+    for _ in range(20):
+        cx, cy = rng.uniform(0.25, 0.75) * width, rng.uniform(0.25, 0.75) * height
+        bw, bh = rng.uniform(0.08, 0.3) * width, rng.uniform(0.02, 0.1) * height
+        ang = rng.uniform(-0.25, 0.25)
+        rot = np.array([[np.cos(ang), -np.sin(ang)], [np.sin(ang), np.cos(ang)]])
+        quad = np.array([[-bw, -bh], [bw, -bh], [bw, bh], [-bw, bh]]) @ rot.T + [cx, cy]
+        quad = quad.astype(np.float32)
+        out_w = int(max(np.linalg.norm(quad[0] - quad[1]), np.linalg.norm(quad[2] - quad[3])))
+        out_h = int(max(np.linalg.norm(quad[0] - quad[3]), np.linalg.norm(quad[1] - quad[2])))
+        monkeypatch.setattr(FLAGS, "FOUND_CV2", True)
+        expected = _warp.perspective_crop(image, quad, out_w, out_h).astype(int)
+        monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
+        actual = _warp.perspective_crop(image, quad, out_w, out_h).astype(int)
+        diff = np.abs(actual - expected)
+        # opencv 5 changed the cubic arithmetic: mean 0.12 (worst 0.29), max 5, <0.5% over 2
+        assert diff.mean() < 0.5
+        assert diff.max() <= 8
+        assert (diff > 2).mean() < 0.02
