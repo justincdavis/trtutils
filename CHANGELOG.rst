@@ -129,6 +129,8 @@ Changed
 * Image kernels register an OpenCV, numba, or numpy implementation at import
   (``trtutils.register``). The chosen function is stored on the module and called directly.
   ``nms_indices`` and segmentation ``warp_scale`` compile with numba when OpenCV is absent.
+  Rotated NMS fuses the probability-IoU test into one numba loop (about 14 ms to 0.2 ms
+  for 2000 candidates capped at 300 detections).
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``
