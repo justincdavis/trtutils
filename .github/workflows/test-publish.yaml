@@ -8,7 +8,7 @@ on:
 jobs:
   build_and_publish:
     name: "Build and Publish PyPI package - TEST"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # ubuntu-latest (26.04) has no setup-python build of 3.8/3.9
     environment:
       name: pypi
       url: https://test.pypi.org/p/trtutils
