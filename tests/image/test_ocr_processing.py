@@ -13,7 +13,7 @@ import pytest
 from tests.conftest import DATA_DIR
 from trtutils._flags import FLAGS
 from trtutils.compat._libs import cv2
-from trtutils.image._geometry import _fill_convex_poly
+from trtutils.image._geometry import _fill_poly
 from trtutils.image.postprocessors import (
     get_text_boxes,
     get_texts,
@@ -52,7 +52,9 @@ def _box_points(center: tuple[float, float], size: tuple[float, float], angle: f
 
 
 def _fill(pred: np.ndarray, pts: np.ndarray, value: float) -> None:
-    pred[_fill_convex_poly(pred.shape, pts) > 0] = value
+    mask = np.zeros(pred.shape, dtype=np.uint8)
+    _fill_poly(mask, np.ascontiguousarray(pts, dtype=np.int64))
+    pred[mask > 0] = value
 
 
 def _prob_map() -> np.ndarray:

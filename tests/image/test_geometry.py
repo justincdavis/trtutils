@@ -517,6 +517,12 @@ def _random_box(kind: int, seed: int) -> tuple[tuple[int, int], np.ndarray]:
     return (h, w), (corners @ rot.T + centre).astype(np.int32)
 
 
+def _filled(shape: tuple[int, int], pts: np.ndarray) -> np.ndarray:
+    mask = np.zeros(shape, dtype=np.uint8)
+    _geometry._fill_poly(mask, np.ascontiguousarray(pts, dtype=np.int64))
+    return mask
+
+
 _KINDS = [
     pytest.param(0, id="rotated-rect"),
     pytest.param(1, id="sliver"),
@@ -536,7 +542,7 @@ def test_fill_matches_cv2(kind, seed, jit) -> None:
     shape, pts = _random_box(kind, seed)
     want = np.zeros(shape, dtype=np.uint8)
     cv2.fillPoly(want, [pts], (1,))
-    np.testing.assert_array_equal(_geometry._fill_convex_poly(shape, pts), want)
+    np.testing.assert_array_equal(_filled(shape, pts), want)
 
 
 @_needs_cv2
@@ -550,7 +556,7 @@ def test_fill_matches_cv2_many(kind, block, jit) -> None:
         shape, pts = _random_box(kind, seed)
         want = np.zeros(shape, dtype=np.uint8)
         cv2.fillPoly(want, [pts], (1,))
-        np.testing.assert_array_equal(_geometry._fill_convex_poly(shape, pts), want)
+        np.testing.assert_array_equal(_filled(shape, pts), want)
 
 
 @_needs_cv2
@@ -573,7 +579,7 @@ def test_polygon_mean_matches_cv2(kind, seed, jit, monkeypatch) -> None:
 @pytest.mark.parametrize("jit", _JIT, indirect=True)
 def test_polygon_mean_literal_rect(jit, no_cv2) -> None:
     """An axis aligned rectangle includes its boundary pixels."""
-    mask = _geometry._fill_convex_poly((6, 8), np.array([[1, 1], [5, 1], [5, 3], [1, 3]]))
+    mask = _filled((6, 8), np.array([[1, 1], [5, 1], [5, 3], [1, 3]]))
     want = np.zeros((6, 8), dtype=np.uint8)
     want[1:4, 1:6] = 1
     np.testing.assert_array_equal(mask, want)
@@ -582,7 +588,7 @@ def test_polygon_mean_literal_rect(jit, no_cv2) -> None:
 @pytest.mark.parametrize("jit", _JIT, indirect=True)
 def test_polygon_mean_literal_diamond(jit, no_cv2) -> None:
     """A 45 degree diamond fills row spans between its edges."""
-    mask = _geometry._fill_convex_poly((5, 5), np.array([[2, 0], [4, 2], [2, 4], [0, 2]]))
+    mask = _filled((5, 5), np.array([[2, 0], [4, 2], [2, 4], [0, 2]]))
     want = np.array(
         [
             [0, 0, 1, 0, 0],

@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from trtutils._flags import FLAGS
@@ -20,9 +22,9 @@ from trtutils.compat._libs import cv2
 # 8 neighbours in clockwise order (image coords, y down), starting east
 _DX = np.array([1, 1, 0, -1, -1, -1, 0, 1], dtype=np.int64)
 _DY = np.array([0, 1, 1, 1, 0, -1, -1, -1], dtype=np.int64)
-_EAST = 0
-_WEST = 4
-_NDIR = 8
+# neighbour step (dy + 1, dx + 1) -> direction, centre is not a step
+_DIR = np.full((3, 3), -1, dtype=np.int64)
+_DIR[_DY + 1, _DX + 1] = np.arange(8)
 
 
 @register_jit()
@@ -30,6 +32,7 @@ def _trace(  # noqa: C901, PLR0912, PLR0915
     grid: np.ndarray,
     dx: np.ndarray,
     dy: np.ndarray,
+    direc: np.ndarray,
     pts: np.ndarray,
     tmp: np.ndarray,
     offsets: np.ndarray,
@@ -85,11 +88,7 @@ def _trace(  # noqa: C901, PLR0912, PLR0915
             y3 = y
             while True:
                 # counterclockwise from the previous point around the current one
-                d2 = 0
-                for d in range(8):
-                    if x2 - x3 == dx[d] and y2 - y3 == dy[d]:
-                        d2 = d
-                        break
+                d2 = direc[(y2 - y3) + 1, (x2 - x3) + 1]
                 east_zero = False
                 x4 = x3
                 y4 = y3
@@ -140,13 +139,14 @@ def _find_contours_numpy(binary: np.ndarray) -> list[np.ndarray]:
     height, width = binary.shape
     grid = np.zeros((height + 2, width + 2), dtype=np.int32)
     grid[1:-1, 1:-1] = binary != 0
-    cap = 4 * int(np.count_nonzero(binary)) + 16
+    # raw border points stay under twice the foreground count; retry if a contour is longer
+    cap = 2 * int(np.count_nonzero(binary)) + 16
     while True:
         pts = np.empty((cap, 2), dtype=np.int32)
         tmp = np.empty((cap, 2), dtype=np.int32)
         offsets = np.zeros(cap + 1, dtype=np.int64)
         work = grid.copy()
-        count = _trace(work, _DX, _DY, pts, tmp, offsets)
+        count = _trace(work, _DX, _DY, _DIR, pts, tmp, offsets)
         if count >= 0:
             break
         cap *= 2
@@ -577,15 +577,23 @@ def _fill_poly(mask: np.ndarray, pts: np.ndarray) -> None:  # noqa: C901, PLR091
             if x1 < width and x2 >= 0:
                 x1 = max(x1, 0)
                 x2 = min(x2, width - 1)
-                for x in range(x1, x2 + 1):
-                    mask[y, x] = 1
+                mask[y, x1 : x2 + 1] = 1
 
 
-def _fill_convex_poly(shape: tuple[int, int], pts: np.ndarray) -> np.ndarray:
-    """Mask of an int polygon, bit identical to cv2.fillPoly(mask, [pts], (1,))."""
-    mask = np.zeros(shape, dtype=np.uint8)
-    _fill_poly(mask, np.ascontiguousarray(pts, dtype=np.int64))
-    return mask
+@register_jit()
+def _masked_mean(window: np.ndarray, mask: np.ndarray) -> float:
+    """Mean of ``window`` where ``mask`` is nonzero, or 0 when nothing is set."""
+    acc = 0.0
+    count = 0
+    height, width = window.shape
+    for y in range(height):
+        for x in range(width):
+            if mask[y, x] != 0:
+                acc += window[y, x]
+                count += 1
+    if count == 0:
+        return 0.0
+    return acc / count
 
 
 def polygon_mean(pred: np.ndarray, box: np.ndarray) -> float:
@@ -610,17 +618,23 @@ def polygon_mean(pred: np.ndarray, box: np.ndarray) -> float:
 
     """
     h, w = pred.shape
-    xmin = int(np.clip(np.floor(box[:, 0].min()), 0, w - 1))
-    xmax = int(np.clip(np.ceil(box[:, 0].max()), 0, w - 1))
-    ymin = int(np.clip(np.floor(box[:, 1].min()), 0, h - 1))
-    ymax = int(np.clip(np.ceil(box[:, 1].max()), 0, h - 1))
+    xs = [float(v) for v in box[:, 0]]
+    ys = [float(v) for v in box[:, 1]]
+    xmin = min(max(math.floor(min(xs)), 0), w - 1)
+    xmax = min(max(math.ceil(max(xs)), 0), w - 1)
+    ymin = min(max(math.floor(min(ys)), 0), h - 1)
+    ymax = min(max(math.ceil(max(ys)), 0), h - 1)
     window = pred[ymin : ymax + 1, xmin : xmax + 1]
     poly = (box - (xmin, ymin)).astype(np.int32)
     if FLAGS.FOUND_CV2:
         mask = np.zeros(window.shape, dtype=np.uint8)
         cv2.fillPoly(mask, [poly], (1,))
         return cv2.mean(window, mask)[0]
-    mask = _fill_convex_poly(window.shape, poly).astype(bool)
-    if not mask.any():
+    mask = np.zeros(window.shape, dtype=np.uint8)
+    _fill_poly(mask, np.ascontiguousarray(poly, dtype=np.int64))
+    if FLAGS.FOUND_NUMBA and FLAGS.JIT:
+        return _masked_mean(window, mask)
+    count = int(mask.sum())
+    if count == 0:
         return 0.0
-    return float(window[mask].mean(dtype=np.float64))
+    return float(np.sum(window, where=mask.astype(bool), dtype=np.float64) / count)

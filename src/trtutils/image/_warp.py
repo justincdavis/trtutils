@@ -15,6 +15,11 @@ from trtutils._flags import FLAGS
 from trtutils._jit import register_jit
 from trtutils.compat._libs import cv2
 
+try:
+    from numba import prange
+except ImportError:
+    prange = range
+
 _INTER_BITS = 5
 _TAB_SIZE = 1 << _INTER_BITS
 _COEF_BITS = 15
@@ -135,16 +140,18 @@ def _inverse_matrix(  # noqa: C901, PLR0915
     out[8] = (m[0] * m[4] - m[1] * m[3]) * d
 
 
-@register_jit()
+@register_jit(parallel=True)
 def _warp_cubic(image: np.ndarray, m: np.ndarray, tab: np.ndarray, out: np.ndarray) -> None:
     """Inverse-map every output pixel and sample with the 4x4 fixed-point cubic, replicating edges."""
     src_h, src_w, chans = image.shape
     dst_h, dst_w, _ = out.shape
+    if dst_h == 0 or dst_w == 0:
+        return
     bh0 = min(_BLOCK_SZ // 2, dst_h)
     bw0 = min(_BLOCK_SZ * _BLOCK_SZ // bh0, dst_w)
     delta = 1 << (_COEF_BITS - 1)
     mask = _TAB_SIZE - 1
-    for y in range(dst_h):
+    for y in prange(dst_h):
         for x in range(dst_w):
             # opencv evaluates the row origin at each block start, then adds the in-block offset
             xb = (x // bw0) * bw0
@@ -168,6 +175,40 @@ def _warp_cubic(image: np.ndarray, m: np.ndarray, tab: np.ndarray, out: np.ndarr
                         xx = min(max(sx + j, 0), src_w - 1)
                         acc += int(image[yy, xx, c]) * tab[base + i * 4 + j]
                 out[y, x, c] = min(max((acc + delta) >> _COEF_BITS, 0), 255)
+
+
+def _warp_cubic_numpy(image: np.ndarray, m: np.ndarray, tab: np.ndarray, out: np.ndarray) -> None:
+    """Sample with the same fixed-point cubic as ``_warp_cubic``."""
+    src_h, src_w = image.shape[:2]
+    dst_h, dst_w, _ = out.shape
+    if dst_h == 0 or dst_w == 0:
+        return
+    bh0 = min(_BLOCK_SZ // 2, dst_h)
+    bw0 = min(_BLOCK_SZ * _BLOCK_SZ // bh0, dst_w)
+    delta = 1 << (_COEF_BITS - 1)
+    bits = _TAB_SIZE - 1
+    ys, xs = np.indices((dst_h, dst_w))
+    xb = (xs // bw0) * bw0
+    x1 = xs - xb
+    x0 = m[0] * xb + m[1] * ys + m[2]
+    y0 = m[3] * xb + m[4] * ys + m[5]
+    denom = m[6] * xb + m[7] * ys + m[8] + m[6] * x1
+    scale = np.zeros(denom.shape, dtype=np.float64)
+    np.divide(float(_TAB_SIZE), denom, out=scale, where=denom != 0.0)
+    fx = np.clip((x0 + m[0] * x1) * scale, _INT_MIN, _INT_MAX)
+    fy = np.clip((y0 + m[3] * x1) * scale, _INT_MIN, _INT_MAX)
+    xi = np.rint(fx).astype(np.int32)
+    yi = np.rint(fy).astype(np.int32)
+    sx = np.clip(xi >> _INTER_BITS, -32768, 32767) - 1
+    sy = np.clip(yi >> _INTER_BITS, -32768, 32767) - 1
+    base = ((yi & bits) * _TAB_SIZE + (xi & bits)) * 16
+    acc = np.zeros(out.shape, dtype=np.int32)
+    for i in range(4):
+        yy = np.clip(sy + i, 0, src_h - 1)
+        for j in range(4):
+            xx = np.clip(sx + j, 0, src_w - 1)
+            acc += image[yy, xx].astype(np.int32) * tab[base + i * 4 + j, None]
+    np.copyto(out, np.clip((acc + delta) >> _COEF_BITS, 0, 255), casting="unsafe")
 
 
 def perspective_crop(image: np.ndarray, points: np.ndarray, width: int, height: int) -> np.ndarray:
@@ -211,5 +252,8 @@ def perspective_crop(image: np.ndarray, points: np.ndarray, width: int, height: 
     inv = np.zeros(9, dtype=np.float64)
     _inverse_matrix(quad, width, height, inv)
     out = np.empty((height, width, src.shape[2]), dtype=np.uint8)
-    _warp_cubic(src, inv, _CUBIC_TAB, out)
+    if FLAGS.FOUND_NUMBA and FLAGS.JIT:
+        _warp_cubic(src, inv, _CUBIC_TAB, out)
+    else:
+        _warp_cubic_numpy(src, inv, _CUBIC_TAB, out)
     return out[:, :, 0] if planar else out
