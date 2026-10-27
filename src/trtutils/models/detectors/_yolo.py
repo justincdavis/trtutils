@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
-from trtutils.models._model import Model, nms_build_hook
+from trtutils.models._model import Model, depthwise_fp32_build_hook, nms_build_hook
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -369,6 +369,7 @@ class YOLOv10(Detector, Model):
     _friendly_name = "YOLOv10"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [depthwise_fp32_build_hook]
 
     def __init__(
         self: Self,
@@ -542,7 +543,10 @@ class YOLOv13(Detector, Model):
     _friendly_name = "YOLOv13"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
-    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [nms_build_hook]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [
+        nms_build_hook,
+        depthwise_fp32_build_hook,
+    ]
 
     def __init__(
         self: Self,
