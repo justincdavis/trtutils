@@ -21,7 +21,8 @@ jobs:
           uv venv $VIRTUAL_ENV --python ${{ matrix.python-version }}
           echo "$PWD/$VIRTUAL_ENV/bin" >> $GITHUB_PATH
       - name: Install dependencies
-        run: uv pip install -e ".[pytest]"
+        # free-threaded legs stay numpy-only (no opencv wheels), the rest run the cv2 parity tests
+        run: uv pip install -e ".[pytest${{ !endsWith(matrix.python-version, 't') && ',cv2' || '' }}]"
       - name: Smoke import
         run: python -c "from tests._cpu_stubs import inject; inject(); import trtutils, trtutils.image, trtutils.models; from trtutils._flags import FLAGS; print(FLAGS.FOUND_CV2)"
       - name: Run CPU tests

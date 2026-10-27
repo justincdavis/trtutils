@@ -1,7 +1,6 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-# ruff: noqa: RUF046
 """Image ops (resize, letterbox, patch, rescale, nms, warp) with a cv2 fast path and numpy fallback."""
 
 from __future__ import annotations
@@ -12,12 +11,9 @@ import operator
 import numpy as np
 
 from trtutils._flags import FLAGS
-from trtutils._jit import register_jit
 from trtutils.compat._libs import cv2
 
 _COEF = 2048  # cv2 INTER_RESIZE_COEF_SCALE
-_WARP_BITS = 5  # cv2 INTER_BITS
-_WARP_TAB = 1 << _WARP_BITS
 _HWC = 3
 
 
@@ -139,14 +135,14 @@ def letterbox(
     """
     shape = image.shape[:2]
     r = min(new_shape[1] / shape[0], new_shape[0] / shape[1])
-    new_unpad = (int(round(shape[1] * r)), int(round(shape[0] * r)))
+    new_unpad = (round(shape[1] * r), round(shape[0] * r))
     dw = (new_shape[0] - new_unpad[0]) / 2
     dh = (new_shape[1] - new_unpad[1]) / 2
 
     if shape[::-1] != new_unpad:
         image = _resize(image, new_unpad[0], new_unpad[1])
-    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+    top, bottom = round(dh - 0.1), round(dh + 0.1)
+    left, right = round(dw - 0.1), round(dw + 0.1)
 
     h, w = image.shape[:2]
     canvas = np.empty((h + top + bottom, w + left + right, *image.shape[2:]), dtype=image.dtype)
@@ -273,40 +269,6 @@ def rescale(image: np.ndarray, value_range: tuple[float, float]) -> np.ndarray:
     return (img_float / 255.0) * (high - low) + low
 
 
-@register_jit()
-def _nms_kernel(
-    bboxes: list[tuple[tuple[int, int, int, int], float, int]],
-    iou_threshold: float,
-    agnostic: bool,  # noqa: FBT001
-) -> list[bool]:
-    keep = [True] * len(bboxes)
-
-    for i in range(len(bboxes)):
-        if not keep[i]:
-            continue
-
-        box1 = bboxes[i]
-        x1a, y1a, x2a, y2a = box1[0]
-        area1 = (x2a - x1a) * (y2a - y1a)
-        for j in range(i + 1, len(bboxes)):
-            if not keep[j]:
-                continue
-
-            box2 = bboxes[j]
-            if not agnostic and box1[2] != box2[2]:
-                continue
-
-            x1b, y1b, x2b, y2b = box2[0]
-            inter = max(0, min(x2a, x2b) - max(x1a, x1b)) * max(0, min(y2a, y2b) - max(y1a, y1b))
-            if inter == 0:
-                continue
-            union = area1 + (x2b - x1b) * (y2b - y1b) - inter
-            if union != 0 and inter / union > iou_threshold:
-                keep[j] = False
-
-    return keep
-
-
 def nms(
     bboxes: list[tuple[tuple[int, int, int, int], float, int]],
     iou_threshold: float = 0.5,
@@ -331,29 +293,32 @@ def nms(
         The kept boxes, sorted by descending confidence.
 
     """
-    if not bboxes:
-        return []
+    # plain python: numba's list-of-tuples conversion costs more than this loop
     ordered = sorted(bboxes, key=operator.itemgetter(1), reverse=True)
-    keep = _nms_kernel(ordered, iou_threshold, bool(agnostic))
+    keep = [True] * len(ordered)
+    for i, ((x1a, y1a, x2a, y2a), _, cls_a) in enumerate(ordered):
+        if not keep[i]:
+            continue
+        area_a = (x2a - x1a) * (y2a - y1a)
+        for j in range(i + 1, len(ordered)):
+            (x1b, y1b, x2b, y2b), _, cls_b = ordered[j]
+            if not keep[j] or (not agnostic and cls_a != cls_b):
+                continue
+            inter = max(0, min(x2a, x2b) - max(x1a, x1b)) * max(0, min(y2a, y2b) - max(y1a, y1b))
+            union = area_a + (x2b - x1b) * (y2b - y1b) - inter
+            if inter and union and inter / union > iou_threshold:
+                keep[j] = False
     return [box for box, kept in zip(ordered, keep) if kept]
 
 
 def _warp_axis(
-    n_out: int,
-    n_in: int,
-    scale: float,
-    offset: float,
-    *,
-    rows: bool,
+    n_out: int, n_in: int, scale: float, offset: float
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    # cv2 warpAffine fixed point: 10 bit coords, rounded down to a 1/32 grid
-    s = float(np.float32(scale))
-    t = float(np.float32(offset))
-    k = np.arange(n_out)
-    fixed = np.rint((s * k + t) * 1024) if rows else np.rint(t * 1024) + np.rint(s * k * 1024)
-    pos = (fixed.astype(np.int64) + 16) >> 5
-    idx = pos >> _WARP_BITS
-    frac = (pos & (_WARP_TAB - 1)).astype(np.float32) / np.float32(_WARP_TAB)
+    # float bilinear like opencv 5 (opencv 4 snaps to a 1/32 px grid, <1% of mask pixels differ)
+    pos = np.arange(n_out) * scale + offset
+    idx = np.floor(pos)
+    frac = (pos - idx).astype(np.float32)
+    idx = idx.astype(np.intp)
     return np.clip(idx, 0, n_in - 1), np.clip(idx + 1, 0, n_in - 1), frac
 
 
@@ -401,7 +366,7 @@ def warp_scale(
             borderMode=cv2.BORDER_REPLICATE,
         )
 
-    y0, y1, fy = _warp_axis(height, src.shape[0], scale[1], offset[1], rows=True)
-    x0, x1, fx = _warp_axis(width, src.shape[1], scale[0], offset[0], rows=False)
+    y0, y1, fy = _warp_axis(height, src.shape[0], scale[1], offset[1])
+    x0, x1, fx = _warp_axis(width, src.shape[1], scale[0], offset[0])
     rows = src[y0] * (1 - fy)[:, None] + src[y1] * fy[:, None]
     return rows[:, x0] * (1 - fx) + rows[:, x1] * fx

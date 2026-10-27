@@ -11,7 +11,10 @@ import pytest
 from trtutils._flags import FLAGS
 from trtutils.image.postprocessors._common import nms_indices
 
-pytestmark = pytest.mark.cpu
+pytestmark = [
+    pytest.mark.cpu,
+    pytest.mark.skipif(not FLAGS.FOUND_CV2, reason="the reference is the cv2 branch"),
+]
 
 
 @pytest.fixture(autouse=True)

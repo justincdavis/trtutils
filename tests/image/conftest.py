@@ -9,9 +9,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests._gpu_fixtures import engine_cache_path
-from tests.conftest import DATA_DIR, ENGINES_DIR
+from tests.conftest import _CPU_ONLY, DATA_DIR, ENGINES_DIR
 from trtutils.builder import build_engine
+
+if not _CPU_ONLY:
+    from tests._gpu_fixtures import engine_cache_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable
