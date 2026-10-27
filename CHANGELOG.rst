@@ -197,6 +197,10 @@ Changed
 
 Fixed
 ^^^^^
+* ``YOLOv10.build`` and ``YOLOv13.build`` keep the depthwise convolutions in FP32: in FP16 the
+  builder sometimes picked depthwise kernels (seen on TensorRT 10.15, RTX 5080) that broke the
+  output. YOLOv10 lost large objects in about one build in seven (no horse on ``horse.jpg``
+  instead of 0.96), YOLOv13 detected nothing in about one in fifty. Rebuild engines built before this
 * ``CPUPreprocessor(resize="linear")`` returned swapped x/y ratios, ``(new_h / w, new_w / h)``,
   so boxes were rescaled wrongly whenever the model input was not square; it now matches the CUDA
   and TensorRT preprocessors, ``(new_w / w, new_h / h)``

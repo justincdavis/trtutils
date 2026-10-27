@@ -9,7 +9,9 @@ import inspect
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.builder._build import build_engine
+from trtutils.builder._onnx import read_onnx
 from trtutils.builder.hooks import yolo_efficient_nms_hook
+from trtutils.compat._libs import trt
 
 from ._utils import download_model_internal
 
@@ -56,6 +58,38 @@ def nms_build_hook(
             ),
         ],
     }
+
+
+def depthwise_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]:  # noqa: ANN401
+    """
+    Build hook that forces FP32 for the depthwise convolutions.
+
+    In FP16 the builder sometimes picks depthwise kernels that break the output (seen on
+    TensorRT 10.15, RTX 5080): YOLOv10 loses large objects in about one build in seven,
+    YOLOv13 detects nothing in about one in fifty. Depthwise convolutions are cheap, so
+    FP32 costs little.
+
+    Parameters
+    ----------
+    onnx : Path | str
+        Path to the ONNX model.
+
+    Returns
+    -------
+    dict[str, Any]
+        Build engine overrides containing the layer_precision list.
+
+    """
+    network, _, _, _ = read_onnx(onnx)
+    layer_precision = []
+    for idx in range(network.num_layers):
+        layer = network.get_layer(idx)
+        if layer.type != trt.LayerType.CONVOLUTION:
+            continue
+        layer.__class__ = trt.IConvolutionLayer
+        if layer.num_groups > 1:
+            layer_precision.append((idx, trt.DataType.FLOAT))
+    return {"layer_precision": layer_precision or None, "prefer_precision_constraints": True}
 
 
 class Model:
