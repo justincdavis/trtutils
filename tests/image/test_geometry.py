@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/_geometry.py -- find_contours against cv2.findContours."""
+"""Tests for src/trtutils/image/_geometry.py -- find_contours and min_area_rect against OpenCV."""
 
 from __future__ import annotations
 
@@ -196,3 +196,226 @@ def test_literal_contours(binary, expected, jit, no_cv2) -> None:
     assert [_key(np.array(c, dtype=np.int32).reshape(-1, 2)) for c in expected] == [
         _key(c) for c in got
     ]
+
+
+def _sorted(corners: np.ndarray) -> np.ndarray:
+    return corners[np.lexsort((corners[:, 1], corners[:, 0]))]
+
+
+def _area(corners: np.ndarray) -> float:
+    c = corners.astype(np.float64)
+    c = c[np.argsort(np.arctan2(*(c - c.mean(axis=0)).T[::-1]))]
+    x, y = c.T
+    return 0.5 * abs(float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+
+
+def _ref_rect(points: np.ndarray) -> tuple[np.ndarray, float]:
+    rect = cv2.minAreaRect(points)
+    return cv2.boxPoints(rect), float(min(rect[1]))
+
+
+def _assert_rect_matches_cv2(points: np.ndarray, *, exact: bool = True) -> None:
+    corners, short = _geometry.min_area_rect(points)
+    want, want_short = _ref_rect(points)
+    assert corners.shape == (4, 2)
+    assert corners.dtype == np.float32
+    if exact:
+        # same arithmetic as opencv: bitwise equal corners, in the same order
+        np.testing.assert_array_equal(corners, want)
+        assert short == want_short
+    else:
+        assert _area(corners) == pytest.approx(_area(want), rel=1e-4, abs=1e-3)
+        assert short == pytest.approx(want_short, rel=1e-4, abs=1e-3)
+
+
+def _int_cloud(seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    n = int(rng.integers(3, 201))
+    return rng.integers(0, int(rng.choice([10, 100, 1000])), (n, 2)).astype(np.int32)
+
+
+def _float_cloud(seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    n = int(rng.integers(3, 201))
+    return (rng.random((n, 2)) * rng.choice([1, 50, 900])).astype(np.float32)
+
+
+def _rotated(seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    cx, cy = rng.uniform(50, 400, 2)
+    w, h = rng.uniform(3, 200, 2)
+    a = rng.uniform(0, np.pi)
+    q = np.array([[-w, -h], [w, -h], [w, h], [-w, h]]) / 2
+    rot = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+    return np.round(q @ rot.T + (cx, cy)).astype(np.int32)
+
+
+def _polygon(n: int, *, rounded: bool) -> np.ndarray:
+    t = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    pts = np.c_[np.cos(t), np.sin(t)] * 100 + 200
+    return np.round(pts).astype(np.int32) if rounded else pts.astype(np.float32)
+
+
+def _i32(rows: list[list[int]]) -> np.ndarray:
+    return np.array(rows, dtype=np.int32)
+
+
+_RECT_SMALL = [
+    pytest.param(_i32([[3, 4]]), id="one-point"),
+    pytest.param(_i32([[1, 1], [1, 1], [1, 1]]), id="same-point-x3"),
+    pytest.param(_i32([[0, 0], [4, 2]]), id="two-points"),
+    pytest.param(_i32([[5, 0], [0, 0]]), id="two-points-reversed"),
+    pytest.param(_i32([[0, 0], [2, 2], [4, 4]]), id="collinear-diagonal"),
+    pytest.param(_i32([[0, 5], [0, 0], [0, 2]]), id="collinear-vertical"),
+    pytest.param(_i32([[0, 0], [9, 0], [3, 0], [4, 0]]), id="collinear-horizontal"),
+    pytest.param(_i32([[0, 0], [10, 0], [10, 5], [0, 5]]), id="rect-wide"),
+    pytest.param(_i32([[0, 0], [5, 0], [5, 10], [0, 10]]), id="rect-tall"),
+    pytest.param(_i32([[127, 657], [127, 662], [248, 662], [248, 657]]), id="rect-text-line"),
+    pytest.param(_i32([[0, 0], [5, 5], [0, 10], [-5, 5]]), id="square-45deg"),
+    pytest.param(_i32([[0, 0], [4, 0], [0, 3]]), id="triangle-right"),
+    pytest.param(_i32([[0, 0], [9, 1], [4, 8]]), id="triangle-scalene"),
+    pytest.param(_i32([[0, 0], [4, 0], [4, 4], [0, 4], [2, 2], [2, 0]]), id="square-inner-points"),
+    pytest.param(_i32([[-5, -5], [-1, -9], [3, -2], [-7, 4]]), id="negative-coords"),
+    pytest.param(_polygon(3, rounded=True), id="polygon-3-int"),
+    pytest.param(_polygon(6, rounded=True), id="polygon-6-int"),
+    pytest.param(_polygon(12, rounded=False), id="polygon-12-float"),
+    pytest.param(_rotated(1), id="rotated-int-1"),
+    pytest.param(_int_cloud(1), id="cloud-int-1"),
+    pytest.param(_float_cloud(1), id="cloud-float-1"),
+]
+
+
+@_needs_cv2
+@pytest.mark.parametrize("jit", _JIT, indirect=True)
+@pytest.mark.parametrize("points", _RECT_SMALL)
+def test_rect_matches_cv2_small(points, jit, no_cv2) -> None:
+    """Corners and short side equal cv2.boxPoints / min(minAreaRect size), jit and python."""
+    _assert_rect_matches_cv2(points)
+
+
+@_needs_cv2
+@_needs_numba
+@pytest.mark.parametrize("jit", [True], indirect=True)
+@pytest.mark.parametrize(
+    "make",
+    [
+        pytest.param(_int_cloud, id="int-cloud"),
+        pytest.param(_float_cloud, id="float-cloud"),
+        pytest.param(_rotated, id="rotated-rect"),
+    ],
+)
+@pytest.mark.parametrize("seed", range(60))
+def test_rect_matches_cv2_random(make, seed, jit, no_cv2) -> None:
+    """Random clouds (sizes 3..200) and rounded rotated rectangles."""
+    _assert_rect_matches_cv2(make(seed))
+
+
+@_needs_cv2
+@_needs_numba
+@pytest.mark.parametrize("jit", [True], indirect=True)
+@pytest.mark.parametrize("seed", [10, 11, 12])
+def test_rect_matches_cv2_text_contours(seed, jit, no_cv2) -> None:
+    """Every contour of a 960x736 text-like map, corners often land on integers."""
+    contours = _geometry.find_contours(_text_like((736, 960), seed, 300))
+    assert len(contours) > 50
+    for contour in contours:
+        _assert_rect_matches_cv2(contour)
+
+
+@_needs_cv2
+@_needs_numba
+@pytest.mark.parametrize("jit", [True], indirect=True)
+@pytest.mark.parametrize("seed", range(20))
+def test_rect_floor_ceil_round_match_cv2(seed, jit, no_cv2) -> None:
+    """The ops OCR applies to corners never flip against cv2."""
+    for contour in _geometry.find_contours(_text_like((736, 960), 100 + seed, 100)):
+        corners, _ = _geometry.min_area_rect(contour)
+        want, _ = _ref_rect(contour)
+        for op in (np.floor, np.ceil, np.round):
+            np.testing.assert_array_equal(op(corners), op(want))
+
+
+@_needs_cv2
+@_needs_numba
+@pytest.mark.parametrize("jit", [True], indirect=True)
+@pytest.mark.parametrize("n", range(3, 41))
+@pytest.mark.parametrize("rounded", [True, False], ids=["int", "float"])
+def test_rect_regular_polygons(n, rounded, jit, no_cv2) -> None:
+    """Regular polygons tie on area, only the area and short side are compared."""
+    _assert_rect_matches_cv2(_polygon(n, rounded=rounded), exact=False)
+
+
+@_needs_cv2
+@_needs_numba
+@pytest.mark.parametrize("jit", [True], indirect=True)
+@pytest.mark.parametrize("seed", range(40))
+def test_rect_duplicates(seed, jit, no_cv2) -> None:
+    """Heavy duplicates make opencv's unstable sort pick any tied rectangle."""
+    rng = np.random.default_rng(seed)
+    points = rng.integers(0, int(rng.choice([2, 3, 5])), (int(rng.integers(3, 60)), 2))
+    _assert_rect_matches_cv2(points.astype(np.int32), exact=False)
+
+
+@_needs_cv2
+@pytest.mark.parametrize("use_cv2", [True, False], ids=["cv2", "numpy"])
+@pytest.mark.parametrize("dtype", [np.int32, np.float32, np.int64, np.float64])
+def test_rect_dispatch_and_dtypes(use_cv2, dtype, monkeypatch) -> None:
+    """Both paths accept any numeric dtype and agree with cv2."""
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", use_cv2)
+    points = _rotated(3)
+    got, short = _geometry.min_area_rect(points.astype(dtype))
+    want, want_short = _ref_rect(points)
+    np.testing.assert_array_equal(got, want)
+    assert short == want_short
+
+
+_S2 = float(np.sqrt(8))
+_RECT_LITERAL = [
+    pytest.param(
+        _i32([[0, 0], [4, 0], [4, 2], [0, 2]]),
+        [[0, 0], [0, 2], [4, 0], [4, 2]],
+        2.0,
+        id="axis-aligned",
+    ),
+    pytest.param(
+        _i32([[2, 0], [4, 2], [2, 4], [0, 2]]),
+        [[0, 2], [2, 0], [2, 4], [4, 2]],
+        _S2,
+        id="square-45deg",
+    ),
+    pytest.param(
+        _i32([[0, 0], [4, 0], [4, 2], [0, 2], [2, 1], [1, 1], [4, 0]]),
+        [[0, 0], [0, 2], [4, 0], [4, 2]],
+        2.0,
+        id="axis-aligned-inner-and-duplicate",
+    ),
+    pytest.param(
+        _i32([[0, 0], [4, 0], [0, 3]]), [[0, 0], [0, 3], [4, 0], [4, 3]], 3.0, id="right-triangle"
+    ),
+    pytest.param(_i32([[3, 4]]), [[3, 4]] * 4, 0.0, id="one-point"),
+    pytest.param(_i32([[2, 2], [2, 2], [2, 2]]), [[2, 2]] * 4, 0.0, id="same-point-x3"),
+    pytest.param(_i32([[0, 0], [4, 2]]), [[0, 0], [0, 0], [4, 2], [4, 2]], 0.0, id="two-points"),
+    pytest.param(
+        _i32([[0, 0], [2, 2], [1, 1], [4, 4]]),
+        [[0, 0], [0, 0], [4, 4], [4, 4]],
+        0.0,
+        id="collinear",
+    ),
+]
+
+
+@pytest.mark.parametrize("jit", _JIT, indirect=True)
+@pytest.mark.parametrize(("points", "expected", "short"), _RECT_LITERAL)
+def test_rect_literal(points, expected, short, jit, no_cv2) -> None:
+    """Hand written expectations, no cv2 needed."""
+    corners, got_short = _geometry.min_area_rect(points)
+    np.testing.assert_allclose(_sorted(corners), _sorted(np.array(expected)), atol=1e-5)
+    assert got_short == pytest.approx(short, abs=1e-5)
+
+
+@pytest.mark.parametrize("jit", _JIT, indirect=True)
+def test_rect_no_points(jit, no_cv2) -> None:
+    """No points gives an all zero rectangle, like cv2."""
+    corners, short = _geometry.min_area_rect(np.zeros((0, 2), dtype=np.int32))
+    np.testing.assert_array_equal(corners, np.zeros((4, 2), dtype=np.float32))
+    assert short == 0.0

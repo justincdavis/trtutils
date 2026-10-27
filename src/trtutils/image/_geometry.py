@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Geometry ops (find_contours) with a cv2 fast path and a numba/numpy fallback."""
+"""Geometry ops (find_contours, min_area_rect) with a cv2 fast path and a numba/numpy fallback."""
 
 from __future__ import annotations
 
@@ -171,3 +171,246 @@ def find_contours(binary: np.ndarray) -> list[np.ndarray]:
         found = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
         return [c.reshape(-1, 2) for c in found]
     return _find_contours_numpy(binary)
+
+
+@register_jit()
+def _min_area_rect(pts: np.ndarray, order: np.ndarray) -> tuple[np.ndarray, np.float32]:  # noqa: C901, PLR0912, PLR0915
+    """
+    Port of OpenCV's rotating calipers on the hull of sorted (N, 2) float32 points.
+
+    Follows the float32 arithmetic of cv2.minAreaRect and cv2.boxPoints so the corners match.
+    Returns the 4 corners (4, 2) float32 and the short side.
+    """
+    pi = np.pi
+    half = np.float32(0.5)
+    zero = np.float32(0)
+    total = pts.shape[0]
+    buf = np.empty((2 * total + 1, 2), dtype=np.float32)
+    ids = np.empty(2 * total + 1, dtype=np.int64)
+    h = 0
+    lower = 2
+    last = 0
+    for i in range(2 * total - 1):
+        idx = i if i < total else 2 * total - 2 - i
+        if i == total:
+            lower = h + 1
+        while h >= lower:
+            ax = np.float64(buf[h - 1, 0]) - np.float64(buf[h - 2, 0])
+            ay = np.float64(buf[h - 1, 1]) - np.float64(buf[h - 2, 1])
+            bx = np.float64(pts[idx, 0]) - np.float64(buf[h - 2, 0])
+            by = np.float64(pts[idx, 1]) - np.float64(buf[h - 2, 1])
+            if ax * by - ay * bx > 0:
+                break
+            h -= 1
+        buf[h] = pts[idx]
+        ids[h] = order[idx]
+        h += 1
+        if i == total - 1:
+            last = h - 1
+    h = max(h - 1, 1)
+    hull = np.empty((h, 2), dtype=np.float32)
+    hids = np.empty(h, dtype=np.int64)
+    for i in range(h):
+        hull[i] = buf[(last + i) % h]
+        hids[i] = ids[(last + i) % h]
+
+    # opencv rotates its hull so the original point indices run monotonic
+    start = 0
+    min_i = 0
+    max_i = 0
+    lt = 0
+    for i in range(1, h):
+        lt += hids[i - 1] < hids[i]
+        if lt > 1 and lt <= i - 2:
+            break
+        if hids[i] < hids[min_i]:
+            min_i = i
+        if hids[i] > hids[max_i]:
+            max_i = i
+    dist = abs(max_i - min_i)
+    if h >= 3 and (dist in (1, h - 1)) and (lt <= 1 or lt >= h - 2):  # noqa: PLR2004
+        ascending = (max_i + 1) % h == min_i
+        i0 = min_i if ascending else max_i
+        j = i0
+        ok = i0 > 0
+        for _ in range(h - 1):
+            nxt = (j + 1) % h
+            if ascending != (hids[j] < hids[nxt]):
+                ok = False
+                break
+            j = nxt
+        if ok:
+            start = i0
+    hull = np.concatenate((hull[start:], hull[:start]))
+    n = hull.shape[0]
+    cx = hull[0, 0]
+    cy = hull[0, 1]
+    width = zero
+    height = zero
+    angle = zero
+
+    if n == 2:  # noqa: PLR2004
+        cx = (hull[0, 0] + hull[1, 0]) * half
+        cy = (hull[0, 1] + hull[1, 1]) * half
+        dx = np.float64(hull[1, 0] - hull[0, 0])
+        dy = np.float64(hull[1, 1] - hull[0, 1])
+        width = np.float32(np.sqrt(dx * dx + dy * dy))
+        angle = np.float32(np.arctan2(dy, dx))
+    elif n > 2:  # noqa: PLR2004
+        vect = np.empty((n, 2), dtype=np.float32)
+        inv_len = np.empty(n, dtype=np.float32)
+        left = 0
+        right = 0
+        top = 0
+        bottom = 0
+        for i in range(n):
+            if hull[i, 0] < hull[left, 0]:
+                left = i
+            if hull[i, 0] > hull[right, 0]:
+                right = i
+            if hull[i, 1] > hull[top, 1]:
+                top = i
+            if hull[i, 1] < hull[bottom, 1]:
+                bottom = i
+            nxt = (i + 1) % n
+            dx = np.float64(hull[nxt, 0] - hull[i, 0])
+            dy = np.float64(hull[nxt, 1] - hull[i, 1])
+            vect[i, 0] = dx
+            vect[i, 1] = dy
+            inv_len[i] = 1.0 / np.sqrt(dx * dx + dy * dy)
+
+        orientation = np.float32(1)
+        ax = np.float64(vect[n - 1, 0])
+        ay = np.float64(vect[n - 1, 1])
+        for i in range(n):
+            bx = np.float64(vect[i, 0])
+            by = np.float64(vect[i, 1])
+            convexity = ax * by - ay * bx
+            if convexity != 0:
+                orientation = np.float32(1 if convexity > 0 else -1)
+                break
+            ax = bx
+            ay = by
+
+        base_a = orientation
+        base_b = zero
+        seq = np.array([bottom, right, top, left], dtype=np.int64)
+        rot = np.empty((4, 2), dtype=np.float32)
+        min_area = np.float32(np.finfo(np.float32).max)
+        best_a = zero
+        best_b = zero
+        best_w = zero
+        best_h = zero
+        best_left = 0
+        best_bottom = 0
+        for _ in range(n):
+            rot[0, 0] = vect[seq[0], 0]
+            rot[0, 1] = vect[seq[0], 1]
+            rot[1, 0] = vect[seq[1], 1]
+            rot[1, 1] = -vect[seq[1], 0]
+            rot[2, 0] = -vect[seq[2], 0]
+            rot[2, 1] = -vect[seq[2], 1]
+            rot[3, 0] = -vect[seq[3], 1]
+            rot[3, 1] = vect[seq[3], 0]
+            main = 0
+            for i in range(1, 4):
+                # first vector is to the right (clockwise) of the current main one
+                if rot[i, 1] * rot[main, 0] + (-rot[i, 0]) * rot[main, 1] < 0:
+                    main = i
+
+            pi_ = seq[main]
+            lead_x = vect[pi_, 0] * inv_len[pi_]
+            lead_y = vect[pi_, 1] * inv_len[pi_]
+            if main == 0:
+                base_a = lead_x
+                base_b = lead_y
+            elif main == 1:
+                base_a = lead_y
+                base_b = -lead_x
+            elif main == 2:  # noqa: PLR2004
+                base_a = -lead_x
+                base_b = -lead_y
+            else:
+                base_a = -lead_y
+                base_b = lead_x
+            seq[main] = (seq[main] + 1) % n
+
+            dx = hull[seq[1], 0] - hull[seq[3], 0]
+            dy = hull[seq[1], 1] - hull[seq[3], 1]
+            w = dx * base_a + dy * base_b
+            dx = hull[seq[2], 0] - hull[seq[0], 0]
+            dy = hull[seq[2], 1] - hull[seq[0], 1]
+            hgt = -dx * base_b + dy * base_a
+            area = w * hgt
+            if area <= min_area:
+                min_area = area
+                best_left = seq[3]
+                best_bottom = seq[0]
+                best_a = base_a
+                best_b = base_b
+                best_w = w
+                best_h = hgt
+
+        a1 = best_a
+        b1 = best_b
+        a2 = -best_b
+        b2 = best_a
+        c1 = a1 * hull[best_left, 0] + hull[best_left, 1] * b1
+        c2 = a2 * hull[best_bottom, 0] + hull[best_bottom, 1] * b2
+        idet = np.float32(1) / (a1 * b2 - a2 * b1)
+        px = (c1 * b2 - c2 * b1) * idet
+        py = (a1 * c2 - a2 * c1) * idet
+        v1x = a1 * best_w
+        v1y = b1 * best_w
+        v2x = a2 * best_h
+        v2y = b2 * best_h
+        cx = px + (v1x + v2x) * half
+        cy = py + (v1y + v2y) * half
+        width = np.float32(np.sqrt(np.float64(v1x) * v1x + np.float64(v1y) * v1y))
+        height = np.float32(np.sqrt(np.float64(v2x) * v2x + np.float64(v2y) * v2y))
+        angle = np.float32(np.arctan2(np.float64(v1y), np.float64(v1x)))
+
+    angle = np.float32(np.float64(angle * np.float32(180)) / pi)
+    rad = np.float64(angle) * pi / 180.0
+    b = np.float32(np.cos(rad)) * half
+    a = np.float32(np.sin(rad)) * half
+    corners = np.empty((4, 2), dtype=np.float32)
+    corners[0, 0] = cx - a * height - b * width
+    corners[0, 1] = cy + b * height - a * width
+    corners[1, 0] = cx + a * height - b * width
+    corners[1, 1] = cy - b * height - a * width
+    corners[2, 0] = np.float32(2) * cx - corners[0, 0]
+    corners[2, 1] = np.float32(2) * cy - corners[0, 1]
+    corners[3, 0] = np.float32(2) * cx - corners[1, 0]
+    corners[3, 1] = np.float32(2) * cy - corners[1, 1]
+    return corners, min(width, height)
+
+
+def min_area_rect(points: np.ndarray) -> tuple[np.ndarray, float]:
+    """
+    Minimum-area rotated rectangle of 2D points, like cv2.minAreaRect plus cv2.boxPoints.
+
+    Degenerate input gives a degenerate rectangle (coincident corners, short side 0)
+    and no points gives zeros, as in OpenCV.
+
+    Parameters
+    ----------
+    points : np.ndarray
+        The (N, 2) points, any numeric dtype.
+
+    Returns
+    -------
+    tuple[np.ndarray, float]
+        The 4 corners as (4, 2) float32 in no particular order, and the short side.
+
+    """
+    if len(points) == 0:
+        return np.zeros((4, 2), dtype=np.float32), 0.0
+    if FLAGS.FOUND_CV2:
+        pts = points if points.dtype in (np.int32, np.float32) else points.astype(np.float32)
+        rect = cv2.minAreaRect(np.ascontiguousarray(pts))
+        return cv2.boxPoints(rect), float(min(rect[1]))
+    pts = np.asarray(points, dtype=np.float32)
+    order = np.lexsort((pts[:, 1], pts[:, 0]))
+    corners, short = _min_area_rect(pts[order], order)
+    return corners, float(short)
