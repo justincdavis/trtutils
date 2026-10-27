@@ -122,8 +122,13 @@ Changed
   The plain install is numpy-only and installs on free-threaded CPython (3.14t, 3.15t). Without
   OpenCV, the ``trtutils`` CLI and image-file loading in the calibration batcher raise an
   ``AttributeError`` with an install hint; everything else, OCR included, runs on numpy ops.
-  ``preprocessor="cpu"`` resize is ~100x slower (about 10 ms per 1080p frame) and pose, OBB and
-  segmentation NMS about 10x slower. To keep the old behaviour: ``pip install "trtutils[cv2]"``
+  ``preprocessor="cpu"`` resize is ~100x slower (about 10 ms per 1080p frame) without numba.
+  Pose and segmentation NMS use a numba loop when numba is installed; the plain-numpy fallback
+  is about 10x slower, and OBB NMS stays vectorized numpy. To keep the old behaviour:
+  ``pip install "trtutils[cv2]"``
+* Image kernels register an OpenCV, numba, or numpy implementation at import
+  (``trtutils.register``). The chosen function is stored on the module and called directly.
+  ``nms_indices`` and segmentation ``warp_scale`` compile with numba when OpenCV is absent.
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``

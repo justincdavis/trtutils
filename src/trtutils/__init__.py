@@ -66,6 +66,8 @@ Functions
     Disable just-in-time compilation using Numba.
 :func:`register_jit`
     Decorator for registering functions for potential JIT compilation.
+:func:`register`
+    Register OpenCV, numba, and numpy implementations of a kernel at import.
 :func:`enable_nvtx`
     Enable trtutils NVTX profiling.
 :func:`disable_nvtx`
@@ -116,7 +118,7 @@ if len(not_found_modules) > 0:
 
 from ._config import CONFIG
 from ._flags import FLAGS
-from ._jit import JIT, disable_jit, enable_jit, register_jit
+from ._jit import JIT, disable_jit, enable_jit, register, register_jit
 from ._log import LOG, set_log_level
 from ._nvtx import NVTX, disable_nvtx, enable_nvtx
 
@@ -175,6 +177,7 @@ __all__ = [
     "models",
     "parallel",
     "profile_engine",
+    "register",
     "register_jit",
     "research",
     "run_trtexec",

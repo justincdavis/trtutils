@@ -10,8 +10,7 @@ import operator
 
 import numpy as np
 
-from trtutils._flags import FLAGS
-from trtutils._jit import register_jit
+from trtutils._jit import register, register_jit
 from trtutils.compat._libs import cv2
 
 try:
@@ -123,23 +122,6 @@ def _resize_bilinear(image: np.ndarray, width: int, height: int) -> np.ndarray:
     """
     src = image if image.ndim == _HWC else image[:, :, None]
     in_h, in_w = src.shape[:2]
-    if (
-        FLAGS.FOUND_NUMBA
-        and FLAGS.JIT
-        and width > 0
-        and height > 0
-        and in_h > 0
-        and in_w > 0
-        and src.dtype in (np.uint8, np.float32, np.float64)
-    ):
-        src = np.ascontiguousarray(src)
-        out = np.empty((height, width, src.shape[2]), dtype=src.dtype)
-        if src.dtype == np.uint8:
-            _resize_uint8(src, out)
-        else:
-            _resize_float(src, out)
-        return out[:, :, 0] if out.shape[2] == 1 else out
-
     xi, xf = _coords(width, in_w)
     xf = np.where((xi < 0) | (xi >= in_w - 1), 0, xf).astype(np.float32)
     x0 = np.clip(xi, 0, in_w - 1)
@@ -169,10 +151,37 @@ def _resize_bilinear(image: np.ndarray, width: int, height: int) -> np.ndarray:
     return out[:, :, 0] if out.shape[2] == 1 else out  # cv2 drops a single channel axis
 
 
-def _resize(image: np.ndarray, width: int, height: int) -> np.ndarray:
-    if FLAGS.FOUND_CV2:
-        return cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR)
+def _resize_numba(image: np.ndarray, width: int, height: int) -> np.ndarray:
+    src = image if image.ndim == _HWC else image[:, :, None]
+    in_h, in_w = src.shape[:2]
+    if (
+        width > 0
+        and height > 0
+        and in_h > 0
+        and in_w > 0
+        and src.dtype in (np.uint8, np.float32, np.float64)
+    ):
+        src = np.ascontiguousarray(src)
+        out = np.empty((height, width, src.shape[2]), dtype=src.dtype)
+        if src.dtype == np.uint8:
+            _resize_uint8.jitted(src, out)
+        else:
+            _resize_float.jitted(src, out)
+        return out[:, :, 0] if out.shape[2] == 1 else out
     return _resize_bilinear(image, width, height)
+
+
+def _resize_cv2(image: np.ndarray, width: int, height: int) -> np.ndarray:
+    return cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR)
+
+
+_resize = register(
+    globals(),
+    "_resize",
+    cv2=_resize_cv2,
+    numba=_resize_numba,
+    numpy=_resize_bilinear,
+)
 
 
 def resize_linear(
@@ -422,21 +431,37 @@ def nms(
     """
     # array kernel when JIT is on; a list of tuples is slower to hand to numba than this loop
     ordered = sorted(bboxes, key=operator.itemgetter(1), reverse=True)
-    if FLAGS.FOUND_NUMBA and FLAGS.JIT and len(ordered) > 1:
-        n = len(ordered)
-        x1 = np.empty(n, dtype=np.int64)
-        y1 = np.empty(n, dtype=np.int64)
-        x2 = np.empty(n, dtype=np.int64)
-        y2 = np.empty(n, dtype=np.int64)
-        cls = np.empty(n, dtype=np.int64)
-        for i, ((xa, ya, xb, yb), _, kind) in enumerate(ordered):
-            x1[i] = xa
-            y1[i] = ya
-            x2[i] = xb
-            y2[i] = yb
-            cls[i] = kind
-        keep = _nms_suppress(x1, y1, x2, y2, cls, iou_threshold, agnostic is True)
-        return [box for box, kept in zip(ordered, keep) if kept]
+    return _nms_run(ordered, iou_threshold, agnostic is True)
+
+
+def _nms_numba(
+    ordered: list[tuple[tuple[int, int, int, int], float, int]],
+    iou_threshold: float,
+    agnostic: bool,  # noqa: FBT001
+) -> list[tuple[tuple[int, int, int, int], float, int]]:
+    if len(ordered) <= 1:
+        return ordered
+    n = len(ordered)
+    x1 = np.empty(n, dtype=np.int64)
+    y1 = np.empty(n, dtype=np.int64)
+    x2 = np.empty(n, dtype=np.int64)
+    y2 = np.empty(n, dtype=np.int64)
+    cls = np.empty(n, dtype=np.int64)
+    for i, ((xa, ya, xb, yb), _, kind) in enumerate(ordered):
+        x1[i] = xa
+        y1[i] = ya
+        x2[i] = xb
+        y2[i] = yb
+        cls[i] = kind
+    keep = _nms_suppress.jitted(x1, y1, x2, y2, cls, iou_threshold, agnostic)
+    return [box for box, kept in zip(ordered, keep) if kept]
+
+
+def _nms_numpy(
+    ordered: list[tuple[tuple[int, int, int, int], float, int]],
+    iou_threshold: float,
+    agnostic: bool,  # noqa: FBT001
+) -> list[tuple[tuple[int, int, int, int], float, int]]:
     keep = [True] * len(ordered)
     for i, ((x1a, y1a, x2a, y2a), _, cls_a) in enumerate(ordered):
         if not keep[i]:
@@ -453,6 +478,9 @@ def nms(
     return [box for box, kept in zip(ordered, keep) if kept]
 
 
+_nms_run = register(globals(), "_nms_run", numba=_nms_numba, numpy=_nms_numpy)
+
+
 def _warp_axis(
     n_out: int, n_in: int, scale: float, offset: float
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -462,6 +490,39 @@ def _warp_axis(
     frac = (pos - idx).astype(np.float32)
     idx = idx.astype(np.intp)
     return np.clip(idx, 0, n_in - 1), np.clip(idx + 1, 0, n_in - 1), frac
+
+
+@register_jit(parallel=True)
+def _warp_bilinear(
+    src: np.ndarray,
+    out: np.ndarray,
+    scale_x: float,
+    scale_y: float,
+    offset_x: float,
+    offset_y: float,
+) -> None:
+    """Per-pixel form of _warp_axis plus the separable float32 blend."""
+    out_h, out_w = out.shape
+    in_h, in_w = src.shape
+    for y in prange(out_h):
+        posy = np.float64(y) * scale_y + offset_y
+        iy = int(np.floor(posy))
+        fy = np.float32(posy - np.float64(iy))
+        y0 = iy if 0 <= iy <= in_h - 1 else (0 if iy < 0 else in_h - 1)
+        y1i = iy + 1
+        y1 = y1i if 0 <= y1i <= in_h - 1 else (0 if y1i < 0 else in_h - 1)
+        for x in range(out_w):
+            posx = np.float64(x) * scale_x + offset_x
+            ix = int(np.floor(posx))
+            fx = np.float32(posx - np.float64(ix))
+            x0 = ix if 0 <= ix <= in_w - 1 else (0 if ix < 0 else in_w - 1)
+            x1i = ix + 1
+            x1 = x1i if 0 <= x1i <= in_w - 1 else (0 if x1i < 0 else in_w - 1)
+            wy0 = np.float32(1) - fy
+            wx0 = np.float32(1) - fx
+            top = src[y0, x0] * wx0 + src[y0, x1] * fx
+            bot = src[y1, x0] * wx0 + src[y1, x1] * fx
+            out[y, x] = top * wy0 + bot * fy
 
 
 def warp_scale(
@@ -494,21 +555,67 @@ def warp_scale(
         The float32 output of shape (height, width).
 
     """
-    width, height = size
-    if FLAGS.FOUND_CV2:
-        affine = np.array(
-            [[scale[0], 0.0, offset[0]], [0.0, scale[1], offset[1]]],
-            dtype=np.float32,
-        )
-        return cv2.warpAffine(
-            src,
-            affine,
-            (width, height),
-            flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
-            borderMode=cv2.BORDER_REPLICATE,
-        )
+    return _warp_scale(src, scale, offset, size)
 
+
+def _warp_scale_cv2(
+    src: np.ndarray,
+    scale: tuple[float, float],
+    offset: tuple[float, float],
+    size: tuple[int, int],
+) -> np.ndarray:
+    width, height = size
+    affine = np.array(
+        [[scale[0], 0.0, offset[0]], [0.0, scale[1], offset[1]]],
+        dtype=np.float32,
+    )
+    return cv2.warpAffine(
+        src,
+        affine,
+        (width, height),
+        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        borderMode=cv2.BORDER_REPLICATE,
+    )
+
+
+def _warp_scale_numba(
+    src: np.ndarray,
+    scale: tuple[float, float],
+    offset: tuple[float, float],
+    size: tuple[int, int],
+) -> np.ndarray:
+    width, height = size
+    out = np.empty((height, width), dtype=np.float32)
+    if height == 0 or width == 0 or src.size == 0:
+        return out
+    _warp_bilinear.jitted(
+        np.ascontiguousarray(src),
+        out,
+        float(scale[0]),
+        float(scale[1]),
+        float(offset[0]),
+        float(offset[1]),
+    )
+    return out
+
+
+def _warp_scale_numpy(
+    src: np.ndarray,
+    scale: tuple[float, float],
+    offset: tuple[float, float],
+    size: tuple[int, int],
+) -> np.ndarray:
+    width, height = size
     y0, y1, fy = _warp_axis(height, src.shape[0], scale[1], offset[1])
     x0, x1, fx = _warp_axis(width, src.shape[1], scale[0], offset[0])
     rows = src[y0] * (1 - fy)[:, None] + src[y1] * fy[:, None]
     return rows[:, x0] * (1 - fx) + rows[:, x1] * fx
+
+
+_warp_scale = register(
+    globals(),
+    "_warp_scale",
+    cv2=_warp_scale_cv2,
+    numba=_warp_scale_numba,
+    numpy=_warp_scale_numpy,
+)

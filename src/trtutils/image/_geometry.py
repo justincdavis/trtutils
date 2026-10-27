@@ -12,12 +12,15 @@
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils._flags import FLAGS
-from trtutils._jit import register_jit
+from trtutils._jit import register, register_jit
 from trtutils.compat._libs import cv2
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # 8 neighbours in clockwise order (image coords, y down), starting east
 _DX = np.array([1, 1, 0, -1, -1, -1, 0, 1], dtype=np.int64)
@@ -172,11 +175,18 @@ def find_contours(binary: np.ndarray) -> list[np.ndarray]:
         One (N, 2) int32 array of (x, y) points per contour, in OpenCV's order.
 
     """
-    if FLAGS.FOUND_CV2:
-        mask = (binary != 0).astype(np.uint8) * 255
-        found = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
-        return [c.reshape(-1, 2) for c in found]
-    return _find_contours_numpy(binary)
+    return _find_contours(binary)
+
+
+def _find_contours_cv2(binary: np.ndarray) -> list[np.ndarray]:
+    mask = (binary != 0).astype(np.uint8) * 255
+    found = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
+    return [c.reshape(-1, 2) for c in found]
+
+
+_find_contours = register(
+    globals(), "_find_contours", cv2=_find_contours_cv2, numpy=_find_contours_numpy
+)
 
 
 @register_jit()
@@ -412,14 +422,36 @@ def min_area_rect(points: np.ndarray) -> tuple[np.ndarray, float]:
     """
     if len(points) == 0:
         return np.zeros((4, 2), dtype=np.float32), 0.0
-    if FLAGS.FOUND_CV2:
-        pts = points if points.dtype in (np.int32, np.float32) else points.astype(np.float32)
-        rect = cv2.minAreaRect(np.ascontiguousarray(pts))
-        return cv2.boxPoints(rect), float(min(rect[1]))
+    return _min_area(points)
+
+
+def _min_area_points(
+    points: np.ndarray,
+    kernel: Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.float32]],
+) -> tuple[np.ndarray, float]:
     pts = np.asarray(points, dtype=np.float32)
     order = np.lexsort((pts[:, 1], pts[:, 0]))
-    corners, short = _min_area_rect(pts[order], order)
+    corners, short = kernel(pts[order], order)
     return corners, float(short)
+
+
+def _min_area_cv2(points: np.ndarray) -> tuple[np.ndarray, float]:
+    pts = points if points.dtype in (np.int32, np.float32) else points.astype(np.float32)
+    rect = cv2.minAreaRect(np.ascontiguousarray(pts))
+    return cv2.boxPoints(rect), float(min(rect[1]))
+
+
+def _min_area_numba(points: np.ndarray) -> tuple[np.ndarray, float]:
+    return _min_area_points(points, _min_area_rect.jitted)
+
+
+def _min_area_numpy(points: np.ndarray) -> tuple[np.ndarray, float]:
+    return _min_area_points(points, _min_area_rect.py_func)
+
+
+_min_area = register(
+    globals(), "_min_area", cv2=_min_area_cv2, numba=_min_area_numba, numpy=_min_area_numpy
+)
 
 
 def dilate_2x2(binary: np.ndarray) -> np.ndarray:
@@ -440,12 +472,21 @@ def dilate_2x2(binary: np.ndarray) -> np.ndarray:
         The dilated (H, W) uint8 map.
 
     """
-    if FLAGS.FOUND_CV2:
-        return cv2.dilate(binary, np.ones((2, 2), dtype=np.uint8))
+    return _dilate(binary)
+
+
+def _dilate_cv2(binary: np.ndarray) -> np.ndarray:
+    return cv2.dilate(binary, np.ones((2, 2), dtype=np.uint8))
+
+
+def _dilate_numpy(binary: np.ndarray) -> np.ndarray:
     out = binary.copy()
     np.maximum(out[:, 1:], binary[:, :-1], out=out[:, 1:])
     np.maximum(out[1:, :], out[:-1, :], out=out[1:, :])
     return out
+
+
+_dilate = register(globals(), "_dilate", cv2=_dilate_cv2, numpy=_dilate_numpy)
 
 
 @register_jit()
@@ -626,15 +667,34 @@ def polygon_mean(pred: np.ndarray, box: np.ndarray) -> float:
     ymax = min(max(math.ceil(max(ys)), 0), h - 1)
     window = pred[ymin : ymax + 1, xmin : xmax + 1]
     poly = (box - (xmin, ymin)).astype(np.int32)
-    if FLAGS.FOUND_CV2:
-        mask = np.zeros(window.shape, dtype=np.uint8)
-        cv2.fillPoly(mask, [poly], (1,))
-        return cv2.mean(window, mask)[0]
+    return _polygon_mean(window, poly)
+
+
+def _polygon_mean_cv2(window: np.ndarray, poly: np.ndarray) -> float:
     mask = np.zeros(window.shape, dtype=np.uint8)
-    _fill_poly(mask, np.ascontiguousarray(poly, dtype=np.int64))
-    if FLAGS.FOUND_NUMBA and FLAGS.JIT:
-        return _masked_mean(window, mask)
+    cv2.fillPoly(mask, [poly], (1,))
+    return cv2.mean(window, mask)[0]
+
+
+def _polygon_mean_numba(window: np.ndarray, poly: np.ndarray) -> float:
+    mask = np.zeros(window.shape, dtype=np.uint8)
+    _fill_poly.jitted(mask, np.ascontiguousarray(poly, dtype=np.int64))
+    return _masked_mean.jitted(window, mask)
+
+
+def _polygon_mean_numpy(window: np.ndarray, poly: np.ndarray) -> float:
+    mask = np.zeros(window.shape, dtype=np.uint8)
+    _fill_poly.py_func(mask, np.ascontiguousarray(poly, dtype=np.int64))
     count = int(mask.sum())
     if count == 0:
         return 0.0
     return float(np.sum(window, where=mask.astype(bool), dtype=np.float64) / count)
+
+
+_polygon_mean = register(
+    globals(),
+    "_polygon_mean",
+    cv2=_polygon_mean_cv2,
+    numba=_polygon_mean_numba,
+    numpy=_polygon_mean_numpy,
+)

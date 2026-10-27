@@ -20,6 +20,7 @@ import cv2
 from tqdm import tqdm
 
 import trtutils
+from trtutils.image._ops import resize_linear
 
 from .config import (
     DATA_DIR,
@@ -492,9 +493,11 @@ def benchmark_optimizations(
     ]
     calls: dict[str, list[list]] = {
         "single": [[image]],
-        "homogeneous8": [[cv2.resize(image, (1280, 720))] * 8],
-        "heterogeneous8": [[cv2.resize(image, size) for size in hetero_sizes]],
-        "resolution-switch": [[cv2.resize(image, size)] for size in [(1280, 720), (1920, 1080)]],
+        "homogeneous8": [[resize_linear(image, (1280, 720))[0]] * 8],
+        "heterogeneous8": [[resize_linear(image, size)[0] for size in hetero_sizes]],
+        "resolution-switch": [
+            [resize_linear(image, size)[0]] for size in [(1280, 720), (1920, 1080)]
+        ],
     }
 
     # build each engine once; a failed build skips its configs instead of retrying
