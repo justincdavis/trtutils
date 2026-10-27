@@ -419,3 +419,211 @@ def test_rect_no_points(jit, no_cv2) -> None:
     corners, short = _geometry.min_area_rect(np.zeros((0, 2), dtype=np.int32))
     np.testing.assert_array_equal(corners, np.zeros((4, 2), dtype=np.float32))
     assert short == 0.0
+
+
+def _cv2_dilate(binary: np.ndarray) -> np.ndarray:
+    return cv2.dilate(binary, np.ones((2, 2), dtype=np.uint8))
+
+
+@_needs_cv2
+@pytest.mark.parametrize(
+    "shape",
+    [
+        pytest.param((1, 1), id="1x1"),
+        pytest.param((1, 9), id="1xN"),
+        pytest.param((9, 1), id="Nx1"),
+        pytest.param((2, 2), id="2x2"),
+        pytest.param((3, 7), id="3x7"),
+        pytest.param((64, 80), id="64x80"),
+        pytest.param((736, 960), id="736x960"),
+    ],
+)
+@pytest.mark.parametrize("density", [0.0, 0.02, 0.2, 0.5, 0.9, 1.0])
+@pytest.mark.parametrize("seed", [0, 1])
+def test_dilate_matches_cv2(shape, density, seed, no_cv2) -> None:
+    """Random maps of many shapes and densities, anchor and borders match cv2."""
+    binary = _noise(shape, density, seed)
+    np.testing.assert_array_equal(_geometry.dilate_2x2(binary), _cv2_dilate(binary))
+
+
+@_needs_cv2
+@pytest.mark.parametrize("y", [0, 3, 7])
+@pytest.mark.parametrize("x", [0, 4, 8])
+def test_dilate_single_pixel_matches_cv2(y, x, no_cv2) -> None:
+    """One lit pixel, including corners and edges, grows down and right only."""
+    binary = np.zeros((8, 9), dtype=np.uint8)
+    binary[min(y, 7), x] = 1
+    np.testing.assert_array_equal(_geometry.dilate_2x2(binary), _cv2_dilate(binary))
+
+
+@_needs_cv2
+def test_dilate_dispatch(monkeypatch) -> None:
+    """The cv2 path gives the same answer as the numpy path."""
+    binary = _noise((20, 30), 0.1, 3)
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", True)
+    with_cv2 = _geometry.dilate_2x2(binary)
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
+    np.testing.assert_array_equal(_geometry.dilate_2x2(binary), with_cv2)
+
+
+def test_dilate_literal(no_cv2) -> None:
+    """A pixel spreads to the pixel below, right and diagonal; the input is untouched."""
+    binary = np.zeros((4, 4), dtype=np.uint8)
+    binary[1, 1] = 1
+    binary[3, 3] = 1
+    before = binary.copy()
+    want = np.array(
+        [[0, 0, 0, 0], [0, 1, 1, 0], [0, 1, 1, 0], [0, 0, 0, 1]],
+        dtype=np.uint8,
+    )
+    np.testing.assert_array_equal(_geometry.dilate_2x2(binary), want)
+    np.testing.assert_array_equal(binary, before)
+
+
+def _random_box(kind: int, seed: int) -> tuple[tuple[int, int], np.ndarray]:
+    """A (shape, int32 polygon) for the fillPoly matrix."""
+    rng = np.random.default_rng(seed)
+    h, w = int(rng.integers(1, 60)), int(rng.integers(1, 80))
+    if kind == 0:
+        centre = rng.random(2) * (w, h)
+        angle = rng.random() * 6.3
+        size = rng.random(2) * (w, h)
+        corners = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * size / 2
+    elif kind == 1:
+        centre = rng.random(2) * (w, h)
+        angle = rng.random() * 6.3
+        corners = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * (
+            rng.random() * max(w, h) / 2,
+            rng.random() * 0.75,
+        )
+    elif kind == 2:
+        pts = rng.random((4, 2)) * 3 + rng.random(2) * (w, h)
+        return (h, w), pts.astype(np.int32)
+    elif kind == 3:
+        pts = (rng.random((4, 2)) - 0.3) * (w * 1.6, h * 1.6)
+        return (h, w), pts.astype(np.int32)
+    elif kind == 4:
+        base = rng.random((2, 2)) * (w, h)
+        return (h, w), base[rng.integers(0, 2, 4)].astype(np.int32)
+    else:
+        pts = rng.integers(-5, max(w, h) + 5, (4, 2))
+        return (h, w), pts.astype(np.int32)
+    rot = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+    return (h, w), (corners @ rot.T + centre).astype(np.int32)
+
+
+_KINDS = [
+    pytest.param(0, id="rotated-rect"),
+    pytest.param(1, id="sliver"),
+    pytest.param(2, id="tiny"),
+    pytest.param(3, id="partly-outside"),
+    pytest.param(4, id="degenerate"),
+    pytest.param(5, id="random-quad"),
+]
+
+
+@_needs_cv2
+@pytest.mark.parametrize("jit", _JIT, indirect=True)
+@pytest.mark.parametrize("kind", _KINDS)
+@pytest.mark.parametrize("seed", range(60))
+def test_fill_matches_cv2(kind, seed, jit) -> None:
+    """Masks are bit identical to cv2.fillPoly, jit and python."""
+    shape, pts = _random_box(kind, seed)
+    want = np.zeros(shape, dtype=np.uint8)
+    cv2.fillPoly(want, [pts], (1,))
+    np.testing.assert_array_equal(_geometry._fill_convex_poly(shape, pts), want)
+
+
+@_needs_cv2
+@_needs_numba
+@pytest.mark.parametrize("jit", [True], indirect=True)
+@pytest.mark.parametrize("kind", _KINDS)
+@pytest.mark.parametrize("block", range(10))
+def test_fill_matches_cv2_many(kind, block, jit) -> None:
+    """Hundreds more masks per kind with jit on."""
+    for seed in range(1000 + block * 100, 1100 + block * 100):
+        shape, pts = _random_box(kind, seed)
+        want = np.zeros(shape, dtype=np.uint8)
+        cv2.fillPoly(want, [pts], (1,))
+        np.testing.assert_array_equal(_geometry._fill_convex_poly(shape, pts), want)
+
+
+@_needs_cv2
+@pytest.mark.parametrize("jit", _JIT, indirect=True)
+@pytest.mark.parametrize("kind", _KINDS)
+@pytest.mark.parametrize("seed", range(30))
+def test_polygon_mean_matches_cv2(kind, seed, jit, monkeypatch) -> None:
+    """Float boxes over random maps score like cv2 (the numpy path vs the cv2 path)."""
+    rng = np.random.default_rng(seed + 500 * kind)
+    shape, pts = _random_box(kind, seed)
+    pred = rng.random(shape).astype(np.float32)
+    box = pts.astype(np.float32) + rng.random((4, 2)).astype(np.float32)
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", True)
+    want = _geometry.polygon_mean(pred, box)
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
+    got = _geometry.polygon_mean(pred, box)
+    assert got == pytest.approx(want, rel=1e-12, abs=0.0)
+
+
+@pytest.mark.parametrize("jit", _JIT, indirect=True)
+def test_polygon_mean_literal_rect(jit, no_cv2) -> None:
+    """An axis aligned rectangle includes its boundary pixels."""
+    mask = _geometry._fill_convex_poly((6, 8), np.array([[1, 1], [5, 1], [5, 3], [1, 3]]))
+    want = np.zeros((6, 8), dtype=np.uint8)
+    want[1:4, 1:6] = 1
+    np.testing.assert_array_equal(mask, want)
+
+
+@pytest.mark.parametrize("jit", _JIT, indirect=True)
+def test_polygon_mean_literal_diamond(jit, no_cv2) -> None:
+    """A 45 degree diamond fills row spans between its edges."""
+    mask = _geometry._fill_convex_poly((5, 5), np.array([[2, 0], [4, 2], [2, 4], [0, 2]]))
+    want = np.array(
+        [
+            [0, 0, 1, 0, 0],
+            [0, 1, 1, 1, 0],
+            [1, 1, 1, 1, 1],
+            [0, 1, 1, 1, 0],
+            [0, 0, 1, 0, 0],
+        ],
+        dtype=np.uint8,
+    )
+    np.testing.assert_array_equal(mask, want)
+
+
+@pytest.mark.parametrize("jit", _JIT, indirect=True)
+def test_polygon_mean_literal_value(jit, no_cv2) -> None:
+    """The mean is over the filled pixels only; empty overlap scores 0."""
+    pred = np.arange(48, dtype=np.float32).reshape(6, 8)
+    box = np.array([[1.9, 1.2], [5.5, 1.2], [5.5, 3.8], [1.9, 3.8]], dtype=np.float32)
+    # window x 1..6, y 1..4; polygon truncates to x 1..5, y 1..3
+    want = float(pred[1:4, 1:6].mean(dtype=np.float64))
+    assert _geometry.polygon_mean(pred, box) == pytest.approx(want, rel=1e-12)
+    outside = np.array([[-9, -9], [-5, -9], [-5, -5], [-9, -5]], dtype=np.float32)
+    assert _geometry.polygon_mean(pred, outside) == 0.0
+
+
+@_needs_cv2
+def test_pad_matches_copy_make_border() -> None:
+    """np.pad on rows equals cv2.copyMakeBorder with a constant black border."""
+    rng = np.random.default_rng(0)
+    for pad in (0, 1, 3, 17):
+        for shape in ((1, 1, 3), (5, 9, 3), (48, 320, 3)):
+            img = rng.integers(0, 256, shape).astype(np.uint8)
+            want = cv2.copyMakeBorder(img, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+            np.testing.assert_array_equal(np.pad(img, ((pad, pad), (0, 0), (0, 0))), want)
+
+
+@_needs_cv2
+@pytest.mark.parametrize("shape", [(1, 1, 3), (7, 5, 3), (48, 320, 3)])
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_lut_matches_split_lut(shape, seed) -> None:
+    """Fancy indexing a (256, 3) table equals cv2.split + cv2.LUT per channel."""
+    rng = np.random.default_rng(seed)
+    img = rng.integers(0, 256, shape).astype(np.uint8)
+    lut = rng.random((256, 3)).astype(np.float32)
+    want = np.empty((3, *shape[:2]), dtype=np.float32)
+    for c, plane in enumerate(cv2.split(img)):
+        cv2.LUT(plane, lut[:, c], dst=want[c])
+    got = lut[img, np.arange(3)].transpose(2, 0, 1)
+    np.testing.assert_array_equal(got, want)

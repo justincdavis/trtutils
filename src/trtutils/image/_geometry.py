@@ -5,7 +5,9 @@
 # min_area_rect is a Python/numba port of OpenCV's rotating-calipers minAreaRect and boxPoints
 # (Copyright (C) OpenCV contributors, Apache License 2.0, https://www.apache.org/licenses/LICENSE-2.0),
 # translated from C++ and adapted to numba; the float32 arithmetic is kept to match its results.
-"""Geometry ops (find_contours, min_area_rect) with a cv2 fast path and a numba/numpy fallback."""
+# _fill_poly is a port of the fixed point scanline fill and Bresenham line of OpenCV
+# fillPoly (drawing.cpp, Apache License 2.0), kept integer exact to match its pixels.
+"""Geometry ops (find_contours, min_area_rect, ...) with a cv2 fast path and a numpy fallback."""
 
 from __future__ import annotations
 
@@ -418,3 +420,207 @@ def min_area_rect(points: np.ndarray) -> tuple[np.ndarray, float]:
     order = np.lexsort((pts[:, 1], pts[:, 0]))
     corners, short = _min_area_rect(pts[order], order)
     return corners, float(short)
+
+
+def dilate_2x2(binary: np.ndarray) -> np.ndarray:
+    """
+    Dilate a 2D uint8 map with a 2x2 kernel, like cv2.dilate with np.ones((2, 2)).
+
+    Each output pixel is the max over the 2x2 window ending at it (anchor (1, 1)),
+    and pixels outside the map are ignored.
+
+    Parameters
+    ----------
+    binary : np.ndarray
+        The (H, W) uint8 map.
+
+    Returns
+    -------
+    np.ndarray
+        The dilated (H, W) uint8 map.
+
+    """
+    if FLAGS.FOUND_CV2:
+        return cv2.dilate(binary, np.ones((2, 2), dtype=np.uint8))
+    out = binary.copy()
+    np.maximum(out[:, 1:], binary[:, :-1], out=out[:, 1:])
+    np.maximum(out[1:, :], out[:-1, :], out=out[1:, :])
+    return out
+
+
+@register_jit()
+def _fill_poly(mask: np.ndarray, pts: np.ndarray) -> None:  # noqa: C901, PLR0912, PLR0915
+    """Fill an int polygon like cv2.fillPoly with LINE_8, edges included."""
+    height, width = mask.shape
+    n = pts.shape[0]
+    right = width - 1
+    bottom = height - 1
+    ey0 = np.empty(n, dtype=np.int64)
+    ey1 = np.empty(n, dtype=np.int64)
+    ex = np.empty(n, dtype=np.int64)
+    edx = np.empty(n, dtype=np.int64)
+    n_edges = 0
+    for i in range(n):
+        ax = int(pts[i - 1, 0])
+        ay = int(pts[i - 1, 1])
+        bx = int(pts[i, 0])
+        by = int(pts[i, 1])
+
+        # clip like cv2.clipLine, the edge is drawn clipped and filled from the clipped line
+        x1, y1, x2, y2 = ax, ay, bx, by
+        c1 = (x1 < 0) + (x1 > right) * 2 + (y1 < 0) * 4 + (y1 > bottom) * 8
+        c2 = (x2 < 0) + (x2 > right) * 2 + (y2 < 0) * 4 + (y2 > bottom) * 8
+        if (c1 & c2) == 0 and (c1 | c2) != 0:
+            if c1 & 12:
+                a = 0 if c1 < 8 else bottom  # noqa: PLR2004
+                x1 += int(float(a - y1) * (x2 - x1) / (y2 - y1))
+                y1 = a
+                c1 = (x1 < 0) + (x1 > right) * 2
+            if c2 & 12:
+                a = 0 if c2 < 8 else bottom  # noqa: PLR2004
+                x2 += int(float(a - y2) * (x2 - x1) / (y2 - y1))
+                y2 = a
+                c2 = (x2 < 0) + (x2 > right) * 2
+            if (c1 & c2) == 0 and (c1 | c2) != 0:
+                if c1:
+                    a = 0 if c1 == 1 else right
+                    y1 += int(float(a - x1) * (y2 - y1) / (x2 - x1))
+                    x1 = a
+                    c1 = 0
+                if c2:
+                    a = 0 if c2 == 1 else right
+                    y2 += int(float(a - x2) * (y2 - y1) / (x2 - x1))
+                    x2 = a
+                    c2 = 0
+        if (c1 | c2) == 0:
+            # bresenham from the left end, err < 0 steps the minor axis too
+            if x2 < x1:
+                lx, rx, ly, ry = x2, x1, y2, y1
+            else:
+                lx, rx, ly, ry = x1, x2, y1, y2
+            ddx = rx - lx
+            ddy = abs(ry - ly)
+            ystep = 1 if ry > ly else -1
+            if ddy > ddx:
+                major = ddy
+                minor = ddx
+            else:
+                major = ddx
+                minor = ddy
+            err = major - 2 * minor
+            px = lx
+            py = ly
+            for _ in range(major + 1):
+                mask[py, px] = 1
+                if ddy > ddx:
+                    py += ystep
+                    if err < 0:
+                        px += 1
+                        err += 2 * major
+                else:
+                    px += 1
+                    if err < 0:
+                        py += ystep
+                        err += 2 * major
+                err -= 2 * minor
+
+        # scanline edge with the original rows and x extrapolated from the clipped line
+        if ay == by:
+            continue
+        cy0 = ay
+        cy1 = by
+        if y1 != y2:
+            cy0 = y1
+            cy1 = y2
+        num = (x2 - x1) << 16
+        den = cy1 - cy0
+        q = abs(num) // abs(den)
+        step = q if (num < 0) == (den < 0) else -q
+        if ay < by:
+            ey0[n_edges] = ay
+            ey1[n_edges] = by
+            ex[n_edges] = (x1 << 16) + (ay - cy0) * step
+        else:
+            ey0[n_edges] = by
+            ey1[n_edges] = ay
+            ex[n_edges] = (x2 << 16) + (by - cy1) * step
+        edx[n_edges] = step
+        n_edges += 1
+
+    if n_edges < 2:  # noqa: PLR2004
+        return
+    y_min = ey0[:n_edges].min()
+    y_max = ey1[:n_edges].max()
+    x_end = ex[:n_edges] + (ey1[:n_edges] - ey0[:n_edges]) * edx[:n_edges]
+    x_lo = min(ex[:n_edges].min(), x_end.min())
+    x_hi = max(ex[:n_edges].max(), x_end.max())
+    if y_max < 0 or y_min >= height or x_hi < 0 or x_lo >= (width << 16):
+        return
+    y_max = min(y_max, height)
+    xs = np.empty(n_edges, dtype=np.int64)
+    for y in range(max(y_min, 0), y_max):
+        m = 0
+        for e in range(n_edges):
+            if ey0[e] <= y < ey1[e]:
+                xs[m] = ex[e] + edx[e] * (y - ey0[e])
+                m += 1
+        for i in range(1, m):
+            v = xs[i]
+            j = i - 1
+            while j >= 0 and xs[j] > v:
+                xs[j + 1] = xs[j]
+                j -= 1
+            xs[j + 1] = v
+        for k in range(0, m - 1, 2):
+            x1 = (xs[k] + 65535) >> 16
+            x2 = xs[k + 1] >> 16
+            if x1 < width and x2 >= 0:
+                x1 = max(x1, 0)
+                x2 = min(x2, width - 1)
+                for x in range(x1, x2 + 1):
+                    mask[y, x] = 1
+
+
+def _fill_convex_poly(shape: tuple[int, int], pts: np.ndarray) -> np.ndarray:
+    """Mask of an int polygon, bit identical to cv2.fillPoly(mask, [pts], (1,))."""
+    mask = np.zeros(shape, dtype=np.uint8)
+    _fill_poly(mask, np.ascontiguousarray(pts, dtype=np.int64))
+    return mask
+
+
+def polygon_mean(pred: np.ndarray, box: np.ndarray) -> float:
+    """
+    Mean of a probability map inside a polygon, as DB text detection scores a box.
+
+    The polygon's bounding window is clipped to the map, the polygon is truncated to
+    integers and filled like cv2.fillPoly, and the mean is taken over the filled pixels
+    (0.0 when none).
+
+    Parameters
+    ----------
+    pred : np.ndarray
+        The (H, W) float32 probability map.
+    box : np.ndarray
+        The (4, 2) float polygon in (x, y) pixels.
+
+    Returns
+    -------
+    float
+        The mean of ``pred`` over the polygon.
+
+    """
+    h, w = pred.shape
+    xmin = int(np.clip(np.floor(box[:, 0].min()), 0, w - 1))
+    xmax = int(np.clip(np.ceil(box[:, 0].max()), 0, w - 1))
+    ymin = int(np.clip(np.floor(box[:, 1].min()), 0, h - 1))
+    ymax = int(np.clip(np.ceil(box[:, 1].max()), 0, h - 1))
+    window = pred[ymin : ymax + 1, xmin : xmax + 1]
+    poly = (box - (xmin, ymin)).astype(np.int32)
+    if FLAGS.FOUND_CV2:
+        mask = np.zeros(window.shape, dtype=np.uint8)
+        cv2.fillPoly(mask, [poly], (1,))
+        return cv2.mean(window, mask)[0]
+    mask = _fill_convex_poly(window.shape, poly).astype(bool)
+    if not mask.any():
+        return 0.0
+    return float(window[mask].mean(dtype=np.float64))
