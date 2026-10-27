@@ -136,10 +136,13 @@ def test_resize_bilinear_random_shapes(seed) -> None:
 @pytest.mark.parametrize("use_cv2", _BACKENDS, indirect=True)
 @pytest.mark.parametrize(("src", "dst"), _RESIZE_CASES)
 def test_resize_linear_dispatch(use_cv2, src, dst) -> None:
-    """resize_linear matches cv2.resize on both backends."""
+    """resize_linear matches cv2.resize on both backends, with (x, y) ratios and no padding."""
     image = _random_image((*src, 3), np.uint8)
-    actual, _ = _ops.resize_linear(image, dst)
+    actual, ratios, padding = _ops.resize_linear(image, dst)
     _assert_close_u8(actual, cv2.resize(image, dst, interpolation=cv2.INTER_LINEAR))
+    # same (x, y) contract as resize_letterbox and the gpu preprocessors
+    assert ratios == (dst[0] / src[1], dst[1] / src[0])
+    assert padding == (0.0, 0.0)
 
 
 @_needs_cv2
@@ -171,11 +174,11 @@ def test_resize_linear_dispatch(use_cv2, src, dst) -> None:
         pytest.param((1, 2, 3), id="custom-color"),
     ],
 )
-def test_letterbox_matches_cv2(use_cv2, src, new_shape, color) -> None:
+def test_resize_letterbox_matches_cv2(use_cv2, src, new_shape, color) -> None:
     """Letterbox returns the cv2 reference's ratios, padding and pad color; image within the resize bar."""
     image = _random_image((*src, 3), np.uint8)
     expected, e_ratio, e_pad = _cv2_letterbox(image, new_shape, color)
-    actual, ratio, pad = _ops.letterbox(image, new_shape=new_shape, color=color)
+    actual, ratio, pad = _ops.resize_letterbox(image, new_shape=new_shape, color=color)
     assert ratio == e_ratio
     assert pad == e_pad
     _assert_close_u8(actual, expected)
@@ -184,19 +187,19 @@ def test_letterbox_matches_cv2(use_cv2, src, new_shape, color) -> None:
     assert (actual[border] == np.array(color, np.uint8)).all()
 
 
-def test_letterbox_identity_shape_no_resize() -> None:
+def test_resize_letterbox_identity_shape_no_resize() -> None:
     """An image already at the target shape is returned unchanged."""
     image = _random_image((64, 64, 3), np.uint8)
-    actual, ratio, pad = _ops.letterbox(image, new_shape=(64, 64))
+    actual, ratio, pad = _ops.resize_letterbox(image, new_shape=(64, 64))
     np.testing.assert_array_equal(actual, image)
     assert ratio == (1.0, 1.0)
     assert pad == (0.0, 0.0)
 
 
-def test_letterbox_2d() -> None:
+def test_resize_letterbox_2d() -> None:
     """A 2D image pads with the first color channel."""
     image = _random_image((20, 40), np.uint8)
-    actual, _, _ = _ops.letterbox(image, new_shape=(40, 40), color=(9, 8, 7))
+    actual, _, _ = _ops.resize_letterbox(image, new_shape=(40, 40), color=(9, 8, 7))
     assert actual.shape == (40, 40)
     assert (actual[:10] == 9).all()
     np.testing.assert_array_equal(actual[10:30], image)

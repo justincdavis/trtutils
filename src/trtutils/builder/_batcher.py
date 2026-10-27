@@ -17,7 +17,7 @@ import numpy as np
 
 from trtutils._log import LOG
 from trtutils.compat._libs import cv2
-from trtutils.image._ops import letterbox, rescale, resize_linear
+from trtutils.image._ops import rescale, resize_letterbox, resize_linear
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -280,10 +280,8 @@ class ImageBatcher(AbstractBatcher):
             raise FileNotFoundError(err_msg)
 
         # resize and rescale the image
-        if self._resize_method == "letterbox":
-            resized_img, _, _ = letterbox(img, (self._width, self._height))
-        else:
-            resized_img, _ = resize_linear(img, (self._width, self._height))
+        resize = resize_letterbox if self._resize_method == "letterbox" else resize_linear
+        resized_img, _, _ = resize(img, (self._width, self._height))
         rescaled_img = rescale(resized_img, self._input_scale)
 
         # run the transpose operations and make contiguous

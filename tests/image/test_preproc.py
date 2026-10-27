@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from trtutils import Buffer, MemoryLocation
-from trtutils.image._ops import letterbox, rescale, resize_linear
+from trtutils.image._ops import rescale, resize_letterbox, resize_linear
 from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 from trtutils.image.preprocessors._process import preprocess
 
@@ -40,10 +40,14 @@ PREPROCS = [
         pytest.param(IMAGENET, 0.1, id="imagenet"),
     ],
 )
-def test_gpu_matches_cpu(images, gpu_cls, resize, norm, tol) -> None:
+# a non-square target is what tells (x, y) ratios apart from swapped ones
+@pytest.mark.parametrize(
+    "size", [pytest.param(SIZE, id="square"), pytest.param((640, 384), id="wide")]
+)
+def test_gpu_matches_cpu(images, gpu_cls, resize, norm, tol, size) -> None:
     """GPU preprocessing matches CPU output, ratios, and padding for every test image."""
-    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=resize, **norm)
-    gpu = gpu_cls(SIZE, RANGE, DTYPE, resize=resize, **norm)
+    cpu = CPUPreprocessor(size, RANGE, DTYPE, resize=resize, **norm)
+    gpu = gpu_cls(size, RANGE, DTYPE, resize=resize, **norm)
     for image in images.values():
         expected, ratios, padding = cpu.preprocess([image.array])
         result, gpu_ratios, gpu_padding = gpu.preprocess([image.array])
@@ -267,10 +271,8 @@ def _reference_preprocess(images, input_shape, dtype, input_range, method, mean,
     """Run the previous per-image float64 pipeline, stacked with concatenate."""
     tensors = []
     for image in images:
-        if method == "letterbox":
-            tensor, _, _ = letterbox(image, new_shape=input_shape)
-        else:
-            tensor, _ = resize_linear(image, new_shape=input_shape)
+        resize = resize_letterbox if method == "letterbox" else resize_linear
+        tensor, _, _ = resize(image, new_shape=input_shape)
         tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
         tensor = (tensor / 255.0 - mean) / std if mean is not None else rescale(tensor, input_range)
         tensors.append(np.transpose(tensor[np.newaxis], (0, 3, 1, 2)).astype(dtype))

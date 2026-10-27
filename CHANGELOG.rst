@@ -192,6 +192,9 @@ Changed
 
 Fixed
 ^^^^^
+* ``CPUPreprocessor(resize="linear")`` returned swapped x/y ratios, ``(new_h / w, new_w / h)``,
+  so boxes were rescaled wrongly whenever the model input was not square; it now matches the CUDA
+  and TensorRT preprocessors, ``(new_w / w, new_h / h)``
 * ``RTDETRv3`` returned garbage boxes (coordinates in the thousands, clipped to image corners) on
   images larger than the model input: it is now fed the model input size and a unit scale factor, and
   boxes are unletterboxed like the other detectors

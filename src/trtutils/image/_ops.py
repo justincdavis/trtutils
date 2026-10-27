@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Image ops (resize, letterbox, patch, rescale, nms, warp) with a cv2 fast path and numpy fallback."""
+"""Image ops (resize_linear, resize_letterbox, patch, rescale, nms, warp) with a cv2 fast path and numpy fallback."""
 
 from __future__ import annotations
 
@@ -87,9 +87,9 @@ def _resize(image: np.ndarray, width: int, height: int) -> np.ndarray:
 def resize_linear(
     image: np.ndarray,
     new_shape: tuple[int, int],
-) -> tuple[np.ndarray, tuple[float, float]]:
+) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
     """
-    Resize an image using linear interpolation.
+    Resize an image to the new shape with linear interpolation, ignoring aspect ratio.
 
     Parameters
     ----------
@@ -100,16 +100,17 @@ def resize_linear(
 
     Returns
     -------
-    tuple[np.ndarray, tuple[float, float]]
-        The resized image and the (x, y) scaling ratios.
+    tuple[np.ndarray, tuple[float, float], tuple[float, float]]
+        The resized image, the (x, y) ratio of new to old size,
+        and the (dw, dh) padding, always (0.0, 0.0).
 
     """
-    resized = _resize(image, new_shape[0], new_shape[1])
     h, w = image.shape[:2]
-    return resized, (new_shape[1] / w, new_shape[0] / h)
+    resized = _resize(image, new_shape[0], new_shape[1])
+    return resized, (new_shape[0] / w, new_shape[1] / h), (0.0, 0.0)
 
 
-def letterbox(
+def resize_letterbox(
     image: np.ndarray,
     new_shape: tuple[int, int] = (640, 640),
     color: tuple[int, int, int] = (114, 114, 114),
