@@ -62,7 +62,7 @@ OpenCV Support
 ~~~~~~~~~~~~~~
 
 The base install is numpy-only (and installs on free-threaded CPython). Install OpenCV for
-OCR, the CLI, calibration from image files, and faster CPU resize and NMS:
+the CLI, calibration from image files, and faster CPU resize, NMS and OCR geometry:
 
 .. code-block:: console
 

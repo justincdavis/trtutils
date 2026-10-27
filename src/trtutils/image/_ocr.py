@@ -14,7 +14,6 @@ from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
-from trtutils.compat._libs import cv2
 from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
@@ -1291,7 +1290,7 @@ class OCR:
         ):
             new_h = max(int(w / self._width_height_ratio), self._min_height) * 2
             pad = int(abs(new_h - h) / 2)
-            img = cv2.copyMakeBorder(img, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+            img = np.pad(img, [(pad, pad)] + [(0, 0)] * (img.ndim - 1))
 
         text_boxes = self._detector.end2end(img, box_conf_thres, verbose=verbose)
         if not text_boxes:

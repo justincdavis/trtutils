@@ -15,6 +15,11 @@ from trtutils.image import _geometry
 pytestmark = pytest.mark.cpu
 
 _needs_cv2 = pytest.mark.skipif(not FLAGS.FOUND_CV2, reason="the reference is OpenCV")
+# opencv 5 rewrote minAreaRect (different start corner and float rounding), the port matches 4.x
+_needs_cv2_4 = pytest.mark.skipif(
+    not FLAGS.FOUND_CV2 or int(cv2.__version__.split(".")[0]) >= 5,
+    reason="the bit-exact reference is OpenCV 4.x",
+)
 _needs_numba = pytest.mark.skipif(not FLAGS.FOUND_NUMBA, reason="needs numba for the jit variant")
 
 _JIT = [
@@ -285,7 +290,7 @@ _RECT_SMALL = [
 ]
 
 
-@_needs_cv2
+@_needs_cv2_4
 @pytest.mark.parametrize("jit", _JIT, indirect=True)
 @pytest.mark.parametrize("points", _RECT_SMALL)
 def test_rect_matches_cv2_small(points, jit, no_cv2) -> None:
@@ -293,7 +298,7 @@ def test_rect_matches_cv2_small(points, jit, no_cv2) -> None:
     _assert_rect_matches_cv2(points)
 
 
-@_needs_cv2
+@_needs_cv2_4
 @_needs_numba
 @pytest.mark.parametrize("jit", [True], indirect=True)
 @pytest.mark.parametrize(
@@ -310,7 +315,7 @@ def test_rect_matches_cv2_random(make, seed, jit, no_cv2) -> None:
     _assert_rect_matches_cv2(make(seed))
 
 
-@_needs_cv2
+@_needs_cv2_4
 @_needs_numba
 @pytest.mark.parametrize("jit", [True], indirect=True)
 @pytest.mark.parametrize("seed", [10, 11, 12])
@@ -322,7 +327,7 @@ def test_rect_matches_cv2_text_contours(seed, jit, no_cv2) -> None:
         _assert_rect_matches_cv2(contour)
 
 
-@_needs_cv2
+@_needs_cv2_4
 @_needs_numba
 @pytest.mark.parametrize("jit", [True], indirect=True)
 @pytest.mark.parametrize("seed", range(20))
@@ -335,7 +340,7 @@ def test_rect_floor_ceil_round_match_cv2(seed, jit, no_cv2) -> None:
             np.testing.assert_array_equal(op(corners), op(want))
 
 
-@_needs_cv2
+@_needs_cv2_4
 @_needs_numba
 @pytest.mark.parametrize("jit", [True], indirect=True)
 @pytest.mark.parametrize("n", range(3, 41))
@@ -345,7 +350,7 @@ def test_rect_regular_polygons(n, rounded, jit, no_cv2) -> None:
     _assert_rect_matches_cv2(_polygon(n, rounded=rounded), exact=False)
 
 
-@_needs_cv2
+@_needs_cv2_4
 @_needs_numba
 @pytest.mark.parametrize("jit", [True], indirect=True)
 @pytest.mark.parametrize("seed", range(40))
@@ -356,7 +361,7 @@ def test_rect_duplicates(seed, jit, no_cv2) -> None:
     _assert_rect_matches_cv2(points.astype(np.int32), exact=False)
 
 
-@_needs_cv2
+@_needs_cv2_4
 @pytest.mark.parametrize("use_cv2", [True, False], ids=["cv2", "numpy"])
 @pytest.mark.parametrize("dtype", [np.int32, np.float32, np.int64, np.float64])
 def test_rect_dispatch_and_dtypes(use_cv2, dtype, monkeypatch) -> None:

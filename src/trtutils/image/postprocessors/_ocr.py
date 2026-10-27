@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils._log import LOG
-from trtutils.compat._libs import cv2
+from trtutils.image._geometry import dilate_2x2, find_contours, min_area_rect, polygon_mean
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -20,37 +20,26 @@ _MIN_BOX_SIDE = 3
 _SAME_LINE_PX = 10
 
 
-def _mini_box(rect: tuple) -> tuple[np.ndarray, float]:
-    """Corner points of a cv2.minAreaRect result ordered TL, TR, BR, BL, and its short side."""
-    p = sorted(cv2.boxPoints(rect).tolist(), key=lambda pt: pt[0])
+def _mini_box(points: np.ndarray) -> tuple[np.ndarray, float]:
+    """Min-area rectangle corners of ``points`` ordered TL, TR, BR, BL, and its short side."""
+    corners, short_side = min_area_rect(points)
+    p = sorted(corners.tolist(), key=lambda pt: pt[0])
     tl, bl = (p[0], p[1]) if p[1][1] > p[0][1] else (p[1], p[0])
     tr, br = (p[2], p[3]) if p[3][1] > p[2][1] else (p[3], p[2])
-    return np.array([tl, tr, br, bl], dtype=np.float32), min(rect[1])
-
-
-def _box_score(pred: np.ndarray, box: np.ndarray) -> float:
-    """Mean probability of ``pred`` inside the polygon ``box``."""
-    h, w = pred.shape
-    xmin = int(np.clip(np.floor(box[:, 0].min()), 0, w - 1))
-    xmax = int(np.clip(np.ceil(box[:, 0].max()), 0, w - 1))
-    ymin = int(np.clip(np.floor(box[:, 1].min()), 0, h - 1))
-    ymax = int(np.clip(np.ceil(box[:, 1].max()), 0, h - 1))
-    mask = np.zeros((ymax - ymin + 1, xmax - xmin + 1), dtype=np.uint8)
-    cv2.fillPoly(mask, [(box - (xmin, ymin)).astype(np.int32)], (1,))
-    return cv2.mean(pred[ymin : ymax + 1, xmin : xmax + 1], mask)[0]
+    return np.array([tl, tr, br, bl], dtype=np.float32), short_side
 
 
 def _round_half_away(value: float) -> int:
     return int(value - 0.5) if value < 0 else int(value + 0.5)
 
 
-def _unclip(box: np.ndarray, unclip_ratio: float) -> tuple:
+def _unclip(box: np.ndarray, unclip_ratio: float) -> np.ndarray:
     """
     Expand a polygon outward by DB's unclip distance (area * ratio / perimeter).
 
     Reproduces the integer round-join polygon offset (Clipper library semantics,
     arc tolerance 0.25) used by the reference implementation, so boxes match it
-    pixel-for-pixel. Returns the cv2.minAreaRect of the expanded polygon.
+    pixel-for-pixel. Returns the expanded polygon's (N, 2) int32 points.
     """
     pts = box.astype(np.float64)
     nxt = np.roll(pts, -1, axis=0)
@@ -67,7 +56,7 @@ def _unclip(box: np.ndarray, unclip_ratio: float) -> tuple:
     if signed < 0:
         ipts = ipts[::-1]
     if delta <= 0 or n < 2:  # noqa: PLR2004
-        return cv2.minAreaRect(np.array(ipts, dtype=np.int32))
+        return np.array(ipts, dtype=np.int32)
 
     steps = min(math.pi / math.acos(1 - min(0.25, delta * 0.25) / delta), delta * math.pi)
     sin_s, cos_s = math.sin(2 * math.pi / steps), math.cos(2 * math.pi / steps)
@@ -102,7 +91,7 @@ def _unclip(box: np.ndarray, unclip_ratio: float) -> tuple:
             out.append(at(ipts[j], (x, y)))
             x, y = x * cos_s - sin_s * y, x * sin_s + y * cos_s
         out.append(at(ipts[j], nj))
-    return cv2.minAreaRect(np.array(out, dtype=np.int32))
+    return np.array(out, dtype=np.int32)
 
 
 def _order_clockwise(points: np.ndarray) -> np.ndarray:
@@ -164,18 +153,18 @@ def _text_boxes(
     src_h, src_w = image_shape
     bitmap = (pred > thresh).astype(np.uint8)
     if use_dilation:
-        bitmap = cv2.dilate(bitmap, np.ones((2, 2), dtype=np.uint8))
-    contours = cv2.findContours(bitmap * 255, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
+        bitmap = dilate_2x2(bitmap)
+    contours = find_contours(bitmap)
 
     size = np.array([width, height], np.float32)
     limit = np.array([src_w, src_h], np.float32)
     boxes: list[np.ndarray] = []
     scores: list[float] = []
     for contour in contours[:max_candidates]:
-        points, short_side = _mini_box(cv2.minAreaRect(contour))
+        points, short_side = _mini_box(contour)
         if short_side < _MIN_BOX_SIDE:
             continue
-        score = _box_score(pred, points)
+        score = polygon_mean(pred, points)
         if score < box_thresh:
             continue
         box, short_side = _mini_box(_unclip(points, unclip_ratio))

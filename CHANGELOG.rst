@@ -3,6 +3,11 @@ Unreleased
 
 Added
 ^^^^^
+* OCR (``image.OCR`` models) no longer needs OpenCV: contour finding, minimum-area rectangles,
+  2x2 dilation, polygon scoring and the cubic perspective crop run as numba/numpy ports that
+  match OpenCV 4.x bit-for-bit (numba is optional, plain numpy is slower). OpenCV is still used
+  when installed. OpenCV 5.x differs slightly: its cubic ``warpPerspective`` by a few levels and
+  its ``minAreaRect`` by up to a pixel or two on some rotated boxes
 * ``Detector(class_map=...)`` (and every detector wrapper): optional ``Mapping[int, int]`` that
   translates model class ids to output ids after postprocessing; unmapped ids pass through. Off
   by default
@@ -115,8 +120,8 @@ Changed
 * **Breaking:** OpenCV moved from the base dependencies to the new ``cv2`` extra, and ``cv2ext``
   is no longer a dependency at all (the CLI and tests use plain OpenCV and numpy).
   The plain install is numpy-only and installs on free-threaded CPython (3.14t, 3.15t). Without
-  OpenCV, OCR (``image.OCR`` models), the ``trtutils`` CLI, and image-file loading in the calibration
-  batcher raise an ``AttributeError`` with an install hint; everything else runs on numpy ops.
+  OpenCV, the ``trtutils`` CLI and image-file loading in the calibration batcher raise an
+  ``AttributeError`` with an install hint; everything else, OCR included, runs on numpy ops.
   ``preprocessor="cpu"`` resize is ~100x slower (about 10 ms per 1080p frame) and pose, OBB and
   segmentation NMS about 10x slower. To keep the old behaviour: ``pip install "trtutils[cv2]"``
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
