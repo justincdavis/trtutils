@@ -11,9 +11,16 @@ import operator
 import numpy as np
 
 from trtutils._flags import FLAGS
+from trtutils._jit import register_jit
 from trtutils.compat._libs import cv2
 
+try:
+    from numba import prange
+except ImportError:
+    prange = range
+
 _COEF = 2048  # cv2 INTER_RESIZE_COEF_SCALE
+_U8_MAX = 255
 _HWC = 3
 
 
@@ -22,6 +29,74 @@ def _coords(n_out: int, n_in: int) -> tuple[np.ndarray, np.ndarray]:
     pos = ((np.arange(n_out) + 0.5) * (n_in / n_out) - 0.5).astype(np.float32)
     idx = np.floor(pos).astype(np.intp)
     return idx, pos - idx.astype(np.float32)
+
+
+@register_jit(parallel=True)
+def _resize_uint8(src: np.ndarray, out: np.ndarray) -> None:
+    """Fixed-point bilinear, the same arithmetic as the numpy uint8 path."""
+    in_h, in_w, chans = src.shape
+    out_h, out_w, _ = out.shape
+    sx = in_w / out_w
+    sy = in_h / out_h
+    for y in prange(out_h):
+        posy = np.float32((y + 0.5) * sy - 0.5)
+        yi = int(np.floor(posy))
+        yf = np.float32(posy - np.float32(yi))
+        y0 = 0 if yi < 0 else min(yi, in_h - 1)
+        y1i = yi + 1
+        y1 = 0 if y1i < 0 else min(y1i, in_h - 1)
+        wy1 = int(np.rint(yf * np.float32(_COEF)))
+        wy0 = int(np.rint((np.float32(1) - yf) * np.float32(_COEF)))
+        for x in range(out_w):
+            posx = np.float32((x + 0.5) * sx - 0.5)
+            xi = int(np.floor(posx))
+            xf = np.float32(posx - np.float32(xi))
+            if xi < 0 or xi >= in_w - 1:
+                xf = np.float32(0)
+            x0 = 0 if xi < 0 else min(xi, in_w - 1)
+            x1 = x0 + 1 if x0 + 1 < in_w else in_w - 1
+            wx1 = int(np.rint(xf * np.float32(_COEF)))
+            wx0 = int(np.rint((np.float32(1) - xf) * np.float32(_COEF)))
+            for c in range(chans):
+                col0 = int(src[y0, x0, c]) * wx0 + int(src[y0, x1, c]) * wx1
+                col1 = int(src[y1, x0, c]) * wx0 + int(src[y1, x1, c]) * wx1
+                val = ((((col0 >> 4) * wy0) >> 16) + (((col1 >> 4) * wy1) >> 16) + 2) >> 2
+                if val < 0:
+                    val = 0
+                elif val > _U8_MAX:
+                    val = _U8_MAX
+                out[y, x, c] = val
+
+
+@register_jit(parallel=True)
+def _resize_float(src: np.ndarray, out: np.ndarray) -> None:
+    """Bilinear in the source dtype, the same weights as the numpy float path."""
+    in_h, in_w, chans = src.shape
+    out_h, out_w, _ = out.shape
+    sx = in_w / out_w
+    sy = in_h / out_h
+    one = src.dtype.type(1)
+    for y in prange(out_h):
+        posy = np.float32((y + 0.5) * sy - 0.5)
+        yi = int(np.floor(posy))
+        yf = src.dtype.type(np.float32(posy - np.float32(yi)))
+        y0 = 0 if yi < 0 else min(yi, in_h - 1)
+        y1i = yi + 1
+        y1 = 0 if y1i < 0 else min(y1i, in_h - 1)
+        for x in range(out_w):
+            posx = np.float32((x + 0.5) * sx - 0.5)
+            xi = int(np.floor(posx))
+            xf = src.dtype.type(np.float32(posx - np.float32(xi)))
+            if xi < 0 or xi >= in_w - 1:
+                xf = src.dtype.type(0)
+            x0 = 0 if xi < 0 else min(xi, in_w - 1)
+            x1 = x0 + 1 if x0 + 1 < in_w else in_w - 1
+            ix = one - xf
+            iy = one - yf
+            for c in range(chans):
+                top = src[y0, x0, c] * ix + src[y0, x1, c] * xf
+                bot = src[y1, x0, c] * ix + src[y1, x1, c] * xf
+                out[y, x, c] = top * iy + bot * yf
 
 
 def _resize_bilinear(image: np.ndarray, width: int, height: int) -> np.ndarray:
@@ -48,6 +123,22 @@ def _resize_bilinear(image: np.ndarray, width: int, height: int) -> np.ndarray:
     """
     src = image if image.ndim == _HWC else image[:, :, None]
     in_h, in_w = src.shape[:2]
+    if (
+        FLAGS.FOUND_NUMBA
+        and FLAGS.JIT
+        and width > 0
+        and height > 0
+        and in_h > 0
+        and in_w > 0
+        and src.dtype in (np.uint8, np.float32, np.float64)
+    ):
+        src = np.ascontiguousarray(src)
+        out = np.empty((height, width, src.shape[2]), dtype=src.dtype)
+        if src.dtype == np.uint8:
+            _resize_uint8(src, out)
+        else:
+            _resize_float(src, out)
+        return out[:, :, 0] if out.shape[2] == 1 else out
 
     xi, xf = _coords(width, in_w)
     xf = np.where((xi < 0) | (xi >= in_w - 1), 0, xf).astype(np.float32)
@@ -270,6 +361,41 @@ def rescale(image: np.ndarray, value_range: tuple[float, float]) -> np.ndarray:
     return (img_float / 255.0) * (high - low) + low
 
 
+@register_jit()
+def _nms_suppress(
+    x1: np.ndarray,
+    y1: np.ndarray,
+    x2: np.ndarray,
+    y2: np.ndarray,
+    cls: np.ndarray,
+    threshold: float,
+    agnostic: bool,  # noqa: FBT001
+) -> np.ndarray:
+    """Keep-mask for boxes already sorted by descending score."""
+    n = x1.shape[0]
+    keep = np.ones(n, dtype=np.bool_)
+    for i in range(n):
+        if not keep[i]:
+            continue
+        area = (x2[i] - x1[i]) * (y2[i] - y1[i])
+        for j in range(i + 1, n):
+            if not keep[j] or (not agnostic and cls[i] != cls[j]):
+                continue
+            iw = min(x2[i], x2[j]) - max(x1[i], x1[j])
+            ih = min(y2[i], y2[j]) - max(y1[i], y1[j])
+            if iw < 0:
+                iw = 0
+            if ih < 0:
+                ih = 0
+            inter = iw * ih
+            if inter == 0:
+                continue
+            union = area + (x2[j] - x1[j]) * (y2[j] - y1[j]) - inter
+            if inter / union > threshold:
+                keep[j] = False
+    return keep
+
+
 def nms(
     bboxes: list[tuple[tuple[int, int, int, int], float, int]],
     iou_threshold: float = 0.5,
@@ -294,8 +420,23 @@ def nms(
         The kept boxes, sorted by descending confidence.
 
     """
-    # plain python: numba's list-of-tuples conversion costs more than this loop
+    # array kernel when JIT is on; a list of tuples is slower to hand to numba than this loop
     ordered = sorted(bboxes, key=operator.itemgetter(1), reverse=True)
+    if FLAGS.FOUND_NUMBA and FLAGS.JIT and len(ordered) > 1:
+        n = len(ordered)
+        x1 = np.empty(n, dtype=np.int64)
+        y1 = np.empty(n, dtype=np.int64)
+        x2 = np.empty(n, dtype=np.int64)
+        y2 = np.empty(n, dtype=np.int64)
+        cls = np.empty(n, dtype=np.int64)
+        for i, ((xa, ya, xb, yb), _, kind) in enumerate(ordered):
+            x1[i] = xa
+            y1[i] = ya
+            x2[i] = xb
+            y2[i] = yb
+            cls[i] = kind
+        keep = _nms_suppress(x1, y1, x2, y2, cls, iou_threshold, agnostic is True)
+        return [box for box, kept in zip(ordered, keep) if kept]
     keep = [True] * len(ordered)
     for i, ((x1a, y1a, x2a, y2a), _, cls_a) in enumerate(ordered):
         if not keep[i]:
