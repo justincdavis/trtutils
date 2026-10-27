@@ -1,6 +1,10 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+#
+# min_area_rect is a Python/numba port of OpenCV's rotating-calipers minAreaRect and boxPoints
+# (Copyright (C) OpenCV contributors, Apache License 2.0, https://www.apache.org/licenses/LICENSE-2.0),
+# translated from C++ and adapted to numba; the float32 arithmetic is kept to match its results.
 """Geometry ops (find_contours, min_area_rect) with a cv2 fast path and a numba/numpy fallback."""
 
 from __future__ import annotations
