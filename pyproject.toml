@@ -94,7 +94,6 @@ jp7 = [
 # OpenCV: OCR, the CLI, calibration from image files, faster cpu resize and NMS
 cv2 = [
     "opencv-python>=4.8.0,<6.0.0",
-    "cv2ext>=0.1.0",
 ]
 # ONNX support
 onnx = [

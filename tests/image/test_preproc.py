@@ -8,9 +8,9 @@ from __future__ import annotations
 import cv2
 import numpy as np
 import pytest
-from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils import Buffer, MemoryLocation
+from trtutils.image._ops import letterbox, rescale, resize_linear
 from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 from trtutils.image.preprocessors._process import preprocess
 

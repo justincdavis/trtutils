@@ -16,17 +16,51 @@ from typing_extensions import TypeGuard
 
 import trtutils
 from trtutils._log import LOG
-from trtutils.compat._libs import cv2, cv2ext
+from trtutils.compat._libs import cv2
 from trtutils.core import cache as caching_tools
 from trtutils.research import discover_submodules
 from trtutils.research import register_cli as research_register_cli
 from trtutils.trtexec._cli import cli_trtexec
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from types import SimpleNamespace
 
     from ._benchmark import Metric
     from .image.types import Bbox, Classification, Detection
+
+
+_RED = (0, 0, 255)
+
+
+def _draw_text(img: np.ndarray, text: str, pos: tuple[int, int]) -> np.ndarray:
+    cv2.putText(img, text, pos, cv2.FONT_HERSHEY_SIMPLEX, 1.0, _RED, 2, cv2.LINE_AA)
+    return img
+
+
+def _draw_boxes(
+    img: np.ndarray,
+    bboxes: list[Bbox],
+    scores: list[float],
+    classes: list[int],
+) -> np.ndarray:
+    for (x1, y1, x2, y2), score, cls in zip(bboxes, scores, classes):
+        cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), _RED, 2)
+        _draw_text(img, f"{cls}: {score:.2f}", (int(x1), max(int(y1) - 5, 15)))
+    return img
+
+
+def _read_video(path: Path) -> Iterator[tuple[int, np.ndarray]]:
+    cap = cv2.VideoCapture(str(path))
+    try:
+        fid = 0
+        ok, frame = cap.read()
+        while ok:
+            yield fid, frame
+            fid += 1
+            ok, frame = cap.read()
+    finally:
+        cap.release()
 
 
 def _to_float_pair(
@@ -785,11 +819,11 @@ def _detect(args: SimpleNamespace) -> None:
         post_t: float,
         det_t: float,
     ) -> np.ndarray:
-        canvas = cv2ext.bboxes.draw_bboxes(img, bboxes, scores, classes)
-        canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
-        canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t} ms", (10, 60))
-        canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
-        return cv2ext.image.draw.text(canvas, f"DET:  {det_t} ms", (10, 120))
+        canvas = _draw_boxes(img, bboxes, scores, classes)
+        canvas = _draw_text(canvas, f"PRE:  {pre_t} ms", (10, 30))
+        canvas = _draw_text(canvas, f"RUN:  {run_t} ms", (10, 60))
+        canvas = _draw_text(canvas, f"POST: {post_t} ms", (10, 90))
+        return _draw_text(canvas, f"DET:  {det_t} ms", (10, 120))
 
     if is_image:
         img = cv2.imread(str(input_path))
@@ -806,22 +840,19 @@ def _detect(args: SimpleNamespace) -> None:
             cv2.destroyAllWindows()
 
     elif is_video:
-        display = cv2ext.Display(f"DETECT: {input_path.stem}") if args.show else None
-
-        for fid, frame in cv2ext.IterableVideo(input_path):
-            if display is not None and display.stopped:
-                break
-
+        window = f"DETECT: {input_path.stem}"
+        for fid, frame in _read_video(input_path):
             LOG.info(f"Processing frame {fid}")
             bboxes, scores, classes, pre_t, run_t, post_t, det_t = process_image(frame)
 
             if args.show:
                 canvas = draw(frame, bboxes, scores, classes, pre_t, run_t, post_t, det_t)
-                if display is not None:
-                    display.update(canvas)
+                cv2.imshow(window, canvas)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
 
-        if display is not None:
-            display.stop()
+        if args.show:
+            cv2.destroyAllWindows()
 
     else:
         err_msg = f"Invalid input file: {input_path}"
@@ -965,12 +996,12 @@ def _classify(args: SimpleNamespace) -> None:
         post_t: float,
         det_t: float,
     ) -> np.ndarray:
-        canvas = cv2ext.image.draw.text(img, f"CLASS: {cls_results[0]}", (50, 30))
-        canvas = cv2ext.image.draw.text(canvas, f"CONF: {cls_results[1]:.2f}", (50, 60))
-        canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
-        canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t} ms", (10, 60))
-        canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
-        return cv2ext.image.draw.text(canvas, f"CLS:  {det_t} ms", (10, 120))
+        canvas = _draw_text(img, f"CLASS: {cls_results[0]}", (50, 30))
+        canvas = _draw_text(canvas, f"CONF: {cls_results[1]:.2f}", (50, 60))
+        canvas = _draw_text(canvas, f"PRE:  {pre_t} ms", (10, 30))
+        canvas = _draw_text(canvas, f"RUN:  {run_t} ms", (10, 60))
+        canvas = _draw_text(canvas, f"POST: {post_t} ms", (10, 90))
+        return _draw_text(canvas, f"CLS:  {det_t} ms", (10, 120))
 
     if is_image:
         img = cv2.imread(str(input_path))

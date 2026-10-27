@@ -1,12 +1,13 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/_ops.py -- numpy image ops against cv2 and cv2ext."""
+"""Tests for src/trtutils/image/_ops.py -- numpy image ops against references built from plain cv2 and numpy."""
 
 from __future__ import annotations
 
+import math
+
 import cv2
-import cv2ext
 import numpy as np
 import pytest
 
@@ -49,6 +50,69 @@ def _random_image(shape: tuple[int, ...], dtype: type, seed: int = 0) -> np.ndar
     if dtype == np.uint8:
         return rng.integers(0, 256, shape, dtype=np.uint8)
     return rng.random(shape).astype(dtype)
+
+
+def _cv2_resize_linear(image: np.ndarray, dst: tuple[int, int]) -> tuple[np.ndarray, tuple]:
+    h, w = image.shape[:2]
+    resized = cv2.resize(image, dst, interpolation=cv2.INTER_LINEAR)
+    return resized, (dst[1] / w, dst[0] / h)
+
+
+def _cv2_letterbox(image: np.ndarray, new_shape: tuple[int, int], color: tuple[int, int, int]):
+    h, w = image.shape[:2]
+    r = min(new_shape[1] / h, new_shape[0] / w)
+    unpad = (round(w * r), round(h * r))
+    dw, dh = (new_shape[0] - unpad[0]) / 2, (new_shape[1] - unpad[1]) / 2
+    if (w, h) != unpad:
+        image = cv2.resize(image, unpad, interpolation=cv2.INTER_LINEAR)
+    top, bottom = round(dh - 0.1), round(dh + 0.1)
+    left, right = round(dw - 0.1), round(dw + 0.1)
+    padded = cv2.copyMakeBorder(image, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+    return padded, (r, r), (dw, dh)
+
+
+def _cv2_patch(image: np.ndarray, patch_size: tuple[int, int], pad: tuple[int, int]):
+    h, w = image.shape[:2]
+
+    def grid(patch_dim: int, dim: int, p: int) -> tuple[int, int]:
+        if dim < patch_dim:
+            return patch_dim, 1
+        count = math.ceil((dim - patch_dim) / (patch_dim - p)) + 1
+        return (patch_dim - p) * (count - 1) + patch_dim, count
+
+    new_w, n_w = grid(patch_size[0], w, pad[0])
+    new_h, n_h = grid(patch_size[1], h, pad[1])
+    resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    offsets = [
+        (j * (patch_size[0] - pad[0]), i * (patch_size[1] - pad[1]))
+        for i in range(n_h)
+        for j in range(n_w)
+    ]
+    patches = [resized[y : y + patch_size[1], x : x + patch_size[0]] for x, y in offsets]
+    return patches, offsets, (new_w, new_h)
+
+
+def _rescale_ref(image: np.ndarray, low: float, high: float) -> np.ndarray:
+    return image.astype(np.float64) / 255.0 * (high - low) + low
+
+
+def _iou(a: tuple, b: tuple) -> float:
+    iw = max(0, min(a[2], b[2]) - max(a[0], b[0]))
+    ih = max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = iw * ih
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union else 0.0
+
+
+def _greedy_nms(boxes: list, iou_threshold: float, agnostic: bool | None) -> list:
+    kept: list = []
+    for box in sorted(boxes, key=lambda b: b[1], reverse=True):
+        clash = any(
+            (agnostic or k[2] == box[2]) and _iou(k[0], box[0]) > iou_threshold for k in kept
+        )
+        if not clash:
+            kept.append(box)
+    return kept
 
 
 def _assert_close_u8(actual: np.ndarray, expected: np.ndarray) -> None:
@@ -99,9 +163,9 @@ def test_resize_bilinear_random_shapes(seed) -> None:
 @pytest.mark.parametrize("use_cv2", _BACKENDS, indirect=True)
 @pytest.mark.parametrize(("src", "dst"), _RESIZE_CASES)
 def test_resize_linear_dispatch(use_cv2, src, dst) -> None:
-    """resize_linear matches cv2ext on both backends, ratios exactly."""
+    """resize_linear matches cv2 on both backends, ratios exactly."""
     image = _random_image((*src, 3), np.uint8)
-    expected, expected_ratios = cv2ext.image.resize_linear(image, dst)
+    expected, expected_ratios = _cv2_resize_linear(image, dst)
     actual, ratios = _ops.resize_linear(image, dst)
     _assert_close_u8(actual, expected)
     assert ratios == expected_ratios
@@ -135,16 +199,16 @@ def test_resize_linear_dispatch(use_cv2, src, dst) -> None:
         pytest.param((1, 2, 3), id="custom-color"),
     ],
 )
-def test_letterbox_matches_cv2ext(use_cv2, src, new_shape, color) -> None:
-    """Letterbox returns cv2ext's ratios, padding and pad color; image within the resize bar."""
+def test_letterbox_matches_cv2(use_cv2, src, new_shape, color) -> None:
+    """Letterbox returns the cv2 reference's ratios, padding and pad color; image within the resize bar."""
     image = _random_image((*src, 3), np.uint8)
-    expected, e_ratio, e_pad = cv2ext.image.letterbox(image, new_shape=new_shape, color=color)
+    expected, e_ratio, e_pad = _cv2_letterbox(image, new_shape, color)
     actual, ratio, pad = _ops.letterbox(image, new_shape=new_shape, color=color)
     assert ratio == e_ratio
     assert pad == e_pad
     _assert_close_u8(actual, expected)
     assert actual.shape[:2] == (new_shape[1], new_shape[0]) or actual.shape == expected.shape
-    # padding pixels are exact: wherever cv2ext holds the color, so do we
+    # padding pixels are exact: wherever the reference holds the color, so do we
     border = (expected == np.array(color, np.uint8)).all(axis=2)
     assert (actual[border] == np.array(color, np.uint8)).all()
 
@@ -194,12 +258,15 @@ def test_letterbox_2d() -> None:
         pytest.param(None, (0.1, 0.3), id="overlap-tuple"),
     ],
 )
-def test_patch_matches_cv2ext(use_cv2, src, patch_size, padding, overlap) -> None:
-    """Patch returns cv2ext's offsets and size, patches within the resize bar."""
+def test_patch_matches_cv2(use_cv2, src, patch_size, padding, overlap) -> None:
+    """Patch returns the reference offsets and size, patches within the resize bar."""
     image = _random_image((*src, 3), np.uint8)
-    e_patches, e_offsets, e_size = cv2ext.image.patch(
-        image, patch_size, padding=padding, overlap=overlap
-    )
+    if overlap is not None:
+        ox, oy = overlap if isinstance(overlap, tuple) else (overlap, overlap)
+        pad = (int(ox * patch_size[0]), int(oy * patch_size[1]))
+    else:
+        pad = padding if isinstance(padding, tuple) else (padding or 0, padding or 0)
+    e_patches, e_offsets, e_size = _cv2_patch(image, patch_size, pad)
     patches, offsets, size = _ops.patch(image, patch_size, padding=padding, overlap=overlap)
     assert offsets == e_offsets
     assert size == e_size
@@ -217,7 +284,7 @@ def test_patch_matches_cv2ext(use_cv2, src, patch_size, padding, overlap) -> Non
     ],
 )
 def test_patch_bad_overlap(padding, overlap) -> None:
-    """Overlap not smaller than the patch raises like cv2ext."""
+    """Overlap not smaller than the patch raises."""
     image = _random_image((800, 800, 3), np.uint8)
     with pytest.raises(ValueError, match="cannot be greater"):
         _ops.patch(image, (640, 640), padding=padding, overlap=overlap)
@@ -232,11 +299,11 @@ def test_patch_bad_overlap(padding, overlap) -> None:
         pytest.param((0.5, 2.5), id="offset"),
     ],
 )
-def test_rescale_matches_cv2ext(value_range) -> None:
-    """Rescale is exactly cv2ext's rescale."""
+def test_rescale_matches_formula(value_range) -> None:
+    """Rescale matches the closed-form formula."""
     image = _random_image((16, 16, 3), np.uint8)
-    np.testing.assert_array_equal(
-        _ops.rescale(image, value_range), cv2ext.image.rescale(image, value_range)
+    np.testing.assert_allclose(
+        _ops.rescale(image, value_range), _rescale_ref(image, *value_range), atol=1e-12
     )
 
 
@@ -290,10 +357,10 @@ def jit_mode(request, monkeypatch) -> bool:
     ],
 )
 @pytest.mark.parametrize("seed", [pytest.param(i, id=f"seed-{i}") for i in range(3)])
-def test_nms_matches_cv2ext(n, classes, score_levels, seed, iou_threshold, agnostic) -> None:
-    """Nms keeps exactly the boxes cv2ext keeps, in the same order."""
+def test_nms_matches_greedy(n, classes, score_levels, seed, iou_threshold, agnostic) -> None:
+    """Nms keeps exactly the boxes greedy nms keeps, in the same order."""
     boxes = _random_boxes(n, seed, classes, score_levels)
-    expected = cv2ext.bboxes.nms(boxes, iou_threshold, agnostic=agnostic)
+    expected = _greedy_nms(boxes, iou_threshold, agnostic)
     assert _ops.nms(boxes, iou_threshold, agnostic=agnostic) == expected
 
 

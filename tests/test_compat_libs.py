@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import cv2
-import cv2ext
 import pytest
 
 from trtutils._flags import FLAGS
@@ -23,7 +22,6 @@ def test_empty_cv2_names_extra() -> None:
 
 
 def test_cv2_found() -> None:
-    """Installed cv2 and cv2ext are routed through compat and flagged."""
+    """Installed cv2 is routed through compat and flagged."""
     assert _libs.cv2 is cv2
-    assert _libs.cv2ext is cv2ext
     assert FLAGS.FOUND_CV2

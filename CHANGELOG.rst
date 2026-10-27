@@ -112,7 +112,8 @@ Added
 
 Changed
 ^^^^^^^
-* **Breaking:** OpenCV and ``cv2ext`` moved from the base dependencies to the new ``cv2`` extra.
+* **Breaking:** OpenCV moved from the base dependencies to the new ``cv2`` extra, and ``cv2ext``
+  is no longer a dependency at all (the CLI and tests use plain OpenCV and numpy).
   The plain install is numpy-only and installs on free-threaded CPython (3.14t, 3.15t). Without
   OpenCV, OCR (``image.OCR`` models), the ``trtutils`` CLI, and image-file loading in the calibration
   batcher raise an ``AttributeError`` with an install hint; everything else runs on numpy ops.

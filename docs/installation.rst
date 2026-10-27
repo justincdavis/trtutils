@@ -70,7 +70,6 @@ OCR, the CLI, calibration from image files, and faster CPU resize and NMS:
 
 This installs:
 - opencv-python
-- cv2ext
 
 ONNX Support
 ~~~~~~~~~~~~
