@@ -306,7 +306,7 @@ def nms(
                 continue
             inter = max(0, min(x2a, x2b) - max(x1a, x1b)) * max(0, min(y2a, y2b) - max(y1a, y1b))
             union = area_a + (x2b - x1b) * (y2b - y1b) - inter
-            if inter and union and inter / union > iou_threshold:
+            if inter and inter / union > iou_threshold:
                 keep[j] = False
     return [box for box, kept in zip(ordered, keep) if kept]
 

@@ -110,6 +110,7 @@ This installs:
 - PyTorch and Torchvision
 - Ultralytics
 - SAHI
+- The ``cv2`` extra
 
 JIT Compiler Support
 ~~~~~~~~~~~~~~~~~~~~

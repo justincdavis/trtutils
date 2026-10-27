@@ -9,14 +9,16 @@ import numpy as np
 import pytest
 
 from trtutils._flags import FLAGS
+from trtutils.compat._libs import cv2
 from trtutils.image import _ops
-
-cv2 = pytest.importorskip("cv2")
 
 pytestmark = pytest.mark.cpu
 
+# references built from opencv; the numpy-only tests also run on free-threaded installs
+_needs_cv2 = pytest.mark.skipif(not FLAGS.FOUND_CV2, reason="the reference is OpenCV")
+
 _BACKENDS = [
-    pytest.param(True, id="cv2"),
+    pytest.param(True, id="cv2", marks=_needs_cv2),
     pytest.param(False, id="numpy"),
 ]
 
@@ -91,6 +93,7 @@ def _assert_close_u8(actual: np.ndarray, expected: np.ndarray) -> None:
     assert diff.mean() < 0.05
 
 
+@_needs_cv2
 @pytest.mark.parametrize(("src", "dst"), _RESIZE_CASES)
 @pytest.mark.parametrize(
     ("channels", "dtype"),
@@ -117,6 +120,7 @@ def test_resize_bilinear_matches_cv2(src, dst, channels, dtype) -> None:
         np.testing.assert_allclose(actual, expected, atol=1e-4)
 
 
+@_needs_cv2
 @pytest.mark.parametrize("seed", [pytest.param(i, id=f"seed-{i}") for i in range(8)])
 def test_resize_bilinear_random_shapes(seed) -> None:
     """Random shapes stay within the resize bar."""
@@ -128,6 +132,7 @@ def test_resize_bilinear_random_shapes(seed) -> None:
     _assert_close_u8(_ops._resize_bilinear(image, int(new_w), int(new_h)), expected)
 
 
+@_needs_cv2
 @pytest.mark.parametrize("use_cv2", _BACKENDS, indirect=True)
 @pytest.mark.parametrize(("src", "dst"), _RESIZE_CASES)
 def test_resize_linear_dispatch(use_cv2, src, dst) -> None:
@@ -137,6 +142,7 @@ def test_resize_linear_dispatch(use_cv2, src, dst) -> None:
     _assert_close_u8(actual, cv2.resize(image, dst, interpolation=cv2.INTER_LINEAR))
 
 
+@_needs_cv2
 @pytest.mark.parametrize("use_cv2", _BACKENDS, indirect=True)
 @pytest.mark.parametrize(
     "src",
@@ -196,6 +202,7 @@ def test_letterbox_2d() -> None:
     np.testing.assert_array_equal(actual[10:30], image)
 
 
+@_needs_cv2
 @pytest.mark.parametrize("use_cv2", _BACKENDS, indirect=True)
 @pytest.mark.parametrize(
     "src",
@@ -370,7 +377,7 @@ def test_warp_scale_matches_cv2(use_cv2, src_shape, scale, offset, size) -> None
     assert actual.shape == (size[1], size[0])
     assert actual.dtype == np.float32
     # opencv 4 snaps sample points to a 1/32 px grid, opencv 5 and numpy don't
-    atol = 1e-5 if not use_cv2 else 0.03
+    atol = 0.03 if use_cv2 else 1e-5
     assert np.abs(actual - expected).max() < atol
     flips = ((actual >= 0.5) != (expected >= 0.5)).mean()
-    assert flips <= (0.0 if not use_cv2 else 0.01)
+    assert flips <= (0.01 if use_cv2 else 0.0)
