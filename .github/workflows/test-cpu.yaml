@@ -23,6 +23,10 @@ jobs:
       - name: Install dependencies
         # free-threaded legs stay numpy-only (no opencv wheels), the rest run the cv2 parity tests
         run: uv pip install -e ".[pytest${{ !endsWith(matrix.python-version, 't') && ',cv2' || '' }}]"
+      - name: Install numba
+        # compiled kernels are tested where numba has wheels; elsewhere the plain python paths run
+        if: ${{ !endsWith(matrix.python-version, 't') && matrix.python-version != '3.15' }}
+        run: uv pip install "numba>=0.58.0,<1.0.0"
       - name: Smoke import
         run: python -c "from tests._cpu_stubs import inject; inject(); import trtutils, trtutils.image, trtutils.models; from trtutils._flags import FLAGS; print(FLAGS.FOUND_CV2)"
       - name: Run CPU tests

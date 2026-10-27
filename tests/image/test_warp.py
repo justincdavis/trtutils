@@ -211,7 +211,9 @@ def test_cubic_table_rows_sum_to_one() -> None:
     assert np.all(sums == 1 << 15)
 
 
+# full photos in plain python take minutes, so this compares the compiled kernel only
 @_needs_cv2
+@_needs_numba
 @pytest.mark.parametrize(
     "name", [pytest.param(n, id=n) for n in ("horse.jpg", "street.jpg", "people.jpeg", "cars.jpeg")]
 )

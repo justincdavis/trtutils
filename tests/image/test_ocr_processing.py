@@ -207,6 +207,8 @@ def test_postprocess_text_recognition_ctc() -> None:
 
 
 _needs_cv2 = pytest.mark.skipif(not FLAGS.FOUND_CV2, reason="the reference is OpenCV")
+# full-photo crops in plain python take minutes, so they compare the compiled kernel only
+_needs_numba = pytest.mark.skipif(not FLAGS.FOUND_NUMBA, reason="needs numba for the jit kernels")
 _PHOTOS = [pytest.param(n, id=n) for n in ("horse.jpg", "street.jpg", "people.jpeg", "cars.jpeg")]
 
 
@@ -285,6 +287,7 @@ def test_text_preprocess_without_cv2_identical(monkeypatch: pytest.MonkeyPatch, 
 
 
 @_needs_cv2
+@_needs_numba
 @pytest.mark.parametrize("name", _PHOTOS)
 def test_crop_text_region_without_cv2_close(monkeypatch: pytest.MonkeyPatch, name) -> None:
     """Crops match cv2 exactly on OpenCV 4.x and within a few levels on 5.x."""
