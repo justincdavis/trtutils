@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
 
 import nvtx
 from typing_extensions import Literal
@@ -70,6 +70,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str = "cpu",
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -141,6 +142,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
+            on the GPU and copies back only the final results. Default is 'cpu'.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -170,6 +174,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -195,7 +200,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -209,7 +214,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
 
         Parameters
         ----------
-        outputs : list[np.ndarray]
+        outputs : list[np.ndarray] | list[Buffer]
             The raw outputs from the engine to postprocess.
         ratios : list[tuple[float, float]]
             The rescale ratios used during preprocessing for each image.
@@ -234,6 +239,8 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             pair_probs, side].
 
         """
+        # only the CUDA postprocessor is handed device outputs
+        outputs = cast("list[np.ndarray]", outputs)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["hoi_postprocess"])
 

@@ -39,6 +39,7 @@ class ShuffleNetV2(Classifier, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str = "cpu",
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -58,6 +59,7 @@ class ShuffleNetV2(Classifier, Model):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
         )

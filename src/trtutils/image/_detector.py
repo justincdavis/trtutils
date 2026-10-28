@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
 
 import numpy as np
 import nvtx
@@ -63,6 +63,7 @@ class Detector(ImageModel, DetectorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str = "cpu",
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         class_map: Mapping[int, int] | None = None,
@@ -137,6 +138,9 @@ class Detector(ImageModel, DetectorInterface):
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
+            on the GPU and copies back only the final results. Default is 'cpu'.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -176,6 +180,7 @@ class Detector(ImageModel, DetectorInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -253,7 +258,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -266,7 +271,7 @@ class Detector(ImageModel, DetectorInterface):
 
         Parameters
         ----------
-        outputs : list[np.ndarray]
+        outputs : list[np.ndarray] | list[Buffer]
             The raw outputs from the engine to postprocess.
         ratios : list[tuple[float, float]]
             The rescale ratios used during preprocessing for each image.
@@ -289,6 +294,8 @@ class Detector(ImageModel, DetectorInterface):
             [bboxes, scores, class_ids].
 
         """
+        # only the CUDA postprocessor is handed device outputs
+        outputs = cast("list[np.ndarray]", outputs)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["det_postprocess"])
 

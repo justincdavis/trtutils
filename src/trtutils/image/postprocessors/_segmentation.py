@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer
 
 from ._common import cxcywh_to_xyxy, filter_class_scores, nms_indices, unletterbox_boxes
 from ._detection import _get_detections_core
@@ -25,10 +26,13 @@ class MaskCanvas:
 
     A new full-frame stack per frame makes the OS zero every page a mask
     touches, which costs more than decoding the masks. A canvas keeps one
-    stack and clears only the boxes the previous frame wrote.
+    stack and clears only the boxes the previous frame wrote. A mapped
+    canvas lives in pinned memory the CUDA postprocessor writes directly.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, mapped: bool = False) -> None:
+        self._mapped = mapped
+        self._buffer: Buffer | None = None
         self._stack = np.zeros((0, 0, 0), dtype=np.uint8)
         # (index, y1, y2, x1, x2) of every box written since the last take
         self.written: list[tuple[int, int, int, int, int]] = []
@@ -37,12 +41,26 @@ class MaskCanvas:
         """Return a zeroed (n, height, width) view, growing the stack when needed."""
         stack = self._stack
         if stack.shape[1:] != (height, width) or stack.shape[0] < n:
-            self._stack = np.zeros((max(n, stack.shape[0]), height, width), dtype=np.uint8)
+            shape = (max(n, stack.shape[0]), height, width)
+            if self._mapped:
+                self._buffer = Buffer.empty(shape, np.uint8, pinned=True, mapped=True)
+                self._stack = self._buffer.array
+                self._stack.fill(0)
+            else:
+                self._stack = np.zeros(shape, dtype=np.uint8)
         else:
             for idx, y1, y2, x1, x2 in self.written:
                 stack[idx, y1:y2, x1:x2] = 0
         self.written = []
         return self._stack[:n]
+
+    @property
+    def device_ptr(self) -> int:
+        """The device address of a mapped canvas, valid after :meth:`take`."""
+        if self._buffer is None:
+            err_msg = "Only a mapped canvas has a device address"
+            raise ValueError(err_msg)
+        return self._buffer.device_ptr
 
 
 def postprocess_yolo_seg(

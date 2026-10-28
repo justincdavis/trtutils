@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
 
 import nvtx
 
@@ -55,6 +55,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str = "cpu",
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -116,6 +117,9 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
+            on the GPU and copies back only the final results. Default is 'cpu'.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -145,6 +149,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -179,7 +184,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -193,7 +198,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
 
         Parameters
         ----------
-        outputs : list[np.ndarray]
+        outputs : list[np.ndarray] | list[Buffer]
             The raw outputs from the engine to postprocess.
         ratios : list[tuple[float, float]]
             The rescale ratios used during preprocessing for each image.
@@ -217,6 +222,8 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
             [bboxes, scores, class_ids, keypoints].
 
         """
+        # only the CUDA postprocessor is handed device outputs
+        outputs = cast("list[np.ndarray]", outputs)
         del no_copy  # results are always new arrays
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["pose_postprocess"])

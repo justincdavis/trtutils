@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """
@@ -20,6 +20,9 @@ Attributes
     ImageNet normalization with scale/swap/transpose (float32 output)
 :attribute:`IMAGENET_SST_F16` : tuple[Path, str]
     ImageNet normalization with scale/swap/transpose (float16 output)
+:attribute:`YOLO_POST` : tuple[Path, str]
+    YOLO-style head postprocessing (decode, NMS, segmentation masks); the
+    file holds several kernels, the name is the first.
 
 """
 
@@ -33,6 +36,7 @@ _SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
 _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
 _SST_IMAGENET_FILE = _KERNEL_DIR / "sst_imagenet.cu"
+_YOLO_POST_FILE = _KERNEL_DIR / "yolo_post.cu"
 
 SST_FAST: tuple[Path, str] = (
     _SST_FAST_FILE,
@@ -67,4 +71,9 @@ IMAGENET_SST: tuple[Path, str] = (
 IMAGENET_SST_F16: tuple[Path, str] = (
     _SST_IMAGENET_FILE,
     "scaleSwapTransposeImagenet_f16",
+)
+
+YOLO_POST: tuple[Path, str] = (
+    _YOLO_POST_FILE,
+    "yoloDecode",
 )

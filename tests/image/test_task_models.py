@@ -190,7 +190,8 @@ def test_segmenter_mask_thres(task_engine, images) -> None:
     strict = Segmenter(task_engine("seg"), mask_thres=0.99, warmup=False)
     filled = Segmenter(task_engine("seg"), mask_thres=0.0, warmup=False)
 
-    default = strict.end2end(image)
+    # end2end masks live in a reused canvas, so keep a copy across calls
+    default = [(*seg[:3], seg[3].copy()) for seg in strict.end2end(image)]
     override = strict.end2end(image, mask_thres=0.0)
     via_run = filled.get_segmentations(filled.run(image))
     assert default
@@ -264,3 +265,24 @@ def test_classifier_softmax_false_top_k(task_engine, images) -> None:
     assert sum(probs) == pytest.approx(1.0, abs=1e-2)
     assert probs == sorted(probs, reverse=True)
     assert top[0][0] == 339  # sorrel, ultralytics top-1
+
+
+@pytest.mark.parametrize("image_name", ["people", "horse"])
+def test_segmenter_cuda_postprocessor_matches_cpu(task_engine, images, image_name: str) -> None:
+    """postprocessor="cuda" gives the CPU results exactly, through run() and end2end()."""
+    image = images[image_name].array
+    cpu = Segmenter(task_engine("seg"), warmup=False)
+    cuda = Segmenter(task_engine("seg"), postprocessor="cuda", warmup=False)
+
+    ref = cpu.end2end(image)
+    for segs in (cuda.end2end(image), cuda.get_segmentations(cuda.run(image)), cuda.end2end(image)):
+        assert _fields(segs) == _fields(ref)
+        for got, want in zip(segs, ref):
+            np.testing.assert_array_equal(got[3], want[3])
+
+
+@pytest.mark.parametrize(("model_cls", "task"), [pytest.param(PoseEstimator, "pose", id="pose")])
+def test_cuda_postprocessor_unsupported_raises(task_engine, model_cls, task: str) -> None:
+    """A task model without a CUDA postprocessor rejects postprocessor="cuda"."""
+    with pytest.raises(ValueError, match="postprocessor"):
+        model_cls(task_engine(task), postprocessor="cuda", warmup=False)

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
 
 import nvtx
 from typing_extensions import Literal
@@ -52,6 +52,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str = "cpu",
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -113,6 +114,9 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
+            on the GPU and copies back only the final results. Default is 'cpu'.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -142,6 +146,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -162,7 +167,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -172,7 +177,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
 
         Parameters
         ----------
-        outputs : list[np.ndarray]
+        outputs : list[np.ndarray] | list[Buffer]
             The raw outputs from the engine to postprocess.
         no_copy : bool, optional
             If True, do not copy the data from the allocated
@@ -187,6 +192,8 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             The postprocessed depth maps per image.
 
         """
+        # only the CUDA postprocessor is handed device outputs
+        outputs = cast("list[np.ndarray]", outputs)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["depth_postprocess"])
 
