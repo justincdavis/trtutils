@@ -34,7 +34,8 @@ class CtcArgmax:
     def __init__(self: Self) -> None:
         file, _ = OCR_POST
         self._kernel = Kernel(file, "ctcArgmax")
-        self._capacity = 0
+        # (indices, probs, rows) per slot, so several batches can be decoded before one sync
+        self._slots: list[tuple[Buffer, Buffer, int]] = []
 
     def __call__(
         self: Self,
@@ -42,19 +43,29 @@ class CtcArgmax:
         stream: cudart.cudaStream_t,
     ) -> list[list[np.ndarray]]:
         """Return [indices (T,) int64, probs (T,) float32] per image, as postprocess_text_recognition."""
+        self.enqueue(probs, stream)
+        stream_synchronize(stream)
+        return self.read(probs.shape)
+
+    def enqueue(self: Self, probs: Buffer, stream: cudart.cudaStream_t, slot: int = 0) -> None:
+        """Enqueue the decode of ``probs`` into ``slot``, read it with :meth:`read` after a sync."""
         batch, steps, classes = probs.shape
         rows = batch * steps
-        if rows > self._capacity:
-            self._idx = _mapped(rows, np.int32)
-            self._prob = _mapped(rows, np.float32)
-            self._capacity = rows
-        args = self._kernel.create_args(
-            probs.device_ptr, classes, self._idx.device_ptr, self._prob.device_ptr
-        )
+        while len(self._slots) <= slot:
+            self._slots.append((_mapped(1, np.int32), _mapped(1, np.float32), 1))
+        if rows > self._slots[slot][2]:
+            self._slots[slot] = (_mapped(rows, np.int32), _mapped(rows, np.float32), rows)
+        idx, prob, _ = self._slots[slot]
+        args = self._kernel.create_args(probs.device_ptr, classes, idx.device_ptr, prob.device_ptr)
         self._kernel.call((rows, 1, 1), (256, 1, 1), stream, args)
-        stream_synchronize(stream)
-        idx = self._idx.array[:rows].astype(np.int64).reshape(batch, steps)
-        prob = self._prob.array[:rows].reshape(batch, steps).copy()
+
+    def read(self: Self, shape: tuple[int, ...], slot: int = 0) -> list[list[np.ndarray]]:
+        """Return the decode of a ``shape`` (B, T, C) head in ``slot``, after a stream sync."""
+        batch, steps = shape[0], shape[1]
+        rows = batch * steps
+        idx_buf, prob_buf, _ = self._slots[slot]
+        idx = idx_buf.array[:rows].astype(np.int64).reshape(batch, steps)
+        prob = prob_buf.array[:rows].reshape(batch, steps).copy()
         return [[i, p] for i, p in zip(idx, prob)]
 
 

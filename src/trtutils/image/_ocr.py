@@ -17,6 +17,7 @@ from typing_extensions import Literal
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
+from trtutils.core._stream import stream_synchronize
 
 from ._image_model import ImageModel
 from ._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
@@ -1347,7 +1348,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             If the recognizer was not created with ``postprocessor="cuda"``.
 
         """
-        if self._cuda_crops is None:
+        ctc = self._cuda_post
+        if self._cuda_crops is None or ctc is None:
             err_msg = "end2end_regions requires postprocessor='cuda' and a float32 engine input"
             raise RuntimeError(err_msg)
         if FLAGS.NVTX_ENABLED:
@@ -1355,12 +1357,21 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
 
         crops = self._cuda_crops
         plan = self.prepare_regions(crops, frame, boxes)
+        # every batch is enqueued before one sync: TensorRT spends ~1 ms of host time on
+        # each new input shape, which then overlaps the previous batch on the GPU
+        shapes = []
+        for index in range(len(plan.batches)):
+            outputs = self._order_outputs(self._infer_regions(crops, plan, index))
+            ctc.enqueue(outputs[0], self._engine.stream, index)
+            shapes.append(outputs[0].shape)
+        t0 = time.perf_counter()
+        stream_synchronize(self._engine.stream)
         results: list[Text] = [("", 0.0)] * len(boxes)
         for index, (start, stop, _) in enumerate(plan.batches):
-            outputs = self._infer_regions(crops, plan, index)
-            batch = self.postprocess(outputs, no_copy=True, verbose=verbose)
+            batch = ctc.read(shapes[index], index)
             for i, text in zip(plan.order[start:stop], self.get_texts(batch, verbose=verbose)):
                 results[i] = text
+        self._post_profile = (t0, time.perf_counter())
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # end2end
