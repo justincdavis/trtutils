@@ -115,7 +115,7 @@ Added
   on the device and copy back only the results; they match the CPU path exactly (OBB enclosing
   boxes to 1e-4 px). Default None picks ``"cuda"`` where available. 1080p end2end on an RTX
   5080: yolo11n-seg 4.6 -> 1.6 ms, yolo11n-obb 6.1 -> 2.1 ms, yolo11n-pose 1.05 -> 0.89 ms,
-  PPOCRv4 on a 14-line page 26 -> 21 ms
+  PPOCRv4 on a 14-line page 26 -> 21 ms (see Changed for the further 21 -> 11 ms)
 
 Changed
 ^^^^^^^
@@ -129,6 +129,14 @@ Changed
   of per numpy scalar: same tuples, 168 -> 42 us per image with 240 detections
 * ``PPOCR`` crops the detected text lines on a thread pool: same results, 41 -> 26 ms on a
   14-line 1080p page
+* ``PPOCR`` with ``postprocessor="cuda"`` (the default) runs end to end on the GPU: the image is
+  uploaded once, ``TextDetector`` resizes and normalizes it there, and the new
+  ``TextRecognizer.end2end_regions`` cuts the text lines out of the device image
+  (``cv2.warpPerspective`` cubic, rotated crops included) and fills the recognizer input without
+  a host round trip. Kernels mirror OpenCV's fixed point ``resize`` and ``warpPerspective``, so
+  boxes, texts and scores equal the CPU path exactly (on x86 OpenCV 4.11); CUDA graphs now
+  replay the detector for consecutive images of one size. 14-line 1080p page on an RTX 5080:
+  21 -> 10.7 ms
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``

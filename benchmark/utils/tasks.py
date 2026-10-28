@@ -122,21 +122,30 @@ class StageTimer:
     """
     Wrap a model's stage methods to attribute end2end time to stages.
 
-    ``prepare_inputs`` (preprocessing) syncs the device so GPU preprocessing is
-    not billed to the engine; ``infer`` (``_infer_post`` with the CUDA
-    postprocessor) covers preprocessing plus the engine and syncs too;
-    ``postprocess`` is timed as is; whatever is left of the end2end call
-    (result extraction, OCR crops) is ``extract``.
+    ``prepare_inputs`` and ``prepare_regions`` (preprocessing) sync the device so
+    GPU preprocessing is not billed to the engine; ``infer`` / ``_infer_post`` /
+    ``_infer_regions`` cover the engine and sync too; ``postprocess`` is timed as
+    is. A stage nested in another is taken out of its parent, and whatever is left
+    of the end2end call (result extraction, OCR crops) is ``extract``.
     """
+
+    _WRAPPED = (
+        ("prepare_inputs", "preprocess", True),
+        ("prepare_regions", "preprocess", True),
+        ("infer", "infer", True),
+        ("_infer_post", "infer", True),
+        ("_infer_regions", "infer", True),
+        ("postprocess", "postprocess", False),
+    )
 
     def __init__(self, image_models: list[Any]) -> None:
         self.times: dict[str, float] = dict.fromkeys(STAGES, 0.0)
         self._active: set[str] = set()
+        self._children: list[float] = []
         for m in image_models:
-            m.prepare_inputs = self._wrap(m.prepare_inputs, "preprocess", sync=True)
-            m.infer = self._wrap(m.infer, "infer", sync=True)
-            m._infer_post = self._wrap(m._infer_post, "infer", sync=True)  # noqa: SLF001
-            m.postprocess = self._wrap(m.postprocess, "postprocess")
+            for name, stage, sync in self._WRAPPED:
+                if hasattr(m, name):
+                    setattr(m, name, self._wrap(getattr(m, name), stage, sync=sync))
 
     def _wrap(self, fn: Callable[..., Any], stage: str, *, sync: bool = False) -> Callable[..., Any]:
         def timed(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
@@ -144,6 +153,7 @@ class StageTimer:
             if stage in self._active:
                 return fn(*args, **kwargs)
             self._active.add(stage)
+            self._children.append(0.0)
             t0 = time.perf_counter()
             try:
                 out = fn(*args, **kwargs)
@@ -151,7 +161,10 @@ class StageTimer:
                     _sync()
             finally:
                 self._active.discard(stage)
-            self.times[stage] += time.perf_counter() - t0
+                elapsed = time.perf_counter() - t0
+                self.times[stage] += elapsed - self._children.pop()
+                if self._children:
+                    self._children[-1] += elapsed
             return out
 
         return timed
@@ -162,13 +175,11 @@ class StageTimer:
     def split(self, total: float) -> dict[str, float]:
         """Per-stage seconds for one end2end call that took ``total`` seconds."""
         t = self.times
-        # infer wraps prepare_inputs, so take preprocessing back out of it
-        infer = t["infer"] - t["preprocess"]
         return {
             "preprocess": t["preprocess"],
-            "infer": infer,
+            "infer": t["infer"],
             "postprocess": t["postprocess"],
-            "extract": total - t["infer"] - t["postprocess"],
+            "extract": total - sum(t.values()),
         }
 
 

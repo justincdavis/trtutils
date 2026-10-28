@@ -360,8 +360,10 @@ class PPOCR(OCR):
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
         postprocessor : str, optional
-            Where to postprocess, 'cpu' or 'cuda', for both models. By default None,
-            which uses the CUDA postprocessor.
+            Where to pre- and postprocess, 'cpu' or 'cuda', for both models. 'cuda' uploads
+            the image once and runs detector preprocessing, text line crops, recognizer
+            preprocessing and the decodes on the GPU with results identical to the CPU
+            path. By default None, which uses 'cuda'.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.

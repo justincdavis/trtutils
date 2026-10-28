@@ -26,6 +26,9 @@ Attributes
 :attribute:`OCR_POST` : tuple[Path, str]
     OCR postprocessing (CTC argmax, DB binarization); the file holds
     several kernels, the name is the first.
+:attribute:`OCR_PRE` : tuple[Path, str]
+    OCR preprocessing (text detection resize, text box crops, text recognition
+    input), bit-exact with OpenCV; the file holds several kernels, the name is the first.
 
 """
 
@@ -41,6 +44,7 @@ _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
 _SST_IMAGENET_FILE = _KERNEL_DIR / "sst_imagenet.cu"
 _YOLO_POST_FILE = _KERNEL_DIR / "yolo_post.cu"
 _OCR_POST_FILE = _KERNEL_DIR / "ocr_post.cu"
+_OCR_PRE_FILE = _KERNEL_DIR / "ocr_pre.cu"
 
 SST_FAST: tuple[Path, str] = (
     _SST_FAST_FILE,
@@ -85,4 +89,9 @@ YOLO_POST: tuple[Path, str] = (
 OCR_POST: tuple[Path, str] = (
     _OCR_POST_FILE,
     "ctcArgmax",
+)
+
+OCR_PRE: tuple[Path, str] = (
+    _OCR_PRE_FILE,
+    "ocrDetResize",
 )

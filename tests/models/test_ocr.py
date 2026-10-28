@@ -13,6 +13,7 @@ from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR
 from trtutils.core import Buffer, MemoryLocation
 from trtutils.image._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
+from trtutils.image.preprocessors import crop_text_region
 from trtutils.models import PPOCR, PPOCRDetector, PPOCRRecognizer
 
 DET_ONNX = DATA_DIR / "ppocr" / "ppocrv4_det_736.onnx"
@@ -244,11 +245,30 @@ def test_ppocr_pipeline(det_engine, rec_engine, image, expected) -> None:
             np.testing.assert_array_equal(box, ref_box)
 
 
-def test_ocr_cuda_postprocessor_matches_cpu(det_engine, rec_engine) -> None:
-    """postprocessor="cuda" gives the CPU boxes, scores, texts and raw decodes exactly."""
-    image = _render(LINES)
-    cpu = PPOCR(det_engine, rec_engine)
+def _page(*, rotate: bool = False) -> np.ndarray:
+    """A 1080p page of 14 text lines (more crops than a recognizer batch), optionally turned upright."""
+    image = np.full((1080, 1920, 3), 255, np.uint8)
+    for i in range(14):
+        line = f"Line {i + 1}: the quick brown fox jumps over the lazy dog {1000 + 37 * i}"
+        cv2.putText(image, line, (60, 70 + 72 * i), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 3)
+    return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE) if rotate else image
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        pytest.param(_render(LINES), id="lines"),
+        pytest.param(_render(LINES[:1], 1400), id="one-wide-line-padded"),
+        pytest.param(_page(), id="page"),
+        pytest.param(_page(rotate=True), id="page-rotated"),
+    ],
+)
+def test_ocr_cuda_postprocessor_matches_cpu(det_engine, rec_engine, image) -> None:
+    """postprocessor="cuda" (GPU preprocessing, crops and decode) gives the CPU result exactly."""
+    cpu = PPOCR(det_engine, rec_engine, postprocessor="cpu")
     cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda")
+    assert cpu._gpu is None
+    assert cuda._gpu is not None
 
     ref = cpu(image)
     assert len(ref) > 0
@@ -258,8 +278,28 @@ def test_ocr_cuda_postprocessor_matches_cpu(det_engine, rec_engine) -> None:
             np.testing.assert_array_equal(box, ref_box)
             assert (text, score) == (ref_text, ref_score)
 
+    # the detector's boxes through the GPU crops equal the CPU crops, texts and scores exactly
+    boxes = np.stack([box for box, _ in cpu.detector.end2end(image)])
+    frame = Buffer.from_array(image, MemoryLocation.DEVICE)
+    want = cpu.recognizer.end2end([crop_text_region(image, box) for box in boxes])
+    assert cuda.recognizer.end2end_regions(frame, boxes) == want
+
+
+def test_ocr_cuda_recognizer_and_empty(det_engine, rec_engine) -> None:
+    """The CUDA recognizer decodes crops as the CPU one, and an image without text gives nothing."""
+    cpu = PPOCR(det_engine, rec_engine, postprocessor="cpu")
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda")
     crops = [_line(t) for t in LINES]
     for got, want in zip(cuda.recognizer.run(crops), cpu.recognizer.run(crops)):
         for g, w in zip(got, want):
             np.testing.assert_array_equal(g, w)
     assert cuda.detector.end2end(_blank(30, 4000)) == []
+    assert cuda(_blank(200, 300)) == []
+
+
+def test_ocr_regions_need_cuda(det_engine, rec_engine) -> None:
+    """The CPU recognizer has no GPU crops."""
+    recognizer = PPOCR(det_engine, rec_engine, postprocessor="cpu").recognizer
+    frame = Buffer.from_array(_blank(40, 40), MemoryLocation.DEVICE)
+    with pytest.raises(RuntimeError, match="postprocessor"):
+        recognizer.end2end_regions(frame, np.zeros((1, 4, 2)))
