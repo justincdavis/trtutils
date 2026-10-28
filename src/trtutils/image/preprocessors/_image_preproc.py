@@ -16,7 +16,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._buffer import Buffer
-from trtutils.core._kernels import Kernel
+from trtutils.core._kernels import Kernel, cached_args
 from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.core._stream import create_stream, stream_synchronize
 from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
@@ -853,13 +853,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             self._cached_resize_key = cache_key
             self._cached_resize_result = (resize_kernel, ratios, padding, geometry_args)
 
-        resize_args = resize_kernel.create_args(
-            input_ptr,
-            output_ptr,
-            *geometry_args,
-            input_stride,
-            output_stride,
-            verbose=verbose,
+        resize_args = cached_args(
+            resize_kernel, input_ptr, output_ptr, *geometry_args, input_stride, output_stride
         )
 
         if FLAGS.NVTX_ENABLED:

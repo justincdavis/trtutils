@@ -13,7 +13,7 @@ import numpy as np
 from trtutils.compat._libs import cudart
 from trtutils.core._buffer import Buffer, MemoryLocation
 from trtutils.core._cuda import cuda_call
-from trtutils.core._kernels import Kernel
+from trtutils.core._kernels import Kernel, cached_args
 from trtutils.core._stream import stream_synchronize
 from trtutils.image.kernels import OCR_POST
 
@@ -56,7 +56,7 @@ class CtcArgmax:
         if rows > self._slots[slot][2]:
             self._slots[slot] = (_mapped(rows, np.int32), _mapped(rows, np.float32), rows)
         idx, prob, _ = self._slots[slot]
-        args = self._kernel.create_args(probs.device_ptr, classes, idx.device_ptr, prob.device_ptr)
+        args = cached_args(self._kernel, probs.device_ptr, classes, idx.device_ptr, prob.device_ptr)
         self._kernel.call((rows, 1, 1), (256, 1, 1), stream, args)
 
     def read(self: Self, shape: tuple[int, ...], slot: int = 0) -> list[list[np.ndarray]]:
@@ -94,8 +94,8 @@ class DbBinarize:
             self._bitmap = _mapped(count, np.uint8)
             self._pred = Buffer.empty((count,), np.float32, MemoryLocation.HOST, pinned=True)
             self._capacity = count
-        args = self._kernel.create_args(
-            probs.device_ptr, count, float(thresh), self._bitmap.device_ptr
+        args = cached_args(
+            self._kernel, probs.device_ptr, count, float(thresh), self._bitmap.device_ptr
         )
         self._kernel.call((math.ceil(count / 256), 1, 1), (256, 1, 1), stream, args)
         stream_synchronize(stream)

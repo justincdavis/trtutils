@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import math
-from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -14,7 +13,7 @@ import numpy as np
 from trtutils.compat._libs import cudart
 from trtutils.core._buffer import Buffer, MemoryLocation
 from trtutils.core._cuda import cuda_call
-from trtutils.core._kernels import Kernel, KernelArgs
+from trtutils.core._kernels import Kernel, cached_args, f64
 from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
 from trtutils.core._stream import stream_synchronize
 from trtutils.image.kernels import YOLO_POST
@@ -45,19 +44,6 @@ def _obb_reach(nms_iou_thres: float, eps: float = 1e-7) -> float:
     lim = 1 + eps - (1 - nms_iou_thres) ** 2
     bd_max = -math.log(lim) if lim > 0 else math.inf
     return 4.04 * bd_max  # 1% margin for float32 rounding
-
-
-def _f64(value: float) -> tuple[str, float]:
-    # a double kernel argument, as a hashable marker for _args
-    return ("f64", value)
-
-
-@lru_cache(maxsize=1024)
-def _args(kernel: Kernel, *values: float | tuple[str, float]) -> KernelArgs:
-    # pointers, shapes and thresholds repeat frame to frame, and packing args costs ~20 us
-    return kernel.create_args(
-        *(np.array([v[1]], dtype=np.float64) if isinstance(v, tuple) else v for v in values)
-    )
 
 
 class YoloNms:
@@ -117,7 +103,7 @@ class YoloNms:
         unfiltered = -math.inf if inclusive else 0.0
         conf = unfiltered if conf_thres is None else float(conf_thres)
         cuda_call(cudart.cudaMemsetAsync(self.count.ptr, 0, self.count.nbytes, stream))
-        args = _args(
+        args = cached_args(
             self._decode,
             head.device_ptr,
             channels,
@@ -133,7 +119,7 @@ class YoloNms:
             self._cand_rank.ptr,
         )
         self._decode.call((math.ceil(num / 256), batch, 1), (256, 1, 1), stream, args)
-        args = _args(
+        args = cached_args(
             self._rank,
             num,
             self.count.ptr,
@@ -143,7 +129,7 @@ class YoloNms:
         )
         blocks = math.ceil(num / 256)
         self._rank.call((blocks * _RANK_SLICES, batch, 1), (256, 1, 1), stream, args)
-        args = _args(
+        args = cached_args(
             self._scatter,
             head.device_ptr,
             channels,
@@ -176,7 +162,7 @@ class YoloNms:
         words = math.ceil(num / 64)
         if self._bits is None:
             self._bits = _device((batch, num, words), np.uint64)
-        args = _args(
+        args = cached_args(
             self._mask,
             num,
             self.count.ptr,
@@ -186,7 +172,7 @@ class YoloNms:
             self._bits.ptr,
         )
         self._mask.call((words, _NMS_STRIPES, batch), (64, 1, 1), stream, args)
-        args = _args(
+        args = cached_args(
             self._reduce,
             num,
             max_det,
@@ -239,7 +225,7 @@ class CudaObbPostprocessor:
 
         nms = self._nms
         nms.rank(head, 4, channels - 5, conf_thres, max_det, stream, inclusive=True)
-        args = _args(
+        args = cached_args(
             self._prep,
             head.device_ptr,
             channels,
@@ -250,7 +236,7 @@ class CudaObbPostprocessor:
             self._boxes.ptr,
         )
         self._prep.call((math.ceil(num / 256), batch, 1), (256, 1, 1), stream, args)
-        args = _args(
+        args = cached_args(
             self._suppress,
             num,
             nms.count.ptr,
@@ -262,7 +248,7 @@ class CudaObbPostprocessor:
         )
         # one warp per box
         self._suppress.call((math.ceil(num * 32 / 256), batch, 1), (256, 1, 1), stream, args)
-        args = _args(
+        args = cached_args(
             self._keep,
             num,
             max_det,
@@ -372,7 +358,7 @@ class CudaSegPostprocessor:
             )
             return view
 
-        args = _args(
+        args = cached_args(
             self._gather,
             head.device_ptr,
             channels,
@@ -451,10 +437,10 @@ class CudaSegPostprocessor:
         geometry = (
             width,
             height,
-            _f64(scale_x),
-            _f64(scale_y),
-            _f64(x0 + 0.5 * scale_x - 0.5),
-            _f64(y0 + 0.5 * scale_y - 0.5),
+            f64(scale_x),
+            f64(scale_y),
+            f64(x0 + 0.5 * scale_x - 0.5),
+            f64(y0 + 0.5 * scale_y - 0.5),
         )
         dets = self._dets.ptr + index * self._dets.shape[1] * 6 * 4
 
@@ -467,7 +453,7 @@ class CudaSegPostprocessor:
                 stale[idx] = (bx1, by1, bx2, by2)
             stale_ptr = self._stale_dev.ptr + index * self._stale.shape[1] * 4 * 4
             memcpy_host_to_device_async(stale_ptr, stale[:stale_n], stream)
-            args = _args(
+            args = cached_args(
                 self._clear,
                 canvas.device_ptr,
                 stale_ptr,
@@ -485,7 +471,7 @@ class CudaSegPostprocessor:
         if n == 0:
             return
 
-        args = _args(
+        args = cached_args(
             self._probs_kernel,
             proto.device_ptr + index * nm * mh * mw * 4,
             nm,
@@ -499,7 +485,7 @@ class CudaSegPostprocessor:
             self._probs.ptr,
         )
         self._probs_kernel.call((n, 4, 1), (256, 1, 1), stream, args)
-        args = _args(
+        args = cached_args(
             self._masks,
             self._probs.ptr,
             mh,
@@ -556,7 +542,7 @@ class CudaPosePostprocessor:
 
         nms = self._nms
         nms(head, 4, 1, conf_thres, nms_iou_thres, max_det, stream)
-        args = _args(
+        args = cached_args(
             self._gather,
             head.device_ptr,
             channels,

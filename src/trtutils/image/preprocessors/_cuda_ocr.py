@@ -22,7 +22,7 @@ import numpy as np
 from trtutils.compat._libs import cudart
 from trtutils.core._buffer import Buffer, MemoryLocation
 from trtutils.core._cuda import cuda_call
-from trtutils.core._kernels import Kernel
+from trtutils.core._kernels import Kernel, cached_args
 from trtutils.image.kernels import OCR_PRE
 
 from ._ocr import (
@@ -171,7 +171,8 @@ class CudaTextDetectionInput:
             else:
                 frame = self._frame(img, stream)
             sh, sw = img.shape[:2]
-            args = self._kernel.create_args(
+            args = cached_args(
+                self._kernel,
                 frame.device_ptr,
                 sh,
                 sw,
@@ -286,7 +287,8 @@ class CudaTextCrops:
         mats_dev = self._upload(self._mats, mats, stream)
         geom_dev = self._upload(self._geom, geom, stream)
         info_dev = self._upload(self._info, info, stream)
-        args = self._warp.create_args(
+        args = cached_args(
+            self._warp,
             frame.device_ptr,
             frame.shape[0],
             frame.shape[1],
@@ -308,7 +310,8 @@ class CudaTextCrops:
         start, stop, width = plan.batches[index]
         count = stop - start
         tensor = self._tensor.get((count, 3, self._height, width), np.float32)
-        args = self._input.create_args(
+        args = cached_args(
+            self._input,
             plan.crops.device_ptr,
             plan.info.device_ptr,
             start,
