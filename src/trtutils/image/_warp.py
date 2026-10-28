@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from trtutils._flags import FLAGS
-from trtutils._jit import register_jit
+from trtutils._jit import register_jit, register_op
 from trtutils.compat._libs import cv2
 
 try:
@@ -236,15 +235,23 @@ def perspective_crop(image: np.ndarray, points: np.ndarray, width: int, height: 
 
     """
     quad = np.ascontiguousarray(points, dtype=np.float32)
-    if FLAGS.FOUND_CV2:
-        target = np.array([[0, 0], [width, 0], [width, height], [0, height]], dtype=np.float32)
-        return cv2.warpPerspective(
-            image,
-            cv2.getPerspectiveTransform(quad, target),
-            (width, height),
-            borderMode=cv2.BORDER_REPLICATE,
-            flags=cv2.INTER_CUBIC,
-        )
+    return _perspective(image, quad, width, height)
+
+
+def _perspective_cv2(image: np.ndarray, quad: np.ndarray, width: int, height: int) -> np.ndarray:
+    target = np.array([[0, 0], [width, 0], [width, height], [0, height]], dtype=np.float32)
+    return cv2.warpPerspective(
+        image,
+        cv2.getPerspectiveTransform(quad, target),
+        (width, height),
+        borderMode=cv2.BORDER_REPLICATE,
+        flags=cv2.INTER_CUBIC,
+    )
+
+
+def _perspective_prepare(
+    image: np.ndarray, quad: np.ndarray, width: int, height: int
+) -> tuple[np.ndarray, bool, np.ndarray, np.ndarray]:
     src = np.ascontiguousarray(image)
     planar = src.ndim == 2  # noqa: PLR2004
     if planar:
@@ -252,8 +259,25 @@ def perspective_crop(image: np.ndarray, points: np.ndarray, width: int, height: 
     inv = np.zeros(9, dtype=np.float64)
     _inverse_matrix(quad, width, height, inv)
     out = np.empty((height, width, src.shape[2]), dtype=np.uint8)
-    if FLAGS.FOUND_NUMBA and FLAGS.JIT:
-        _warp_cubic(src, inv, _CUBIC_TAB, out)
-    else:
-        _warp_cubic_numpy(src, inv, _CUBIC_TAB, out)
+    return src, planar, inv, out
+
+
+def _perspective_numba(image: np.ndarray, quad: np.ndarray, width: int, height: int) -> np.ndarray:
+    src, planar, inv, out = _perspective_prepare(image, quad, width, height)
+    _warp_cubic.jitted(src, inv, _CUBIC_TAB, out)
     return out[:, :, 0] if planar else out
+
+
+def _perspective_numpy(image: np.ndarray, quad: np.ndarray, width: int, height: int) -> np.ndarray:
+    src, planar, inv, out = _perspective_prepare(image, quad, width, height)
+    _warp_cubic_numpy(src, inv, _CUBIC_TAB, out)
+    return out[:, :, 0] if planar else out
+
+
+_perspective = register_op(
+    globals(),
+    "_perspective",
+    cv2=_perspective_cv2,
+    numba=_perspective_numba,
+    numpy=_perspective_numpy,
+)
