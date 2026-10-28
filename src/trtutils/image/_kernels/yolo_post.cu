@@ -688,7 +688,7 @@ void obbKeep(
     float* __restrict__ dets,
     int* __restrict__ keepCount
 ) {
-    __shared__ int offsets[1024];
+    __shared__ int warpSums[32];
     const int b = blockIdx.x;
     const int t = threadIdx.x;
     const int n = count[b];
@@ -698,19 +698,29 @@ void obbKeep(
     const int hi = min(lo + chunk, n);
     int mine = 0;
     for (int k = lo; k < hi; ++k) mine += alive[base + k];
-    offsets[t] = mine;
+    // exclusive block scan of the counts: shuffles within warps, then over the warp totals
+    // (blockDim is a multiple of 32)
+    const int lane = t & 31;
+    const int warp = t >> 5;
+    const int warps = blockDim.x >> 5;
+    int inc = mine;
+    for (int d = 1; d < 32; d <<= 1) {
+        const int v = __shfl_up_sync(0xffffffffu, inc, d);
+        if (lane >= d) inc += v;
+    }
+    if (lane == 31) warpSums[warp] = inc;
     __syncthreads();
-    if (t == 0) {
-        int run = 0;
-        for (int u = 0; u < blockDim.x; ++u) {
-            const int c = offsets[u];
-            offsets[u] = run;
-            run += c;
+    if (warp == 0) {
+        int w = lane < warps ? warpSums[lane] : 0;
+        for (int d = 1; d < 32; d <<= 1) {
+            const int v = __shfl_up_sync(0xffffffffu, w, d);
+            if (lane >= d) w += v;
         }
-        keepCount[b] = min(run, maxDet);
+        warpSums[lane] = w;
     }
     __syncthreads();
-    int pos = offsets[t];
+    if (t == 0) keepCount[b] = min(warpSums[warps - 1], maxDet);
+    int pos = inc - mine + (warp > 0 ? warpSums[warp - 1] : 0);
     for (int k = lo; k < hi && pos < maxDet; ++k) {
         if (!alive[base + k]) continue;
         const float* r = rb + (base + k) * 8;
