@@ -21,6 +21,7 @@ from trtutils.core._cuda import cuda_call
 
 from .config import REPO_DIR
 from .data import get_data, write_data
+from .runners import trtutils_provenance, write_stage_snapshot
 from .timing import compute_results
 
 if TYPE_CHECKING:
@@ -216,9 +217,16 @@ def run_tasks(
     iterations: int,
     *,
     overwrite: bool = False,
+    stage: str | None = None,
 ) -> dict[str, Any]:
-    """Benchmark every task model (or those in ``names``) and save to data/tasks/<device>.json."""
-    data: dict[str, Any] = get_data(device, "tasks", [])
+    """
+    Benchmark every task model (or those in ``names``).
+
+    Results go to data/tasks/<device>.json (cached by key unless ``overwrite``), or, with
+    ``stage``, are always measured fresh into data/perf-series/<device>/stage-<stage>.json.
+    """
+    data: dict[str, Any] = {} if stage is not None else get_data(device, "tasks", [])
+    cached = 0
     for spec in TASK_MODELS:
         if names is not None and spec.name not in names:
             continue
@@ -227,11 +235,21 @@ def run_tasks(
             key = f"{spec.name}/{prep}"
             if key in data and not overwrite:
                 print(f"Skipping {key} (already exists)")
+                cached += 1
                 continue
             print(f"Benchmarking {key}")
             data[key] = bench_task(spec, prep, warmup, iterations)
+            data[key].update(trtutils_provenance())
             res = data[key]
-            parts = ", ".join(f"{s} {res['stages'][s]['mean']:.2f}" for s in STAGES)
-            print(f"\t{key}: end2end {res['end2end']['mean']:.2f}ms ({parts})")
-            write_data(device, "tasks", data)
+            parts = ", ".join(f"{s} {res['stages'][s]['median']:.2f}" for s in STAGES)
+            e2e = res["end2end"]
+            print(f"\t{key}: end2end median {e2e['median']:.2f}ms max {e2e['max']:.2f}ms ({parts})")
+            if stage is None:
+                write_data(device, "tasks", data)
+    if stage is not None:
+        write_stage_snapshot(
+            device, stage, "tasks", {"warmup": warmup, "iterations": iterations, "data": data}
+        )
+    elif cached:
+        print(f"{cached} cached entries skipped; pass --overwrite or --stage to re-measure")
     return data

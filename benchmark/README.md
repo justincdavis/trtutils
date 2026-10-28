@@ -134,7 +134,7 @@ The benchmark system uses `trtutils.download` to automatically download and expo
 - **`data/`**: Benchmark data directory:
   - **`data/models/`**: Device benchmark results (one JSON per device, e.g. `3080Ti.json`). Written by `run.py`.
   - **`data/optimizations/`**: Optimization benchmark results (one JSON per device). Written by `optimizations.py`.
-  - **`data/tasks/`**: Per-task stage breakdowns (one JSON per device). Written by `run.py tasks`.
+  - **`data/tasks/`**: Per-task stage breakdowns (one JSON per device). Written by `run.py tasks`. With `--stage NAME` results go to `data/perf-series/<device>/stage-NAME.json` instead; `run.py compare A... --vs B...` diffs sets of these files.
 
 ### How It Works
 
