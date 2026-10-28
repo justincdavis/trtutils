@@ -281,8 +281,24 @@ def test_segmenter_cuda_postprocessor_matches_cpu(task_engine, images, image_nam
             np.testing.assert_array_equal(got[3], want[3])
 
 
-@pytest.mark.parametrize(("model_cls", "task"), [pytest.param(PoseEstimator, "pose", id="pose")])
+@pytest.mark.parametrize(("model_cls", "task"), [pytest.param(OBBDetector, "obb", id="obb")])
 def test_cuda_postprocessor_unsupported_raises(task_engine, model_cls, task: str) -> None:
     """A task model without a CUDA postprocessor rejects postprocessor="cuda"."""
     with pytest.raises(ValueError, match="postprocessor"):
         model_cls(task_engine(task), postprocessor="cuda", warmup=False)
+
+
+@pytest.mark.parametrize("image_name", ["people", "horse"])
+def test_pose_cuda_postprocessor_matches_cpu(task_engine, images, image_name: str) -> None:
+    """postprocessor="cuda" gives the CPU poses exactly, through run() and end2end()."""
+    image = images[image_name].array
+    cpu = PoseEstimator(task_engine("pose"), warmup=False)
+    cuda = PoseEstimator(task_engine("pose"), postprocessor="cuda", warmup=False)
+
+    ref = cpu.end2end(image)
+    for poses in (cuda.end2end(image), cuda.get_poses(cuda.run(image)), cuda.end2end(image)):
+        assert len(poses) == len(ref)
+        for got, want in zip(poses, ref):
+            np.testing.assert_array_equal(got[0], want[0])
+            assert got[1] == want[1]
+            np.testing.assert_array_equal(got[2], want[2])

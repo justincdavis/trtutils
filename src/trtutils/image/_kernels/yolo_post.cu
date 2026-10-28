@@ -315,3 +315,51 @@ void yoloSegMasks(
         dst[(size_t)(by1 + yd) * width + bx1 + xd] = v >= maskThres;
     }
 }
+
+// gather the kept pose detections as unletterboxed, clipped (x1, y1, x2, y2, score, class)
+// rows and their (x, y, visibility) keypoints, x and y unletterboxed and clipped like boxes
+extern "C" __global__
+void yoloPoseGather(
+    const float* __restrict__ out,
+    const int C,
+    const int N,
+    const int kptStart,
+    const int nk,
+    const int maxDet,
+    const int* __restrict__ keep,
+    const int* __restrict__ keepCount,
+    const int* __restrict__ sortAnchor,
+    const float* __restrict__ sortScore,
+    const int* __restrict__ sortCls,
+    const float* __restrict__ sortBox,
+    const float* __restrict__ letterbox,  // per image: ratio x, ratio y, pad x, pad y, width, height
+    float* __restrict__ dets,
+    float* __restrict__ kpts
+) {
+    const int k = blockIdx.x;
+    const int b = blockIdx.y;
+    if (k >= keepCount[b]) return;
+    const size_t base = (size_t)b * N;
+    const int s = keep[(size_t)b * maxDet + k];
+    const size_t row = (size_t)b * maxDet + k;
+    const float* lb = letterbox + b * 6;
+    if (threadIdx.x == 0) {
+        const float* box = sortBox + (base + s) * 4;
+        float* det = dets + row * 6;
+        det[0] = fminf(fmaxf((box[0] - lb[2]) / lb[0], 0.0f), lb[4]);
+        det[1] = fminf(fmaxf((box[1] - lb[3]) / lb[1], 0.0f), lb[5]);
+        det[2] = fminf(fmaxf((box[2] - lb[2]) / lb[0], 0.0f), lb[4]);
+        det[3] = fminf(fmaxf((box[3] - lb[3]) / lb[1], 0.0f), lb[5]);
+        det[4] = sortScore[base + s];
+        det[5] = (float)sortCls[base + s];
+    }
+    const int a = sortAnchor[base + s];
+    const float* head = out + (size_t)b * C * N + a;
+    for (int j = threadIdx.x; j < nk; j += blockDim.x) {
+        const float* src = head + (size_t)(kptStart + j * 3) * N;
+        float* dst = kpts + (row * nk + j) * 3;
+        dst[0] = fminf(fmaxf((src[0] - lb[2]) / lb[0], 0.0f), lb[4]);
+        dst[1] = fminf(fmaxf((src[N] - lb[3]) / lb[1], 0.0f), lb[5]);
+        dst[2] = src[2 * (size_t)N];
+    }
+}

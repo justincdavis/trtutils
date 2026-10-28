@@ -10,11 +10,13 @@ import nvtx
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
 from ._schema import PoseEstimatorOutputSchema
 from .interfaces import PoseEstimatorInterface
 from .postprocessors import get_poses, postprocess_yolo_pose
+from .postprocessors._gpu import CudaPosePostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -23,7 +25,6 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Literal, Self
 
-    from trtutils.core._buffer import Buffer
     from trtutils.image.types import Pose
 
     from ._image_model import _PostFn
@@ -33,6 +34,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
     """Implementation of pose estimation models (YOLO-style pose heads)."""
 
     _OUTPUT_SCHEMA = PoseEstimatorOutputSchema
+    _cuda_postprocess = True
 
     def __init__(
         self: Self,
@@ -171,6 +173,8 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         self._nms_iou: float = nms_iou_thres
         self._max_det: int = max_det
 
+        self._cuda_post = CudaPosePostprocessor() if self._postprocessor == "cuda" else None
+
         if self._verbose:
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
 
@@ -222,8 +226,6 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
             [bboxes, scores, class_ids, keypoints].
 
         """
-        # only the CUDA postprocessor is handed device outputs
-        outputs = cast("list[np.ndarray]", outputs)
         del no_copy  # results are always new arrays
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["pose_postprocess"])
@@ -235,16 +237,28 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         outputs = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        data = postprocess_yolo_pose(
-            outputs,
-            ratios,
-            padding,
-            conf_thres,
-            nms_iou_thres,
-            max_det=self._max_det,
-            input_size=self._input_size,
-            verbose=verbose,
-        )
+        if self._cuda_post is not None and isinstance(outputs[0], Buffer):
+            data = self._cuda_post(
+                cast("list[Buffer]", outputs),
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                max_det=self._max_det,
+                input_size=self._input_size,
+                stream=self._engine.stream,
+            )
+        else:
+            data = postprocess_yolo_pose(
+                cast("list[np.ndarray]", outputs),
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                max_det=self._max_det,
+                input_size=self._input_size,
+                verbose=verbose,
+            )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 

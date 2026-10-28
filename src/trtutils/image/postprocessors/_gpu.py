@@ -287,3 +287,88 @@ class CudaSegPostprocessor:
         stream_synchronize(stream)
         regions = self._regions.array[:n].tolist()
         canvas.written = [(k, by1, by2, bx1, bx2) for k, (bx1, by1, bx2, by2) in enumerate(regions)]
+
+
+class CudaPosePostprocessor:
+    """YOLO pose postprocessing on the device, see ``postprocess_yolo_pose``."""
+
+    def __init__(self: Self) -> None:
+        file, _ = YOLO_POST
+        self._nms = YoloNms()
+        self._gather = Kernel(file, "yoloPoseGather")
+        self._shape: tuple[int, int, int] | None = None
+
+    def __call__(
+        self: Self,
+        outputs: list[Buffer],
+        ratios: list[tuple[float, float]],
+        padding: list[tuple[float, float]],
+        conf_thres: float | None,
+        nms_iou_thres: float,
+        *,
+        max_det: int,
+        input_size: tuple[int, int],
+        stream: cudart.cudaStream_t,
+    ) -> list[list[np.ndarray]]:
+        """Postprocess a device ``[output0]`` into the per-image lists of ``postprocess_yolo_pose``."""
+        head = outputs[0]
+        batch, channels, num = head.shape
+        nk = (channels - 5) // 3
+        if self._shape != (batch, nk, max_det):
+            self._dets = _mapped((batch, max_det, 6), np.float32)
+            self._kpts = _mapped((batch, max_det, nk, 3), np.float32)
+            self._keep_count = _mapped((batch,), np.int32)
+            self._letterbox = _mapped((batch, 6), np.float32)
+            self._shape = (batch, nk, max_det)
+
+        input_w, input_h = input_size
+        for i in range(batch):
+            (rx, ry), (px, py) = ratios[i], padding[i]
+            width = max(round((input_w - 2 * px) / rx), 1)
+            height = max(round((input_h - 2 * py) / ry), 1)
+            self._letterbox.array[i] = (rx, ry, px, py, width, height)
+
+        nms = self._nms
+        nms(head, 4, 1, conf_thres, nms_iou_thres, max_det, stream)
+        cuda_call(
+            cudart.cudaMemcpyAsync(
+                self._keep_count.ptr,
+                nms.keep_count.ptr,
+                nms.keep_count.nbytes,
+                cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
+                stream,
+            ),
+        )
+        args = self._gather.create_args(
+            head.device_ptr,
+            channels,
+            num,
+            5,
+            nk,
+            max_det,
+            nms.keep.ptr,
+            nms.keep_count.ptr,
+            nms.sort_anchor.ptr,
+            nms.sort_score.ptr,
+            nms.sort_cls.ptr,
+            nms.sort_box.ptr,
+            self._letterbox.device_ptr,
+            self._dets.device_ptr,
+            self._kpts.device_ptr,
+        )
+        self._gather.call((max_det, batch, 1), (32, 1, 1), stream, args)
+        stream_synchronize(stream)
+
+        results = []
+        for i in range(batch):
+            n = int(self._keep_count.array[i])
+            dets = self._dets.array[i, :n]
+            results.append(
+                [
+                    dets[:, :4].copy(),
+                    dets[:, 4].copy(),
+                    dets[:, 5].astype(np.int64),
+                    self._kpts.array[i, :n].copy(),
+                ],
+            )
+        return results
