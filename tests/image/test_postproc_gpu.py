@@ -119,6 +119,102 @@ def test_cuda_seg_masks_on_unaligned_frames(ratio: float) -> None:
         destroy_stream(stream)
 
 
+@pytest.mark.parametrize(
+    ("nms_iou_thres", "shift", "ulps"),
+    [
+        pytest.param(0.5, 10 / 3, 1, id="iou-at-threshold"),
+        pytest.param(0.5, 10 / 3, 37, id="iou-near-threshold"),
+        pytest.param(0.0, 10.0, 1, id="barely-touching"),
+        pytest.param(0.0, 10.0, 293, id="nearly-touching"),
+    ],
+)
+def test_cuda_seg_nms_at_the_iou_threshold(nms_iou_thres, shift, ulps) -> None:
+    """Pairs whose IoU walks across the threshold in float32 steps get the CPU NMS decisions."""
+    side, pitch = 10.0, 24.0
+    grid = 26
+    centers = np.stack(np.meshgrid(np.arange(grid), np.arange(grid)), -1).reshape(-1, 2)
+    centers = centers * pitch + 12.0
+    # the second box's center, walked ulps float32 steps at a time through the threshold shift
+    steps = (np.arange(grid * grid) - grid * grid // 2) * ulps
+    second = ((centers[:, 0] + shift).astype(np.float32).view(np.int32) + steps).view(np.float32)
+    head = np.zeros((1, 4 + 1 + 4, 2 * grid * grid), dtype=np.float32)
+    for k, ((cx, cy), sx) in enumerate(zip(centers, second)):
+        head[0, :5, 2 * k] = [cx, cy, side, side, 0.9]
+        head[0, :5, 2 * k + 1] = [sx, cy, side, side, 0.8]
+    proto = np.zeros((1, 4, 16, 16), dtype=np.float32)
+    kwargs = {"max_det": 2 * grid * grid, "input_size": (640, 640)}
+    ref = postprocess_yolo_seg(
+        [head, proto], [(1.0, 1.0)], [(0.0, 0.0)], 0.25, nms_iou_thres, 0.6, **kwargs
+    )
+    assert 0 < len(ref[0][1]) - grid * grid < grid * grid  # some second boxes survive, some do not
+
+    stream = create_stream()
+    try:
+        outputs = [Buffer.from_array(a, MemoryLocation.DEVICE) for a in (head, proto)]
+        ours = CudaSegPostprocessor()(
+            outputs,
+            [(1.0, 1.0)],
+            [(0.0, 0.0)],
+            0.25,
+            nms_iou_thres,
+            0.6,
+            canvases=[MaskCanvas(mapped=True)],
+            stream=stream,
+            **kwargs,
+        )
+        for field in range(3):
+            np.testing.assert_array_equal(ours[0][field], ref[0][field])
+    finally:
+        destroy_stream(stream)
+
+
+def _rect_iou(a: np.ndarray, b: np.ndarray) -> float:
+    """IoU as cv2.dnn.NMSBoxes computes it: double rects from float32 corners."""
+    ax, ay, aw, ah = float(a[0]), float(a[1]), float(a[2] - a[0]), float(a[3] - a[1])
+    bx, by, bw, bh = float(b[0]), float(b[1]), float(b[2] - b[0]), float(b[3] - b[1])
+    iw = min(ax + aw, bx + bw) - max(ax, bx)
+    ih = min(ay + ah, by + bh) - max(ay, by)
+    inter = iw * ih
+    return inter / (aw * ah + bw * bh - inter)
+
+
+@pytest.mark.parametrize("pick", range(8))
+def test_cuda_seg_nms_with_a_pair_iou_as_threshold(pick: int) -> None:
+    """A threshold equal to a pair's IoU in float32 is decided like the CPU, beyond float32."""
+    rng = np.random.default_rng(pick)
+    num = 64
+    head = np.zeros((1, 4 + 1 + 4, 2 * num), dtype=np.float32)
+    centers = np.stack([np.arange(num) % 8 * 70 + 30, np.arange(num) // 8 * 70 + 30], -1)
+    for k, (cx, cy) in enumerate(centers):
+        w, h = rng.uniform(10, 40, 2)
+        head[0, :5, 2 * k] = [cx, cy, w, h, 0.9]
+        head[0, :5, 2 * k + 1] = [cx + rng.uniform(0, w / 2), cy + rng.uniform(0, h / 2), w, h, 0.8]
+    xyxy = np.concatenate([head[0, :2] - head[0, 2:4] / 2, head[0, :2] + head[0, 2:4] / 2]).T
+    thres = float(np.float32(_rect_iou(xyxy[2 * pick], xyxy[2 * pick + 1])))
+    proto = np.zeros((1, 4, 16, 16), dtype=np.float32)
+    kwargs = {"max_det": 2 * num, "input_size": (640, 640)}
+    ref = postprocess_yolo_seg([head, proto], [(1.0, 1.0)], [(0.0, 0.0)], 0.25, thres, 0.6, **kwargs)
+
+    stream = create_stream()
+    try:
+        outputs = [Buffer.from_array(a, MemoryLocation.DEVICE) for a in (head, proto)]
+        ours = CudaSegPostprocessor()(
+            outputs,
+            [(1.0, 1.0)],
+            [(0.0, 0.0)],
+            0.25,
+            thres,
+            0.6,
+            canvases=[MaskCanvas(mapped=True)],
+            stream=stream,
+            **kwargs,
+        )
+        for field in range(3):
+            np.testing.assert_array_equal(ours[0][field], ref[0][field])
+    finally:
+        destroy_stream(stream)
+
+
 def _one_box_seg(x2: float) -> list:
     """One detection spanning x 4..x2 whose mask fills the whole box."""
     head = np.zeros((1, 4 + 1 + 4, 1), dtype=np.float32)

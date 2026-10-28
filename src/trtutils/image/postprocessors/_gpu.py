@@ -195,7 +195,7 @@ class YoloNms:
             self.keep.ptr,
             self.keep_count.ptr,
         )
-        self._reduce.call((batch, 1, 1), (128, 1, 1), stream, args)
+        self._reduce.call((batch, 1, 1), (32, 1, 1), stream, args)
 
 
 class CudaObbPostprocessor:

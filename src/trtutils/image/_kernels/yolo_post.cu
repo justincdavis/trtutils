@@ -151,9 +151,14 @@ void yoloNmsMask(
     const bool active = i < n;
     // opencv computes IoU on double (x, y, w, h) rects built from float32 xywh
     double ax = 0.0, ay = 0.0, aw = 0.0, ah = 0.0;
+    float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
     int ci = -1;
     if (active) {
         const float* bi = sortBox + (base + i) * 4;
+        a0 = bi[0];
+        a1 = bi[1];
+        a2 = bi[2];
+        a3 = bi[3];
         ax = bi[0];
         ay = bi[1];
         aw = (double)(bi[2] - bi[0]);
@@ -176,6 +181,23 @@ void yoloNmsMask(
         for (int t = first; t < cols; ++t) {
             if (colCls[t] != ci) continue;
             const float* bj = colBox + t * 4;
+            // float64 is slow on GeForce parts: decide in float32 when the pair is clearly
+            // apart or its IoU clearly off the threshold. The margins sit far above the
+            // rounding between these corners and opencv's double rects; the rest go exact.
+            const float mx = 1e-4f * (fabsf(a2) + fabsf(bj[2]) + 1.0f);
+            const float my = 1e-4f * (fabsf(a3) + fabsf(bj[3]) + 1.0f);
+            const float fiw = fminf(a2, bj[2]) - fmaxf(a0, bj[0]);
+            const float fih = fminf(a3, bj[3]) - fmaxf(a1, bj[1]);
+            if (fiw < -mx || fih < -my) continue;
+            if (fiw > mx && fih > my) {
+                const float inter = fiw * fih;
+                const float iou = inter / ((a2 - a0) * (a3 - a1) + (bj[2] - bj[0]) * (bj[3] - bj[1]) - inter);
+                if (iou > iouThres + 2e-3f) {
+                    bits |= 1ULL << t;
+                    continue;
+                }
+                if (iou < iouThres - 2e-3f) continue;
+            }
             const double bx = bj[0];
             const double by = bj[1];
             const double bw = (double)(bj[2] - bj[0]);
@@ -191,7 +213,7 @@ void yoloNmsMask(
     }
 }
 
-// greedy pass over the sorted boxes, one block per image
+// greedy pass over the sorted boxes, one warp per image (the loop syncs once per kept box)
 extern "C" __global__
 void yoloNmsReduce(
     const int N,
@@ -207,17 +229,24 @@ void yoloNmsReduce(
     const int words = (N + 63) / 64;
     const int used = (n + 63) / 64;
     for (int w = threadIdx.x; w < used; w += blockDim.x) removed[w] = 0;
-    __syncthreads();
+    __syncwarp();
     const size_t base = (size_t)b * N;
     int kept = 0;
-    for (int i = 0; i < n && kept < maxDet; ++i) {
-        if (removed[i / 64] & (1ULL << (i % 64))) continue;
-        if (threadIdx.x == 0) keep[(size_t)b * maxDet + kept] = i;
-        ++kept;
-        const unsigned long long* row = mask + (base + i) * words;
-        // only words at or after i hold bits for later boxes
-        for (int w = i / 64 + threadIdx.x; w < used; w += blockDim.x) removed[w] |= row[w];
-        __syncthreads();
+    for (int w = 0; w < used && kept < maxDet; ++w) {
+        // live boxes of word w, jumping straight from one survivor to the next
+        const unsigned long long tail = (w == used - 1 && n % 64) ? (1ULL << (n % 64)) - 1 : ~0ULL;
+        unsigned long long live = ~removed[w] & tail;
+        while (live && kept < maxDet) {
+            const int bit = __ffsll(live) - 1;
+            const int i = w * 64 + bit;
+            if (threadIdx.x == 0) keep[(size_t)b * maxDet + kept] = i;
+            ++kept;
+            const unsigned long long* row = mask + (base + i) * words;
+            // only words at or after i hold bits for later boxes
+            for (int x = w + threadIdx.x; x < used; x += blockDim.x) removed[x] |= row[x];
+            __syncwarp();
+            live = ~removed[w] & tail & ~((2ULL << bit) - 1);
+        }
     }
     if (threadIdx.x == 0) keepCount[b] = kept;
 }
