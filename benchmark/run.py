@@ -297,6 +297,7 @@ def cmd_tasks(args: argparse.Namespace) -> None:
         args.preprocessors,
         args.warmup,
         args.iterations,
+        postprocessors=tuple(args.postprocessors),
         overwrite=args.overwrite,
     )
 
@@ -407,6 +408,7 @@ def main() -> None:
     p.add_argument("--device", required=True)
     p.add_argument("--model", nargs="+", default=None, help="Task models (default all)")
     p.add_argument("--preprocessors", nargs="+", default=["cpu", "cuda", "trt"])
+    p.add_argument("--postprocessors", nargs="+", default=["cpu"], choices=["cpu", "cuda"])
     p.add_argument("--warmup", type=int, default=20)
     p.add_argument("--iterations", type=int, default=200)
     p.add_argument("--overwrite", action="store_true")

@@ -104,14 +104,14 @@ def _engine(cls: Any, name: str, imgsz: int | None) -> Path:  # noqa: ANN401
     return engine
 
 
-def load_model(spec: TaskModel, preprocessor: str) -> Any:  # noqa: ANN401
+def load_model(spec: TaskModel, preprocessor: str, postprocessor: str = "cpu") -> Any:  # noqa: ANN401
     """Build (if needed) and load the model of ``spec`` with ``preprocessor``."""
     if spec.parts:
         det = _engine(spec.parts["det"], f"{spec.name}_det", spec.imgsz)
         rec = _engine(spec.parts["rec"], f"{spec.name}_rec", None)
-        return spec.cls(det, rec, warmup=True)
+        return spec.cls(det, rec, postprocessor=postprocessor, warmup=True)
     engine = _engine(spec.cls, spec.name, spec.imgsz)
-    return spec.cls(engine, preprocessor=preprocessor, warmup=True)
+    return spec.cls(engine, preprocessor=preprocessor, postprocessor=postprocessor, warmup=True)
 
 
 def _sync() -> None:
@@ -123,24 +123,34 @@ class StageTimer:
     Wrap a model's stage methods to attribute end2end time to stages.
 
     ``prepare_inputs`` (preprocessing) syncs the device so GPU preprocessing is
-    not billed to the engine; ``infer`` covers preprocessing plus the engine;
+    not billed to the engine; ``infer`` (``_infer_post`` with the CUDA
+    postprocessor) covers preprocessing plus the engine and syncs too;
     ``postprocess`` is timed as is; whatever is left of the end2end call
     (result extraction, OCR crops) is ``extract``.
     """
 
     def __init__(self, image_models: list[Any]) -> None:
         self.times: dict[str, float] = dict.fromkeys(STAGES, 0.0)
+        self._active: set[str] = set()
         for m in image_models:
             m.prepare_inputs = self._wrap(m.prepare_inputs, "preprocess", sync=True)
-            m.infer = self._wrap(m.infer, "infer")
+            m.infer = self._wrap(m.infer, "infer", sync=True)
+            m._infer_post = self._wrap(m._infer_post, "infer", sync=True)  # noqa: SLF001
             m.postprocess = self._wrap(m.postprocess, "postprocess")
 
     def _wrap(self, fn: Callable[..., Any], stage: str, *, sync: bool = False) -> Callable[..., Any]:
         def timed(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+            # _infer_post calls infer on the CPU path, count the stage once
+            if stage in self._active:
+                return fn(*args, **kwargs)
+            self._active.add(stage)
             t0 = time.perf_counter()
-            out = fn(*args, **kwargs)
-            if sync:
-                _sync()
+            try:
+                out = fn(*args, **kwargs)
+                if sync:
+                    _sync()
+            finally:
+                self._active.discard(stage)
             self.times[stage] += time.perf_counter() - t0
             return out
 
@@ -174,10 +184,11 @@ def bench_task(
     preprocessor: str,
     warmup: int,
     iterations: int,
+    postprocessor: str = "cpu",
 ) -> dict[str, Any]:
     """Time ``iterations`` end2end calls, both plain and split into stages."""
     image = load_frame(spec.image)
-    model = load_model(spec, preprocessor)
+    model = load_model(spec, preprocessor, postprocessor)
     for _ in range(warmup):
         model.end2end(image)
 
@@ -202,6 +213,7 @@ def bench_task(
         "task": spec.task,
         "model": spec.name,
         "preprocessor": preprocessor,
+        "postprocessor": postprocessor,
         "frame": list(FRAME_SIZE),
         "end2end": compute_results(totals),
         "stages": {s: compute_results(v) for s, v in stages.items()},
@@ -215,6 +227,7 @@ def run_tasks(
     warmup: int,
     iterations: int,
     *,
+    postprocessors: tuple[str, ...] = ("cpu",),
     overwrite: bool = False,
 ) -> dict[str, Any]:
     """Benchmark every task model (or those in ``names``) and save to data/tasks/<device>.json."""
@@ -223,13 +236,19 @@ def run_tasks(
         if names is not None and spec.name not in names:
             continue
         # OCR preprocesses on the CPU only
-        for prep in ["cpu"] if spec.parts else preprocessors:
-            key = f"{spec.name}/{prep}"
+        runs = [(pre, post) for post in postprocessors for pre in (["cpu"] if spec.parts else preprocessors)]
+        for prep, post in runs:
+            key = f"{spec.name}/{prep}" + ("" if post == "cpu" else f"/{post}-post")
             if key in data and not overwrite:
                 print(f"Skipping {key} (already exists)")
                 continue
             print(f"Benchmarking {key}")
-            data[key] = bench_task(spec, prep, warmup, iterations)
+            try:
+                data[key] = bench_task(spec, prep, warmup, iterations, post)
+            except ValueError as err:
+                # the task has no such postprocessor
+                print(f"Skipping {key}: {err}")
+                continue
             res = data[key]
             parts = ", ".join(f"{s} {res['stages'][s]['mean']:.2f}" for s in STAGES)
             print(f"\t{key}: end2end {res['end2end']['mean']:.2f}ms ({parts})")
