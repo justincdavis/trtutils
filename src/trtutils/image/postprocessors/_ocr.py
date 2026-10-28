@@ -31,10 +31,12 @@ def _mini_box(rect: tuple) -> tuple[np.ndarray, float]:
 def _box_score(pred: np.ndarray, box: np.ndarray) -> float:
     """Mean probability of ``pred`` inside the polygon ``box``."""
     h, w = pred.shape
-    xmin = int(np.clip(np.floor(box[:, 0].min()), 0, w - 1))
-    xmax = int(np.clip(np.ceil(box[:, 0].max()), 0, w - 1))
-    ymin = int(np.clip(np.floor(box[:, 1].min()), 0, h - 1))
-    ymax = int(np.clip(np.ceil(box[:, 1].max()), 0, h - 1))
+    # plain floats: numpy calls on a 4x2 box cost more than the math
+    xs, ys = box.T.tolist()
+    xmin = min(max(math.floor(min(xs)), 0), w - 1)
+    xmax = min(max(math.ceil(max(xs)), 0), w - 1)
+    ymin = min(max(math.floor(min(ys)), 0), h - 1)
+    ymax = min(max(math.ceil(max(ys)), 0), h - 1)
     mask = np.zeros((ymax - ymin + 1, xmax - xmin + 1), dtype=np.uint8)
     cv2.fillPoly(mask, [(box - (xmin, ymin)).astype(np.int32)], (1,))
     return cv2.mean(pred[ymin : ymax + 1, xmin : xmax + 1], mask)[0]
@@ -52,13 +54,18 @@ def _unclip(box: np.ndarray, unclip_ratio: float) -> tuple:
     arc tolerance 0.25) used by the reference implementation, so boxes match it
     pixel-for-pixel. Returns the cv2.minAreaRect of the expanded polygon.
     """
-    pts = box.astype(np.float64)
-    nxt = np.roll(pts, -1, axis=0)
-    area = abs(float(np.sum(pts[:, 0] * nxt[:, 1] - nxt[:, 0] * pts[:, 1]))) / 2
-    delta = area * unclip_ratio / float(np.sum(np.linalg.norm(nxt - pts, axis=1)))
+    # float64 shoelace area and perimeter, summed in numpy's order for small arrays
+    pts = box.tolist()
+    nxt = pts[1:] + pts[:1]
+    area = abs(sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(pts, nxt))) / 2
+    perimeter = sum(
+        math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0))
+        for (x0, y0), (x1, y1) in zip(pts, nxt)
+    )
+    delta = area * unclip_ratio / perimeter
 
     # integer polygon, consecutive duplicates removed, counter-clockwise
-    ipts = [(int(x), int(y)) for x, y in box.tolist()]
+    ipts = [(int(x), int(y)) for x, y in pts]
     ipts = [p for i, p in enumerate(ipts) if p != ipts[i - 1]] or ipts[:1]
     n = len(ipts)
     signed = sum(
