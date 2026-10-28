@@ -141,6 +141,10 @@ Changed
   boxes, texts and scores equal the CPU path exactly (on x86 OpenCV 4.11); CUDA graphs now
   replay the detector for consecutive images of one size. 14-line 1080p page on an RTX 5080:
   21 -> 10.7 ms
+* ``PPOCRDetector.build`` and ``PPOCRRecognizer.build`` default to ``fp16=True``, like the other
+  models. On 24 rendered pages FP16 changed ~4% of recognized lines, with the same character error
+  rate against the ground truth (2.38% FP32, 2.41% FP16); 14-line page 10.7 -> 8.2 ms on an RTX
+  5080. Pass ``fp16=False`` for the FP32 behavior
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``

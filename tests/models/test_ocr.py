@@ -54,13 +54,13 @@ def _blank(height: int, width: int) -> np.ndarray:
 @pytest.fixture(scope="module")
 def det_engine(build_model_engine):
     """Dynamic-shape PP-OCR detection engine."""
-    return build_model_engine(PPOCRDetector, DET_ONNX)
+    return build_model_engine(PPOCRDetector, DET_ONNX, tag="fp16")
 
 
 @pytest.fixture(scope="module")
 def small_det_engine(det_engine):  # det_engine skips when the onnx is missing
     """Detection engine whose profile tops out at batch 2 and 320x320."""
-    path = engine_cache_path(f"{DET_ONNX.stem}_PPOCRDetector_img320_max320", 2)
+    path = engine_cache_path(f"{DET_ONNX.stem}_PPOCRDetector_img320_max320_fp16", 2)
     if not path.exists():
         PPOCRDetector.build(DET_ONNX, path, imgsz=320, batch_size=2, max_imgsz=320, opt_level=1)
     return path
@@ -69,7 +69,7 @@ def small_det_engine(det_engine):  # det_engine skips when the onnx is missing
 @pytest.fixture(scope="module")
 def rec_engine(build_model_engine):
     """Dynamic-shape PP-OCR recognition engine, batch 3 so the three LINES crops fit one run."""
-    return build_model_engine(PPOCRRecognizer, REC_ONNX, batch_size=len(LINES))
+    return build_model_engine(PPOCRRecognizer, REC_ONNX, batch_size=len(LINES), tag="fp16")
 
 
 @pytest.mark.parametrize(
