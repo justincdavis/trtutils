@@ -145,8 +145,10 @@ Changed
   models. On 24 rendered pages FP16 changed ~4% of recognized lines, with the same character error
   rate against the ground truth (2.38% FP32, 2.41% FP16); 14-line page 10.7 -> 8.2 ms on an RTX
   5080. Pass ``fp16=False`` for the FP32 behavior
-* ``PPOCR`` enqueues every recognizer batch before one stream sync, and the DB box unclip and
-  score bounds use plain floats (same boxes): 14-line page 8.2 -> 7.4 ms on an RTX 5080
+* ``PPOCR`` enqueues every recognizer batch before one stream sync, the DB box unclip and score
+  bounds use plain floats (same boxes), and ``TextDetector`` / ``TextRecognizer`` run their
+  engines on non-blocking streams, so TensorRT's own synchronous copies stop waiting on queued
+  work: 14-line page 8.2 -> 7.0 ms on an RTX 5080. ``create_stream(non_blocking=True)`` makes one
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``

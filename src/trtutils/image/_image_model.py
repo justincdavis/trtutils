@@ -26,6 +26,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 from trtutils.core._device import Device
+from trtutils.core._stream import create_stream
 
 from ._schema import resolve_schema
 from .preprocessors import (
@@ -83,6 +84,9 @@ class ImageModel:
     _OUTPUT_SCHEMA: ClassVar[type[Enum] | None] = None
     # whether postprocess() reads device outputs when postprocessor="cuda"
     _cuda_postprocess: ClassVar[bool] = False
+    # run the engine on a non-blocking stream, for models that sync it explicitly: TensorRT's
+    # own synchronous copies then don't wait on work queued on the stream
+    _non_blocking_stream: ClassVar[bool] = False
 
     def __init__(  # noqa: C901, PLR0915
         self: Self,
@@ -202,6 +206,10 @@ class ImageModel:
 
             self._device = device
             self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+            stream = None
+            if self._non_blocking_stream:
+                with Device(device):
+                    stream = create_stream(non_blocking=True)
             self._engine = TRTEngine(
                 engine_path=engine_path,
                 warmup_iterations=warmup_iterations,
@@ -212,6 +220,7 @@ class ImageModel:
                 pagelocked_mem=self._pagelocked_mem,
                 unified_mem=unified_mem,
                 cuda_graph=cuda_graph,
+                stream=stream,
                 no_warn=no_warn,
                 verbose=verbose,
             )

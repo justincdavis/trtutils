@@ -64,6 +64,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
 
     _OUTPUT_SCHEMA = TextDetectorOutputSchema
     _cuda_postprocess = True
+    _non_blocking_stream = True
 
     def __init__(
         self: Self,
@@ -760,6 +761,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
 
     _OUTPUT_SCHEMA = TextRecognizerOutputSchema
     _cuda_postprocess = True
+    _non_blocking_stream = True
 
     def __init__(
         self: Self,
