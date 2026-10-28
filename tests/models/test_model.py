@@ -132,4 +132,4 @@ def test_wrappers_accept_postprocessor(name: str) -> None:
     cls = getattr(models, name)
     if not issubclass(cls, Model) or "cuda_graph" not in inspect.signature(cls).parameters:
         pytest.skip("not an image model wrapper")
-    assert inspect.signature(cls).parameters["postprocessor"].default == "cpu"
+    assert inspect.signature(cls).parameters["postprocessor"].default is None

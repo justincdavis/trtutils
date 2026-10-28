@@ -63,7 +63,7 @@ class Detector(ImageModel, DetectorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         class_map: Mapping[int, int] | None = None,
@@ -140,7 +140,8 @@ class Detector(ImageModel, DetectorInterface):
             Only effective with async_v3 backend. Default is True.
         postprocessor : str, optional
             Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
-            on the GPU and copies back only the final results. Default is 'cpu'.
+            on the GPU and copies back only the final results. Default is None,
+            which picks 'cuda' when the task has a CUDA postprocessor, else 'cpu'.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.

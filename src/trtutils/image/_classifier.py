@@ -53,7 +53,7 @@ class Classifier(ImageModel, ClassifierInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         softmax: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -116,7 +116,8 @@ class Classifier(ImageModel, ClassifierInterface):
             Only effective with async_v3 backend. Default is True.
         postprocessor : str, optional
             Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
-            on the GPU and copies back only the final results. Default is 'cpu'.
+            on the GPU and copies back only the final results. Default is None,
+            which picks 'cuda' when the task has a CUDA postprocessor, else 'cpu'.
         softmax : bool, optional
             Whether or not to apply softmax to the raw network outputs during
             postprocessing. Default is True. Some networks already apply

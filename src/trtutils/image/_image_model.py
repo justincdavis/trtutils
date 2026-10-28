@@ -99,7 +99,7 @@ class ImageModel:
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
         output_schema: Enum | str | None = None,
@@ -156,7 +156,8 @@ class ImageModel:
             Only effective with async_v3 backend. Default is True.
         postprocessor : str, optional
             Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
-            on the GPU and copies back only the final results. Default is 'cpu'.
+            on the GPU and copies back only the final results. Default is None,
+            which picks 'cuda' when the task has a CUDA postprocessor, else 'cpu'.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -264,6 +265,8 @@ class ImageModel:
             # (update_input_range/update_mean_std rebuild them)
             self._preprocessor_method: str = self._resolve_method(preprocessor)
             valid = ("cpu", "cuda") if self._cuda_postprocess else ("cpu",)
+            # the CUDA postprocessors win on every task that has one (benchmark/run.py tasks)
+            postprocessor = postprocessor if postprocessor is not None else valid[-1]
             if postprocessor not in valid:
                 err_msg = f"Invalid postprocessor '{postprocessor}' for {type(self).__name__}, expected one of {valid}"
                 raise ValueError(err_msg)

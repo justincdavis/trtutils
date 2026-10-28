@@ -39,7 +39,7 @@ class DepthAnythingV1(DepthEstimator, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -90,7 +90,7 @@ class DepthAnythingV2(DepthEstimator, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -141,7 +141,7 @@ class DepthAnythingV3(DepthEstimator, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:

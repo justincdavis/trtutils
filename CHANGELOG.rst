@@ -109,6 +109,13 @@ Added
   is matched against the engine's output names in any order, and a wrong engine raises
   ``ValueError``
 * ``image.types`` aliases ``Segmentation``, ``Pose``, ``OBBDetection`` and ``RBox``
+* ``postprocessor="cpu"|"cuda"`` on every image model and wrapper. ``Segmenter``,
+  ``PoseEstimator``, ``OBBDetector``, ``TextDetector``, ``TextRecognizer`` and ``PPOCR`` have
+  CUDA postprocessors (NMS, masks, probiou, CTC decode, DB binarize) that read the engine outputs
+  on the device and copy back only the results; they match the CPU path exactly (OBB enclosing
+  boxes to 1e-4 px). Default None picks ``"cuda"`` where available. 1080p end2end on an RTX
+  5080: yolo11n-seg 4.6 -> 1.6 ms, yolo11n-obb 6.1 -> 2.1 ms, yolo11n-pose 1.05 -> 0.89 ms,
+  PPOCRv4 on a 14-line page 26 -> 21 ms
 
 Changed
 ^^^^^^^
@@ -118,6 +125,10 @@ Changed
   cost more than decoding the masks (yolo11n-seg postprocess 5.9 ms -> 3.3 ms on 1080p frames)
 * OBB rotated NMS runs in float32 on small score-ordered blocks and skips pairs too far apart
   to overlap; same results, yolo11n-obb postprocess 28 ms -> 5 ms on 1080p frames
+* ``get_detections`` (and segmentation/pose result extraction) converts results in bulk instead
+  of per numpy scalar: same tuples, 168 -> 42 us per image with 240 detections
+* ``PPOCR`` crops the detected text lines on a thread pool: same results, 41 -> 26 ms on a
+  14-line 1080p page
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``

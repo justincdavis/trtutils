@@ -81,7 +81,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,  # noqa: ARG002
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         use_dilation: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -162,7 +162,8 @@ class TextDetector(ImageModel, TextDetectorInterface):
             changes on almost every call.
         postprocessor : str, optional
             Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
-            on the GPU and copies back only the final results. Default is 'cpu'.
+            on the GPU and copies back only the final results. Default is None,
+            which picks 'cuda' when the task has a CUDA postprocessor, else 'cpu'.
         use_dilation : bool, optional
             Whether or not to dilate the binarized map before extracting boxes.
             By default None, which means no dilation.
@@ -715,7 +716,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,  # noqa: ARG002
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         use_space_char: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -783,7 +784,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             changes on almost every call.
         postprocessor : str, optional
             Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
-            on the GPU and copies back only the final results. Default is 'cpu'.
+            on the GPU and copies back only the final results. Default is None,
+            which picks 'cuda' when the task has a CUDA postprocessor, else 'cpu'.
         use_space_char : bool, optional
             Whether or not the model has an extra trailing class for the space
             character. By default None, which means True.

@@ -52,7 +52,7 @@ class PPOCRDetector(TextDetector, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         use_dilation: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -185,7 +185,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         use_space_char: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -305,7 +305,7 @@ class PPOCR(OCR):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        postprocessor: str = "cpu",
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -360,7 +360,8 @@ class PPOCR(OCR):
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
         postprocessor : str, optional
-            Where to postprocess, 'cpu' or 'cuda', for both models. By default 'cpu'.
+            Where to postprocess, 'cpu' or 'cuda', for both models. By default None,
+            which uses the CUDA postprocessor.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
