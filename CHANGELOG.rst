@@ -114,7 +114,7 @@ Added
   CUDA postprocessors (NMS, masks, probiou, CTC decode, DB binarize) that read the engine outputs
   on the device and copy back only the results; they match the CPU path exactly (OBB enclosing
   boxes to 1e-4 px). Default None picks ``"cuda"`` where available. 1080p end2end on an RTX
-  5080: yolo11n-seg 4.6 -> 1.3 ms, yolo11n-obb 6.0 -> 1.2 ms, yolo11n-pose 1.08 -> 0.90 ms,
+  5080: yolo11n-seg 4.6 -> 1.2 ms, yolo11n-obb 6.0 -> 1.2 ms, yolo11n-pose 1.08 -> 0.90 ms,
   PPOCRv4 on a 14-line page 26 -> 21 ms (see Changed for the further 21 -> 11 ms)
 
 Changed
