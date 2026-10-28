@@ -97,7 +97,8 @@ void yoloRank(
     dst[3] = cy + hh;
 }
 
-// bit j of row i is set when sorted box j > i overlaps box i of the same class
+// bit j of row i is set when sorted box j > i overlaps box i of the same class;
+// one block per 64 rows walks the column blocks at or after its own
 extern "C" __global__
 void yoloNmsMask(
     const int N,
@@ -111,44 +112,51 @@ void yoloNmsMask(
     __shared__ int colCls[64];
     const int b = blockIdx.z;
     const int n = count[b];
-    const int rowStart = blockIdx.y * 64;
-    const int colStart = blockIdx.x * 64;
-    if (rowStart >= n || colStart >= n || blockIdx.x < blockIdx.y) return;
+    const int rowStart = blockIdx.x * 64;
+    if (rowStart >= n) return;
     const size_t base = (size_t)b * N;
     const int words = (N + 63) / 64;
-    const int cols = min(64, n - colStart);
-    if ((int)threadIdx.x < cols) {
-        const int j = colStart + threadIdx.x;
-        for (int k = 0; k < 4; ++k) colBox[threadIdx.x * 4 + k] = sortBox[(base + j) * 4 + k];
-        colCls[threadIdx.x] = sortCls[base + j];
-    }
-    __syncthreads();
     const int i = rowStart + threadIdx.x;
-    if (i >= n) return;
-    const float* bi = sortBox + (base + i) * 4;
+    const bool active = i < n;
     // opencv computes IoU on double (x, y, w, h) rects built from float32 xywh
-    const double ax = bi[0];
-    const double ay = bi[1];
-    const double aw = (double)(bi[2] - bi[0]);
-    const double ah = (double)(bi[3] - bi[1]);
-    const int ci = sortCls[base + i];
-    unsigned long long bits = 0;
-    const int first = (colStart == rowStart) ? threadIdx.x + 1 : 0;
-    for (int t = first; t < cols; ++t) {
-        if (colCls[t] != ci) continue;
-        const float* bj = colBox + t * 4;
-        const double bx = bj[0];
-        const double by = bj[1];
-        const double bw = (double)(bj[2] - bj[0]);
-        const double bh = (double)(bj[3] - bj[1]);
-        const double iw = fmin(ax + aw, bx + bw) - fmax(ax, bx);
-        const double ih = fmin(ay + ah, by + bh) - fmax(ay, by);
-        if (iw <= 0.0 || ih <= 0.0) continue;
-        const double inter = iw * ih;
-        const double uni = aw * ah + bw * bh - inter;
-        if (uni > 0.0 && inter / uni > iouThres) bits |= 1ULL << t;
+    double ax = 0.0, ay = 0.0, aw = 0.0, ah = 0.0;
+    int ci = -1;
+    if (active) {
+        const float* bi = sortBox + (base + i) * 4;
+        ax = bi[0];
+        ay = bi[1];
+        aw = (double)(bi[2] - bi[0]);
+        ah = (double)(bi[3] - bi[1]);
+        ci = sortCls[base + i];
     }
-    mask[(base + i) * words + blockIdx.x] = bits;
+    for (int colStart = rowStart; colStart < n; colStart += 64) {
+        const int cols = min(64, n - colStart);
+        __syncthreads();
+        if ((int)threadIdx.x < cols) {
+            const int j = colStart + threadIdx.x;
+            for (int k = 0; k < 4; ++k) colBox[threadIdx.x * 4 + k] = sortBox[(base + j) * 4 + k];
+            colCls[threadIdx.x] = sortCls[base + j];
+        }
+        __syncthreads();
+        if (!active) continue;
+        unsigned long long bits = 0;
+        const int first = (colStart == rowStart) ? threadIdx.x + 1 : 0;
+        for (int t = first; t < cols; ++t) {
+            if (colCls[t] != ci) continue;
+            const float* bj = colBox + t * 4;
+            const double bx = bj[0];
+            const double by = bj[1];
+            const double bw = (double)(bj[2] - bj[0]);
+            const double bh = (double)(bj[3] - bj[1]);
+            const double iw = fmin(ax + aw, bx + bw) - fmax(ax, bx);
+            const double ih = fmin(ay + ah, by + bh) - fmax(ay, by);
+            if (iw <= 0.0 || ih <= 0.0) continue;
+            const double inter = iw * ih;
+            const double uni = aw * ah + bw * bh - inter;
+            if (uni > 0.0 && inter / uni > iouThres) bits |= 1ULL << t;
+        }
+        mask[(base + i) * words + colStart / 64] = bits;
+    }
 }
 
 // greedy pass over the sorted boxes, one block per image
@@ -201,9 +209,12 @@ void yoloSegGather(
     const float* __restrict__ letterbox,  // per image: ratio x, ratio y, pad x, pad y, width, height
     float* __restrict__ dets,
     float* __restrict__ coefs
+,
+    int* __restrict__ keepCountOut  // mapped host copy of keepCount
 ) {
     const int k = blockIdx.x;
     const int b = blockIdx.y;
+    if (k == 0 && threadIdx.x == 0) keepCountOut[b] = keepCount[b];
     if (k >= keepCount[b]) return;
     const size_t base = (size_t)b * N;
     const int s = keep[(size_t)b * maxDet + k];
@@ -222,6 +233,27 @@ void yoloSegGather(
     const int a = sortAnchor[base + s];
     for (int m = threadIdx.x; m < nm; m += blockDim.x) {
         coefs[row * nm + m] = out[((size_t)b * C + coefStart + m) * N + a];
+    }
+}
+
+// zero the boxes the previous frame wrote into each mask
+extern "C" __global__
+void yoloSegClear(
+    unsigned char* __restrict__ masks,  // (>= n, height, width)
+    const int* __restrict__ regions,  // (n, 4) x1, y1, x2, y2
+    const int n,
+    const int width,
+    const int height
+) {
+    const int k = blockIdx.x;
+    if (k >= n) return;
+    const int* r = regions + k * 4;
+    const int bw = r[2] - r[0];
+    const int total = bw * (r[3] - r[1]);
+    if (total <= 0) return;
+    unsigned char* dst = masks + (size_t)k * height * width;
+    for (int p = blockIdx.y * blockDim.x + threadIdx.x; p < total; p += gridDim.y * blockDim.x) {
+        dst[(size_t)(r[1] + p / bw) * width + r[0] + p % bw] = 0;
     }
 }
 
@@ -335,9 +367,12 @@ void yoloPoseGather(
     const float* __restrict__ letterbox,  // per image: ratio x, ratio y, pad x, pad y, width, height
     float* __restrict__ dets,
     float* __restrict__ kpts
+,
+    int* __restrict__ keepCountOut  // mapped host copy of keepCount
 ) {
     const int k = blockIdx.x;
     const int b = blockIdx.y;
+    if (k == 0 && threadIdx.x == 0) keepCountOut[b] = keepCount[b];
     if (k >= keepCount[b]) return;
     const size_t base = (size_t)b * N;
     const int s = keep[(size_t)b * maxDet + k];

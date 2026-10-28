@@ -37,8 +37,14 @@ class MaskCanvas:
         # (index, y1, y2, x1, x2) of every box written since the last take
         self.written: list[tuple[int, int, int, int, int]] = []
 
-    def take(self, n: int, height: int, width: int) -> np.ndarray:
-        """Return a zeroed (n, height, width) view, growing the stack when needed."""
+    def take(self, n: int, height: int, width: int, *, clear: bool = True) -> np.ndarray:
+        """
+        Return a zeroed (n, height, width) view, growing the stack when needed.
+
+        With ``clear=False`` a reused stack keeps the previous boxes, listed in
+        :attr:`written`, for the caller to zero (the CUDA postprocessor does it
+        on the device); a new stack is already zero and ``written`` is empty.
+        """
         stack = self._stack
         if stack.shape[1:] != (height, width) or stack.shape[0] < n:
             shape = (max(n, stack.shape[0]), height, width)
@@ -48,10 +54,11 @@ class MaskCanvas:
                 self._stack.fill(0)
             else:
                 self._stack = np.zeros(shape, dtype=np.uint8)
-        else:
+            self.written = []
+        elif clear:
             for idx, y1, y2, x1, x2 in self.written:
                 stack[idx, y1:y2, x1:x2] = 0
-        self.written = []
+            self.written = []
         return self._stack[:n]
 
     @property

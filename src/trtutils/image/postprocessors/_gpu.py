@@ -125,7 +125,7 @@ class YoloNms:
             float(nms_iou_thres),
             self._bits.ptr,
         )
-        self._mask.call((words, words, batch), (64, 1, 1), stream, args)
+        self._mask.call((words, 1, batch), (64, 1, 1), stream, args)
         args = self._reduce.create_args(
             num,
             max_det,
@@ -145,6 +145,7 @@ class CudaSegPostprocessor:
         self._nms = YoloNms()
         self._gather = Kernel(file, "yoloSegGather")
         self._masks = Kernel(file, "yoloSegMasks")
+        self._clear = Kernel(file, "yoloSegClear")
         self._shape: tuple[int, int, int] | None = None
 
     def __call__(
@@ -173,7 +174,9 @@ class CudaSegPostprocessor:
         if self._shape != (batch, nm, max_det):
             self._dets = _mapped((batch, max_det, 6), np.float32)
             self._coefs = _device((batch, max_det, nm), np.float32)
-            self._regions = _mapped((max_det, 4), np.int32)
+            # boxes each mask wrote this frame, and the previous frame's to clear
+            self._regions = _mapped((batch, max_det, 4), np.int32)
+            self._stale = _mapped((batch, max_det, 4), np.int32)
             self._keep_count = _mapped((batch,), np.int32)
             self._letterbox = _mapped((batch, 6), np.float32)
             self._shape = (batch, nm, max_det)
@@ -189,15 +192,6 @@ class CudaSegPostprocessor:
 
         self._nms(head, 4, channels - 4 - nm, conf_thres, nms_iou_thres, max_det, stream)
         nms = self._nms
-        cuda_call(
-            cudart.cudaMemcpyAsync(
-                self._keep_count.ptr,
-                nms.keep_count.ptr,
-                nms.keep_count.nbytes,
-                cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
-                stream,
-            ),
-        )
         args = self._gather.create_args(
             head.device_ptr,
             channels,
@@ -214,32 +208,69 @@ class CudaSegPostprocessor:
             self._letterbox.device_ptr,
             self._dets.device_ptr,
             self._coefs.ptr,
+            self._keep_count.device_ptr,
         )
         self._gather.call((max_det, batch, 1), (32, 1, 1), stream, args)
         stream_synchronize(stream)
 
-        results = []
+        counts = [int(c) for c in self._keep_count.array]
+        masks = []
         for i in range(batch):
-            n = int(self._keep_count.array[i])
             width, height = sizes[i]
-            masks = canvases[i].take(n, height, width)
-            if n > 0:
+            canvas = canvases[i]
+            masks.append(canvas.take(counts[i], height, width, clear=False))
+            self._clear_stale(i, canvas, (width, height), stream)
+            if counts[i] > 0:
                 self._launch_masks(
                     proto,
                     i,
-                    n,
+                    counts[i],
                     (width, height),
                     input_size,
                     padding[i],
                     mask_thres,
-                    canvases[i],
+                    canvas,
                     stream,
                 )
+        stream_synchronize(stream)
+
+        results = []
+        for i in range(batch):
+            n = counts[i]
+            regions = self._regions.array[i, :n].tolist()
+            canvases[i].written = [
+                (k, by1, by2, bx1, bx2) for k, (bx1, by1, bx2, by2) in enumerate(regions)
+            ]
             dets = self._dets.array[i, :n]
             results.append(
-                [dets[:, :4].copy(), dets[:, 4].copy(), dets[:, 5].astype(np.int64), masks],
+                [dets[:, :4].copy(), dets[:, 4].copy(), dets[:, 5].astype(np.int64), masks[i]],
             )
         return results
+
+    def _clear_stale(
+        self: Self,
+        index: int,
+        canvas: MaskCanvas,
+        size: tuple[int, int],
+        stream: cudart.cudaStream_t,
+    ) -> None:
+        # zero the previous frame's boxes on the device instead of the CPU
+        if not canvas.written:
+            return
+        n = max(entry[0] for entry in canvas.written) + 1
+        stale = self._stale.array[index]
+        stale[:n] = 0
+        for idx, y1, y2, x1, x2 in canvas.written:
+            stale[idx] = (x1, y1, x2, y2)
+        width, height = size
+        args = self._clear.create_args(
+            canvas.device_ptr,
+            self._stale.device_ptr + index * self._stale.shape[1] * 4 * 4,
+            n,
+            width,
+            height,
+        )
+        self._clear.call((n, 16, 1), (256, 1, 1), stream, args)
 
     def _launch_masks(
         self: Self,
@@ -281,12 +312,9 @@ class CudaSegPostprocessor:
             _f64(y0 + 0.5 * scale_y - 0.5),
             float(mask_thres),
             canvas.device_ptr,
-            self._regions.device_ptr,
+            self._regions.device_ptr + index * self._regions.shape[1] * 4 * 4,
         )
         self._masks.call((n, 32, 1), (256, 1, 1), stream, args)
-        stream_synchronize(stream)
-        regions = self._regions.array[:n].tolist()
-        canvas.written = [(k, by1, by2, bx1, bx2) for k, (bx1, by1, bx2, by2) in enumerate(regions)]
 
 
 class CudaPosePostprocessor:
@@ -330,15 +358,6 @@ class CudaPosePostprocessor:
 
         nms = self._nms
         nms(head, 4, 1, conf_thres, nms_iou_thres, max_det, stream)
-        cuda_call(
-            cudart.cudaMemcpyAsync(
-                self._keep_count.ptr,
-                nms.keep_count.ptr,
-                nms.keep_count.nbytes,
-                cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
-                stream,
-            ),
-        )
         args = self._gather.create_args(
             head.device_ptr,
             channels,
@@ -355,6 +374,7 @@ class CudaPosePostprocessor:
             self._letterbox.device_ptr,
             self._dets.device_ptr,
             self._kpts.device_ptr,
+            self._keep_count.device_ptr,
         )
         self._gather.call((max_det, batch, 1), (32, 1, 1), stream, args)
         stream_synchronize(stream)
