@@ -134,6 +134,7 @@ The benchmark system uses `trtutils.download` to automatically download and expo
 - **`data/`**: Benchmark data directory:
   - **`data/models/`**: Device benchmark results (one JSON per device, e.g. `3080Ti.json`). Written by `run.py`.
   - **`data/optimizations/`**: Optimization benchmark results (one JSON per device). Written by `optimizations.py`.
+  - **`data/tasks/`**: Per-task stage breakdowns (one JSON per device). Written by `run.py tasks`.
 
 ### How It Works
 
@@ -203,6 +204,24 @@ The grid covers preprocessor x CUDA graph x memory mode x input composition: `si
 `resolution-switch` (single images alternating 720p/1080p each call). Batch compositions
 run on a static batch-8 engine whose ONNX is exported with `trtutils download --batch`.
 Results are saved to `data/optimizations/{device}.json`.
+
+### Task Stage Breakdown
+
+Time one model per task (detection, classification, segmentation, pose, OBB, depth, hand
+interaction, OCR) on a 1920x1080 frame, split into preprocess, inference, postprocess, and
+result extraction:
+
+```bash
+python benchmark/run.py tasks --device MyDevice
+python benchmark/run.py tasks --device MyDevice --model yolov11n-seg --preprocessors cuda
+```
+
+Models are the smallest of each task (yolo11n and yolo26n for the YOLO tasks,
+depth_anything_v2_small, hands23_x101, ppocrv4). ONNX files and engines live in the repo's
+`data/tasks/` and are downloaded and built on first use. Each model runs `end2end` once without
+instrumentation for the end-to-end time, then again with its stages timed; preprocessing syncs
+the device so GPU preprocessing is not billed to inference. Results are saved to
+`data/tasks/{device}.json`.
 
 ### Perf Series
 
