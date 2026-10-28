@@ -215,6 +215,30 @@ def test_cuda_seg_nms_with_a_pair_iou_as_threshold(pick: int) -> None:
         destroy_stream(stream)
 
 
+def test_cuda_seg_reused_canvases_grow_and_shrink() -> None:
+    """Frames with more, fewer, then more masks than the canvas holds, and a new frame size."""
+    rng = np.random.default_rng(1)
+    head, proto = _seg_head(rng, 2, num=500, nc=3, nm=8)
+    outputs = [Buffer.from_array(a, MemoryLocation.DEVICE) for a in (head, proto)]
+    padding = [(0.0, 6.0), (10.0, 0.0)]
+    kwargs = {"max_det": 300, "input_size": INPUT}
+    stream = create_stream()
+    try:
+        canvases = [MaskCanvas(mapped=True) for _ in range(2)]
+        post = CudaSegPostprocessor()
+        for conf_thres, ratio in [(0.9, 0.6), (0.25, 0.6), (0.6, 0.6), (0.1, 0.6), (0.25, 0.5)]:
+            ratios = [(ratio, ratio), (0.35, 0.35)]
+            args = ([head, proto], ratios, padding, conf_thres, 0.5)
+            ref = postprocess_yolo_seg(*args, **kwargs)
+            args = (outputs, ratios, padding, conf_thres, 0.5, 0.5)
+            ours = post(*args, canvases=canvases, stream=stream, **kwargs)
+            for got, want in zip(ours, ref):
+                for field, expected in zip(got, want):
+                    np.testing.assert_array_equal(field, expected)
+    finally:
+        destroy_stream(stream)
+
+
 def _one_box_seg(x2: float) -> list:
     """One detection spanning x 4..x2 whose mask fills the whole box."""
     head = np.zeros((1, 4 + 1 + 4, 1), dtype=np.float32)

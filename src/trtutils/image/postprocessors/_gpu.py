@@ -353,6 +353,25 @@ class CudaSegPostprocessor:
 
         self._nms(head, 4, channels - 4 - nm, conf_thres, nms_iou_thres, max_det, stream)
         nms = self._nms
+
+        def draw(i: int, n: int) -> np.ndarray:
+            width, height = sizes[i]
+            view = canvases[i].take(n, height, width, clear=False)
+            count_ptr = nms.keep_count.ptr + i * 4
+            self._draw_masks(
+                proto,
+                i,
+                n,
+                count_ptr,
+                sizes[i],
+                input_size,
+                padding[i],
+                mask_thres,
+                canvases[i],
+                stream,
+            )
+            return view
+
         args = _args(
             self._gather,
             head.device_ptr,
@@ -374,30 +393,26 @@ class CudaSegPostprocessor:
         )
         self._gather.call((max_det, batch, 1), (32, 1, 1), stream, args)
         memcpy_device_to_host_async(self._dets_host.array, self._dets.ptr, stream)
+
+        # draw into each canvas's current depth before the counts are known, so one sync
+        # covers the usual frame; the kernels stop at the kept count on the device
+        caps = [canvases[i].capacity(sizes[i][1], sizes[i][0]) for i in range(batch)]
+        masks = [draw(i, caps[i]) for i in range(batch)]
         stream_synchronize(stream)
 
+        # more masks than the canvas holds (or a new canvas): grow it and draw again
         counts = [int(c) for c in self._keep_count.array]
-        masks = []
-        for i in range(batch):
-            width, height = sizes[i]
-            masks.append(canvases[i].take(counts[i], height, width, clear=False))
-            self._draw_masks(
-                proto,
-                i,
-                counts[i],
-                sizes[i],
-                input_size,
-                padding[i],
-                mask_thres,
-                canvases[i],
-                stream,
-            )
-        stream_synchronize(stream)
+        redo = [i for i in range(batch) if counts[i] > caps[i]]
+        for i in redo:
+            masks[i] = draw(i, counts[i])
+        if redo:
+            stream_synchronize(stream)
 
         results = []
         for i in range(batch):
             n = counts[i]
             regions = self._regions.array[i, :n].tolist()
+            masks[i] = masks[i][:n]
             canvases[i].written = [
                 (k, by1, by2, bx1, bx2) for k, (bx1, by1, bx2, by2) in enumerate(regions)
             ]
@@ -412,6 +427,7 @@ class CudaSegPostprocessor:
         proto: Buffer,
         index: int,
         n: int,
+        count_ptr: int,
         size: tuple[int, int],
         input_size: tuple[int, int],
         padding: tuple[float, float],
@@ -460,6 +476,7 @@ class CudaSegPostprocessor:
                 height,
                 dets,
                 n,
+                count_ptr,
                 mh,
                 mw,
                 *geometry[2:],
@@ -477,6 +494,7 @@ class CudaSegPostprocessor:
             dets,
             self._coefs.ptr + index * self._coefs.shape[1] * nm * 4,
             n,
+            count_ptr,
             *geometry,
             self._probs.ptr,
         )
@@ -488,6 +506,7 @@ class CudaSegPostprocessor:
             mw,
             dets,
             n,
+            count_ptr,
             *geometry,
             float(mask_thres),
             canvas.device_ptr,

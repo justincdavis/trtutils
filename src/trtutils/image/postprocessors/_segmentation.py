@@ -61,6 +61,10 @@ class MaskCanvas:
             self.written = []
         return self._stack[:n]
 
+    def capacity(self, height: int, width: int) -> int:
+        """How many (height, width) masks :meth:`take` hands out without reallocating."""
+        return self._stack.shape[0] if self._stack.shape[1:] == (height, width) else 0
+
     @property
     def device_ptr(self) -> int:
         """The device address of a mapped canvas, valid after :meth:`take`."""

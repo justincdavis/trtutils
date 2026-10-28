@@ -387,6 +387,7 @@ void yoloSegClear(
     const int height,
     const float* __restrict__ dets,  // (newN, 6) this frame's boxes
     const int newN,
+    const int* __restrict__ newCount,  // this frame's kept count on the device, at most newN used
     const int mh,
     const int mw,
     const double scaleX,
@@ -396,13 +397,13 @@ void yoloSegClear(
 ) {
     const int k = blockIdx.x;
     if (k >= n) return;
-    // regions and dets are mapped host memory, read once per block
+    // thread 0 reads this block's region and new box into shared memory
     __shared__ int r[4];
     __shared__ SegBox nb;
     if (threadIdx.x == 0) {
         for (int i = 0; i < 4; ++i) r[i] = regions[k * 4 + i];
         nb.valid = false;
-        if (k < newN) nb = segBox(dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
+        if (k < min(newN, newCount[0])) nb = segBox(dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
     }
     __syncthreads();
     if (r[2] <= r[0] || r[3] <= r[1]) return;
@@ -435,6 +436,7 @@ void yoloSegProbs(
     const float* __restrict__ dets,  // (n, 6) of one image
     const float* __restrict__ coefs,  // (n, nm) of one image
     const int n,
+    const int* __restrict__ count,  // kept count on the device, at most n used
     const int width,
     const int height,
     const double scaleX,
@@ -445,7 +447,7 @@ void yoloSegProbs(
 ) {
     __shared__ float coefShared[SEG_MAX_COEFS];
     const int k = blockIdx.x;
-    if (k >= n) return;
+    if (k >= min(n, count[0])) return;
     BLOCK_SEG_BOX(r, dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
     if (!r.valid) return;
     for (int m = threadIdx.x; m < nm; m += blockDim.x) coefShared[m] = coefs[(size_t)k * nm + m];
@@ -470,6 +472,7 @@ void yoloSegMasks(
     const int mw,
     const float* __restrict__ dets,  // (n, 6) of one image
     const int n,
+    const int* __restrict__ count,  // kept count on the device, at most n used
     const int width,
     const int height,
     const double scaleX,
@@ -481,7 +484,7 @@ void yoloSegMasks(
     int* __restrict__ regions  // (n, 4) written box: x1, y1, x2, y2
 ) {
     const int k = blockIdx.x;
-    if (k >= n) return;
+    if (k >= min(n, count[0])) return;
     BLOCK_SEG_BOX(r, dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
     if (blockIdx.y == 0 && threadIdx.x == 0) {
         int* region = regions + k * 4;
