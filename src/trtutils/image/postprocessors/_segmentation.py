@@ -158,10 +158,13 @@ def _decode_masks(
         if cx2 <= cx1 or cy2 <= cy1:
             continue
 
-        logits = np.tensordot(coeffs[idx], proto[:, cy1:cy2, cx1:cx2], axes=1)
-        probs = 1.0 / (1.0 + np.exp(-logits))
+        crop = proto[:, cy1:cy2, cx1:cx2]
+        flat = np.ascontiguousarray(crop.reshape(proto.shape[0], -1))
+        logits = (coeffs[idx] @ flat).reshape(cy2 - cy1, cx2 - cx1)
+        one = logits.dtype.type(1)
+        probs = one / (one + np.exp(-logits))
         resized = warp_scale(
-            probs.astype(np.float32, copy=False),
+            probs,
             (scale_x, scale_y),
             (scale_x * bx1 + off_x - cx1, scale_y * by1 + off_y - cy1),
             (bx2 - bx1, by2 - by1),

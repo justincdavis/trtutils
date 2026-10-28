@@ -11,6 +11,7 @@ import pytest
 
 from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR
+from trtutils._flags import FLAGS
 from trtutils.core import Buffer, MemoryLocation
 from trtutils.image._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
 from trtutils.models import PPOCR, PPOCRDetector, PPOCRRecognizer
@@ -242,3 +243,25 @@ def test_ppocr_pipeline(det_engine, rec_engine, image, expected) -> None:
         assert [t for _, t, _ in ocr(buf)] == texts
         for (box, _), (ref_box, _) in zip(ocr.detector.end2end(buf), ocr.detector.end2end(image)):
             np.testing.assert_array_equal(box, ref_box)
+
+
+@pytest.mark.skipif(not FLAGS.FOUND_CV2, reason="the reference is OpenCV")
+@pytest.mark.parametrize("angle", [pytest.param(a, id=f"rot{a}") for a in (0, 8, -12)])
+def test_ppocr_pipeline_without_cv2_identical(
+    monkeypatch: pytest.MonkeyPatch, det_engine, rec_engine, angle
+) -> None:
+    """Strings, boxes and scores are identical with cv2 and with the numba/numpy geometry."""
+    image = _render(LINES)
+    h, w = image.shape[:2]
+    rot = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+    image = cv2.warpAffine(image, rot, (w, h), borderValue=(255, 255, 255))
+    ocr = PPOCR(det_engine, rec_engine)
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", True)
+    want = ocr(image)
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
+    got = ocr(image)
+    assert len(want) > 0
+    assert [t for _, t, _ in got] == [t for _, t, _ in want]
+    for (box, _, score), (ref_box, _, ref_score) in zip(got, want):
+        np.testing.assert_array_equal(box, ref_box)
+        assert score == ref_score

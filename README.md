@@ -44,7 +44,7 @@ On Jetson devices, TensorRT is provided by Jetpack, so use the matching `jp5`,
 Additional extras:
 
 ```bash
-# OpenCV: OCR, the CLI, calibration from image files, faster CPU resize and NMS
+# OpenCV: the CLI, calibration from image files, faster CPU resize, NMS and OCR geometry
 pip install "trtutils[cv2]"
 
 # ONNX graph utilities used by the builder
