@@ -43,8 +43,42 @@ discarded and noise reported.
 ## Repo tooling
 
 - `benchmark/run.py` subcommands: `models`, `batch`, `optimize`, `sahi`, `plot`, `table`,
-  `bootstrap`. Results go under `benchmark/data/`; do not commit ad-hoc result files.
+  `tasks`, `compare`, `bootstrap`. Results go under `benchmark/data/`; do not commit ad-hoc result files.
 - Profiling: `trtutils.enable_nvtx()` then `nsys profile ...` to see stage ranges.
 - A real dynamic-batch yolov10n needs `trtutils download --model yolov10n --dynamic`;
   making a static export's batch dim symbolic collapses back to static in TensorRT.
 
+- `tasks` times one model per task on a 1080p frame (end2end plus preprocess/infer/
+  postprocess/extract) and prints medians. Without `--stage` it caches by key in
+  `data/tasks/<device>.json`; `--stage NAME` always measures fresh into
+  `data/perf-series/<device>/stage-NAME.json` with `trtutils_sha`, `dirty` and `timestamp`.
+- `compare A [A ...] --vs B [B ...] [--labels LA LB] [--csv PATH]` matches keys across stage
+  or tasks files and prints median A, median B and delta % per key and stage (median of
+  per-file medians when a side has several files).
+
+## Rule: GPU commands go through the lock
+
+Every command that touches the GPU is wrapped in `flock ~/.gpu.lock`.
+
+## A/B recipe (two worktrees)
+
+```bash
+# 3 alternating rounds per side; A and B are worktrees, run from <tree>/benchmark
+for i in 1 2 3; do
+  for side in A B; do
+    flock ~/.gpu.lock env PYTHONPATH=<tree-$side>/src python run.py tasks --device <dev> \
+      --model yolov11n --stage $side-$i
+  done
+done
+python run.py compare data/perf-series/<dev>/stage-A-{1,2,3}.json \
+  --vs data/perf-series/<dev>/stage-B-{1,2,3}.json --labels A B --csv ab.csv
+```
+
+Check the `dirty` and `trtutils_sha` fields in each file before trusting a side.
+
+## Profiling a tasks run
+
+```bash
+flock ~/.gpu.lock env PYTHONPATH=<tree>/src nsys profile -o prof python run.py tasks --device <dev> --nvtx --stage scratch
+flock ~/.gpu.lock env PYTHONPATH=<tree>/src python -m cProfile -s tottime run.py tasks --device <dev> --stage scratch
+```
