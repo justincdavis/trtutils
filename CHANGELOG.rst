@@ -111,14 +111,14 @@ Added
 * ``image.types`` aliases ``Segmentation``, ``Pose``, ``OBBDetection`` and ``RBox``
 * ``preprocessor="hybrid"`` and ``HybridPreprocessor``: resize on the CPU (the exact pixels of
   ``"cpu"``), upload only the resized image and normalize on the GPU. 1080p frame on an RTX 5080:
-  yolo11n-cls 0.66 -> 0.41 ms end2end vs ``"cuda"``, yolo11n 0.97 -> 0.90 ms, Depth Anything v2
-  small 1.97 -> 1.83 ms. The default stays ``"trt"``: the CPU resize costs more on weaker CPUs
+  yolo11n-cls 0.66 -> 0.38 ms end2end vs ``"cuda"``, yolo11n 0.98 -> 0.86 ms, Depth Anything v2
+  small 1.95 -> 1.81 ms. The default stays ``"trt"``: the CPU resize costs more on weaker CPUs
 * ``postprocessor="cpu"|"cuda"`` on every image model and wrapper. ``Segmenter``,
   ``PoseEstimator``, ``OBBDetector``, ``TextDetector``, ``TextRecognizer`` and ``PPOCR`` have
   CUDA postprocessors (NMS, masks, probiou, CTC decode, DB binarize) that read the engine outputs
   on the device and copy back only the results; they match the CPU path exactly (OBB enclosing
   boxes to 1e-4 px). Default None picks ``"cuda"`` where available. 1080p end2end on an RTX
-  5080: yolo11n-seg 4.6 -> 1.2 ms, yolo11n-obb 6.0 -> 1.2 ms, yolo11n-pose 1.08 -> 0.90 ms,
+  5080: yolo11n-seg 4.6 -> 1.15 ms, yolo11n-obb 6.6 -> 1.25 ms, yolo11n-pose 1.03 -> 0.88 ms,
   PPOCRv4 on a 14-line page 26 -> 21 ms (see Changed for the further 21 -> 11 ms)
 
 Changed
@@ -145,6 +145,8 @@ Changed
   models. On 24 rendered pages FP16 changed ~4% of recognized lines, with the same character error
   rate against the ground truth (2.38% FP32, 2.41% FP16); 14-line page 10.7 -> 8.2 ms on an RTX
   5080. Pass ``fp16=False`` for the FP32 behavior
+* ``PPOCR`` enqueues every recognizer batch before one stream sync, and the DB box unclip and
+  score bounds use plain floats (same boxes): 14-line page 8.2 -> 7.4 ms on an RTX 5080
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``
