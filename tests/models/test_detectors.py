@@ -89,7 +89,7 @@ def _assert_same_detections(left, right) -> None:
 
 
 @pytest.mark.parametrize(("model_cls", "onnx_path"), DETECTORS)
-@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt", "hybrid"])
 def test_detector_end2end(build_model_engine, images, model_cls, onnx_path, preprocessor) -> None:
     """run(), get_detections(), and end2end() agree and find the ground-truth classes in bounds."""
     engine = build_model_engine(model_cls, onnx_path, opt_level=OPT_LEVELS.get(model_cls, 1))

@@ -24,6 +24,7 @@ PREPROCS = [
     pytest.param("cpu", id="cpu"),
     pytest.param("cuda", id="cuda"),
     pytest.param("trt", id="trt"),
+    pytest.param("hybrid", id="hybrid"),
 ]
 TASKS = [
     pytest.param(Segmenter, "seg", "people", id="seg"),

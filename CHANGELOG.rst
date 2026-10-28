@@ -109,6 +109,10 @@ Added
   is matched against the engine's output names in any order, and a wrong engine raises
   ``ValueError``
 * ``image.types`` aliases ``Segmentation``, ``Pose``, ``OBBDetection`` and ``RBox``
+* ``preprocessor="hybrid"`` and ``HybridPreprocessor``: resize on the CPU (the exact pixels of
+  ``"cpu"``), upload only the resized image and normalize on the GPU. 1080p frame on an RTX 5080:
+  yolo11n-cls 0.66 -> 0.41 ms end2end vs ``"cuda"``, yolo11n 0.97 -> 0.90 ms, Depth Anything v2
+  small 1.97 -> 1.83 ms. The default stays ``"trt"``: the CPU resize costs more on weaker CPUs
 * ``postprocessor="cpu"|"cuda"`` on every image model and wrapper. ``Segmenter``,
   ``PoseEstimator``, ``OBBDetector``, ``TextDetector``, ``TextRecognizer`` and ``PPOCR`` have
   CUDA postprocessors (NMS, masks, probiou, CTC decode, DB binarize) that read the engine outputs

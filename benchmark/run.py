@@ -407,7 +407,7 @@ def main() -> None:
     p = subparsers.add_parser("tasks", help="Per-stage latency per task on a 1080p frame")
     p.add_argument("--device", required=True)
     p.add_argument("--model", nargs="+", default=None, help="Task models (default all)")
-    p.add_argument("--preprocessors", nargs="+", default=["cpu", "cuda", "trt"])
+    p.add_argument("--preprocessors", nargs="+", default=["cpu", "cuda", "trt", "hybrid"])
     p.add_argument("--postprocessors", nargs="+", default=["cpu"], choices=["cpu", "cuda"])
     p.add_argument("--warmup", type=int, default=20)
     p.add_argument("--iterations", type=int, default=200)

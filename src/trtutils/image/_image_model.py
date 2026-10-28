@@ -32,6 +32,7 @@ from .preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
     GPUImagePreprocessor,
+    HybridPreprocessor,
     TRTPreprocessor,
 )
 
@@ -43,7 +44,8 @@ if TYPE_CHECKING:
 
 _COLOR_CHANNELS = 3
 
-_PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
+_PREPROCESSOR_METHODS = ("cpu", "cuda", "trt", "hybrid")
+_GPUPre = TypeVar("_GPUPre", bound=CUDAPreprocessor)
 
 
 # (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image;
@@ -119,7 +121,9 @@ class ImageModel:
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
+            The options are ['cpu', 'cuda', 'trt', 'hybrid'], default is 'trt'.
+            'hybrid' resizes on the CPU and normalizes on the GPU, uploading only
+            the resized image, which wins for inputs much smaller than the frame.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'linear'.
@@ -273,6 +277,7 @@ class ImageModel:
             self._postprocessor: str = postprocessor
             self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
             self._preproc_cuda: CUDAPreprocessor | None = None
+            self._preproc_hybrid: HybridPreprocessor | None = None
             self._preproc_trt: TRTPreprocessor | None = None
             default_preprocessor = self.get_preprocessor()
 
@@ -308,11 +313,11 @@ class ImageModel:
 
         return result
 
-    def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
+    def _setup_cuda_preproc(self: Self, cls: type[_GPUPre]) -> _GPUPre:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["_setup_cuda_preproc"])
 
-        result = CUDAPreprocessor(
+        result = cls(
             self._input_size,
             self._input_range,
             self._dtype,
@@ -419,7 +424,7 @@ class ImageModel:
         Parameters
         ----------
         method : str, optional
-            Options are 'cpu', 'cuda', or 'trt'. 'trt' falls back to 'cuda'
+            Options are 'cpu', 'cuda', 'trt', or 'hybrid'. 'trt' falls back to 'cuda'
             on platforms without UINT8 support, and 'cuda' to 'cpu' for
             models whose input is not float32. By default None, which
             returns the preprocessor stated in the constructor.
@@ -432,15 +437,20 @@ class ImageModel:
         Raises
         ------
         ValueError
-            If the method is not 'cpu', 'cuda', or 'trt'.
+            If the method is not 'cpu', 'cuda', 'trt', or 'hybrid'.
 
         """
         method = self._preprocessor_method if method is None else self._resolve_method(method)
         if method == "cuda":
             if self._preproc_cuda is None:
                 with Device(self._device):
-                    self._preproc_cuda = self._setup_cuda_preproc()
+                    self._preproc_cuda = self._setup_cuda_preproc(CUDAPreprocessor)
             return self._preproc_cuda
+        if method == "hybrid":
+            if self._preproc_hybrid is None:
+                with Device(self._device):
+                    self._preproc_hybrid = self._setup_cuda_preproc(HybridPreprocessor)
+            return self._preproc_hybrid
         if method == "trt":
             if self._preproc_trt is None:
                 with Device(self._device):
@@ -455,7 +465,7 @@ class ImageModel:
         Raises
         ------
         ValueError
-            If the method is not 'cpu', 'cuda', or 'trt'.
+            If the method is not 'cpu', 'cuda', 'trt', or 'hybrid'.
 
         """
         if method not in _PREPROCESSOR_METHODS:
@@ -466,7 +476,7 @@ class ImageModel:
             LOG.warning(
                 "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
             )
-        if method == "cuda" and self._dtype != np.float32:
+        if method in ("cuda", "hybrid") and self._dtype != np.float32:
             method = "cpu"
         return method
 
@@ -474,7 +484,9 @@ class ImageModel:
         if self._preproc_cpu is not None:
             self._preproc_cpu = self._setup_cpu_preproc()
         if self._preproc_cuda is not None:
-            self._preproc_cuda = self._setup_cuda_preproc()
+            self._preproc_cuda = self._setup_cuda_preproc(CUDAPreprocessor)
+        if self._preproc_hybrid is not None:
+            self._preproc_hybrid = self._setup_cuda_preproc(HybridPreprocessor)
         if self._preproc_trt is not None:
             self._preproc_trt = self._setup_trt_preproc()
 
@@ -622,7 +634,7 @@ class ImageModel:
             during initialization.
         method : str, optional
             The underlying preprocessor to use.
-            Options are 'cpu', 'cuda', or 'trt'. By default None, which
+            Options are 'cpu', 'cuda', 'trt', or 'hybrid'. By default None, which
             will use the preprocessor stated in the constructor.
         no_copy : bool, optional
             If True and using CUDA, do not copy the
@@ -640,7 +652,7 @@ class ImageModel:
         Raises
         ------
         ValueError
-            If the method is not 'cpu', 'cuda', or 'trt'.
+            If the method is not 'cpu', 'cuda', 'trt', or 'hybrid'.
 
         """
         preprocessor = self.get_preprocessor(method)
