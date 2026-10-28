@@ -52,6 +52,10 @@ def _draw_boxes(
 
 def _read_video(path: Path) -> Iterator[tuple[int, np.ndarray]]:
     cap = cv2.VideoCapture(str(path))
+    if not cap.isOpened():
+        cap.release()
+        err_msg = f"Failed to open video: {path}"
+        raise ValueError(err_msg)
     try:
         fid = 0
         ok, frame = cap.read()

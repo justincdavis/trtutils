@@ -20,7 +20,7 @@ def nms_indices(
     max_det: int | None = None,
 ) -> np.ndarray:
     """Class-aware NMS over xyxy boxes, returns the kept indices by score, at most max_det."""
-    if boxes.shape[0] == 0:
+    if boxes.shape[0] == 0 or (max_det is not None and max_det <= 0):
         return np.zeros((0,), dtype=int)
 
     xywh = np.empty_like(boxes, dtype=np.float32)

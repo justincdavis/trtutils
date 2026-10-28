@@ -145,3 +145,14 @@ def test_nms_indices_offset_is_max_coordinate_plus_one() -> None:
     expected = _cv2_nms(boxes, scores, labels, 0.1, 0.0, None)
     assert expected.tolist() == [0]
     assert np.array_equal(nms_indices(boxes, scores, labels, 0.1, 0.0, None), expected)
+
+
+@pytest.mark.parametrize("use_cv2", [True, False], ids=["cv2", "numpy"])
+@pytest.mark.parametrize("max_det", [0, -1])
+def test_nms_indices_non_positive_max_det_is_empty(use_cv2, max_det) -> None:
+    """Every backend returns nothing for max_det <= 0."""
+    FLAGS.FOUND_CV2 = use_cv2
+    boxes = np.array([[0, 0, 10, 10], [50, 50, 60, 60]], dtype=np.float32)
+    scores = np.array([0.9, 0.8], dtype=np.float32)
+    labels = np.zeros(2, dtype=np.int64)
+    assert nms_indices(boxes, scores, labels, 0.1, 0.5, max_det).size == 0

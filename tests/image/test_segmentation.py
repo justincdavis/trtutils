@@ -176,3 +176,13 @@ def test_box_cropped_masks_match_full_resize_reference() -> None:
         outside = masks[idx].copy()
         outside[region] = 0
         assert not outside.any()
+
+
+def test_fp16_outputs_decode() -> None:
+    """Half-precision proto and coefficients decode, the warp needs float32."""
+    rng = np.random.default_rng(0)
+    proto = rng.normal(size=(4, 40, 40)).astype(np.float16)
+    coeffs = rng.normal(size=(1, 4)).astype(np.float16)
+    boxes = np.array([[10.0, 5.0, 200.0, 90.0]], dtype=np.float32)
+    masks = _decode_masks(coeffs, proto, boxes, (0.25, 0.25), (0.0, 30.0), (160, 160), 0.5)
+    assert masks.shape == (1, 400, 640)

@@ -61,29 +61,3 @@ def test_register_without_cv2_impl(monkeypatch) -> None:
     assert ns["fn"] is numba_fn
     monkeypatch.setattr(FLAGS, "JIT", False)
     assert ns["fn"] is numpy_fn
-
-
-def test_register_compiles_when_jit_keywords_are_set(monkeypatch) -> None:
-    """Jit keywords compile the numba function once and reuse that dispatcher."""
-    pytest.importorskip("numba")
-    monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
-    monkeypatch.setattr(FLAGS, "FOUND_NUMBA", True)
-    monkeypatch.setattr(FLAGS, "JIT", True)
-
-    def add(left: int, right: int) -> int:
-        return left + right
-
-    ns: dict[str, object] = {}
-    register_op(ns, "add", numba=add, numpy=add)
-    # no jit keywords: the plain function is the numba choice
-    assert ns["add"] is add
-
-    ns2: dict[str, object] = {}
-    register_op(ns2, "add", numba=add, numpy=add, parallel=False)
-    assert ns2["add"] is not add
-    assert ns2["add"](1, 2) == 3
-    compiled = ns2["add"]
-    monkeypatch.setattr(FLAGS, "JIT", False)
-    assert ns2["add"] is add
-    monkeypatch.setattr(FLAGS, "JIT", True)
-    assert ns2["add"] is compiled

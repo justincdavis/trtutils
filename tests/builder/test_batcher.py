@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from tests.builder.conftest import drain_batches
+from trtutils._flags import FLAGS
 from trtutils.builder._batcher import ImageBatcher, SyntheticBatcher
 
 
@@ -217,3 +218,11 @@ class TestImageBatcher:
         batcher._close()
         assert not batcher._thread.is_alive()
         assert batcher._event.is_set()
+
+
+@pytest.mark.cpu
+def test_image_batcher_requires_cv2(monkeypatch, tmp_path) -> None:
+    """Without OpenCV the constructor raises instead of hanging the worker thread."""
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
+    with pytest.raises(ImportError, match="OpenCV"):
+        ImageBatcher(tmp_path, (8, 8, 3), np.float32)

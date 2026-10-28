@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import cv2
 from trtutils.image._ops import rescale, resize_letterbox, resize_linear
@@ -154,6 +155,8 @@ class ImageBatcher(AbstractBatcher):
             If the input_dir cannot be found
         NotADirectoryError
             If the input_dir is a file
+        ImportError
+            If OpenCV is not installed
         ValueError
             If the max_images is set less than one
         ValueError
@@ -162,6 +165,11 @@ class ImageBatcher(AbstractBatcher):
             If no valid batches could be formed
 
         """
+        if not FLAGS.FOUND_CV2:
+            err_msg = (
+                "ImageBatcher reads images with OpenCV, install with: pip install trtutils[cv2]"
+            )
+            raise ImportError(err_msg)
         self._verbose = verbose
 
         # verify resize method and input scale

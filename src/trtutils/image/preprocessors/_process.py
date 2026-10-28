@@ -97,7 +97,7 @@ def preprocess(
     padding_list: list[tuple[float, float]] = []
     resize = resize_letterbox if method == "letterbox" else resize_linear
     for i, image in enumerate(images):
-        tensor, ratios, padding = resize(image, new_shape=input_shape)
+        tensor, ratios, padding = resize(image[..., :3], new_shape=input_shape)
         tensor = tensor[..., ::-1]
 
         # writing the transposed view straight into the slot does HWC->CHW,

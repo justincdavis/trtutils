@@ -164,7 +164,7 @@ def _decode_masks(
         one = logits.dtype.type(1)
         probs = one / (one + np.exp(-logits))
         resized = warp_scale(
-            probs,
+            probs.astype(np.float32, copy=False),
             (scale_x, scale_y),
             (scale_x * bx1 + off_x - cx1, scale_y * by1 + off_y - cy1),
             (bx2 - bx1, by2 - by1),

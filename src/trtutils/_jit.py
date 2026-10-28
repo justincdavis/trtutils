@@ -116,42 +116,21 @@ class _Choice:
         cv2: Callable[..., object] | None,
         numba: Callable[..., object] | None,
         numpy: Callable[..., object],
-        jit_kw: dict[str, object],
     ) -> None:
         self.ns = ns
         self.name = name
         self.cv2 = cv2
         self.numba = numba
         self.numpy = numpy
-        self.jit_kw = jit_kw
-        self.compiled: Callable[..., object] | None = None
 
 
 _CHOICES: list[_Choice] = []
-
-
-def _compile(func: Callable[..., _R], jit_kw: dict[str, object]) -> Callable[..., _R]:
-    if _jit is None:
-        return func
-    options: dict[str, object] = {
-        "fastmath": False,
-        "parallel": False,
-        "nogil": False,
-        "cache": False,
-        "inline": "never",
-    }
-    options.update(jit_kw)
-    return _jit(func, nopython=True, **options)
 
 
 def _chosen(choice: _Choice) -> Callable[..., object]:
     if FLAGS.FOUND_CV2 and choice.cv2 is not None:
         return choice.cv2
     if choice.numba is not None and FLAGS.FOUND_NUMBA and FLAGS.JIT:
-        if choice.jit_kw:
-            if choice.compiled is None:
-                choice.compiled = _compile(choice.numba, choice.jit_kw)
-            return choice.compiled
         return choice.numba
     return choice.numpy
 
@@ -163,15 +142,13 @@ def register_op(
     cv2: Callable[..., _R] | None = None,
     numba: Callable[..., _R] | None = None,
     numpy: Callable[..., _R],
-    **jit_kw: object,
 ) -> Callable[..., _R]:
     """
     Register a kernel and store the chosen implementation on ``ns[name]``.
 
     Called at import. OpenCV wins when it was passed and is installed, otherwise the
-    numba callable when numba is installed and JIT is on, otherwise ``numpy``. Keyword
-    arguments are numba options (``parallel``, ``fastmath``, ...) and compile ``numba``
-    on first selection. ``Flags`` reassigns the global when ``JIT`` or ``FOUND_CV2`` changes,
+    numba callable when numba is installed and JIT is on, otherwise ``numpy``.
+    ``Flags`` reassigns the global when ``JIT`` or ``FOUND_CV2`` changes,
     so inference calls the stored function with no flag check.
 
     Parameters
@@ -183,11 +160,9 @@ def register_op(
     cv2 : Callable[..., object], optional
         The OpenCV implementation. Omit when the kernel has no OpenCV version.
     numba : Callable[..., object], optional
-        The numba implementation, or the plain function to compile when jit keywords are set.
+        The numba implementation.
     numpy : Callable[..., object]
         The implementation that is always available.
-    **jit_kw : object
-        Numba compile options used only when ``numba`` is selected.
 
     Returns
     -------
@@ -195,7 +170,7 @@ def register_op(
         The function stored on ``ns[name]``.
 
     """
-    choice = _Choice(ns, name, cv2, numba, numpy, jit_kw)
+    choice = _Choice(ns, name, cv2, numba, numpy)
     _CHOICES.append(choice)
     picked = cast("Callable[..., _R]", _chosen(choice))
     ns[name] = picked

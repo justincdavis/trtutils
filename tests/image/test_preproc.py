@@ -386,3 +386,15 @@ def test_cpu_preprocess_fn_rejects_fixed_options(kwargs) -> None:
     cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=_half_size_fn)
     with pytest.raises(ValueError, match="not supported with a preprocessing function"):
         cpu.preprocess(np.zeros((64, 64, 3), np.uint8), **kwargs)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("method", ["letterbox", "linear"])
+def test_preprocess_drops_alpha_channel(method) -> None:
+    """A BGRA frame preprocesses the same as its BGR channels."""
+    rng = np.random.default_rng(0)
+    bgra = rng.integers(0, 256, (120, 160, 4), dtype=np.uint8)
+    args = ((64, 64), np.dtype(np.float32), (0.0, 1.0), method, None, None)
+    expected, _, _ = preprocess([bgra[..., :3]], *args)
+    result, _, _ = preprocess([bgra], *args)
+    np.testing.assert_array_equal(result, expected)
