@@ -4,7 +4,7 @@ jobs:
   build_check:
     name: "Build trtutils package"
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # ubuntu-latest (26.04) has no setup-python build of 3.8/3.9
 
     steps:
     - uses: actions/checkout@v4

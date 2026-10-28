@@ -2,7 +2,7 @@ name: Ruff
 on: [ push ]
 jobs:
   Format:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # ubuntu-latest (26.04) has no setup-python build of 3.8/3.9
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -15,7 +15,7 @@ jobs:
         run: ./ci/run_ruff.sh --format --check --diff
 
   Check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # ubuntu-latest (26.04) has no setup-python build of 3.8/3.9
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
