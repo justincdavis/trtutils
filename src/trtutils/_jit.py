@@ -156,7 +156,7 @@ def _chosen(choice: _Choice) -> Callable[..., object]:
     return choice.numpy
 
 
-def register(
+def register_op(
     ns: MutableMapping[str, object],
     name: str,
     *,

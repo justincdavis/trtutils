@@ -127,7 +127,7 @@ Changed
   is about 10x slower, and OBB NMS stays vectorized numpy. To keep the old behaviour:
   ``pip install "trtutils[cv2]"``
 * Image kernels register an OpenCV, numba, or numpy implementation at import
-  (``trtutils.register``). The chosen function is stored on the module and called directly.
+  (``trtutils.register_op``). The chosen function is stored on the module and called directly.
   ``nms_indices`` and segmentation ``warp_scale`` compile with numba when OpenCV is absent.
   Rotated NMS fuses the probability-IoU test into one numba loop (about 14 ms to 0.2 ms
   for 2000 candidates capped at 300 detections).

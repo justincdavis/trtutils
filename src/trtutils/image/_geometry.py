@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils._jit import register, register_jit
+from trtutils._jit import register_jit, register_op
 from trtutils.compat._libs import cv2
 
 if TYPE_CHECKING:
@@ -184,7 +184,7 @@ def _find_contours_cv2(binary: np.ndarray) -> list[np.ndarray]:
     return [c.reshape(-1, 2) for c in found]
 
 
-_find_contours = register(
+_find_contours = register_op(
     globals(), "_find_contours", cv2=_find_contours_cv2, numpy=_find_contours_numpy
 )
 
@@ -449,7 +449,7 @@ def _min_area_numpy(points: np.ndarray) -> tuple[np.ndarray, float]:
     return _min_area_points(points, _min_area_rect.py_func)
 
 
-_min_area = register(
+_min_area = register_op(
     globals(), "_min_area", cv2=_min_area_cv2, numba=_min_area_numba, numpy=_min_area_numpy
 )
 
@@ -486,7 +486,7 @@ def _dilate_numpy(binary: np.ndarray) -> np.ndarray:
     return out
 
 
-_dilate = register(globals(), "_dilate", cv2=_dilate_cv2, numpy=_dilate_numpy)
+_dilate = register_op(globals(), "_dilate", cv2=_dilate_cv2, numpy=_dilate_numpy)
 
 
 @register_jit()
@@ -691,7 +691,7 @@ def _polygon_mean_numpy(window: np.ndarray, poly: np.ndarray) -> float:
     return float(np.sum(window, where=mask.astype(bool), dtype=np.float64) / count)
 
 
-_polygon_mean = register(
+_polygon_mean = register_op(
     globals(),
     "_polygon_mean",
     cv2=_polygon_mean_cv2,

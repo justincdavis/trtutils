@@ -10,7 +10,7 @@ import operator
 
 import numpy as np
 
-from trtutils._jit import register, register_jit
+from trtutils._jit import register_jit, register_op
 from trtutils.compat._libs import cv2
 
 try:
@@ -175,7 +175,7 @@ def _resize_cv2(image: np.ndarray, width: int, height: int) -> np.ndarray:
     return cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR)
 
 
-_resize = register(
+_resize = register_op(
     globals(),
     "_resize",
     cv2=_resize_cv2,
@@ -478,7 +478,7 @@ def _nms_numpy(
     return [box for box, kept in zip(ordered, keep) if kept]
 
 
-_nms_run = register(globals(), "_nms_run", numba=_nms_numba, numpy=_nms_numpy)
+_nms_run = register_op(globals(), "_nms_run", numba=_nms_numba, numpy=_nms_numpy)
 
 
 def _warp_axis(
@@ -612,7 +612,7 @@ def _warp_scale_numpy(
     return rows[:, x0] * (1 - fx) + rows[:, x1] * fx
 
 
-_warp_scale = register(
+_warp_scale = register_op(
     globals(),
     "_warp_scale",
     cv2=_warp_scale_cv2,

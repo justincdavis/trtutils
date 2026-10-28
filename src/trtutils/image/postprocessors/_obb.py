@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils._jit import register, register_jit
+from trtutils._jit import register_jit, register_op
 from trtutils._log import LOG
 
 from ._common import filter_class_scores
@@ -264,7 +264,7 @@ def _rotated_pick_numpy(
     return np.concatenate(keep)[:max_det]
 
 
-_rotated_pick = register(
+_rotated_pick = register_op(
     globals(),
     "_rotated_pick",
     numba=_rotated_pick_numba,

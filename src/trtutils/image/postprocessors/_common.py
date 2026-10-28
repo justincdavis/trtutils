@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from trtutils._jit import register, register_jit
+from trtutils._jit import register_jit, register_op
 from trtutils.compat._libs import cv2
 
 
@@ -151,7 +151,7 @@ def _nms_indices_numpy(
     return order[keep].astype(int)
 
 
-_nms_pick = register(
+_nms_pick = register_op(
     globals(),
     "_nms_pick",
     cv2=_nms_indices_cv2,

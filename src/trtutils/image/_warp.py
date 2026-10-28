@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from trtutils._jit import register, register_jit
+from trtutils._jit import register_jit, register_op
 from trtutils.compat._libs import cv2
 
 try:
@@ -274,7 +274,7 @@ def _perspective_numpy(image: np.ndarray, quad: np.ndarray, width: int, height: 
     return out[:, :, 0] if planar else out
 
 
-_perspective = register(
+_perspective = register_op(
     globals(),
     "_perspective",
     cv2=_perspective_cv2,

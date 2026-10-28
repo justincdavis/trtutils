@@ -1,14 +1,14 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for trtutils._jit.register -- import-time choice, rebound when flags change."""
+"""Tests for trtutils._jit.register_op -- import-time choice, rebound when flags change."""
 
 from __future__ import annotations
 
 import pytest
 
 from trtutils._flags import FLAGS
-from trtutils._jit import register
+from trtutils._jit import register_op
 
 pytestmark = pytest.mark.cpu
 
@@ -29,7 +29,7 @@ def test_register_picks_at_import_and_rebinds(monkeypatch) -> None:
         return f"numpy-{value}"
 
     ns: dict[str, object] = {}
-    register(ns, "fn", cv2=cv2_fn, numba=numba_fn, numpy=numpy_fn)
+    register_op(ns, "fn", cv2=cv2_fn, numba=numba_fn, numpy=numpy_fn)
     assert ns["fn"] is numpy_fn
 
     monkeypatch.setattr(FLAGS, "JIT", True)
@@ -57,7 +57,7 @@ def test_register_without_cv2_impl(monkeypatch) -> None:
         return "numpy"
 
     ns: dict[str, object] = {}
-    register(ns, "fn", numba=numba_fn, numpy=numpy_fn)
+    register_op(ns, "fn", numba=numba_fn, numpy=numpy_fn)
     assert ns["fn"] is numba_fn
     monkeypatch.setattr(FLAGS, "JIT", False)
     assert ns["fn"] is numpy_fn
@@ -74,12 +74,12 @@ def test_register_compiles_when_jit_keywords_are_set(monkeypatch) -> None:
         return left + right
 
     ns: dict[str, object] = {}
-    register(ns, "add", numba=add, numpy=add)
+    register_op(ns, "add", numba=add, numpy=add)
     # no jit keywords: the plain function is the numba choice
     assert ns["add"] is add
 
     ns2: dict[str, object] = {}
-    register(ns2, "add", numba=add, numpy=add, parallel=False)
+    register_op(ns2, "add", numba=add, numpy=add, parallel=False)
     assert ns2["add"] is not add
     assert ns2["add"](1, 2) == 3
     compiled = ns2["add"]
