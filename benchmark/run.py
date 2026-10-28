@@ -287,6 +287,20 @@ def cmd_table(args: argparse.Namespace) -> None:
     generate_tables(skip_devices=skip)
 
 
+def cmd_tasks(args: argparse.Namespace) -> None:
+    """Run per-stage benchmarks of one model per task on a 1080p frame."""
+    from utils.tasks import run_tasks
+
+    run_tasks(
+        args.device,
+        args.model,
+        args.preprocessors,
+        args.warmup,
+        args.iterations,
+        overwrite=args.overwrite,
+    )
+
+
 def cmd_bootstrap(args: argparse.Namespace) -> None:
     """Download models upfront."""
     from utils.runners import bootstrap_models
@@ -387,6 +401,17 @@ def main() -> None:
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--skip-devices", type=str, default="")
     p.set_defaults(func=cmd_table)
+
+    # --- tasks ---
+    p = subparsers.add_parser("tasks", help="Per-stage latency per task on a 1080p frame")
+    p.add_argument("--device", required=True)
+    p.add_argument("--model", nargs="+", default=None, help="Task models (default all)")
+    p.add_argument("--preprocessors", nargs="+", default=["cpu", "cuda", "trt"])
+    p.add_argument("--warmup", type=int, default=20)
+    p.add_argument("--iterations", type=int, default=200)
+    p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--nvtx", action="store_true")
+    p.set_defaults(func=cmd_tasks)
 
     # --- bootstrap ---
     p = subparsers.add_parser("bootstrap", help="Download models upfront")
