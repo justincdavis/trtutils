@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, overload
@@ -35,6 +36,10 @@ from .preprocessors import (
     resize_text_detection,
 )
 from .preprocessors._ocr import _IMAGENET_MEAN, _IMAGENET_STD, _REC_MEAN, _REC_STD
+
+# cubic perspective crops cost ~1 ms per text line and cv2 runs each on one
+# thread while releasing the GIL, so the lines of an image crop in parallel
+_CROP_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="trtutils-ocr-crop")
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -1327,9 +1332,8 @@ class OCR:
         if not text_boxes:
             return []
         boxes = np.stack([box for box, _ in text_boxes])
-        lines = self._recognizer.end2end(
-            [crop_text_region(img, box) for box in boxes], verbose=verbose
-        )
+        crops = list(_CROP_POOL.map(partial(crop_text_region, img), boxes))
+        lines = self._recognizer.end2end(crops, verbose=verbose)
 
         out_boxes = (boxes - np.array([0, pad], np.float32)) * scale
         out_boxes = np.clip(out_boxes, 0, np.array([raw_w, raw_h], np.float32))
