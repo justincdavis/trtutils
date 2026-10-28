@@ -23,6 +23,9 @@ Attributes
 :attribute:`YOLO_POST` : tuple[Path, str]
     YOLO-style head postprocessing (decode, NMS, segmentation masks); the
     file holds several kernels, the name is the first.
+:attribute:`OCR_POST` : tuple[Path, str]
+    OCR postprocessing (CTC argmax, DB binarization); the file holds
+    several kernels, the name is the first.
 
 """
 
@@ -37,6 +40,7 @@ _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
 _SST_IMAGENET_FILE = _KERNEL_DIR / "sst_imagenet.cu"
 _YOLO_POST_FILE = _KERNEL_DIR / "yolo_post.cu"
+_OCR_POST_FILE = _KERNEL_DIR / "ocr_post.cu"
 
 SST_FAST: tuple[Path, str] = (
     _SST_FAST_FILE,
@@ -76,4 +80,9 @@ IMAGENET_SST_F16: tuple[Path, str] = (
 YOLO_POST: tuple[Path, str] = (
     _YOLO_POST_FILE,
     "yoloDecode",
+)
+
+OCR_POST: tuple[Path, str] = (
+    _OCR_POST_FILE,
+    "ctcArgmax",
 )

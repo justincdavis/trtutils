@@ -26,6 +26,7 @@ from .postprocessors import (
     postprocess_text_detection,
     postprocess_text_recognition,
 )
+from .postprocessors._gpu_ocr import CtcArgmax, DbBinarize
 from .preprocessors import (
     CPUPreprocessor,
     crop_text_region,
@@ -49,6 +50,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
     """Implementation of DB (Differentiable Binarization) text detectors, as used by PaddleOCR."""
 
     _OUTPUT_SCHEMA = TextDetectorOutputSchema
+    _cuda_postprocess = True
 
     def __init__(
         self: Self,
@@ -202,6 +204,8 @@ class TextDetector(ImageModel, TextDetectorInterface):
             output_schema=output_schema,
         )
 
+        self._cuda_post = DbBinarize() if self._postprocessor == "cuda" else None
+
         # prepend with 'tdet_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
             {
@@ -272,8 +276,6 @@ class TextDetector(ImageModel, TextDetectorInterface):
             [boxes, scores].
 
         """
-        # only the CUDA postprocessor is handed device outputs
-        outputs = cast("list[np.ndarray]", outputs)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["tdet_postprocess"])
 
@@ -281,9 +283,14 @@ class TextDetector(ImageModel, TextDetectorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
+        outputs = self._order_outputs(outputs)
         t0 = time.perf_counter()
+        bitmaps = wait = None
+        if self._cuda_post is not None and isinstance(outputs[0], Buffer):
+            bitmaps, pred, wait = self._cuda_post(outputs[0], self._thresh, self._engine.stream)
+            outputs = [pred]
         data = postprocess_text_detection(
-            self._order_outputs(outputs),
+            cast("list[np.ndarray]", outputs),
             ratios,
             padding,
             self._thresh,
@@ -291,6 +298,8 @@ class TextDetector(ImageModel, TextDetectorInterface):
             self._max_candidates,
             self._unclip_ratio,
             use_dilation=self._use_dilation,
+            bitmaps=bitmaps,
+            wait=wait,
             no_copy=no_copy,
             verbose=verbose,
         )
@@ -680,6 +689,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
     """Implementation of CTC text line recognizers, as used by PaddleOCR."""
 
     _OUTPUT_SCHEMA = TextRecognizerOutputSchema
+    _cuda_postprocess = True
 
     def __init__(
         self: Self,
@@ -831,6 +841,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             )
             raise ValueError(err_msg)
 
+        self._cuda_post = CtcArgmax() if self._postprocessor == "cuda" else None
+
         # prepend with 'trec_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
             {
@@ -895,18 +907,20 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             [indices, probs] of the best class per timestep.
 
         """
-        # only the CUDA postprocessor is handed device outputs
-        outputs = cast("list[np.ndarray]", outputs)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["trec_postprocess"])
 
         if verbose:
             LOG.debug(f"{self._tag}: postprocess")
 
+        outputs = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        data = postprocess_text_recognition(
-            self._order_outputs(outputs), no_copy=no_copy, verbose=verbose
-        )
+        if self._cuda_post is not None and isinstance(outputs[0], Buffer):
+            data = self._cuda_post(outputs[0], self._engine.stream)
+        else:
+            data = postprocess_text_recognition(
+                cast("list[np.ndarray]", outputs), no_copy=no_copy, verbose=verbose
+            )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
@@ -1198,7 +1212,9 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         for start in range(0, len(order), self._batch_size):
             batch_idx = order[start : start + self._batch_size]
             # outputs are consumed by get_texts() inside this call, so skip their copies
-            outputs, _, _ = self.infer([lines[i] for i in batch_idx], no_copy=True, verbose=verbose)
+            outputs, _, _ = self._infer_post(
+                [lines[i] for i in batch_idx], no_copy=True, verbose=verbose
+            )
             batch = self.postprocess(outputs, no_copy=True, verbose=verbose)
             for i, text in zip(batch_idx, self.get_texts(batch, verbose=verbose)):
                 results[i] = text

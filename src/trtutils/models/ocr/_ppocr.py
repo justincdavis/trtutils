@@ -305,6 +305,7 @@ class PPOCR(OCR):
         warmup: bool | None = None,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        postprocessor: str = "cpu",
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -358,6 +359,8 @@ class PPOCR(OCR):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda', for both models. By default 'cpu'.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -377,6 +380,7 @@ class PPOCR(OCR):
                 warmup=warmup,
                 pagelocked_mem=pagelocked_mem,
                 unified_mem=unified_mem,
+                postprocessor=postprocessor,
                 no_warn=no_warn,
                 verbose=verbose,
             ),
@@ -390,6 +394,7 @@ class PPOCR(OCR):
                 warmup=warmup,
                 pagelocked_mem=pagelocked_mem,
                 unified_mem=unified_mem,
+                postprocessor=postprocessor,
                 no_warn=no_warn,
                 verbose=verbose,
             ),

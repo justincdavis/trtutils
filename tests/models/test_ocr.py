@@ -242,3 +242,24 @@ def test_ppocr_pipeline(det_engine, rec_engine, image, expected) -> None:
         assert [t for _, t, _ in ocr(buf)] == texts
         for (box, _), (ref_box, _) in zip(ocr.detector.end2end(buf), ocr.detector.end2end(image)):
             np.testing.assert_array_equal(box, ref_box)
+
+
+def test_ocr_cuda_postprocessor_matches_cpu(det_engine, rec_engine) -> None:
+    """postprocessor="cuda" gives the CPU boxes, scores, texts and raw decodes exactly."""
+    image = _render(LINES)
+    cpu = PPOCR(det_engine, rec_engine)
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda")
+
+    ref = cpu(image)
+    assert len(ref) > 0
+    for results in (cuda(image), cuda.end2end(image), cuda([image, image])[1]):
+        assert len(results) == len(ref)
+        for (box, text, score), (ref_box, ref_text, ref_score) in zip(results, ref):
+            np.testing.assert_array_equal(box, ref_box)
+            assert (text, score) == (ref_text, ref_score)
+
+    crops = [_line(t) for t in LINES]
+    for got, want in zip(cuda.recognizer.run(crops), cpu.recognizer.run(crops)):
+        for g, w in zip(got, want):
+            np.testing.assert_array_equal(g, w)
+    assert cuda.detector.end2end(_blank(30, 4000)) == []

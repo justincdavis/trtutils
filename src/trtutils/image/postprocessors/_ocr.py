@@ -12,7 +12,7 @@ import numpy as np
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from trtutils.image.types import Text, TextBox
 
@@ -158,11 +158,19 @@ def _text_boxes(
     unclip_ratio: float,
     *,
     use_dilation: bool,
+    bitmap: np.ndarray | None = None,
+    wait: Callable[[], None] | None = None,
 ) -> list[np.ndarray]:
-    """Boxes (N, 4, 2) and scores (N,) in reading order from one (H, W) probability map."""
+    """
+    Boxes (N, 4, 2) and scores (N,) in reading order from one (H, W) probability map.
+
+    ``bitmap`` is ``pred > thresh`` when already computed, and ``wait`` blocks
+    until ``pred`` is readable (it may still be copying from the device).
+    """
     height, width = pred.shape
     src_h, src_w = image_shape
-    bitmap = (pred > thresh).astype(np.uint8)
+    if bitmap is None:
+        bitmap = (pred > thresh).astype(np.uint8)
     if use_dilation:
         bitmap = cv2.dilate(bitmap, np.ones((2, 2), dtype=np.uint8))
     contours = cv2.findContours(bitmap * 255, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
@@ -175,6 +183,9 @@ def _text_boxes(
         points, short_side = _mini_box(cv2.minAreaRect(contour))
         if short_side < _MIN_BOX_SIDE:
             continue
+        if wait is not None:
+            wait()
+            wait = None
         score = _box_score(pred, points)
         if score < box_thresh:
             continue
@@ -207,6 +218,8 @@ def postprocess_text_detection(
     unclip_ratio: float = 1.5,
     *,
     use_dilation: bool = False,
+    bitmaps: np.ndarray | None = None,
+    wait: Callable[[], None] | None = None,
     no_copy: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
@@ -235,6 +248,10 @@ def postprocess_text_detection(
         How far to expand each shrunk text kernel. Default is 1.5.
     use_dilation : bool
         Whether to dilate the binary map with a 2x2 kernel. Default is False.
+    bitmaps : np.ndarray, optional
+        ``outputs[0] > thresh`` as 0/1 bytes when already computed (by the CUDA postprocessor).
+    wait : Callable[[], None], optional
+        Blocks until ``outputs[0]`` is readable, called before it is first read for scoring.
     no_copy : bool, optional
         Unused, the boxes are always new arrays.
     verbose : bool, optional
@@ -267,8 +284,14 @@ def postprocess_text_detection(
                 max_candidates,
                 unclip_ratio,
                 use_dilation=use_dilation,
+                bitmap=None
+                if bitmaps is None
+                else bitmaps[i].reshape(height, width)[:valid_h, :valid_w],
+                wait=wait,
             )
         )
+        # the first image's scoring waited already
+        wait = None
     return results
 
 
