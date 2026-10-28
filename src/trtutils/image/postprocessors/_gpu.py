@@ -22,6 +22,8 @@ if TYPE_CHECKING:
 
     from ._segmentation import MaskCanvas
 
+# column stripes per row block of the NMS mask kernel
+_NMS_STRIPES = 16
 # NMS_MAX_WORDS in yolo_post.cu
 _MAX_CANDIDATES = 64 * 1024
 
@@ -33,6 +35,13 @@ def _device(shape: tuple[int, ...], dtype: type) -> Buffer:
 def _mapped(shape: tuple[int, ...], dtype: type) -> Buffer:
     # pinned host memory the kernels write directly, read after a stream sync
     return Buffer.empty(shape, dtype, MemoryLocation.HOST, pinned=True, mapped=True)
+
+
+def _obb_reach(nms_iou_thres: float, eps: float = 1e-7) -> float:
+    # center distance cull of _rotated_nms_indices: probiou >= thres needs bd <= bd_max
+    lim = 1 + eps - (1 - nms_iou_thres) ** 2
+    bd_max = -math.log(lim) if lim > 0 else math.inf
+    return 4.04 * bd_max  # 1% margin for float32 rounding
 
 
 def _f64(value: float) -> np.ndarray:
@@ -147,7 +156,7 @@ class YoloNms:
             float(nms_iou_thres),
             self._bits.ptr,
         )
-        self._mask.call((words, 1, batch), (64, 1, 1), stream, args)
+        self._mask.call((words, _NMS_STRIPES, batch), (64, 1, 1), stream, args)
         args = self._reduce.create_args(
             num,
             max_det,
@@ -216,9 +225,11 @@ class CudaObbPostprocessor:
             nms.sort_cls.ptr,
             self._boxes.ptr,
             float(nms_iou_thres),
+            _obb_reach(nms_iou_thres),
             self._alive.ptr,
         )
-        self._suppress.call((math.ceil(num / 128), batch, 1), (128, 1, 1), stream, args)
+        # one warp per box
+        self._suppress.call((math.ceil(num * 32 / 256), batch, 1), (256, 1, 1), stream, args)
         args = self._keep.create_args(
             num,
             max_det,
@@ -254,9 +265,10 @@ class CudaSegPostprocessor:
         file, _ = YOLO_POST
         self._nms = YoloNms()
         self._gather = Kernel(file, "yoloSegGather")
+        self._probs_kernel = Kernel(file, "yoloSegProbs")
         self._masks = Kernel(file, "yoloSegMasks")
         self._clear = Kernel(file, "yoloSegClear")
-        self._shape: tuple[int, int, int] | None = None
+        self._shape: tuple[int, ...] | None = None
 
     def __call__(
         self: Self,
@@ -280,8 +292,8 @@ class CudaSegPostprocessor:
         """
         head, proto = outputs
         batch, channels, num = head.shape
-        nm = proto.shape[1]
-        if self._shape != (batch, nm, max_det):
+        _, nm, mh, mw = proto.shape
+        if self._shape != (batch, nm, mh, mw, max_det):
             self._dets = _mapped((batch, max_det, 6), np.float32)
             self._coefs = _device((batch, max_det, nm), np.float32)
             # boxes each mask wrote this frame, and the previous frame's to clear
@@ -289,7 +301,9 @@ class CudaSegPostprocessor:
             self._stale = _mapped((batch, max_det, 4), np.int32)
             self._keep_count = _mapped((batch,), np.int32)
             self._letterbox = _mapped((batch, 6), np.float32)
-            self._shape = (batch, nm, max_det)
+            # per-detection sigmoid probs of the proto cells, reused image by image
+            self._probs = _device((max_det, mh * mw), np.float32)
+            self._shape = (batch, nm, mh, mw, max_det)
 
         input_w, input_h = input_size
         sizes = []
@@ -327,21 +341,18 @@ class CudaSegPostprocessor:
         masks = []
         for i in range(batch):
             width, height = sizes[i]
-            canvas = canvases[i]
-            masks.append(canvas.take(counts[i], height, width, clear=False))
-            self._clear_stale(i, canvas, (width, height), stream)
-            if counts[i] > 0:
-                self._launch_masks(
-                    proto,
-                    i,
-                    counts[i],
-                    (width, height),
-                    input_size,
-                    padding[i],
-                    mask_thres,
-                    canvas,
-                    stream,
-                )
+            masks.append(canvases[i].take(counts[i], height, width, clear=False))
+            self._draw_masks(
+                proto,
+                i,
+                counts[i],
+                sizes[i],
+                input_size,
+                padding[i],
+                mask_thres,
+                canvases[i],
+                stream,
+            )
         stream_synchronize(stream)
 
         results = []
@@ -357,32 +368,7 @@ class CudaSegPostprocessor:
             )
         return results
 
-    def _clear_stale(
-        self: Self,
-        index: int,
-        canvas: MaskCanvas,
-        size: tuple[int, int],
-        stream: cudart.cudaStream_t,
-    ) -> None:
-        # zero the previous frame's boxes on the device instead of the CPU
-        if not canvas.written:
-            return
-        n = max(entry[0] for entry in canvas.written) + 1
-        stale = self._stale.array[index]
-        stale[:n] = 0
-        for idx, y1, y2, x1, x2 in canvas.written:
-            stale[idx] = (x1, y1, x2, y2)
-        width, height = size
-        args = self._clear.create_args(
-            canvas.device_ptr,
-            self._stale.device_ptr + index * self._stale.shape[1] * 4 * 4,
-            n,
-            width,
-            height,
-        )
-        self._clear.call((n, 16, 1), (256, 1, 1), stream, args)
-
-    def _launch_masks(
+    def _draw_masks(
         self: Self,
         proto: Buffer,
         index: int,
@@ -394,6 +380,7 @@ class CudaSegPostprocessor:
         canvas: MaskCanvas,
         stream: cudart.cudaStream_t,
     ) -> None:
+        """Enqueue clearing the canvas's previous boxes and drawing image ``index``'s n masks."""
         _, nm, mh, mw = proto.shape
         width, height = size
         input_w, input_h = input_size
@@ -406,20 +393,58 @@ class CudaSegPostprocessor:
         y1 = max(min(int(np.ceil((input_h - padding[1]) / stride_y)), mh), y0 + 1)
         scale_x = (x1 - x0) / width
         scale_y = (y1 - y0) / height
-        args = self._masks.create_args(
-            proto.device_ptr + index * nm * mh * mw * 4,
-            nm,
-            mh,
-            mw,
-            self._dets.device_ptr + index * self._dets.shape[1] * 6 * 4,
-            self._coefs.ptr + index * self._coefs.shape[1] * nm * 4,
-            n,
+        geometry = (
             width,
             height,
             _f64(scale_x),
             _f64(scale_y),
             _f64(x0 + 0.5 * scale_x - 0.5),
             _f64(y0 + 0.5 * scale_y - 0.5),
+        )
+        dets = self._dets.device_ptr + index * self._dets.shape[1] * 6 * 4
+
+        # zero the previous frame's boxes on the device instead of the CPU
+        if canvas.written:
+            stale_n = max(entry[0] for entry in canvas.written) + 1
+            stale = self._stale.array[index]
+            stale[:stale_n] = 0
+            for idx, by1, by2, bx1, bx2 in canvas.written:
+                stale[idx] = (bx1, by1, bx2, by2)
+            args = self._clear.create_args(
+                canvas.device_ptr,
+                self._stale.device_ptr + index * self._stale.shape[1] * 4 * 4,
+                stale_n,
+                width,
+                height,
+                dets,
+                n,
+                mh,
+                mw,
+                *geometry[2:],
+            )
+            self._clear.call((stale_n, 16, 1), (256, 1, 1), stream, args)
+        if n == 0:
+            return
+
+        args = self._probs_kernel.create_args(
+            proto.device_ptr + index * nm * mh * mw * 4,
+            nm,
+            mh,
+            mw,
+            dets,
+            self._coefs.ptr + index * self._coefs.shape[1] * nm * 4,
+            n,
+            *geometry,
+            self._probs.ptr,
+        )
+        self._probs_kernel.call((n, 4, 1), (256, 1, 1), stream, args)
+        args = self._masks.create_args(
+            self._probs.ptr,
+            mh,
+            mw,
+            dets,
+            n,
+            *geometry,
             float(mask_thres),
             canvas.device_ptr,
             self._regions.device_ptr + index * self._regions.shape[1] * 4 * 4,

@@ -99,7 +99,7 @@ void yoloRank(
 }
 
 // bit j of row i is set when sorted box j > i overlaps box i of the same class;
-// one block per 64 rows walks the column blocks at or after its own
+// a block per 64 rows and stripe of column blocks, so empty launches stay cheap
 extern "C" __global__
 void yoloNmsMask(
     const int N,
@@ -130,7 +130,8 @@ void yoloNmsMask(
         ah = (double)(bi[3] - bi[1]);
         ci = sortCls[base + i];
     }
-    for (int colStart = rowStart; colStart < n; colStart += 64) {
+    // column blocks at or after the row block, striped over blockIdx.y
+    for (int colStart = rowStart + 64 * blockIdx.y; colStart < n; colStart += 64 * gridDim.y) {
         const int cols = min(64, n - colStart);
         __syncthreads();
         if ((int)threadIdx.x < cols) {
@@ -237,43 +238,119 @@ void yoloSegGather(
     }
 }
 
-// zero the boxes the previous frame wrote into each mask
+// a detection's mask box in the image and the proto cells it samples, as _decode_masks
+struct SegBox {
+    int bx1, by1, bx2, by2, cx1, cx2, cy1, cy2;
+    bool valid;
+};
+
+__device__ __forceinline__ SegBox segBox(
+    const float* __restrict__ det,
+    const int width,
+    const int height,
+    const int mh,
+    const int mw,
+    const double scaleX,
+    const double scaleY,
+    const double offX,
+    const double offY
+) {
+    SegBox r;
+    r.bx1 = max((int)floorf(det[0]), 0);
+    r.by1 = max((int)floorf(det[1]), 0);
+    r.bx2 = min((int)ceilf(det[2]), width);
+    r.by2 = min((int)ceilf(det[3]), height);
+    r.cx1 = max((int)floor(scaleX * r.bx1 + offX), 0);
+    r.cx2 = min((int)ceil(scaleX * (r.bx2 - 1) + offX) + 1, mw);
+    r.cy1 = max((int)floor(scaleY * r.by1 + offY), 0);
+    r.cy2 = min((int)ceil(scaleY * (r.by2 - 1) + offY) + 1, mh);
+    r.valid = r.bx2 > r.bx1 && r.by2 > r.by1 && r.cx2 > r.cx1 && r.cy2 > r.cy1;
+    return r;
+}
+
+// Masks are written to mapped host memory, where byte stores over PCIe are slow, so rows go
+// out in aligned 16 byte chunks. Bytes of a chunk outside the box are zero: the previous
+// frame's boxes are cleared first and everything else in a mask is already zero. Bytes outside
+// the mask's own plane are left alone (byte stores), so neighbouring masks are never touched.
+#define CHUNK 16
+// chunkStart's marker for a chunk past the row's end (a real offset can be negative)
+#define NO_CHUNK (-(1LL << 62))
+
+// for each row of [x1, x2) the aligned chunks overlapping it, chunks per row is an upper bound
+__device__ __forceinline__ int chunksPerRow(const int x1, const int x2) { return (x2 - x1 + 2 * CHUNK - 2) / CHUNK; }
+
+// plane offset of the aligned chunk c of row y overlapping [x1, x2), or NO_CHUNK
+__device__ __forceinline__ long long chunkStart(
+    const unsigned char* plane, const int width, const int y, const int x1, const int x2, const int c
+) {
+    const unsigned long long row = (unsigned long long)(plane + (size_t)y * width);
+    const unsigned long long first = (row + x1) & ~(unsigned long long)(CHUNK - 1);
+    const unsigned long long start = first + (unsigned long long)c * CHUNK;
+    return start < row + x2 ? (long long)start - (long long)plane : NO_CHUNK;
+}
+
+// store 16 bytes at plane offset off, byte by byte where the chunk leaves the plane
+__device__ __forceinline__ void storeChunk(
+    unsigned char* plane, const long long off, const long long size, const uint4 v
+) {
+    if (off >= 0 && off + CHUNK <= size) {
+        *reinterpret_cast<uint4*>(plane + off) = v;
+        return;
+    }
+    const unsigned char* bytes = reinterpret_cast<const unsigned char*>(&v);
+    for (int i = 0; i < CHUNK; ++i) {
+        if (off + i >= 0 && off + i < size) plane[off + i] = bytes[i];
+    }
+}
+
+// zero the boxes the previous frame wrote into each mask, skipping chunks the new box covers
 extern "C" __global__
 void yoloSegClear(
     unsigned char* __restrict__ masks,  // (>= n, height, width)
-    const int* __restrict__ regions,  // (n, 4) x1, y1, x2, y2
+    const int* __restrict__ regions,  // (n, 4) old x1, y1, x2, y2
     const int n,
     const int width,
-    const int height
+    const int height,
+    const float* __restrict__ dets,  // (newN, 6) this frame's boxes
+    const int newN,
+    const int mh,
+    const int mw,
+    const double scaleX,
+    const double scaleY,
+    const double offX,
+    const double offY
 ) {
     const int k = blockIdx.x;
     if (k >= n) return;
     const int* r = regions + k * 4;
-    const int bw = r[2] - r[0];
-    const int total = bw * (r[3] - r[1]);
-    if (total <= 0) return;
-    unsigned char* dst = masks + (size_t)k * height * width;
+    if (r[2] <= r[0] || r[3] <= r[1]) return;
+    SegBox nb;
+    nb.valid = false;
+    if (k < newN) nb = segBox(dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
+    unsigned char* plane = masks + (size_t)k * height * width;
+    const long long size = (long long)height * width;
+    const int cpr = chunksPerRow(r[0], r[2]);
+    const int total = cpr * (r[3] - r[1]);
+    const uint4 zero = make_uint4(0, 0, 0, 0);
     for (int p = blockIdx.y * blockDim.x + threadIdx.x; p < total; p += gridDim.y * blockDim.x) {
-        dst[(size_t)(r[1] + p / bw) * width + r[0] + p % bw] = 0;
+        const int y = r[1] + p / cpr;
+        const long long off = chunkStart(plane, width, y, r[0], r[2], p % cpr);
+        if (off == NO_CHUNK) continue;
+        if (nb.valid) {
+            // the mask kernel rewrites chunks inside the new box anyway
+            const long long first = max(off, 0LL);
+            const long long last = min(off + CHUNK, size) - 1;
+            const int fy = (int)(first / width), fx = (int)(first % width);
+            const int ly = (int)(last / width), lx = (int)(last % width);
+            if (fy == ly && fy >= nb.by1 && fy < nb.by2 && fx >= nb.bx1 && lx < nb.bx2) continue;
+        }
+        storeChunk(plane, off, size, zero);
     }
 }
 
-__device__ __forceinline__ float protoProb(
-    const float* __restrict__ proto,
-    const float* __restrict__ coef,
-    const int nm,
-    const int plane,
-    const int idx
-) {
-    float logit = 0.0f;
-    for (int m = 0; m < nm; ++m) logit += coef[m] * proto[(size_t)m * plane + idx];
-    return 1.0f / (1.0f + expf(-logit));
-}
-
-// write the binary mask of each kept detection inside its box, matching
-// cv2.warpAffine(INTER_LINEAR | WARP_INVERSE_MAP, BORDER_REPLICATE) over the proto crop
+// sigmoid(coef . proto) of every proto cell a detection samples, (n, mh * mw) of one image
 extern "C" __global__
-void yoloSegMasks(
+void yoloSegProbs(
     const float* __restrict__ proto,  // (nm, mh, mw) of one image
     const int nm,
     const int mh,
@@ -287,65 +364,101 @@ void yoloSegMasks(
     const double scaleY,
     const double offX,
     const double offY,
-    const float maskThres,
-    unsigned char* __restrict__ masks,  // (n, height, width)
-    int* __restrict__ regions  // (n, 4) written box: x1, y1, x2, y2
+    float* __restrict__ probs
 ) {
     __shared__ float coefShared[SEG_MAX_COEFS];
     const int k = blockIdx.x;
     if (k >= n) return;
-    const float* det = dets + (size_t)k * 6;
-    const int bx1 = max((int)floorf(det[0]), 0);
-    const int by1 = max((int)floorf(det[1]), 0);
-    const int bx2 = min((int)ceilf(det[2]), width);
-    const int by2 = min((int)ceilf(det[3]), height);
-    const int cx1 = max((int)floor(scaleX * bx1 + offX), 0);
-    const int cx2 = min((int)ceil(scaleX * (bx2 - 1) + offX) + 1, mw);
-    const int cy1 = max((int)floor(scaleY * by1 + offY), 0);
-    const int cy2 = min((int)ceil(scaleY * (by2 - 1) + offY) + 1, mh);
-    const bool valid = bx2 > bx1 && by2 > by1 && cx2 > cx1 && cy2 > cy1;
-    if (blockIdx.y == 0 && threadIdx.x == 0) {
-        int* region = regions + k * 4;
-        region[0] = valid ? bx1 : 0;
-        region[1] = valid ? by1 : 0;
-        region[2] = valid ? bx2 : 0;
-        region[3] = valid ? by2 : 0;
-    }
-    if (!valid) return;
+    const SegBox r = segBox(dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
+    if (!r.valid) return;
     for (int m = threadIdx.x; m < nm; m += blockDim.x) coefShared[m] = coefs[(size_t)k * nm + m];
     __syncthreads();
+    const int cw = r.cx2 - r.cx1;
+    const int total = cw * (r.cy2 - r.cy1);
+    const int plane = mh * mw;
+    for (int p = blockIdx.y * blockDim.x + threadIdx.x; p < total; p += gridDim.y * blockDim.x) {
+        const int idx = (r.cy1 + p / cw) * mw + r.cx1 + p % cw;
+        float logit = 0.0f;
+        for (int m = 0; m < nm; ++m) logit += coefShared[m] * proto[(size_t)m * plane + idx];
+        probs[(size_t)k * plane + idx] = 1.0f / (1.0f + expf(-logit));
+    }
+}
+
+// write the binary mask of each kept detection inside its box, matching
+// cv2.warpAffine(INTER_LINEAR | WARP_INVERSE_MAP, BORDER_REPLICATE) over the proto crop
+extern "C" __global__
+void yoloSegMasks(
+    const float* __restrict__ probs,  // (n, mh * mw) from yoloSegProbs
+    const int mh,
+    const int mw,
+    const float* __restrict__ dets,  // (n, 6) of one image
+    const int n,
+    const int width,
+    const int height,
+    const double scaleX,
+    const double scaleY,
+    const double offX,
+    const double offY,
+    const float maskThres,
+    unsigned char* __restrict__ masks,  // (n, height, width)
+    int* __restrict__ regions  // (n, 4) written box: x1, y1, x2, y2
+) {
+    const int k = blockIdx.x;
+    if (k >= n) return;
+    const SegBox r = segBox(dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
+    if (blockIdx.y == 0 && threadIdx.x == 0) {
+        int* region = regions + k * 4;
+        region[0] = r.valid ? r.bx1 : 0;
+        region[1] = r.valid ? r.by1 : 0;
+        region[2] = r.valid ? r.bx2 : 0;
+        region[3] = r.valid ? r.by2 : 0;
+    }
+    if (!r.valid) return;
 
     // opencv's fixed point warp: 10 bit coordinates rounded to 1/32 of a cell
     const double m0 = (double)(float)scaleX;
-    const double m2 = (double)(float)(scaleX * bx1 + offX - cx1);
+    const double m2 = (double)(float)(scaleX * r.bx1 + offX - r.cx1);
     const double m4 = (double)(float)scaleY;
-    const double m5 = (double)(float)(scaleY * by1 + offY - cy1);
-    const int cw = cx2 - cx1;
-    const int ch = cy2 - cy1;
-    const int bw = bx2 - bx1;
-    const int total = bw * (by2 - by1);
-    const int plane = mh * mw;
-    unsigned char* dst = masks + (size_t)k * height * width;
+    const double m5 = (double)(float)(scaleY * r.by1 + offY - r.cy1);
+    const int cw = r.cx2 - r.cx1;
+    const int ch = r.cy2 - r.cy1;
+    const float* prob = probs + (size_t)k * mh * mw;
+    unsigned char* plane = masks + (size_t)k * height * width;
+    const long long size = (long long)height * width;
+    const int cpr = chunksPerRow(r.bx1, r.bx2);
+    const int total = cpr * (r.by2 - r.by1);
     for (int p = blockIdx.y * blockDim.x + threadIdx.x; p < total; p += gridDim.y * blockDim.x) {
-        const int xd = p % bw;
-        const int yd = p / bw;
-        const int X = (__double2int_rn(m2 * 1024.0) + 16 + __double2int_rn(m0 * xd * 1024.0)) >> 5;
-        const int Y = (__double2int_rn((m4 * yd + m5) * 1024.0) + 16) >> 5;
-        const int ix = X >> 5;
-        const int iy = Y >> 5;
-        const float fx = (X & 31) / 32.0f;
-        const float fy = (Y & 31) / 32.0f;
-        const int x0 = cx1 + min(max(ix, 0), cw - 1);
-        const int x1 = cx1 + min(max(ix + 1, 0), cw - 1);
-        const int y0 = cy1 + min(max(iy, 0), ch - 1);
-        const int y1 = cy1 + min(max(iy + 1, 0), ch - 1);
-        const float v00 = protoProb(proto, coefShared, nm, plane, y0 * mw + x0);
-        const float v01 = protoProb(proto, coefShared, nm, plane, y0 * mw + x1);
-        const float v10 = protoProb(proto, coefShared, nm, plane, y1 * mw + x0);
-        const float v11 = protoProb(proto, coefShared, nm, plane, y1 * mw + x1);
-        const float v = v00 * ((1.0f - fy) * (1.0f - fx)) + v01 * ((1.0f - fy) * fx)
-            + v10 * (fy * (1.0f - fx)) + v11 * (fy * fx);
-        dst[(size_t)(by1 + yd) * width + bx1 + xd] = v >= maskThres;
+        const long long off = chunkStart(plane, width, r.by1 + p / cpr, r.bx1, r.bx2, p % cpr);
+        if (off == NO_CHUNK) continue;
+        uint4 v = make_uint4(0, 0, 0, 0);
+        unsigned char* bytes = reinterpret_cast<unsigned char*>(&v);
+        for (int i = 0; i < CHUNK; ++i) {
+            const long long o = off + i;
+            if (o < 0 || o >= size) continue;
+            const int y = (int)(o / width);
+            const int x = (int)(o % width);
+            if (y < r.by1 || y >= r.by2 || x < r.bx1 || x >= r.bx2) continue;
+            const int xd = x - r.bx1;
+            const int yd = y - r.by1;
+            const int X = (__double2int_rn(m2 * 1024.0) + 16 + __double2int_rn(m0 * xd * 1024.0)) >> 5;
+            const int Y = (__double2int_rn((m4 * yd + m5) * 1024.0) + 16) >> 5;
+            const int ix = X >> 5;
+            const int iy = Y >> 5;
+            const float fx = (X & 31) / 32.0f;
+            const float fy = (Y & 31) / 32.0f;
+            const int x0 = r.cx1 + min(max(ix, 0), cw - 1);
+            const int x1 = r.cx1 + min(max(ix + 1, 0), cw - 1);
+            const int y0 = r.cy1 + min(max(iy, 0), ch - 1);
+            const int y1 = r.cy1 + min(max(iy + 1, 0), ch - 1);
+            const float v00 = prob[y0 * mw + x0];
+            const float v01 = prob[y0 * mw + x1];
+            const float v10 = prob[y1 * mw + x0];
+            const float v11 = prob[y1 * mw + x1];
+            const float val = v00 * ((1.0f - fy) * (1.0f - fx)) + v01 * ((1.0f - fy) * fx)
+                + v10 * (fy * (1.0f - fx)) + v11 * (fy * fx);
+            bytes[i] = val >= maskThres;
+        }
+        storeChunk(plane, off, size, v);
     }
 }
 
@@ -466,7 +579,9 @@ __device__ float probiou(const float* __restrict__ p, const float* __restrict__ 
 }
 
 // ultralytics fast-nms: sorted box j survives unless any higher ranked box of its class
-// overlaps it by probiou >= iouThres, whether or not that box survives itself
+// overlaps it by probiou >= iouThres, whether or not that box survives itself. One warp per
+// box; pairs whose centers are farther apart than reach * (trace_i + trace_j) cannot reach
+// the threshold (bd >= |d|^2 / (4 * trace)) and skip the full formula, as the CPU path does
 extern "C" __global__
 void obbSuppress(
     const int N,
@@ -474,23 +589,34 @@ void obbSuppress(
     const int* __restrict__ sortCls,
     const float* __restrict__ rb,
     const float iouThres,
+    const float reach,
     unsigned char* __restrict__ alive
 ) {
-    const int j = blockIdx.x * blockDim.x + threadIdx.x;
+    const int j = (blockIdx.x * blockDim.x + threadIdx.x) / 32;
+    const int lane = threadIdx.x % 32;
     const int b = blockIdx.y;
     if (j >= count[b]) return;
     const size_t base = (size_t)b * N;
     const int cj = sortCls[base + j];
     const float* q = rb + (base + j) * 8;
-    unsigned char keep = 1;
-    for (int i = 0; i < j; ++i) {
-        if (sortCls[base + i] != cj) continue;
-        if (probiou(rb + (base + i) * 8, q) >= iouThres) {
-            keep = 0;
+    const float traceJ = q[5] + q[6];
+    bool hit = false;
+    for (int start = 0; start < j; start += 32) {
+        const int i = start + lane;
+        if (i < j && sortCls[base + i] == cj) {
+            const float* p = rb + (base + i) * 8;
+            const float dx = p[0] - q[0];
+            const float dy = p[1] - q[1];
+            if (dx * dx + dy * dy <= reach * (p[5] + p[6] + traceJ)) {
+                hit = probiou(p, q) >= iouThres;
+            }
+        }
+        if (__any_sync(0xffffffffu, hit)) {
+            hit = true;
             break;
         }
     }
-    alive[base + j] = keep;
+    if (lane == 0) alive[base + j] = hit ? 0 : 1;
 }
 
 // first maxDet survivors in rank order as rows of (enclosing xyxy, score, class, cx, cy, w, h,

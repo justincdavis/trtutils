@@ -81,6 +81,70 @@ def test_cuda_seg_matches_cpu(batch, conf_thres, nms_iou_thres, max_det) -> None
         destroy_stream(stream)
 
 
+@pytest.mark.parametrize(
+    "ratio",
+    [
+        pytest.param(5.0, id="13px-wide"),
+        pytest.param(1.7, id="38px-wide"),
+        pytest.param(0.21, id="305px-wide"),
+    ],
+)
+def test_cuda_seg_masks_on_unaligned_frames(ratio: float) -> None:
+    """Frames whose rows and mask planes are not 16 byte aligned get the exact masks."""
+    rng = np.random.default_rng(1)
+    head, proto = _seg_head(rng, 1, num=500, nc=3, nm=8)
+    kwargs = {"max_det": 300, "input_size": INPUT}
+    ref = postprocess_yolo_seg([head, proto], [(ratio, ratio)], [(0.0, 0.0)], 0.1, 0.5, **kwargs)
+
+    stream = create_stream()
+    try:
+        outputs = [Buffer.from_array(a, MemoryLocation.DEVICE) for a in (head, proto)]
+        canvases = [MaskCanvas(mapped=True)]
+        post = CudaSegPostprocessor()
+        for _ in range(2):
+            ours = post(
+                outputs,
+                [(ratio, ratio)],
+                [(0.0, 0.0)],
+                0.1,
+                0.5,
+                0.5,
+                canvases=canvases,
+                stream=stream,
+                **kwargs,
+            )
+            assert ours[0][3].any()
+            np.testing.assert_array_equal(ours[0][3], ref[0][3])
+    finally:
+        destroy_stream(stream)
+
+
+def _one_box_seg(x2: float) -> list:
+    """One detection spanning x 4..x2 whose mask fills the whole box."""
+    head = np.zeros((1, 4 + 1 + 4, 1), dtype=np.float32)
+    head[0, :5, 0] = [(4 + x2) / 2, 32, x2 - 4, 40, 0.9]
+    head[0, 5:, 0] = 1.0
+    return [head, np.full((1, 4, 16, 16), 5.0, dtype=np.float32)]
+
+
+def test_cuda_seg_clears_stale_columns_past_a_shrunk_box() -> None:
+    """A reused canvas drops the stale pixels just right of a narrower box at every alignment."""
+    stream = create_stream()
+    try:
+        canvases = [MaskCanvas(mapped=True)]
+        post = CudaSegPostprocessor()
+        kwargs = {"max_det": 300, "input_size": INPUT, "canvases": canvases, "stream": stream}
+        for x2 in range(44, 60):
+            head = [Buffer.from_array(a, MemoryLocation.DEVICE) for a in _one_box_seg(60.0)]
+            post(head, [(1.0, 1.0)], [(0.0, 0.0)], 0.5, 0.5, 0.5, **kwargs)
+            head = [Buffer.from_array(a, MemoryLocation.DEVICE) for a in _one_box_seg(x2)]
+            ours = post(head, [(1.0, 1.0)], [(0.0, 0.0)], 0.5, 0.5, 0.5, **kwargs)
+            assert ours[0][3][0, 12:52, 4:x2].all()
+            assert not ours[0][3][0, :, x2:].any()
+    finally:
+        destroy_stream(stream)
+
+
 def _pose_head(rng: np.random.Generator, batch: int, num: int, nk: int) -> np.ndarray:
     """Clustered boxes with quantized scores, keypoints spilling past the input for clipping."""
     seg = _seg_head(rng, batch, num, nc=1, nm=3 * nk)[0]
