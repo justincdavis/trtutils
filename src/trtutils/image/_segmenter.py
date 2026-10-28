@@ -17,6 +17,7 @@ from ._image_model import ImageModel
 from ._schema import SegmenterOutputSchema
 from .interfaces import SegmenterInterface
 from .postprocessors import get_segmentations, postprocess_yolo_seg
+from .postprocessors._segmentation import MaskCanvas
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -170,6 +171,8 @@ class Segmenter(ImageModel, SegmenterInterface):
         self._nms_iou: float = nms_iou_thres
         self._max_det: int = max_det
         self._mask_thres: float = mask_thres
+        # one reused mask stack per batch slot, used when no_copy is set
+        self._canvases: list[MaskCanvas] = []
 
         if self._verbose:
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
@@ -215,7 +218,10 @@ class Segmenter(ImageModel, SegmenterInterface):
             The threshold applied to the sigmoid mask logits.
             If not passed, will use value from constructor.
         no_copy : bool, optional
-            Unused, results are always new arrays.
+            If True, masks are written into a reused buffer per batch slot,
+            which the next call with no_copy overwrites. This skips zeroing a
+            new full-frame mask stack each frame. By default None, which
+            returns new mask arrays.
         verbose : bool, optional
             Whether or not to log additional information.
 
@@ -226,7 +232,6 @@ class Segmenter(ImageModel, SegmenterInterface):
             [bboxes, scores, class_ids, masks].
 
         """
-        del no_copy  # results are always new arrays
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["seg_postprocess"])
 
@@ -237,6 +242,11 @@ class Segmenter(ImageModel, SegmenterInterface):
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         mask_thres = mask_thres if mask_thres is not None else self._mask_thres
         outputs = self._order_outputs(outputs)
+        canvases = None
+        if no_copy:
+            batch = outputs[0].shape[0]
+            self._canvases.extend(MaskCanvas() for _ in range(batch - len(self._canvases)))
+            canvases = self._canvases[:batch]
         t0 = time.perf_counter()
         data = postprocess_yolo_seg(
             outputs,
@@ -247,6 +257,7 @@ class Segmenter(ImageModel, SegmenterInterface):
             max_det=self._max_det,
             input_size=self._input_size,
             mask_thres=mask_thres,
+            canvases=canvases,
             verbose=verbose,
         )
         t1 = time.perf_counter()

@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from trtutils.image.postprocessors._segmentation import (
+    MaskCanvas,
     _decode_masks,
     get_segmentations,
     postprocess_yolo_seg,
@@ -176,3 +177,22 @@ def test_box_cropped_masks_match_full_resize_reference() -> None:
         outside = masks[idx].copy()
         outside[region] = 0
         assert not outside.any()
+
+
+def test_mask_canvas_reuse_matches_fresh_masks() -> None:
+    """Masks decoded into a reused canvas match fresh arrays frame after frame."""
+    rng = np.random.default_rng(2)
+    nm, mh, mw = 4, 40, 40
+    input_size = (160, 160)
+    ratios = (0.25, 0.25)
+    padding = (0.0, 30.0)
+    canvas = MaskCanvas()
+    # frames with shrinking, growing and moving boxes, so stale pixels would show
+    for n in (5, 2, 7, 0, 3):
+        proto = rng.normal(size=(nm, mh, mw)).astype(np.float32) * 3
+        coeffs = rng.normal(size=(n, nm)).astype(np.float32)
+        xy = rng.uniform(0, 400, (n, 2))
+        boxes = np.column_stack((xy, xy + rng.uniform(20, 240, (n, 2)))).astype(np.float32)
+        fresh = _decode_masks(coeffs, proto, boxes, ratios, padding, input_size, 0.5)
+        reused = _decode_masks(coeffs, proto, boxes, ratios, padding, input_size, 0.5, canvas)
+        assert np.array_equal(reused, fresh)

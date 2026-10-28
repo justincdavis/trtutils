@@ -112,6 +112,12 @@ Added
 
 Changed
 ^^^^^^^
+* ``Segmenter.postprocess(no_copy=True)``, and so ``Segmenter.end2end``, write masks into a
+  reused buffer per batch slot, as detection outputs already are: the masks of earlier results
+  are overwritten by the next call, so copy any you keep. A new full-frame mask stack per frame
+  cost more than decoding the masks (yolo11n-seg postprocess 5.9 ms -> 3.3 ms on 1080p frames)
+* OBB rotated NMS runs in float32 on small score-ordered blocks and skips pairs too far apart
+  to overlap; same results, yolo11n-obb postprocess 28 ms -> 5 ms on 1080p frames
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``

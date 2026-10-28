@@ -146,14 +146,26 @@ def _probiou(rboxes1: np.ndarray, rboxes2: np.ndarray, eps: float = 1e-7) -> np.
         The (N, M) similarity matrix in [0, 1].
 
     """
-    x1, y1 = rboxes1[:, 0:1], rboxes1[:, 1:2]
-    x2, y2 = rboxes2[None, :, 0], rboxes2[None, :, 1]
     a1, b1, c1 = (v[:, None] for v in _covariance(rboxes1))
     a2, b2, c2 = (v[None] for v in _covariance(rboxes2))
+    dx = rboxes1[:, 0:1] - rboxes2[None, :, 0]
+    dy = rboxes1[:, 1:2] - rboxes2[None, :, 1]
+    return _probiou_terms(dx, dy, (a1, b1, c1), (a2, b2, c2), eps)
 
+
+def _probiou_terms(
+    dx: np.ndarray,
+    dy: np.ndarray,
+    cov1: tuple[np.ndarray, np.ndarray, np.ndarray],
+    cov2: tuple[np.ndarray, np.ndarray, np.ndarray],
+    eps: float,
+) -> np.ndarray:
+    # elementwise probiou from center offsets and covariances, any broadcastable shapes
+    a1, b1, c1 = cov1
+    a2, b2, c2 = cov2
     det = (a1 + a2) * (b1 + b2) - (c1 + c2) ** 2
-    t1 = ((a1 + a2) * (y1 - y2) ** 2 + (b1 + b2) * (x1 - x2) ** 2) / (det + eps) * 0.25
-    t2 = ((c1 + c2) * (x2 - x1) * (y1 - y2)) / (det + eps) * 0.5
+    t1 = ((a1 + a2) * dy**2 + (b1 + b2) * dx**2) / (det + eps) * 0.25
+    t2 = ((c1 + c2) * -dx * dy) / (det + eps) * 0.5
     dets = np.clip(a1 * b1 - c1**2, 0, None) * np.clip(a2 * b2 - c2**2, 0, None)
     t3 = np.log(det / (4 * np.sqrt(dets) + eps) + eps) * 0.5
     bd = np.clip(t1 + t2 + t3, eps, 100.0)
@@ -166,23 +178,44 @@ def _rotated_nms_indices(
     class_ids: np.ndarray,
     nms_iou_thres: float,
     max_det: int,
-    block: int = 1024,
+    block: int = 128,
+    eps: float = 1e-7,
 ) -> np.ndarray:
     # ultralytics fast-nms: drop a box if any higher scored same-class box overlaps it
     order = np.argsort(-scores, kind="stable")
-    rboxes = rboxes[order]
+    # float32 as ultralytics computes it, about twice as fast as float64
+    rboxes = rboxes[order].astype(np.float32)
     class_ids = class_ids[order]
+    cov = _covariance(rboxes)
+    x, y = rboxes[:, 0], rboxes[:, 1]
+    # probiou >= thres needs bd <= bd_max, and bd >= |d|^2 / (4 * trace(cov1 + cov2)),
+    # so pairs whose centers are farther apart cannot suppress and skip the full formula
+    trace = cov[0] + cov[1]
+    lim = 1 + eps - (1 - nms_iou_thres) ** 2
+    bd_max = -np.log(lim) if lim > 0 else np.inf
+    reach = 4.04 * bd_max  # 1% margin for float32 rounding
     keep = [np.zeros(0, dtype=int)]
     kept = 0
-    # column blocks bound memory to n x block, stop once max_det are kept
+    # small column blocks stop soon after max_det are kept, skipping most pairs
     for start in range(0, len(order), block):
         stop = min(start + block, len(order))
-        iou = _probiou(rboxes[:stop], rboxes[start:stop])
-        rows = np.arange(stop)[:, None]
-        cols = np.arange(start, stop)[None]
-        hit = (iou >= nms_iou_thres) & (rows < cols)
-        hit &= class_ids[:stop, None] == class_ids[None, start:stop]
-        cols_kept = start + np.flatnonzero(~hit.any(axis=0))
+        dx = x[:stop, None] - x[None, start:stop]
+        dy = y[:stop, None] - y[None, start:stop]
+        near = dx * dx + dy * dy <= reach * (trace[:stop, None] + trace[None, start:stop])
+        near &= np.arange(stop)[:, None] < np.arange(start, stop)[None]
+        near &= class_ids[:stop, None] == class_ids[None, start:stop]
+        rows, cols = np.nonzero(near)
+        cols += start
+        iou = _probiou_terms(
+            x[rows] - x[cols],
+            y[rows] - y[cols],
+            tuple(v[rows] for v in cov),
+            tuple(v[cols] for v in cov),
+            eps,
+        )
+        hit = np.zeros(len(order), dtype=bool)
+        hit[cols[iou >= nms_iou_thres]] = True
+        cols_kept = start + np.flatnonzero(~hit[start:stop])
         keep.append(cols_kept)
         kept += len(cols_kept)
         if kept >= max_det:
