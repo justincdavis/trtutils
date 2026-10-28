@@ -62,13 +62,25 @@ TASK_MODELS = [
         "ocr",
         "ppocrv4",
         models.PPOCR,
+        image="text",
         parts={"det": models.PPOCRDetector, "rec": models.PPOCRRecognizer},
     ),
 ]
 
 
+def _text_frame() -> np.ndarray:
+    """A 1080p page of 14 printed text lines, so OCR runs its recognizer (photos hold no text)."""
+    image = np.full((FRAME_SIZE[1], FRAME_SIZE[0], 3), 255, dtype=np.uint8)
+    for i in range(14):
+        line = f"Line {i + 1}: the quick brown fox jumps over the lazy dog {1000 + 37 * i}"
+        cv2.putText(image, line, (60, 70 + 72 * i), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 3)
+    return image
+
+
 def load_frame(name: str) -> np.ndarray:
-    """Read a data/ image and resize it to a 1080p frame."""
+    """Read a data/ image and resize it to a 1080p frame ("text" renders a page of text)."""
+    if name == "text":
+        return _text_frame()
     image = cv2.imread(str(REPO_DIR / "data" / name))
     if image is None:
         err_msg = f"Could not read data/{name}"
