@@ -10,11 +10,13 @@ import nvtx
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
 from ._schema import OBBDetectorOutputSchema
 from .interfaces import OBBDetectorInterface
 from .postprocessors import get_obb_detections, postprocess_yolo_obb
+from .postprocessors._gpu import CudaObbPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -23,7 +25,6 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Literal, Self
 
-    from trtutils.core._buffer import Buffer
     from trtutils.image.types import OBBDetection
 
     from ._image_model import _PostFn
@@ -33,6 +34,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
     """Implementation of oriented bounding box detectors (YOLO-style OBB heads)."""
 
     _OUTPUT_SCHEMA = OBBDetectorOutputSchema
+    _cuda_postprocess = True
 
     def __init__(
         self: Self,
@@ -170,6 +172,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         self._conf_thres: float = conf_thres
         self._nms_iou: float = nms_iou_thres
         self._max_det: int = max_det
+        self._cuda_post = CudaObbPostprocessor() if self._postprocessor == "cuda" else None
 
         if self._verbose:
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
@@ -222,8 +225,6 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             [bboxes, scores, class_ids, rboxes].
 
         """
-        # only the CUDA postprocessor is handed device outputs
-        outputs = cast("list[np.ndarray]", outputs)
         del no_copy  # results are always new arrays
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["obb_postprocess"])
@@ -235,15 +236,26 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         outputs = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        data = postprocess_yolo_obb(
-            outputs,
-            ratios,
-            padding,
-            conf_thres,
-            nms_iou_thres,
-            max_det=self._max_det,
-            verbose=verbose,
-        )
+        if self._cuda_post is not None and isinstance(outputs[0], Buffer):
+            data = self._cuda_post(
+                cast("list[Buffer]", outputs),
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                max_det=self._max_det,
+                stream=self._engine.stream,
+            )
+        else:
+            data = postprocess_yolo_obb(
+                cast("list[np.ndarray]", outputs),
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                max_det=self._max_det,
+                verbose=verbose,
+            )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 

@@ -59,7 +59,6 @@ class YoloNms:
         if num > _MAX_CANDIDATES:
             err_msg = f"CUDA NMS supports up to {_MAX_CANDIDATES} anchors, got {num}"
             raise ValueError(err_msg)
-        words = math.ceil(num / 64)
         self.count = _device((batch,), np.int32)
         self._cand_anchor = _device((batch, num), np.int32)
         self._cand_score = _device((batch, num), np.float32)
@@ -68,27 +67,32 @@ class YoloNms:
         self.sort_score = _device((batch, num), np.float32)
         self.sort_cls = _device((batch, num), np.int32)
         self.sort_box = _device((batch, num, 4), np.float32)
-        self._bits = _device((batch, num, words), np.uint64)
+        self._bits: Buffer | None = None
         self.keep = _device((batch, max_det), np.int32)
         self.keep_count = _device((batch,), np.int32)
 
-    def __call__(
+    def rank(
         self: Self,
         head: Buffer,
         cls_start: int,
         nc: int,
         conf_thres: float | None,
-        nms_iou_thres: float,
         max_det: int,
         stream: cudart.cudaStream_t,
+        *,
+        inclusive: bool = False,
     ) -> None:
-        """Enqueue NMS of ``head`` on ``stream``, filling keep / keep_count and the sorted arrays."""
+        """
+        Enqueue the decode and sort of ``head`` on ``stream``, filling count and the sorted arrays.
+
+        Keeps scores above ``conf_thres`` (at or above with ``inclusive``); None keeps every anchor.
+        """
         batch, channels, num = head.shape
         if self._shape != (batch, channels, num, max_det):
             self._allocate(batch, num, max_det)
             self._shape = (batch, channels, num, max_det)
-        conf = 0.0 if conf_thres is None else float(conf_thres)
-        words = math.ceil(num / 64)
+        unfiltered = -math.inf if inclusive else 0.0
+        conf = unfiltered if conf_thres is None else float(conf_thres)
         cuda_call(cudart.cudaMemsetAsync(self.count.ptr, 0, self.count.nbytes, stream))
         args = self._decode.create_args(
             head.device_ptr,
@@ -97,6 +101,7 @@ class YoloNms:
             cls_start,
             nc,
             conf,
+            int(inclusive),
             self.count.ptr,
             self._cand_anchor.ptr,
             self._cand_score.ptr,
@@ -117,6 +122,23 @@ class YoloNms:
             self.sort_box.ptr,
         )
         self._rank.call((math.ceil(num / 256), batch, 1), (256, 1, 1), stream, args)
+
+    def __call__(
+        self: Self,
+        head: Buffer,
+        cls_start: int,
+        nc: int,
+        conf_thres: float | None,
+        nms_iou_thres: float,
+        max_det: int,
+        stream: cudart.cudaStream_t,
+    ) -> None:
+        """Enqueue NMS of ``head`` on ``stream``, filling keep / keep_count and the sorted arrays."""
+        batch, _, num = head.shape
+        self.rank(head, cls_start, nc, conf_thres, max_det, stream)
+        words = math.ceil(num / 64)
+        if self._bits is None:
+            self._bits = _device((batch, num, words), np.uint64)
         args = self._mask.create_args(
             num,
             self.count.ptr,
@@ -135,6 +157,94 @@ class YoloNms:
             self.keep_count.ptr,
         )
         self._reduce.call((batch, 1, 1), (128, 1, 1), stream, args)
+
+
+class CudaObbPostprocessor:
+    """YOLO oriented box postprocessing on the device, see ``postprocess_yolo_obb``."""
+
+    def __init__(self: Self) -> None:
+        file, _ = YOLO_POST
+        self._nms = YoloNms()
+        self._prep = Kernel(file, "obbPrep")
+        self._suppress = Kernel(file, "obbSuppress")
+        self._keep = Kernel(file, "obbKeep")
+        self._shape: tuple[int, int, int] | None = None
+
+    def __call__(
+        self: Self,
+        outputs: list[Buffer],
+        ratios: list[tuple[float, float]],
+        padding: list[tuple[float, float]],
+        conf_thres: float | None,
+        nms_iou_thres: float,
+        *,
+        max_det: int,
+        stream: cudart.cudaStream_t,
+    ) -> list[list[np.ndarray]]:
+        """Postprocess device ``[output0]`` into the per-image lists of ``postprocess_yolo_obb``."""
+        head = outputs[0]
+        batch, channels, num = head.shape
+        if self._shape != (batch, num, max_det):
+            self._boxes = _device((batch, num, 8), np.float32)
+            self._alive = _device((batch, num), np.uint8)
+            self._dets = _mapped((batch, max_det, 11), np.float32)
+            self._keep_count = _mapped((batch,), np.int32)
+            self._letterbox = _mapped((batch, 4), np.float32)
+            self._shape = (batch, num, max_det)
+
+        for i in range(batch):
+            if not np.isclose(ratios[i][0], ratios[i][1]):
+                err_msg = "OBB decoding needs uniform scaling, use resize_method='letterbox'"
+                raise ValueError(err_msg)
+            self._letterbox.array[i] = (*ratios[i], *padding[i])
+
+        nms = self._nms
+        nms.rank(head, 4, channels - 5, conf_thres, max_det, stream, inclusive=True)
+        args = self._prep.create_args(
+            head.device_ptr,
+            channels,
+            num,
+            nms.count.ptr,
+            nms.sort_anchor.ptr,
+            self._letterbox.device_ptr,
+            self._boxes.ptr,
+        )
+        self._prep.call((math.ceil(num / 256), batch, 1), (256, 1, 1), stream, args)
+        args = self._suppress.create_args(
+            num,
+            nms.count.ptr,
+            nms.sort_cls.ptr,
+            self._boxes.ptr,
+            float(nms_iou_thres),
+            self._alive.ptr,
+        )
+        self._suppress.call((math.ceil(num / 128), batch, 1), (128, 1, 1), stream, args)
+        args = self._keep.create_args(
+            num,
+            max_det,
+            nms.count.ptr,
+            self._alive.ptr,
+            nms.sort_cls.ptr,
+            nms.sort_score.ptr,
+            self._boxes.ptr,
+            self._dets.device_ptr,
+            self._keep_count.device_ptr,
+        )
+        self._keep.call((batch, 1, 1), (1024, 1, 1), stream, args)
+        stream_synchronize(stream)
+
+        results = []
+        for i in range(batch):
+            dets = self._dets.array[i, : int(self._keep_count.array[i])]
+            results.append(
+                [
+                    dets[:, :4].copy(),
+                    dets[:, 4].copy(),
+                    dets[:, 5].astype(np.int64),
+                    dets[:, 6:].copy(),
+                ],
+            )
+        return results
 
 
 class CudaSegPostprocessor:

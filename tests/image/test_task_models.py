@@ -281,7 +281,25 @@ def test_segmenter_cuda_postprocessor_matches_cpu(task_engine, images, image_nam
             np.testing.assert_array_equal(got[3], want[3])
 
 
-@pytest.mark.parametrize(("model_cls", "task"), [pytest.param(OBBDetector, "obb", id="obb")])
+def test_obb_detector_cuda_postprocessor_matches_cpu(task_engine, images) -> None:
+    """postprocessor="cuda" gives the CPU detections exactly, through run() and end2end()."""
+    image = _load(images, "aerial")
+    cpu = OBBDetector(task_engine("obb"), warmup=False)
+    cuda = OBBDetector(task_engine("obb"), postprocessor="cuda", warmup=False)
+
+    ref = cpu.end2end(image)
+    assert ref
+    for obbs in (cuda.end2end(image), cuda.get_obbs(cuda.run(image)), cuda.end2end(image)):
+        assert obbs == ref
+    # enclosing boxes use cos / sin, which numpy's float32 does not round like the GPU
+    want = cpu.run(image)
+    got = cuda.run(image)
+    np.testing.assert_allclose(got[0], want[0], rtol=1e-5, atol=1e-3)
+    for g, w in zip(got[1:], want[1:]):
+        np.testing.assert_array_equal(g, w)
+
+
+@pytest.mark.parametrize(("model_cls", "task"), [pytest.param(Classifier, "cls", id="cls")])
 def test_cuda_postprocessor_unsupported_raises(task_engine, model_cls, task: str) -> None:
     """A task model without a CUDA postprocessor rejects postprocessor="cuda"."""
     with pytest.raises(ValueError, match="postprocessor"):
