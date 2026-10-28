@@ -298,7 +298,62 @@ def cmd_tasks(args: argparse.Namespace) -> None:
         args.warmup,
         args.iterations,
         overwrite=args.overwrite,
+        stage=args.stage,
     )
+
+
+def cmd_compare(args: argparse.Namespace) -> None:
+    """Compare per-stage medians of two sets of tasks result or stage JSON files."""
+    import csv
+    import json
+    import statistics
+    from pathlib import Path
+
+    fields = ["end2end", "preprocess", "infer", "postprocess", "extract"]
+
+    def load(paths: list[str]) -> tuple[dict, list[dict]]:
+        # key -> field -> per-file medians, plus flat rows for the csv
+        meds: dict = {}
+        rows: list[dict] = []
+        for run, path in enumerate(paths):
+            doc = json.loads(Path(path).read_text())
+            entries = doc["tasks"]["data"] if "tasks" in doc else doc
+            for key, e in entries.items():
+                vals = {"end2end": e["end2end"]["median"]}
+                vals.update({s: v["median"] for s, v in e["stages"].items()})
+                for f in fields:
+                    meds.setdefault(key, {}).setdefault(f, []).append(vals[f])
+                rows.append(
+                    {
+                        "run": run,
+                        "task": e["task"],
+                        "model": e["model"],
+                        "pre": e["preprocessor"],
+                        **vals,
+                    }
+                )
+        return meds, rows
+
+    (a, rows_a), (b, rows_b) = load(args.a), load(args.vs)
+    print(f"{'key':<28} {'stage':<12} {'A(ms)':>8} {'B(ms)':>8} {'delta%':>8}")
+    for key in sorted(a.keys() & b.keys()):
+        for f in fields:
+            ma, mb = statistics.median(a[key][f]), statistics.median(b[key][f])
+            delta = (mb - ma) / ma * 100 if ma else 0.0
+            print(f"{key:<28} {f:<12} {ma:>8.3f} {mb:>8.3f} {delta:>+8.1f}")
+
+    if args.csv is not None:
+        labels = args.labels or ["A", "B"]
+        with Path(args.csv).open("w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(
+                ["run", "revision", "task", "model", "preprocessor", "end2end_ms", "preprocess_ms", "infer_ms", "postprocess_ms", "extract_ms"]
+            )
+            for rev, rows in zip(labels, (rows_a, rows_b)):
+                for r in rows:
+                    w.writerow(
+                        [r["run"], rev, r["task"], r["model"], r["pre"], *(r[x] for x in fields)]
+                    )
 
 
 def cmd_bootstrap(args: argparse.Namespace) -> None:
@@ -411,7 +466,16 @@ def main() -> None:
     p.add_argument("--iterations", type=int, default=200)
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--nvtx", action="store_true")
+    p.add_argument("--stage", default=None, help="Measure fresh into a stage snapshot")
     p.set_defaults(func=cmd_tasks)
+
+    # --- compare ---
+    p = subparsers.add_parser("compare", help="Compare two sets of tasks/stage JSON files")
+    p.add_argument("a", nargs="+", metavar="A")
+    p.add_argument("--vs", nargs="+", required=True, metavar="B")
+    p.add_argument("--labels", nargs=2, default=None, help="Revision labels for A and B")
+    p.add_argument("--csv", default=None)
+    p.set_defaults(func=cmd_compare)
 
     # --- bootstrap ---
     p = subparsers.add_parser("bootstrap", help="Download models upfront")
