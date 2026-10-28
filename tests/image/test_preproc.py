@@ -8,9 +8,9 @@ from __future__ import annotations
 import cv2
 import numpy as np
 import pytest
-from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils import Buffer, MemoryLocation
+from trtutils.image._ops import rescale, resize_letterbox, resize_linear
 from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
 from trtutils.image.preprocessors._process import preprocess
 
@@ -40,10 +40,14 @@ PREPROCS = [
         pytest.param(IMAGENET, 0.1, id="imagenet"),
     ],
 )
-def test_gpu_matches_cpu(images, gpu_cls, resize, norm, tol) -> None:
+# a non-square target is what tells (x, y) ratios apart from swapped ones
+@pytest.mark.parametrize(
+    "size", [pytest.param(SIZE, id="square"), pytest.param((640, 384), id="wide")]
+)
+def test_gpu_matches_cpu(images, gpu_cls, resize, norm, tol, size) -> None:
     """GPU preprocessing matches CPU output, ratios, and padding for every test image."""
-    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=resize, **norm)
-    gpu = gpu_cls(SIZE, RANGE, DTYPE, resize=resize, **norm)
+    cpu = CPUPreprocessor(size, RANGE, DTYPE, resize=resize, **norm)
+    gpu = gpu_cls(size, RANGE, DTYPE, resize=resize, **norm)
     for image in images.values():
         expected, ratios, padding = cpu.preprocess([image.array])
         result, gpu_ratios, gpu_padding = gpu.preprocess([image.array])
@@ -267,10 +271,8 @@ def _reference_preprocess(images, input_shape, dtype, input_range, method, mean,
     """Run the previous per-image float64 pipeline, stacked with concatenate."""
     tensors = []
     for image in images:
-        if method == "letterbox":
-            tensor, _, _ = letterbox(image, new_shape=input_shape)
-        else:
-            tensor, _ = resize_linear(image, new_shape=input_shape)
+        resize = resize_letterbox if method == "letterbox" else resize_linear
+        tensor, _, _ = resize(image, new_shape=input_shape)
         tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
         tensor = (tensor / 255.0 - mean) / std if mean is not None else rescale(tensor, input_range)
         tensors.append(np.transpose(tensor[np.newaxis], (0, 3, 1, 2)).astype(dtype))
@@ -384,3 +386,15 @@ def test_cpu_preprocess_fn_rejects_fixed_options(kwargs) -> None:
     cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=_half_size_fn)
     with pytest.raises(ValueError, match="not supported with a preprocessing function"):
         cpu.preprocess(np.zeros((64, 64, 3), np.uint8), **kwargs)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("method", ["letterbox", "linear"])
+def test_preprocess_drops_alpha_channel(method) -> None:
+    """A BGRA frame preprocesses the same as its BGR channels."""
+    rng = np.random.default_rng(0)
+    bgra = rng.integers(0, 256, (120, 160, 4), dtype=np.uint8)
+    args = ((64, 64), np.dtype(np.float32), (0.0, 1.0), method, None, None)
+    expected, _, _ = preprocess([bgra[..., :3]], *args)
+    result, _, _ = preprocess([bgra], *args)
+    np.testing.assert_array_equal(result, expected)

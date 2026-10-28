@@ -6,9 +6,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from cv2ext.bboxes import nms
 
 from trtutils._log import LOG
+from trtutils.image._ops import nms
 
 from ._common import clip_boxes, unletterbox_boxes
 

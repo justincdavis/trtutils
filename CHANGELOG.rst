@@ -3,6 +3,11 @@ Unreleased
 
 Added
 ^^^^^
+* OCR (``image.OCR`` models) no longer needs OpenCV: contour finding, minimum-area rectangles,
+  2x2 dilation, polygon scoring and the cubic perspective crop run as numba/numpy ports that
+  match OpenCV 4.x bit-for-bit (numba is optional, plain numpy is slower). OpenCV is still used
+  when installed. OpenCV 5.x differs slightly: its cubic ``warpPerspective`` by a few levels and
+  its ``minAreaRect`` by up to a pixel or two on some rotated boxes
 * ``Detector(class_map=...)`` (and every detector wrapper): optional ``Mapping[int, int]`` that
   translates model class ids to output ids after postprocessing; unmapped ids pass through. Off
   by default
@@ -112,6 +117,23 @@ Added
 
 Changed
 ^^^^^^^
+* **Breaking:** OpenCV moved from the base dependencies to the new ``cv2`` extra, and ``cv2ext``
+  is no longer a dependency at all (the CLI and tests use plain OpenCV and numpy).
+  The plain install is numpy-only and installs on free-threaded CPython (3.14t, 3.15t). Without
+  OpenCV, the ``trtutils`` CLI and image-file loading in the calibration batcher raise an
+  ``AttributeError`` with an install hint; everything else, OCR included, runs on numpy ops.
+  ``preprocessor="cpu"`` resize is ~100x slower (about 10 ms per 1080p frame) without numba.
+  Pose and segmentation NMS use a numba loop when numba is installed; the plain-numpy fallback
+  is about 10x slower, and OBB NMS stays vectorized numpy. To keep the old behaviour:
+  ``pip install "trtutils[cv2]"``
+* Image kernels register an OpenCV, numba, or numpy implementation at import
+  (``trtutils.register_op``). The chosen function is stored on the module and called directly.
+  ``nms_indices`` and segmentation ``warp_scale`` compile with numba when OpenCV is absent.
+  Rotated NMS fuses the probability-IoU test into one numba loop (about 14 ms to 0.2 ms
+  for 2000 candidates capped at 300 detections).
+  Segmentation masks dot each box against a contiguous proto crop in that crop's dtype,
+  which keeps the warp off a float64 copy (about 17 ms to 10 ms for 40 large masks without
+  OpenCV).
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``
@@ -189,6 +211,9 @@ Fixed
   builder sometimes picked depthwise kernels (seen on TensorRT 10.15, RTX 5080) that broke the
   output. YOLOv10 lost large objects in about one build in seven (no horse on ``horse.jpg``
   instead of 0.96), YOLOv13 detected nothing in about one in fifty. Rebuild engines built before this
+* ``CPUPreprocessor(resize="linear")`` returned swapped x/y ratios, ``(new_h / w, new_w / h)``,
+  so boxes were rescaled wrongly whenever the model input was not square; it now matches the CUDA
+  and TensorRT preprocessors, ``(new_w / w, new_h / h)``
 * ``RTDETRv3`` returned garbage boxes (coordinates in the thousands, clipped to image corners) on
   images larger than the model input: it is now fed the model input size and a unit scale factor, and
   boxes are unletterboxed like the other detectors

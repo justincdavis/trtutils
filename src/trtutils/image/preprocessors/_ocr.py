@@ -6,10 +6,11 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-import cv2
 import numpy as np
 
 from trtutils._log import LOG
+from trtutils.image._ops import resize_linear
+from trtutils.image._warp import perspective_crop
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -81,7 +82,7 @@ def resize_text_detection(
         fit = min(max_shape[0] / resize_h, max_shape[1] / resize_w)
         resize_h = min(_round32(resize_h * fit), max_shape[0] // 32 * 32)
         resize_w = min(_round32(resize_w * fit), max_shape[1] // 32 * 32)
-    return cv2.resize(image, (resize_w, resize_h))
+    return resize_linear(image, (resize_w, resize_h))[0]
 
 
 def preprocess_text_detection(
@@ -148,8 +149,7 @@ def preprocess_text_detection(
     padding: list[tuple[float, float]] = []
     for i, (image, img) in enumerate(zip(images, resized)):
         h, w = img.shape[:2]
-        for c, plane in enumerate(cv2.split(img)):
-            cv2.LUT(plane, lut[:, c], dst=batch[i, c, :h, :w])
+        batch[i, :, :h, :w] = lut[img, np.arange(3)].transpose(2, 0, 1)
         ratios.append((w / image.shape[1], h / image.shape[0]))
         padding.append((float(width - w), float(height - h)))
         if verbose:
@@ -179,15 +179,7 @@ def crop_text_region(image: np.ndarray, box: np.ndarray) -> np.ndarray:
     points = box.astype(np.float32)
     width = int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3])))
     height = int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2])))
-    target = np.array([[0, 0], [width, 0], [width, height], [0, height]], dtype=np.float32)
-    matrix = cv2.getPerspectiveTransform(points, target)
-    crop = cv2.warpPerspective(
-        image,
-        matrix,
-        (width, height),
-        borderMode=cv2.BORDER_REPLICATE,
-        flags=cv2.INTER_CUBIC,
-    )
+    crop = perspective_crop(image, points, width, height)
     if crop.shape[0] / crop.shape[1] >= _ROTATE_ASPECT:
         crop = np.rot90(crop)
     return crop
@@ -258,7 +250,7 @@ def preprocess_text_recognition(
     padding: list[tuple[float, float]] = []
     for i, img in enumerate(images):
         resized_w = min(batch_width, math.ceil(image_height * img.shape[1] / img.shape[0]))
-        resized = cv2.resize(img, (resized_w, image_height))
+        resized = resize_linear(img, (resized_w, image_height))[0]
         dst = batch[i, :, :, :resized_w]
         np.divide(resized.transpose(2, 0, 1), np.float32(255), out=dst)
         dst -= shift

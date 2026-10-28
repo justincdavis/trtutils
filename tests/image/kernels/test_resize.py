@@ -10,9 +10,9 @@ import math
 import cv2
 import numpy as np
 import pytest
-from cv2ext.image import letterbox
 
 from trtutils.image import kernels
+from trtutils.image._ops import resize_letterbox
 
 from .conftest import run_kernel
 
@@ -31,11 +31,11 @@ def _assert_close_uint8(result: np.ndarray, expected: np.ndarray) -> None:
 
 @pytest.mark.parametrize("shape", SHAPES)
 def test_letterbox(cuda_stream, images, batch_size, shape) -> None:
-    """The letterbox kernel matches cv2ext.letterbox for every batch element."""
+    """The letterbox kernel matches _ops.letterbox for every batch element."""
     img = images["horse"].array
     height, width = img.shape[:2]
     out_width, out_height = shape
-    expected, _ratios, _padding = letterbox(img, new_shape=shape)
+    expected, _ratios, _padding = resize_letterbox(img, new_shape=shape)
 
     scale = min(out_width / width, out_height / height)
     new_width, new_height = int(width * scale), int(height * scale)

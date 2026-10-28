@@ -3,11 +3,10 @@
 # MIT License
 from __future__ import annotations
 
-import cv2
 import numpy as np
-from cv2ext.image import letterbox, resize_linear
 
 from trtutils._log import LOG
+from trtutils.image._ops import resize_letterbox, resize_linear
 
 
 def preprocess(
@@ -96,13 +95,10 @@ def preprocess(
 
     ratios_list: list[tuple[float, float]] = []
     padding_list: list[tuple[float, float]] = []
+    resize = resize_letterbox if method == "letterbox" else resize_linear
     for i, image in enumerate(images):
-        if method == "letterbox":
-            tensor, ratios, padding = letterbox(image, new_shape=input_shape)
-        else:
-            tensor, ratios = resize_linear(image, new_shape=input_shape)
-            padding = (0.0, 0.0)
-        tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
+        tensor, ratios, padding = resize(image[..., :3], new_shape=input_shape)
+        tensor = tensor[..., ::-1]
 
         # writing the transposed view straight into the slot does HWC->CHW,
         # the cast and the affine in one pass

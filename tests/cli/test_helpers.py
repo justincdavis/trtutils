@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from trtutils.__main__ import _is_raw_outputs, _parse_shapes_arg
+from trtutils.__main__ import _is_raw_outputs, _parse_shapes_arg, _read_video
 
 pytestmark = pytest.mark.cpu
 
@@ -59,3 +59,10 @@ def test_parse_shapes_arg_invalid(arg, match) -> None:
     """Malformed shape specs raise ValueError with a descriptive message."""
     with pytest.raises(ValueError, match=match):
         _parse_shapes_arg(arg)
+
+
+@pytest.mark.cpu
+def test_read_video_missing_file_raises(tmp_path) -> None:
+    """A video that cannot be opened raises instead of yielding zero frames."""
+    with pytest.raises(ValueError, match="Failed to open video"):
+        next(_read_video(tmp_path / "missing.mp4"))

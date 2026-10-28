@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import cv2
-import cv2ext
 
 from trtutils import set_log_level
 from trtutils.image import SAHI, Detector
@@ -25,7 +24,7 @@ def main() -> None:
     parser.add_argument(
         "--display",
         action="store_true",
-        help="Display the detections using cv2ext.",
+        help="Display the detections using OpenCV.",
     )
     parser.add_argument(
         "--verbose",
@@ -60,12 +59,10 @@ def main() -> None:
     print(f"SAHI:     bboxes: {len(sahi_bboxes)}, in {round((sahi_time) * 1000.0, 2)} ms")
 
     if args.display:
-        canvas = cv2ext.bboxes.draw_bboxes(
-            img.copy(), [bbox for bbox, _, _ in sahi_bboxes], color=(0, 255, 0)
-        )
-        canvas = cv2ext.bboxes.draw_bboxes(
-            canvas, [bbox for bbox, _, _ in bboxes], color=(0, 0, 255)
-        )
+        canvas = img.copy()
+        for dets, color in ((sahi_bboxes, (0, 255, 0)), (bboxes, (0, 0, 255))):
+            for (x1, y1, x2, y2), _, _ in dets:
+                cv2.rectangle(canvas, (x1, y1), (x2, y2), color, 2)
         cv2.imshow("SAHI Detections", canvas)
         cv2.waitKey(0)
         cv2.destroyAllWindows()

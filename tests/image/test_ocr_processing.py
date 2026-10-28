@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import contextlib
 
-import cv2
 import numpy as np
 import pytest
 
+from tests.conftest import DATA_DIR
+from trtutils._flags import FLAGS
+from trtutils.compat._libs import cv2
+from trtutils.image._geometry import _fill_poly
 from trtutils.image.postprocessors import (
     get_text_boxes,
     get_texts,
@@ -38,12 +41,27 @@ REFERENCE_BOXES = np.array(
 )
 
 
+def _box_points(center: tuple[float, float], size: tuple[float, float], angle: float) -> np.ndarray:
+    """Corners of a rotated rect as int32, like cv2.boxPoints(...).astype(np.int32)."""
+    (cx, cy), (w, h) = center, size
+    b, a = np.cos(np.radians(angle)) * 0.5, np.sin(np.radians(angle)) * 0.5
+    p0 = (cx - a * h - b * w, cy + b * h - a * w)
+    p1 = (cx + a * h - b * w, cy - b * h - a * w)
+    pts = np.array([p0, p1, (2 * cx - p0[0], 2 * cy - p0[1]), (2 * cx - p1[0], 2 * cy - p1[1])])
+    return pts.astype(np.float32).astype(np.int32)
+
+
+def _fill(pred: np.ndarray, pts: np.ndarray, value: float) -> None:
+    mask = np.zeros(pred.shape, dtype=np.uint8)
+    _fill_poly(mask, np.ascontiguousarray(pts, dtype=np.int64))
+    pred[mask > 0] = value
+
+
 def _prob_map() -> np.ndarray:
     m = np.zeros((160, 320), np.float32)
     m[20:40, 30:150] = 0.9
     m[22:38, 180:300] = 0.8
-    pts = cv2.boxPoints(((160, 110), (200, 18), -10)).astype(np.int32)
-    cv2.fillPoly(m, [pts], (0.95,))
+    _fill(m, _box_points((160, 110), (200, 18), -10), 0.95)
     m[140:142, 10:20] = 0.9  # too thin to be text
     return m
 
@@ -188,3 +206,112 @@ def test_postprocess_text_recognition_ctc() -> None:
     assert res[0][0] == "aab "
     assert res[0][1] == pytest.approx(np.mean([0.5, 0.65, 0.7, 0.85]))
     assert res[1] == ("", 0.0)
+
+
+_needs_cv2 = pytest.mark.skipif(not FLAGS.FOUND_CV2, reason="the reference is OpenCV")
+# full-photo crops in plain python take minutes, so they compare the compiled kernel only
+_needs_numba = pytest.mark.skipif(not FLAGS.FOUND_NUMBA, reason="needs numba for the jit kernels")
+_PHOTOS = [pytest.param(n, id=n) for n in ("horse.jpg", "street.jpg", "people.jpeg", "cars.jpeg")]
+
+
+def _text_map(seed: int, shape: tuple[int, int] = (736, 960)) -> np.ndarray:
+    """Probability map of many axis-aligned and rotated text-line blobs plus speckle."""
+    rng = np.random.default_rng(seed)
+    pred = rng.uniform(0.0, 0.25, shape).astype(np.float32)
+    for _ in range(40):
+        cx, cy = rng.uniform(60, shape[1] - 60), rng.uniform(20, shape[0] - 20)
+        w, h = rng.uniform(20, 220), rng.uniform(3, 30)
+        angle = rng.choice([0, rng.uniform(-30, 30), 90])
+        _fill(pred, _box_points((cx, cy), (w, h), angle), float(rng.uniform(0.4, 0.98)))
+    if seed % 2:
+        pad = np.pad(pred, 1, mode="edge")
+        pred = sum(pad[i : i + shape[0], j : j + shape[1]] for i in range(3) for j in range(3)) / 9
+    return pred.astype(np.float32)
+
+
+def _detect(pred: np.ndarray, thresh: float, box_thresh: float, unclip: float, dilate: bool):
+    return postprocess_text_detection(
+        [pred[None, None]], [(0.5, 0.5)], [(0.0, 0.0)], thresh, box_thresh, 1000, unclip,
+        use_dilation=dilate,
+    )[0]  # fmt: skip
+
+
+@_needs_cv2
+@pytest.mark.parametrize(
+    "dilate", [pytest.param(True, id="dilate"), pytest.param(False, id="plain")]
+)
+@pytest.mark.parametrize(
+    ("thresh", "box_thresh", "unclip"),
+    [
+        pytest.param(0.3, 0.6, 1.5, id="defaults"),
+        pytest.param(0.5, 0.3, 2.0, id="high-thresh-wide-unclip"),
+        pytest.param(0.3, 0.65, 1.0, id="strict-box"),
+        pytest.param(0.35, 0.5, 0.0, id="no-unclip"),
+    ],
+)
+@pytest.mark.parametrize("seed", [pytest.param(s, id=f"seed{s}") for s in range(4)])
+def test_text_detection_without_cv2_identical(
+    monkeypatch: pytest.MonkeyPatch, seed, thresh, box_thresh, unclip, dilate
+) -> None:
+    """Boxes and scores are identical whether cv2 or the numba/numpy geometry runs."""
+    pred = _text_map(seed)
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", True)
+    want_boxes, want_scores = _detect(pred, thresh, box_thresh, unclip, dilate)
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
+    boxes, scores = _detect(pred, thresh, box_thresh, unclip, dilate)
+    assert len(want_boxes) > 0
+    if int(cv2.__version__.split(".")[0]) < 5:
+        np.testing.assert_array_equal(boxes, want_boxes)
+        np.testing.assert_array_equal(scores, want_scores)
+    else:
+        # opencv 5 rewrote minAreaRect: a rotated blob can move a box corner by a pixel or two
+        assert boxes.shape == want_boxes.shape
+        np.testing.assert_allclose(boxes, want_boxes, atol=2)
+        np.testing.assert_allclose(scores, want_scores, atol=0.02)
+
+
+@_needs_cv2
+@pytest.mark.parametrize("name", _PHOTOS)
+def test_text_preprocess_without_cv2_identical(monkeypatch: pytest.MonkeyPatch, name) -> None:
+    """Detection and recognition tensors are identical with and without cv2."""
+    image = cv2.imread(str(DATA_DIR / name))
+    crop = image[40:100, 20:300]
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", True)
+    want_det = preprocess_text_detection([image, crop], max_shape=(1024, 1024))
+    want_rec = preprocess_text_recognition([crop, image[:30, :50]])
+    monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
+    got_det = preprocess_text_detection([image, crop], max_shape=(1024, 1024))
+    got_rec = preprocess_text_recognition([crop, image[:30, :50]])
+    np.testing.assert_array_equal(got_det[0], want_det[0])
+    assert got_det[1:] == want_det[1:]
+    np.testing.assert_array_equal(got_rec[0], want_rec[0])
+    assert got_rec[1:] == want_rec[1:]
+
+
+@_needs_cv2
+@_needs_numba
+@pytest.mark.parametrize("name", _PHOTOS)
+def test_crop_text_region_without_cv2_close(monkeypatch: pytest.MonkeyPatch, name) -> None:
+    """Crops match cv2 exactly on OpenCV 4.x and within a few levels on 5.x."""
+    image = cv2.imread(str(DATA_DIR / name))
+    height, width = image.shape[:2]
+    rng = np.random.default_rng(3)
+    for _ in range(25):
+        cx, cy = rng.uniform(0.25, 0.75) * width, rng.uniform(0.25, 0.75) * height
+        bw, bh = rng.uniform(0.04, 0.2) * width, rng.uniform(0.01, 0.06) * height
+        if rng.random() < 0.3:
+            bw, bh = bh, bw
+        ang = rng.uniform(-0.3, 0.3)
+        rot = np.array([[np.cos(ang), -np.sin(ang)], [np.sin(ang), np.cos(ang)]])
+        box = np.array([[-bw, -bh], [bw, -bh], [bw, bh], [-bw, bh]]) @ rot.T + [cx, cy]
+        monkeypatch.setattr(FLAGS, "FOUND_CV2", True)
+        want = crop_text_region(image, box.astype(np.float32))
+        monkeypatch.setattr(FLAGS, "FOUND_CV2", False)
+        got = crop_text_region(image, box.astype(np.float32))
+        assert got.shape == want.shape
+        if int(cv2.__version__.split(".")[0]) < 5:
+            np.testing.assert_array_equal(got, want)
+        else:
+            diff = np.abs(got.astype(int) - want.astype(int))
+            assert diff.mean() < 0.5
+            assert diff.max() <= 8

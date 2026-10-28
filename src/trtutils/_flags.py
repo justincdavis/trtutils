@@ -4,11 +4,12 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from trtutils.compat._libs import trt
+from trtutils.compat._libs import _EmptyModule, cv2, trt
 
 
 @dataclass
@@ -76,6 +77,8 @@ class Flags:
         The number of DLA cores available on the system. 0 if none.
     JIT : bool
         Whether or not to use jit.
+    FOUND_CV2 : bool
+        Whether OpenCV (cv2) is installed.
     FOUND_NUMBA : bool
         Whether or not a Numba installation was found.
     WARNED_NUMBA_NOT_FOUND : bool
@@ -143,9 +146,20 @@ class Flags:
         self.NUM_DLA_CORES = get_num_dla_cores()
         self.HAS_DLA = self.NUM_DLA_CORES > 0
 
+    FOUND_CV2: bool = not isinstance(cv2, _EmptyModule)
     FOUND_NUMBA: bool = False
     WARNED_NUMBA_NOT_FOUND: bool = False
     NVTX_ENABLED: bool = False
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # registered kernels rebind on these two; _jit is mid-import during Flags()
+        object.__setattr__(self, name, value)
+        if name != "JIT" and name != "FOUND_CV2":
+            return
+        mod = sys.modules.get("trtutils._jit")
+        rebind = None if mod is None else getattr(mod, "rebind", None)
+        if rebind is not None:
+            rebind()
 
 
 def _get_version(package: str) -> tuple[int, int]:

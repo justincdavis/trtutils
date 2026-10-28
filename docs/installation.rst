@@ -58,6 +58,19 @@ Optional Dependencies
 trtutils provides several optional dependency groups that can be installed
 using pip's extras feature:
 
+OpenCV Support
+~~~~~~~~~~~~~~
+
+The base install is numpy-only (and installs on free-threaded CPython). Install OpenCV for
+the CLI, calibration from image files, and faster CPU resize, NMS and OCR geometry:
+
+.. code-block:: console
+
+    $ pip install "trtutils[cv2]"
+
+This installs:
+- opencv-python
+
 ONNX Support
 ~~~~~~~~~~~~
 
@@ -97,6 +110,7 @@ This installs:
 - PyTorch and Torchvision
 - Ultralytics
 - SAHI
+- The ``cv2`` extra
 
 JIT Compiler Support
 ~~~~~~~~~~~~~~~~~~~~

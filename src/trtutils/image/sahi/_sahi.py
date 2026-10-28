@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import nvtx
-from cv2ext.bboxes import nms
-from cv2ext.image import patch as patch_image
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.image._ops import nms
+from trtutils.image._ops import patch as patch_image
 
 if TYPE_CHECKING:
     from typing_extensions import Self

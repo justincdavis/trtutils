@@ -13,11 +13,12 @@ from queue import Empty, Full, Queue
 from threading import Event, Thread
 from typing import TYPE_CHECKING
 
-import cv2
 import numpy as np
-from cv2ext.image import letterbox, rescale
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.compat._libs import cv2
+from trtutils.image._ops import rescale, resize_letterbox, resize_linear
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -154,6 +155,8 @@ class ImageBatcher(AbstractBatcher):
             If the input_dir cannot be found
         NotADirectoryError
             If the input_dir is a file
+        ImportError
+            If OpenCV is not installed
         ValueError
             If the max_images is set less than one
         ValueError
@@ -162,6 +165,11 @@ class ImageBatcher(AbstractBatcher):
             If no valid batches could be formed
 
         """
+        if not FLAGS.FOUND_CV2:
+            err_msg = (
+                "ImageBatcher reads images with OpenCV, install with: pip install trtutils[cv2]"
+            )
+            raise ImportError(err_msg)
         self._verbose = verbose
 
         # verify resize method and input scale
@@ -280,14 +288,8 @@ class ImageBatcher(AbstractBatcher):
             raise FileNotFoundError(err_msg)
 
         # resize and rescale the image
-        if self._resize_method == "letterbox":
-            resized_img, _, _ = letterbox(img, (self._width, self._height))
-        else:
-            resized_img = cv2.resize(
-                img,
-                (self._width, self._height),
-                interpolation=cv2.INTER_LINEAR,
-            )
+        resize = resize_letterbox if self._resize_method == "letterbox" else resize_linear
+        resized_img, _, _ = resize(img, (self._width, self._height))
         rescaled_img = rescale(resized_img, self._input_scale)
 
         # run the transpose operations and make contiguous

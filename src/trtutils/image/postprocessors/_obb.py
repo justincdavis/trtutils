@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from trtutils._jit import register_jit, register_op
 from trtutils._log import LOG
 
 from ._common import filter_class_scores
@@ -160,23 +161,96 @@ def _probiou(rboxes1: np.ndarray, rboxes2: np.ndarray, eps: float = 1e-7) -> np.
     return 1 - np.sqrt(1.0 - np.exp(-bd) + eps)
 
 
-def _rotated_nms_indices(
+@register_jit()
+def _rotated_suppress(  # noqa: C901
+    cx: np.ndarray,
+    cy: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray,
+    class_ids: np.ndarray,
+    iou_thres: float,
+    max_det: int,
+) -> np.ndarray:
+    """Return kept positions. Drop a box when any earlier same-class box overlaps it."""
+    eps = 1e-7
+    cap = 100.0
+    n = cx.shape[0]
+    keep = np.empty(n, dtype=np.int64)
+    kept = 0
+    limit = min(max_det, n)
+    for j in range(n):
+        hit = False
+        aj, bj, cj = a[j], b[j], c[j]
+        xj, yj = cx[j], cy[j]
+        kind = class_ids[j]
+        for i in range(j):
+            if class_ids[i] != kind:
+                continue
+            a1, b1, c1 = a[i], b[i], c[i]
+            det = (a1 + aj) * (b1 + bj) - (c1 + cj) * (c1 + cj)
+            y1, x1, y2, x2 = cy[i], cx[i], yj, xj
+            dy = y1 - y2
+            dx = x1 - x2
+            t1 = ((a1 + aj) * dy * dy + (b1 + bj) * dx * dx) / (det + eps) * 0.25
+            t2 = ((c1 + cj) * (x2 - x1) * dy) / (det + eps) * 0.5
+            d1 = a1 * b1 - c1 * c1
+            d2 = aj * bj - cj * cj
+            if d1 < 0.0:
+                d1 = 0.0
+            if d2 < 0.0:
+                d2 = 0.0
+            t3 = np.log(det / (4.0 * np.sqrt(d1 * d2) + eps) + eps) * 0.5
+            bd = t1 + t2 + t3
+            if bd < eps:
+                bd = eps
+            elif bd > cap:
+                bd = cap
+            iou = 1.0 - np.sqrt(1.0 - np.exp(-bd) + eps)
+            if iou >= iou_thres:
+                hit = True
+                break
+        if not hit:
+            keep[kept] = j
+            kept += 1
+            if kept == limit:
+                break
+    return keep[:kept]
+
+
+def _rotated_pick_numba(
     rboxes: np.ndarray,
-    scores: np.ndarray,
     class_ids: np.ndarray,
     nms_iou_thres: float,
     max_det: int,
-    block: int = 1024,
+    block: int,  # noqa: ARG001
 ) -> np.ndarray:
-    # ultralytics fast-nms: drop a box if any higher scored same-class box overlaps it
-    order = np.argsort(-scores, kind="stable")
-    rboxes = rboxes[order]
-    class_ids = class_ids[order]
+    a, b, c = _covariance(rboxes)
+    return _rotated_suppress.jitted(
+        np.ascontiguousarray(rboxes[:, 0]),
+        np.ascontiguousarray(rboxes[:, 1]),
+        np.ascontiguousarray(a),
+        np.ascontiguousarray(b),
+        np.ascontiguousarray(c),
+        np.ascontiguousarray(class_ids.astype(np.int64, copy=False)),
+        float(nms_iou_thres),
+        int(max_det),
+    )
+
+
+def _rotated_pick_numpy(
+    rboxes: np.ndarray,
+    class_ids: np.ndarray,
+    nms_iou_thres: float,
+    max_det: int,
+    block: int,
+) -> np.ndarray:
+    # column blocks bound memory to n x block
     keep = [np.zeros(0, dtype=int)]
     kept = 0
-    # column blocks bound memory to n x block, stop once max_det are kept
-    for start in range(0, len(order), block):
-        stop = min(start + block, len(order))
+    n = rboxes.shape[0]
+    for start in range(0, n, block):
+        stop = min(start + block, n)
         iou = _probiou(rboxes[:stop], rboxes[start:stop])
         rows = np.arange(stop)[:, None]
         cols = np.arange(start, stop)[None]
@@ -187,7 +261,31 @@ def _rotated_nms_indices(
         kept += len(cols_kept)
         if kept >= max_det:
             break
-    return order[np.concatenate(keep)[:max_det]]
+    return np.concatenate(keep)[:max_det]
+
+
+_rotated_pick = register_op(
+    globals(),
+    "_rotated_pick",
+    numba=_rotated_pick_numba,
+    numpy=_rotated_pick_numpy,
+)
+
+
+def _rotated_nms_indices(
+    rboxes: np.ndarray,
+    scores: np.ndarray,
+    class_ids: np.ndarray,
+    nms_iou_thres: float,
+    max_det: int,
+    block: int = 1024,
+) -> np.ndarray:
+    # ultralytics fast-nms: drop a box if any higher scored same-class box overlaps it
+    if rboxes.shape[0] == 0 or max_det <= 0:
+        return np.zeros(0, dtype=int)
+    order = np.argsort(-scores, kind="stable")
+    chosen = _rotated_pick(rboxes[order], class_ids[order], nms_iou_thres, max_det, block)
+    return order[chosen]
 
 
 def _enclosing_bboxes(rboxes: np.ndarray) -> np.ndarray:
