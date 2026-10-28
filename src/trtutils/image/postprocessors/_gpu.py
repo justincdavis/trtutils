@@ -14,6 +14,7 @@ from trtutils.compat._libs import cudart
 from trtutils.core._buffer import Buffer, MemoryLocation
 from trtutils.core._cuda import cuda_call
 from trtutils.core._kernels import Kernel
+from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
 from trtutils.core._stream import stream_synchronize
 from trtutils.image.kernels import YOLO_POST
 
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 
 # column stripes per row block of the NMS mask kernel
 _NMS_STRIPES = 16
+_RANK_SLICES = 16  # RANK_SLICES in yolo_post.cu
 # NMS_MAX_WORDS in yolo_post.cu
 _MAX_CANDIDATES = 64 * 1024
 
@@ -60,6 +62,7 @@ class YoloNms:
         file, _ = YOLO_POST
         self._decode = Kernel(file, "yoloDecode")
         self._rank = Kernel(file, "yoloRank")
+        self._scatter = Kernel(file, "yoloScatter")
         self._mask = Kernel(file, "yoloNmsMask")
         self._reduce = Kernel(file, "yoloNmsReduce")
         self._shape: tuple[int, int, int, int] | None = None
@@ -72,6 +75,7 @@ class YoloNms:
         self._cand_anchor = _device((batch, num), np.int32)
         self._cand_score = _device((batch, num), np.float32)
         self._cand_cls = _device((batch, num), np.int32)
+        self._cand_rank = _device((batch, num), np.int32)
         self.sort_anchor = _device((batch, num), np.int32)
         self.sort_score = _device((batch, num), np.float32)
         self.sort_cls = _device((batch, num), np.int32)
@@ -115,9 +119,19 @@ class YoloNms:
             self._cand_anchor.ptr,
             self._cand_score.ptr,
             self._cand_cls.ptr,
+            self._cand_rank.ptr,
         )
         self._decode.call((math.ceil(num / 256), batch, 1), (256, 1, 1), stream, args)
         args = self._rank.create_args(
+            num,
+            self.count.ptr,
+            self._cand_anchor.ptr,
+            self._cand_score.ptr,
+            self._cand_rank.ptr,
+        )
+        blocks = math.ceil(num / 256)
+        self._rank.call((blocks * _RANK_SLICES, batch, 1), (256, 1, 1), stream, args)
+        args = self._scatter.create_args(
             head.device_ptr,
             channels,
             num,
@@ -125,12 +139,13 @@ class YoloNms:
             self._cand_anchor.ptr,
             self._cand_score.ptr,
             self._cand_cls.ptr,
+            self._cand_rank.ptr,
             self.sort_anchor.ptr,
             self.sort_score.ptr,
             self.sort_cls.ptr,
             self.sort_box.ptr,
         )
-        self._rank.call((math.ceil(num / 256), batch, 1), (256, 1, 1), stream, args)
+        self._scatter.call((blocks, batch, 1), (256, 1, 1), stream, args)
 
     def __call__(
         self: Self,
@@ -294,11 +309,15 @@ class CudaSegPostprocessor:
         batch, channels, num = head.shape
         _, nm, mh, mw = proto.shape
         if self._shape != (batch, nm, mh, mw, max_det):
-            self._dets = _mapped((batch, max_det, 6), np.float32)
+            # the mask kernels read dets and stale boxes from device memory: reads of mapped
+            # memory each cost a PCIe round trip
+            self._dets = _device((batch, max_det, 6), np.float32)
+            self._dets_host = _mapped((batch, max_det, 6), np.float32)
             self._coefs = _device((batch, max_det, nm), np.float32)
             # boxes each mask wrote this frame, and the previous frame's to clear
             self._regions = _mapped((batch, max_det, 4), np.int32)
             self._stale = _mapped((batch, max_det, 4), np.int32)
+            self._stale_dev = _device((batch, max_det, 4), np.int32)
             self._keep_count = _mapped((batch,), np.int32)
             self._letterbox = _mapped((batch, 6), np.float32)
             # per-detection sigmoid probs of the proto cells, reused image by image
@@ -330,11 +349,12 @@ class CudaSegPostprocessor:
             nms.sort_cls.ptr,
             nms.sort_box.ptr,
             self._letterbox.device_ptr,
-            self._dets.device_ptr,
+            self._dets.ptr,
             self._coefs.ptr,
             self._keep_count.device_ptr,
         )
         self._gather.call((max_det, batch, 1), (32, 1, 1), stream, args)
+        memcpy_device_to_host_async(self._dets_host.array, self._dets.ptr, stream)
         stream_synchronize(stream)
 
         counts = [int(c) for c in self._keep_count.array]
@@ -362,7 +382,7 @@ class CudaSegPostprocessor:
             canvases[i].written = [
                 (k, by1, by2, bx1, bx2) for k, (bx1, by1, bx2, by2) in enumerate(regions)
             ]
-            dets = self._dets.array[i, :n]
+            dets = self._dets_host.array[i, :n]
             results.append(
                 [dets[:, :4].copy(), dets[:, 4].copy(), dets[:, 5].astype(np.int64), masks[i]],
             )
@@ -401,7 +421,7 @@ class CudaSegPostprocessor:
             _f64(x0 + 0.5 * scale_x - 0.5),
             _f64(y0 + 0.5 * scale_y - 0.5),
         )
-        dets = self._dets.device_ptr + index * self._dets.shape[1] * 6 * 4
+        dets = self._dets.ptr + index * self._dets.shape[1] * 6 * 4
 
         # zero the previous frame's boxes on the device instead of the CPU
         if canvas.written:
@@ -410,9 +430,11 @@ class CudaSegPostprocessor:
             stale[:stale_n] = 0
             for idx, by1, by2, bx1, bx2 in canvas.written:
                 stale[idx] = (bx1, by1, bx2, by2)
+            stale_ptr = self._stale_dev.ptr + index * self._stale.shape[1] * 4 * 4
+            memcpy_host_to_device_async(stale_ptr, stale[:stale_n], stream)
             args = self._clear.create_args(
                 canvas.device_ptr,
-                self._stale.device_ptr + index * self._stale.shape[1] * 4 * 4,
+                stale_ptr,
                 stale_n,
                 width,
                 height,

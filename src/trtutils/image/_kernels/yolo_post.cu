@@ -18,7 +18,8 @@ void yoloDecode(
     int* __restrict__ count,
     int* __restrict__ candAnchor,
     float* __restrict__ candScore,
-    int* __restrict__ candCls
+    int* __restrict__ candCls,
+    int* __restrict__ candRank
 ) {
     const int a = blockIdx.x * blockDim.x + threadIdx.x;
     const int b = blockIdx.y;
@@ -39,12 +40,60 @@ void yoloDecode(
     candAnchor[(size_t)b * N + slot] = a;
     candScore[(size_t)b * N + slot] = best;
     candCls[(size_t)b * N + slot] = bestCls;
+    candRank[(size_t)b * N + slot] = 0;
 }
 
-// sort candidates by score, ties by anchor (a stable sort of the anchor order),
-// writing their xyxy boxes in sorted order
+#define RANK_SLICES 16
+
+// count the candidates that sort before each candidate (score, ties by anchor: a stable
+// sort of the anchor order); a block per 256 candidates and slice of the others, so a few
+// thousand candidates still fill the GPU
 extern "C" __global__
 void yoloRank(
+    const int N,
+    const int* __restrict__ count,
+    const int* __restrict__ candAnchor,
+    const float* __restrict__ candScore,
+    int* __restrict__ candRank
+) {
+    __shared__ float tileScore[256];
+    __shared__ int tileAnchor[256];
+    const int tile = blockIdx.x / RANK_SLICES;
+    const int slice = blockIdx.x % RANK_SLICES;
+    const int b = blockIdx.y;
+    const int n = count[b];
+    if (tile * (int)blockDim.x >= n) return;
+    const int perSlice = (n + RANK_SLICES - 1) / RANK_SLICES;
+    const int sliceLen = (perSlice + blockDim.x - 1) / blockDim.x * blockDim.x;
+    const int jStart = slice * sliceLen;
+    if (jStart >= n) return;
+    const int jEnd = min(n, jStart + sliceLen);
+    const size_t base = (size_t)b * N;
+    const int i = tile * blockDim.x + threadIdx.x;
+    const bool active = i < n;
+    const float s = active ? candScore[base + i] : 0.0f;
+    const int a = active ? candAnchor[base + i] : 0;
+    int rank = 0;
+    for (int start = jStart; start < jEnd; start += blockDim.x) {
+        const int j = start + threadIdx.x;
+        if (j < jEnd) {
+            tileScore[threadIdx.x] = candScore[base + j];
+            tileAnchor[threadIdx.x] = candAnchor[base + j];
+        }
+        __syncthreads();
+        const int len = min((int)blockDim.x, jEnd - start);
+        for (int t = 0; t < len; ++t) {
+            const float sj = tileScore[t];
+            rank += (sj > s) || (sj == s && tileAnchor[t] < a);
+        }
+        __syncthreads();
+    }
+    if (active && rank) atomicAdd(candRank + base + i, rank);
+}
+
+// write each candidate at its rank, with its xyxy box
+extern "C" __global__
+void yoloScatter(
     const float* __restrict__ out,
     const int C,
     const int N,
@@ -52,39 +101,20 @@ void yoloRank(
     const int* __restrict__ candAnchor,
     const float* __restrict__ candScore,
     const int* __restrict__ candCls,
+    const int* __restrict__ candRank,
     int* __restrict__ sortAnchor,
     float* __restrict__ sortScore,
     int* __restrict__ sortCls,
     float* __restrict__ sortBox
 ) {
-    __shared__ float tileScore[256];
-    __shared__ int tileAnchor[256];
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     const int b = blockIdx.y;
-    const int n = count[b];
-    if ((int)(blockIdx.x * blockDim.x) >= n) return;
+    if (i >= count[b]) return;
     const size_t base = (size_t)b * N;
-    const bool active = i < n;
-    const float s = active ? candScore[base + i] : 0.0f;
-    const int a = active ? candAnchor[base + i] : 0;
-    int rank = 0;
-    for (int start = 0; start < n; start += blockDim.x) {
-        const int j = start + threadIdx.x;
-        if (j < n) {
-            tileScore[threadIdx.x] = candScore[base + j];
-            tileAnchor[threadIdx.x] = candAnchor[base + j];
-        }
-        __syncthreads();
-        const int len = min((int)blockDim.x, n - start);
-        for (int t = 0; t < len; ++t) {
-            const float sj = tileScore[t];
-            rank += (sj > s) || (sj == s && tileAnchor[t] < a);
-        }
-        __syncthreads();
-    }
-    if (!active) return;
+    const int a = candAnchor[base + i];
+    const int rank = candRank[base + i];
     sortAnchor[base + rank] = a;
-    sortScore[base + rank] = s;
+    sortScore[base + rank] = candScore[base + i];
     sortCls[base + rank] = candCls[base + i];
     const float* box = out + (size_t)b * C * N + a;
     const float cx = box[0];
@@ -268,6 +298,21 @@ __device__ __forceinline__ SegBox segBox(
     return r;
 }
 
+// segBox of a block's detection, computed once: float64 math is slow on GeForce parts
+#define BLOCK_SEG_BOX(r, det, width, height, mh, mw, scaleX, scaleY, offX, offY) \
+    __shared__ SegBox r##Shared; \
+    if (threadIdx.x == 0) r##Shared = segBox(det, width, height, mh, mw, scaleX, scaleY, offX, offY); \
+    __syncthreads(); \
+    const SegBox r = r##Shared
+
+// opencv's fixed point warp coordinates: 10 bit, rounded to 1/32 of a cell
+__device__ __forceinline__ int warpX(const double m0, const double m2, const int xd) {
+    return (__double2int_rn(m2 * 1024.0) + 16 + __double2int_rn(m0 * xd * 1024.0)) >> 5;
+}
+__device__ __forceinline__ int warpY(const double m4, const double m5, const int yd) {
+    return (__double2int_rn((m4 * yd + m5) * 1024.0) + 16) >> 5;
+}
+
 // Masks are written to mapped host memory, where byte stores over PCIe are slow, so rows go
 // out in aligned 16 byte chunks. Bytes of a chunk outside the box are zero: the previous
 // frame's boxes are cleared first and everything else in a mask is already zero. Bytes outside
@@ -303,7 +348,7 @@ __device__ __forceinline__ void storeChunk(
     }
 }
 
-// zero the boxes the previous frame wrote into each mask, skipping chunks the new box covers
+// zero the boxes the previous frame wrote into each mask, skipping chunks the new box overlaps
 extern "C" __global__
 void yoloSegClear(
     unsigned char* __restrict__ masks,  // (>= n, height, width)
@@ -322,11 +367,16 @@ void yoloSegClear(
 ) {
     const int k = blockIdx.x;
     if (k >= n) return;
-    const int* r = regions + k * 4;
+    // regions and dets are mapped host memory, read once per block
+    __shared__ int r[4];
+    __shared__ SegBox nb;
+    if (threadIdx.x == 0) {
+        for (int i = 0; i < 4; ++i) r[i] = regions[k * 4 + i];
+        nb.valid = false;
+        if (k < newN) nb = segBox(dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
+    }
+    __syncthreads();
     if (r[2] <= r[0] || r[3] <= r[1]) return;
-    SegBox nb;
-    nb.valid = false;
-    if (k < newN) nb = segBox(dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
     unsigned char* plane = masks + (size_t)k * height * width;
     const long long size = (long long)height * width;
     const int cpr = chunksPerRow(r[0], r[2]);
@@ -336,13 +386,11 @@ void yoloSegClear(
         const int y = r[1] + p / cpr;
         const long long off = chunkStart(plane, width, y, r[0], r[2], p % cpr);
         if (off == NO_CHUNK) continue;
-        if (nb.valid) {
-            // the mask kernel rewrites chunks inside the new box anyway
-            const long long first = max(off, 0LL);
-            const long long last = min(off + CHUNK, size) - 1;
-            const int fy = (int)(first / width), fx = (int)(first % width);
-            const int ly = (int)(last / width), lx = (int)(last % width);
-            if (fy == ly && fy >= nb.by1 && fy < nb.by2 && fx >= nb.bx1 && lx < nb.bx2) continue;
+        if (nb.valid && y >= nb.by1 && y < nb.by2) {
+            // the mask kernel rewrites every chunk of row y overlapping the new box, zeros
+            // outside it; chunks reaching into a neighbouring row are cleared here
+            const long long fx = off - (long long)y * width;
+            if (fx >= 0 && fx + CHUNK <= width && fx + CHUNK > nb.bx1 && fx < nb.bx2) continue;
         }
         storeChunk(plane, off, size, zero);
     }
@@ -369,7 +417,7 @@ void yoloSegProbs(
     __shared__ float coefShared[SEG_MAX_COEFS];
     const int k = blockIdx.x;
     if (k >= n) return;
-    const SegBox r = segBox(dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
+    BLOCK_SEG_BOX(r, dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
     if (!r.valid) return;
     for (int m = threadIdx.x; m < nm; m += blockDim.x) coefShared[m] = coefs[(size_t)k * nm + m];
     __syncthreads();
@@ -405,7 +453,7 @@ void yoloSegMasks(
 ) {
     const int k = blockIdx.x;
     if (k >= n) return;
-    const SegBox r = segBox(dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
+    BLOCK_SEG_BOX(r, dets + (size_t)k * 6, width, height, mh, mw, scaleX, scaleY, offX, offY);
     if (blockIdx.y == 0 && threadIdx.x == 0) {
         int* region = regions + k * 4;
         region[0] = r.valid ? r.bx1 : 0;
@@ -415,7 +463,7 @@ void yoloSegMasks(
     }
     if (!r.valid) return;
 
-    // opencv's fixed point warp: 10 bit coordinates rounded to 1/32 of a cell
+    // the float32 affine matrix cv2.warpAffine sees
     const double m0 = (double)(float)scaleX;
     const double m2 = (double)(float)(scaleX * r.bx1 + offX - r.cx1);
     const double m4 = (double)(float)scaleY;
@@ -428,20 +476,27 @@ void yoloSegMasks(
     const int cpr = chunksPerRow(r.bx1, r.bx2);
     const int total = cpr * (r.by2 - r.by1);
     for (int p = blockIdx.y * blockDim.x + threadIdx.x; p < total; p += gridDim.y * blockDim.x) {
-        const long long off = chunkStart(plane, width, r.by1 + p / cpr, r.bx1, r.bx2, p % cpr);
+        const int row = r.by1 + p / cpr;
+        const long long off = chunkStart(plane, width, row, r.bx1, r.bx2, p % cpr);
         if (off == NO_CHUNK) continue;
+        const long long rowOff = (long long)row * width;
         uint4 v = make_uint4(0, 0, 0, 0);
         unsigned char* bytes = reinterpret_cast<unsigned char*>(&v);
         for (int i = 0; i < CHUNK; ++i) {
             const long long o = off + i;
             if (o < 0 || o >= size) continue;
-            const int y = (int)(o / width);
-            const int x = (int)(o % width);
+            // bytes of a chunk lie in its own row unless it straddles a row boundary
+            int y = row;
+            int x = (int)(o - rowOff);
+            if (x < 0 || x >= width) {
+                y = (int)(o / width);
+                x = (int)(o % width);
+            }
             if (y < r.by1 || y >= r.by2 || x < r.bx1 || x >= r.bx2) continue;
             const int xd = x - r.bx1;
             const int yd = y - r.by1;
-            const int X = (__double2int_rn(m2 * 1024.0) + 16 + __double2int_rn(m0 * xd * 1024.0)) >> 5;
-            const int Y = (__double2int_rn((m4 * yd + m5) * 1024.0) + 16) >> 5;
+            const int X = warpX(m0, m2, xd);
+            const int Y = warpY(m4, m5, yd);
             const int ix = X >> 5;
             const int iy = Y >> 5;
             const float fx = (X & 31) / 32.0f;
