@@ -23,6 +23,8 @@ Submodules
 
 Classes
 -------
+:class:`AutotuneTrial`
+    One timed configuration from :func:`autotune`.
 :class:`Classifer`
     Wrapper around classification models.
 :class:`DepthEstimator`
@@ -48,6 +50,11 @@ Classes
 :class:`ImageModel`
     Base class for models which process images.
 
+Functions
+---------
+:func:`autotune`
+    Time an image model's runtime options on your own images.
+
 Constants
 ---------
 :data:`COCO91_TO_COCO80`
@@ -65,6 +72,7 @@ from . import (
     preprocessors,
     sahi,
 )
+from ._autotune import AutotuneTrial, autotune
 from ._class_maps import COCO91_TO_COCO80
 from ._classifier import Classifier
 from ._depth_estimator import DepthEstimator
@@ -81,6 +89,7 @@ __all__ = [
     "COCO91_TO_COCO80",
     "OCR",
     "SAHI",
+    "AutotuneTrial",
     "Classifier",
     "DepthEstimator",
     "Detector",
@@ -91,6 +100,7 @@ __all__ = [
     "Segmenter",
     "TextDetector",
     "TextRecognizer",
+    "autotune",
     "interfaces",
     "kernels",
     "onnx_models",

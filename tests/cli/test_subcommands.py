@@ -9,9 +9,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
+import trtutils
 from trtutils.__main__ import (
+    _AUTOTUNE_TASKS,
+    _autotune,
     _benchmark,
     _build,
     _classify,
@@ -101,6 +105,17 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "no_warn": False,
         "verbose": False,
         "show": False,
+    },
+    "autotune": {
+        "engine": _FAKE_ENGINE,
+        "task": "classify",
+        "input": _FAKE_IMG,
+        "iterations": 3,
+        "warmup": 1,
+        "preprocessors": None,
+        "postprocessors": None,
+        "no_graph_off": False,
+        "verbose": False,
     },
     "profile": {
         "engine": _FAKE_ENGINE,
@@ -221,3 +236,97 @@ def test_clear_cache_forwards_no_warn() -> None:
     with patch("trtutils.__main__.caching_tools.clear") as mock_clear:
         _clear_cache(SimpleNamespace(no_warn=True))
     mock_clear.assert_called_once_with(no_warn=True)
+
+
+def _trial(pre, post, *, graph, median, p90, same, error) -> trtutils.image.AutotuneTrial:
+    return trtutils.image.AutotuneTrial(
+        preprocessor=pre,
+        postprocessor=post,
+        cuda_graph=graph,
+        median_ms=median,
+        p90_ms=p90,
+        same_as_default=same,
+        error=error,
+    )
+
+
+def _logged(log: MagicMock) -> str:
+    return "\n".join(c.args[0] for c in log.info.call_args_list)
+
+
+@pytest.mark.parametrize("task", ["detect", "classify", "segment", "pose", "obb", "depth", "hand"])
+@pytest.mark.parametrize("no_graph_off", [False, True])
+def test_autotune_dispatches_task_and_options(task, no_graph_off, tmp_path) -> None:
+    """The task picks the model class and the flags reach autotune()."""
+    img = tmp_path / "a.jpg"
+    img.touch()
+    trial = _trial("cuda", "cpu", graph=True, median=1.0, p90=2.0, same=True, error=None)
+    with patch("trtutils.__main__.cv2.imread", return_value=np.zeros((8, 8, 3), np.uint8)), patch(
+        "trtutils.__main__.trtutils.image.autotune", return_value=[trial]
+    ) as mock:
+        _autotune(_args("autotune", task=task, input=str(img), no_graph_off=no_graph_off))
+    assert mock.call_args[0][0] is _AUTOTUNE_TASKS[task]
+    assert mock.call_args.kwargs["cuda_graphs"] == ((True,) if no_graph_off else None)
+    assert mock.call_args.kwargs["iterations"] == 3
+    assert mock.call_args.kwargs["warmup"] == 1
+
+
+def test_autotune_directory_takes_sorted_images(tmp_path) -> None:
+    """A directory yields its sorted jpg/jpeg/png files and ignores the rest."""
+    for name in ("b.png", "a.jpg", "c.JPEG", "notes.txt"):
+        (tmp_path / name).touch()
+    trial = _trial("cuda", "cpu", graph=True, median=1.0, p90=2.0, same=True, error=None)
+    with patch(
+        "trtutils.__main__.cv2.imread", return_value=np.zeros((8, 8, 3), np.uint8)
+    ) as read, patch("trtutils.__main__.trtutils.image.autotune", return_value=[trial]):
+        _autotune(_args("autotune", input=str(tmp_path)))
+    assert [Path(c[0][0]).name for c in read.call_args_list] == ["a.jpg", "b.png", "c.JPEG"]
+
+
+def test_autotune_empty_directory_raises(tmp_path) -> None:
+    """A directory without images is an error."""
+    with pytest.raises(ValueError, match="No images found"):
+        _autotune(_args("autotune", input=str(tmp_path)))
+
+
+def test_autotune_unreadable_image_raises(tmp_path) -> None:
+    """An image cv2 cannot read is an error."""
+    (tmp_path / "a.jpg").touch()
+    with patch("trtutils.__main__.cv2.imread", return_value=None), pytest.raises(
+        ValueError, match="Could not read image"
+    ):
+        _autotune(_args("autotune", input=str(tmp_path)))
+
+
+def test_autotune_logs_table_and_best(tmp_path) -> None:
+    """Every trial gets a row and the fastest working one is reported as best."""
+    (tmp_path / "a.jpg").touch()
+    ok = _trial("hybrid", "cuda", graph=True, median=0.5, p90=0.6, same=True, error=None)
+    diff = _trial("cpu", "cuda", graph=False, median=0.9, p90=1.0, same=False, error=None)
+    bad = _trial(
+        "trt", "cpu", graph=True, median=float("inf"), p90=float("inf"), same=None, error="boom"
+    )
+    with patch("trtutils.__main__.LOG") as log, patch(
+        "trtutils.__main__.cv2.imread", return_value=np.zeros((8, 8, 3), np.uint8)
+    ), patch("trtutils.__main__.trtutils.image.autotune", return_value=[ok, diff, bad]):
+        _autotune(_args("autotune", input=str(tmp_path)))
+    text = _logged(log)
+    assert "same" in text
+    assert "differs" in text
+    assert "error: boom" in text
+    assert (
+        "Best: preprocessor='hybrid', postprocessor='cuda', cuda_graph=True (0.50 ms/image)" in text
+    )
+
+
+def test_autotune_all_failed_reports_none(tmp_path) -> None:
+    """With every trial failed there is no best configuration."""
+    (tmp_path / "a.jpg").touch()
+    bad = _trial(
+        "trt", "cpu", graph=True, median=float("inf"), p90=float("inf"), same=None, error="boom"
+    )
+    with patch("trtutils.__main__.LOG") as log, patch(
+        "trtutils.__main__.cv2.imread", return_value=np.zeros((8, 8, 3), np.uint8)
+    ), patch("trtutils.__main__.trtutils.image.autotune", return_value=[bad]):
+        _autotune(_args("autotune", input=str(tmp_path)))
+    assert "Best: none" in _logged(log)

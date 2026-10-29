@@ -30,6 +30,18 @@ if TYPE_CHECKING:
     from .image.types import Bbox, Classification, Detection
 
 
+_IMG_SUFFIXES = (".jpg", ".jpeg", ".png")
+_AUTOTUNE_TASKS = {
+    "detect": trtutils.image.Detector,
+    "classify": trtutils.image.Classifier,
+    "segment": trtutils.image.Segmenter,
+    "pose": trtutils.image.PoseEstimator,
+    "obb": trtutils.image.OBBDetector,
+    "depth": trtutils.image.DepthEstimator,
+    "hand": trtutils.image.HandInteractionDetector,
+}
+
+
 def _to_float_pair(
     values: list[float] | None,
     default: tuple[float, float] = (0.0, 1.0),
@@ -833,6 +845,84 @@ def _detect(args: SimpleNamespace) -> None:
         LOG.info(f"{k}: {np.mean(v):.2f} ms")
 
 
+def _autotune(args: SimpleNamespace) -> None:
+    """
+    Time an image model's runtime options on your own images and report the fastest.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments containing:
+        - engine : str
+            Path to the TensorRT engine file.
+        - task : str
+            Task of the engine (detect, classify, segment, pose, obb, depth, hand).
+        - input : str
+            An image file or a directory of images.
+        - iterations : int
+            Timed passes over the images per trial.
+        - warmup : int
+            Untimed passes over the images per trial.
+        - preprocessors : list[str] or None
+            Preprocessors to try.
+        - postprocessors : list[str] or None
+            Postprocessors to try.
+        - no_graph_off : bool
+            Only try cuda_graph=True.
+        - verbose : bool
+            Enable verbose output.
+
+    Raises
+    ------
+    ValueError
+        If no images are found or an image cannot be read.
+
+    """
+    input_path = Path(args.input)
+    if input_path.is_dir():
+        paths = sorted(p for p in input_path.iterdir() if p.suffix.lower() in _IMG_SUFFIXES)
+    else:
+        paths = [input_path]
+    if not paths:
+        err_msg = f"No images found in {input_path}"
+        raise ValueError(err_msg)
+    images: list[np.ndarray] = []
+    for path in paths:
+        img = cv2.imread(str(path))
+        if img is None:
+            err_msg = f"Could not read image {path}"
+            raise ValueError(err_msg)
+        images.append(img)
+
+    trials = trtutils.image.autotune(
+        _AUTOTUNE_TASKS[args.task],
+        args.engine,
+        images,
+        preprocessors=args.preprocessors,
+        postprocessors=args.postprocessors,
+        cuda_graphs=(True,) if args.no_graph_off else None,
+        iterations=args.iterations,
+        warmup=args.warmup,
+        verbose=args.verbose,
+    )
+
+    LOG.info(f"{'preprocessor':<13}{'postprocessor':<14}{'graph':<7}{'median':>9}{'p90':>9}  result")
+    for t in trials:
+        head = f"{t.preprocessor:<13}{t.postprocessor:<14}{t.cuda_graph!s:<7}"
+        if t.error is not None:
+            LOG.info(f"{head}{'-':>9}{'-':>9}  error: {t.error}")
+        else:
+            same = "same" if t.same_as_default else "differs"
+            LOG.info(f"{head}{t.median_ms:>9.2f}{t.p90_ms:>9.2f}  {same}")
+    ok = [t for t in trials if t.error is None]
+    if not ok:
+        LOG.info("Best: none, every configuration failed")
+        return
+    best = ok[0]
+    kw = ", ".join(f"{k}={v!r}" for k, v in best.kwargs.items())
+    LOG.info(f"Best: {kw} ({best.median_ms:.2f} ms/image)")
+
+
 def _classify(args: SimpleNamespace) -> None:
     """
     Run image classification on an image using a TensorRT engine.
@@ -1299,6 +1389,8 @@ def _main() -> None:
         Run object detection on images or videos.
     classify
         Run image classification on images.
+    autotune
+        Time an image model's runtime options and report the fastest.
     inspect
         Inspect a TensorRT engine's properties.
     profile
@@ -1902,6 +1994,62 @@ def _main() -> None:
         help="Show the classifications.",
     )
     classify_parser.set_defaults(func=_classify)
+
+    # autotune parser
+    autotune_parser = subparsers.add_parser(
+        "autotune",
+        help="Time an image model's runtime options on your images and report the fastest.",
+        parents=[general_parser],
+    )
+    autotune_parser.add_argument(
+        "--engine",
+        "-e",
+        required=True,
+        help="Path to the TensorRT engine file.",
+    )
+    autotune_parser.add_argument(
+        "--task",
+        "-t",
+        required=True,
+        choices=list(_AUTOTUNE_TASKS),
+        help="Task of the engine.",
+    )
+    autotune_parser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="Path to an image file or a directory of jpg/png images.",
+    )
+    autotune_parser.add_argument(
+        "--iterations",
+        type=int,
+        default=50,
+        help="Timed passes over the images per configuration. Default is 50.",
+    )
+    autotune_parser.add_argument(
+        "--warmup",
+        type=int,
+        default=5,
+        help="Untimed passes over the images per configuration. Default is 5.",
+    )
+    autotune_parser.add_argument(
+        "--preprocessors",
+        nargs="+",
+        choices=["cpu", "cuda", "trt", "hybrid"],
+        help="Preprocessors to try. Default is all.",
+    )
+    autotune_parser.add_argument(
+        "--postprocessors",
+        nargs="+",
+        choices=["cpu", "cuda"],
+        help="Postprocessors to try. Default is all the task supports.",
+    )
+    autotune_parser.add_argument(
+        "--no-graph-off",
+        action="store_true",
+        help="Only try cuda_graph=True.",
+    )
+    autotune_parser.set_defaults(func=_autotune)
 
     # inspect parser
     inspect_parser = subparsers.add_parser(
