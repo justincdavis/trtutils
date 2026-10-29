@@ -174,6 +174,8 @@ SHAPES = [(1080, 1920), (480, 640), (2160, 3840), (720, 1280), (512, 512)]
         pytest.param([[s] for s in SHAPES], id="single"),
         pytest.param([[s] * n for n, s in zip((3, 1, 2, 4, 2), SHAPES)], id="homogeneous"),
         pytest.param([SHAPES[:4], SHAPES[1:], SHAPES[::2]], id="heterogeneous"),
+        # chunked pinned uploads, the second into a larger stage
+        pytest.param([[(1280, 1920)], [(1081, 1919)]], id="large-staged"),
     ],
 )
 def test_reused_staging_matches_fresh(gpu_cls, memory, calls) -> None:

@@ -128,6 +128,9 @@ Changed
   reused buffer per batch slot, as other ``no_copy`` outputs are: the masks of earlier results
   are overwritten by the next call, so copy any you keep. A new full-frame mask stack per frame
   cost more than decoding the masks (yolo11n-seg postprocess 5.9 ms -> 3.3 ms on 1080p frames)
+* The CUDA and TensorRT preprocessors and the PPOCR frame upload copy images of 3 MB and more
+  through pinned memory in 4 overlapping chunks (``memcpy_host_to_device_staged_async``), 1080p
+  preprocess 0.61 -> 0.56 ms on an RTX 5080
 * OBB rotated NMS runs in float32 on small score-ordered blocks and skips pairs too far apart
   to overlap; same results, yolo11n-obb postprocess 28 ms -> 5 ms on 1080p frames
 * ``get_detections`` (and segmentation/pose result extraction) converts results in bulk instead

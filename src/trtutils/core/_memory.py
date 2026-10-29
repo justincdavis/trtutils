@@ -124,6 +124,48 @@ def memcpy_host_to_device_async(
         nvtx.pop_range()
 
 
+def memcpy_host_to_device_staged_async(
+    device_ptr: int,
+    host_arr: np.ndarray,
+    stage: np.ndarray,
+    stream: cudart.cudaStream_t,
+    chunk: int = 1_555_200,
+) -> None:
+    """
+    Copy a numpy array to a device pointer through pinned memory, in chunks.
+
+    Each chunk's DMA overlaps the host copy of the next: a 1080p frame takes 287 us in
+    4 chunks against 377 us from pageable memory (RTX 5080, WSL2). Arrays under two
+    chunks copy from pageable memory directly. Before writing ``stage`` the stream is
+    synchronized, as earlier copies on it may still read the stage.
+
+    Parameters
+    ----------
+    device_ptr : int
+        The device pointer to copy to.
+    host_arr : np.ndarray
+        The numpy array to copy.
+    stage : np.ndarray
+        Pinned host memory of at least ``host_arr.nbytes`` bytes.
+    stream : cudart.cudaStream_t
+        The stream to utilize.
+    chunk : int
+        Bytes per chunk. Default is a quarter of a 1080p frame.
+
+    """
+    src = np.ascontiguousarray(host_arr).reshape(-1)
+    if src.nbytes < 2 * chunk:
+        memcpy_host_to_device_async(device_ptr, src, stream)
+        return
+    cuda_call(cudart.cudaStreamSynchronize(stream))
+    stage = stage.reshape(-1).view(src.dtype)[: src.size]
+    step = max(chunk // src.itemsize, 1)
+    for start in range(0, src.size, step):
+        part = stage[start : start + step]
+        np.copyto(part, src[start : start + step])
+        memcpy_host_to_device_async(device_ptr + start * src.itemsize, part, stream)
+
+
 def memcpy_device_to_host_async(
     host_arr: np.ndarray,
     device_ptr: int,

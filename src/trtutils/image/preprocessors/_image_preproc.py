@@ -17,7 +17,10 @@ from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._buffer import Buffer
 from trtutils.core._kernels import Kernel, cached_args
-from trtutils.core._memory import memcpy_host_to_device_async
+from trtutils.core._memory import (
+    memcpy_host_to_device_async,
+    memcpy_host_to_device_staged_async,
+)
 from trtutils.core._stream import create_stream, stream_synchronize
 from trtutils.image.kernels import LETTERBOX_RESIZE, LINEAR_RESIZE
 
@@ -866,13 +869,18 @@ class GPUImagePreprocessor(ImagePreprocessor):
         """Get a device pointer to one image, staging host images in the input binding."""
         if isinstance(image, Buffer):
             return image.device_ptr
+        binding = self._input_binding
         if self._pagelocked_mem and self._unified_mem:
             # the kernel for the previous image may still read this mapped buffer
             stream_synchronize(self._stream)
-            self._input_binding.host_allocation.reshape(-1)[: image.size] = image.reshape(-1)
+            binding.host_allocation.reshape(-1)[: image.size] = image.reshape(-1)
+        elif self._pagelocked_mem:
+            memcpy_host_to_device_staged_async(
+                binding.allocation, image, binding.host_allocation, self._stream
+            )
         else:
-            memcpy_host_to_device_async(self._input_binding.allocation, image, self._stream)
-        return self._input_binding.allocation
+            memcpy_host_to_device_async(binding.allocation, image, self._stream)
+        return binding.allocation
 
     def _resize_single_image_to_batch(
         self: Self,

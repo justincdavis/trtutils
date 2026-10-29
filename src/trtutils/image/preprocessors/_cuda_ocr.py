@@ -23,6 +23,7 @@ from trtutils.compat._libs import cudart
 from trtutils.core._buffer import Buffer, MemoryLocation
 from trtutils.core._cuda import cuda_call
 from trtutils.core._kernels import Kernel, cached_args
+from trtutils.core._memory import memcpy_host_to_device_staged_async
 from trtutils.image.kernels import OCR_PRE
 
 from ._ocr import (
@@ -116,11 +117,14 @@ class DeviceFrame:
 
     def __init__(self: Self) -> None:
         self._scratch = _Scratch()
+        self._stage: Buffer | None = None
 
     def __call__(self: Self, image: np.ndarray, stream: cudart.cudaStream_t) -> Buffer:
         """Enqueue the upload of a (H, W, 3) uint8 image, the Buffer is valid on ``stream``."""
         frame = self._scratch.get(image.shape, np.uint8)
-        frame.copy_from(Buffer.wrap(np.ascontiguousarray(image)), stream)
+        if self._stage is None or self._stage.nbytes < image.nbytes:
+            self._stage = Buffer.empty((image.nbytes,), np.uint8, pinned=True)
+        memcpy_host_to_device_staged_async(frame.device_ptr, image, self._stage.array, stream)
         return frame
 
 
