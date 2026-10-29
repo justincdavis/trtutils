@@ -254,13 +254,21 @@ def text_recognition_widths(
     image_height: int = 48,
     min_width: int = 320,
     max_width: int | None = None,
+    width_bucket: int | None = None,
 ) -> tuple[int, list[int]]:
     """Get the padded batch width and the resized width per text line of preprocessing."""
     max_wh_ratio = max([min_width / image_height] + [s[1] / s[0] for s in shapes])
     batch_width = int(image_height * max_wh_ratio)
     if max_width is not None:
         batch_width = min(batch_width, max_width)
-    return batch_width, [min(batch_width, math.ceil(image_height * s[1] / s[0])) for s in shapes]
+    widths = [min(batch_width, math.ceil(image_height * s[1] / s[0])) for s in shapes]
+    if width_bucket is not None:
+        # only the padding grows: round up to a multiple of the bucket, so batches
+        # share a few widths while each line keeps its resized width
+        batch_width = -(-batch_width // width_bucket) * width_bucket
+        if max_width is not None:
+            batch_width = min(batch_width, max_width)
+    return batch_width, widths
 
 
 def preprocess_text_recognition(
@@ -272,6 +280,7 @@ def preprocess_text_recognition(
     mean: tuple[float, float, float] | None = _REC_MEAN,
     std: tuple[float, float, float] | None = _REC_STD,
     *,
+    width_bucket: int | None = None,
     verbose: bool | None = None,
 ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
     """
@@ -299,6 +308,10 @@ def preprocess_text_recognition(
         The per-channel mean on the [0, 1] scale. Default is (0.5, 0.5, 0.5).
     std : tuple[float, float, float] | None, optional
         The per-channel standard deviation. Default is (0.5, 0.5, 0.5).
+    width_bucket : int, optional
+        Round the padded batch width up to a multiple of this (capped at ``max_width``),
+        so batches share a few widths. Lines keep their own resized width; only the
+        padding grows. By default None, which pads to the widest line.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -311,7 +324,9 @@ def preprocess_text_recognition(
 
     """
     shapes = [img.shape for img in images]
-    batch_width, widths = text_recognition_widths(shapes, image_height, min_width, max_width)
+    batch_width, widths = text_recognition_widths(
+        shapes, image_height, min_width, max_width, width_bucket
+    )
     shift, scale = _recognition_shift_scale(mean, std, input_range)
     batch = np.zeros((len(images), 3, image_height, batch_width), dtype=np.float32)
     ratios: list[tuple[float, float]] = []

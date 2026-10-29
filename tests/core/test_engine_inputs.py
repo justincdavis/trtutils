@@ -84,7 +84,9 @@ class _FakeGraph:
         self.is_captured = False
 
 
-def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
+def _make_engine(
+    *, cuda_graph: bool = False, shape_contexts: int | None = None
+) -> tuple[TRTEngine, _FakeContext]:
     """Assemble a dynamic-batch (1..4, 3) -> (batch, 2) engine without TensorRT."""
     inp = _bindings.create_binding(
         np.zeros((_MAX_BATCH, _FEATURES), np.float32),
@@ -107,7 +109,7 @@ def _make_engine(*, cuda_graph: bool = False) -> tuple[TRTEngine, _FakeContext]:
     eng._inputs = [inp]
     eng._outputs = [out]
     eng._allocations = [inp.allocation, out.allocation]
-    eng._init_io_state(cuda_graph=cuda_graph)
+    eng._init_io_state(cuda_graph=cuda_graph, shape_contexts=shape_contexts)
     context.shape_calls.clear()  # only record the calls the tests make
     return eng, context
 
@@ -378,3 +380,137 @@ def test_raw_exec_never_uses_the_graph(fake_graphs) -> None:
     for _ in range(3):
         eng.raw_exec([_host(_MAX_BATCH)])
     assert (context.enqueues, len(fake_graphs)) == (3, 0)
+
+
+def _pooled(
+    shape_contexts: int, *, fail_first: frozenset[int] = frozenset()
+) -> tuple[TRTEngine, list[_FakeContext]]:
+    """A pooled engine; the contexts it creates are listed in order after the first."""
+    eng, first = _make_engine(cuda_graph=True, shape_contexts=shape_contexts)
+    contexts = [first]
+
+    def create() -> _FakeContext:
+        context = _FakeContext()
+        if len(contexts) in fail_first:
+            context.reject_enqueue_at = 1
+        contexts.append(context)
+        return context
+
+    eng._create_context = create  # type: ignore[method-assign]
+    return eng, contexts
+
+
+def test_no_pool_by_default(fake_graphs) -> None:
+    """Without shape_contexts one context serves every shape, as before."""
+    eng, context = _make_engine(cuda_graph=True)
+    for batch in (4, 2, 3, 2):
+        eng.execute([_host(batch)])
+    assert eng._shape_contexts is None
+    assert len(eng._parked) == 0
+    assert eng._context is context
+    assert len(context.shape_calls) == 3  # 2, 3, 2; the first batch is the max shape
+
+
+@pytest.mark.parametrize("shape_contexts", [0, -1])
+def test_pool_size_must_be_positive(shape_contexts) -> None:
+    """A pool of fewer than one context is rejected."""
+    with pytest.raises(ValueError, match="shape_contexts"):
+        _make_engine(shape_contexts=shape_contexts)
+
+
+@pytest.mark.parametrize(
+    ("batches", "created"),
+    [
+        pytest.param([4, 4, 4], 0, id="max-shape-uses-first-context"),
+        pytest.param([2, 2, 2], 1, id="one-shape"),
+        pytest.param([4, 2, 3, 2, 3, 4], 2, id="cycle"),
+        pytest.param([1, 2, 3, 1, 2, 3, 1, 2, 3], 3, id="all-new"),
+    ],
+)
+def test_pool_creates_one_context_per_shape(fake_graphs, batches, created) -> None:
+    """Each distinct input shape gets a context, which is reused and never changes shape."""
+    eng, contexts = _pooled(8)
+    for batch in batches:
+        eng.execute([_host(batch)])
+    assert len(contexts) - 1 == created
+    assert len(eng._parked) + 1 == len(contexts)
+    # a context only sees the one shape it was made for (plus its creation call)
+    for context in contexts[1:]:
+        assert len(context.shape_calls) == 2
+        assert context.shape_calls[-1] == (context.shapes["input"])
+
+
+def test_pool_properties_describe_the_last_run(fake_graphs) -> None:
+    """Shapes and outputs follow the context of the most recent run."""
+    eng, _ = _pooled(8)
+    for batch in (2, 4, 3, 2, 3):
+        outputs = eng.execute([_host(batch)])
+        assert eng.active_input_shapes == [(batch, _FEATURES)]
+        assert eng.active_output_shapes == [(batch, _OUT_FEATURES)]
+        assert outputs[0].shape == (batch, _OUT_FEATURES)
+
+
+def test_pool_contexts_share_bindings(fake_graphs) -> None:
+    """Every context reads and writes the engine's own input and output allocations."""
+    eng, contexts = _pooled(8)
+    for batch in (2, 3, 4):
+        eng.execute([_host(batch)])
+    for context in contexts:
+        assert context.addresses["input"] == eng._inputs[0].allocation
+        assert context.addresses["output"] == eng._outputs[0].allocation
+
+
+def test_pool_replays_graphs_per_context(fake_graphs) -> None:
+    """Alternating shapes replay a graph per context, which one context could never do."""
+    eng, contexts = _pooled(8)
+    for _ in range(5):
+        for batch in (4, 2):
+            eng.execute([_host(batch)])
+    assert len(fake_graphs) == 2
+    # the first context (batch 4): plain, plain + capture, then replays
+    # the second (batch 2): its shape-change run is plain and never counts toward a capture
+    assert [c.enqueues for c in contexts] == [3, 4]
+    assert [g.launches for g in fake_graphs] == [3, 2]
+
+
+def test_pool_failed_first_run_keeps_its_shape_change(fake_graphs) -> None:
+    """A context whose shape-change run was rejected still owes a plain run, whatever ran since."""
+    eng, contexts = _pooled(8, fail_first=frozenset({1}))
+    with pytest.raises(RuntimeError, match="failed to enqueue"):
+        eng.execute([_host(2)])
+    eng.execute([_host(4)])  # another context's plain run
+    eng.execute([_host(2)])  # the plain run the shape change owes: not a sighting
+    eng.execute([_host(2)])  # first sighting
+    assert len(fake_graphs) == 0
+    eng.execute([_host(2)])  # second sighting: capture
+    assert len(fake_graphs) == 1
+    assert contexts[1].enqueues == 5  # the rejected run, three plain runs, the capture
+
+
+def test_pool_evicts_least_recently_used(fake_graphs) -> None:
+    """Over the limit the least recently used context goes, its graphs invalidated."""
+    eng, contexts = _pooled(2)
+    for _ in range(3):
+        eng.execute([_host(4)])  # first context, captured
+    assert fake_graphs[0].is_captured
+    eng.execute([_host(2)])
+    assert len(contexts) == 2
+    assert fake_graphs[0].is_captured  # both still fit
+    eng.execute([_host(3)])  # evicts batch 4, least recently used
+    assert not fake_graphs[0].is_captured
+    assert len(contexts) == 3
+    assert len(eng._parked) == 1
+    eng.execute([_host(2)])  # batch 2 survived
+    assert len(contexts) == 3
+    eng.execute([_host(4)])  # batch 4 pays for a new context
+    assert len(contexts) == 4
+    assert eng.active_input_shapes == [(4, _FEATURES)]
+
+
+def test_pool_of_one_rebuilds_on_every_shape_change(fake_graphs) -> None:
+    """With a single context every change of shape evicts and creates one."""
+    eng, contexts = _pooled(1)
+    for batch in (2, 3, 2, 3):
+        eng.execute([_host(batch)])
+    assert len(contexts) == 5
+    assert len(eng._parked) == 0

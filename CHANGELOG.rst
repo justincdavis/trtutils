@@ -34,6 +34,17 @@ Added
   numpy arrays and any ``__cuda_array_interface__`` object (CuPy, PyTorch, ...) without
   copying; memory is reference counted so views and numpy arrays never outlive it
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
+* ``TRTEngine(shape_contexts=N)`` (also ``ImageModel``): opt-in pool of up to ``N`` execution
+  contexts, one per distinct tuple of input shapes, sharing one device memory block. A context
+  never changes shape, so TensorRT skips its per-shape setup and every context replays its own
+  CUDA graphs. Creating a context takes ~65 ms (paid on first use of each shape, so warm up with
+  every shape in use), and evicting the least recently used context when more shapes than ``N``
+  are in use pays it again: size ``N`` above the number of shapes. Off by default
+* ``width_bucket`` on ``TextRecognizer`` / ``PPOCRRecognizer`` / ``PPOCR``: round each recognizer
+  batch width up to a multiple of this many pixels and keep one engine context per
+  (batch size, width). On 24 rendered pages this cut steady-state OCR from ~3.4 to ~2.4
+  ms/page, at ~65 ms of warmup per width. The extra padding changes outputs slightly (CER
+  unchanged at 32, higher at larger buckets). Off by default, which keeps outputs identical
 * ``build_engine(shapes=[(name, (min_shape, opt_shape, max_shape))])`` builds a dynamic
   optimization profile; malformed triples raise ``ValueError`` and non-integer dims
   raise ``TypeError``

@@ -9,15 +9,17 @@ import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import nvtx
 
 from ._flags import FLAGS
 from ._log import LOG
+from .compat._libs import trt
 from .core._buffer import Buffer, as_buffers
 from .core._graph import CUDAGraph
 from .core._interface import TRTEngineInterface
+from .core._memory import cuda_free, cuda_malloc
 from .core._stream import stream_synchronize
 
 if TYPE_CHECKING:
@@ -36,6 +38,19 @@ if TYPE_CHECKING:
 # the most CUDA graphs (and seen-once configurations) an engine keeps
 _MAX_CUDA_GRAPHS = 8
 
+# the attributes that make up one execution context's state, swapped as a unit
+_CONTEXT_STATE = (
+    "_context",
+    "_allocations",
+    "_input_shapes",
+    "_input_addresses",
+    "_bound_inputs",
+    "_output_shapes",
+    "_shapes_changed",
+    "_cuda_graphs",
+    "_seen_configs",
+)
+
 
 class TRTEngine(TRTEngineInterface):
     """
@@ -51,6 +66,15 @@ class TRTEngine(TRTEngineInterface):
     _backends: ClassVar[set[str]] = {"auto", "async_v3", "async_v2"}
     _capture_lock: ClassVar[threading.Lock] = threading.Lock()
 
+    # the per-context state, see _CONTEXT_STATE
+    _input_shapes: list[tuple[int, ...]]
+    _input_addresses: list[int]
+    _bound_inputs: list[Buffer]
+    _output_shapes: list[tuple[int, ...]]
+    _shapes_changed: bool
+    _cuda_graphs: OrderedDict[_GraphKey, CUDAGraph]
+    _seen_configs: OrderedDict[_GraphKey, None]
+
     def __init__(
         self: Self,
         engine_path: Path | str,
@@ -64,6 +88,7 @@ class TRTEngine(TRTEngineInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        shape_contexts: int | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -102,6 +127,19 @@ class TRTEngine(TRTEngineInterface):
         cuda_graph : bool, optional
             Whether to enable CUDA graph capture for optimized execution.
             By default True. Only effective when using async_v3 backend.
+        shape_contexts : int, optional
+            The most execution contexts to keep, one per distinct tuple of input
+            shapes. TensorRT redoes per-shape setup whenever a context's input
+            shapes change (~1 ms of host time on small engines), and a CUDA graph
+            can only replay while they do not, so an engine that cycles through a
+            few shapes runs faster with one context per shape, each with its own
+            CUDA graphs. All contexts share one device memory block, so each
+            costs little GPU memory. Creating a context takes ~65 ms, which is
+            paid again for every shape seen first or evicted (least recently used
+            first) when more shapes than this are in use: size it above the
+            number of shapes in use, or the engine thrashes. Outputs are shared
+            and valid until the next execution, as without the pool.
+            By default None, which uses a single context.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -115,6 +153,8 @@ class TRTEngine(TRTEngineInterface):
 
         """
         self._name = Path(engine_path).stem
+        # the device memory the pool's contexts share, allocated with the first
+        self._shared_memory: int | None = None
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(f"engine::init [{self.name}]")
@@ -152,7 +192,11 @@ class TRTEngine(TRTEngineInterface):
 
             self._async_v3 = FLAGS.EXEC_ASYNC_V3 and (backend == "async_v3" or backend == "auto")
 
-            self._init_io_state(cuda_graph=cuda_graph)
+            if shape_contexts is not None:
+                # replace the default context with one that shares the pool's memory
+                with self._device_guard:
+                    self._context = self._create_context()
+            self._init_io_state(cuda_graph=cuda_graph, shape_contexts=shape_contexts)
 
             # store timing variable for sleep call before stream_sync
             self._sync_t: float = 0.0
@@ -175,8 +219,17 @@ class TRTEngine(TRTEngineInterface):
 
         LOG.debug(f"Created TRTEngine: {self.name}")
 
-    def _init_io_state(self: Self, *, cuda_graph: bool | None) -> None:
+    def _init_io_state(
+        self: Self, *, cuda_graph: bool | None, shape_contexts: int | None = None
+    ) -> None:
         """Point the context at the bindings at their max shapes and reset the graph cache."""
+        if shape_contexts is not None and shape_contexts < 1:
+            err_msg = f"shape_contexts must be at least 1, got {shape_contexts}."
+            raise ValueError(err_msg)
+        # parked contexts by input shapes, least recently used first; the active
+        # context's state lives in the attributes of _CONTEXT_STATE instead
+        self._shape_contexts = shape_contexts
+        self._parked: OrderedDict[tuple[tuple[int, ...], ...], dict[str, Any]] = OrderedDict()
         # CUDA graph support: one graph per input configuration (the shape and
         # device address of every input), least recently used first. A graph
         # can only replay on a call that does not change the shapes, so a
@@ -187,27 +240,75 @@ class TRTEngine(TRTEngineInterface):
         self._cuda_graph_enabled: bool = (
             cuda_graph if cuda_graph is not None else True
         ) and self._async_v3
-        self._cuda_graphs: OrderedDict[_GraphKey, CUDAGraph] = OrderedDict()
-        self._seen_configs: OrderedDict[_GraphKey, None] = OrderedDict()
+        self._apply_state(self._fresh_state(self._context))
+        self._active_key = tuple(self._input_shapes)
 
-        # the shapes and device addresses the context currently holds for each
-        # input; every call compares against these, so the context is only
-        # updated when a submitted Buffer differs from the previous call
-        self._input_shapes: list[tuple[int, ...]] = [b.max_shape for b in self._inputs]
-        self._input_addresses: list[int] = [b.allocation for b in self._inputs]
-        # the Buffers the context reads, kept alive for graph_exec / raw_exec,
-        # which use them after the call that bound them returns
-        self._bound_inputs: list[Buffer] = [b.device for b in self._inputs]
-        self._output_shapes: list[tuple[int, ...]] = [b.max_shape for b in self._outputs]
-        # set when the context shapes change; the next enqueue then runs
-        # without a CUDA graph so TensorRT can react to the new shapes
-        self._shapes_changed: bool = False
+    def _fresh_state(self: Self, context: Any) -> dict[str, Any]:  # noqa: ANN401
+        """Point a context at the bindings at their max shapes and describe its state."""
+        # every call compares against the shapes and device addresses the context
+        # holds for each input, so it is only updated when a submitted Buffer
+        # differs from the previous call
+        allocations = list(self._allocations)
+        for binding in (*self._inputs, *self._outputs):
+            allocations[binding.index] = binding.allocation
         if self._async_v3:
             for i_binding in self._inputs:
-                self._context.set_input_shape(i_binding.name, i_binding.shape)
-                self._context.set_tensor_address(i_binding.name, i_binding.allocation)
+                context.set_input_shape(i_binding.name, i_binding.shape)
+                context.set_tensor_address(i_binding.name, i_binding.allocation)
             for o_binding in self._outputs:
-                self._context.set_tensor_address(o_binding.name, o_binding.allocation)
+                context.set_tensor_address(o_binding.name, o_binding.allocation)
+        return {
+            "_context": context,
+            "_allocations": allocations,
+            "_input_shapes": [b.max_shape for b in self._inputs],
+            "_input_addresses": [b.allocation for b in self._inputs],
+            # the Buffers the context reads, kept alive for graph_exec / raw_exec,
+            # which use them after the call that bound them returns
+            "_bound_inputs": [b.device for b in self._inputs],
+            "_output_shapes": [b.max_shape for b in self._outputs],
+            # set when the context shapes change; the next enqueue then runs
+            # without a CUDA graph so TensorRT can react to the new shapes
+            "_shapes_changed": False,
+            "_cuda_graphs": OrderedDict(),
+            "_seen_configs": OrderedDict(),
+        }
+
+    def _apply_state(self: Self, state: dict[str, Any]) -> None:
+        for name, value in state.items():
+            setattr(self, name, value)
+
+    def _create_context(self: Self) -> Any:  # noqa: ANN401
+        """Create an execution context that runs in the engine's shared device memory."""
+        if self._shared_memory is None:
+            self._shared_memory = cuda_malloc(max(self._memsize, 1))
+        if FLAGS.MEMSIZE_V2:
+            strategy = trt.ExecutionContextAllocationStrategy.USER_MANAGED
+            context = self._engine.create_execution_context(strategy)
+            context.set_device_memory(self._shared_memory, self._memsize)
+        else:
+            context = self._engine.create_execution_context_without_device_memory()
+            context.device_memory = self._shared_memory
+        if context is None:
+            err_msg = f"Failed to create an execution context for engine '{self._name}'."
+            raise RuntimeError(err_msg)
+        return context
+
+    def _select_context(self: Self, key: tuple[tuple[int, ...], ...]) -> None:
+        """Make the context for these input shapes the active one, creating it if needed."""
+        if key == self._active_key:
+            return
+        self._parked[self._active_key] = {name: getattr(self, name) for name in _CONTEXT_STATE}
+        state = self._parked.pop(key, None)
+        if state is None:
+            # evicting is costly: the context is rebuilt (~65 ms) if its shapes come back
+            while len(self._parked) > cast("int", self._shape_contexts) - 1:
+                stream_synchronize(self._stream)
+                _, evicted = self._parked.popitem(last=False)
+                for graph in evicted["_cuda_graphs"].values():
+                    graph.invalidate()
+            state = self._fresh_state(self._create_context())
+        self._apply_state(state)
+        self._active_key = key
 
     @property
     def active_input_shapes(self: Self) -> list[tuple[int, ...]]:
@@ -285,6 +386,8 @@ class TRTEngine(TRTEngineInterface):
         engine's own input bindings on the engine stream.
         """
         inputs = self._validate_inputs(data)
+        if self._shape_contexts is not None:
+            self._select_context(tuple(b.shape for b in inputs))
         shapes_changed = False
         try:
             for index, (binding, buffer) in enumerate(zip(self._inputs, inputs)):
@@ -353,9 +456,10 @@ class TRTEngine(TRTEngineInterface):
             evicted.invalidate()
 
     def _clear_graphs(self: Self) -> None:
-        for graph in self._cuda_graphs.values():
-            graph.invalidate()
-        self._cuda_graphs.clear()
+        for graphs in (self._cuda_graphs, *(s["_cuda_graphs"] for s in self._parked.values())):
+            for graph in graphs.values():
+                graph.invalidate()
+            graphs.clear()
         self._seen_configs.clear()
 
     def _capture_cuda_graph(self: Self) -> CUDAGraph | None:
@@ -397,6 +501,11 @@ class TRTEngine(TRTEngineInterface):
         with contextlib.suppress(AttributeError):
             self._clear_graphs()
         super().__del__()
+        # the contexts are gone, so the memory they shared can go too
+        shared = getattr(self, "_shared_memory", None)
+        if shared is not None:
+            self._parked.clear()
+            cuda_free(shared)
 
     def execute(
         self: Self,

@@ -817,6 +817,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         cuda_graph: bool | None = None,  # noqa: ARG002
         postprocessor: str | None = None,
         use_space_char: bool | None = None,
+        width_bucket: int | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -889,6 +890,15 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         use_space_char : bool, optional
             Whether or not the model has an extra trailing class for the space
             character. By default None, which means True.
+        width_bucket : int, optional
+            Round each batch's padded width up to a multiple of this many pixels (capped at
+            the engine's maximum width), and keep one TensorRT execution context per
+            resulting batch size and width. Contexts never change shape, so TensorRT skips
+            its per-shape setup and CUDA graphs replay for every batch, which is faster for
+            streams of pages with varied lines. Costs: each new width pays ~65 ms for its
+            context on first use (warmup), the extra padding changes outputs slightly
+            (a larger bucket changes them more), and a few MiB of GPU memory per width.
+            By default None, which pads to the widest line with one context.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -918,6 +928,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             chars = list(character_dict)
         use_space_char = use_space_char if use_space_char is not None else True
         self._characters: list[str] = ["blank", *chars] + ([" "] if use_space_char else [])
+        self._width_bucket = width_bucket
 
         super().__init__(
             engine_path=engine_path,
@@ -934,6 +945,11 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=postprocessor != "cpu",
+            # one context per (batch size, width): the batch size is at most the engine's
+            # and the bucketed widths are max_width / width_bucket, so 64 holds the pairs a
+            # page stream uses; evicting one costs ~65 ms to rebuild, far worse than the
+            # few MiB each context holds
+            shape_contexts=64 if width_bucket is not None else None,
             postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
@@ -978,6 +994,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             input_range=self._input_range,
             mean=self._mean,
             std=self._std,
+            width_bucket=self._width_bucket,
         )
         return CPUPreprocessor(
             self._input_size, self._input_range, self._dtype, resize=fn, tag=self._tag
@@ -988,7 +1005,13 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             return None
         width, height = self._input_size
         return CudaTextCrops(
-            height, width, self._batch_size, self._mean, self._std, self._input_range
+            height,
+            width,
+            self._batch_size,
+            self._mean,
+            self._std,
+            self._input_range,
+            self._width_bucket,
         )
 
     def _update_preprocessors(self: Self) -> None:
