@@ -63,10 +63,11 @@ def _postprocess_depth_core(
         if output.ndim == 2 or (output.ndim == 3 and output.shape[0] != 1):  # noqa: PLR2004
             output = np.expand_dims(output, axis=0)  # noqa: PLW2901
 
-        # min-max normalize to [0, 1]
+        # min-max normalize to [0, 1], in place to skip two full-map temporaries
         d_min = output.min()
         d_max = output.max()
-        output[:] = (output - d_min) / (d_max - d_min + 1e-8)
+        np.subtract(output, d_min, out=output)
+        np.divide(output, d_max - d_min + 1e-8, out=output)
 
     if no_copy:
         return outputs
