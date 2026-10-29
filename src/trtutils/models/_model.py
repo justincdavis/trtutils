@@ -8,6 +8,7 @@ from __future__ import annotations
 import inspect
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from trtutils._log import LOG
 from trtutils.builder._build import build_engine
 from trtutils.builder._onnx import read_onnx
 from trtutils.builder.hooks import yolo_efficient_nms_hook
@@ -115,6 +116,9 @@ def hands23_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]:  #
     """
     network, _, _, _ = read_onnx(onnx)
     names = [network.get_layer(idx).name for idx in range(network.num_layers)]
+    if "/proposal_generator/Transpose" not in names or "/Greater" not in names:
+        LOG.warning("Hands23 FP32 hook: layer names not found, building the whole model in FP16")
+        return {}
     start = names.index("/proposal_generator/Transpose")
     stop = names.index("/Greater")
     layer_precision = []
