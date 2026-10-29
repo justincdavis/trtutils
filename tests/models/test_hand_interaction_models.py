@@ -8,8 +8,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR
 from trtutils._flags import FLAGS
+from trtutils.builder.onnx import fix_hands23_onnx
 from trtutils.image._hand_interaction import HandInteractionDetector
 from trtutils.image._schema import HandInteractionOutputSchema
 from trtutils.models import HOIDETR, Hands23
@@ -225,3 +227,27 @@ def test_batch_slots_match_single(build_model_engine, images, names, ref_names) 
         _assert_interactions_close(
             sorted(result, key=lambda t: t[0][0]), sorted(expected, key=lambda t: t[0][0])
         )
+
+
+@_trt86_hands23
+def test_nonzero_free_engine_matches_original(build_model_engine, images, tmp_path_factory) -> None:
+    """An engine built from the NonZero-free ONNX detects what the original engine detects."""
+    original_engine = build_model_engine(Hands23, HANDS23_ONNX)
+    fixed_engine = engine_cache_path("hands23_x101_800_nonzero_free", 1, 1)
+    if not fixed_engine.exists():
+        fixed_onnx = tmp_path_factory.mktemp("hands23") / "hands23_fixed_800.onnx"
+        assert fix_hands23_onnx(HANDS23_ONNX, fixed_onnx)
+        Hands23.build(fixed_onnx, fixed_engine, imgsz=800, batch_size=1, opt_level=1)
+
+    img = images["people"].array
+    reference = Hands23(original_engine, warmup=False).end2end(img)
+    result = Hands23(fixed_engine, warmup=False).end2end(img)
+    assert len(reference) == len(result) > 0
+    # fp16 engines drift between builds: boxes within a few px, scores loosely
+    for ref, new in zip(reference, result):
+        for entry_ref, entry_new in zip(ref[:3], new[:3]):
+            assert (entry_ref is None) == (entry_new is None)
+            if entry_ref is not None:
+                np.testing.assert_allclose(entry_ref[0], entry_new[0], atol=3)
+                assert entry_ref[1] == pytest.approx(entry_new[1], abs=0.05)
+        assert ref[3:] == new[3:]
