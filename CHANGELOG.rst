@@ -3,6 +3,9 @@ Unreleased
 
 Added
 ^^^^^
+* ``image.autotune`` / ``image.AutotuneTrial`` and ``trtutils autotune``: time every
+  preprocessor / postprocessor / ``cuda_graph`` combination of an image model on your own
+  images, check each against the default configuration's results, and report the fastest
 * ``Detector(class_map=...)`` (and every detector wrapper): optional ``Mapping[int, int]`` that
   translates model class ids to output ids after postprocessing; unmapped ids pass through. Off
   by default

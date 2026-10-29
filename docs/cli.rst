@@ -9,6 +9,7 @@ Overview
 TRTUtils provides a command-line interface with several subcommands for working with TensorRT engines and models. The main commands are:
 
 * ``benchmark``: Benchmark a TensorRT engine
+* ``autotune``: Time an image model's runtime options on your images and report the fastest
 * ``build``: Build a TensorRT engine from an ONNX model
 * ``build_yolo``: Build a TensorRT engine from an ONNX model with YOLO NMS injection
 * ``build_dla``: Build a TensorRT engine with mixed GPU/DLA layers and precision automatically
@@ -281,6 +282,21 @@ The command will output:
     * Start and end layer indices
     * Number of layers in the chunk
     * Device assignment (DLA or GPU)
+
+Autotune
+~~~~~~~~
+
+Time every preprocessor, postprocessor and CUDA graph setting of an image model on your own
+images and report the fastest. Configurations that cannot be built are listed with their error.
+
+.. code-block:: console
+
+    python3 -m trtutils autotune --engine model.engine --task detect --input images/
+    python3 -m trtutils autotune -e model.engine -t segment -i image.jpg --preprocessors cuda hybrid
+
+Options: ``--engine``, ``--task`` (detect, classify, segment, pose, obb, depth, hand),
+``--input`` (image or directory), ``--iterations``, ``--warmup``, ``--preprocessors``,
+``--postprocessors``, ``--no-graph-off`` (only try ``cuda_graph=True``).
 
 Classify
 ~~~~~~~~
