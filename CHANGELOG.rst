@@ -124,6 +124,12 @@ Added
 
 Changed
 ^^^^^^^
+* The default preprocessor of every image model, wrapper and the ``detect`` / ``classify``
+  CLI is now ``"cuda"`` instead of ``"trt"``: it is at least as fast on every benchmarked
+  task (1080p frames, RTX 5080), without a second engine per model. Input pixels change
+  slightly, since the TensorRT resize differs; pass ``preprocessor="trt"`` for the old
+  behavior. ``"hybrid"`` (CPU resize, GPU normalize) is faster still for small inputs such as
+  224 px classifiers
 * ``Segmenter.postprocess(no_copy=True)``, and so ``Segmenter.end2end``, write masks into a
   reused buffer per batch slot, as other ``no_copy`` outputs are: the masks of earlier results
   are overwritten by the next call, so copy any you keep. A new full-frame mask stack per frame

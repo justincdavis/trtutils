@@ -53,7 +53,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
-        preprocessor: str = "trt",
+        preprocessor: str = "cuda",
         resize_method: str = "letterbox",
         conf_thres: float = 0.3,
         pair_thres: float = 0.5,
@@ -89,7 +89,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
+            The options are ['cpu', 'cuda', 'trt'], default is 'cuda'.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'letterbox'.

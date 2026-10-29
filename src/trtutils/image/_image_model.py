@@ -95,7 +95,7 @@ class ImageModel:
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
-        preprocessor: str = "trt",
+        preprocessor: str = "cuda",
         resize_method: str = "linear",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
@@ -127,7 +127,7 @@ class ImageModel:
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt', 'hybrid'], default is 'trt'.
+            The options are ['cpu', 'cuda', 'trt', 'hybrid'], default is 'cuda'.
             'hybrid' resizes on the CPU and normalizes on the GPU, uploading only
             the resized image, which wins for inputs much smaller than the frame.
         resize_method : str

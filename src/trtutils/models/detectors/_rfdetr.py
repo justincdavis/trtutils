@@ -36,7 +36,7 @@ class RFDETR(Detector, Model):
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0, 1),
-        preprocessor: str = "trt",
+        preprocessor: str = "cuda",
         resize_method: str = "linear",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,

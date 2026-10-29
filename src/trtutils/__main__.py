@@ -1836,8 +1836,8 @@ def _main() -> None:
         "--preprocessor",
         "-p",
         choices=["cpu", "cuda", "trt", "hybrid"],
-        default="trt",
-        help="Preprocessor to use. Default is trt.",
+        default="cuda",
+        help="Preprocessor to use. Default is cuda.",
     )
     detect_parser.add_argument(
         "--resize_method",
@@ -1893,8 +1893,8 @@ def _main() -> None:
         "--preprocessor",
         "-p",
         choices=["cpu", "cuda", "trt", "hybrid"],
-        default="trt",
-        help="Preprocessor to use. Default is trt.",
+        default="cuda",
+        help="Preprocessor to use. Default is cuda.",
     )
     classify_parser.add_argument(
         "--show",
