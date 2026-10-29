@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from trtutils._log import LOG
+from trtutils.builder.onnx import fix_hands23_onnx
 
 from . import _make_static, _simplify
 from ._models import (
@@ -266,6 +267,10 @@ def download_model(  # noqa: C901, PLR0912, PLR0915
             no_uv_cache=no_uv_cache,
             verbose=verbose,
         )
+
+    # drop the NonZero ops (after simplify, which could refold them)
+    if export_func is export_hands23:
+        fix_hands23_onnx(model_path)
 
     if make_static:
         _make_static.make_static(

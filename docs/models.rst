@@ -155,6 +155,11 @@ Hand-Object Interaction
 2. **Hands23**
 
    - GitHub: `EvaCheng-cty/hands23_detector <https://github.com/EvaCheng-cty/hands23_detector>`_
+   - Downloaded ONNX files already have their ``NonZero`` ops removed (about 5-9% faster
+     ``end2end``). For an older export, run
+     ``trtutils.builder.onnx.fix_hands23_onnx("hands23_x101.onnx")`` before building; it is
+     idempotent and skips files that are not Hands23 exports. It assumes at least 1000 valid
+     RPN proposals per image (1700+ seen at 800 px).
 
 Text Detection and Recognition (OCR)
 ------------------------------------
