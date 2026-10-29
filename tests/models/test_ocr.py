@@ -285,6 +285,21 @@ def test_ocr_cuda_postprocessor_matches_cpu(det_engine, rec_engine, image) -> No
     assert cuda.recognizer.end2end_regions(frame, boxes) == want
 
 
+def test_ocr_cuda_result_ignores_previous_shapes(det_engine, rec_engine) -> None:
+    """A page gives the same lines after images of other shapes, whose graphs it must not replay stale."""
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda")
+    page = _page()
+    ref = [cuda(page) for _ in range(3)][-1]
+    assert len(ref) > 0
+    for other in (_render(LINES[:1], 1400), _blank(200, 300), _page(rotate=True)):
+        cuda(other)
+        for results in (cuda(page), cuda(page)):
+            assert len(results) == len(ref)
+            for (box, text, score), (ref_box, ref_text, ref_score) in zip(results, ref):
+                np.testing.assert_array_equal(box, ref_box)
+                assert (text, score) == (ref_text, ref_score)
+
+
 def test_ocr_cuda_recognizer_and_empty(det_engine, rec_engine) -> None:
     """The CUDA recognizer decodes crops as the CPU one, and an image without text gives nothing."""
     cpu = PPOCR(det_engine, rec_engine, postprocessor="cpu")
