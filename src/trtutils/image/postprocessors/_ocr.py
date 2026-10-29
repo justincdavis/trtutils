@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from trtutils.image.types import Text, TextBox
 
 _MIN_BOX_SIDE = 3
+_SIDE_SQ_LIMIT = (_MIN_BOX_SIDE + 1) ** 2
 _SAME_LINE_PX = 10
 
 
@@ -102,11 +103,19 @@ def _unclip(box: np.ndarray, unclip_ratio: float) -> tuple:
         if sin_a * delta < 0:
             out += [at(ipts[j], nk), ipts[j], at(ipts[j], nj)]
             continue
+        # the arc: the hot loop, with at() and _round_half_away() inlined
+        px, py = ipts[j]
         x, y = nk
         for _ in range(
             max(_round_half_away(steps / (2 * math.pi) * abs(math.atan2(sin_a, cos_a))), 1)
         ):
-            out.append(at(ipts[j], (x, y)))
+            vx, vy = px + x * delta, py + y * delta
+            out.append(
+                (
+                    int(vx - 0.5) if vx < 0 else int(vx + 0.5),
+                    int(vy - 0.5) if vy < 0 else int(vy + 0.5),
+                )
+            )
             x, y = x * cos_s - sin_s * y, x * sin_s + y * cos_s
         out.append(at(ipts[j], nj))
     return cv2.minAreaRect(np.array(out, dtype=np.int32))
@@ -156,6 +165,33 @@ def sort_text_boxes(
     return boxes[idx].reshape(-1, 4, 2), np.asarray(scores)[idx]
 
 
+def _scaled_boxes(
+    kept: list[np.ndarray],
+    kept_scores: list[float],
+    size: np.ndarray,
+    limit: np.ndarray,
+) -> tuple[list[np.ndarray], list[float]]:
+    """Scale unclipped boxes to the source image, dropping those with a side under 4 px."""
+    boxes: list[np.ndarray] = []
+    scores: list[float] = []
+    if not kept:
+        return boxes, scores
+    # rounded and clipped, so already integral like the reference's int32 boxes; float32
+    # elementwise ops, so scaling all boxes at once gives the per-box bits
+    scaled = np.clip(np.round(np.stack(kept) / size * limit), 0, limit)
+    for raw, score in zip(scaled, kept_scores):
+        box = np.clip(_order_clockwise(raw), 0, limit - 1)
+        (x0, y0), (x1, y1), _, (x3, y3) = box.tolist()
+        # integral corners: int(norm) <= 3 is exactly a squared length under 16
+        if (x1 - x0) ** 2 + (y1 - y0) ** 2 < _SIDE_SQ_LIMIT or (x3 - x0) ** 2 + (
+            y3 - y0
+        ) ** 2 < _SIDE_SQ_LIMIT:
+            continue
+        boxes.append(box)
+        scores.append(score)
+    return boxes, scores
+
+
 def _text_boxes(
     pred: np.ndarray,
     image_shape: tuple[int, int],
@@ -184,8 +220,8 @@ def _text_boxes(
 
     size = np.array([width, height], np.float32)
     limit = np.array([src_w, src_h], np.float32)
-    boxes: list[np.ndarray] = []
-    scores: list[float] = []
+    kept: list[np.ndarray] = []
+    kept_scores: list[float] = []
     for contour in contours[:max_candidates]:
         points, short_side = _mini_box(cv2.minAreaRect(contour))
         if short_side < _MIN_BOX_SIDE:
@@ -199,17 +235,10 @@ def _text_boxes(
         box, short_side = _mini_box(_unclip(points, unclip_ratio))
         if short_side < _MIN_BOX_SIDE + 2:
             continue
-        # rounded and clipped, so already integral like the reference's int32 boxes
-        box = np.clip(np.round(box / size * limit), 0, limit)
-        box = np.clip(_order_clockwise(box), 0, limit - 1)
-        if (
-            int(np.linalg.norm(box[0] - box[1])) <= _MIN_BOX_SIDE
-            or int(np.linalg.norm(box[0] - box[3])) <= _MIN_BOX_SIDE
-        ):
-            continue
-        boxes.append(box)
-        scores.append(score)
+        kept.append(box)
+        kept_scores.append(score)
 
+    boxes, scores = _scaled_boxes(kept, kept_scores, size, limit)
     if not boxes:
         return [np.zeros((0, 4, 2), dtype=np.float32), np.zeros(0, dtype=np.float32)]
     return list(sort_text_boxes(np.stack(boxes), np.array(scores, dtype=np.float32)))
