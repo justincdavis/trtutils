@@ -21,5 +21,6 @@ Examples
     examples/depth_estimator.rst
     examples/hand_interaction.rst
     examples/ocr.rst
+    examples/io.rst
     examples/dla.rst
     examples/jetson.rst
