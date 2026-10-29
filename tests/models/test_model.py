@@ -120,3 +120,23 @@ def test_build_unknown_kwargs_raises(tmp_path) -> None:
     # yolov8's hook doesn't read the onnx, so the fake path is never opened
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         YOLOv8.build(tmp_path / "fake.onnx", tmp_path / "out.engine", totally_fake_kwarg=True)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "fp16"),
+    [
+        pytest.param({}, True, id="default"),
+        pytest.param({"fp16": False}, False, id="fp16-off"),
+        pytest.param({"fp16": True, "fp8": True}, True, id="fp16-with-fp8"),
+        pytest.param({"strongly_typed": True}, False, id="strongly-typed"),
+    ],
+)
+def test_build_fp16(tmp_path, kwargs, fp16) -> None:
+    """build() defaults to fp16, takes an explicit fp16, and leaves strongly typed builds unflagged."""
+    with patch("trtutils.models._model.build_engine") as mock_build:
+        YOLOv8.build(tmp_path / "fake.onnx", tmp_path / "out.engine", **kwargs)
+    call = mock_build.call_args.kwargs
+    assert call["fp16"] is fp16
+    for key, value in kwargs.items():
+        if key != "fp16":
+            assert call[key] == value
