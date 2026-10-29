@@ -129,7 +129,8 @@ void yoloScatter(
 }
 
 // bit j of row i is set when sorted box j > i overlaps box i of the same class;
-// a block per 64 rows and stripe of column blocks, so empty launches stay cheap
+// a block per 64 rows and stripe of column blocks, so empty launches stay cheap.
+// N is the row capacity of mask: images with more candidates are left to the reduce
 extern "C" __global__
 void yoloNmsMask(
     const int N,
@@ -144,7 +145,7 @@ void yoloNmsMask(
     const int b = blockIdx.z;
     const int n = count[b];
     const int rowStart = blockIdx.x * 64;
-    if (rowStart >= n) return;
+    if (rowStart >= n || n > N) return;
     const size_t base = (size_t)b * N;
     const int words = (N + 63) / 64;
     const int i = rowStart + threadIdx.x;
@@ -213,7 +214,8 @@ void yoloNmsMask(
     }
 }
 
-// greedy pass over the sorted boxes, one warp per image (the loop syncs once per kept box)
+// greedy pass over the sorted boxes, one warp per image (the loop syncs once per kept box);
+// keepCount is -1 when the image has more candidates than mask holds (N rows)
 extern "C" __global__
 void yoloNmsReduce(
     const int N,
@@ -226,6 +228,10 @@ void yoloNmsReduce(
     __shared__ unsigned long long removed[NMS_MAX_WORDS];
     const int b = blockIdx.x;
     const int n = count[b];
+    if (n > N) {
+        if (threadIdx.x == 0) keepCount[b] = -1;
+        return;
+    }
     const int words = (N + 63) / 64;
     const int used = (n + 63) / 64;
     for (int w = threadIdx.x; w < used; w += blockDim.x) removed[w] = 0;

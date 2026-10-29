@@ -268,6 +268,21 @@ def test_classifier_softmax_false_top_k(task_engine, images) -> None:
     assert top[0][0] == 339  # sorrel, ultralytics top-1
 
 
+def test_segmenter_cpu_no_copy_postprocess_then_cuda(task_engine, images) -> None:
+    """A CPU no_copy postprocess of host outputs leaves the CUDA path's canvases working."""
+    image = images["horse"].array
+    ref = Segmenter(task_engine("seg"), postprocessor="cpu", warmup=False).end2end(image)
+    seg = Segmenter(task_engine("seg"), postprocessor="cuda", warmup=False)
+    tensor, ratios, padding = seg.preprocess(image)
+    raw = seg.run(tensor, ratios, padding, preprocessed=True, postprocess=False)
+    host = seg.get_segmentations(seg.postprocess(raw, ratios, padding, no_copy=True))[0]
+    assert _fields(host) == _fields(ref)
+    got = seg.end2end(image)
+    assert _fields(got) == _fields(ref)
+    for g, w in zip(got, ref):
+        np.testing.assert_array_equal(g[3], w[3])
+
+
 @pytest.mark.parametrize("image_name", ["people", "horse"])
 def test_segmenter_cuda_postprocessor_matches_cpu(task_engine, images, image_name: str) -> None:
     """postprocessor="cuda" gives the CPU results exactly, through run() and end2end()."""

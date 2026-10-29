@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+import functools
 import math
 from typing import TYPE_CHECKING
 
@@ -306,6 +307,9 @@ def postprocess_text_detection(
 
     maps = outputs[0]
     height, width = int(maps.shape[-2]), int(maps.shape[-1])
+    # an image may never score a box, so every image waits, only the first call blocks
+    if wait is not None:
+        wait = functools.lru_cache(maxsize=None)(wait)
     results = []
     for i, ((ratio_w, ratio_h), (pad_x, pad_y)) in enumerate(zip(ratios, padding)):
         valid_h, valid_w = height - int(pad_y), width - int(pad_x)
@@ -326,8 +330,6 @@ def postprocess_text_detection(
                 wait=wait,
             )
         )
-        # the first image's scoring waited already
-        wait = None
     return results
 
 

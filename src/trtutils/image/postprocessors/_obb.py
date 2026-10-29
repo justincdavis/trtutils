@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -172,6 +173,14 @@ def _probiou_terms(
     return 1 - np.sqrt(1.0 - np.exp(-bd) + eps)
 
 
+def _probiou_reach(nms_iou_thres: float, eps: float = 1e-7) -> float:
+    # probiou >= thres needs bd <= bd_max, and bd >= |d|^2 / (4 * trace(cov1 + cov2)),
+    # so pairs whose centers are farther apart than reach * trace cannot suppress
+    lim = 1 + eps - (1 - nms_iou_thres) ** 2
+    bd_max = -math.log(lim) if lim > 0 else math.inf
+    return 4.04 * bd_max  # 1% margin for float32 rounding
+
+
 def _rotated_nms_indices(
     rboxes: np.ndarray,
     scores: np.ndarray,
@@ -188,12 +197,9 @@ def _rotated_nms_indices(
     class_ids = class_ids[order]
     cov = _covariance(rboxes)
     x, y = rboxes[:, 0], rboxes[:, 1]
-    # probiou >= thres needs bd <= bd_max, and bd >= |d|^2 / (4 * trace(cov1 + cov2)),
-    # so pairs whose centers are farther apart cannot suppress and skip the full formula
+    # pairs too far apart to suppress skip the full formula
     trace = cov[0] + cov[1]
-    lim = 1 + eps - (1 - nms_iou_thres) ** 2
-    bd_max = -np.log(lim) if lim > 0 else np.inf
-    reach = 4.04 * bd_max  # 1% margin for float32 rounding
+    reach = _probiou_reach(nms_iou_thres, eps)
     keep = [np.zeros(0, dtype=int)]
     kept = 0
     # small column blocks stop soon after max_det are kept, skipping most pairs

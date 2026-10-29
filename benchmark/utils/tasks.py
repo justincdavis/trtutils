@@ -262,13 +262,11 @@ def run_tasks(
                 print(f"Skipping {key} (already exists)")
                 cached += 1
                 continue
-            print(f"Benchmarking {key}")
-            try:
-                data[key] = bench_task(spec, prep, warmup, iterations, post)
-            except ValueError as err:
-                # the task has no such postprocessor
-                print(f"Skipping {key}: {err}")
+            if post == "cuda" and not spec.cls._cuda_postprocess:
+                print(f"Skipping {key}: no CUDA postprocessor")
                 continue
+            print(f"Benchmarking {key}")
+            data[key] = bench_task(spec, prep, warmup, iterations, post)
             data[key].update(trtutils_provenance())
             res = data[key]
             parts = ", ".join(f"{s} {res['stages'][s]['median']:.2f}" for s in STAGES)

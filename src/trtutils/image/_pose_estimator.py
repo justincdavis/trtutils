@@ -16,7 +16,7 @@ from ._image_model import ImageModel
 from ._schema import PoseEstimatorOutputSchema
 from .interfaces import PoseEstimatorInterface
 from .postprocessors import get_poses, postprocess_yolo_pose
-from .postprocessors._gpu import CudaPosePostprocessor
+from .postprocessors._gpu import _MAX_CANDIDATES, CudaPosePostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -35,6 +35,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
 
     _OUTPUT_SCHEMA = PoseEstimatorOutputSchema
     _cuda_postprocess = True
+    _cuda_max_anchors = _MAX_CANDIDATES
 
     def __init__(
         self: Self,

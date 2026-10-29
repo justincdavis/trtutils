@@ -10,6 +10,7 @@ import pytest
 
 from trtutils import Buffer, MemoryLocation
 from trtutils.core._stream import create_stream, destroy_stream
+from trtutils.image.postprocessors import _gpu
 from trtutils.image.postprocessors._gpu import (
     CudaObbPostprocessor,
     CudaPosePostprocessor,
@@ -377,3 +378,11 @@ def test_cuda_obb_rejects_nonuniform_scale() -> None:
             )
     finally:
         destroy_stream(stream)
+
+
+@pytest.mark.parametrize("batch", [1, 2])
+def test_cuda_nms_grows_past_its_rows(monkeypatch, batch) -> None:
+    """Frames with more candidates than the NMS bit matrix holds grow it and still match the CPU."""
+    monkeypatch.setattr(_gpu, "_NMS_ROWS", 64)
+    test_cuda_seg_matches_cpu(batch, None, 0.5, 300)
+    test_cuda_pose_matches_cpu(batch, None, 0.5, 300)

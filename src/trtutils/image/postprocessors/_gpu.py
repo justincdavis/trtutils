@@ -18,6 +18,8 @@ from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_de
 from trtutils.core._stream import stream_synchronize
 from trtutils.image.kernels import YOLO_POST
 
+from ._obb import _probiou_reach
+
 if TYPE_CHECKING:
     from typing_extensions import Self
 
@@ -28,6 +30,8 @@ _NMS_STRIPES = 16
 _RANK_SLICES = 16  # RANK_SLICES in yolo_post.cu
 # NMS_MAX_WORDS in yolo_post.cu
 _MAX_CANDIDATES = 64 * 1024
+# NMS bit matrix rows before a frame needs more: (N, N / 64) words is 141 MB at N = 33600
+_NMS_ROWS = 4096
 
 
 def _device(shape: tuple[int, ...], dtype: type) -> Buffer:
@@ -37,13 +41,6 @@ def _device(shape: tuple[int, ...], dtype: type) -> Buffer:
 def _mapped(shape: tuple[int, ...], dtype: type) -> Buffer:
     # pinned host memory the kernels write directly, read after a stream sync
     return Buffer.empty(shape, dtype, MemoryLocation.HOST, pinned=True, mapped=True)
-
-
-def _obb_reach(nms_iou_thres: float, eps: float = 1e-7) -> float:
-    # center distance cull of _rotated_nms_indices: probiou >= thres needs bd <= bd_max
-    lim = 1 + eps - (1 - nms_iou_thres) ** 2
-    bd_max = -math.log(lim) if lim > 0 else math.inf
-    return 4.04 * bd_max  # 1% margin for float32 rounding
 
 
 class YoloNms:
@@ -64,9 +61,6 @@ class YoloNms:
         self._shape: tuple[int, int, int, int] | None = None
 
     def _allocate(self: Self, batch: int, num: int, max_det: int) -> None:
-        if num > _MAX_CANDIDATES:
-            err_msg = f"CUDA NMS supports up to {_MAX_CANDIDATES} anchors, got {num}"
-            raise ValueError(err_msg)
         self.count = _device((batch,), np.int32)
         self._cand_anchor = _device((batch, num), np.int32)
         self._cand_score = _device((batch, num), np.float32)
@@ -77,6 +71,7 @@ class YoloNms:
         self.sort_cls = _device((batch, num), np.int32)
         self.sort_box = _device((batch, num, 4), np.float32)
         self._bits: Buffer | None = None
+        self._rows = min(num, _NMS_ROWS)
         self.keep = _device((batch, max_det), np.int32)
         self.keep_count = _device((batch,), np.int32)
 
@@ -156,15 +151,24 @@ class YoloNms:
         max_det: int,
         stream: cudart.cudaStream_t,
     ) -> None:
-        """Enqueue NMS of ``head`` on ``stream``, filling keep / keep_count and the sorted arrays."""
+        """
+        Enqueue NMS of ``head`` on ``stream``, filling keep / keep_count and the sorted arrays.
+
+        keep_count is -1 for an image with more candidates than the NMS holds: call
+        :meth:`grow` and run the frame again.
+        """
         batch, _, num = head.shape
+        if num > _MAX_CANDIDATES:
+            err_msg = f"CUDA NMS supports up to {_MAX_CANDIDATES} anchors, got {num}"
+            raise ValueError(err_msg)
         self.rank(head, cls_start, nc, conf_thres, max_det, stream)
-        words = math.ceil(num / 64)
+        rows = self._rows
+        words = math.ceil(rows / 64)
         if self._bits is None:
-            self._bits = _device((batch, num, words), np.uint64)
+            self._bits = _device((batch, rows, words), np.uint64)
         args = cached_args(
             self._mask,
-            num,
+            rows,
             self.count.ptr,
             self.sort_cls.ptr,
             self.sort_box.ptr,
@@ -174,7 +178,7 @@ class YoloNms:
         self._mask.call((words, _NMS_STRIPES, batch), (64, 1, 1), stream, args)
         args = cached_args(
             self._reduce,
-            num,
+            rows,
             max_det,
             self.count.ptr,
             self._bits.ptr,
@@ -182,6 +186,11 @@ class YoloNms:
             self.keep_count.ptr,
         )
         self._reduce.call((batch, 1, 1), (32, 1, 1), stream, args)
+
+    def grow(self: Self) -> None:
+        """Size the NMS for every anchor, after a frame overflowed it."""
+        self._rows = self.sort_anchor.shape[1]
+        self._bits = None
 
 
 class CudaObbPostprocessor:
@@ -243,7 +252,7 @@ class CudaObbPostprocessor:
             nms.sort_cls.ptr,
             self._boxes.ptr,
             float(nms_iou_thres),
-            _obb_reach(nms_iou_thres),
+            _probiou_reach(nms_iou_thres),
             self._alive.ptr,
         )
         # one warp per box
@@ -388,6 +397,20 @@ class CudaSegPostprocessor:
 
         # more masks than the canvas holds (or a new canvas): grow it and draw again
         counts = [int(c) for c in self._keep_count.array]
+        if min(counts) < 0:
+            nms.grow()
+            return self(
+                outputs,
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                mask_thres,
+                max_det=max_det,
+                input_size=input_size,
+                canvases=canvases,
+                stream=stream,
+            )
         redo = [i for i in range(batch) if counts[i] > caps[i]]
         for i in redo:
             masks[i] = draw(i, counts[i])
@@ -563,6 +586,18 @@ class CudaPosePostprocessor:
         )
         self._gather.call((max_det, batch, 1), (32, 1, 1), stream, args)
         stream_synchronize(stream)
+        if self._keep_count.array.min() < 0:
+            nms.grow()
+            return self(
+                outputs,
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                max_det=max_det,
+                input_size=input_size,
+                stream=stream,
+            )
 
         results = []
         for i in range(batch):

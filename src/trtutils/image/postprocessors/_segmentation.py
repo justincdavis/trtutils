@@ -47,8 +47,11 @@ class MaskCanvas:
         """
         stack = self._stack
         if stack.shape[1:] != (height, width) or stack.shape[0] < n:
-            shape = (max(n, stack.shape[0]), height, width)
+            # a new frame size starts over, so one busy frame doesn't size every later one
+            depth = stack.shape[0] if stack.shape[1:] == (height, width) else 0
+            shape = (max(n, depth, 1), height, width)
             if self._mapped:
+                self._buffer = None  # free the old stack before taking the new one
                 self._buffer = Buffer.empty(shape, np.uint8, pinned=True, mapped=True)
                 self._stack = self._buffer.array
                 self._stack.fill(0)
@@ -64,6 +67,14 @@ class MaskCanvas:
     def capacity(self, height: int, width: int) -> int:
         """How many (height, width) masks :meth:`take` hands out without reallocating."""
         return self._stack.shape[0] if self._stack.shape[1:] == (height, width) else 0
+
+    def detach(self, masks: np.ndarray) -> np.ndarray:
+        """Copy ``masks``, a view from :meth:`take`, out of the canvas, box by box."""
+        out = np.zeros(masks.shape, dtype=np.uint8)
+        for idx, y1, y2, x1, x2 in self.written:
+            if idx < len(out):
+                out[idx, y1:y2, x1:x2] = masks[idx, y1:y2, x1:x2]
+        return out
 
     @property
     def device_ptr(self) -> int:

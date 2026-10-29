@@ -84,6 +84,8 @@ class ImageModel:
     _OUTPUT_SCHEMA: ClassVar[type[Enum] | None] = None
     # whether postprocess() reads device outputs when postprocessor="cuda"
     _cuda_postprocess: ClassVar[bool] = False
+    # most (B, C, N) head anchors the CUDA postprocessor handles, None for no limit
+    _cuda_max_anchors: ClassVar[int | None] = None
     # run the engine on a non-blocking stream, for models that sync it explicitly: TensorRT's
     # own synchronous copies then don't wait on work queued on the stream
     _non_blocking_stream: ClassVar[bool] = False
@@ -277,13 +279,7 @@ class ImageModel:
             # get_preprocessor() always returns the current instance
             # (update_input_range/update_mean_std rebuild them)
             self._preprocessor_method: str = self._resolve_method(preprocessor)
-            valid = ("cpu", "cuda") if self._cuda_postprocess else ("cpu",)
-            # the CUDA postprocessors win on every task that has one (benchmark/run.py tasks)
-            postprocessor = postprocessor if postprocessor is not None else valid[-1]
-            if postprocessor not in valid:
-                err_msg = f"Invalid postprocessor '{postprocessor}' for {type(self).__name__}, expected one of {valid}"
-                raise ValueError(err_msg)
-            self._postprocessor: str = postprocessor
+            self._postprocessor: str = self._resolve_postprocessor(postprocessor)
             self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
             self._preproc_cuda: CUDAPreprocessor | None = None
             self._preproc_hybrid: HybridPreprocessor | None = None
@@ -372,6 +368,27 @@ class ImageModel:
         if self._OUTPUT_SCHEMA is not None:
             self._output_schema: Any = resolve_schema(self._engine, self._OUTPUT_SCHEMA, override)
             self._set_output_order(self._output_schema.value)
+
+    def _resolve_postprocessor(self: Self, postprocessor: str | None) -> str:
+        """Pick the postprocessor, CUDA by default where the task has one that fits the engine."""
+        valid = ("cpu", "cuda") if self._cuda_postprocess else ("cpu",)
+        # the CUDA postprocess kernels read float32 outputs, up to a head size
+        limit = self._cuda_max_anchors
+        fits = all(dtype == np.float32 for dtype in self._engine.output_dtypes) and (
+            limit is None or all(shape[-1] <= limit for shape in self._engine.output_shapes)
+        )
+        if postprocessor is None:
+            # the CUDA postprocessors win on every task that has one (benchmark/run.py tasks)
+            postprocessor = "cuda" if self._cuda_postprocess and fits else "cpu"
+        if postprocessor not in valid:
+            err_msg = f"Invalid postprocessor '{postprocessor}' for {type(self).__name__}, expected one of {valid}"
+            raise ValueError(err_msg)
+        if postprocessor == "cuda" and not fits:
+            err_msg = (
+                f"The CUDA postprocessor needs float32 outputs and at most {limit} head anchors"
+            )
+            raise ValueError(err_msg)
+        return postprocessor
 
     def _configure_model(self: Self) -> None:
         """Configure model-specific state after engine load, before preprocessor creation."""

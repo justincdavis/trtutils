@@ -1354,6 +1354,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         if self._cuda_crops is None or ctc is None:
             err_msg = "end2end_regions requires postprocessor='cuda' and a float32 engine input"
             raise RuntimeError(err_msg)
+        if len(boxes) == 0:
+            return []
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["end2end"])
 

@@ -196,3 +196,25 @@ def test_mask_canvas_reuse_matches_fresh_masks() -> None:
         fresh = _decode_masks(coeffs, proto, boxes, ratios, padding, input_size, 0.5)
         reused = _decode_masks(coeffs, proto, boxes, ratios, padding, input_size, 0.5, canvas)
         assert np.array_equal(reused, fresh)
+
+
+def test_mask_canvas_new_frame_size_starts_shallow() -> None:
+    """A new frame size allocates only the masks asked for, not the old stack's depth."""
+    canvas = MaskCanvas()
+    canvas.take(100, 8, 8)
+    assert canvas.take(0, 400, 300).shape == (0, 400, 300)
+    assert canvas.capacity(400, 300) == 1
+    assert canvas.take(3, 400, 300).shape == (3, 400, 300)
+
+
+def test_mask_canvas_detach_survives_the_next_take() -> None:
+    """Detached masks equal the canvas view and keep their pixels after the canvas is reused."""
+    canvas = MaskCanvas()
+    masks = canvas.take(2, 10, 12)
+    masks[0, 1:4, 2:6] = 1
+    masks[1, 5:9, 0:3] = 1
+    canvas.written = [(0, 1, 4, 2, 6), (1, 5, 9, 0, 3)]
+    owned = canvas.detach(masks)
+    np.testing.assert_array_equal(owned, masks)
+    canvas.take(2, 10, 12)
+    assert owned.sum() == 12 + 12

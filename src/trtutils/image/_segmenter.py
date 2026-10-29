@@ -17,7 +17,7 @@ from ._image_model import ImageModel
 from ._schema import SegmenterOutputSchema
 from .interfaces import SegmenterInterface
 from .postprocessors import get_segmentations, postprocess_yolo_seg
-from .postprocessors._gpu import CudaSegPostprocessor
+from .postprocessors._gpu import _MAX_CANDIDATES, CudaSegPostprocessor
 from .postprocessors._segmentation import MaskCanvas
 
 if TYPE_CHECKING:
@@ -36,6 +36,7 @@ class Segmenter(ImageModel, SegmenterInterface):
 
     _OUTPUT_SCHEMA = SegmenterOutputSchema
     _cuda_postprocess = True
+    _cuda_max_anchors = _MAX_CANDIDATES
 
     def __init__(
         self: Self,
@@ -179,8 +180,8 @@ class Segmenter(ImageModel, SegmenterInterface):
         self._nms_iou: float = nms_iou_thres
         self._max_det: int = max_det
         self._mask_thres: float = mask_thres
-        # one reused mask stack per batch slot, used when no_copy is set
-        self._canvases: list[MaskCanvas] = []
+        # reused mask stacks per batch slot, pageable (no_copy CPU path) and mapped (CUDA path)
+        self._canvases: dict[bool, list[MaskCanvas]] = {False: [], True: []}
         self._cuda_post = CudaSegPostprocessor() if self._postprocessor == "cuda" else None
 
         if self._verbose:
@@ -255,9 +256,9 @@ class Segmenter(ImageModel, SegmenterInterface):
         canvases = None
         if no_copy or cuda:
             batch = outputs[0].shape[0]
-            new = (MaskCanvas(mapped=cuda) for _ in range(batch - len(self._canvases)))
-            self._canvases.extend(new)
-            canvases = self._canvases[:batch]
+            pool = self._canvases[cuda]
+            pool.extend(MaskCanvas(mapped=cuda) for _ in range(batch - len(pool)))
+            canvases = pool[:batch]
         t0 = time.perf_counter()
         if self._cuda_post is not None and canvases is not None and cuda:
             data = self._cuda_post(
@@ -273,8 +274,8 @@ class Segmenter(ImageModel, SegmenterInterface):
                 stream=self._engine.stream,
             )
             if not no_copy:
-                for image in data:
-                    image[3] = image[3].copy()
+                for image, canvas in zip(data, canvases):
+                    image[3] = canvas.detach(image[3])
         else:
             data = postprocess_yolo_seg(
                 cast("list[np.ndarray]", outputs),

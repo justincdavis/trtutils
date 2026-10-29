@@ -295,6 +295,8 @@ def test_ocr_cuda_recognizer_and_empty(det_engine, rec_engine) -> None:
             np.testing.assert_array_equal(g, w)
     assert cuda.detector.end2end(_blank(30, 4000)) == []
     assert cuda(_blank(200, 300)) == []
+    frame = Buffer.from_array(_blank(40, 40), MemoryLocation.DEVICE)
+    assert cuda.recognizer.end2end_regions(frame, np.zeros((0, 4, 2), np.float32)) == []
 
 
 def test_ocr_regions_need_cuda(det_engine, rec_engine) -> None:

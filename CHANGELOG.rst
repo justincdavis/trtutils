@@ -117,14 +117,15 @@ Added
   ``PoseEstimator``, ``OBBDetector``, ``TextDetector``, ``TextRecognizer`` and ``PPOCR`` have
   CUDA postprocessors (NMS, masks, probiou, CTC decode, DB binarize) that read the engine outputs
   on the device and copy back only the results; they match the CPU path exactly (OBB enclosing
-  boxes to 1e-4 px). Default None picks ``"cuda"`` where available. 1080p end2end on an RTX
-  5080: yolo11n-seg 4.6 -> 1.15 ms, yolo11n-obb 6.6 -> 1.25 ms, yolo11n-pose 1.03 -> 0.88 ms,
-  PPOCRv4 on a 14-line page 26 -> 21 ms (see Changed for the further 21 -> 11 ms)
+  boxes to 1e-4 px). Default None picks ``"cuda"`` where available and the engine fits it
+  (float32 outputs, at most 65536 seg/pose anchors). 1080p end2end on an RTX 5080: yolo11n-seg
+  4.6 -> 1.15 ms, yolo11n-obb 6.6 -> 1.25 ms, yolo11n-pose 1.03 -> 0.88 ms, PPOCRv4 on a
+  14-line page 26 -> 21 ms (see Changed for the further 21 -> 11 ms)
 
 Changed
 ^^^^^^^
 * ``Segmenter.postprocess(no_copy=True)``, and so ``Segmenter.end2end``, write masks into a
-  reused buffer per batch slot, as detection outputs already are: the masks of earlier results
+  reused buffer per batch slot, as other ``no_copy`` outputs are: the masks of earlier results
   are overwritten by the next call, so copy any you keep. A new full-frame mask stack per frame
   cost more than decoding the masks (yolo11n-seg postprocess 5.9 ms -> 3.3 ms on 1080p frames)
 * OBB rotated NMS runs in float32 on small score-ordered blocks and skips pairs too far apart
