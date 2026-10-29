@@ -17,6 +17,7 @@ from trtutils.image.postprocessors import (
     postprocess_rfdetr,
     postprocess_yolov10,
 )
+from trtutils.image.postprocessors._detection import _get_detections_core
 
 pytestmark = pytest.mark.cpu
 
@@ -255,3 +256,20 @@ def test_get_classifications(batch_size, top_k) -> None:
             assert isinstance(class_id, int)
             assert isinstance(confidence, float)
             assert 0.0 <= confidence <= 1.0
+
+
+@pytest.mark.parametrize("conf_thres", [None, 0.0, 0.5, 1.1])
+def test_get_detections_core_matches_scalar_loop(conf_thres) -> None:
+    """The vectorized conversion equals per-element int()/float() casts, negatives included."""
+    rng = np.random.default_rng(0)
+    bboxes = rng.uniform(-50.0, 700.0, (64, 4)).astype(np.float32)
+    scores = rng.uniform(0.0, 1.0, 64).astype(np.float32)
+    scores[:4] = 0.5  # exactly at the threshold
+    class_ids = rng.integers(0, 80, 64)
+    thres = 0.0 if conf_thres is None else conf_thres
+    expected = [
+        ((int(b[0]), int(b[1]), int(b[2]), int(b[3])), float(s), int(c))
+        for b, s, c in zip(bboxes, scores, class_ids)
+        if s >= thres
+    ]
+    assert _get_detections_core([bboxes, scores, class_ids], conf_thres) == expected

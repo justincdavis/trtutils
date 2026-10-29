@@ -161,6 +161,36 @@ def test_postprocess_text_detection(prob_map, pad, expected) -> None:
         np.testing.assert_array_equal(box, ref)
 
 
+@pytest.mark.parametrize("first", ["empty", "thin"])
+def test_postprocess_text_detection_waits_for_late_images(first) -> None:
+    """Scoring waits for the map even when an earlier image never scores a box."""
+    probs = np.stack([np.zeros((160, 320), np.float32), _prob_map()])
+    if first == "thin":
+        probs[0, 140:142, 10:20] = 0.9  # a contour culled before scoring
+    maps = np.zeros_like(probs)[:, None]  # filled in by wait, as the async copy lands
+    calls = []
+
+    def wait() -> None:
+        calls.append(1)
+        maps[:, 0] = probs
+
+    outputs = postprocess_text_detection(
+        [maps],
+        [(320 / 640, 160 / 480)] * 2,
+        [(0.0, 0.0)] * 2,
+        0.3,
+        0.5,
+        1000,
+        1.6,
+        use_dilation=True,
+        bitmaps=(probs > 0.3).astype(np.uint8)[:, None],
+        wait=wait,
+    )
+    assert len(outputs[0][0]) == 0
+    np.testing.assert_array_equal(outputs[1][0], REFERENCE_BOXES.astype(np.float32))
+    assert calls == [1]
+
+
 def test_sort_text_boxes_reading_order() -> None:
     """Boxes on the same line (within 10 px) sort left to right, lines top to bottom."""
 

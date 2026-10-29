@@ -203,3 +203,44 @@ def test_postprocess_obb_sorted_by_score() -> None:
     _bboxes, scores, _class_ids, rboxes = _post(dets)
     np.testing.assert_allclose(scores, [0.9, 0.6, 0.3], atol=1e-6)
     np.testing.assert_allclose(rboxes[:, 0], [100.0, 150.0, 50.0])
+
+
+def _fast_nms_reference(rboxes: np.ndarray, scores: np.ndarray, thres: float) -> list[int]:
+    """Fast-NMS over the full pairwise probiou matrix, without culling or blocks."""
+    order = np.argsort(-scores, kind="stable")
+    iou = _probiou(rboxes[order], rboxes[order])
+    hit = np.triu(iou >= thres, 1).any(axis=0)
+    return order[~hit].tolist()
+
+
+@pytest.mark.parametrize(
+    "thres",
+    [
+        pytest.param(0.1, id="thres-0.1"),
+        pytest.param(0.5, id="thres-0.5"),
+        pytest.param(0.9, id="thres-0.9"),
+    ],
+)
+@pytest.mark.parametrize(
+    "spread",
+    [
+        pytest.param(50.0, id="crowded"),
+        pytest.param(1000.0, id="sparse"),
+    ],
+)
+def test_rotated_nms_distance_cull_matches_full_matrix(thres: float, spread: float) -> None:
+    """Culling far pairs by center distance keeps exactly the boxes the full matrix keeps."""
+    rng = np.random.default_rng(1)
+    n = 600
+    rboxes = np.column_stack(
+        (
+            rng.uniform(0, spread, n),
+            rng.uniform(0, spread, n),
+            rng.uniform(2, 80, n),
+            rng.uniform(2, 80, n),
+            rng.uniform(-math.pi / 2, math.pi / 2, n),
+        )
+    ).astype(np.float32)
+    scores = rng.uniform(0, 1, n).astype(np.float32)
+    keep = _rotated_nms_indices(rboxes, scores, np.zeros(n), thres, n)
+    assert keep.tolist() == _fast_nms_reference(rboxes, scores, thres)

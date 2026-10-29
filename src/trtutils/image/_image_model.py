@@ -5,7 +5,18 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, Optional, Tuple, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ClassVar,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+    overload,
+)
 
 import numpy as np
 import nvtx
@@ -15,12 +26,14 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 from trtutils.core._device import Device
+from trtutils.core._stream import create_stream
 
 from ._schema import resolve_schema
 from .preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
     GPUImagePreprocessor,
+    HybridPreprocessor,
     TRTPreprocessor,
 )
 
@@ -32,15 +45,23 @@ if TYPE_CHECKING:
 
 _COLOR_CHANNELS = 3
 
-_PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
+_PREPROCESSOR_METHODS = ("cpu", "cuda", "trt", "hybrid")
+_GPUPre = TypeVar("_GPUPre", bound=CUDAPreprocessor)
 
 
-# (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image
+# (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image;
+# raw outputs are device Buffers when postprocessor="cuda"
 _PostFn = Callable[
-    [List[np.ndarray], List[Tuple[float, float]], List[Tuple[float, float]], Optional[bool]],
+    [
+        Union[List[np.ndarray], List[Buffer]],
+        List[Tuple[float, float]],
+        List[Tuple[float, float]],
+        Optional[bool],
+    ],
     List[List[np.ndarray]],
 ]
 T = TypeVar("T")
+_O = TypeVar("_O")  # a raw output, host array or device Buffer
 
 
 def host_input(array: np.ndarray | Buffer) -> Buffer:
@@ -61,13 +82,20 @@ class ImageModel:
 
     # task models set the enum used to resolve and order the engine outputs
     _OUTPUT_SCHEMA: ClassVar[type[Enum] | None] = None
+    # whether postprocess() reads device outputs when postprocessor="cuda"
+    _cuda_postprocess: ClassVar[bool] = False
+    # most (B, C, N) head anchors the CUDA postprocessor handles, None for no limit
+    _cuda_max_anchors: ClassVar[int | None] = None
+    # run the engine on a non-blocking stream, for models that sync it explicitly: TensorRT's
+    # own synchronous copies then don't wait on work queued on the stream
+    _non_blocking_stream: ClassVar[bool] = False
 
-    def __init__(  # noqa: PLR0915
+    def __init__(  # noqa: C901, PLR0915
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
-        preprocessor: str = "trt",
+        preprocessor: str = "cuda",
         resize_method: str = "linear",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
@@ -79,6 +107,7 @@ class ImageModel:
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
         output_schema: Enum | str | None = None,
@@ -98,7 +127,9 @@ class ImageModel:
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
+            The options are ['cpu', 'cuda', 'trt', 'hybrid'], default is 'cuda'.
+            'hybrid' resizes on the CPU and normalizes on the GPU, uploading only
+            the resized image, which wins for inputs much smaller than the frame.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'linear'.
@@ -133,6 +164,10 @@ class ImageModel:
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
+            on the GPU and copies back only the final results. Default is None,
+            which picks 'cuda' when the task has a CUDA postprocessor, else 'cpu'.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -173,6 +208,10 @@ class ImageModel:
 
             self._device = device
             self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+            stream = None
+            if self._non_blocking_stream:
+                with Device(device):
+                    stream = create_stream(non_blocking=True)
             self._engine = TRTEngine(
                 engine_path=engine_path,
                 warmup_iterations=warmup_iterations,
@@ -183,6 +222,7 @@ class ImageModel:
                 pagelocked_mem=self._pagelocked_mem,
                 unified_mem=unified_mem,
                 cuda_graph=cuda_graph,
+                stream=stream,
                 no_warn=no_warn,
                 verbose=verbose,
             )
@@ -239,8 +279,10 @@ class ImageModel:
             # get_preprocessor() always returns the current instance
             # (update_input_range/update_mean_std rebuild them)
             self._preprocessor_method: str = self._resolve_method(preprocessor)
+            self._postprocessor: str = self._resolve_postprocessor(postprocessor)
             self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
             self._preproc_cuda: CUDAPreprocessor | None = None
+            self._preproc_hybrid: HybridPreprocessor | None = None
             self._preproc_trt: TRTPreprocessor | None = None
             default_preprocessor = self.get_preprocessor()
 
@@ -276,11 +318,11 @@ class ImageModel:
 
         return result
 
-    def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
+    def _setup_cuda_preproc(self: Self, cls: type[_GPUPre]) -> _GPUPre:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["_setup_cuda_preproc"])
 
-        result = CUDAPreprocessor(
+        result = cls(
             self._input_size,
             self._input_range,
             self._dtype,
@@ -327,6 +369,27 @@ class ImageModel:
             self._output_schema: Any = resolve_schema(self._engine, self._OUTPUT_SCHEMA, override)
             self._set_output_order(self._output_schema.value)
 
+    def _resolve_postprocessor(self: Self, postprocessor: str | None) -> str:
+        """Pick the postprocessor, CUDA by default where the task has one that fits the engine."""
+        valid = ("cpu", "cuda") if self._cuda_postprocess else ("cpu",)
+        # the CUDA postprocess kernels read float32 outputs, up to a head size
+        limit = self._cuda_max_anchors
+        fits = all(dtype == np.float32 for dtype in self._engine.output_dtypes) and (
+            limit is None or all(shape[-1] <= limit for shape in self._engine.output_shapes)
+        )
+        if postprocessor is None:
+            # the CUDA postprocessors win on every task that has one (benchmark/run.py tasks)
+            postprocessor = "cuda" if self._cuda_postprocess and fits else "cpu"
+        if postprocessor not in valid:
+            err_msg = f"Invalid postprocessor '{postprocessor}' for {type(self).__name__}, expected one of {valid}"
+            raise ValueError(err_msg)
+        if postprocessor == "cuda" and not fits:
+            err_msg = (
+                f"The CUDA postprocessor needs float32 outputs and at most {limit} head anchors"
+            )
+            raise ValueError(err_msg)
+        return postprocessor
+
     def _configure_model(self: Self) -> None:
         """Configure model-specific state after engine load, before preprocessor creation."""
 
@@ -337,7 +400,7 @@ class ImageModel:
         if names != list(expected) and sorted(names) == sorted(expected):
             self._output_order = [names.index(name) for name in expected]
 
-    def _order_outputs(self: Self, outputs: list[np.ndarray]) -> list[np.ndarray]:
+    def _order_outputs(self: Self, outputs: list[_O]) -> list[_O]:
         """Reorder raw outputs to the expected names, see :meth:`_set_output_order`."""
         if self._output_order is None:
             return outputs
@@ -387,7 +450,7 @@ class ImageModel:
         Parameters
         ----------
         method : str, optional
-            Options are 'cpu', 'cuda', or 'trt'. 'trt' falls back to 'cuda'
+            Options are 'cpu', 'cuda', 'trt', or 'hybrid'. 'trt' falls back to 'cuda'
             on platforms without UINT8 support, and 'cuda' to 'cpu' for
             models whose input is not float32. By default None, which
             returns the preprocessor stated in the constructor.
@@ -400,15 +463,20 @@ class ImageModel:
         Raises
         ------
         ValueError
-            If the method is not 'cpu', 'cuda', or 'trt'.
+            If the method is not 'cpu', 'cuda', 'trt', or 'hybrid'.
 
         """
         method = self._preprocessor_method if method is None else self._resolve_method(method)
         if method == "cuda":
             if self._preproc_cuda is None:
                 with Device(self._device):
-                    self._preproc_cuda = self._setup_cuda_preproc()
+                    self._preproc_cuda = self._setup_cuda_preproc(CUDAPreprocessor)
             return self._preproc_cuda
+        if method == "hybrid":
+            if self._preproc_hybrid is None:
+                with Device(self._device):
+                    self._preproc_hybrid = self._setup_cuda_preproc(HybridPreprocessor)
+            return self._preproc_hybrid
         if method == "trt":
             if self._preproc_trt is None:
                 with Device(self._device):
@@ -423,7 +491,7 @@ class ImageModel:
         Raises
         ------
         ValueError
-            If the method is not 'cpu', 'cuda', or 'trt'.
+            If the method is not 'cpu', 'cuda', 'trt', or 'hybrid'.
 
         """
         if method not in _PREPROCESSOR_METHODS:
@@ -434,7 +502,7 @@ class ImageModel:
             LOG.warning(
                 "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
             )
-        if method == "cuda" and self._dtype != np.float32:
+        if method in ("cuda", "hybrid") and self._dtype != np.float32:
             method = "cpu"
         return method
 
@@ -442,7 +510,9 @@ class ImageModel:
         if self._preproc_cpu is not None:
             self._preproc_cpu = self._setup_cpu_preproc()
         if self._preproc_cuda is not None:
-            self._preproc_cuda = self._setup_cuda_preproc()
+            self._preproc_cuda = self._setup_cuda_preproc(CUDAPreprocessor)
+        if self._preproc_hybrid is not None:
+            self._preproc_hybrid = self._setup_cuda_preproc(HybridPreprocessor)
         if self._preproc_trt is not None:
             self._preproc_trt = self._setup_trt_preproc()
 
@@ -590,7 +660,7 @@ class ImageModel:
             during initialization.
         method : str, optional
             The underlying preprocessor to use.
-            Options are 'cpu', 'cuda', or 'trt'. By default None, which
+            Options are 'cpu', 'cuda', 'trt', or 'hybrid'. By default None, which
             will use the preprocessor stated in the constructor.
         no_copy : bool, optional
             If True and using CUDA, do not copy the
@@ -608,7 +678,7 @@ class ImageModel:
         Raises
         ------
         ValueError
-            If the method is not 'cpu', 'cuda', or 'trt'.
+            If the method is not 'cpu', 'cuda', 'trt', or 'hybrid'.
 
         """
         preprocessor = self.get_preprocessor(method)
@@ -759,6 +829,49 @@ class ImageModel:
         self._infer_profile = (t0, time.perf_counter())
         return outputs, ratios, padding
 
+    def _infer_post(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        *,
+        preprocessed: bool = False,
+        ratios: list[tuple[float, float]] | None = None,
+        padding: list[tuple[float, float]] | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[
+        list[np.ndarray] | list[Buffer],
+        list[tuple[float, float]] | None,
+        list[tuple[float, float]] | None,
+    ]:
+        """
+        Run :meth:`infer` for outputs that are postprocessed right away.
+
+        With ``postprocessor="cuda"`` the outputs stay on the device as views
+        of the engine's output bindings, read by the CUDA postprocessor on
+        the engine stream; otherwise this is :meth:`infer` with ``postprocess``.
+        """
+        if self._postprocessor != "cuda":
+            return self.infer(
+                images,
+                preprocessed=preprocessed,
+                ratios=ratios,
+                padding=padding,
+                postprocess=True,
+                no_copy=no_copy,
+                verbose=verbose,
+            )
+        engine_inputs, ratios, padding = self.prepare_inputs(
+            images,
+            preprocessed=preprocessed,
+            ratios=ratios,
+            padding=padding,
+            verbose=verbose,
+        )
+        t0 = time.perf_counter()
+        outputs = self._engine.raw_exec(engine_inputs, graph=True)
+        self._infer_profile = (t0, time.perf_counter())
+        return outputs, ratios, padding
+
     def engine_inputs(
         self: Self,
         image: Buffer,
@@ -904,24 +1017,32 @@ class ImageModel:
                     f"{self._tag}: Running: preprocessed: {preprocessed}, postprocess: {postprocess}",
                 )
 
-            outputs, batch_ratios, batch_padding = self.infer(
+            if not postprocess:
+                outputs, _, _ = self.infer(
+                    batch_images,
+                    preprocessed=preprocessed,
+                    ratios=batch_ratios,
+                    padding=batch_padding,
+                    postprocess=False,
+                    no_copy=no_copy,
+                    verbose=verbose,
+                )
+                return outputs
+            post_outputs, batch_ratios, batch_padding = self._infer_post(
                 batch_images,
                 preprocessed=preprocessed,
                 ratios=batch_ratios,
                 padding=batch_padding,
-                postprocess=postprocess,
                 no_copy=no_copy,
                 verbose=verbose,
             )
-            if not postprocess:
-                return outputs
 
             if verbose:
                 LOG.debug("Postprocessing outputs")
             if needs_ratios and (batch_ratios is None or batch_padding is None):
                 err_msg = "Must pass ratios/padding if postprocessing and passing already preprocessed inputs."
                 raise RuntimeError(err_msg)
-            result = post(outputs, batch_ratios or [], batch_padding or [], no_copy)
+            result = post(post_outputs, batch_ratios or [], batch_padding or [], no_copy)
             # unwrap for single-image input
             return result[0] if is_single else result
         finally:
@@ -973,7 +1094,9 @@ class ImageModel:
 
             # outputs are consumed by get() inside this call, so skip their copies
             no_copy = True
-            outputs, ratios, padding = self.infer(batch_images, no_copy=no_copy, verbose=verbose)
+            outputs, ratios, padding = self._infer_post(
+                batch_images, no_copy=no_copy, verbose=verbose
+            )
             result = get(post(outputs, ratios or [], padding or [], no_copy))
             # unwrap for single-image input
             return result[0] if is_single else result

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import inspect
 from unittest.mock import patch
 
 import pytest
@@ -120,3 +121,15 @@ def test_build_unknown_kwargs_raises(tmp_path) -> None:
     # yolov8's hook doesn't read the onnx, so the fake path is never opened
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         YOLOv8.build(tmp_path / "fake.onnx", tmp_path / "out.engine", totally_fake_kwarg=True)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [n for n in models.__all__ if isinstance(getattr(models, n), type)],
+)
+def test_wrappers_accept_postprocessor(name: str) -> None:
+    """Every model wrapper forwards the postprocessor option to its task model."""
+    cls = getattr(models, name)
+    if not issubclass(cls, Model) or "cuda_graph" not in inspect.signature(cls).parameters:
+        pytest.skip("not an image model wrapper")
+    assert inspect.signature(cls).parameters["postprocessor"].default is None

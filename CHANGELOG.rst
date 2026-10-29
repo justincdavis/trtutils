@@ -109,9 +109,56 @@ Added
   is matched against the engine's output names in any order, and a wrong engine raises
   ``ValueError``
 * ``image.types`` aliases ``Segmentation``, ``Pose``, ``OBBDetection`` and ``RBox``
+* ``preprocessor="hybrid"`` and ``HybridPreprocessor``: resize on the CPU (the exact pixels of
+  ``"cpu"``), upload only the resized image and normalize on the GPU. 1080p frame on an RTX 5080:
+  yolo11n-cls 0.66 -> 0.38 ms end2end vs ``"cuda"``, yolo11n 0.98 -> 0.86 ms, Depth Anything v2
+  small 1.95 -> 1.81 ms. The default stays ``"trt"``: the CPU resize costs more on weaker CPUs
+* ``postprocessor="cpu"|"cuda"`` on every image model and wrapper. ``Segmenter``,
+  ``PoseEstimator``, ``OBBDetector``, ``TextDetector``, ``TextRecognizer`` and ``PPOCR`` have
+  CUDA postprocessors (NMS, masks, probiou, CTC decode, DB binarize) that read the engine outputs
+  on the device and copy back only the results; they match the CPU path exactly (OBB enclosing
+  boxes to 1e-4 px). Default None picks ``"cuda"`` where available and the engine fits it
+  (float32 outputs, at most 65536 seg/pose anchors). 1080p end2end on an RTX 5080: yolo11n-seg
+  4.6 -> 1.15 ms, yolo11n-obb 6.6 -> 1.25 ms, yolo11n-pose 1.03 -> 0.88 ms, PPOCRv4 on a
+  14-line page 26 -> 21 ms (see Changed for the further 21 -> 11 ms)
 
 Changed
 ^^^^^^^
+* The default preprocessor of every image model, wrapper and the ``detect`` / ``classify``
+  CLI is now ``"cuda"`` instead of ``"trt"``: within 0.04 ms of it on all 24 benchmarked
+  models (1080p frames, RTX 5080), and it needs no second engine per model. Input pixels change
+  slightly, since the TensorRT resize differs; pass ``preprocessor="trt"`` for the old
+  behavior. ``"hybrid"`` (CPU resize, GPU normalize) is faster still for small inputs such as
+  224 px classifiers
+* ``Segmenter.postprocess(no_copy=True)``, and so ``Segmenter.end2end``, write masks into a
+  reused buffer per batch slot, as other ``no_copy`` outputs are: the masks of earlier results
+  are overwritten by the next call, so copy any you keep. A new full-frame mask stack per frame
+  cost more than decoding the masks (yolo11n-seg postprocess 5.9 ms -> 3.3 ms on 1080p frames)
+* The CUDA and TensorRT preprocessors and the PPOCR frame upload copy images of 3 MB and more
+  through pinned memory in 4 overlapping chunks (``memcpy_host_to_device_staged_async``), 1080p
+  preprocess 0.61 -> 0.56 ms on an RTX 5080
+* OBB rotated NMS runs in float32 on small score-ordered blocks and skips pairs too far apart
+  to overlap; same results, yolo11n-obb postprocess 28 ms -> 5 ms on 1080p frames
+* ``get_detections`` (and segmentation/pose result extraction) converts results in bulk instead
+  of per numpy scalar: same tuples, 168 -> 42 us per image with 240 detections
+* ``PPOCR`` crops the detected text lines on a thread pool: same results, 41 -> 26 ms on a
+  14-line 1080p page
+* ``PPOCR`` with ``postprocessor="cuda"`` (the default) runs end to end on the GPU: the image is
+  uploaded once, ``TextDetector`` resizes and normalizes it there, and the new
+  ``TextRecognizer.end2end_regions`` cuts the text lines out of the device image
+  (``cv2.warpPerspective`` cubic, rotated crops included) and fills the recognizer input without
+  a host round trip. Kernels mirror OpenCV's fixed point ``resize`` and ``warpPerspective``, so
+  boxes, texts and scores equal the CPU path exactly (on x86 OpenCV 4.11); CUDA graphs now
+  replay the detector for consecutive images of one size. 14-line 1080p page on an RTX 5080:
+  21 -> 10.7 ms
+* ``PPOCRDetector.build`` and ``PPOCRRecognizer.build`` default to ``fp16=True``, like the other
+  models. On 24 rendered pages FP16 changed ~4% of recognized lines, with the same character error
+  rate against the ground truth (2.38% FP32, 2.41% FP16); 14-line page 10.7 -> 8.2 ms on an RTX
+  5080. Pass ``fp16=False`` for the FP32 behavior
+* ``PPOCR`` enqueues every recognizer batch before one stream sync, the DB box unclip and score
+  bounds use plain floats (same boxes), and ``TextDetector`` / ``TextRecognizer`` run their
+  engines on non-blocking streams, so TensorRT's own synchronous copies stop waiting on queued
+  work: 14-line page 8.2 -> 7.0 ms on an RTX 5080. ``create_stream(non_blocking=True)`` makes one
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``

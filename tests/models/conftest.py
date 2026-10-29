@@ -21,15 +21,19 @@ def build_model_engine() -> Callable[..., Path]:
     """
     Build and cache an engine via model_cls.build(), skipping if the ONNX is missing.
 
-    Factory: build_model_engine(model_cls, onnx_path, batch_size=1, opt_level=1). ONNX files are named <model>_<imgsz>.onnx.
+    Factory: build_model_engine(model_cls, onnx_path, batch_size=1, opt_level=1, tag="").
+    ONNX files are named <model>_<imgsz>.onnx; ``tag`` keeps engines of other build defaults
+    (e.g. precision) apart in the shared cache.
     """
 
-    def _build(model_cls: type, onnx_path: Path, batch_size: int = 1, opt_level: int = 1) -> Path:
+    def _build(
+        model_cls: type, onnx_path: Path, batch_size: int = 1, opt_level: int = 1, tag: str = ""
+    ) -> Path:
         if not onnx_path.exists():
             pytest.skip(f"missing {onnx_path}")
         ENGINES_DIR.mkdir(parents=True, exist_ok=True)
         engine_path = engine_cache_path(
-            f"{onnx_path.stem}_{model_cls.__name__}", batch_size, opt_level
+            f"{onnx_path.stem}_{model_cls.__name__}{'_' + tag if tag else ''}", batch_size, opt_level
         )
         if not engine_path.exists():
             imgsz = int(onnx_path.stem.rsplit("_", 1)[1])

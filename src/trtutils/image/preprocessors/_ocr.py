@@ -26,6 +26,33 @@ def _round32(value: float) -> int:
     return max(32, int(round(value / 32) * 32))
 
 
+def text_detection_size(
+    h: int,
+    w: int,
+    limit_side_len: int,
+    limit_type: str,
+    max_shape: tuple[int, int] | None = None,
+) -> tuple[int, int]:
+    """Get the (height, width) :func:`resize_text_detection` resizes an (h, w) image to."""
+    if limit_type == "max":
+        ratio = limit_side_len / max(h, w) if max(h, w) > limit_side_len else 1.0
+    elif limit_type == "min":
+        ratio = limit_side_len / min(h, w) if min(h, w) < limit_side_len else 1.0
+    else:
+        err_msg = f"Invalid limit_type {limit_type!r}, options are: ['min', 'max']"
+        raise ValueError(err_msg)
+
+    resize_h = _round32(int(h * ratio))
+    resize_w = _round32(int(w * ratio))
+    if max_shape is not None and (resize_h > max_shape[0] or resize_w > max_shape[1]):
+        # ponytail: fit inside the engine's profile by shrinking; build a larger
+        # profile if this costs accuracy on very large or very wide images
+        fit = min(max_shape[0] / resize_h, max_shape[1] / resize_w)
+        resize_h = min(_round32(resize_h * fit), max_shape[0] // 32 * 32)
+        resize_w = min(_round32(resize_w * fit), max_shape[1] // 32 * 32)
+    return resize_h, resize_w
+
+
 def resize_text_detection(
     image: np.ndarray,
     limit_side_len: int = 960,
@@ -65,23 +92,23 @@ def resize_text_detection(
 
     """
     h, w = image.shape[:2]
-    if limit_type == "max":
-        ratio = limit_side_len / max(h, w) if max(h, w) > limit_side_len else 1.0
-    elif limit_type == "min":
-        ratio = limit_side_len / min(h, w) if min(h, w) < limit_side_len else 1.0
-    else:
-        err_msg = f"Invalid limit_type {limit_type!r}, options are: ['min', 'max']"
-        raise ValueError(err_msg)
-
-    resize_h = _round32(int(h * ratio))
-    resize_w = _round32(int(w * ratio))
-    if max_shape is not None and (resize_h > max_shape[0] or resize_w > max_shape[1]):
-        # ponytail: fit inside the engine's profile by shrinking; build a larger
-        # profile if this costs accuracy on very large or very wide images
-        fit = min(max_shape[0] / resize_h, max_shape[1] / resize_w)
-        resize_h = min(_round32(resize_h * fit), max_shape[0] // 32 * 32)
-        resize_w = min(_round32(resize_w * fit), max_shape[1] // 32 * 32)
+    resize_h, resize_w = text_detection_size(h, w, limit_side_len, limit_type, max_shape)
     return cv2.resize(image, (resize_w, resize_h))
+
+
+def text_detection_lut(
+    mean: tuple[float, float, float] | None,
+    std: tuple[float, float, float] | None,
+    input_range: tuple[float, float],
+) -> np.ndarray:
+    """Get the (256, 3) float32 table normalizing a uint8 BGR image for text detection."""
+    # uint8 -> normalized float32 through a 256-entry table per channel: same values as
+    # normalizing in float, without the per-pixel float64 math (large on big inputs)
+    levels = np.arange(256, dtype=np.float32)[:, None] * (1 / 255.0)
+    if mean is not None and std is not None:
+        return ((levels - np.array(mean)) / np.array(std)).astype(np.float32)
+    low, high = input_range
+    return np.repeat(levels * (high - low) + low, 3, axis=1).astype(np.float32)
 
 
 def preprocess_text_detection(
@@ -135,14 +162,7 @@ def preprocess_text_detection(
     resized = [resize_text_detection(img, limit_side_len, limit_type, max_shape) for img in images]
     height = max(r.shape[0] for r in resized)
     width = max(r.shape[1] for r in resized)
-    # uint8 -> normalized float32 through a 256-entry table per channel: same values as
-    # normalizing in float, without the per-pixel float64 math (large on big inputs)
-    levels = np.arange(256, dtype=np.float32)[:, None] * (1 / 255.0)
-    if mean is not None and std is not None:
-        lut = ((levels - np.array(mean)) / np.array(std)).astype(np.float32)
-    else:
-        low, high = input_range
-        lut = np.repeat(levels * (high - low) + low, 3, axis=1).astype(np.float32)
+    lut = text_detection_lut(mean, std, input_range)
     batch = np.zeros((len(resized), 3, height, width), dtype=np.float32)
     ratios: list[tuple[float, float]] = []
     padding: list[tuple[float, float]] = []
@@ -155,6 +175,15 @@ def preprocess_text_detection(
         if verbose:
             LOG.debug(f"Text detection preprocess {image.shape} -> {(h, w)}")
     return batch, ratios, padding
+
+
+def text_crop_geometry(box: np.ndarray) -> tuple[np.ndarray, int, int]:
+    """Get the perspective matrix and (width, height) :func:`crop_text_region` warps a box to."""
+    points = box.astype(np.float32)
+    width = int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3])))
+    height = int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2])))
+    target = np.array([[0, 0], [width, 0], [width, height], [0, height]], dtype=np.float32)
+    return cv2.getPerspectiveTransform(points, target), width, height
 
 
 def crop_text_region(image: np.ndarray, box: np.ndarray) -> np.ndarray:
@@ -176,11 +205,7 @@ def crop_text_region(image: np.ndarray, box: np.ndarray) -> np.ndarray:
         (vertical text) are rotated by 90 degrees.
 
     """
-    points = box.astype(np.float32)
-    width = int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3])))
-    height = int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2])))
-    target = np.array([[0, 0], [width, 0], [width, height], [0, height]], dtype=np.float32)
-    matrix = cv2.getPerspectiveTransform(points, target)
+    matrix, width, height = text_crop_geometry(box)
     crop = cv2.warpPerspective(
         image,
         matrix,
@@ -191,6 +216,51 @@ def crop_text_region(image: np.ndarray, box: np.ndarray) -> np.ndarray:
     if crop.shape[0] / crop.shape[1] >= _ROTATE_ASPECT:
         crop = np.rot90(crop)
     return crop
+
+
+def _recognition_shift_scale(
+    mean: tuple[float, float, float] | None,
+    std: tuple[float, float, float] | None,
+    input_range: tuple[float, float],
+) -> tuple[np.ndarray, np.ndarray]:
+    if mean is not None and std is not None:
+        return (
+            np.array(mean, dtype=np.float32).reshape(3, 1, 1),
+            np.array(std, dtype=np.float32).reshape(3, 1, 1),
+        )
+    low, high = input_range
+    scale = np.float32(1 / (high - low))
+    return np.full((3, 1, 1), -low * scale, np.float32), np.full((3, 1, 1), scale, np.float32)
+
+
+def text_recognition_lut(
+    mean: tuple[float, float, float] | None,
+    std: tuple[float, float, float] | None,
+    input_range: tuple[float, float],
+) -> np.ndarray:
+    """Get the (3, 256) float32 table normalizing a uint8 BGR text line, as preprocessing does."""
+    shift, scale = _recognition_shift_scale(mean, std, input_range)
+    # the same float32 operations as preprocess_text_recognition, on every uint8 level
+    levels = np.broadcast_to(np.arange(256, dtype=np.uint8), (3, 256))
+    lut = np.empty((3, 256), dtype=np.float32)
+    np.divide(levels, np.float32(255), out=lut)
+    lut -= shift.reshape(3, 1)
+    lut /= scale.reshape(3, 1)
+    return lut
+
+
+def text_recognition_widths(
+    shapes: Sequence[tuple[int, ...]],
+    image_height: int = 48,
+    min_width: int = 320,
+    max_width: int | None = None,
+) -> tuple[int, list[int]]:
+    """Get the padded batch width and the resized width per text line of preprocessing."""
+    max_wh_ratio = max([min_width / image_height] + [s[1] / s[0] for s in shapes])
+    batch_width = int(image_height * max_wh_ratio)
+    if max_width is not None:
+        batch_width = min(batch_width, max_width)
+    return batch_width, [min(batch_width, math.ceil(image_height * s[1] / s[0])) for s in shapes]
 
 
 def preprocess_text_recognition(
@@ -240,24 +310,14 @@ def preprocess_text_recognition(
         padding per image.
 
     """
-    max_wh_ratio = max(
-        [min_width / image_height] + [img.shape[1] / img.shape[0] for img in images],
-    )
-    batch_width = int(image_height * max_wh_ratio)
-    if max_width is not None:
-        batch_width = min(batch_width, max_width)
-    if mean is not None and std is not None:
-        shift = np.array(mean, dtype=np.float32).reshape(3, 1, 1)
-        scale = np.array(std, dtype=np.float32).reshape(3, 1, 1)
-    else:
-        low, high = input_range
-        scale = np.float32(1 / (high - low))
-        shift = np.float32(-low * scale)
+    shapes = [img.shape for img in images]
+    batch_width, widths = text_recognition_widths(shapes, image_height, min_width, max_width)
+    shift, scale = _recognition_shift_scale(mean, std, input_range)
     batch = np.zeros((len(images), 3, image_height, batch_width), dtype=np.float32)
     ratios: list[tuple[float, float]] = []
     padding: list[tuple[float, float]] = []
     for i, img in enumerate(images):
-        resized_w = min(batch_width, math.ceil(image_height * img.shape[1] / img.shape[0]))
+        resized_w = widths[i]
         resized = cv2.resize(img, (resized_w, image_height))
         dst = batch[i, :, :, :resized_w]
         np.divide(resized.transpose(2, 0, 1), np.float32(255), out=dst)

@@ -14,7 +14,7 @@ from trtutils._flags import FLAGS
 from trtutils.image import ImageModel
 
 
-@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt", "hybrid"])
 @pytest.mark.parametrize("resize_method", ["linear", "letterbox"])
 def test_preprocess(yolov10_engine, images, preprocessor, resize_method) -> None:
     """preprocess() yields a (1, 3, H, W) tensor in the model dtype for every backend and resize."""

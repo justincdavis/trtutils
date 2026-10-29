@@ -96,6 +96,7 @@ def _assert_interactions_close(left, right) -> None:
         pytest.param("cpu", id="cpu"),
         pytest.param("cuda", id="cuda"),
         pytest.param("trt", id="trt"),
+        pytest.param("hybrid", id="hybrid"),
     ],
 )
 def test_hand_interaction_end2end(

@@ -27,7 +27,7 @@ class MNASNet(Classifier, Model):
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0, 1),
-        preprocessor: str = "trt",
+        preprocessor: str = "cuda",
         resize_method: str = "linear",
         mean: tuple[float, float, float] | None = (0.485, 0.456, 0.406),
         std: tuple[float, float, float] | None = (0.229, 0.224, 0.225),
@@ -39,6 +39,7 @@ class MNASNet(Classifier, Model):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -58,6 +59,7 @@ class MNASNet(Classifier, Model):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
         )

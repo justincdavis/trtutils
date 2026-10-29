@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -16,9 +16,17 @@ from trtutils._flags import FLAGS
 from ._cuda import cuda_call
 
 
-def create_stream() -> cudart.cudaStream_t:
+def create_stream(*, non_blocking: bool = False) -> cudart.cudaStream_t:
     """
     Create a CUDA Stream.
+
+    Parameters
+    ----------
+    non_blocking : bool
+        Create the stream with ``cudaStreamNonBlocking``: work on it does not
+        wait for, or hold up, synchronous calls on the legacy default stream
+        (``Buffer.copy()`` without a stream, ``memcpy_host_to_device``, ...).
+        By default False.
 
     Returns
     -------
@@ -28,7 +36,10 @@ def create_stream() -> cudart.cudaStream_t:
     """
     if FLAGS.NVTX_ENABLED:
         nvtx.push_range("core::create_stream")
-    result = cuda_call(cudart.cudaStreamCreate())
+    if non_blocking:
+        result = cuda_call(cudart.cudaStreamCreateWithFlags(cudart.cudaStreamNonBlocking))
+    else:
+        result = cuda_call(cudart.cudaStreamCreate())
     if FLAGS.NVTX_ENABLED:
         nvtx.pop_range()
     return result

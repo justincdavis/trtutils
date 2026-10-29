@@ -534,14 +534,15 @@ class TRTEngine(TRTEngineInterface):
         self: Self,
         data: Sequence[Buffer],
         *,
+        graph: bool | None = None,
         verbose: bool | None = None,
         debug: bool | None = None,
     ) -> list[Buffer]:
         """
         Enqueue the network on its stream, leaving the outputs on the device.
 
-        Inputs are handled as in :meth:`execute`. The engine's own CUDA
-        graph is never used, so this call can be recorded into an outer
+        Inputs are handled as in :meth:`execute`. By default the engine's own
+        CUDA graph is not used, so this call can be recorded into an outer
         graph. The returned Buffers view the engine's output bindings and
         are overwritten by the next execution.
 
@@ -549,6 +550,10 @@ class TRTEngine(TRTEngineInterface):
         ----------
         data : Sequence[Buffer]
             One Buffer per engine input.
+        graph : bool, optional
+            Whether to replay the engine's own CUDA graph, as :meth:`execute`
+            does, for callers that consume the outputs on the device right
+            away. By default False.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -576,7 +581,7 @@ class TRTEngine(TRTEngineInterface):
             nvtx.push_range(self._nvtx_tags["raw_exec"])
         try:
             with self._device_guard:
-                self._run(data, allow_graph=False, debug=debug)
+                self._run(data, allow_graph=bool(graph), debug=debug)
         finally:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # raw_exec

@@ -11,7 +11,12 @@ import pytest
 from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils import Buffer, MemoryLocation
-from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+from trtutils.image.preprocessors import (
+    CPUPreprocessor,
+    CUDAPreprocessor,
+    HybridPreprocessor,
+    TRTPreprocessor,
+)
 from trtutils.image.preprocessors._process import preprocess
 
 SIZE = (640, 640)
@@ -22,7 +27,28 @@ PREPROCS = [
     pytest.param(CPUPreprocessor, {}, id="cpu"),
     pytest.param(CUDAPreprocessor, {}, id="cuda"),
     pytest.param(TRTPreprocessor, {"batch_size": 4}, id="trt"),
+    pytest.param(HybridPreprocessor, {}, id="hybrid"),
 ]
+
+
+@pytest.mark.parametrize("resize", ["linear", "letterbox"])
+@pytest.mark.parametrize(
+    ("norm", "atol"),
+    [
+        pytest.param({}, 0.0, id="raw"),
+        pytest.param(IMAGENET, 1e-6, id="imagenet"),
+    ],
+)
+def test_hybrid_matches_cpu(images, resize, norm, atol) -> None:
+    """Hybrid resizes exactly as the CPU path; only the float32 normalization order differs."""
+    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=resize, **norm)
+    hybrid = HybridPreprocessor(SIZE, RANGE, DTYPE, resize=resize, **norm)
+    batch = [image.array for image in images.values()]
+    expected, ratios, padding = cpu.preprocess(batch)
+    result, hybrid_ratios, hybrid_padding = hybrid.preprocess(batch)
+    assert hybrid_ratios == ratios
+    assert hybrid_padding == padding
+    np.testing.assert_allclose(result, expected, rtol=0, atol=atol)
 
 
 @pytest.mark.parametrize(
@@ -148,6 +174,8 @@ SHAPES = [(1080, 1920), (480, 640), (2160, 3840), (720, 1280), (512, 512)]
         pytest.param([[s] for s in SHAPES], id="single"),
         pytest.param([[s] * n for n, s in zip((3, 1, 2, 4, 2), SHAPES)], id="homogeneous"),
         pytest.param([SHAPES[:4], SHAPES[1:], SHAPES[::2]], id="heterogeneous"),
+        # chunked pinned uploads, the second into a larger stage
+        pytest.param([[(1280, 1920)], [(1081, 1919)]], id="large-staged"),
     ],
 )
 def test_reused_staging_matches_fresh(gpu_cls, memory, calls) -> None:

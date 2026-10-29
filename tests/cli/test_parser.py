@@ -121,7 +121,7 @@ def test_missing_required_args_exit_2(argv) -> None:
             {
                 "conf_thres": pytest.approx(0.1),
                 "nms_iou_thres": pytest.approx(0.5),
-                "preprocessor": "trt",
+                "preprocessor": "cuda",
                 "resize_method": "letterbox",
                 "extra_nms": False,
                 "agnostic_nms": False,
@@ -135,7 +135,7 @@ def test_missing_required_args_exit_2(argv) -> None:
             ["trtutils", "classify", "--engine", _ENGINE, "--input", _IMG],
             "trtutils.__main__._classify",
             {
-                "preprocessor": "trt",
+                "preprocessor": "cuda",
                 "input_range": [0.0, 1.0],
                 "show": False,
                 "warmup": False,

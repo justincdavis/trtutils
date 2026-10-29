@@ -25,7 +25,7 @@ CLASSIFIERS = [
 
 
 @pytest.mark.parametrize(("model_cls", "onnx_path"), CLASSIFIERS)
-@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt", "hybrid"])
 def test_classifier_end2end(build_model_engine, images, model_cls, onnx_path, preprocessor) -> None:
     """run(), get_classifications(), and end2end() agree and rank the ground-truth class in the top 5."""
     engine = build_model_engine(model_cls, onnx_path)
