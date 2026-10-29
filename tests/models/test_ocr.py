@@ -11,6 +11,7 @@ import pytest
 
 from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR
+from trtutils import TRTEngine
 from trtutils.core import Buffer, MemoryLocation
 from trtutils.image._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
 from trtutils.image.preprocessors import crop_text_region
@@ -354,3 +355,93 @@ def test_ocr_regions_need_cuda(det_engine, rec_engine) -> None:
     frame = Buffer.from_array(_blank(40, 40), MemoryLocation.DEVICE)
     with pytest.raises(RuntimeError, match="postprocessor"):
         recognizer.end2end_regions(frame, np.zeros((1, 4, 2)))
+
+
+def _same_results(got, want) -> None:
+    assert len(got) == len(want)
+    for (box, text, score), (ref_box, ref_text, ref_score) in zip(got, want):
+        np.testing.assert_array_equal(box, ref_box)
+        assert (text, score) == (ref_text, ref_score)
+
+
+_REC_SHAPES = [(1, 32), (3, 64), (2, 32), (3, 320), (1, 128), (3, 64), (2, 640), (1, 32)]
+
+
+@pytest.mark.parametrize("shape_contexts", [8, 3])
+def test_engine_shape_contexts_match_single_context(rec_engine, shape_contexts) -> None:
+    """Cycling through shapes with a context per shape gives a single context's outputs exactly."""
+    ref = TRTEngine(rec_engine, warmup=False)
+    pooled = TRTEngine(rec_engine, warmup=False, shape_contexts=shape_contexts)
+    rng = np.random.default_rng(0)
+    inputs = {s: rng.normal(size=(s[0], 3, 48, s[1])).astype(np.float32) for s in set(_REC_SHAPES)}
+    for _ in range(4):
+        for shape in _REC_SHAPES:
+            data = [Buffer.wrap(inputs[shape])]
+            want = ref.execute(data)
+            got = pooled.execute(data)
+            assert pooled.active_input_shapes == [inputs[shape].shape]
+            for g, w in zip(got, want):
+                np.testing.assert_array_equal(g, w)
+    # the pool also holds the context made at the engine's max shape, which no input uses;
+    # when every shape fits, the repeated cycle leaves each context a graph to replay
+    assert len(pooled._parked) + 1 == min(shape_contexts, len(inputs) + 1)
+    if shape_contexts > len(inputs):
+        graphs = [pooled._cuda_graphs, *(state["_cuda_graphs"] for state in pooled._parked.values())]
+        assert sum(len(g) for g in graphs) == len(inputs)
+
+
+def test_ocr_without_width_bucket_has_no_pool(det_engine, rec_engine) -> None:
+    """The default recognizer pads to the widest line with a single context."""
+    recognizer = PPOCR(det_engine, rec_engine).recognizer
+    assert recognizer._width_bucket is None
+    assert recognizer._engine._shape_contexts is None
+    bucketed = PPOCR(det_engine, rec_engine, width_bucket=32).recognizer
+    assert bucketed._engine._shape_contexts is not None
+
+
+@pytest.mark.parametrize("width_bucket", [32, 100, 5000])
+def test_ocr_bucket_widths(rec_engine, width_bucket) -> None:
+    """Batch widths are multiples of the bucket, capped at the engine's maximum width."""
+    recognizer = PPOCRRecognizer(rec_engine, postprocessor="cpu", width_bucket=width_bucket)
+    max_width = recognizer._input_size[0]
+    for text in ("a", LINES[0], LINES[1] * 3):
+        recognizer.run([_line(text)])
+        width = recognizer._engine.active_input_shapes[0][3]
+        assert width % width_bucket == 0 or width == max_width
+        assert width <= max_width
+
+
+@pytest.mark.parametrize("width_bucket", [32, 128])
+@pytest.mark.parametrize(
+    "image", [pytest.param(_render(LINES), id="lines"), pytest.param(_page(), id="page")]
+)
+def test_ocr_bucketed_cuda_matches_cpu(det_engine, rec_engine, width_bucket, image) -> None:
+    """With a bucket the CPU and CUDA paths still agree exactly."""
+    cpu = PPOCR(det_engine, rec_engine, postprocessor="cpu", width_bucket=width_bucket)
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda", width_bucket=width_bucket)
+    ref = cpu(image)
+    assert len(ref) > 0
+    for results in (cuda(image), cuda(image), cuda.end2end(image), cuda([image, image])[1]):
+        _same_results(results, ref)
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        pytest.param(["page", "lines", "padded", "page", "lines"], id="mixed"),
+        pytest.param(["page", "blank", "rotated", "lines", "page", "rotated"], id="blank-between"),
+    ],
+)
+def test_ocr_bucketed_ignores_previous_shapes(det_engine, rec_engine, names) -> None:
+    """A page's result with a bucket equals a fresh model's, batched or one by one."""
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda", width_bucket=32)
+    fresh = {
+        name: PPOCR(det_engine, rec_engine, postprocessor="cuda", width_bucket=32)(_PAGES[name])
+        for name in set(names)
+    }
+    images = [_PAGES[name] for name in names]
+    for _ in range(2):
+        for name, image in zip(names, images):
+            _same_results(cuda(image), fresh[name])
+    for name, results in zip(names, cuda(images)):
+        _same_results(results, fresh[name])
