@@ -258,3 +258,8 @@ def test_hands23_fp32_build_keeps_sides(images, tmp_path) -> None:
     )
     # FP32 reference (onnxruntime and the FP32 engine) finds these six
     assert strong == [(0, 0), (0, 0), (0, 1), (1, 0), (1, 0), (1, 1)]
+
+
+def test_hands23_fp32_hook_skips_other_graphs() -> None:
+    """A graph without the Hands23 layer names gets no overrides, so it builds in FP16."""
+    assert hands23_fp32_build_hook(onnx=DATA_DIR / "simple.onnx") == {}
