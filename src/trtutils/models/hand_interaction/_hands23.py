@@ -3,12 +3,13 @@
 # MIT License
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.image._hand_interaction import HandInteractionDetector
-from trtutils.models._model import Model
+from trtutils.models._model import Model, hands23_fp32_build_hook
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from typing_extensions import Self
@@ -28,6 +29,7 @@ class Hands23(HandInteractionDetector, Model):
     cannot capture.
     """
 
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [hands23_fp32_build_hook]
     _model_type = "hands23"
     _friendly_name = "Hands23"
     _default_imgsz = 800

@@ -92,6 +92,39 @@ def depthwise_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]: 
     return {"layer_precision": layer_precision or None, "prefer_precision_constraints": True}
 
 
+def hands23_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]:  # noqa: ANN401
+    """
+    Build hook that forces FP32 for the proposal, box head and relation heads of Hands23.
+
+    A full FP16 build flips the hand side (left/right) of many detections and adds spurious
+    ones (seen on TensorRT 10.15, RTX 5080). Pinning every float layer from the proposal
+    decoding (after the RPN head convolutions) through the second-stage relation heads to FP32
+    fixes it. The backbone, FPN and RPN head convolutions, which hold nearly all the compute,
+    stay FP16.
+
+    Parameters
+    ----------
+    onnx : Path | str
+        Path to the ONNX model.
+
+    Returns
+    -------
+    dict[str, Any]
+        Build engine overrides containing the layer_precision list.
+
+    """
+    network, _, _, _ = read_onnx(onnx)
+    names = [network.get_layer(idx).name for idx in range(network.num_layers)]
+    start = names.index("/proposal_generator/Transpose")
+    stop = names.index("/Greater")
+    layer_precision = []
+    for idx in range(start, stop + 1):
+        layer = network.get_layer(idx)
+        if layer.num_outputs and layer.get_output(0).dtype == trt.DataType.FLOAT:
+            layer_precision.append((idx, trt.DataType.FLOAT))
+    return {"layer_precision": layer_precision, "prefer_precision_constraints": True}
+
+
 class Model:
     """
     Mixin providing concrete build() and download() classmethods driven by class attributes.
