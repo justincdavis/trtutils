@@ -300,6 +300,40 @@ def test_ocr_cuda_result_ignores_previous_shapes(det_engine, rec_engine) -> None
                 assert (text, score) == (ref_text, ref_score)
 
 
+_PAGES = {
+    "page": _page(),
+    "rotated": _page(rotate=True),
+    "lines": _render(LINES),
+    "padded": _render(LINES[:1], 1400),
+    "blank": _blank(200, 300),
+}
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        pytest.param(["page", "lines"], id="two"),
+        pytest.param(["blank", "page", "lines"], id="blank-first"),
+        pytest.param(["page", "lines", "blank"], id="blank-last"),
+        pytest.param(["page", "blank", "blank", "lines"], id="blanks-between"),
+        pytest.param(["blank", "blank"], id="all-blank"),
+        pytest.param(["page", "rotated", "lines", "padded", "page", "rotated", "lines"], id="mixed"),
+    ],
+)
+def test_ocr_cuda_pipeline_matches_pages(det_engine, rec_engine, names) -> None:
+    """A batch overlaps detection and recognition across pages, with each page's result exactly."""
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda")
+    images = [_PAGES[name] for name in names]
+    want = [cuda(image) for image in images]
+    got = cuda(images)
+    assert len(got) == len(want)
+    for results, ref in zip(got, want):
+        assert len(results) == len(ref)
+        for (box, text, score), (ref_box, ref_text, ref_score) in zip(results, ref):
+            np.testing.assert_array_equal(box, ref_box)
+            assert (text, score) == (ref_text, ref_score)
+
+
 def test_ocr_cuda_recognizer_and_empty(det_engine, rec_engine) -> None:
     """The CUDA recognizer decodes crops as the CPU one, and an image without text gives nothing."""
     cpu = PPOCR(det_engine, rec_engine, postprocessor="cpu")

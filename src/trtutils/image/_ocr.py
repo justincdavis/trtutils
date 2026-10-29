@@ -58,6 +58,13 @@ if TYPE_CHECKING:
 
     from ._image_model import _PostFn
 
+    # bitmaps, probability map, ratios, padding of a detector frame in flight
+    _FrameJob = tuple[np.ndarray, np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+    # crop plan, output shape per batch, box count of a recognition in flight
+    _RegionsJob = tuple[CropPlan, list[tuple[int, ...]], int]
+    # image to detect on, its (x, y) scale back to the input, top padding, input (w, h)
+    _Page = tuple[np.ndarray, np.ndarray, int, tuple[int, int]]
+
 
 class TextDetector(ImageModel, TextDetectorInterface):
     """Implementation of DB (Differentiable Binarization) text detectors, as used by PaddleOCR."""
@@ -639,6 +646,32 @@ class TextDetector(ImageModel, TextDetectorInterface):
             verbose=verbose,
             post=self._post_fn(conf_thres, verbose=verbose),
         )
+
+    def _enqueue_frame(self: Self, frame: Buffer, slot: int) -> _FrameJob:
+        """Enqueue detection of a device frame into ``slot``, read it after a stream sync."""
+        if self._cuda_post is None:
+            err_msg = "_enqueue_frame requires postprocessor='cuda'"
+            raise RuntimeError(err_msg)
+        inputs, ratios, padding = self.prepare_inputs([frame])
+        outputs = self._order_outputs(self._engine.raw_exec(inputs, graph=True))
+        bitmaps, pred = self._cuda_post.enqueue(outputs[0], self._thresh, self._engine.stream, slot)
+        return bitmaps, pred, ratios or [], padding or []
+
+    def _read_frame(self: Self, job: _FrameJob, conf_thres: float | None) -> list[TextBox]:
+        """Get the text boxes of a :meth:`_enqueue_frame` job once its stream is synced."""
+        bitmaps, pred, ratios, padding = job
+        data = postprocess_text_detection(
+            [pred],
+            ratios,
+            padding,
+            self._thresh,
+            conf_thres if conf_thres is not None else self._conf_thres,
+            self._max_candidates,
+            self._unclip_ratio,
+            use_dilation=self._use_dilation,
+            bitmaps=bitmaps,
+        )
+        return get_text_boxes(data)[0]
 
     # get_text_boxes overloads
     @overload
@@ -1359,7 +1392,17 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["end2end"])
 
-        crops = self._cuda_crops
+        results = self._read_regions(self._enqueue_regions(frame, boxes), verbose=verbose)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # end2end
+
+        return results
+
+    def _enqueue_regions(self: Self, frame: Buffer, boxes: np.ndarray) -> _RegionsJob:
+        """Enqueue recognition of ``boxes``, read it with :meth:`_read_regions`."""
+        crops = cast("CudaTextCrops", self._cuda_crops)
+        ctc = cast("CtcArgmax", self._cuda_post)
         plan = self.prepare_regions(crops, frame, boxes)
         # every batch is enqueued before one sync: TensorRT spends ~1 ms of host time on
         # each new input shape, which then overlaps the previous batch on the GPU
@@ -1368,18 +1411,20 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             outputs = self._order_outputs(self._infer_regions(crops, plan, index))
             ctc.enqueue(outputs[0], self._engine.stream, index)
             shapes.append(outputs[0].shape)
+        return plan, shapes, len(boxes)
+
+    def _read_regions(self: Self, job: _RegionsJob, *, verbose: bool | None = None) -> list[Text]:
+        """Wait for a :meth:`_enqueue_regions` job and decode its texts in box order."""
+        plan, shapes, count = job
+        ctc = cast("CtcArgmax", self._cuda_post)
         t0 = time.perf_counter()
         stream_synchronize(self._engine.stream)
-        results: list[Text] = [("", 0.0)] * len(boxes)
+        results: list[Text] = [("", 0.0)] * count
         for index, (start, stop, _) in enumerate(plan.batches):
             batch = ctc.read(shapes[index], index)
             for i, text in zip(plan.order[start:stop], self.get_texts(batch, verbose=verbose)):
                 results[i] = text
         self._post_profile = (t0, time.perf_counter())
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # end2end
-
         return results
 
     def prepare_regions(
@@ -1484,14 +1529,8 @@ class OCR:
         """Get the text recognizer."""
         return self._recognizer
 
-    def _ocr_image(
-        self: Self,
-        image: np.ndarray | Buffer,
-        conf_thres: float,
-        box_conf_thres: float | None,
-        *,
-        verbose: bool | None,
-    ) -> list[TextLine]:
+    def _prep_page(self: Self, image: np.ndarray | Buffer) -> _Page:
+        """Resize and pad an image for detection the way RapidOCR does."""
         img = image.numpy() if isinstance(image, Buffer) else image
         raw_h, raw_w = img.shape[:2]
         if max(raw_h, raw_w) > self._max_side_len:
@@ -1508,7 +1547,29 @@ class OCR:
             new_h = max(int(w / self._width_height_ratio), self._min_height) * 2
             pad = int(abs(new_h - h) / 2)
             img = cv2.copyMakeBorder(img, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+        return img, scale, pad, (raw_w, raw_h)
 
+    @staticmethod
+    def _finish_page(
+        page: _Page, boxes: np.ndarray, lines: list[Text], conf_thres: float
+    ) -> list[TextLine]:
+        """Map the boxes back to the input image and drop low-confidence lines."""
+        _, scale, pad, size = page
+        out_boxes = (boxes - np.array([0, pad], np.float32)) * scale
+        out_boxes = np.clip(out_boxes, 0, np.array(size, np.float32))
+        return [
+            (box, text, score) for box, (text, score) in zip(out_boxes, lines) if score >= conf_thres
+        ]
+
+    def _ocr_image(
+        self: Self,
+        page: _Page,
+        conf_thres: float,
+        box_conf_thres: float | None,
+        *,
+        verbose: bool | None,
+    ) -> list[TextLine]:
+        img = page[0]
         gpu = self._gpu
         frame = None
         if gpu is not None and is_bgr_frame(img):
@@ -1524,12 +1585,54 @@ class OCR:
         else:
             crops = list(_CROP_POOL.map(partial(crop_text_region, img), boxes))
             lines = self._recognizer.end2end(crops, verbose=verbose)
+        return self._finish_page(page, boxes, lines, conf_thres)
 
-        out_boxes = (boxes - np.array([0, pad], np.float32)) * scale
-        out_boxes = np.clip(out_boxes, 0, np.array([raw_w, raw_h], np.float32))
-        return [
-            (box, text, score) for box, (text, score) in zip(out_boxes, lines) if score >= conf_thres
-        ]
+    def _ocr_pipelined(
+        self: Self,
+        pages: list[_Page],
+        conf_thres: float,
+        box_conf_thres: float | None,
+        *,
+        verbose: bool | None,
+    ) -> list[list[TextLine]]:
+        """
+        OCR pages with the detection of page i + 1 overlapping the recognition of page i.
+
+        The detector and recognizer run on their own streams. Frames rotate through
+        three device slots (page i - 1 may still be recognized while page i + 1 uploads)
+        and the detector maps through two host slots, so no buffer is overwritten in use.
+        """
+        det, rec = cast("tuple[TextDetector, TextRecognizer]", self._gpu)
+        stream = det.engine.stream
+
+        def start(i: int) -> tuple[Buffer, _FrameJob]:
+            frame = self._frame(pages[i][0], stream, slot=i % 3)
+            return frame, det._enqueue_frame(frame, i % 2)  # noqa: SLF001
+
+        results: list[list[TextLine]] = []
+        pending: tuple[int, np.ndarray, _RegionsJob] | None = None
+        job = start(0)
+        for i in range(len(pages)):
+            stream_synchronize(stream)
+            frame, det_job = job
+            if i + 1 < len(pages):
+                job = start(i + 1)
+            text_boxes = det._read_frame(det_job, box_conf_thres)  # noqa: SLF001
+            if pending is not None:
+                index, boxes, rec_job = pending
+                lines = rec._read_regions(rec_job, verbose=verbose)  # noqa: SLF001
+                results.append(self._finish_page(pages[index], boxes, lines, conf_thres))
+                pending = None
+            if text_boxes:
+                boxes = np.stack([box for box, _ in text_boxes])
+                pending = (i, boxes, rec._enqueue_regions(frame, boxes))  # noqa: SLF001
+            else:
+                results.append([])
+        if pending is not None:
+            index, boxes, rec_job = pending
+            lines = rec._read_regions(rec_job, verbose=verbose)  # noqa: SLF001
+            results.append(self._finish_page(pages[index], boxes, lines, conf_thres))
+        return results
 
     # __call__ overloads
     @overload
@@ -1649,9 +1752,13 @@ class OCR:
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         is_single = isinstance(images, (np.ndarray, Buffer))
         batch_images: Sequence[np.ndarray | Buffer] = [images] if is_single else images
-        results = [
-            self._ocr_image(img, conf_thres, box_conf_thres, verbose=verbose) for img in batch_images
-        ]
+        pages = [self._prep_page(img) for img in batch_images]
+        if self._gpu is not None and len(pages) > 1 and all(is_bgr_frame(p[0]) for p in pages):
+            results = self._ocr_pipelined(pages, conf_thres, box_conf_thres, verbose=verbose)
+        else:
+            results = [
+                self._ocr_image(page, conf_thres, box_conf_thres, verbose=verbose) for page in pages
+            ]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # end2end
