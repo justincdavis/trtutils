@@ -185,6 +185,12 @@ Changed
 
 Fixed
 ^^^^^
+* ``Hands23.build`` keeps the proposal decoding, box heads and relation heads in FP32 (the
+  backbone, FPN and RPN convolutions stay FP16): a full FP16 build flipped the hand side of
+  many detections. On 300 COCO val2017 person images against an onnxruntime FP32 reference
+  (TensorRT 10.15, RTX 5080) side mismatches fall from 50 to 23 (FP32 engine: 15) and
+  unmatched detections from 197 to 142 (FP32 engine: 115), for 8.8 -> 9.1 ms end to end
+  (FP32 engine: 19.7 ms). Rebuild engines built before this
 * ``YOLOv10.build`` and ``YOLOv13.build`` keep the depthwise convolutions in FP32: in FP16 the
   builder sometimes picked depthwise kernels (seen on TensorRT 10.15, RTX 5080) that broke the
   output. YOLOv10 lost large objects in about one build in seven (no horse on ``horse.jpg``

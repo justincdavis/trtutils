@@ -8,6 +8,7 @@ from __future__ import annotations
 import inspect
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from trtutils._log import LOG
 from trtutils.builder._build import build_engine
 from trtutils.builder._onnx import read_onnx
 from trtutils.builder.hooks import yolo_efficient_nms_hook
@@ -90,6 +91,42 @@ def depthwise_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]: 
         if layer.num_groups > 1:
             layer_precision.append((idx, trt.DataType.FLOAT))
     return {"layer_precision": layer_precision or None, "prefer_precision_constraints": True}
+
+
+def hands23_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]:  # noqa: ANN401
+    """
+    Build hook that forces FP32 for the proposal, box head and relation heads of Hands23.
+
+    A full FP16 build flips the hand side (left/right) of many detections and adds spurious
+    ones (seen on TensorRT 10.15, RTX 5080). Pinning every float layer from the proposal
+    decoding (after the RPN head convolutions) through the second-stage relation heads to FP32
+    fixes it. The backbone, FPN and RPN head convolutions, which hold nearly all the compute,
+    stay FP16.
+
+    Parameters
+    ----------
+    onnx : Path | str
+        Path to the ONNX model.
+
+    Returns
+    -------
+    dict[str, Any]
+        Build engine overrides containing the layer_precision list.
+
+    """
+    network, _, _, _ = read_onnx(onnx)
+    names = [network.get_layer(idx).name for idx in range(network.num_layers)]
+    if "/proposal_generator/Transpose" not in names or "/Greater" not in names:
+        LOG.warning("Hands23 FP32 hook: layer names not found, building the whole model in FP16")
+        return {}
+    start = names.index("/proposal_generator/Transpose")
+    stop = names.index("/Greater")
+    layer_precision = []
+    for idx in range(start, stop + 1):
+        layer = network.get_layer(idx)
+        if layer.num_outputs and layer.get_output(0).dtype == trt.DataType.FLOAT:
+            layer_precision.append((idx, trt.DataType.FLOAT))
+    return {"layer_precision": layer_precision, "prefer_precision_constraints": True}
 
 
 class Model:

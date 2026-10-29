@@ -10,9 +10,11 @@ import pytest
 
 from tests.conftest import DATA_DIR
 from trtutils._flags import FLAGS
+from trtutils.compat._libs import trt
 from trtutils.image._hand_interaction import HandInteractionDetector
 from trtutils.image._schema import HandInteractionOutputSchema
 from trtutils.models import HOIDETR, Hands23
+from trtutils.models._model import hands23_fp32_build_hook
 
 HOI_DETR_ONNX = DATA_DIR / "hoi_detr" / "hoi_detr_vitl_640.onnx"
 HANDS23_ONNX = DATA_DIR / "hands23" / "hands23_x101_800.onnx"
@@ -225,3 +227,39 @@ def test_batch_slots_match_single(build_model_engine, images, names, ref_names) 
         _assert_interactions_close(
             sorted(result, key=lambda t: t[0][0]), sorted(expected, key=lambda t: t[0][0])
         )
+
+
+@_trt86_hands23
+def test_hands23_fp32_hook_overrides() -> None:
+    """The hook pins a block of float layers to FP32 and leaves the backbone and RPN head FP16."""
+    if not HANDS23_ONNX.exists():
+        pytest.skip(f"missing {HANDS23_ONNX}")
+    assert hands23_fp32_build_hook in Hands23._build_hooks
+    overrides = hands23_fp32_build_hook(onnx=HANDS23_ONNX)
+    assert overrides["prefer_precision_constraints"] is True
+    pinned = overrides["layer_precision"]
+    assert {dtype for _idx, dtype in pinned} == {trt.DataType.FLOAT}
+    assert 400 < len(pinned) < 800
+    # the 38..310 layers are backbone, FPN and RPN head convolutions
+    assert min(idx for idx, _dtype in pinned) > 310
+
+
+@_trt86_hands23
+def test_hands23_fp32_build_keeps_sides(images, tmp_path) -> None:
+    """A Hands23 build with the hook keeps the FP32 sides and contacts on people.jpeg."""
+    if not HANDS23_ONNX.exists():
+        pytest.skip(f"missing {HANDS23_ONNX}")
+    engine = tmp_path / "hands23_fp32_layers.engine"
+    Hands23.build(HANDS23_ONNX, engine, opt_level=1)
+    model = Hands23(engine, warmup=False)
+    found = model.end2end(images["people"].array)
+    strong = sorted(
+        (side, contact) for (_box, score), _obj, _second, side, contact in found if score >= 0.5
+    )
+    # FP32 reference (onnxruntime and the FP32 engine) finds these six
+    assert strong == [(0, 0), (0, 0), (0, 1), (1, 0), (1, 0), (1, 1)]
+
+
+def test_hands23_fp32_hook_skips_other_graphs() -> None:
+    """A graph without the Hands23 layer names gets no overrides, so it builds in FP16."""
+    assert hands23_fp32_build_hook(onnx=DATA_DIR / "simple.onnx") == {}
