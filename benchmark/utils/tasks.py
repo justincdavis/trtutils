@@ -274,7 +274,7 @@ def run_tasks(
                 print(f"Skipping {key} (already exists)")
                 cached += 1
                 continue
-            if post == "cuda" and not spec.cls._cuda_postprocess:
+            if post == "cuda" and not (spec.parts or spec.cls._cuda_postprocess):
                 print(f"Skipping {key}: no CUDA postprocessor")
                 continue
             print(f"Benchmarking {key}")

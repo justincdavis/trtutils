@@ -125,8 +125,8 @@ Added
 Changed
 ^^^^^^^
 * The default preprocessor of every image model, wrapper and the ``detect`` / ``classify``
-  CLI is now ``"cuda"`` instead of ``"trt"``: it is at least as fast on every benchmarked
-  task (1080p frames, RTX 5080), without a second engine per model. Input pixels change
+  CLI is now ``"cuda"`` instead of ``"trt"``: within 0.04 ms of it on all 24 benchmarked
+  models (1080p frames, RTX 5080), and it needs no second engine per model. Input pixels change
   slightly, since the TensorRT resize differs; pass ``preprocessor="trt"`` for the old
   behavior. ``"hybrid"`` (CPU resize, GPU normalize) is faster still for small inputs such as
   224 px classifiers
