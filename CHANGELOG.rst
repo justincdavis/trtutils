@@ -3,6 +3,10 @@ Unreleased
 
 Added
 ^^^^^
+* ``trtutils.io``: optional GPU decode into device ``Buffer``\ s. ``decode_image`` (nvImageCodec,
+  BGR uint8 HWC, bit-identical to ``cv2.imread`` on the stock photos) and ``VideoReader``
+  (PyNvVideoCodec, GPU RGB to BGR kernel). New extras ``nvimgcodec-cu11/cu12/cu13`` and
+  ``nvvideocodec``
 * ``Detector(class_map=...)`` (and every detector wrapper): optional ``Mapping[int, int]`` that
   translates model class ids to output ids after postprocessing; unmapped ids pass through. Off
   by default
