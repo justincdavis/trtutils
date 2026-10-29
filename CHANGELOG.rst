@@ -121,6 +121,8 @@ Added
   (float32 outputs, at most 65536 seg/pose anchors). 1080p end2end on an RTX 5080: yolo11n-seg
   4.6 -> 1.15 ms, yolo11n-obb 6.6 -> 1.25 ms, yolo11n-pose 1.03 -> 0.88 ms, PPOCRv4 on a
   14-line page 26 -> 21 ms (see Changed for the further 21 -> 11 ms)
+* ``OCR`` with ``postprocessor="cuda"`` overlaps the pages of a batch: page i + 1 is detected
+  while page i is recognized, with the same results. PPOCRv4 7.1 -> 5.6 ms per 1080p page
 
 Changed
 ^^^^^^^

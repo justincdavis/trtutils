@@ -113,15 +113,17 @@ def cubic_table() -> np.ndarray:
 
 
 class DeviceFrame:
-    """Uploads host images into a reused device buffer."""
+    """Uploads host images into reused device buffers, one per slot."""
 
     def __init__(self: Self) -> None:
-        self._scratch = _Scratch()
+        self._scratch: dict[int, _Scratch] = {}
         self._stage: Buffer | None = None
 
-    def __call__(self: Self, image: np.ndarray, stream: cudart.cudaStream_t) -> Buffer:
+    def __call__(
+        self: Self, image: np.ndarray, stream: cudart.cudaStream_t, slot: int = 0
+    ) -> Buffer:
         """Enqueue the upload of a (H, W, 3) uint8 image, the Buffer is valid on ``stream``."""
-        frame = self._scratch.get(image.shape, np.uint8)
+        frame = self._scratch.setdefault(slot, _Scratch()).get(image.shape, np.uint8)
         if self._stage is None or self._stage.nbytes < image.nbytes:
             self._stage = Buffer.empty((image.nbytes,), np.uint8, pinned=True)
         memcpy_host_to_device_staged_async(frame.device_ptr, image, self._stage.array, stream)
