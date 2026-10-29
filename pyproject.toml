@@ -102,6 +102,19 @@ onnx = [
 jit = [
     "numba>=0.58.0,<1.0.0",
 ]
+# GPU image/video decode via trtutils.io (pick the nvimgcodec extra matching your CUDA major)
+nvimgcodec-cu11 = [
+    "nvidia-nvimgcodec-cu11>=0.6.0",
+]
+nvimgcodec-cu12 = [
+    "nvidia-nvimgcodec-cu12>=0.6.0; python_version >= '3.9'",
+]
+nvimgcodec-cu13 = [
+    "nvidia-nvimgcodec-cu13>=0.6.0; python_version >= '3.9'",
+]
+nvvideocodec = [
+    "PyNvVideoCodec>=2.0.0",
+]
 # Quantize CLI/API tools
 quantize = [
     "trtutils[onnx]",

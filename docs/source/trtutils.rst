@@ -13,6 +13,7 @@ Subpackages
    trtutils.download
    trtutils.image
    trtutils.inspect
+   trtutils.io
    trtutils.jetson
    trtutils.models
    trtutils.parallel

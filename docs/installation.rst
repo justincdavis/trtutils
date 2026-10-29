@@ -113,8 +113,19 @@ This installs:
 
 This enables the use of :func:`trtutils.enable_jit` to accelerate some CPU operations.
 
+GPU Image and Video Decode
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Decode images and video straight to the GPU with :mod:`trtutils.io`
+(pick the nvImageCodec extra matching your CUDA major):
+
+.. code-block:: console
+
+    $ pip install "trtutils[nvimgcodec-cu12,nvvideocodec]"
+
 Development Tools
 ~~~~~~~~~~~~~~~~~
+
 
 For development or contributing to trtutils:
 
