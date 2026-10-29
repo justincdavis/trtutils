@@ -131,6 +131,27 @@ def test_crops_and_recognizer_input_match_cpu(stream, seed, height, width) -> No
         np.testing.assert_array_equal(tensor.numpy(), ref)
 
 
+@pytest.mark.parametrize("width_bucket", [None, 32, 100, 3200])
+def test_bucketed_crops_match_cpu(stream, width_bucket) -> None:
+    """Bucketed batch widths on the device equal the CPU path, the padding included."""
+    rng = np.random.default_rng(3)
+    image = _image(rng, 1080, 1920)
+    boxes = _boxes(rng, 1080, 1920, 12)
+    refs = _crops_reference(image, boxes)
+    crops = CudaTextCrops(48, 3200, 5, (0.5,) * 3, (0.5,) * 3, (0.0, 1.0), width_bucket)
+    plan = crops.plan(_upload(image, stream), boxes, stream)
+    for index, (start, stop, width) in enumerate(plan.batches):
+        tensor = crops.batch_input(plan, index, stream)
+        stream_synchronize(stream)
+        batch = [refs[i] for i in plan.order[start:stop]]
+        ref, _, _ = preprocess_text_recognition(
+            batch, 48, max_width=3200, mean=(0.5,) * 3, std=(0.5,) * 3, width_bucket=width_bucket
+        )
+        assert width == ref.shape[-1]
+        assert width_bucket is None or width % width_bucket == 0 or width == 3200
+        np.testing.assert_array_equal(tensor.numpy(), ref)
+
+
 def test_rotated_crops_are_covered(stream) -> None:
     """The random boxes include tall crops, so the np.rot90 branch is exercised."""
     rng = np.random.default_rng(0)

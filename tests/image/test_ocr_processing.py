@@ -24,6 +24,7 @@ from trtutils.image.preprocessors import (
     preprocess_text_recognition,
     resize_text_detection,
 )
+from trtutils.image.preprocessors._ocr import text_recognition_widths
 
 pytestmark = pytest.mark.cpu
 
@@ -120,6 +121,44 @@ def test_preprocess_text_recognition(shapes, max_width, expected_width, expected
         np.testing.assert_array_equal(tensor[i, :, :, resized_w:], 0.0)
         assert ratios[i] == (resized_w / w, 48 / h)
         assert padding[i] == (expected_width - resized_w, 0.0)
+
+
+@pytest.mark.parametrize(
+    ("shapes", "bucket", "max_width", "expected_width"),
+    [
+        pytest.param([(48, 48)], None, None, 320, id="no-bucket-min-width"),
+        pytest.param([(48, 48)], 32, None, 320, id="min-width-is-a-bucket"),
+        pytest.param([(48, 48)], 128, None, 384, id="min-width-rounds-up"),
+        pytest.param([(10, 500)], 32, None, 2400, id="already-a-multiple"),
+        pytest.param([(10, 520)], 32, None, 2496, id="rounds-up"),
+        pytest.param([(10, 520)], 100, None, 2500, id="odd-bucket"),
+        pytest.param([(10, 2000)], 32, 1000, 1000, id="capped-at-max-width"),
+        pytest.param([(10, 2000)], 128, 1000, 1000, id="cap-is-not-a-multiple"),
+        pytest.param([(24, 48), (10, 520)], 32, 3200, 2496, id="widest-line"),
+    ],
+)
+def test_text_recognition_widths_bucket(shapes, bucket, max_width, expected_width) -> None:
+    """The batch width rounds up to a multiple of the bucket, never past the maximum."""
+    width, resized = text_recognition_widths(shapes, 48, 320, max_width, bucket)
+    unbucketed, unbucketed_resized = text_recognition_widths(shapes, 48, 320, max_width)
+    assert width == expected_width
+    assert width >= unbucketed
+    assert bucket is None or width % bucket == 0 or width == max_width
+    assert bucket is not None or width == unbucketed
+    # only the padding grows: every line keeps the width it has without a bucket
+    assert resized == unbucketed_resized
+
+
+def test_preprocess_text_recognition_bucket_only_pads() -> None:
+    """Bucketing adds zero padding on the right and leaves the lines' pixels unchanged."""
+    lines = [np.random.default_rng(0).integers(0, 255, (30, 200, 3), np.uint8)]
+    ref, ref_ratios, _ = preprocess_text_recognition(lines)
+    tensor, ratios, padding = preprocess_text_recognition(lines, width_bucket=128)
+    assert (ref.shape[-1], tensor.shape[-1]) == (320, 384)
+    np.testing.assert_array_equal(tensor[..., :320], ref)
+    np.testing.assert_array_equal(tensor[..., 320:], 0.0)
+    assert ratios == ref_ratios
+    assert padding == [(64.0, 0.0)]
 
 
 @pytest.mark.parametrize(
