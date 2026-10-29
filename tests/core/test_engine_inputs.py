@@ -240,36 +240,33 @@ def test_cuda_graph_per_input_configuration(fake_graphs) -> None:
     eng.execute([_host(_MAX_BATCH)])  # replay
     assert (context.enqueues, _launches(fake_graphs)) == (3, 1)
 
-    # a partial batch is a configuration of its own; the call that changes
-    # the shapes only runs plain, so it is captured on its second run after that
+    # a partial batch is a configuration of its own, captured on its second run
     eng.execute([_host(2)])
+    assert (context.enqueues, len(fake_graphs)) == (4, 1)
     eng.execute([_host(2)])
-    assert (context.enqueues, len(fake_graphs)) == (5, 1)
+    assert (context.enqueues, len(fake_graphs)) == (6, 2)
     eng.execute([_host(2)])
-    assert (context.enqueues, len(fake_graphs)) == (7, 2)
-    eng.execute([_host(2)])
-    assert (context.enqueues, _launches(fake_graphs)) == (7, 2)
+    assert (context.enqueues, _launches(fake_graphs)) == (6, 2)
 
-    # back at the full shape: one plain run after the shape change, then replay
+    # back at the full shape: its graph replays right after the shape change
     eng.execute([_host(_MAX_BATCH)])
-    assert (context.enqueues, _launches(fake_graphs)) == (8, 2)
-    eng.execute([_host(_MAX_BATCH)])
-    assert (context.enqueues, _launches(fake_graphs), len(fake_graphs)) == (8, 3, 2)
+    assert (context.enqueues, _launches(fake_graphs), len(fake_graphs)) == (6, 3, 2)
 
     # a device input bound in place is keyed by its address
     device = Buffer.from_array(_host(_MAX_BATCH).array, MemoryLocation.DEVICE)
     for _ in range(3):
         eng.execute([device])
-    assert (context.enqueues, _launches(fake_graphs), len(fake_graphs)) == (11, 4, 3)
+    assert (context.enqueues, _launches(fake_graphs), len(fake_graphs)) == (9, 4, 3)
 
 
-def test_alternating_shapes_are_not_captured(fake_graphs) -> None:
-    """Shapes that change every call could never replay a graph, so none is captured."""
+def test_alternating_shapes_replay_their_graphs(fake_graphs) -> None:
+    """Shapes that change every call (a recognizer's batches) are captured and replayed."""
     eng, context = _make_engine(cuda_graph=True)
     for _ in range(4):
         eng.execute([_host(2)])
         eng.execute([_host(3)])
-    assert (context.enqueues, len(fake_graphs)) == (8, 0)
+    # two plain runs each, the second also captured; every later call replays
+    assert (context.enqueues, len(fake_graphs), _launches(fake_graphs)) == (6, 2, 4)
     assert len(eng._seen_configs) == 0
 
 

@@ -178,12 +178,12 @@ class TRTEngine(TRTEngineInterface):
     def _init_io_state(self: Self, *, cuda_graph: bool | None) -> None:
         """Point the context at the bindings at their max shapes and reset the graph cache."""
         # CUDA graph support: one graph per input configuration (the shape and
-        # device address of every input), least recently used first. A graph
-        # can only replay on a call that does not change the shapes, so a
-        # configuration counts only when it runs at unchanged shapes, and is
-        # captured the second time it does; configurations seen once are
-        # tracked separately so inputs that never repeat (or alternate shapes
-        # every call) neither pay for a capture nor evict graphs worth keeping.
+        # device address of every input), least recently used first. A
+        # configuration is captured the second time it runs, even right after a
+        # shape change, so engines that cycle through a few shapes (a text
+        # recognizer's batches) replay too; configurations seen once are
+        # tracked separately so inputs that never repeat neither pay for a
+        # capture nor evict graphs worth keeping.
         self._cuda_graph_enabled: bool = (
             cuda_graph if cuda_graph is not None else True
         ) and self._async_v3
@@ -199,9 +199,6 @@ class TRTEngine(TRTEngineInterface):
         # which use them after the call that bound them returns
         self._bound_inputs: list[Buffer] = [b.device for b in self._inputs]
         self._output_shapes: list[tuple[int, ...]] = [b.max_shape for b in self._outputs]
-        # set when the context shapes change; the next enqueue then runs
-        # without a CUDA graph so TensorRT can react to the new shapes
-        self._shapes_changed: bool = False
         if self._async_v3:
             for i_binding in self._inputs:
                 self._context.set_input_shape(i_binding.name, i_binding.shape)
@@ -229,7 +226,6 @@ class TRTEngine(TRTEngineInterface):
             err_msg = f"TensorRT rejected shape {shape} for input '{binding.name}' of engine '{self._name}'."
             raise ValueError(err_msg)
         self._input_shapes[index] = shape
-        self._shapes_changed = True
 
     def _refresh_output_shapes(self: Self) -> None:
         shapes: list[tuple[int, ...]] = []
@@ -315,19 +311,15 @@ class TRTEngine(TRTEngineInterface):
             return
         key = self._graph_key() if allow_graph and self._cuda_graph_enabled else None
         graph = self._cuda_graphs.get(key) if key is not None else None
-        # right after a shape change TensorRT needs one real enqueue before
-        # a graph for the new shapes may be captured or replayed
         if key is not None and graph is not None:
             self._cuda_graphs.move_to_end(key)
-            if not self._shapes_changed:
-                graph.launch()
-                return
+            graph.launch()
+            return
         self._check_enqueued(self._context.execute_async_v3(self._stream))
-        shapes_changed, self._shapes_changed = self._shapes_changed, False
-        if key is None or graph is not None or shapes_changed:
+        if key is None or graph is not None:
             return
         if key in self._seen_configs:
-            # second run at unchanged shapes: record it for the next calls
+            # second run of this configuration: record it for the next calls
             del self._seen_configs[key]
             graph = self._capture_cuda_graph()
             if graph is not None:
