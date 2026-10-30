@@ -185,6 +185,8 @@ Changed
 
 Fixed
 ^^^^^
+* ``Model.build()`` takes an explicit ``fp16`` and passes no fp16 flag with ``strongly_typed=True``;
+  both raised before
 * ``YOLOv10.build`` and ``YOLOv13.build`` keep the depthwise convolutions in FP32: in FP16 the
   builder sometimes picked depthwise kernels (seen on TensorRT 10.15, RTX 5080) that broke the
   output. YOLOv10 lost large objects in about one build in seven (no horse on ``horse.jpg``

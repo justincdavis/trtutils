@@ -297,12 +297,16 @@ class Model:
 
         # Forward unconsumed kwargs to build_engine for validation
         remaining_kwargs = {k: v for k, v in kwargs.items() if k not in consumed_keys}
+        # an explicit fp16 wins; a strongly typed network takes its precision from the onnx
+        fp16 = remaining_kwargs.pop(
+            "fp16", cls._fp16 and not remaining_kwargs.get("strongly_typed", False)
+        )
 
         build_engine(
             onnx=onnx,
             output=output,
             shapes=shapes,
-            fp16=cls._fp16,
+            fp16=fp16,
             dla_core=dla_core,
             optimization_level=opt_level,
             verbose=verbose,
