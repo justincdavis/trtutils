@@ -207,7 +207,7 @@ Results are saved to `data/optimizations/{device}.json`.
 
 ### Task Stage Breakdown
 
-Time one model per task (detection, classification, segmentation, pose, OBB, depth, hand
+Time models of every task (detection, classification, segmentation, pose, OBB, depth, hand
 interaction, OCR) on a 1920x1080 frame, split into preprocess, inference, postprocess, and
 result extraction:
 
@@ -216,9 +216,14 @@ python benchmark/run.py tasks --device MyDevice
 python benchmark/run.py tasks --device MyDevice --model yolov11n-seg --preprocessors cuda
 ```
 
-Models are the smallest of each task (yolo11n and yolo26n for the YOLO tasks,
-depth_anything_v2_small, hands23_x101, ppocrv4). ONNX files and engines live in the repo's
-`data/tasks/` and are downloaded and built on first use. Each model runs `end2end` once without
+By default the first (smallest) model of every wrapper class runs (e.g. yolov11n, yolov8n-seg,
+resnet18, depth_anything_v2_small, hands23_x101, ppocrv4). `--all` runs every downloadable model
+(the list is generated from the wrapper classes and `src/trtutils/download/configs`), `--task
+detection ocr ...` limits the tasks, `--model NAME ...` picks exact names (unknown names raise),
+and `--list` prints the selection without running. A model that fails to download or build is
+logged and skipped, and so is a preprocessor the model resolves to something else (e.g. trt
+falling back to cuda). ONNX files and engines live in `data/tasks/<trtutils sha>[-dirty]/` and
+are downloaded and built on first use. Each model runs `end2end` once without
 instrumentation for the end-to-end time, then again with its stages timed; preprocessing syncs
 the device so GPU preprocessing is not billed to inference. Results are saved to
 `data/tasks/{device}.json`.
