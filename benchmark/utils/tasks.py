@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import inspect
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,9 +17,11 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
-from trtutils import models
+from trtutils import image, models
 from trtutils.compat._libs import cudart
 from trtutils.core._cuda import cuda_call
+from trtutils.download._download import load_model_configs
+from trtutils.models._model import Model
 
 from .config import REPO_DIR
 from .data import get_data, write_data
@@ -46,39 +50,77 @@ class TaskModel:
     parts: dict[str, Any] = field(default_factory=dict)
 
 
-TASK_MODELS = [
-    TaskModel("detection", "yolov11n", models.YOLOv11),
-    TaskModel("detection", "yolov26n", models.YOLOv26),
-    TaskModel("detection", "yolov8n", models.YOLOv8),
-    TaskModel("detection", "yolov10n", models.YOLOv10),
-    TaskModel("detection", "yoloxn", models.YOLOX),
-    TaskModel("detection", "rtdetrv2_r18", models.RTDETRv2),
-    TaskModel("detection", "dfine_n", models.DFINE),
-    TaskModel("classification", "yolov11n-cls", models.YOLOv11Cls),
-    TaskModel("classification", "yolov26n-cls", models.YOLOv26Cls),
-    TaskModel("classification", "yolov8n-cls", models.YOLOv8Cls),
-    TaskModel("classification", "resnet18", models.ResNet),
-    TaskModel("classification", "efficientnet_b0", models.EfficientNet),
-    TaskModel("segmentation", "yolov11n-seg", models.YOLOv11Seg),
-    TaskModel("segmentation", "yolov26n-seg", models.YOLOv26Seg),
-    TaskModel("segmentation", "yolov8n-seg", models.YOLOv8Seg),
-    TaskModel("pose", "yolov11n-pose", models.YOLOv11Pose),
-    TaskModel("pose", "yolov26n-pose", models.YOLOv26Pose),
-    TaskModel("pose", "yolov8n-pose", models.YOLOv8Pose),
-    TaskModel("obb", "yolov11n-obb", models.YOLOv11OBB, image="aerial.jpg"),
-    TaskModel("obb", "yolov26n-obb", models.YOLOv26OBB, image="aerial.jpg"),
-    TaskModel("obb", "yolov8n-obb", models.YOLOv8OBB, image="aerial.jpg"),
-    TaskModel("depth", "depth_anything_v2_small", models.DepthAnythingV2),
-    TaskModel("depth", "depth_anything_v1_small", models.DepthAnythingV1),
-    TaskModel("hand_interaction", "hands23_x101", models.Hands23),
-    TaskModel(
-        "ocr",
-        "ppocrv4",
-        models.PPOCR,
-        image="text",
-        parts={"det": models.PPOCRDetector, "rec": models.PPOCRRecognizer},
-    ),
-]
+# image-model base class -> task
+TASKS = {
+    image.Detector: "detection",
+    image.Classifier: "classification",
+    image.Segmenter: "segmentation",
+    image.PoseEstimator: "pose",
+    image.OBBDetector: "obb",
+    image.DepthEstimator: "depth",
+    image.HandInteractionDetector: "hand_interaction",
+}
+# per-task overrides of TaskModel fields
+TASK_OVERRIDES: dict[str, dict[str, Any]] = {"obb": {"image": "aerial.jpg"}}
+
+
+def _norm(name: str) -> str:
+    return re.sub("[^a-z0-9]", "", name.lower()).replace("transformer", "")
+
+
+def _wrapper(model_type: str, name: str, classes: list[Any]) -> Any:  # noqa: ANN401
+    """The wrapper class of a model: the family's only class, else the longest name prefix."""
+    if len(classes) == 1:
+        return classes[0]
+    # torchvision nets share one config, so match e.g. wide_resnet50_2 to WideResNet
+    prefixed = [c for c in classes if _norm(name).startswith(_norm(c.__name__))]
+    return max(prefixed, key=lambda c: len(c.__name__)) if prefixed else None
+
+
+def build_task_models() -> list[TaskModel]:
+    """One TaskModel per downloadable model, from the wrapper classes and download configs."""
+    by_type: dict[str, list[Any]] = {}
+    for cls in vars(models).values():
+        is_model = inspect.isclass(cls) and issubclass(cls, Model)
+        if is_model and any(issubclass(cls, base) for base in TASKS):
+            by_type.setdefault(cls._model_type, []).append(cls)  # noqa: SLF001
+    specs = []
+    for model_type, names in load_model_configs().items():
+        for name in names:
+            cls = _wrapper(model_type, name, by_type.get(model_type, []))
+            if cls is None:
+                continue
+            task = next(t for base, t in TASKS.items() if issubclass(cls, base))
+            specs.append(TaskModel(task, name, cls, **TASK_OVERRIDES.get(task, {})))
+    ocr = {"det": models.PPOCRDetector, "rec": models.PPOCRRecognizer}
+    specs.append(TaskModel("ocr", "ppocrv4", models.PPOCR, image="text", parts=ocr))
+    return specs
+
+
+TASK_MODELS = build_task_models()
+
+
+def select_task_models(
+    names: list[str] | None = None,
+    tasks: list[str] | None = None,
+    *,
+    all_models: bool = False,
+) -> list[TaskModel]:
+    """
+    Pick task models: ``names`` if given, else the first (smallest) model per wrapper class
+    (every model with ``all_models``), optionally limited to ``tasks``.
+    """
+    if names is not None:
+        return [m for m in TASK_MODELS if m.name in names]
+    seen: set[Any] = set()
+    picked = []
+    for m in TASK_MODELS:
+        if tasks is not None and m.task not in tasks:
+            continue
+        if all_models or m.cls not in seen:
+            picked.append(m)
+        seen.add(m.cls)
+    return picked
 
 
 def _text_frame() -> np.ndarray:
@@ -254,18 +296,18 @@ def run_tasks(
     postprocessors: tuple[str, ...] = ("cpu",),
     overwrite: bool = False,
     stage: str | None = None,
+    tasks: list[str] | None = None,
+    all_models: bool = False,
 ) -> dict[str, Any]:
     """
-    Benchmark every task model (or those in ``names``).
+    Benchmark the task models picked by ``select_task_models``; a model that fails is skipped.
 
     Results go to data/tasks/<device>.json (cached by key unless ``overwrite``), or, with
     ``stage``, are always measured fresh into data/perf-series/<device>/stage-<stage>.json.
     """
     data: dict[str, Any] = {} if stage is not None else get_data(device, "tasks", [])
     cached = 0
-    for spec in TASK_MODELS:
-        if names is not None and spec.name not in names:
-            continue
+    for spec in select_task_models(names, tasks, all_models=all_models):
         # OCR preprocesses on the CPU only
         runs = [(pre, post) for post in postprocessors for pre in (["cpu"] if spec.parts else preprocessors)]
         for prep, post in runs:
@@ -278,7 +320,11 @@ def run_tasks(
                 print(f"Skipping {key}: no CUDA postprocessor")
                 continue
             print(f"Benchmarking {key}")
-            data[key] = bench_task(spec, prep, warmup, iterations, post)
+            try:
+                data[key] = bench_task(spec, prep, warmup, iterations, post)
+            except Exception as e:  # noqa: BLE001
+                print(f"\tFAILED {key}: {type(e).__name__}: {e}")
+                continue
             data[key].update(trtutils_provenance())
             res = data[key]
             parts = ", ".join(f"{s} {res['stages'][s]['median']:.2f}" for s in STAGES)

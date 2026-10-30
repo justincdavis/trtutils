@@ -289,8 +289,14 @@ def cmd_table(args: argparse.Namespace) -> None:
 
 def cmd_tasks(args: argparse.Namespace) -> None:
     """Run per-stage benchmarks of one model per task on a 1080p frame."""
-    from utils.tasks import run_tasks
+    from utils.tasks import run_tasks, select_task_models
 
+    if args.list:
+        picked = select_task_models(args.model, args.task, all_models=args.all)
+        for m in picked:
+            print(f"{m.task:18}{m.cls.__name__:20}{m.name}")
+        print(f"{len(picked)} models")
+        return
     run_tasks(
         args.device,
         args.model,
@@ -300,6 +306,8 @@ def cmd_tasks(args: argparse.Namespace) -> None:
         postprocessors=tuple(args.postprocessors),
         overwrite=args.overwrite,
         stage=args.stage,
+        tasks=args.task,
+        all_models=args.all,
     )
 
 
@@ -461,7 +469,10 @@ def main() -> None:
     # --- tasks ---
     p = subparsers.add_parser("tasks", help="Per-stage latency per task on a 1080p frame")
     p.add_argument("--device", required=True)
-    p.add_argument("--model", nargs="+", default=None, help="Task models (default all)")
+    p.add_argument("--model", nargs="+", default=None, help="Model names (overrides selection)")
+    p.add_argument("--task", nargs="+", default=None, help="Only these tasks, e.g. detection ocr")
+    p.add_argument("--all", action="store_true", help="Every model, not the first per class")
+    p.add_argument("--list", action="store_true", help="Print the selected models and exit")
     p.add_argument("--preprocessors", nargs="+", default=["cpu", "cuda", "trt", "hybrid"])
     p.add_argument("--postprocessors", nargs="+", default=["cpu"], choices=["cpu", "cuda"])
     p.add_argument("--warmup", type=int, default=20)
