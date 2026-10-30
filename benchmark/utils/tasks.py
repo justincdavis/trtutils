@@ -45,7 +45,6 @@ class TaskModel:
     name: str
     cls: Any
     image: str = "street.jpg"
-    imgsz: int | None = None
     # the downloaded model name per ONNX, when it differs from ``name``
     parts: dict[str, Any] = field(default_factory=dict)
 
@@ -110,6 +109,11 @@ def select_task_models(
     Pick task models: ``names`` if given, else the first (smallest) model per wrapper class
     (every model with ``all_models``), optionally limited to ``tasks``.
     """
+    known = {m.name for m in TASK_MODELS}
+    unknown = sorted(set(names or []) - known)
+    if unknown:
+        err_msg = f"Unknown task models: {', '.join(unknown)}"
+        raise ValueError(err_msg)
     if names is not None:
         return [m for m in TASK_MODELS if m.name in names]
     seen: set[Any] = set()
@@ -145,27 +149,31 @@ def load_frame(name: str) -> np.ndarray:
     return image
 
 
-def _engine(cls: Any, name: str, imgsz: int | None) -> Path:  # noqa: ANN401
+def _engine(cls: Any, name: str) -> Path:  # noqa: ANN401
     """Download the ONNX and build the engine for one model, once, at its default precision."""
-    onnx = TASK_DIR / f"{name}.onnx"
-    engine = TASK_DIR / "engines" / f"{name}.engine"
+    # one cache per trtutils under test, so A/B runs never share ONNX files or engines
+    prov = trtutils_provenance()
+    cache = TASK_DIR / f"{str(prov['trtutils_sha'])[:10]}{'-dirty' if prov['dirty'] else ''}"
+    onnx = cache / f"{name}.onnx"
+    engine = cache / "engines" / f"{name}.engine"
     if not onnx.exists():
+        onnx.parent.mkdir(parents=True, exist_ok=True)
         print(f"\tDownloading {name}")
-        cls.download(name, onnx, imgsz=imgsz)
+        cls.download(name, onnx)
     if not engine.exists():
         print(f"\tBuilding {engine.name}")
         engine.parent.mkdir(parents=True, exist_ok=True)
-        cls.build(onnx, engine, imgsz=imgsz)
+        cls.build(onnx, engine)
     return engine
 
 
 def load_model(spec: TaskModel, preprocessor: str, postprocessor: str = "cpu") -> Any:  # noqa: ANN401
     """Build (if needed) and load the model of ``spec`` with ``preprocessor``."""
     if spec.parts:
-        det = _engine(spec.parts["det"], f"{spec.name}_det", spec.imgsz)
-        rec = _engine(spec.parts["rec"], f"{spec.name}_rec", None)
+        det = _engine(spec.parts["det"], f"{spec.name}_det")
+        rec = _engine(spec.parts["rec"], f"{spec.name}_rec")
         return spec.cls(det, rec, postprocessor=postprocessor, warmup=True)
-    engine = _engine(spec.cls, spec.name, spec.imgsz)
+    engine = _engine(spec.cls, spec.name)
     return spec.cls(engine, preprocessor=preprocessor, postprocessor=postprocessor, warmup=True)
 
 
@@ -245,16 +253,24 @@ def _image_models(model: Any) -> list[Any]:  # noqa: ANN401
     return [model._detector, model._recognizer]  # noqa: SLF001
 
 
+def _resolved(model: Any) -> str:  # noqa: ANN401
+    """The preprocessor a model actually runs (OCR: its detector's)."""
+    return (model if hasattr(model, "prepare_inputs") else model._detector)._preprocessor_method  # noqa: SLF001
+
+
 def bench_task(
     spec: TaskModel,
     preprocessor: str,
     warmup: int,
     iterations: int,
     postprocessor: str = "cpu",
-) -> dict[str, Any]:
-    """Time ``iterations`` end2end calls, both plain and split into stages."""
+) -> dict[str, Any] | None:
+    """Time ``iterations`` end2end calls, both plain and split into stages (None if skipped)."""
     image = load_frame(spec.image)
     model = load_model(spec, preprocessor, postprocessor)
+    if _resolved(model) != preprocessor:
+        print(f"\tSkipping {spec.name}/{preprocessor}: ran as {_resolved(model)}")
+        return None
     for _ in range(warmup):
         model.end2end(image)
 
@@ -284,6 +300,12 @@ def bench_task(
         "end2end": compute_results(totals),
         "stages": {s: compute_results(v) for s, v in stages.items()},
     }
+
+
+def _write_stage(device: str, stage: str, warmup: int, iterations: int, data: dict) -> None:
+    write_stage_snapshot(
+        device, stage, "tasks", {"warmup": warmup, "iterations": iterations, "data": data}
+    )
 
 
 def run_tasks(
@@ -321,21 +343,21 @@ def run_tasks(
                 continue
             print(f"Benchmarking {key}")
             try:
-                data[key] = bench_task(spec, prep, warmup, iterations, post)
+                res = bench_task(spec, prep, warmup, iterations, post)
             except Exception as e:  # noqa: BLE001
                 print(f"\tFAILED {key}: {type(e).__name__}: {e}")
                 continue
-            data[key].update(trtutils_provenance())
-            res = data[key]
+            if res is None:
+                continue
+            data[key] = res
+            res.update(trtutils_provenance())
             parts = ", ".join(f"{s} {res['stages'][s]['median']:.2f}" for s in STAGES)
             e2e = res["end2end"]
             print(f"\t{key}: end2end median {e2e['median']:.2f}ms max {e2e['max']:.2f}ms ({parts})")
             if stage is None:
                 write_data(device, "tasks", data)
-    if stage is not None:
-        write_stage_snapshot(
-            device, stage, "tasks", {"warmup": warmup, "iterations": iterations, "data": data}
-        )
-    elif cached:
+            else:
+                _write_stage(device, stage, warmup, iterations, data)
+    if stage is None and cached:
         print(f"{cached} cached entries skipped; pass --overwrite or --stage to re-measure")
     return data
