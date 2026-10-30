@@ -48,10 +48,12 @@ discarded and noise reported.
 - A real dynamic-batch yolov10n needs `trtutils download --model yolov10n --dynamic`;
   making a static export's batch dim symbolic collapses back to static in TensorRT.
 
-- `tasks` times one model per task on a 1080p frame (end2end plus preprocess/infer/
-  postprocess/extract) and prints medians. Without `--stage` it caches by key in
+- `tasks` times models on a 1080p frame (default: first model per wrapper class; `--all` every
+  downloadable model, `--task T...` filter, `--model N...` exact names, `--list` prints only) (end2end plus preprocess/infer/
+  postprocess/extract) and prints medians. Engines are cached per trtutils sha, so A/B sides never share them. Without `--stage` it caches by key in
   `data/tasks/<device>.json`; `--stage NAME` always measures fresh into
-  `data/perf-series/<device>/stage-NAME.json` with `trtutils_sha`, `dirty` and `timestamp`.
+  `data/perf-series/<device>/stage-NAME.json` (its own `tasks` section; `plot --patch-series` skips it)
+  with `trtutils_sha`, `dirty` and `timestamp`.
 - `compare A [A ...] --vs B [B ...] [--labels LA LB] [--csv PATH]` matches keys across stage
   or tasks files and prints median A, median B and delta % per key and stage (median of
   per-file medians when a side has several files).
