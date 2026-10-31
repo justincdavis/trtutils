@@ -255,6 +255,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         *,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        normalize: bool = True,
     ) -> None:
         """
         Create a GPUImagePreprocessor for image processing models.
@@ -297,6 +298,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        normalize : bool, optional
+            When False, return the letterboxed uint8 HWC image and skip scale,
+            channel swap, and transpose. Default is True.
 
         """
         super().__init__(
@@ -336,6 +340,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         # handle memory flags
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._unified_mem = unified_mem
+        self._normalize = normalize
 
         # handle stream
         self._stream: cudart.cudaStream_t

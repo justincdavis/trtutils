@@ -3,6 +3,11 @@ Unreleased
 
 Added
 ^^^^^
+* ``Model.build(..., embed_sst=True)`` for detection models. Letterbox stays in the
+  preprocessor. The engine input becomes uint8 ``(batch, imgsz, imgsz, 3)``, and the ONNX
+  graph casts, scales (``1/255`` for YOLO, ``1`` for YOLOX), swaps BGR to RGB, and
+  transposes to NCHW. Loading that engine skips the normalize/transpose kernel.
+  ``YOLOv10.build(onnx, engine, embed_sst=True)``
 * ``Detector(class_map=...)`` (and every detector wrapper): optional ``Mapping[int, int]`` that
   translates model class ids to output ids after postprocessing; unmapped ids pass through. Off
   by default

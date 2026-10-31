@@ -6,6 +6,8 @@ Some basic utilties for using ONNX models.
 
 Functions
 ---------
+:func:`embed_sst`
+    Prepend scale, BGR swap, and HWC-to-CHW, and take uint8 HWC input.
 :func:`extract_subgraph`
     Extract a subgraph from an ONNX model using layer indices.
 :func:`extract_subgraph_from_file`
@@ -24,6 +26,7 @@ Functions
 from __future__ import annotations
 
 from ._shapes import get_onnx_input, make_onnx_static
+from ._sst import embed_sst
 from ._subgraph import (
     extract_subgraph,
     extract_subgraph_from_file,
@@ -32,6 +35,7 @@ from ._subgraph import (
 )
 
 __all__ = [
+    "embed_sst",
     "extract_subgraph",
     "extract_subgraph_from_file",
     "get_onnx_input",
