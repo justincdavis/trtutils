@@ -6,18 +6,20 @@
 from __future__ import annotations
 
 import inspect
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.builder._build import build_engine
 from trtutils.builder._onnx import read_onnx
 from trtutils.builder.hooks import yolo_efficient_nms_hook
+from trtutils.builder.onnx import embed_sst as embed_sst_graph
 from trtutils.compat._libs import trt
 
 from ._utils import download_model_internal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
 
 def nms_build_hook(
@@ -90,6 +92,34 @@ def depthwise_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]: 
         if layer.num_groups > 1:
             layer_precision.append((idx, trt.DataType.FLOAT))
     return {"layer_precision": layer_precision or None, "prefer_precision_constraints": True}
+
+
+def _embed_sst_scale(cls: type) -> float:
+    """
+    Scale implied by a detection wrapper's default ``input_range``.
+
+    ``(0, 1)`` is ``1/255``. ``(0, 255)`` is ``1``. Wrappers that subtract a mean
+    are a different preprocess and are rejected.
+
+    Raises
+    ------
+    ValueError
+        If the class normalizes with mean/std, or has no ``input_range``.
+
+    """
+    signature = inspect.signature(cls.__init__)
+    mean = signature.parameters["mean"].default if "mean" in signature.parameters else None
+    if mean is not None and mean is not inspect.Parameter.empty:
+        err_msg = (
+            f"{cls.__name__} normalizes with mean/std, which embed_sst does not cover. "
+            "embed_sst is the scale, BGR swap, and HWC transpose used by detection models."
+        )
+        raise ValueError(err_msg)
+    if "input_range" not in signature.parameters:
+        err_msg = f"{cls.__name__} has no input_range, so embed_sst cannot choose a scale"
+        raise ValueError(err_msg)
+    low, high = signature.parameters["input_range"].default
+    return (float(high) - float(low)) / 255.0
 
 
 class Model:
@@ -250,6 +280,7 @@ class Model:
         opt_level: int = 3,
         *,
         verbose: bool | None = None,
+        embed_sst: bool = False,
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """
@@ -271,21 +302,43 @@ class Model:
             TensorRT builder optimization level (0-5). Default is 3.
         verbose : bool | None
             Enable verbose builder output.
+        embed_sst : bool
+            Prepend scale, BGR-to-RGB, and HWC-to-CHW to the ONNX image input and
+            build the engine on uint8 ``(batch, imgsz, imgsz, 3)``. Letterbox stays
+            in the preprocessor. The scale comes from the wrapper's default
+            ``input_range``: ``1/255`` for YOLO, ``1`` for YOLOX. Default is False.
         **kwargs : Any
             Additional keyword arguments. Consumed first by build hooks,
             then remaining kwargs are forwarded to ``build_engine()``.
+
+        Raises
+        ------
+        ValueError
+            If ``embed_sst`` is set on a model that normalizes with mean/std.
 
         """
         if imgsz is None:
             imgsz = cls._default_imgsz
         cls._validate_imgsz(imgsz)
         shapes = cls._make_shapes(batch_size, imgsz)
+        onnx_path = Path(onnx)
+        embedded: tempfile.TemporaryDirectory[str] | None = None
+        if embed_sst:
+            scale = _embed_sst_scale(cls)
+            image_name = next(name for name, kind in cls._input_tensors if kind == "image")
+            shapes = [
+                ((name, (batch_size, imgsz, imgsz, 3)) if name == image_name else (name, shape))
+                for name, shape in shapes
+            ]
+            embedded = tempfile.TemporaryDirectory()
+            onnx_path = Path(embedded.name) / "embedded.onnx"
+            embed_sst_graph(onnx, onnx_path, image_name, scale=scale, height=imgsz, width=imgsz)
 
         # Collect overrides from hooks, tracking consumed kwargs
         build_overrides: dict[str, Any] = {}
         consumed_keys: set[str] = set()
         for hook in cls._build_hooks:
-            overrides = hook(onnx=onnx, imgsz=imgsz, batch_size=batch_size, **kwargs)
+            overrides = hook(onnx=onnx_path, imgsz=imgsz, batch_size=batch_size, **kwargs)
             consumed_keys.update(k for k in kwargs if k in inspect.signature(hook).parameters)
             for key, val in overrides.items():
                 if key in build_overrides and isinstance(build_overrides[key], list):
@@ -302,14 +355,18 @@ class Model:
             "fp16", cls._fp16 and not remaining_kwargs.get("strongly_typed", False)
         )
 
-        build_engine(
-            onnx=onnx,
-            output=output,
-            shapes=shapes,
-            fp16=fp16,
-            dla_core=dla_core,
-            optimization_level=opt_level,
-            verbose=verbose,
-            **build_overrides,
-            **remaining_kwargs,
-        )
+        try:
+            build_engine(
+                onnx=onnx_path,
+                output=output,
+                shapes=shapes,
+                fp16=fp16,
+                dla_core=dla_core,
+                optimization_level=opt_level,
+                verbose=verbose,
+                **build_overrides,
+                **remaining_kwargs,
+            )
+        finally:
+            if embedded is not None:
+                embedded.cleanup()

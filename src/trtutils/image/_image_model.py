@@ -31,8 +31,28 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 _COLOR_CHANNELS = 3
+_IMAGE_RANK = 4
 
 _PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
+
+
+def _image_binding(
+    shape: tuple[int, ...],
+    dtype: np.dtype,
+) -> tuple[tuple[int, int], bool] | None:
+    """
+    Return ``(width, height)`` and whether scale/swap/transpose is already in the graph.
+
+    Float NCHW is ``(batch, 3, height, width)``. uint8 NHWC is ``(batch, height, width, 3)``,
+    the letterboxed image, with normalize and transpose inside the network.
+    """
+    if len(shape) != _IMAGE_RANK:
+        return None
+    if shape[1] == _COLOR_CHANNELS:
+        return (int(shape[3]), int(shape[2])), False
+    if shape[-1] == _COLOR_CHANNELS and dtype == np.dtype(np.uint8):
+        return (int(shape[2]), int(shape[1])), True
+    return None
 
 
 # (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image
@@ -188,42 +208,36 @@ class ImageModel:
             )
             self._unified_mem = self._engine.unified_mem
             self._resize_method: str = resize_method
-            # Find the image input: 4D tensor with 3 channels (batch, 3, H, W)
+            # Float NCHW is (batch, 3, H, W). uint8 NHWC is a letterboxed image whose
+            # scale, channel swap, and transpose already live in the network.
             input_size: tuple[int, ...] | None = None
             input_spec = self._engine.input_spec[0]
-            # position of the image among the engine inputs; other inputs go around it
             self._image_input_index = 0
-            expected_input_size = 4
+            self._sst_in_graph = False
+            self._input_size = (0, 0)
             for index, spec in enumerate(self._engine.input_spec):
-                shape = tuple(spec[0])
-                if len(shape) == expected_input_size and shape[1] == _COLOR_CHANNELS:
-                    input_size = shape
-                    input_spec = spec
-                    self._image_input_index = index
-                    break
+                found = _image_binding(tuple(spec[0]), spec[1])
+                if found is None:
+                    continue
+                (width, height), sst_in_graph = found
+                input_size = tuple(spec[0])
+                input_spec = spec
+                self._image_input_index = index
+                self._input_size = (width, height)
+                self._sst_in_graph = sst_in_graph
+                break
 
             if input_size is None:
-                # Fallback: use first input with original validation
                 input_size = tuple(self._engine.input_spec[0][0])
-                expected_input_size = 4
-                if len(input_size) != expected_input_size:
-                    err_msg = (
-                        "Expected model to have input size of form: (batch, channels, height, width)"
-                    )
-                    err_msg += f", found {input_size}"
-                    raise ValueError(err_msg)
-                rgb_channels = 3
-                if input_size[1] != rgb_channels:
-                    err_msg = (
-                        f"Expected model to take {rgb_channels} channel input, found {input_size[1]}"
-                    )
-                    raise ValueError(err_msg)
+                err_msg = (
+                    "Expected an image input of shape (batch, 3, height, width) "
+                    f"or uint8 (batch, height, width, 3), found {input_size}"
+                )
+                raise ValueError(err_msg)
 
             # Extract batch size from engine (the max profile batch for a
             # dynamic-batch engine, which bounds what the preprocessors accept)
             self._batch_size: int = input_size[0]
-
-            self._input_size: tuple[int, int] = (input_size[3], input_size[2])
             self._dtype = input_spec[1]
             self._input_range = input_range
             self._mean = mean
@@ -291,6 +305,7 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
+            normalize=not self._sst_in_graph,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -314,6 +329,7 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
+            normalize=not self._sst_in_graph,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -434,8 +450,14 @@ class ImageModel:
             LOG.warning(
                 "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
             )
-        if method == "cuda" and self._dtype != np.float32:
+        if method == "cuda" and self._dtype != np.float32 and not self._sst_in_graph:
             method = "cpu"
+        if self._sst_in_graph and method == "cpu":
+            err_msg = (
+                "This engine scales, swaps channels, and transposes in the graph. "
+                "Use the cuda or trt preprocessor, which only letterboxes."
+            )
+            raise ValueError(err_msg)
         return method
 
     def _update_preprocessors(self: Self) -> None:
