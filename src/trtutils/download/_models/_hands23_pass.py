@@ -11,8 +11,6 @@ import numpy as np
 import onnx
 from onnx import helper, numpy_helper
 
-from trtutils._log import LOG
-
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -129,9 +127,9 @@ def _make_mask(
     return helper.make_node("Unsqueeze", [cond, axes], [out], name=out)
 
 
-def remove_hands23_nonzero(model: onnx.ModelProto) -> bool:
+def remove_nonzero(onnx_path: Path) -> None:
     """
-    Remove the NonZero ops from an exported Hands23 ONNX model, in place.
+    Remove the NonZero ops from an exported Hands23 ONNX file, in place.
 
     TensorRT runs every NonZero as a blocking, data-dependent-shape copy; Hands23 has nine.
     This pass replaces them with fixed-shape equivalents:
@@ -144,25 +142,25 @@ def remove_hands23_nonzero(model: onnx.ModelProto) -> bool:
 
     Outputs match the original graph. The RPN rewrite assumes at least 1000 proposals are
     valid per image (the graph keeps the top 1000 after NMS); fewer would let invalid boxes
-    through. Hands23 at 800 px yields 1700+ in practice. A model that is not the Hands23
-    export pattern, or that was already rewritten, is left untouched.
+    through. Hands23 at 800 px yields 1700+ in practice.
 
     Parameters
     ----------
-    model : onnx.ModelProto
-        The exported Hands23 model. Modified in place.
+    onnx_path : Path
+        The exported Hands23 model. Overwritten.
 
-    Returns
-    -------
-    bool
-        True if the model was rewritten, False if it was left untouched.
+    Raises
+    ------
+    RuntimeError
+        If the graph is not the Hands23 export pattern, or a NonZero remains.
 
     """
+    model = onnx.load(str(onnx_path))
     graph = model.graph
     match = _match(graph)
     if match is None:
-        LOG.debug("hands23 pass: no NonZero pooler pattern found, skipping")
-        return False
+        err_msg = f"{onnx_path} does not match the Hands23 NonZero pooler pattern"
+        raise RuntimeError(err_msg)
     roi_masks, scatter_masks, rpn_where, bypass = match
 
     axes_roi = "hands23_unsqueeze_1"
@@ -218,29 +216,4 @@ def remove_hands23_nonzero(model: onnx.ModelProto) -> bool:
     if any(n.op_type == "NonZero" for n in graph.node):
         err_msg = "Hands23 pass left a NonZero in the graph"
         raise RuntimeError(err_msg)
-    return True
-
-
-def fix_hands23_onnx(onnx_path: Path | str, output: Path | str | None = None) -> bool:
-    """
-    Remove the NonZero ops from a Hands23 ONNX file, see :func:`remove_hands23_nonzero`.
-
-    Parameters
-    ----------
-    onnx_path : Path | str
-        Path to an exported Hands23 ONNX model.
-    output : Path | str | None
-        Where to write the rewritten model. By default the input file is overwritten.
-
-    Returns
-    -------
-    bool
-        True if the model was rewritten and saved, False if it was left untouched (not a
-        Hands23 export, or already rewritten). Nothing is written in that case.
-
-    """
-    model = onnx.load(str(onnx_path))
-    if not remove_hands23_nonzero(model):
-        return False
-    onnx.save(model, str(output if output is not None else onnx_path))
-    return True
+    onnx.save(model, str(onnx_path))

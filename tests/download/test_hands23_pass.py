@@ -1,9 +1,11 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/builder/onnx/_hands23.py -- NonZero removal for Hands23 ONNX files."""
+"""Tests for src/trtutils/download/_models/_hands23_pass.py -- NonZero removal for Hands23 ONNX files."""
 
 from __future__ import annotations
+
+import shutil
 
 import cv2
 import numpy as np
@@ -13,7 +15,7 @@ import pytest
 from onnx import helper
 
 from tests.conftest import DATA_DIR
-from trtutils.builder.onnx import fix_hands23_onnx, remove_hands23_nonzero
+from trtutils.download._models._hands23_pass import remove_nonzero
 
 HANDS23_ONNX = DATA_DIR / "hands23" / "hands23_x101_800.onnx"
 _IMGSZ = 800
@@ -88,12 +90,12 @@ def original() -> onnx.ModelProto:
 
 
 @pytest.fixture(scope="module")
-def passed(original) -> onnx.ModelProto:
+def passed(tmp_path_factory) -> onnx.ModelProto:
     """The Hands23 model after the NonZero pass."""
-    model = onnx.ModelProto()
-    model.CopyFrom(original)
-    assert remove_hands23_nonzero(model)
-    return model
+    path = tmp_path_factory.mktemp("hands23") / "hands23.onnx"
+    shutil.copy(HANDS23_ONNX, path)
+    remove_nonzero(path)
+    return onnx.load(str(path))
 
 
 @pytest.mark.cpu
@@ -111,16 +113,6 @@ def test_removes_nonzero_keeps_io(original, passed) -> None:
 
 
 @pytest.mark.cpu
-@_needs_onnx
-def test_idempotent(passed) -> None:
-    """A second pass reports no change and leaves the graph untouched."""
-    again = onnx.ModelProto()
-    again.CopyFrom(passed)
-    assert not remove_hands23_nonzero(again)
-    assert again.SerializeToString() == passed.SerializeToString()
-
-
-@pytest.mark.cpu
 @pytest.mark.parametrize(
     "make_model",
     [
@@ -128,27 +120,14 @@ def test_idempotent(passed) -> None:
         pytest.param(_unrelated_nonzero_model, id="foreign-nonzero"),
     ],
 )
-def test_non_hands23_untouched(make_model, tmp_path) -> None:
-    """A model that is not the Hands23 pattern is left as is, in memory and on disk."""
-    model = make_model()
-    before = model.SerializeToString()
-    assert not remove_hands23_nonzero(model)
-    assert model.SerializeToString() == before
-
+def test_non_hands23_raises(make_model, tmp_path) -> None:
+    """A model that is not the Hands23 pattern raises and is left as is on disk."""
     path = tmp_path / "in.onnx"
-    onnx.save(model, str(path))
-    assert not fix_hands23_onnx(path, tmp_path / "out.onnx")
-    assert not (tmp_path / "out.onnx").exists()
-
-
-@pytest.mark.cpu
-@_needs_onnx
-def test_fix_file(passed, tmp_path) -> None:
-    """fix_hands23_onnx writes the rewritten model to output, or over the input by default."""
-    out = tmp_path / "out.onnx"
-    assert fix_hands23_onnx(HANDS23_ONNX, out)
-    assert _count(onnx.load(str(out)), "NonZero") == 0
-    assert not fix_hands23_onnx(out)
+    onnx.save(make_model(), str(path))
+    before = path.read_bytes()
+    with pytest.raises(RuntimeError, match="Hands23"):
+        remove_nonzero(path)
+    assert path.read_bytes() == before
 
 
 @_needs_onnx

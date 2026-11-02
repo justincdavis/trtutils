@@ -5,13 +5,15 @@
 
 from __future__ import annotations
 
+import shutil
+
 import numpy as np
 import pytest
 
 from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR
 from trtutils._flags import FLAGS
-from trtutils.builder.onnx import fix_hands23_onnx
+from trtutils.download._models._hands23_pass import remove_nonzero
 from trtutils.image._hand_interaction import HandInteractionDetector
 from trtutils.image._schema import HandInteractionOutputSchema
 from trtutils.models import HOIDETR, Hands23
@@ -236,7 +238,8 @@ def test_nonzero_free_engine_matches_original(build_model_engine, images, tmp_pa
     fixed_engine = engine_cache_path("hands23_x101_800_nonzero_free", 1, 1)
     if not fixed_engine.exists():
         fixed_onnx = tmp_path_factory.mktemp("hands23") / "hands23_fixed_800.onnx"
-        assert fix_hands23_onnx(HANDS23_ONNX, fixed_onnx)
+        shutil.copy(HANDS23_ONNX, fixed_onnx)
+        remove_nonzero(fixed_onnx)
         Hands23.build(fixed_onnx, fixed_engine, imgsz=800, batch_size=1, opt_level=1)
 
     img = images["people"].array
