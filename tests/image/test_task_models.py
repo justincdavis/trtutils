@@ -24,6 +24,7 @@ PREPROCS = [
     pytest.param("cpu", id="cpu"),
     pytest.param("cuda", id="cuda"),
     pytest.param("trt", id="trt"),
+    pytest.param("hybrid", id="hybrid"),
 ]
 TASKS = [
     pytest.param(Segmenter, "seg", "people", id="seg"),
@@ -190,7 +191,8 @@ def test_segmenter_mask_thres(task_engine, images) -> None:
     strict = Segmenter(task_engine("seg"), mask_thres=0.99, warmup=False)
     filled = Segmenter(task_engine("seg"), mask_thres=0.0, warmup=False)
 
-    default = strict.end2end(image)
+    # end2end masks live in a reused canvas, so keep a copy across calls
+    default = [(*seg[:3], seg[3].copy()) for seg in strict.end2end(image)]
     override = strict.end2end(image, mask_thres=0.0)
     via_run = filled.get_segmentations(filled.run(image))
     assert default
@@ -264,3 +266,73 @@ def test_classifier_softmax_false_top_k(task_engine, images) -> None:
     assert sum(probs) == pytest.approx(1.0, abs=1e-2)
     assert probs == sorted(probs, reverse=True)
     assert top[0][0] == 339  # sorrel, ultralytics top-1
+
+
+def test_segmenter_cpu_no_copy_postprocess_then_cuda(task_engine, images) -> None:
+    """A CPU no_copy postprocess of host outputs leaves the CUDA path's canvases working."""
+    image = images["horse"].array
+    ref = Segmenter(task_engine("seg"), postprocessor="cpu", warmup=False).end2end(image)
+    seg = Segmenter(task_engine("seg"), postprocessor="cuda", warmup=False)
+    tensor, ratios, padding = seg.preprocess(image)
+    raw = seg.run(tensor, ratios, padding, preprocessed=True, postprocess=False)
+    host = seg.get_segmentations(seg.postprocess(raw, ratios, padding, no_copy=True))[0]
+    assert _fields(host) == _fields(ref)
+    got = seg.end2end(image)
+    assert _fields(got) == _fields(ref)
+    for g, w in zip(got, ref):
+        np.testing.assert_array_equal(g[3], w[3])
+
+
+@pytest.mark.parametrize("image_name", ["people", "horse"])
+def test_segmenter_cuda_postprocessor_matches_cpu(task_engine, images, image_name: str) -> None:
+    """postprocessor="cuda" gives the CPU results exactly, through run() and end2end()."""
+    image = images[image_name].array
+    cpu = Segmenter(task_engine("seg"), warmup=False)
+    cuda = Segmenter(task_engine("seg"), postprocessor="cuda", warmup=False)
+
+    ref = cpu.end2end(image)
+    for segs in (cuda.end2end(image), cuda.get_segmentations(cuda.run(image)), cuda.end2end(image)):
+        assert _fields(segs) == _fields(ref)
+        for got, want in zip(segs, ref):
+            np.testing.assert_array_equal(got[3], want[3])
+
+
+def test_obb_detector_cuda_postprocessor_matches_cpu(task_engine, images) -> None:
+    """postprocessor="cuda" gives the CPU detections exactly, through run() and end2end()."""
+    image = _load(images, "aerial")
+    cpu = OBBDetector(task_engine("obb"), warmup=False)
+    cuda = OBBDetector(task_engine("obb"), postprocessor="cuda", warmup=False)
+
+    ref = cpu.end2end(image)
+    assert ref
+    for obbs in (cuda.end2end(image), cuda.get_obbs(cuda.run(image)), cuda.end2end(image)):
+        assert obbs == ref
+    # enclosing boxes use cos / sin, which numpy's float32 does not round like the GPU
+    want = cpu.run(image)
+    got = cuda.run(image)
+    np.testing.assert_allclose(got[0], want[0], rtol=1e-5, atol=1e-3)
+    for g, w in zip(got[1:], want[1:]):
+        np.testing.assert_array_equal(g, w)
+
+
+@pytest.mark.parametrize(("model_cls", "task"), [pytest.param(Classifier, "cls", id="cls")])
+def test_cuda_postprocessor_unsupported_raises(task_engine, model_cls, task: str) -> None:
+    """A task model without a CUDA postprocessor rejects postprocessor="cuda"."""
+    with pytest.raises(ValueError, match="postprocessor"):
+        model_cls(task_engine(task), postprocessor="cuda", warmup=False)
+
+
+@pytest.mark.parametrize("image_name", ["people", "horse"])
+def test_pose_cuda_postprocessor_matches_cpu(task_engine, images, image_name: str) -> None:
+    """postprocessor="cuda" gives the CPU poses exactly, through run() and end2end()."""
+    image = images[image_name].array
+    cpu = PoseEstimator(task_engine("pose"), warmup=False)
+    cuda = PoseEstimator(task_engine("pose"), postprocessor="cuda", warmup=False)
+
+    ref = cpu.end2end(image)
+    for poses in (cuda.end2end(image), cuda.get_poses(cuda.run(image)), cuda.end2end(image)):
+        assert len(poses) == len(ref)
+        for got, want in zip(poses, ref):
+            np.testing.assert_array_equal(got[0], want[0])
+            assert got[1] == want[1]
+            np.testing.assert_array_equal(got[2], want[2])

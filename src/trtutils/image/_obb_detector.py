@@ -4,17 +4,19 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
 
 import nvtx
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
 from ._schema import OBBDetectorOutputSchema
 from .interfaces import OBBDetectorInterface
 from .postprocessors import get_obb_detections, postprocess_yolo_obb
+from .postprocessors._gpu import CudaObbPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -23,7 +25,6 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Literal, Self
 
-    from trtutils.core._buffer import Buffer
     from trtutils.image.types import OBBDetection
 
     from ._image_model import _PostFn
@@ -33,13 +34,14 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
     """Implementation of oriented bounding box detectors (YOLO-style OBB heads)."""
 
     _OUTPUT_SCHEMA = OBBDetectorOutputSchema
+    _cuda_postprocess = True
 
     def __init__(
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
-        preprocessor: str = "trt",
+        preprocessor: str = "cuda",
         resize_method: str = "letterbox",
         conf_thres: float = 0.1,
         nms_iou_thres: float = 0.5,
@@ -55,6 +57,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -73,7 +76,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
+            The options are ['cpu', 'cuda', 'trt'], default is 'cuda'.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'letterbox'.
@@ -116,6 +119,10 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
+            on the GPU and copies back only the final results. Default is None,
+            which picks 'cuda' when the task has a CUDA postprocessor, else 'cpu'.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -145,6 +152,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -165,6 +173,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         self._conf_thres: float = conf_thres
         self._nms_iou: float = nms_iou_thres
         self._max_det: int = max_det
+        self._cuda_post = CudaObbPostprocessor() if self._postprocessor == "cuda" else None
 
         if self._verbose:
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
@@ -179,7 +188,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -193,7 +202,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
 
         Parameters
         ----------
-        outputs : list[np.ndarray]
+        outputs : list[np.ndarray] | list[Buffer]
             The raw outputs from the engine to postprocess.
         ratios : list[tuple[float, float]]
             The rescale ratios used during preprocessing for each image.
@@ -228,15 +237,26 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         outputs = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        data = postprocess_yolo_obb(
-            outputs,
-            ratios,
-            padding,
-            conf_thres,
-            nms_iou_thres,
-            max_det=self._max_det,
-            verbose=verbose,
-        )
+        if self._cuda_post is not None and isinstance(outputs[0], Buffer):
+            data = self._cuda_post(
+                cast("list[Buffer]", outputs),
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                max_det=self._max_det,
+                stream=self._engine.stream,
+            )
+        else:
+            data = postprocess_yolo_obb(
+                cast("list[np.ndarray]", outputs),
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                max_det=self._max_det,
+                verbose=verbose,
+            )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 

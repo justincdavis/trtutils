@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+import functools
 import math
 from typing import TYPE_CHECKING
 
@@ -12,11 +13,12 @@ import numpy as np
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from trtutils.image.types import Text, TextBox
 
 _MIN_BOX_SIDE = 3
+_SIDE_SQ_LIMIT = (_MIN_BOX_SIDE + 1) ** 2
 _SAME_LINE_PX = 10
 
 
@@ -31,10 +33,12 @@ def _mini_box(rect: tuple) -> tuple[np.ndarray, float]:
 def _box_score(pred: np.ndarray, box: np.ndarray) -> float:
     """Mean probability of ``pred`` inside the polygon ``box``."""
     h, w = pred.shape
-    xmin = int(np.clip(np.floor(box[:, 0].min()), 0, w - 1))
-    xmax = int(np.clip(np.ceil(box[:, 0].max()), 0, w - 1))
-    ymin = int(np.clip(np.floor(box[:, 1].min()), 0, h - 1))
-    ymax = int(np.clip(np.ceil(box[:, 1].max()), 0, h - 1))
+    # plain floats: numpy calls on a 4x2 box cost more than the math
+    xs, ys = box.T.tolist()
+    xmin = min(max(math.floor(min(xs)), 0), w - 1)
+    xmax = min(max(math.ceil(max(xs)), 0), w - 1)
+    ymin = min(max(math.floor(min(ys)), 0), h - 1)
+    ymax = min(max(math.ceil(max(ys)), 0), h - 1)
     mask = np.zeros((ymax - ymin + 1, xmax - xmin + 1), dtype=np.uint8)
     cv2.fillPoly(mask, [(box - (xmin, ymin)).astype(np.int32)], (1,))
     return cv2.mean(pred[ymin : ymax + 1, xmin : xmax + 1], mask)[0]
@@ -52,13 +56,18 @@ def _unclip(box: np.ndarray, unclip_ratio: float) -> tuple:
     arc tolerance 0.25) used by the reference implementation, so boxes match it
     pixel-for-pixel. Returns the cv2.minAreaRect of the expanded polygon.
     """
-    pts = box.astype(np.float64)
-    nxt = np.roll(pts, -1, axis=0)
-    area = abs(float(np.sum(pts[:, 0] * nxt[:, 1] - nxt[:, 0] * pts[:, 1]))) / 2
-    delta = area * unclip_ratio / float(np.sum(np.linalg.norm(nxt - pts, axis=1)))
+    # float64 shoelace area and perimeter, summed in numpy's order for small arrays
+    pts = box.tolist()
+    nxt = pts[1:] + pts[:1]
+    area = abs(sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(pts, nxt))) / 2
+    perimeter = sum(
+        math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0))
+        for (x0, y0), (x1, y1) in zip(pts, nxt)
+    )
+    delta = area * unclip_ratio / perimeter
 
     # integer polygon, consecutive duplicates removed, counter-clockwise
-    ipts = [(int(x), int(y)) for x, y in box.tolist()]
+    ipts = [(int(x), int(y)) for x, y in pts]
     ipts = [p for i, p in enumerate(ipts) if p != ipts[i - 1]] or ipts[:1]
     n = len(ipts)
     signed = sum(
@@ -95,11 +104,19 @@ def _unclip(box: np.ndarray, unclip_ratio: float) -> tuple:
         if sin_a * delta < 0:
             out += [at(ipts[j], nk), ipts[j], at(ipts[j], nj)]
             continue
+        # the arc: the hot loop, with at() and _round_half_away() inlined
+        px, py = ipts[j]
         x, y = nk
         for _ in range(
             max(_round_half_away(steps / (2 * math.pi) * abs(math.atan2(sin_a, cos_a))), 1)
         ):
-            out.append(at(ipts[j], (x, y)))
+            vx, vy = px + x * delta, py + y * delta
+            out.append(
+                (
+                    int(vx - 0.5) if vx < 0 else int(vx + 0.5),
+                    int(vy - 0.5) if vy < 0 else int(vy + 0.5),
+                )
+            )
             x, y = x * cos_s - sin_s * y, x * sin_s + y * cos_s
         out.append(at(ipts[j], nj))
     return cv2.minAreaRect(np.array(out, dtype=np.int32))
@@ -149,6 +166,33 @@ def sort_text_boxes(
     return boxes[idx].reshape(-1, 4, 2), np.asarray(scores)[idx]
 
 
+def _scaled_boxes(
+    kept: list[np.ndarray],
+    kept_scores: list[float],
+    size: np.ndarray,
+    limit: np.ndarray,
+) -> tuple[list[np.ndarray], list[float]]:
+    """Scale unclipped boxes to the source image, dropping those with a side under 4 px."""
+    boxes: list[np.ndarray] = []
+    scores: list[float] = []
+    if not kept:
+        return boxes, scores
+    # rounded and clipped, so already integral like the reference's int32 boxes; float32
+    # elementwise ops, so scaling all boxes at once gives the per-box bits
+    scaled = np.clip(np.round(np.stack(kept) / size * limit), 0, limit)
+    for raw, score in zip(scaled, kept_scores):
+        box = np.clip(_order_clockwise(raw), 0, limit - 1)
+        (x0, y0), (x1, y1), _, (x3, y3) = box.tolist()
+        # integral corners: int(norm) <= 3 is exactly a squared length under 16
+        if (x1 - x0) ** 2 + (y1 - y0) ** 2 < _SIDE_SQ_LIMIT or (x3 - x0) ** 2 + (
+            y3 - y0
+        ) ** 2 < _SIDE_SQ_LIMIT:
+            continue
+        boxes.append(box)
+        scores.append(score)
+    return boxes, scores
+
+
 def _text_boxes(
     pred: np.ndarray,
     image_shape: tuple[int, int],
@@ -158,40 +202,44 @@ def _text_boxes(
     unclip_ratio: float,
     *,
     use_dilation: bool,
+    bitmap: np.ndarray | None = None,
+    wait: Callable[[], None] | None = None,
 ) -> list[np.ndarray]:
-    """Boxes (N, 4, 2) and scores (N,) in reading order from one (H, W) probability map."""
+    """
+    Boxes (N, 4, 2) and scores (N,) in reading order from one (H, W) probability map.
+
+    ``bitmap`` is ``pred > thresh`` when already computed, and ``wait`` blocks
+    until ``pred`` is readable (it may still be copying from the device).
+    """
     height, width = pred.shape
     src_h, src_w = image_shape
-    bitmap = (pred > thresh).astype(np.uint8)
+    if bitmap is None:
+        bitmap = (pred > thresh).astype(np.uint8)
     if use_dilation:
         bitmap = cv2.dilate(bitmap, np.ones((2, 2), dtype=np.uint8))
     contours = cv2.findContours(bitmap * 255, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2]
 
     size = np.array([width, height], np.float32)
     limit = np.array([src_w, src_h], np.float32)
-    boxes: list[np.ndarray] = []
-    scores: list[float] = []
+    kept: list[np.ndarray] = []
+    kept_scores: list[float] = []
     for contour in contours[:max_candidates]:
         points, short_side = _mini_box(cv2.minAreaRect(contour))
         if short_side < _MIN_BOX_SIDE:
             continue
+        if wait is not None:
+            wait()
+            wait = None
         score = _box_score(pred, points)
         if score < box_thresh:
             continue
         box, short_side = _mini_box(_unclip(points, unclip_ratio))
         if short_side < _MIN_BOX_SIDE + 2:
             continue
-        # rounded and clipped, so already integral like the reference's int32 boxes
-        box = np.clip(np.round(box / size * limit), 0, limit)
-        box = np.clip(_order_clockwise(box), 0, limit - 1)
-        if (
-            int(np.linalg.norm(box[0] - box[1])) <= _MIN_BOX_SIDE
-            or int(np.linalg.norm(box[0] - box[3])) <= _MIN_BOX_SIDE
-        ):
-            continue
-        boxes.append(box)
-        scores.append(score)
+        kept.append(box)
+        kept_scores.append(score)
 
+    boxes, scores = _scaled_boxes(kept, kept_scores, size, limit)
     if not boxes:
         return [np.zeros((0, 4, 2), dtype=np.float32), np.zeros(0, dtype=np.float32)]
     return list(sort_text_boxes(np.stack(boxes), np.array(scores, dtype=np.float32)))
@@ -207,6 +255,8 @@ def postprocess_text_detection(
     unclip_ratio: float = 1.5,
     *,
     use_dilation: bool = False,
+    bitmaps: np.ndarray | None = None,
+    wait: Callable[[], None] | None = None,
     no_copy: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
@@ -235,6 +285,10 @@ def postprocess_text_detection(
         How far to expand each shrunk text kernel. Default is 1.5.
     use_dilation : bool
         Whether to dilate the binary map with a 2x2 kernel. Default is False.
+    bitmaps : np.ndarray, optional
+        ``outputs[0] > thresh`` as 0/1 bytes when already computed (by the CUDA postprocessor).
+    wait : Callable[[], None], optional
+        Blocks until ``outputs[0]`` is readable, called before it is first read for scoring.
     no_copy : bool, optional
         Unused, the boxes are always new arrays.
     verbose : bool, optional
@@ -253,6 +307,9 @@ def postprocess_text_detection(
 
     maps = outputs[0]
     height, width = int(maps.shape[-2]), int(maps.shape[-1])
+    # an image may never score a box, so every image waits, only the first call blocks
+    if wait is not None:
+        wait = functools.lru_cache(maxsize=None)(wait)
     results = []
     for i, ((ratio_w, ratio_h), (pad_x, pad_y)) in enumerate(zip(ratios, padding)):
         valid_h, valid_w = height - int(pad_y), width - int(pad_x)
@@ -267,6 +324,10 @@ def postprocess_text_detection(
                 max_candidates,
                 unclip_ratio,
                 use_dilation=use_dilation,
+                bitmap=None
+                if bitmaps is None
+                else bitmaps[i].reshape(height, width)[:valid_h, :valid_w],
+                wait=wait,
             )
         )
     return results

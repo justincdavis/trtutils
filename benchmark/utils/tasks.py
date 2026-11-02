@@ -117,14 +117,14 @@ def _engine(cls: Any, name: str, imgsz: int | None) -> Path:  # noqa: ANN401
     return engine
 
 
-def load_model(spec: TaskModel, preprocessor: str) -> Any:  # noqa: ANN401
+def load_model(spec: TaskModel, preprocessor: str, postprocessor: str = "cpu") -> Any:  # noqa: ANN401
     """Build (if needed) and load the model of ``spec`` with ``preprocessor``."""
     if spec.parts:
         det = _engine(spec.parts["det"], f"{spec.name}_det", spec.imgsz)
         rec = _engine(spec.parts["rec"], f"{spec.name}_rec", None)
-        return spec.cls(det, rec, warmup=True)
+        return spec.cls(det, rec, postprocessor=postprocessor, warmup=True)
     engine = _engine(spec.cls, spec.name, spec.imgsz)
-    return spec.cls(engine, preprocessor=preprocessor, warmup=True)
+    return spec.cls(engine, preprocessor=preprocessor, postprocessor=postprocessor, warmup=True)
 
 
 def _sync() -> None:
@@ -135,26 +135,49 @@ class StageTimer:
     """
     Wrap a model's stage methods to attribute end2end time to stages.
 
-    ``prepare_inputs`` (preprocessing) syncs the device so GPU preprocessing is
-    not billed to the engine; ``infer`` covers preprocessing plus the engine;
-    ``postprocess`` is timed as is; whatever is left of the end2end call
-    (result extraction, OCR crops) is ``extract``.
+    ``prepare_inputs`` and ``prepare_regions`` (preprocessing) sync the device so
+    GPU preprocessing is not billed to the engine; ``infer`` / ``_infer_post`` /
+    ``_infer_regions`` cover the engine and sync too; ``postprocess`` is timed as
+    is. A stage nested in another is taken out of its parent, and whatever is left
+    of the end2end call (result extraction, OCR crops) is ``extract``.
     """
+
+    _WRAPPED = (
+        ("prepare_inputs", "preprocess", True),
+        ("prepare_regions", "preprocess", True),
+        ("infer", "infer", True),
+        ("_infer_post", "infer", True),
+        ("_infer_regions", "infer", True),
+        ("postprocess", "postprocess", False),
+    )
 
     def __init__(self, image_models: list[Any]) -> None:
         self.times: dict[str, float] = dict.fromkeys(STAGES, 0.0)
+        self._active: set[str] = set()
+        self._children: list[float] = []
         for m in image_models:
-            m.prepare_inputs = self._wrap(m.prepare_inputs, "preprocess", sync=True)
-            m.infer = self._wrap(m.infer, "infer")
-            m.postprocess = self._wrap(m.postprocess, "postprocess")
+            for name, stage, sync in self._WRAPPED:
+                if hasattr(m, name):
+                    setattr(m, name, self._wrap(getattr(m, name), stage, sync=sync))
 
     def _wrap(self, fn: Callable[..., Any], stage: str, *, sync: bool = False) -> Callable[..., Any]:
         def timed(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+            # _infer_post calls infer on the CPU path, count the stage once
+            if stage in self._active:
+                return fn(*args, **kwargs)
+            self._active.add(stage)
+            self._children.append(0.0)
             t0 = time.perf_counter()
-            out = fn(*args, **kwargs)
-            if sync:
-                _sync()
-            self.times[stage] += time.perf_counter() - t0
+            try:
+                out = fn(*args, **kwargs)
+                if sync:
+                    _sync()
+            finally:
+                self._active.discard(stage)
+                elapsed = time.perf_counter() - t0
+                self.times[stage] += elapsed - self._children.pop()
+                if self._children:
+                    self._children[-1] += elapsed
             return out
 
         return timed
@@ -165,13 +188,11 @@ class StageTimer:
     def split(self, total: float) -> dict[str, float]:
         """Per-stage seconds for one end2end call that took ``total`` seconds."""
         t = self.times
-        # infer wraps prepare_inputs, so take preprocessing back out of it
-        infer = t["infer"] - t["preprocess"]
         return {
             "preprocess": t["preprocess"],
-            "infer": infer,
+            "infer": t["infer"],
             "postprocess": t["postprocess"],
-            "extract": total - t["infer"] - t["postprocess"],
+            "extract": total - sum(t.values()),
         }
 
 
@@ -187,10 +208,11 @@ def bench_task(
     preprocessor: str,
     warmup: int,
     iterations: int,
+    postprocessor: str = "cpu",
 ) -> dict[str, Any]:
     """Time ``iterations`` end2end calls, both plain and split into stages."""
     image = load_frame(spec.image)
-    model = load_model(spec, preprocessor)
+    model = load_model(spec, preprocessor, postprocessor)
     for _ in range(warmup):
         model.end2end(image)
 
@@ -215,6 +237,7 @@ def bench_task(
         "task": spec.task,
         "model": spec.name,
         "preprocessor": preprocessor,
+        "postprocessor": postprocessor,
         "frame": list(FRAME_SIZE),
         "end2end": compute_results(totals),
         "stages": {s: compute_results(v) for s, v in stages.items()},
@@ -228,6 +251,7 @@ def run_tasks(
     warmup: int,
     iterations: int,
     *,
+    postprocessors: tuple[str, ...] = ("cpu",),
     overwrite: bool = False,
     stage: str | None = None,
 ) -> dict[str, Any]:
@@ -243,14 +267,18 @@ def run_tasks(
         if names is not None and spec.name not in names:
             continue
         # OCR preprocesses on the CPU only
-        for prep in ["cpu"] if spec.parts else preprocessors:
-            key = f"{spec.name}/{prep}"
+        runs = [(pre, post) for post in postprocessors for pre in (["cpu"] if spec.parts else preprocessors)]
+        for prep, post in runs:
+            key = f"{spec.name}/{prep}" + ("" if post == "cpu" else f"/{post}-post")
             if key in data and not overwrite:
                 print(f"Skipping {key} (already exists)")
                 cached += 1
                 continue
+            if post == "cuda" and not (spec.parts or spec.cls._cuda_postprocess):
+                print(f"Skipping {key}: no CUDA postprocessor")
+                continue
             print(f"Benchmarking {key}")
-            data[key] = bench_task(spec, prep, warmup, iterations)
+            data[key] = bench_task(spec, prep, warmup, iterations, post)
             data[key].update(trtutils_provenance())
             res = data[key]
             parts = ", ".join(f"{s} {res['stages'][s]['median']:.2f}" for s in STAGES)

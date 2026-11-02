@@ -167,22 +167,13 @@ def _get_detections_core(
     if conf_thres is None:
         conf_thres = 0.0
 
-    bboxes = outputs[0]
-    scores = outputs[1]
-    class_ids = outputs[2]
-
-    results: list[Detection] = []
-    for idx in range(len(bboxes)):
-        if scores[idx] >= conf_thres:
-            x1, y1, x2, y2 = bboxes[idx]
-            entry = (
-                (int(x1), int(y1), int(x2), int(y2)),
-                float(scores[idx]),
-                int(class_ids[idx]),
-            )
-            results.append(entry)
-
-    return results
+    keep = outputs[1] >= conf_thres
+    # bulk tolist is far cheaper than converting numpy scalars one at a time;
+    # astype(int) truncates toward zero as int() does
+    bboxes = outputs[0][keep].astype(int).tolist()
+    scores = outputs[1][keep].astype(float).tolist()
+    class_ids = outputs[2][keep].astype(int).tolist()
+    return [(tuple(box), score, cls) for box, score, cls in zip(bboxes, scores, class_ids)]
 
 
 def postprocess_efficient_nms(
