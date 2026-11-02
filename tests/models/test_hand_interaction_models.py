@@ -14,7 +14,7 @@ from trtutils.compat._libs import trt
 from trtutils.image._hand_interaction import HandInteractionDetector
 from trtutils.image._schema import HandInteractionOutputSchema
 from trtutils.models import HOIDETR, Hands23
-from trtutils.models._model import hands23_fp32_build_hook
+from trtutils.models._hooks import hands23_fp32_build_hook
 
 HOI_DETR_ONNX = DATA_DIR / "hoi_detr" / "hoi_detr_vitl_640.onnx"
 HANDS23_ONNX = DATA_DIR / "hands23" / "hands23_x101_800.onnx"

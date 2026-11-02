@@ -6,7 +6,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.image._hand_interaction import HandInteractionDetector
-from trtutils.models._model import Model, hands23_fp32_build_hook
+from trtutils.models._hooks import hands23_fp32_build_hook
+from trtutils.models._model import Model
 
 if TYPE_CHECKING:
     from collections.abc import Callable
