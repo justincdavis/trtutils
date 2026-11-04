@@ -147,6 +147,16 @@ def test_nms_indices_offset_is_max_coordinate_plus_one() -> None:
     assert np.array_equal(nms_indices(boxes, scores, labels, 0.1, 0.0, None), expected)
 
 
+def test_nms_indices_offset_starts_at_zero() -> None:
+    """Boxes entirely left of the origin suppress across classes like NMSBoxesBatched."""
+    boxes = np.array([[-10, -10, -5, -5], [-10, -10, -5, -5]], dtype=np.float32)
+    scores = np.array([0.9, 0.8], dtype=np.float32)
+    labels = np.array([0, 1])
+    expected = _cv2_nms(boxes, scores, labels, 0.1, 0.3, None)
+    assert expected.tolist() == [0]
+    assert np.array_equal(nms_indices(boxes, scores, labels, 0.1, 0.3, None), expected)
+
+
 @pytest.mark.parametrize("use_cv2", [True, False], ids=["cv2", "numpy"])
 @pytest.mark.parametrize("max_det", [0, -1])
 def test_nms_indices_non_positive_max_det_is_empty(use_cv2, max_det) -> None:

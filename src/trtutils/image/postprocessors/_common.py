@@ -37,9 +37,10 @@ def _nms_order(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Boxes shifted by class, areas, and the stable score order, matching NMSBoxesBatched."""
     xywh = xywh.astype(np.float64)
-    offset = labels.astype(np.float64) * (np.max(xywh[:, :2] + xywh[:, 2:]) + 1)
-    xywh[:, :2] += offset[:, None]
     boxes = np.concatenate((xywh[:, :2], xywh[:, :2] + xywh[:, 2:]), axis=1)
+    # cv2 starts max_coord at 0, so boxes left of the origin still separate by class
+    offset = labels.astype(np.float64) * (np.max(boxes, initial=0.0) + 1.0)
+    boxes += offset[:, None]
     scores = scores.astype(np.float32).astype(np.float64)
     thres = 0.0 if conf_thres is None else conf_thres
     cand = np.flatnonzero(scores > thres)

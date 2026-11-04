@@ -207,6 +207,9 @@ Changed
 
 Fixed
 ^^^^^
+* Class-aware NMS without OpenCV matches ``cv2.dnn.NMSBoxesBatched`` when every box sits at or
+  left of the origin: the class offset starts at 0 and takes the max of every corner, so a
+  different class no longer survives IoU suppression
 * ``YOLOv10.build`` and ``YOLOv13.build`` keep the depthwise convolutions in FP32: in FP16 the
   builder sometimes picked depthwise kernels (seen on TensorRT 10.15, RTX 5080) that broke the
   output. YOLOv10 lost large objects in about one build in seven (no horse on ``horse.jpg``
