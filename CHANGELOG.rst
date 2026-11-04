@@ -112,7 +112,7 @@ Added
 * ``preprocessor="hybrid"`` and ``HybridPreprocessor``: resize on the CPU (the exact pixels of
   ``"cpu"``), upload only the resized image and normalize on the GPU. 1080p frame on an RTX 5080:
   yolo11n-cls 0.66 -> 0.38 ms end2end vs ``"cuda"``, yolo11n 0.98 -> 0.86 ms, Depth Anything v2
-  small 1.95 -> 1.81 ms. The default stays ``"trt"``: the CPU resize costs more on weaker CPUs
+  small 1.95 -> 1.81 ms. The default is ``"cuda"``; the CPU resize costs more on weaker CPUs
 * ``postprocessor="cpu"|"cuda"`` on every image model and wrapper. ``Segmenter``,
   ``PoseEstimator``, ``OBBDetector``, ``TextDetector``, ``TextRecognizer`` and ``PPOCR`` have
   CUDA postprocessors (NMS, masks, probiou, CTC decode, DB binarize) that read the engine outputs

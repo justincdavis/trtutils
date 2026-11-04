@@ -222,7 +222,9 @@ resnet18, depth_anything_v2_small, hands23_x101, ppocrv4). `--all` runs every do
 detection ocr ...` limits the tasks, `--model NAME ...` picks exact names (unknown names raise),
 and `--list` prints the selection without running. A model that fails to download or build is
 logged and skipped, and so is a preprocessor the model resolves to something else (e.g. trt
-falling back to cuda). ONNX files and engines live in `data/tasks/<trtutils sha>[-dirty]/` and
+falling back to cuda). The postprocessor is the one the model resolves, CUDA where the task
+has a kernel, unless `--postprocessors` is set (`--postprocessors cpu` times the CPU path).
+ONNX files and engines live in `data/tasks/<trtutils sha>[-dirty]/` and
 are downloaded and built on first use. Each model runs `end2end` once without
 instrumentation for the end-to-end time, then again with its stages timed; preprocessing syncs
 the device so GPU preprocessing is not billed to inference. Results are saved to

@@ -301,13 +301,15 @@ def cmd_tasks(args: argparse.Namespace) -> None:
             print(f"{m.task:18}{m.cls.__name__:20}{m.name}")
         print(f"{len(picked)} models")
         return
+    # None times the postprocessor each model resolves, not an explicit cpu sweep
+    posts = None if args.postprocessors is None else tuple(args.postprocessors)
     run_tasks(
         args.device,
         args.model,
         args.preprocessors,
         args.warmup,
         args.iterations,
-        postprocessors=tuple(args.postprocessors),
+        postprocessors=posts,
         overwrite=args.overwrite,
         stage=args.stage,
         tasks=args.task,
@@ -474,7 +476,13 @@ def main() -> None:
     p.add_argument("--all", action="store_true", help="Every model, not the first per class")
     p.add_argument("--list", action="store_true", help="Print the selected models and exit")
     p.add_argument("--preprocessors", nargs="+", default=["cpu", "cuda", "trt", "hybrid"])
-    p.add_argument("--postprocessors", nargs="+", default=["cpu"], choices=["cpu", "cuda"])
+    p.add_argument(
+        "--postprocessors",
+        nargs="+",
+        default=None,
+        choices=["cpu", "cuda"],
+        help="Postprocessors to time (default: the one each model resolves)",
+    )
     p.add_argument("--warmup", type=int, default=20)
     p.add_argument("--iterations", type=int, default=200)
     p.add_argument("--overwrite", action="store_true")

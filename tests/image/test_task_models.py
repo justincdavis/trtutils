@@ -287,7 +287,7 @@ def test_segmenter_cpu_no_copy_postprocess_then_cuda(task_engine, images) -> Non
 def test_segmenter_cuda_postprocessor_matches_cpu(task_engine, images, image_name: str) -> None:
     """postprocessor="cuda" gives the CPU results exactly, through run() and end2end()."""
     image = images[image_name].array
-    cpu = Segmenter(task_engine("seg"), warmup=False)
+    cpu = Segmenter(task_engine("seg"), postprocessor="cpu", warmup=False)
     cuda = Segmenter(task_engine("seg"), postprocessor="cuda", warmup=False)
 
     ref = cpu.end2end(image)
@@ -300,7 +300,7 @@ def test_segmenter_cuda_postprocessor_matches_cpu(task_engine, images, image_nam
 def test_obb_detector_cuda_postprocessor_matches_cpu(task_engine, images) -> None:
     """postprocessor="cuda" gives the CPU detections exactly, through run() and end2end()."""
     image = _load(images, "aerial")
-    cpu = OBBDetector(task_engine("obb"), warmup=False)
+    cpu = OBBDetector(task_engine("obb"), postprocessor="cpu", warmup=False)
     cuda = OBBDetector(task_engine("obb"), postprocessor="cuda", warmup=False)
 
     ref = cpu.end2end(image)
@@ -326,7 +326,7 @@ def test_cuda_postprocessor_unsupported_raises(task_engine, model_cls, task: str
 def test_pose_cuda_postprocessor_matches_cpu(task_engine, images, image_name: str) -> None:
     """postprocessor="cuda" gives the CPU poses exactly, through run() and end2end()."""
     image = images[image_name].array
-    cpu = PoseEstimator(task_engine("pose"), warmup=False)
+    cpu = PoseEstimator(task_engine("pose"), postprocessor="cpu", warmup=False)
     cuda = PoseEstimator(task_engine("pose"), postprocessor="cuda", warmup=False)
 
     ref = cpu.end2end(image)
