@@ -9,12 +9,14 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import nvtx
+from cv2ext.image import letterbox, resize_linear
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._kernels import Kernel
-from trtutils.core._stream import destroy_stream
+from trtutils.core._memory import memcpy_host_to_device_async
+from trtutils.core._stream import destroy_stream, stream_synchronize
 from trtutils.image.kernels import IMAGENET_SST, SST_FAST
 
 from ._image_preproc import GPUImagePreprocessor
@@ -353,3 +355,46 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             nvtx.pop_range()  # cuda_direct_preproc
 
         return self._output_binding.device[:batch_size], ratios_list, padding_list
+
+
+class HybridPreprocessor(CUDAPreprocessor):
+    """
+    Resize on the CPU as :class:`CPUPreprocessor` does, then normalize on the GPU.
+
+    Only the resized image is uploaded instead of the full frame, which wins
+    when the model input is much smaller than the frame (classifiers). Device
+    Buffers are resized on the GPU as in :class:`CUDAPreprocessor`.
+    """
+
+    def _resize_images_to_batch(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        batch_buffer_ptr: int,
+        resize: str | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        host_images = [img for img in images if isinstance(img, np.ndarray)]
+        if len(host_images) != len(images):
+            return super()._resize_images_to_batch(images, batch_buffer_ptr, resize, verbose=verbose)
+        for img in host_images[1:]:
+            self._validate_input(img, resize, verbose=verbose)
+        method = self._validate_input(host_images[0], resize, verbose=verbose)
+        o_width, o_height = self._o_shape
+        host = self._reallocate_batch_input(len(images), o_height, o_width)
+        # the previous upload may still read the pinned staging
+        if self._pagelocked_mem:
+            stream_synchronize(self._stream)
+        ratios_list: list[tuple[float, float]] = []
+        padding_list: list[tuple[float, float]] = []
+        for i, image in enumerate(host_images):
+            if method == "letterbox":
+                resized, ratios, padding = letterbox(image, new_shape=self._o_shape)
+            else:
+                resized, ratios = resize_linear(image, new_shape=self._o_shape)
+                padding = (0.0, 0.0)
+            np.copyto(host[i], resized)
+            ratios_list.append(ratios)
+            padding_list.append(padding)
+        memcpy_host_to_device_async(batch_buffer_ptr, host, self._stream)
+        return ratios_list, padding_list

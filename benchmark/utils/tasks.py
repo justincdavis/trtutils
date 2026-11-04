@@ -1,0 +1,418 @@
+# Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
+#
+# MIT License
+# ruff: noqa: T201
+"""Per-stage latency of one model per task on a 1080p frame."""
+
+from __future__ import annotations
+
+import functools
+import inspect
+import re
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import cv2
+import numpy as np
+from tqdm import tqdm
+
+from trtutils import image, models
+from trtutils.compat._libs import cudart
+from trtutils.core._cuda import cuda_call
+from trtutils.download._download import load_model_configs
+from trtutils.models._model import Model
+
+from .config import REPO_DIR
+from .data import get_data, write_data
+from .runners import trtutils_provenance, write_stage_snapshot
+from .timing import compute_results
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
+
+TASK_DIR = REPO_DIR / "data" / "tasks"
+FRAME_SIZE = (1920, 1080)
+STAGES = ("preprocess", "infer", "postprocess", "extract")
+
+
+@dataclass
+class TaskModel:
+    """One benchmarked model: its wrapper class(es) and how to build and call it."""
+
+    task: str
+    name: str
+    cls: Any
+    image: str = "street.jpg"
+    # wrapper class per ONNX for multi-engine models (OCR det + rec)
+    parts: dict[str, Any] = field(default_factory=dict)
+
+
+# image-model base class -> task
+TASKS = {
+    image.Detector: "detection",
+    image.Classifier: "classification",
+    image.Segmenter: "segmentation",
+    image.PoseEstimator: "pose",
+    image.OBBDetector: "obb",
+    image.DepthEstimator: "depth",
+    image.HandInteractionDetector: "hand_interaction",
+}
+# per-task overrides of TaskModel fields
+TASK_OVERRIDES: dict[str, dict[str, Any]] = {"obb": {"image": "aerial.jpg"}}
+
+
+def _norm(name: str) -> str:
+    return re.sub("[^a-z0-9]", "", name.lower()).replace("transformer", "")
+
+
+def _wrapper(name: str, classes: list[Any]) -> Any:  # noqa: ANN401
+    """The wrapper class of a model: the family's only class, else the longest name prefix."""
+    if len(classes) == 1:
+        return classes[0]
+    # torchvision nets share one config, so match e.g. wide_resnet50_2 to WideResNet
+    prefixed = [c for c in classes if _norm(name).startswith(_norm(c.__name__))]
+    return max(prefixed, key=lambda c: len(c.__name__)) if prefixed else None
+
+
+def build_task_models() -> list[TaskModel]:
+    """One TaskModel per downloadable model, from the wrapper classes and download configs."""
+    by_type: dict[str, list[Any]] = {}
+    for cls in vars(models).values():
+        is_model = inspect.isclass(cls) and issubclass(cls, Model)
+        if is_model and any(issubclass(cls, base) for base in TASKS):
+            by_type.setdefault(cls._model_type, []).append(cls)  # noqa: SLF001
+    specs = []
+    for model_type, names in load_model_configs().items():
+        for name in names:
+            cls = _wrapper(name, by_type.get(model_type, []))
+            if cls is None:
+                continue
+            task = next(t for base, t in TASKS.items() if issubclass(cls, base))
+            specs.append(TaskModel(task, name, cls, **TASK_OVERRIDES.get(task, {})))
+    ocr = {"det": models.PPOCRDetector, "rec": models.PPOCRRecognizer}
+    specs.append(TaskModel("ocr", "ppocrv4", models.PPOCR, image="text", parts=ocr))
+    return specs
+
+
+TASK_MODELS = build_task_models()
+
+
+def select_task_models(
+    names: list[str] | None = None,
+    tasks: list[str] | None = None,
+    *,
+    all_models: bool = False,
+) -> list[TaskModel]:
+    """
+    Pick task models: ``names`` if given, else the first (smallest) model per wrapper class
+    (every model with ``all_models``), optionally limited to ``tasks``.
+    """
+    known = {m.name for m in TASK_MODELS}
+    unknown = sorted(set(names or []) - known)
+    if unknown:
+        err_msg = f"Unknown task models: {', '.join(unknown)}"
+        raise ValueError(err_msg)
+    if names is not None:
+        return [m for m in TASK_MODELS if m.name in names and (tasks is None or m.task in tasks)]
+    seen: set[Any] = set()
+    picked = []
+    for m in TASK_MODELS:
+        if tasks is not None and m.task not in tasks:
+            continue
+        if all_models or m.cls not in seen:
+            picked.append(m)
+        seen.add(m.cls)
+    return picked
+
+
+def _text_frame() -> np.ndarray:
+    """A 1080p page of 14 printed text lines, so OCR runs its recognizer (photos hold no text)."""
+    image = np.full((FRAME_SIZE[1], FRAME_SIZE[0], 3), 255, dtype=np.uint8)
+    for i in range(14):
+        line = f"Line {i + 1}: the quick brown fox jumps over the lazy dog {1000 + 37 * i}"
+        cv2.putText(image, line, (60, 70 + 72 * i), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 3)
+    return image
+
+
+def load_frame(name: str) -> np.ndarray:
+    """Read a data/ image and resize it to a 1080p frame ("text" renders a page of text)."""
+    if name == "text":
+        return _text_frame()
+    image = cv2.imread(str(REPO_DIR / "data" / name))
+    if image is None:
+        err_msg = f"Could not read data/{name}"
+        raise FileNotFoundError(err_msg)
+    if image.shape[1::-1] != FRAME_SIZE:
+        image = cv2.resize(image, FRAME_SIZE, interpolation=cv2.INTER_LINEAR)
+    return image
+
+
+@functools.lru_cache(maxsize=None)
+def _cache_dir() -> Path:
+    """One cache per trtutils under test, so A/B runs never share ONNX files or engines."""
+    prov = trtutils_provenance()
+    return TASK_DIR / f"{str(prov['trtutils_sha'])[:10]}{'-dirty' if prov['dirty'] else ''}"
+
+
+def _engine(cls: Any, name: str) -> Path:  # noqa: ANN401
+    """Download the ONNX and build the engine for one model, once, at its default precision."""
+    cache = _cache_dir()
+    onnx = cache / f"{name}.onnx"
+    engine = cache / "engines" / f"{name}.engine"
+    if not onnx.exists():
+        onnx.parent.mkdir(parents=True, exist_ok=True)
+        print(f"\tDownloading {name}")
+        cls.download(name, onnx)
+    if not engine.exists():
+        print(f"\tBuilding {engine.name}")
+        engine.parent.mkdir(parents=True, exist_ok=True)
+        cls.build(onnx, engine)
+    return engine
+
+
+def load_model(spec: TaskModel, preprocessor: str, postprocessor: str | None = None) -> Any:  # noqa: ANN401
+    """Build (if needed) and load ``spec``. A None postprocessor is the model's own default."""
+    if spec.parts:
+        det = _engine(spec.parts["det"], f"{spec.name}_det")
+        rec = _engine(spec.parts["rec"], f"{spec.name}_rec")
+        return spec.cls(det, rec, postprocessor=postprocessor, warmup=True)
+    engine = _engine(spec.cls, spec.name)
+    return spec.cls(engine, preprocessor=preprocessor, postprocessor=postprocessor, warmup=True)
+
+
+def _sync() -> None:
+    cuda_call(cudart.cudaDeviceSynchronize())
+
+
+class StageTimer:
+    """
+    Wrap a model's stage methods to attribute end2end time to stages.
+
+    ``prepare_inputs`` and ``prepare_regions`` sync the device so GPU preprocessing
+    is not billed to the engine, and the OCR page upload is timed with them.
+    ``infer`` / ``_infer_post`` / ``_infer_regions`` cover the engine and sync too.
+    ``postprocess`` is timed as is, and the recognizer's CTC enqueue syncs so a
+    batch's decode is not billed to the next infer or to ``extract``. A stage nested
+    in another is taken out of its parent; what remains (result extraction, and CPU
+    OCR crops) is ``extract``.
+    """
+
+    _WRAPPED = (
+        ("prepare_inputs", "preprocess", True),
+        ("prepare_regions", "preprocess", True),
+        ("infer", "infer", True),
+        ("_infer_post", "infer", True),
+        ("_infer_regions", "infer", True),
+        ("postprocess", "postprocess", False),
+    )
+
+    def __init__(self, model: Any) -> None:  # noqa: ANN401
+        self.times: dict[str, float] = dict.fromkeys(STAGES, 0.0)
+        self._active: set[str] = set()
+        self._children: list[float] = []
+        # the page upload runs before detector.end2end, so time it as preprocessing
+        upload = getattr(model, "_frame", None)
+        if callable(upload):
+            model._frame = self._wrap(upload, "preprocess", sync=True)  # noqa: SLF001
+        for m in _image_models(model):
+            for name, stage, sync in self._WRAPPED:
+                if hasattr(m, name):
+                    setattr(m, name, self._wrap(getattr(m, name), stage, sync=sync))
+            # end2end_regions enqueues CTC outside postprocess; sync that decode here
+            post = getattr(m, "_cuda_post", None)
+            enqueue = getattr(post, "enqueue", None)
+            if enqueue is not None:
+                post.enqueue = self._wrap(enqueue, "postprocess", sync=True)
+                read = getattr(post, "read", None)
+                if read is not None:
+                    post.read = self._wrap(read, "postprocess", sync=False)
+
+    def _wrap(self, fn: Callable[..., Any], stage: str, *, sync: bool = False) -> Callable[..., Any]:
+        def timed(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+            # _infer_post calls infer on the CPU path, count the stage once
+            if stage in self._active:
+                return fn(*args, **kwargs)
+            self._active.add(stage)
+            self._children.append(0.0)
+            t0 = time.perf_counter()
+            try:
+                out = fn(*args, **kwargs)
+                if sync:
+                    _sync()
+            finally:
+                self._active.discard(stage)
+                elapsed = time.perf_counter() - t0
+                self.times[stage] += elapsed - self._children.pop()
+                if self._children:
+                    self._children[-1] += elapsed
+            return out
+
+        return timed
+
+    def reset(self) -> None:
+        self.times = dict.fromkeys(STAGES, 0.0)
+
+    def split(self, total: float) -> dict[str, float]:
+        """Per-stage seconds for one end2end call that took ``total`` seconds."""
+        t = self.times
+        return {
+            "preprocess": t["preprocess"],
+            "infer": t["infer"],
+            "postprocess": t["postprocess"],
+            "extract": total - sum(t.values()),
+        }
+
+
+def _image_models(model: Any) -> list[Any]:  # noqa: ANN401
+    """The ImageModels inside ``model`` (OCR holds a detector and a recognizer)."""
+    if hasattr(model, "prepare_inputs"):
+        return [model]
+    return [model._detector, model._recognizer]  # noqa: SLF001
+
+
+def _resolved(model: Any) -> str:  # noqa: ANN401
+    """The preprocessor a model actually runs (OCR: its detector's)."""
+    det = _image_models(model)[0]
+    # postprocessor="cuda" resizes on the GPU; the constructor method stays "cpu"
+    if getattr(det, "cuda_preprocess", False):
+        return "cuda"
+    return det._preprocessor_method  # noqa: SLF001
+
+
+def _resolved_post(model: Any) -> str:  # noqa: ANN401
+    """The postprocessor the model resolved."""
+    if hasattr(model, "_postprocessor"):
+        return model._postprocessor  # noqa: SLF001
+    return model._detector._postprocessor  # noqa: SLF001
+
+
+def _key(name: str, pre: str, post: str) -> str:
+    return f"{name}/{pre}" + ("" if post == "cpu" else f"/{post}-post")
+
+
+def _cuda_post(spec: TaskModel) -> bool:
+    """Whether the task has a CUDA postprocessor (OCR's parts do; the pipeline class does not)."""
+    return bool(spec.parts) or bool(spec.cls._cuda_postprocess)  # noqa: SLF001
+
+
+def bench_task(
+    spec: TaskModel,
+    preprocessor: str,
+    warmup: int,
+    iterations: int,
+    postprocessor: str | None = None,
+) -> dict[str, Any] | None:
+    """Time ``iterations`` end2end calls, both plain and split into stages (None if skipped)."""
+    image = load_frame(spec.image)
+    model = load_model(spec, preprocessor, postprocessor)
+    ran = _resolved(model)
+    # OCR's constructor preprocessor is cpu even when the cuda post resizes on the GPU
+    if ran != preprocessor and not spec.parts:
+        print(f"\tSkipping {spec.name}/{preprocessor}: ran as {ran}")
+        return None
+    for _ in range(warmup):
+        model.end2end(image)
+
+    # plain end2end latency, no extra syncs
+    totals = []
+    for _ in tqdm(range(iterations), desc=f"{spec.name} {ran} e2e"):
+        t0 = time.perf_counter()
+        model.end2end(image)
+        totals.append(time.perf_counter() - t0)
+
+    timer = StageTimer(model)
+    stages: dict[str, list[float]] = {s: [] for s in STAGES}
+    for _ in tqdm(range(iterations), desc=f"{spec.name} {ran} stages"):
+        timer.reset()
+        t0 = time.perf_counter()
+        model.end2end(image)
+        for stage, sec in timer.split(time.perf_counter() - t0).items():
+            stages[stage].append(sec)
+
+    post_ran = _resolved_post(model)
+    del model
+    return {
+        "task": spec.task,
+        "model": spec.name,
+        "preprocessor": ran,
+        "postprocessor": post_ran,
+        "frame": list(FRAME_SIZE),
+        "end2end": compute_results(totals),
+        "stages": {s: compute_results(v) for s, v in stages.items()},
+    }
+
+
+def _write_stage(device: str, stage: str, warmup: int, iterations: int, data: dict) -> None:
+    write_stage_snapshot(
+        device, stage, "tasks", {"warmup": warmup, "iterations": iterations, "data": data}
+    )
+
+
+def run_tasks(
+    device: str,
+    names: list[str] | None,
+    preprocessors: list[str],
+    warmup: int,
+    iterations: int,
+    *,
+    postprocessors: tuple[str, ...] | None = None,
+    overwrite: bool = False,
+    stage: str | None = None,
+    tasks: list[str] | None = None,
+    all_models: bool = False,
+) -> dict[str, Any]:
+    """
+    Benchmark the task models picked by ``select_task_models``; a model that fails is skipped.
+
+    ``postprocessors`` None times the postprocessor each model resolves (CUDA where the
+    task has one). Results go to data/tasks/<device>.json (cached by key unless
+    ``overwrite``), or, with ``stage``, are measured fresh into
+    data/perf-series/<device>/stage-<stage>.json.
+    """
+    data: dict[str, Any] = {} if stage is not None else get_data(device, "tasks", [])
+    cached = 0
+    chosen: tuple[str | None, ...] = (None,) if postprocessors is None else postprocessors
+    for spec in select_task_models(names, tasks, all_models=all_models):
+        for post in chosen:
+            # None is the library default: cuda where the task has a kernel, else cpu
+            post_label = post if post is not None else ("cuda" if _cuda_post(spec) else "cpu")
+            # OCR's constructor preprocessor is cpu; the cuda postprocessor resizes on the GPU
+            pres = ["cuda" if post_label == "cuda" else "cpu"] if spec.parts else preprocessors
+            for prep in pres:
+                key = _key(spec.name, prep, post_label)
+                if key in data and not overwrite:
+                    print(f"Skipping {key} (already exists)")
+                    cached += 1
+                    continue
+                if post == "cuda" and not _cuda_post(spec):
+                    print(f"Skipping {key}: no CUDA postprocessor")
+                    continue
+                print(f"Benchmarking {key}")
+                try:
+                    res = bench_task(spec, prep, warmup, iterations, post)
+                except Exception as e:  # noqa: BLE001
+                    print(f"\tFAILED {key}: {type(e).__name__}: {e}")
+                    continue
+                if res is None:
+                    continue
+                stored = _key(spec.name, res["preprocessor"], res["postprocessor"])
+                if stored != key and stored in data and not overwrite:
+                    print(f"Skipping {stored} (already exists)")
+                    cached += 1
+                    continue
+                key = stored
+                data[key] = res
+                res.update(trtutils_provenance())
+                parts = ", ".join(f"{s} {res['stages'][s]['median']:.2f}" for s in STAGES)
+                e2e = res["end2end"]
+                print(f"\t{key}: end2end median {e2e['median']:.2f}ms max {e2e['max']:.2f}ms ({parts})")
+                if stage is None:
+                    write_data(device, "tasks", data)
+                else:
+                    _write_stage(device, stage, warmup, iterations, data)
+    if stage is None and cached:
+        print(f"{cached} cached entries skipped; pass --overwrite or --stage to re-measure")
+    return data

@@ -25,6 +25,7 @@ from trtutils.core._memory import (
     memcpy_host_to_device_async,
     memcpy_host_to_device_offset,
     memcpy_host_to_device_offset_async,
+    memcpy_host_to_device_staged_async,
 )
 from trtutils.core._stream import stream_synchronize
 
@@ -152,6 +153,33 @@ def test_memcpy_h2d_d2h_async(dtype, size, cuda_stream) -> None:
     stream_synchronize(cuda_stream)
     np.testing.assert_array_equal(src, dst)
     cuda_free(ptr)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "size", "chunk", "spare"),
+    [
+        pytest.param(np.uint8, 1000, 1000, 0, id="pageable-under-two-chunks"),
+        pytest.param(np.uint8, 4000, 1000, 0, id="even-chunks"),
+        pytest.param(np.uint8, 4001, 1000, 0, id="ragged-tail"),
+        pytest.param(np.float32, 3001, 1000, 0, id="float32"),
+        pytest.param(np.float32, 3001, 2, 0, id="chunk-under-itemsize"),
+        pytest.param(np.uint8, 4001, 1000, 5000, id="larger-stage"),
+    ],
+)
+def test_memcpy_h2d_staged(dtype, size, chunk, spare, cuda_stream) -> None:
+    """A chunked copy through a pinned stage lands every byte, then reuses the stage."""
+    nbytes = size * np.dtype(dtype).itemsize
+    stage = allocate_pinned_memory(nbytes + spare, np.dtype(np.uint8), (nbytes + spare,))
+    ptr = cuda_malloc(nbytes)
+    for seed in range(2):
+        src = np.random.default_rng(seed).random(size).astype(dtype) * 255
+        memcpy_host_to_device_staged_async(ptr, src.astype(dtype), stage, cuda_stream, chunk)
+        dst = np.zeros(size, dtype=dtype)
+        memcpy_device_to_host_async(dst, ptr, cuda_stream)
+        stream_synchronize(cuda_stream)
+        np.testing.assert_array_equal(dst, src.astype(dtype))
+    cuda_free(ptr)
+    cuda_host_free(stage)
 
 
 @pytest.mark.parametrize(

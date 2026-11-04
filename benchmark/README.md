@@ -134,6 +134,7 @@ The benchmark system uses `trtutils.download` to automatically download and expo
 - **`data/`**: Benchmark data directory:
   - **`data/models/`**: Device benchmark results (one JSON per device, e.g. `3080Ti.json`). Written by `run.py`.
   - **`data/optimizations/`**: Optimization benchmark results (one JSON per device). Written by `optimizations.py`.
+  - **`data/tasks/`**: Per-task stage breakdowns (one JSON per device). Written by `run.py tasks`. With `--stage NAME` results go to `data/perf-series/<device>/stage-NAME.json` instead; `run.py compare A... --vs B...` diffs sets of these files.
 
 ### How It Works
 
@@ -203,6 +204,31 @@ The grid covers preprocessor x CUDA graph x memory mode x input composition: `si
 `resolution-switch` (single images alternating 720p/1080p each call). Batch compositions
 run on a static batch-8 engine whose ONNX is exported with `trtutils download --batch`.
 Results are saved to `data/optimizations/{device}.json`.
+
+### Task Stage Breakdown
+
+Time models of every task (detection, classification, segmentation, pose, OBB, depth, hand
+interaction, OCR) on a 1920x1080 frame, split into preprocess, inference, postprocess, and
+result extraction:
+
+```bash
+python benchmark/run.py tasks --device MyDevice
+python benchmark/run.py tasks --device MyDevice --model yolov11n-seg --preprocessors cuda
+```
+
+By default the first (smallest) model of every wrapper class runs (e.g. yolov11n, yolov8n-seg,
+resnet18, depth_anything_v2_small, hands23_x101, ppocrv4). `--all` runs every downloadable model
+(the list is generated from the wrapper classes and `src/trtutils/download/configs`), `--task
+detection ocr ...` limits the tasks, `--model NAME ...` picks exact names (unknown names raise),
+and `--list` prints the selection without running. A model that fails to download or build is
+logged and skipped, and so is a preprocessor the model resolves to something else (e.g. trt
+falling back to cuda). The postprocessor is the one the model resolves, CUDA where the task
+has a kernel, unless `--postprocessors` is set (`--postprocessors cpu` times the CPU path).
+ONNX files and engines live in `data/tasks/<trtutils sha>[-dirty]/` and
+are downloaded and built on first use. Each model runs `end2end` once without
+instrumentation for the end-to-end time, then again with its stages timed; preprocessing syncs
+the device so GPU preprocessing is not billed to inference. Results are saved to
+`data/tasks/{device}.json`.
 
 ### Perf Series
 
