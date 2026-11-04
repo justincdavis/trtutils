@@ -152,9 +152,13 @@ class TRTEngine(TRTEngineInterface):
             If the backend is not valid or not available in this TensorRT version.
 
         """
+        if shape_contexts is not None and shape_contexts < 1:
+            err_msg = f"shape_contexts must be at least 1, got {shape_contexts}."
+            raise ValueError(err_msg)
         self._name = Path(engine_path).stem
         # the device memory the pool's contexts share, allocated with the first
         self._shared_memory: int | None = None
+        self._parked: OrderedDict[tuple[tuple[int, ...], ...], dict[str, Any]] = OrderedDict()
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(f"engine::init [{self.name}]")
@@ -223,13 +227,9 @@ class TRTEngine(TRTEngineInterface):
         self: Self, *, cuda_graph: bool | None, shape_contexts: int | None = None
     ) -> None:
         """Point the context at the bindings at their max shapes and reset the graph cache."""
-        if shape_contexts is not None and shape_contexts < 1:
-            err_msg = f"shape_contexts must be at least 1, got {shape_contexts}."
-            raise ValueError(err_msg)
         # parked contexts by input shapes, least recently used first; the active
         # context's state lives in the attributes of _CONTEXT_STATE instead
         self._shape_contexts = shape_contexts
-        self._parked: OrderedDict[tuple[tuple[int, ...], ...], dict[str, Any]] = OrderedDict()
         # CUDA graph support: one graph per input configuration (the shape and
         # device address of every input), least recently used first. A graph
         # can only replay on a call that does not change the shapes, so a
@@ -284,13 +284,15 @@ class TRTEngine(TRTEngineInterface):
         if FLAGS.MEMSIZE_V2:
             strategy = trt.ExecutionContextAllocationStrategy.USER_MANAGED
             context = self._engine.create_execution_context(strategy)
-            context.set_device_memory(self._shared_memory, self._memsize)
         else:
             context = self._engine.create_execution_context_without_device_memory()
-            context.device_memory = self._shared_memory
         if context is None:
             err_msg = f"Failed to create an execution context for engine '{self._name}'."
             raise RuntimeError(err_msg)
+        if FLAGS.MEMSIZE_V2:
+            context.set_device_memory(self._shared_memory, self._memsize)
+        else:
+            context.device_memory = self._shared_memory
         return context
 
     def _select_context(self: Self, key: tuple[tuple[int, ...], ...]) -> None:
@@ -456,11 +458,12 @@ class TRTEngine(TRTEngineInterface):
             evicted.invalidate()
 
     def _clear_graphs(self: Self) -> None:
-        for graphs in (self._cuda_graphs, *(s["_cuda_graphs"] for s in self._parked.values())):
-            for graph in graphs.values():
+        states = (vars(self), *self._parked.values())
+        for state in states:
+            for graph in state["_cuda_graphs"].values():
                 graph.invalidate()
-            graphs.clear()
-        self._seen_configs.clear()
+            state["_cuda_graphs"].clear()
+            state["_seen_configs"].clear()
 
     def _capture_cuda_graph(self: Self) -> CUDAGraph | None:
         """

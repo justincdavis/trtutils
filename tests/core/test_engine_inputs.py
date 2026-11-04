@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import gc
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
@@ -109,6 +110,7 @@ def _make_engine(
     eng._inputs = [inp]
     eng._outputs = [out]
     eng._allocations = [inp.allocation, out.allocation]
+    eng._parked = OrderedDict()
     eng._init_io_state(cuda_graph=cuda_graph, shape_contexts=shape_contexts)
     context.shape_calls.clear()  # only record the calls the tests make
     return eng, context
@@ -415,7 +417,7 @@ def test_no_pool_by_default(fake_graphs) -> None:
 def test_pool_size_must_be_positive(shape_contexts) -> None:
     """A pool of fewer than one context is rejected."""
     with pytest.raises(ValueError, match="shape_contexts"):
-        _make_engine(shape_contexts=shape_contexts)
+        TRTEngine("unused.engine", shape_contexts=shape_contexts)
 
 
 @pytest.mark.parametrize(
