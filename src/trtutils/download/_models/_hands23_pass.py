@@ -119,11 +119,7 @@ def _set_live_nodes(graph: onnx.GraphProto, nodes: list[onnx.NodeProto]) -> None
     graph.node.extend(reversed(kept))
 
 
-def _make_mask(
-    cond: str,
-    axes: str,
-    out: str,
-) -> onnx.NodeProto:
+def _make_mask(cond: str, axes: str, out: str) -> onnx.NodeProto:
     return helper.make_node("Unsqueeze", [cond, axes], [out], name=out)
 
 
@@ -177,8 +173,7 @@ def remove_nonzero(onnx_path: Path) -> None:
     )
 
     # slices read the full box tensor instead of the per-level gather
-    gather_src = {n.name: n.input[0] for n in graph.node if n.name in bypass}
-    gather_out = {o: gather_src[n.name] for n in graph.node if n.name in bypass for o in n.output}
+    gather_out = {o: n.input[0] for n in graph.node if n.name in bypass for o in n.output}
 
     nodes: list[onnx.NodeProto] = []
     for node in graph.node:
