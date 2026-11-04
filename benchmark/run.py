@@ -7,7 +7,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import json
+import statistics
 import warnings
+from pathlib import Path
 
 from utils.config import (
     BATCH_FRAMEWORKS,
@@ -313,11 +317,6 @@ def cmd_tasks(args: argparse.Namespace) -> None:
 
 def cmd_compare(args: argparse.Namespace) -> None:
     """Compare per-stage medians of two sets of tasks result or stage JSON files."""
-    import csv
-    import json
-    import statistics
-    from pathlib import Path
-
     fields = ["end2end", "preprocess", "infer", "postprocess", "extract"]
 
     def load(paths: list[str]) -> tuple[dict, list[dict]]:
@@ -326,7 +325,8 @@ def cmd_compare(args: argparse.Namespace) -> None:
         rows: list[dict] = []
         for run, path in enumerate(paths):
             doc = json.loads(Path(path).read_text())
-            entries = doc["tasks"]["data"] if "tasks" in doc else doc
+            # a stage snapshot (has "device") may hold no tasks section
+            entries = doc.get("tasks", {}).get("data", {}) if "device" in doc else doc
             for key, e in entries.items():
                 vals = {"end2end": e["end2end"]["median"]}
                 vals.update({s: v["median"] for s, v in e["stages"].items()})
