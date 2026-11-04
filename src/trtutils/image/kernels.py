@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """
@@ -33,6 +33,7 @@ _SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
 _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
 _SST_IMAGENET_FILE = _KERNEL_DIR / "sst_imagenet.cu"
+_DET_CLS_POST_FILE = _KERNEL_DIR / "det_cls_post.cu"
 
 SST_FAST: tuple[Path, str] = (
     _SST_FAST_FILE,
@@ -67,4 +68,9 @@ IMAGENET_SST: tuple[Path, str] = (
 IMAGENET_SST_F16: tuple[Path, str] = (
     _SST_IMAGENET_FILE,
     "scaleSwapTransposeImagenet_f16",
+)
+
+DET_CLS_POST: tuple[Path, str] = (
+    _DET_CLS_POST_FILE,
+    "unletterboxV10",
 )
