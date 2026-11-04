@@ -18,15 +18,6 @@ with contextlib.suppress(ImportError):
     FLAGS.FOUND_NVIMGCODEC = True
 
 
-def _require_nvimgcodec() -> None:
-    if not FLAGS.FOUND_NVIMGCODEC:
-        err_msg = (
-            "nvImageCodec is not installed. Install it with "
-            "`pip install trtutils[nvimgcodec-cu12]` (or -cu13)."
-        )
-        raise ImportError(err_msg)
-
-
 @functools.lru_cache(maxsize=1)
 def _decoder() -> nvimgcodec.Decoder:
     return nvimgcodec.Decoder(device_id=0)
@@ -36,19 +27,6 @@ def _decoder() -> nvimgcodec.Decoder:
 def _bgr_params() -> nvimgcodec.DecodeParams:
     # I_BGR with the default backend is bit-identical to cv2.imread
     return nvimgcodec.DecodeParams(sample_format=nvimgcodec.SampleFormat.I_BGR)
-
-
-def _read(source: str | Path | bytes) -> bytes:
-    if isinstance(source, (str, Path)):
-        return Path(source).read_bytes()
-    return bytes(source)
-
-
-def _wrap(image: object | None, source: object) -> Buffer:
-    if image is None:
-        err_msg = f"nvImageCodec could not decode {source!r}"
-        raise ValueError(err_msg)
-    return Buffer.wrap(image)
 
 
 def decode_image(source: str | Path | bytes) -> Buffer:
@@ -78,8 +56,18 @@ def decode_image(source: str | Path | bytes) -> Buffer:
         If the image cannot be decoded.
 
     """
-    _require_nvimgcodec()
-    data = _read(source)
+    if not FLAGS.FOUND_NVIMGCODEC:
+        err_msg = (
+            "nvImageCodec is not installed. Install it with "
+            "`pip install trtutils[nvimgcodec-cu11]` "
+            "(nvimgcodec-cu12 and nvimgcodec-cu13 require Python 3.9+)."
+        )
+        raise ImportError(err_msg)
+    is_path = isinstance(source, (str, Path))
+    data = Path(source).read_bytes() if is_path else source
     image = _decoder().decode(data, params=_bgr_params())
+    if image is None:
+        err_msg = f"nvImageCodec could not decode {source if is_path else 'bytes'!r}"
+        raise ValueError(err_msg)
     cuda_call(cudart.cudaStreamSynchronize(0))
-    return _wrap(image, source if isinstance(source, (str, Path)) else "bytes")
+    return Buffer.wrap(image)

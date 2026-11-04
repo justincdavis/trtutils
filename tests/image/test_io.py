@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
-from typing import TYPE_CHECKING
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -23,9 +25,6 @@ needs_images = pytest.mark.skipif(not FLAGS.FOUND_NVIMGCODEC, reason="nvImageCod
 needs_video = pytest.mark.skipif(
     not FLAGS.FOUND_PYNVVIDEOCODEC, reason="PyNvVideoCodec not installed"
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 SIZES = [
     pytest.param((1080, 1920), id="1080p"),
@@ -122,6 +121,7 @@ def test_video_reader_frames(video_path) -> None:
             # different colour matrix than cv2; a channel swap would give a far larger diff
             assert diff.mean() < 4
             count += 1
+        reader.close()
     assert count == NUM_FRAMES
 
 
@@ -135,5 +135,37 @@ def test_video_reader_frames(video_path) -> None:
 def test_missing_library_raises(monkeypatch, flag, call, tmp_path) -> None:
     """Without the decoder libraries the entry points raise a clear ImportError."""
     monkeypatch.setattr(FLAGS, flag, False)
-    with pytest.raises(ImportError, match="not installed"):
+    with pytest.raises(ImportError, match="not installed") as exc_info:
         call(tmp_path / "x.mp4")
+    if flag == "FOUND_NVIMGCODEC":
+        assert "nvimgcodec-cu11" in str(exc_info.value)
+
+
+def test_broken_video_codec_does_not_block_image_decode(tmp_path: Path) -> None:
+    """A RuntimeError from PyNvVideoCodec's import must not take down decode_image."""
+    package = tmp_path / "PyNvVideoCodec"
+    package.mkdir()
+    (package / "__init__.py").write_text("raise RuntimeError('nvenc missing')\n")
+    script = (
+        "import trtutils.io as io\n"
+        "from trtutils._flags import FLAGS\n"
+        "FLAGS.FOUND_NVIMGCODEC = False\n"
+        "try:\n"
+        "    io.decode_image(b'')\n"
+        "except ImportError as exc:\n"
+        "    if 'not installed' not in str(exc):\n"
+        "        raise SystemExit(str(exc))\n"
+        "else:\n"
+        "    raise SystemExit('expected ImportError')\n"
+    )
+    src = Path(__file__).resolve().parents[2] / "src"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join((str(tmp_path), str(src)))
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", script],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr

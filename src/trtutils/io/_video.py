@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
-with contextlib.suppress(ImportError):
+# package init re-raises RuntimeError when the NVENC/driver check fails
+with contextlib.suppress(ImportError, RuntimeError):
     import PyNvVideoCodec
 
     FLAGS.FOUND_PYNVVIDEOCODEC = True
@@ -56,23 +57,23 @@ class VideoReader:
         if not FLAGS.FOUND_PYNVVIDEOCODEC:
             err_msg = "PyNvVideoCodec is not installed. Install it with `pip install trtutils[nvvideocodec]`."
             raise ImportError(err_msg)
-        # the decoder needs an open binary file object, not a path
-        self._file: BinaryIO = Path(path).open("rb")  # noqa: SIM115
-        try:
-            self._decoder = PyNvVideoCodec.CreateSimpleDecoder(
-                self._file,
-                gpuid=0,
-                useDeviceMemory=True,
-                outputColorType=PyNvVideoCodec.OutputColorType.RGB,
-            )
-            meta = self._decoder.get_stream_metadata()
-            self._num_frames: int = meta.num_frames
-            self._shape = (int(meta.height), int(meta.width), 3)
-            self._out = Buffer.empty(self._shape, np.uint8, MemoryLocation.DEVICE)
-            self._kernel = Kernel(_RGB_TO_BGR, "rgbToBgr")
-        except BaseException:
-            self._file.close()
-            raise
+        # 2.0 CreateSimpleDecoder does not take a file object. SimpleDecoder
+        # takes a path on 2.0 and 2.2, and a path can scan the frame count.
+        self._decoder = PyNvVideoCodec.SimpleDecoder(
+            str(path),
+            gpu_id=0,
+            use_device_memory=True,
+            need_scanned_stream_metadata=True,
+            output_color_type=PyNvVideoCodec.OutputColorType.RGB,
+        )
+        meta = self._decoder.get_stream_metadata()
+        scanned_frames = int(self._decoder.get_scanned_stream_metadata().num_frames)
+        # header count is approximate (and sometimes 0); the scan is the real length
+        self._num_frames = scanned_frames if scanned_frames != 0 else int(meta.num_frames)
+        self._shape = (int(meta.height), int(meta.width), 3)
+        self._out = Buffer.empty(self._shape, np.uint8, MemoryLocation.DEVICE)
+        self._kernel = Kernel(_RGB_TO_BGR, "rgbToBgr")
+        self._closed = False
         height, width, _ = self._shape
         self._blocks = (
             (width + _THREADS[0] - 1) // _THREADS[0],
@@ -92,8 +93,12 @@ class VideoReader:
     def __iter__(self: Self) -> Iterator[Buffer]:
         """Yield each frame as a device BGR Buffer, valid until the next frame."""
         height, width, _ = self._shape
-        for i in range(self._num_frames):
-            frame = self._decoder[i]
+        # index checks use the header count, which can be lower than the scan
+        for _ in range(self._num_frames):
+            frames = self._decoder.get_batch_frames(1)
+            if len(frames) == 0:
+                break
+            frame = frames[0]
             plane = frame.cuda()[0].__cuda_array_interface__
             ptr = int(plane["data"][0])
             # strides is None for a C-contiguous plane
@@ -106,8 +111,11 @@ class VideoReader:
             yield self._out
 
     def close(self: Self) -> None:
-        """Close the video file."""
-        self._file.close()
+        """Release the decoder. A second call does nothing."""
+        if self._closed:
+            return
+        self._closed = True
+        del self._decoder
 
     def __enter__(self: Self) -> Self:
         return self

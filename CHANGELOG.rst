@@ -189,6 +189,12 @@ Changed
 
 Fixed
 ^^^^^
+* ``VideoReader`` decodes through ``SimpleDecoder`` on a file path. PyNvVideoCodec 2.0 rejects the
+  file object passed to ``CreateSimpleDecoder``, ``close`` releases the decoder and can be called
+  twice, and the frame count prefers a full stream scan over the container header. A PyNvVideoCodec
+  install that fails its driver check no longer prevents ``decode_image`` from importing.
+  ``decode_image``'s missing-library hint names ``nvimgcodec-cu11``, the extra that installs on
+  Python 3.8 (``nvimgcodec-cu12`` and ``nvimgcodec-cu13`` require 3.9+)
 * ``Model.build()`` takes an explicit ``fp16`` and passes no fp16 flag with ``strongly_typed=True``;
   both raised before
 * ``YOLOv10.build`` and ``YOLOv13.build`` keep the depthwise convolutions in FP32: in FP16 the
