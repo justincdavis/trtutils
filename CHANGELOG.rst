@@ -187,6 +187,9 @@ Fixed
 ^^^^^
 * ``Model.build()`` takes an explicit ``fp16`` and passes no fp16 flag with ``strongly_typed=True``;
   both raised before
+* ``Hands23.build`` keeps the proposal decoding, box heads, and relation heads (including the
+  z-head pair scores) in FP32 (the backbone, FPN and RPN convolutions stay FP16): a full FP16
+  build flipped the hand side of many detections. Rebuild engines built before this change.
 * ``YOLOv10.build`` and ``YOLOv13.build`` keep the depthwise convolutions in FP32: in FP16 the
   builder sometimes picked depthwise kernels (seen on TensorRT 10.15, RTX 5080) that broke the
   output. YOLOv10 lost large objects in about one build in seven (no horse on ``horse.jpg``
