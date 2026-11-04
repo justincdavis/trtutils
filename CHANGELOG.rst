@@ -245,6 +245,9 @@ Changed
 
 Fixed
 ^^^^^
+* ``TRTEngine(shape_contexts=N)`` on the async_v2 backend sets each fresh context's binding
+  shapes (a max-shape call was left at unspecified dynamic dims). Construction that fails
+  after allocating the shared workspace still frees it
 * ``Model.build()`` takes an explicit ``fp16`` and passes no fp16 flag with ``strongly_typed=True``;
   both raised before
 * ``YOLOv10.build`` and ``YOLOv13.build`` keep the depthwise convolutions in FP32: in FP16 the

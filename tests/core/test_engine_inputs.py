@@ -23,6 +23,7 @@ from trtutils import _engine
 from trtutils._engine import TRTEngine
 from trtutils.core import _bindings, _device
 from trtutils.core._buffer import Buffer, MemoryLocation
+from trtutils.core._interface import TRTEngineInterface
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -35,8 +36,10 @@ _OUT_FEATURES = 2
 class _FakeContext:
     """Records shape/address updates; the output batch follows the input batch."""
 
-    def __init__(self) -> None:
-        self.shapes: dict[str, tuple[int, ...]] = {"input": (_MAX_BATCH, _FEATURES)}
+    def __init__(self, *, dynamic: bool = False) -> None:
+        # a real fresh context reports -1 until something sets the binding shape
+        batch = -1 if dynamic else _MAX_BATCH
+        self.shapes: dict[str, tuple[int, ...]] = {"input": (batch, _FEATURES)}
         self.addresses: dict[str, int] = {}
         self.shape_calls: list[tuple[int, ...]] = []
         self.enqueues = 0
@@ -50,15 +53,26 @@ class _FakeContext:
         self.shapes[name] = tuple(shape)
         return True
 
+    def set_binding_shape(self, index: int, shape: tuple[int, ...]) -> bool:
+        return self.set_input_shape("input" if index == 0 else "output", shape)
+
     def set_tensor_address(self, name: str, address: int) -> None:
         self.addresses[name] = address
 
     def get_tensor_shape(self, _name: str) -> tuple[int, ...]:
         return (self.shapes["input"][0], _OUT_FEATURES)
 
+    def get_binding_shape(self, index: int) -> tuple[int, ...]:
+        if index == 0:
+            return self.shapes["input"]
+        return (self.shapes["input"][0], _OUT_FEATURES)
+
     def execute_async_v3(self, _stream: object) -> bool:
         self.enqueues += 1
         return self.enqueues != self.reject_enqueue_at
+
+    def execute_async_v2(self, _allocations: object, stream: object) -> bool:
+        return self.execute_async_v3(stream)
 
 
 class _FakeGraph:
@@ -86,7 +100,10 @@ class _FakeGraph:
 
 
 def _make_engine(
-    *, cuda_graph: bool = False, shape_contexts: int | None = None
+    *,
+    cuda_graph: bool = False,
+    shape_contexts: int | None = None,
+    async_v3: bool = True,
 ) -> tuple[TRTEngine, _FakeContext]:
     """Assemble a dynamic-batch (1..4, 3) -> (batch, 2) engine without TensorRT."""
     inp = _bindings.create_binding(
@@ -98,7 +115,7 @@ def _make_engine(
     out = _bindings.create_binding(
         np.zeros((_MAX_BATCH, _OUT_FEATURES), np.float32), bind_id=1, name="output"
     )
-    context = _FakeContext()
+    context = _FakeContext(dynamic=not async_v3)
     eng = TRTEngine.__new__(TRTEngine)
     eng._name = "fake"
     eng._verbose = False
@@ -106,7 +123,7 @@ def _make_engine(
     eng._device_guard = contextlib.nullcontext()
     eng._stream = None
     eng._context = context
-    eng._async_v3 = True
+    eng._async_v3 = async_v3
     eng._inputs = [inp]
     eng._outputs = [out]
     eng._allocations = [inp.allocation, out.allocation]
@@ -414,10 +431,66 @@ def test_no_pool_by_default(fake_graphs) -> None:
 
 
 @pytest.mark.parametrize("shape_contexts", [0, -1])
-def test_pool_size_must_be_positive(shape_contexts) -> None:
-    """A pool of fewer than one context is rejected."""
+def test_pool_size_must_be_positive(shape_contexts, fake_cuda) -> None:
+    """A pool of fewer than one context is rejected before any workspace exists."""
+    eng = TRTEngine.__new__(TRTEngine)
     with pytest.raises(ValueError, match="shape_contexts"):
-        TRTEngine("unused.engine", shape_contexts=shape_contexts)
+        eng.__init__("unused.engine", shape_contexts=shape_contexts)
+    eng.__del__()
+    assert getattr(eng, "_shared_memory", None) is None
+    assert fake_cuda.freed == []
+
+
+class _NoContextEngine:
+    """Stands in for an engine whose execution context cannot be created."""
+
+    def create_execution_context(self, *_args: object) -> None:
+        return None
+
+    def create_execution_context_without_device_memory(self) -> None:
+        return None
+
+
+def test_failed_pool_construction_frees_workspace(monkeypatch, fake_cuda) -> None:
+    """Construction that dies after allocating the shared workspace still frees it."""
+
+    def parent_init(self: TRTEngine, *_args: object, **_kwargs: object) -> None:
+        self._memsize = 16
+        self._engine = _NoContextEngine()
+        self._device_guard = contextlib.nullcontext()
+        self._nvtx_tags = {}
+
+    monkeypatch.setattr(TRTEngineInterface, "__init__", parent_init)
+    eng = TRTEngine.__new__(TRTEngine)
+    with pytest.raises(RuntimeError, match="execution context"):
+        eng.__init__("unused.engine", shape_contexts=1, warmup=False)
+    eng.__del__()
+    eng.__del__()
+    assert fake_cuda.blocks == {}
+    assert len(fake_cuda.freed) == 1
+
+
+def test_v2_pool_sets_max_binding_shape() -> None:
+    """A pooled async_v2 context is given its max shape, including one rebuilt for that shape."""
+    eng, first = _make_engine(shape_contexts=1, async_v3=False)
+    assert first.shapes["input"] == (_MAX_BATCH, _FEATURES)
+    contexts = [first]
+
+    def create() -> _FakeContext:
+        context = _FakeContext(dynamic=True)
+        contexts.append(context)
+        return context
+
+    eng._create_context = create  # type: ignore[method-assign]
+    eng.execute([_host(_MAX_BATCH)])
+    assert first.shape_calls == []
+    eng.execute([_host(2)])
+    assert contexts[1].shapes["input"] == (2, _FEATURES)
+    eng.execute([_host(_MAX_BATCH)])
+    rebuilt = contexts[-1]
+    assert rebuilt is not first
+    assert rebuilt.shapes["input"] == (_MAX_BATCH, _FEATURES)
+    assert rebuilt.shape_calls == [(_MAX_BATCH, _FEATURES)]
 
 
 @pytest.mark.parametrize(

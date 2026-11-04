@@ -251,10 +251,15 @@ class TRTEngine(TRTEngineInterface):
         allocations = list(self._allocations)
         for binding in (*self._inputs, *self._outputs):
             allocations[binding.index] = binding.allocation
-        if self._async_v3:
-            for i_binding in self._inputs:
+        # a fresh context still has dynamic dims at -1, and a later call at the
+        # recorded max shape will not set them again
+        for i_binding in self._inputs:
+            if self._async_v3:
                 context.set_input_shape(i_binding.name, i_binding.shape)
                 context.set_tensor_address(i_binding.name, i_binding.allocation)
+            else:
+                context.set_binding_shape(i_binding.index, i_binding.shape)
+        if self._async_v3:
             for o_binding in self._outputs:
                 context.set_tensor_address(o_binding.name, o_binding.allocation)
         return {
@@ -501,13 +506,17 @@ class TRTEngine(TRTEngineInterface):
         return graph
 
     def __del__(self: Self) -> None:
-        with contextlib.suppress(AttributeError):
+        # init can fail after the workspace exists and before the graph state
+        # or _parked does; cleanup still has to reach cuda_free
+        with contextlib.suppress(AttributeError, KeyError):
             self._clear_graphs()
         super().__del__()
-        # the contexts are gone, so the memory they shared can go too
+        parked = getattr(self, "_parked", None)
+        if parked is not None:
+            parked.clear()
         shared = getattr(self, "_shared_memory", None)
         if shared is not None:
-            self._parked.clear()
+            self._shared_memory = None
             cuda_free(shared)
 
     def execute(
