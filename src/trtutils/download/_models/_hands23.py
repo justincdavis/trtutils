@@ -14,6 +14,8 @@ from trtutils.download._tools import (
     run_uv_pip_install,
 )
 
+from ._hands23_pass import remove_nonzero
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -390,8 +392,5 @@ except Exception:
     )
 
     onnx_path = repo_dir / onnx_name
-    # onnx is an optional extra; a module-level import breaks `import trtutils`
-    from ._hands23_pass import remove_nonzero  # noqa: PLC0415
-
     remove_nonzero(onnx_path)
     return onnx_path

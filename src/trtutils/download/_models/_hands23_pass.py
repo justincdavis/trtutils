@@ -8,11 +8,20 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-import onnx
-from onnx import helper, numpy_helper
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    import onnx
+    from onnx import helper, numpy_helper
+else:
+    try:
+        import onnx
+        from onnx import helper, numpy_helper
+    except ImportError:
+        onnx = None
+        helper = None
+        numpy_helper = None
 
 # score given to rpn proposals that fail the zero-area filter
 _INVALID_SCORE = -1e4
@@ -149,8 +158,13 @@ def remove_nonzero(onnx_path: Path) -> None:
     ------
     RuntimeError
         If the graph is not the Hands23 export pattern, or a NonZero remains.
+    ImportError
+        If onnx is not installed.
 
     """
+    if onnx is None or helper is None or numpy_helper is None:
+        err_msg = "onnx is not installed, install with: pip install trtutils[onnx]"
+        raise ImportError(err_msg)
     model = onnx.load(str(onnx_path))
     graph = model.graph
     match = _match(graph)
