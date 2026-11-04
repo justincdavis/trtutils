@@ -10,10 +10,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils.compat._libs import cudart
 from trtutils.core._buffer import Buffer, MemoryLocation
-from trtutils.core._cuda import cuda_call
 from trtutils.core._kernels import Kernel, cached_args
+from trtutils.core._memory import memcpy_device_to_host_async
 from trtutils.core._stream import stream_synchronize
 from trtutils.image.kernels import OCR_POST
 
@@ -21,6 +20,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from typing_extensions import Self
+
+    from trtutils.compat._libs import cudart
 
 
 def _mapped(count: int, dtype: type) -> Buffer:
@@ -82,35 +83,23 @@ class DbBinarize:
     def __init__(self: Self) -> None:
         file, _ = OCR_POST
         self._kernel = Kernel(file, "dbBinarize")
-        # slot -> (mapped bitmap, pinned probability map, capacity)
-        self._slots: dict[int, tuple[Buffer, Buffer, int]] = {}
+        # slot -> (mapped bitmap, pinned probability map); buffer size is the capacity
+        self._slots: dict[int, tuple[Buffer, Buffer]] = {}
 
     def _enqueue(
         self: Self, probs: Buffer, thresh: float, stream: cudart.cudaStream_t, slot: int
-    ) -> tuple[Buffer, Buffer, int]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         count = math.prod(probs.shape)
         held = self._slots.get(slot)
-        if held is None or held[2] < count:
+        if held is None or held[0].size < count:
             pred = Buffer.empty((count,), np.float32, MemoryLocation.HOST, pinned=True)
-            held = (_mapped(count, np.uint8), pred, count)
+            held = (_mapped(count, np.uint8), pred)
             self._slots[slot] = held
-        bitmap = held[0]
+        bitmap, pred = held
         args = cached_args(self._kernel, probs.device_ptr, count, float(thresh), bitmap.device_ptr)
         self._kernel.call((math.ceil(count / 256), 1, 1), (256, 1, 1), stream, args)
-        return bitmap, held[1], count
-
-    def _copy_pred(
-        self: Self, probs: Buffer, pred: Buffer, count: int, stream: cudart.cudaStream_t
-    ) -> None:
-        cuda_call(
-            cudart.cudaMemcpyAsync(
-                pred.ptr,
-                probs.device_ptr,
-                count * 4,
-                cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
-                stream,
-            ),
-        )
+        shape = probs.shape
+        return bitmap.array[:count].reshape(shape), pred.array[:count].reshape(shape)
 
     def enqueue(
         self: Self,
@@ -120,10 +109,9 @@ class DbBinarize:
         slot: int = 0,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Enqueue the bitmap and the probability map copy into ``slot``, read after a stream sync."""
-        bitmap, pred, count = self._enqueue(probs, thresh, stream, slot)
-        self._copy_pred(probs, pred, count, stream)
-        shape = probs.shape
-        return bitmap.array[:count].reshape(shape), pred.array[:count].reshape(shape)
+        bitmaps, pred = self._enqueue(probs, thresh, stream, slot)
+        memcpy_device_to_host_async(pred, probs.device_ptr, stream)
+        return bitmaps, pred
 
     def __call__(
         self: Self,
@@ -132,13 +120,8 @@ class DbBinarize:
         stream: cudart.cudaStream_t,
     ) -> tuple[np.ndarray, np.ndarray, Callable[[], None]]:
         """Return the bitmap and probability map, both (B, 1, H, W), and the ``wait`` callable."""
-        bitmap, pred, count = self._enqueue(probs, thresh, stream, 0)
+        bitmaps, pred = self._enqueue(probs, thresh, stream, 0)
         # the bitmap is read first, the map copy overlaps finding its contours
         stream_synchronize(stream)
-        self._copy_pred(probs, pred, count, stream)
-        shape = probs.shape
-        return (
-            bitmap.array[:count].reshape(shape),
-            pred.array[:count].reshape(shape),
-            lambda: stream_synchronize(stream),
-        )
+        memcpy_device_to_host_async(pred, probs.device_ptr, stream)
+        return bitmaps, pred, lambda: stream_synchronize(stream)

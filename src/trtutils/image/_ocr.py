@@ -60,8 +60,8 @@ if TYPE_CHECKING:
 
     # bitmaps, probability map, ratios, padding of a detector frame in flight
     _FrameJob = tuple[np.ndarray, np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
-    # crop plan, output shape per batch, box count of a recognition in flight
-    _RegionsJob = tuple[CropPlan, list[tuple[int, ...]], int]
+    # crop plan and the output shape of each batch of a recognition in flight
+    _RegionsJob = tuple[CropPlan, list[tuple[int, ...]]]
     # image to detect on, its (x, y) scale back to the input, top padding, input (w, h)
     _Page = tuple[np.ndarray, np.ndarray, int, tuple[int, int]]
 
@@ -1383,8 +1383,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             If the recognizer was not created with ``postprocessor="cuda"``.
 
         """
-        ctc = self._cuda_post
-        if self._cuda_crops is None or ctc is None:
+        if self._cuda_crops is None or self._cuda_post is None:
             err_msg = "end2end_regions requires postprocessor='cuda' and a float32 engine input"
             raise RuntimeError(err_msg)
         if len(boxes) == 0:
@@ -1411,15 +1410,16 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             outputs = self._order_outputs(self._infer_regions(crops, plan, index))
             ctc.enqueue(outputs[0], self._engine.stream, index)
             shapes.append(outputs[0].shape)
-        return plan, shapes, len(boxes)
+        return plan, shapes
 
     def _read_regions(self: Self, job: _RegionsJob, *, verbose: bool | None = None) -> list[Text]:
         """Wait for a :meth:`_enqueue_regions` job and decode its texts in box order."""
-        plan, shapes, count = job
+        plan, shapes = job
         ctc = cast("CtcArgmax", self._cuda_post)
         t0 = time.perf_counter()
         stream_synchronize(self._engine.stream)
-        results: list[Text] = [("", 0.0)] * count
+        # plan.order is one index per box
+        results: list[Text] = [("", 0.0)] * len(plan.order)
         for index, (start, stop, _) in enumerate(plan.batches):
             batch = ctc.read(shapes[index], index)
             for i, text in zip(plan.order[start:stop], self.get_texts(batch, verbose=verbose)):
