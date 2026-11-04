@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import functools
+
 import numpy as np
 
 from trtutils._jit import register_jit, register_op
@@ -41,6 +43,7 @@ def _cubic_taps(x: np.float32) -> np.ndarray:
     return c
 
 
+@functools.lru_cache(maxsize=1)
 def _build_cubic_table() -> np.ndarray:
     """Build OpenCV's 32x32x(4x4) fixed-point cubic weights (initInterTab2D)."""
     taps = np.stack([_cubic_taps(np.float32(i) * np.float32(1.0 / _TAB_SIZE)) for i in range(32)])
@@ -62,9 +65,6 @@ def _build_cubic_table() -> np.ndarray:
                 t[hi if diff < 0 else lo] -= diff
             tab[i, j] = t
     return tab.ravel()
-
-
-_CUBIC_TAB = _build_cubic_table()
 
 
 @register_jit()
@@ -264,13 +264,13 @@ def _perspective_prepare(
 
 def _perspective_numba(image: np.ndarray, quad: np.ndarray, width: int, height: int) -> np.ndarray:
     src, planar, inv, out = _perspective_prepare(image, quad, width, height)
-    _warp_cubic.jitted(src, inv, _CUBIC_TAB, out)
+    _warp_cubic.jitted(src, inv, _build_cubic_table(), out)
     return out[:, :, 0] if planar else out
 
 
 def _perspective_numpy(image: np.ndarray, quad: np.ndarray, width: int, height: int) -> np.ndarray:
     src, planar, inv, out = _perspective_prepare(image, quad, width, height)
-    _warp_cubic_numpy(src, inv, _CUBIC_TAB, out)
+    _warp_cubic_numpy(src, inv, _build_cubic_table(), out)
     return out[:, :, 0] if planar else out
 
 

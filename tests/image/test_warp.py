@@ -207,7 +207,7 @@ def test_constant_image_gives_constant_crop(
 
 def test_cubic_table_rows_sum_to_one() -> None:
     """Every fixed-point weight set sums to 1.0."""
-    sums = _warp._CUBIC_TAB.reshape(-1, 16).sum(axis=1)
+    sums = _warp._build_cubic_table().reshape(-1, 16).sum(axis=1)
     assert np.all(sums == 1 << 15)
 
 
