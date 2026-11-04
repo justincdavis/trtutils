@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import re
 import time
@@ -149,11 +150,16 @@ def load_frame(name: str) -> np.ndarray:
     return image
 
 
+@functools.lru_cache(maxsize=None)
+def _cache_dir() -> Path:
+    """One cache per trtutils under test, so A/B runs never share ONNX files or engines."""
+    prov = trtutils_provenance()
+    return TASK_DIR / f"{str(prov['trtutils_sha'])[:10]}{'-dirty' if prov['dirty'] else ''}"
+
+
 def _engine(cls: Any, name: str) -> Path:  # noqa: ANN401
     """Download the ONNX and build the engine for one model, once, at its default precision."""
-    # one cache per trtutils under test, so A/B runs never share ONNX files or engines
-    prov = trtutils_provenance()
-    cache = TASK_DIR / f"{str(prov['trtutils_sha'])[:10]}{'-dirty' if prov['dirty'] else ''}"
+    cache = _cache_dir()
     onnx = cache / f"{name}.onnx"
     engine = cache / "engines" / f"{name}.engine"
     if not onnx.exists():
