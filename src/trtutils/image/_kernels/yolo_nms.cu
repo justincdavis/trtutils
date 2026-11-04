@@ -128,10 +128,12 @@ void yoloScatter(
 
 // bit j of row i is set when sorted box j > i overlaps box i of the same class;
 // a block per 64 rows and stripe of column blocks, so empty launches stay cheap.
-// N is the row capacity of mask: images with more candidates are left to the reduce
+// N is the row capacity of mask: images with more candidates are left to the reduce.
+// stride is the batch stride of sortCls/sortBox (the anchor count), which can exceed N.
 extern "C" __global__
 void yoloNmsMask(
     const int N,
+    const int stride,
     const int* __restrict__ count,
     const int* __restrict__ sortCls,
     const float* __restrict__ sortBox,
@@ -144,7 +146,8 @@ void yoloNmsMask(
     const int n = count[b];
     const int rowStart = blockIdx.x * 64;
     if (rowStart >= n || n > N) return;
-    const size_t base = (size_t)b * N;
+    const size_t sortBase = (size_t)b * stride;
+    const size_t maskBase = (size_t)b * N;
     const int words = (N + 63) / 64;
     const int i = rowStart + threadIdx.x;
     const bool active = i < n;
@@ -153,7 +156,7 @@ void yoloNmsMask(
     float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
     int ci = -1;
     if (active) {
-        const float* bi = sortBox + (base + i) * 4;
+        const float* bi = sortBox + (sortBase + i) * 4;
         a0 = bi[0];
         a1 = bi[1];
         a2 = bi[2];
@@ -162,7 +165,7 @@ void yoloNmsMask(
         ay = bi[1];
         aw = (double)(bi[2] - bi[0]);
         ah = (double)(bi[3] - bi[1]);
-        ci = sortCls[base + i];
+        ci = sortCls[sortBase + i];
     }
     // column blocks at or after the row block, striped over blockIdx.y
     for (int colStart = rowStart + 64 * blockIdx.y; colStart < n; colStart += 64 * gridDim.y) {
@@ -170,8 +173,8 @@ void yoloNmsMask(
         __syncthreads();
         if ((int)threadIdx.x < cols) {
             const int j = colStart + threadIdx.x;
-            for (int k = 0; k < 4; ++k) colBox[threadIdx.x * 4 + k] = sortBox[(base + j) * 4 + k];
-            colCls[threadIdx.x] = sortCls[base + j];
+            for (int k = 0; k < 4; ++k) colBox[threadIdx.x * 4 + k] = sortBox[(sortBase + j) * 4 + k];
+            colCls[threadIdx.x] = sortCls[sortBase + j];
         }
         __syncthreads();
         if (!active) continue;
@@ -208,7 +211,7 @@ void yoloNmsMask(
             const double uni = aw * ah + bw * bh - inter;
             if (uni > 0.0 && inter / uni > iouThres) bits |= 1ULL << t;
         }
-        mask[(base + i) * words + colStart / 64] = bits;
+        mask[(maskBase + i) * words + colStart / 64] = bits;
     }
 }
 
