@@ -163,6 +163,7 @@ class YoloNms:
         args = cached_args(
             self._mask,
             rows,
+            num,
             self.count.ptr,
             self.sort_cls.ptr,
             self.sort_box.ptr,
