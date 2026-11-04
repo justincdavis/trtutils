@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import inspect
 import shutil
 
 import numpy as np
@@ -13,15 +14,21 @@ import pytest
 from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR
 from trtutils._flags import FLAGS
+from trtutils.builder._onnx import read_onnx
+from trtutils.compat._libs import trt
 from trtutils.download._models._hands23_pass import remove_nonzero
 from trtutils.image._hand_interaction import HandInteractionDetector
 from trtutils.image._schema import HandInteractionOutputSchema
 from trtutils.models import HOIDETR, Hands23
+from trtutils.models._hooks import hands23_fp32_build_hook
 
 HOI_DETR_ONNX = DATA_DIR / "hoi_detr" / "hoi_detr_vitl_640.onnx"
 HANDS23_ONNX = DATA_DIR / "hands23" / "hands23_x101_800.onnx"
 _trt86_hoi = pytest.mark.skipif(
     FLAGS.TRT_VERSION < (10, 0), reason="TensorRT 8.6 cannot build HOI-DETR (Einsum ellipsis)"
+)
+_no_hands23_onnx = pytest.mark.skipif(
+    not HANDS23_ONNX.exists(), reason=f"missing {HANDS23_ONNX.name}"
 )
 _trt86_hands23 = pytest.mark.skipif(
     FLAGS.TRT_VERSION < (10, 0), reason="TensorRT 8.6 cannot build Hands23 (OneHot shape tensor)"
@@ -232,6 +239,7 @@ def test_batch_slots_match_single(build_model_engine, images, names, ref_names) 
 
 
 @_trt86_hands23
+@_no_hands23_onnx
 def test_nonzero_free_engine_matches_original(build_model_engine, images, tmp_path_factory) -> None:
     """An engine built from the NonZero-free ONNX detects what the original engine detects."""
     original_engine = build_model_engine(Hands23, HANDS23_ONNX)
@@ -254,3 +262,98 @@ def test_nonzero_free_engine_matches_original(build_model_engine, images, tmp_pa
                 np.testing.assert_allclose(entry_ref[0], entry_new[0], atol=3)
                 assert entry_ref[1] == pytest.approx(entry_new[1], abs=0.05)
         assert ref[3:] == new[3:]
+
+
+# float layers a cut at the first /Greater leaves in FP16: the sdf tail and the z-head
+_HANDS23_PAIR_LAYERS = (
+    "/Where_1",
+    "/Div_16",
+    "/Concat_10",
+    "onnx::MatMul_6058",
+    "Gemm_12",
+    "det_model.roi_heads.z_head.relation_layer.0.bias",
+    "/z_head/relation_layer/relation_layer.1/Relu",
+    "onnx::MatMul_6059",
+    "Gemm_18",
+    "det_model.roi_heads.z_head.relation_layer.2.bias",
+    "/z_head/relation_layer/relation_layer.3/Relu",
+    "onnx::MatMul_6060",
+    "Gemm_24",
+    "det_model.roi_heads.z_head.relation_layer.4.bias",
+    "/Softmax_1",
+    "/Where_14",
+)
+
+
+def _hands23_layer_names(onnx):
+    network, _, _, _ = read_onnx(onnx)
+    return [network.get_layer(idx).name for idx in range(network.num_layers)]
+
+
+def _assert_pair_score_path_pinned(pinned, names) -> None:
+    # these sit after the first /Greater, so a cut there leaves the z-head in FP16
+    pinned_idx = {idx for idx, _dtype in pinned}
+    for name in (*_HANDS23_PAIR_LAYERS, "/Unsqueeze_51"):
+        assert names.index(name) in pinned_idx
+
+
+@_trt86_hands23
+@_no_hands23_onnx
+def test_hands23_fp32_hook_overrides() -> None:
+    """The hook pins proposal decoding through the z-head and leaves the RPN head FP16."""
+    assert hands23_fp32_build_hook in Hands23._build_hooks
+    overrides = hands23_fp32_build_hook(onnx=HANDS23_ONNX)
+    assert overrides["prefer_precision_constraints"] is True
+    pinned = overrides["layer_precision"]
+    assert {dtype for _idx, dtype in pinned} == {trt.DataType.FLOAT}
+    names = _hands23_layer_names(HANDS23_ONNX)
+    pinned_idx = {idx for idx, _dtype in pinned}
+    # backbone, FPN and RPN head convolutions stay FP16; the proposal transpose is first
+    assert names.index("/proposal_generator/rpn_head/anchor_deltas_4/Conv") not in pinned_idx
+    assert min(pinned_idx) == names.index("/proposal_generator/Transpose")
+    assert names.index("/h_head/relation_layer/relation_layer.0/Gemm") in pinned_idx
+    assert names.index("det_model.roi_heads.h_head.relation_layer.0.weight") in pinned_idx
+    _assert_pair_score_path_pinned(pinned, names)
+    assert max(pinned_idx) == names.index("/Unsqueeze_51")
+
+
+@_trt86_hands23
+@_no_hands23_onnx
+def test_hands23_fp32_hook_skips_strongly_typed() -> None:
+    """A strongly typed build gets no layer precision, and the flag is still forwarded."""
+    assert "strongly_typed" not in inspect.signature(hands23_fp32_build_hook).parameters
+    assert hands23_fp32_build_hook(onnx=HANDS23_ONNX, strongly_typed=True) == {}
+
+
+@_trt86_hands23
+@_no_hands23_onnx
+def test_hands23_fp32_build_keeps_sides(images, tmp_path) -> None:
+    """The hooked build keeps people.jpeg's sides and the FP32 hand-hand link probabilities."""
+    engine = tmp_path / "hands23_fp32_layers.engine"
+    Hands23.build(HANDS23_ONNX, engine, opt_level=1)
+    model = Hands23(engine, warmup=False)
+    img = images["people"].array
+    found = model.end2end(img)
+    strong = sorted(
+        (side, contact) for (_box, score), _obj, _second, side, contact in found if score >= 0.5
+    )
+    assert strong == [(0, 0), (0, 0), (0, 1), (1, 0), (1, 0), (1, 1)]
+
+    boxes, scores, labels, pair_probs, _side = model.run(img, postprocess=True)
+    link = 1.0 - pair_probs[..., 0]
+    by_box = {}
+    for i in range(len(scores)):
+        if int(labels[i]) != 0 or scores[i] < 0.5:
+            continue
+        by_box[tuple(round(float(v)) for v in boxes[i])] = i
+    # an unpinned z-head scores these hand-hand links at 0.850 and 0.800
+    left = by_box[(102, 96, 108, 106)]
+    right = by_box[(122, 81, 131, 88)]
+    edge = by_box[(216, 97, 223, 108)]
+    assert float(link[left, right]) == pytest.approx(0.836, abs=0.01)
+    assert float(link[edge, left]) == pytest.approx(0.780, abs=0.01)
+
+
+def test_hands23_fp32_hook_skips_other_graphs() -> None:
+    """A graph without the Hands23 layer names gets no overrides, so it builds in FP16."""
+    assert hands23_fp32_build_hook(onnx=DATA_DIR / "simple.onnx") == {}

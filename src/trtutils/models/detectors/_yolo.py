@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
-from trtutils.models._model import Model, depthwise_fp32_build_hook, nms_build_hook
+from trtutils.models._hooks import depthwise_fp32_build_hook, nms_build_hook
+from trtutils.models._model import Model
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
