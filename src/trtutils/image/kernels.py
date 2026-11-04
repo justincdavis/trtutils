@@ -34,6 +34,7 @@ _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
 _SST_IMAGENET_FILE = _KERNEL_DIR / "sst_imagenet.cu"
 _DET_CLS_POST_FILE = _KERNEL_DIR / "det_cls_post.cu"
+_YOLO_NMS_FILE = _KERNEL_DIR / "yolo_nms.cu"
 
 SST_FAST: tuple[Path, str] = (
     _SST_FAST_FILE,
@@ -73,4 +74,9 @@ IMAGENET_SST_F16: tuple[Path, str] = (
 DET_CLS_POST: tuple[Path, str] = (
     _DET_CLS_POST_FILE,
     "unletterboxV10",
+)
+
+YOLO_NMS: tuple[Path, str] = (
+    _YOLO_NMS_FILE,
+    "yoloDecode",
 )
