@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 
 # column stripes per row block of the NMS mask kernel
 _NMS_STRIPES = 16
-_RANK_SLICES = 16  # RANK_SLICES in yolo_post.cu
-# NMS_MAX_WORDS in yolo_post.cu
+_RANK_SLICES = 16  # RANK_SLICES in yolo_nms.cu
+# NMS_MAX_WORDS in yolo_nms.cu
 _MAX_CANDIDATES = 64 * 1024
 # NMS bit matrix rows before a frame needs more: (N, N / 64) words is 141 MB at N = 33600
 _NMS_ROWS = 4096
