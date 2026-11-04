@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
 
 import numpy as np
 import nvtx
@@ -26,6 +26,7 @@ from .postprocessors import (
     postprocess_rtdetrv3,
     postprocess_yolov10,
 )
+from .postprocessors._gpu_detcls import CudaDetPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -41,6 +42,12 @@ class Detector(ImageModel, DetectorInterface):
     """Implementation of object detectors."""
 
     _OUTPUT_SCHEMA = OutputSchema
+    # opt in: unletterboxing a few hundred boxes does not always beat the host
+    _cuda_postprocess = True
+    _cuda_post_default = False
+    _CUDA_SCHEMAS = frozenset(
+        {OutputSchema.YOLO_V10, OutputSchema.EFFICIENT_NMS, OutputSchema.EFFICIENT_NMS_2}
+    )
 
     def __init__(
         self: Self,
@@ -63,6 +70,7 @@ class Detector(ImageModel, DetectorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         class_map: Mapping[int, int] | None = None,
@@ -137,6 +145,9 @@ class Detector(ImageModel, DetectorInterface):
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. Default is None, which
+            keeps 'cpu' unless the task's CUDA postprocessor is the default.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -176,6 +187,7 @@ class Detector(ImageModel, DetectorInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -202,6 +214,8 @@ class Detector(ImageModel, DetectorInterface):
         if self._verbose:
             LOG.debug(f"{self._tag}: Input schema: {self._input_schema}")
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
+
+        self._cuda_post = CudaDetPostprocessor() if self._postprocessor == "cuda" else None
 
         # solve for the postprocessing function
         if self._output_schema == OutputSchema.YOLO_V10:
@@ -253,7 +267,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -296,16 +310,28 @@ class Detector(ImageModel, DetectorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
+        ordered = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        data = self._postprocess_fn(
-            self._order_outputs(outputs),
-            ratios=ratios,
-            padding=padding,
-            conf_thres=conf_thres,
-            input_size=self._input_size,
-            no_copy=no_copy,
-            verbose=verbose,
-        )
+        if self._cuda_post is not None and isinstance(ordered[0], Buffer):
+            dev = cast("list[Buffer]", ordered)
+            if self._output_schema == OutputSchema.YOLO_V10:
+                data = self._cuda_post.yolov10(
+                    dev[0], ratios, padding, conf_thres, self._input_size, self._engine.stream
+                )
+            else:
+                data = self._cuda_post.efficient_nms(
+                    dev, ratios, padding, conf_thres, self._input_size, self._engine.stream
+                )
+        else:
+            data = self._postprocess_fn(
+                cast("list[np.ndarray]", ordered),
+                ratios=ratios,
+                padding=padding,
+                conf_thres=conf_thres,
+                input_size=self._input_size,
+                no_copy=no_copy,
+                verbose=verbose,
+            )
         if self._class_map is not None:
             for result in data:
                 ids = result[2]
@@ -317,6 +343,21 @@ class Detector(ImageModel, DetectorInterface):
             nvtx.pop_range()  # postprocess
 
         return data
+
+    def _resolve_postprocessor(self: Self, postprocessor: str | None) -> str:
+        """CPU by default. ``cuda`` unletterboxes YOLO-v10 and EfficientNMS outputs."""
+        if postprocessor is None or postprocessor == "cpu":
+            return "cpu"
+        if postprocessor != "cuda":
+            err_msg = f"Invalid postprocessor '{postprocessor}' for Detector, expected one of ('cpu', 'cuda')"
+            raise ValueError(err_msg)
+        if self._output_schema not in self._CUDA_SCHEMAS:
+            err_msg = (
+                "CUDA detection postprocess supports YOLO_V10 and EfficientNMS, "
+                f"not {self._output_schema.name}"
+            )
+            raise ValueError(err_msg)
+        return "cuda"
 
     def _post_fn(self: Self, conf_thres: float | None, *, verbose: bool | None) -> _PostFn:
         """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""

@@ -3,6 +3,11 @@ Unreleased
 
 Added
 ^^^^^
+* ``postprocessor="cuda"`` on ``Detector`` (YOLO-v10 and EfficientNMS) and ``Classifier``.
+  Detection unletterboxes the kept boxes on the engine stream; classification writes the
+  softmax, or copies the vector when ``softmax=False``. The default for both stays ``"cpu"``.
+  Image models take ``postprocessor`` and can leave engine outputs on the device for a CUDA
+  postprocessor
 * Hands23 downloads now drop all 9 ``NonZero`` ops from the exported ONNX (ROIAlign over all
   rois merged with ``Where``, RPN zero-area filter as ``Where(valid, score, -1e4)``), so
   TensorRT no longer does nine blocking data-dependent-shape copies per run. ``end2end`` is

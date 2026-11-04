@@ -4,18 +4,20 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
 
 import nvtx
 from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
 from ._schema import ClassifierOutputSchema
 from .interfaces import ClassifierInterface
 from .postprocessors import get_classifications, postprocess_classifications
+from .postprocessors._gpu_detcls import CudaClsPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -24,7 +26,6 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
-    from trtutils.core._buffer import Buffer
     from trtutils.image.types import Classification
 
     from ._image_model import _PostFn
@@ -34,6 +35,9 @@ class Classifier(ImageModel, ClassifierInterface):
     """Implementation of image classifiers."""
 
     _OUTPUT_SCHEMA = ClassifierOutputSchema
+    # opt in: a class-vector softmax is small, so the host stays the default
+    _cuda_postprocess = True
+    _cuda_post_default = False
 
     def __init__(
         self: Self,
@@ -53,6 +57,7 @@ class Classifier(ImageModel, ClassifierInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
         softmax: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -113,6 +118,9 @@ class Classifier(ImageModel, ClassifierInterface):
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. Default is None, which
+            keeps 'cpu' unless the task's CUDA postprocessor is the default.
         softmax : bool, optional
             Whether or not to apply softmax to the raw network outputs during
             postprocessing. Default is True. Some networks already apply
@@ -148,12 +156,14 @@ class Classifier(ImageModel, ClassifierInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
         )
 
         self._softmax = softmax
+        self._cuda_post = CudaClsPostprocessor() if self._postprocessor == "cuda" else None
 
         # prepend with 'cls_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
@@ -170,7 +180,7 @@ class Classifier(ImageModel, ClassifierInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -201,10 +211,17 @@ class Classifier(ImageModel, ClassifierInterface):
         if verbose:
             LOG.debug(f"{self._tag}: postprocess")
 
+        ordered = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        data = postprocess_classifications(
-            self._order_outputs(outputs), softmax=self._softmax, no_copy=no_copy, verbose=verbose
-        )
+        if self._cuda_post is not None and isinstance(ordered[0], Buffer):
+            data = self._cuda_post(ordered[0], softmax=self._softmax, stream=self._engine.stream)
+        else:
+            data = postprocess_classifications(
+                cast("list[np.ndarray]", ordered),
+                softmax=self._softmax,
+                no_copy=no_copy,
+                verbose=verbose,
+            )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
