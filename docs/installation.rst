@@ -126,7 +126,6 @@ Decode images and video straight to the GPU with :mod:`trtutils.io`
 Development Tools
 ~~~~~~~~~~~~~~~~~
 
-
 For development or contributing to trtutils:
 
 .. code-block:: console
