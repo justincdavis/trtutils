@@ -1611,6 +1611,15 @@ class OCR:
 
         results: list[list[TextLine]] = []
         pending: tuple[int, np.ndarray, _RegionsJob] | None = None
+
+        def flush() -> None:
+            nonlocal pending
+            if pending is not None:
+                index, boxes, rec_job = pending
+                lines = rec._read_regions(rec_job, verbose=verbose)  # noqa: SLF001
+                results.append(self._finish_page(pages[index], boxes, lines, conf_thres))
+                pending = None
+
         job = start(0)
         for i in range(len(pages)):
             stream_synchronize(stream)
@@ -1618,20 +1627,13 @@ class OCR:
             if i + 1 < len(pages):
                 job = start(i + 1)
             text_boxes = det._read_frame(det_job, box_conf_thres)  # noqa: SLF001
-            if pending is not None:
-                index, boxes, rec_job = pending
-                lines = rec._read_regions(rec_job, verbose=verbose)  # noqa: SLF001
-                results.append(self._finish_page(pages[index], boxes, lines, conf_thres))
-                pending = None
+            flush()
             if text_boxes:
                 boxes = np.stack([box for box, _ in text_boxes])
                 pending = (i, boxes, rec._enqueue_regions(frame, boxes))  # noqa: SLF001
             else:
                 results.append([])
-        if pending is not None:
-            index, boxes, rec_job = pending
-            lines = rec._read_regions(rec_job, verbose=verbose)  # noqa: SLF001
-            results.append(self._finish_page(pages[index], boxes, lines, conf_thres))
+        flush()
         return results
 
     # __call__ overloads
