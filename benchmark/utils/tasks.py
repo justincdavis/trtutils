@@ -45,7 +45,7 @@ class TaskModel:
     name: str
     cls: Any
     image: str = "street.jpg"
-    # the downloaded model name per ONNX, when it differs from ``name``
+    # wrapper class per ONNX for multi-engine models (OCR det + rec)
     parts: dict[str, Any] = field(default_factory=dict)
 
 
@@ -67,7 +67,7 @@ def _norm(name: str) -> str:
     return re.sub("[^a-z0-9]", "", name.lower()).replace("transformer", "")
 
 
-def _wrapper(model_type: str, name: str, classes: list[Any]) -> Any:  # noqa: ANN401
+def _wrapper(name: str, classes: list[Any]) -> Any:  # noqa: ANN401
     """The wrapper class of a model: the family's only class, else the longest name prefix."""
     if len(classes) == 1:
         return classes[0]
@@ -86,7 +86,7 @@ def build_task_models() -> list[TaskModel]:
     specs = []
     for model_type, names in load_model_configs().items():
         for name in names:
-            cls = _wrapper(model_type, name, by_type.get(model_type, []))
+            cls = _wrapper(name, by_type.get(model_type, []))
             if cls is None:
                 continue
             task = next(t for base, t in TASKS.items() if issubclass(cls, base))
@@ -115,7 +115,7 @@ def select_task_models(
         err_msg = f"Unknown task models: {', '.join(unknown)}"
         raise ValueError(err_msg)
     if names is not None:
-        return [m for m in TASK_MODELS if m.name in names]
+        return [m for m in TASK_MODELS if m.name in names and (tasks is None or m.task in tasks)]
     seen: set[Any] = set()
     picked = []
     for m in TASK_MODELS:
