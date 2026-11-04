@@ -90,7 +90,7 @@ def _run_trial(
     iterations: int,
     warmup: int,
     model_kwargs: dict[str, Any],
-) -> tuple[float, float, list[Any]]:
+) -> tuple[float, float, list[Any], str, bool]:
     # end2end is defined per task class, not on ImageModel
     model: Any = model_cls(engine_path, warmup=False, **kwargs, **model_kwargs)
     try:
@@ -104,10 +104,13 @@ def _run_trial(
                 model.end2end([image])
                 times.append(time.perf_counter() - t0)
         results = [_copy(model.end2end([image])) for image in images]
+        # the model may have fallen back from the requested options
+        method = model._preprocessor_method  # noqa: SLF001
+        graph = model._engine._cuda_graph_enabled  # noqa: SLF001
     finally:
         del model
     median, p90 = np.percentile(times, [50, 90]) * 1000.0
-    return float(median), float(p90), results
+    return float(median), float(p90), results, method, graph
 
 
 def autotune(
@@ -125,6 +128,9 @@ def autotune(
 ) -> list[AutotuneTrial]:
     """
     Time every combination of runtime options and rank them.
+
+    Options the model falls back from (e.g. ``trt`` without UINT8 support, or CUDA graphs
+    that fail to capture) are reported as what actually ran, and duplicates are dropped.
 
     Each trial times ``end2end`` per image over all of ``images``. Configurations that fail
     to build or run are reported with ``error`` set instead of raising.
@@ -158,7 +164,15 @@ def autotune(
     list[AutotuneTrial]
         The trials, fastest median first and failed trials last.
 
+    Raises
+    ------
+    ValueError
+        If iterations is less than 1.
+
     """
+    if iterations < 1:
+        err_msg = f"iterations must be at least 1, got {iterations}"
+        raise ValueError(err_msg)
     preprocessors = preprocessors if preprocessors is not None else _PREPROCESSORS
     if postprocessors is None:
         postprocessors = ("cpu", "cuda") if model_cls._cuda_postprocess else ("cpu",)  # noqa: SLF001
@@ -170,14 +184,19 @@ def autotune(
     del default_model
 
     trials: list[AutotuneTrial] = []
+    seen: set[tuple[str, str, bool]] = set()
     for pre, post, graph in itertools.product(preprocessors, postprocessors, cuda_graphs):
         kwargs = {"preprocessor": pre, "postprocessor": post, "cuda_graph": graph}
         try:
-            median, p90, results = _run_trial(
+            median, p90, results, pre_used, graph_used = _run_trial(
                 model_cls, engine_path, images, kwargs, iterations, warmup, model_kwargs
             )
+            # report what actually ran, and skip configurations that collapse onto one
+            if (pre_used, post, graph_used) in seen:
+                continue
+            seen.add((pre_used, post, graph_used))
             same = _equal(results, default_results)
-            trial = AutotuneTrial(pre, post, graph, median, p90, same, None)
+            trial = AutotuneTrial(pre_used, post, graph_used, median, p90, same, None)
         except Exception as exc:  # noqa: BLE001
             trial = AutotuneTrial(pre, post, graph, float("inf"), float("inf"), None, str(exc))
         if verbose:

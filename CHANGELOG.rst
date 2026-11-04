@@ -5,7 +5,10 @@ Added
 ^^^^^
 * ``image.autotune`` / ``image.AutotuneTrial`` and ``trtutils autotune``: time every
   preprocessor / postprocessor / ``cuda_graph`` combination of an image model on your own
-  images, check each against the default configuration's results, and report the fastest
+  images, check each against the default configuration's results, and report the fastest.
+  A trial names the preprocessor and CUDA graph that actually ran (``trt`` without UINT8,
+  or a CUDA graph that fails to capture, is the fallback), configurations that collapse
+  onto one already reported are dropped, and ``iterations`` below 1 raises ``ValueError``
 * ``Detector(class_map=...)`` (and every detector wrapper): optional ``Mapping[int, int]`` that
   translates model class ids to output ids after postprocessing; unmapped ids pass through. Off
   by default

@@ -10,6 +10,7 @@ import itertools
 import numpy as np
 import pytest
 
+from trtutils import FLAGS
 from trtutils.image import AutotuneTrial, Classifier, OBBDetector, Segmenter, autotune
 from trtutils.image._autotune import _copy, _equal
 
@@ -162,3 +163,24 @@ def test_kwargs_round_trip_into_constructor(task_engine, images) -> None:
     assert best.error is None
     model = Segmenter(engine, warmup=False, **best.kwargs)
     assert len(model.end2end([img])) == 1
+
+
+def test_fallback_preprocessor_is_reported_once(task_engine, images, monkeypatch) -> None:
+    """A trt request that falls back to cuda is reported as cuda, not duplicated."""
+    monkeypatch.setattr(FLAGS, "TRT_HAS_UINT8", False)
+    trials = autotune(
+        Classifier,
+        task_engine("cls"),
+        [images["horse"].array],
+        preprocessors=["cuda", "trt"],
+        postprocessors=["cpu"],
+        cuda_graphs=[False],
+        **_FAST,
+    )
+    assert [(t.preprocessor, t.cuda_graph) for t in trials] == [("cuda", False)]
+
+
+def test_iterations_must_be_positive(task_engine, images) -> None:
+    """Zero iterations is rejected up front instead of failing every trial."""
+    with pytest.raises(ValueError, match="iterations"):
+        autotune(Classifier, task_engine("cls"), [images["horse"].array], iterations=0)
