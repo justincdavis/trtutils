@@ -66,13 +66,13 @@ class VideoReader:
                 outputColorType=PyNvVideoCodec.OutputColorType.RGB,
             )
             meta = self._decoder.get_stream_metadata()
+            self._num_frames: int = meta.num_frames
+            self._shape = (int(meta.height), int(meta.width), 3)
+            self._out = Buffer.empty(self._shape, np.uint8, MemoryLocation.DEVICE)
+            self._kernel = Kernel(_RGB_TO_BGR, "rgbToBgr")
         except BaseException:
             self._file.close()
             raise
-        self._num_frames: int = meta.num_frames
-        self._shape = (int(meta.height), int(meta.width), 3)
-        self._out = Buffer.empty(self._shape, np.uint8, MemoryLocation.DEVICE)
-        self._kernel = Kernel(_RGB_TO_BGR, "rgbToBgr")
         height, width, _ = self._shape
         self._blocks = (
             (width + _THREADS[0] - 1) // _THREADS[0],
@@ -96,7 +96,9 @@ class VideoReader:
             frame = self._decoder[i]
             plane = frame.cuda()[0].__cuda_array_interface__
             ptr = int(plane["data"][0])
-            pitch = int(plane["strides"][0])
+            # strides is None for a C-contiguous plane
+            strides = plane["strides"]
+            pitch = int(strides[0]) if strides is not None else width * 3
             args = self._kernel.create_args(ptr, self._out.ptr, width, height, pitch)
             self._kernel.call(self._blocks, _THREADS, cudart.cudaStream_t(0), args)
             # also guarantees the decoder frame is not reused under the kernel
