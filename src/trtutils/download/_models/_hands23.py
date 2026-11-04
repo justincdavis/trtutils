@@ -14,6 +14,8 @@ from trtutils.download._tools import (
     run_uv_pip_install,
 )
 
+from ._hands23_pass import remove_nonzero
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -389,4 +391,6 @@ except Exception:
         verbose=verbose,
     )
 
-    return repo_dir / onnx_name
+    onnx_path = repo_dir / onnx_name
+    remove_nonzero(onnx_path)
+    return onnx_path

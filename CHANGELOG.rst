@@ -3,6 +3,12 @@ Unreleased
 
 Added
 ^^^^^
+* Hands23 downloads now drop all 9 ``NonZero`` ops from the exported ONNX (ROIAlign over all
+  rois merged with ``Where``, RPN zero-area filter as ``Where(valid, score, -1e4)``), so
+  TensorRT no longer does nine blocking data-dependent-shape copies per run. ``end2end`` is
+  5-9% faster (about 0.5-0.7 ms, RTX 5080, TensorRT 10.15); detections match the original
+  within FP16 noise and ONNX Runtime outputs are bit-identical. Assumes at least 1000 valid
+  RPN proposals per image (1700+ seen). Re-download older Hands23 ONNX files to get it
 * ``Detector(class_map=...)`` (and every detector wrapper): optional ``Mapping[int, int]`` that
   translates model class ids to output ids after postprocessing; unmapped ids pass through. Off
   by default
