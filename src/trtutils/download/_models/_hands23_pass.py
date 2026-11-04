@@ -197,13 +197,8 @@ def remove_nonzero(onnx_path: Path) -> None:
             node.CopyFrom(replacement)
         elif node.op_type == "GatherND" and node.name in rpn_where:
             valid, data = rpn_where[node.name], node.input[0]
-            if valid:
-                replacement = helper.make_node(
-                    "Where", [valid, data, invalid], list(node.output), name=node.name
-                )
-            else:
-                replacement = helper.make_node("Identity", [data], list(node.output), name=node.name)
-            node.CopyFrom(replacement)
+            op, ins = ("Where", [valid, data, invalid]) if valid else ("Identity", [data])
+            node.CopyFrom(helper.make_node(op, ins, list(node.output), name=node.name))
         nodes.append(node)
 
     _set_live_nodes(graph, nodes)
