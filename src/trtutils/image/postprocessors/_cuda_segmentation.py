@@ -26,8 +26,6 @@ if TYPE_CHECKING:
 
     from ._cpu_segmentation import MaskCanvas
 
-_FLOAT = 4  # bytes, also int32
-
 
 class CUDASegPostprocessor(CUDAPostprocessor):
     """YOLO segmentation postprocessing on the device, see ``postprocess_yolo_seg``."""
@@ -40,7 +38,6 @@ class CUDASegPostprocessor(CUDAPostprocessor):
         self._probs_kernel = self._kernel("yoloSegProbs")
         self._masks = self._kernel("yoloSegMasks")
         self._clear = self._kernel("yoloSegClear")
-        self._shape: tuple[int, ...] | None = None
 
     def __call__(
         self: Self,
@@ -64,7 +61,7 @@ class CUDASegPostprocessor(CUDAPostprocessor):
         head, proto = outputs
         batch, channels, _ = head.shape
         _, nm, mh, mw = proto.shape
-        if self._shape != (batch, nm, mh, mw, max_det):
+        if self._resized(batch, nm, mh, mw, max_det):
             # the mask kernels read dets and stale boxes from device memory: reads of mapped
             # memory each cost a PCIe round trip
             self._dets = Buffer.device((batch, max_det, 6), np.float32)
@@ -77,7 +74,6 @@ class CUDASegPostprocessor(CUDAPostprocessor):
             self._stale_dev = Buffer.device((batch, max_det, 4), np.int32)
             # per-detection sigmoid probs of the proto cells, reused image by image
             self._probs = Buffer.device((max_det, mh * mw), np.float32)
-            self._shape = (batch, nm, mh, mw, max_det)
 
         geoms = [_mask_geometry(input_size, r, p, (mh, mw)) for r, p in zip(ratios, padding)]
         self._nms(head, 4, channels - 4 - nm, conf_thres, nms_iou_thres, max_det)
@@ -129,12 +125,11 @@ class CUDASegPostprocessor(CUDAPostprocessor):
     ) -> np.ndarray:
         """Enqueue clearing the canvas's previous boxes and drawing image ``index``'s n masks."""
         _, nm, mh, mw = proto.shape
-        max_det = self._dets.shape[1]
         width, height, *scales = geometry
         view = canvas.take(n, height, width, clear=False)
         geom = (width, height, *(f64(s) for s in scales))
-        dets = self._dets.ptr + index * max_det * 6 * _FLOAT
-        count = self._nms.keep_count.ptr + index * _FLOAT
+        dets = self._dets[index].device_ptr
+        count = self._nms.keep_count[index].device_ptr
 
         # zero the previous frame's boxes on the device instead of the CPU
         if canvas.written:
@@ -143,7 +138,7 @@ class CUDASegPostprocessor(CUDAPostprocessor):
             stale[:stale_n] = 0
             for k, by1, by2, bx1, bx2 in canvas.written:
                 stale[k] = (bx1, by1, bx2, by2)
-            stale_ptr = self._stale_dev.ptr + index * max_det * 4 * _FLOAT
+            stale_ptr = self._stale_dev[index].device_ptr
             memcpy_host_to_device_async(stale_ptr, stale[:stale_n], self._stream)
             self._launch(
                 self._clear,
@@ -168,12 +163,12 @@ class CUDASegPostprocessor(CUDAPostprocessor):
             self._probs_kernel,
             (n, 4, 1),
             (256, 1, 1),
-            proto.device_ptr + index * nm * mh * mw * _FLOAT,
+            proto[index].device_ptr,
             nm,
             mh,
             mw,
             dets,
-            self._coefs.ptr + index * max_det * nm * _FLOAT,
+            self._coefs[index].device_ptr,
             n,
             count,
             *geom,
@@ -192,6 +187,6 @@ class CUDASegPostprocessor(CUDAPostprocessor):
             *geom,
             float(mask_thres),
             canvas.device_ptr,
-            self._regions.device_ptr + index * max_det * 4 * _FLOAT,
+            self._regions[index].device_ptr,
         )
         return view
