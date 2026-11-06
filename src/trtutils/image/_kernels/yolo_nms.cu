@@ -1,8 +1,44 @@
-// YOLO-style head postprocessing: decode, sort, and class-aware NMS.
+// YOLO-style head postprocessing: decode, sort, class-aware NMS, and gather of the kept rows.
 // Every kernel takes the batch index from the last grid dimension.
 // The head is (B, C, N): rows 0-3 cxcywh, rows [clsStart, clsStart + nc) class scores.
 
-#define NMS_MAX_WORDS 1024  // NMS supports up to 64 * NMS_MAX_WORDS candidates
+#include "postprocess.cuh"
+
+#define NMS_MAX_ROWS 4096  // _NMS_ROWS in _gpu_nms.py
+
+// whether box b overlaps box a (both x1, y1, x2, y2) by IoU above iouThres, as opencv's NMS,
+// which computes IoU on double (x, y, w, h) rects built from float32 xywh
+__device__ __forceinline__ bool nmsOverlap(const float* a, const float* b, const float iouThres) {
+    // float64 is slow on GeForce parts: decide in float32 when the pair is clearly
+    // apart or its IoU clearly off the threshold. The margins sit far above the
+    // rounding between these corners and opencv's double rects; the rest go exact.
+    const float mx = 1e-4f * (fabsf(a[2]) + fabsf(b[2]) + 1.0f);
+    const float my = 1e-4f * (fabsf(a[3]) + fabsf(b[3]) + 1.0f);
+    const float fiw = fminf(a[2], b[2]) - fmaxf(a[0], b[0]);
+    const float fih = fminf(a[3], b[3]) - fmaxf(a[1], b[1]);
+    if (fiw < -mx || fih < -my) return false;
+    if (fiw > mx && fih > my) {
+        const float inter = fiw * fih;
+        const float iou = inter / ((a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter);
+        if (iou > iouThres + 2e-3f) return true;
+        if (iou < iouThres - 2e-3f) return false;
+    }
+    const double ax = a[0];
+    const double ay = a[1];
+    const double aw = (double)(a[2] - a[0]);
+    const double ah = (double)(a[3] - a[1]);
+    const double bx = b[0];
+    const double by = b[1];
+    const double bw = (double)(b[2] - b[0]);
+    const double bh = (double)(b[3] - b[1]);
+    const double iw = fmin(ax + aw, bx + bw) - fmax(ax, bx);
+    const double ih = fmin(ay + ah, by + bh) - fmax(ay, by);
+    if (iw <= 0.0 || ih <= 0.0) return false;
+    const double inter = iw * ih;
+    const double uni = aw * ah + bw * bh - inter;
+    return uni > 0.0 && inter / uni > iouThres;
+}
+
 // keep anchors whose best class score is above conf, in any order
 extern "C" __global__
 void yoloDecode(
@@ -151,20 +187,10 @@ void yoloNmsMask(
     const int words = (N + 63) / 64;
     const int i = rowStart + threadIdx.x;
     const bool active = i < n;
-    // opencv computes IoU on double (x, y, w, h) rects built from float32 xywh
-    double ax = 0.0, ay = 0.0, aw = 0.0, ah = 0.0;
-    float a0 = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
+    float a[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     int ci = -1;
     if (active) {
-        const float* bi = sortBox + (sortBase + i) * 4;
-        a0 = bi[0];
-        a1 = bi[1];
-        a2 = bi[2];
-        a3 = bi[3];
-        ax = bi[0];
-        ay = bi[1];
-        aw = (double)(bi[2] - bi[0]);
-        ah = (double)(bi[3] - bi[1]);
+        for (int k = 0; k < 4; ++k) a[k] = sortBox[(sortBase + i) * 4 + k];
         ci = sortCls[sortBase + i];
     }
     // column blocks at or after the row block, striped over blockIdx.y
@@ -181,56 +207,50 @@ void yoloNmsMask(
         unsigned long long bits = 0;
         const int first = (colStart == rowStart) ? threadIdx.x + 1 : 0;
         for (int t = first; t < cols; ++t) {
-            if (colCls[t] != ci) continue;
-            const float* bj = colBox + t * 4;
-            // float64 is slow on GeForce parts: decide in float32 when the pair is clearly
-            // apart or its IoU clearly off the threshold. The margins sit far above the
-            // rounding between these corners and opencv's double rects; the rest go exact.
-            const float mx = 1e-4f * (fabsf(a2) + fabsf(bj[2]) + 1.0f);
-            const float my = 1e-4f * (fabsf(a3) + fabsf(bj[3]) + 1.0f);
-            const float fiw = fminf(a2, bj[2]) - fmaxf(a0, bj[0]);
-            const float fih = fminf(a3, bj[3]) - fmaxf(a1, bj[1]);
-            if (fiw < -mx || fih < -my) continue;
-            if (fiw > mx && fih > my) {
-                const float inter = fiw * fih;
-                const float iou = inter / ((a2 - a0) * (a3 - a1) + (bj[2] - bj[0]) * (bj[3] - bj[1]) - inter);
-                if (iou > iouThres + 2e-3f) {
-                    bits |= 1ULL << t;
-                    continue;
-                }
-                if (iou < iouThres - 2e-3f) continue;
-            }
-            const double bx = bj[0];
-            const double by = bj[1];
-            const double bw = (double)(bj[2] - bj[0]);
-            const double bh = (double)(bj[3] - bj[1]);
-            const double iw = fmin(ax + aw, bx + bw) - fmax(ax, bx);
-            const double ih = fmin(ay + ah, by + bh) - fmax(ay, by);
-            if (iw <= 0.0 || ih <= 0.0) continue;
-            const double inter = iw * ih;
-            const double uni = aw * ah + bw * bh - inter;
-            if (uni > 0.0 && inter / uni > iouThres) bits |= 1ULL << t;
+            if (colCls[t] == ci && nmsOverlap(a, colBox + t * 4, iouThres)) bits |= 1ULL << t;
         }
         mask[(maskBase + i) * words + colStart / 64] = bits;
     }
 }
 
-// greedy pass over the sorted boxes, one warp per image (the loop syncs once per kept box);
-// keepCount is -1 when the image has more candidates than mask holds (N rows)
+// greedy pass over the sorted boxes, one warp per image (the loop syncs once per kept box).
+// An image with more candidates than mask holds (N rows) instead tests each candidate
+// against the boxes kept so far, slower but rare (a very low conf_thres)
 extern "C" __global__
 void yoloNmsReduce(
     const int N,
+    const int stride,
     const int maxDet,
     const int* __restrict__ count,
+    const int* __restrict__ sortCls,
+    const float* __restrict__ sortBox,
+    const float iouThres,
     const unsigned long long* __restrict__ mask,
     int* __restrict__ keep,
     int* __restrict__ keepCount
 ) {
-    __shared__ unsigned long long removed[NMS_MAX_WORDS];
+    __shared__ unsigned long long removed[NMS_MAX_ROWS / 64];
     const int b = blockIdx.x;
     const int n = count[b];
+    int* kept_ = keep + (size_t)b * maxDet;
+    int kept = 0;
     if (n > N) {
-        if (threadIdx.x == 0) keepCount[b] = -1;
+        const size_t sortBase = (size_t)b * stride;
+        for (int i = 0; i < n && kept < maxDet; ++i) {
+            const float* box = sortBox + (sortBase + i) * 4;
+            const int cls = sortCls[sortBase + i];
+            bool hit = false;
+            for (int u = threadIdx.x; u < kept && !hit; u += blockDim.x) {
+                const int k = kept_[u];
+                hit = sortCls[sortBase + k] == cls && nmsOverlap(sortBox + (sortBase + k) * 4, box, iouThres);
+            }
+            if (!__any_sync(0xffffffffu, hit)) {
+                if (threadIdx.x == 0) kept_[kept] = i;
+                ++kept;
+                __syncwarp();
+            }
+        }
+        if (threadIdx.x == 0) keepCount[b] = kept;
         return;
     }
     const int words = (N + 63) / 64;
@@ -238,7 +258,6 @@ void yoloNmsReduce(
     for (int w = threadIdx.x; w < used; w += blockDim.x) removed[w] = 0;
     __syncwarp();
     const size_t base = (size_t)b * N;
-    int kept = 0;
     for (int w = 0; w < used && kept < maxDet; ++w) {
         // live boxes of word w, jumping straight from one survivor to the next
         const unsigned long long tail = (w == used - 1 && n % 64) ? (1ULL << (n % 64)) - 1 : ~0ULL;
@@ -246,7 +265,7 @@ void yoloNmsReduce(
         while (live && kept < maxDet) {
             const int bit = __ffsll(live) - 1;
             const int i = w * 64 + bit;
-            if (threadIdx.x == 0) keep[(size_t)b * maxDet + kept] = i;
+            if (threadIdx.x == 0) kept_[kept] = i;
             ++kept;
             const unsigned long long* row = mask + (base + i) * words;
             // only words at or after i hold bits for later boxes
@@ -256,4 +275,56 @@ void yoloNmsReduce(
         }
     }
     if (threadIdx.x == 0) keepCount[b] = kept;
+}
+
+// the kept detections as unletterboxed (x1, y1, x2, y2, score, class) rows, plus nExtra head
+// channels from extraStart per detection (mask coefficients, keypoints). With points the
+// extras are (x, y, visibility) triplets whose x and y are unletterboxed like the boxes.
+// A block per kept slot; counts gets each image's kept count
+extern "C" __global__
+void yoloGather(
+    const float* __restrict__ out,
+    const int C,
+    const int N,
+    const int extraStart,
+    const int nExtra,
+    const int points,
+    const int maxDet,
+    const int* __restrict__ keep,
+    const int* __restrict__ keepCount,
+    const int* __restrict__ sortAnchor,
+    const float* __restrict__ sortScore,
+    const int* __restrict__ sortCls,
+    const float* __restrict__ sortBox,
+    const float* __restrict__ letterbox,
+    float* __restrict__ dets,
+    float* __restrict__ extras,
+    int* __restrict__ counts
+) {
+    const int k = blockIdx.x;
+    const int b = blockIdx.y;
+    const int kept = keepCount[b];
+    if (k == 0 && threadIdx.x == 0) counts[b] = kept;
+    if (k >= kept) return;
+    const size_t base = (size_t)b * N;
+    const size_t row = (size_t)b * maxDet + k;
+    const int s = keep[row];
+    const Letterbox lb = loadLetterbox(letterbox, b);
+    if (threadIdx.x == 0) {
+        const float* box = sortBox + (base + s) * 4;
+        float* det = dets + row * 6;
+        det[0] = unletterX(box[0], lb);
+        det[1] = unletterY(box[1], lb);
+        det[2] = unletterX(box[2], lb);
+        det[3] = unletterY(box[3], lb);
+        det[4] = sortScore[base + s];
+        det[5] = (float)sortCls[base + s];
+    }
+    const float* head = out + ((size_t)b * C + extraStart) * N + sortAnchor[base + s];
+    float* dst = extras + row * nExtra;
+    for (int m = threadIdx.x; m < nExtra; m += blockDim.x) {
+        const float v = head[(size_t)m * N];
+        const int axis = points ? m % 3 : 2;
+        dst[m] = axis == 0 ? unletterX(v, lb) : axis == 1 ? unletterY(v, lb) : v;
+    }
 }
