@@ -31,8 +31,28 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 _COLOR_CHANNELS = 3
+_IMAGE_RANK = 4
 
 _PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
+
+
+def _image_binding(
+    shape: tuple[int, ...],
+    dtype: np.dtype,
+) -> tuple[tuple[int, int], bool] | None:
+    """
+    Return ``(width, height)`` and whether scale/swap/transpose is already in the graph.
+
+    Float NCHW is ``(batch, 3, height, width)``. uint8 NHWC is ``(batch, height, width, 3)``,
+    the letterboxed image, with normalize and transpose inside the network.
+    """
+    if len(shape) != _IMAGE_RANK:
+        return None
+    if shape[1] == _COLOR_CHANNELS:
+        return (int(shape[3]), int(shape[2])), False
+    if shape[-1] == _COLOR_CHANNELS and dtype == np.dtype(np.uint8):
+        return (int(shape[2]), int(shape[1])), True
+    return None
 
 
 # (raw_outputs, ratios, padding, no_copy) -> postprocessed outputs per image
@@ -62,7 +82,7 @@ class ImageModel:
     # task models set the enum used to resolve and order the engine outputs
     _OUTPUT_SCHEMA: ClassVar[type[Enum] | None] = None
 
-    def __init__(  # noqa: PLR0915
+    def __init__(
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
@@ -188,42 +208,24 @@ class ImageModel:
             )
             self._unified_mem = self._engine.unified_mem
             self._resize_method: str = resize_method
-            # Find the image input: 4D tensor with 3 channels (batch, 3, H, W)
-            input_size: tuple[int, ...] | None = None
-            input_spec = self._engine.input_spec[0]
-            # position of the image among the engine inputs; other inputs go around it
-            self._image_input_index = 0
-            expected_input_size = 4
-            for index, spec in enumerate(self._engine.input_spec):
-                shape = tuple(spec[0])
-                if len(shape) == expected_input_size and shape[1] == _COLOR_CHANNELS:
-                    input_size = shape
-                    input_spec = spec
-                    self._image_input_index = index
+            # Float NCHW is (batch, 3, H, W). uint8 NHWC is a letterboxed image whose
+            # scale, channel swap, and transpose already live in the network.
+            for index, input_spec in enumerate(self._engine.input_spec):  # noqa: B007
+                found = _image_binding(tuple(input_spec[0]), input_spec[1])
+                if found is not None:
                     break
-
-            if input_size is None:
-                # Fallback: use first input with original validation
-                input_size = tuple(self._engine.input_spec[0][0])
-                expected_input_size = 4
-                if len(input_size) != expected_input_size:
-                    err_msg = (
-                        "Expected model to have input size of form: (batch, channels, height, width)"
-                    )
-                    err_msg += f", found {input_size}"
-                    raise ValueError(err_msg)
-                rgb_channels = 3
-                if input_size[1] != rgb_channels:
-                    err_msg = (
-                        f"Expected model to take {rgb_channels} channel input, found {input_size[1]}"
-                    )
-                    raise ValueError(err_msg)
+            else:
+                err_msg = (
+                    "Expected an image input of shape (batch, 3, height, width) "
+                    f"or uint8 (batch, height, width, 3), found {self._engine.input_spec[0][0]}"
+                )
+                raise ValueError(err_msg)
+            self._image_input_index = index
+            self._input_size, self._sst_in_graph = found
 
             # Extract batch size from engine (the max profile batch for a
             # dynamic-batch engine, which bounds what the preprocessors accept)
-            self._batch_size: int = input_size[0]
-
-            self._input_size: tuple[int, int] = (input_size[3], input_size[2])
+            self._batch_size: int = input_spec[0][0]
             self._dtype = input_spec[1]
             self._input_range = input_range
             self._mean = mean
@@ -286,11 +288,13 @@ class ImageModel:
             self._dtype,
             resize=self._resize_method,
             stream=self._engine.stream,
-            mean=self._mean,
-            std=self._std,
+            # an in-graph normalize needs no mean/std buffers or ImageNet kernel
+            mean=None if self._sst_in_graph else self._mean,
+            std=None if self._sst_in_graph else self._std,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
+            normalize=not self._sst_in_graph,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -429,6 +433,15 @@ class ImageModel:
         if method not in _PREPROCESSOR_METHODS:
             err_msg = f"Invalid preprocessing method {method!r}, options are: {list(_PREPROCESSOR_METHODS)}"
             raise ValueError(err_msg)
+        if self._sst_in_graph:
+            if method == "cpu":
+                err_msg = (
+                    "This engine swaps channels, normalizes, and transposes in the graph. "
+                    "Use the cuda preprocessor, which only resizes."
+                )
+                raise ValueError(err_msg)
+            # the TRT preprocessor's engine only normalizes; both resize with the same kernels
+            return "cuda"
         if method == "trt" and not FLAGS.TRT_HAS_UINT8:
             method = "cuda"
             LOG.warning(
@@ -437,6 +450,13 @@ class ImageModel:
         if method == "cuda" and self._dtype != np.float32:
             method = "cpu"
         return method
+
+    def _raise_baked_norm(self: Self) -> None:
+        err_msg = (
+            "This engine swaps channels, normalizes, and transposes in the graph. "
+            "input_range, mean, and std are fixed at build time."
+        )
+        raise ValueError(err_msg)
 
     def _update_preprocessors(self: Self) -> None:
         if self._preproc_cpu is not None:
@@ -458,7 +478,14 @@ class ImageModel:
         input_range : tuple[float, float]
             The new input range.
 
+        Raises
+        ------
+        ValueError
+            If scale, channel swap, and transpose are already in the engine graph
+
         """
+        if self._sst_in_graph:
+            self._raise_baked_norm()
         self._input_range = input_range
         self._update_preprocessors()
 
@@ -479,6 +506,7 @@ class ImageModel:
         ------
         ValueError
             If the mean or std is not a tuple of 3 floats
+            If scale, channel swap, and transpose are already in the engine graph
 
         """
         if len(mean) != _COLOR_CHANNELS:
@@ -487,6 +515,8 @@ class ImageModel:
         if len(std) != _COLOR_CHANNELS:
             err_msg = f"{self._tag}: Std must be a tuple of 3 floats"
             raise ValueError(err_msg)
+        if self._sst_in_graph:
+            self._raise_baked_norm()
         self._mean = mean
         self._std = std
         self._update_preprocessors()
