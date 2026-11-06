@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import time
+from functools import partial
 from typing import TYPE_CHECKING, overload
 
+import numpy as np
 import nvtx
 from typing_extensions import Literal
 
@@ -16,12 +18,12 @@ from ._image_model import ImageModel
 from ._schema import HandInteractionOutputSchema
 from .interfaces import HandInteractionDetectorInterface
 from .postprocessors import get_interactions, postprocess_hand_interactions
+from .postprocessors._gpu_hoi import CudaHoiPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    import numpy as np
     from typing_extensions import Self
 
     from trtutils.core._buffer import Buffer
@@ -47,6 +49,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     """
 
     _OUTPUT_SCHEMA = HandInteractionOutputSchema
+    _CUDA_POSTPROCESSOR = CudaHoiPostprocessor
+    # opt in: NMS of a fixed top-k (about 100) is not clearly faster than the host
+    _cuda_post_default = False
 
     def __init__(
         self: Self,
@@ -198,6 +203,16 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         """Get the output schema used by this detector."""
         return self._output_schema
 
+    def _cuda_unsupported(self: Self) -> str | None:
+        """CUDA reads float32 boxes, scores and pair probabilities; labels and side are indices."""
+        # [boxes, scores, labels, pair_probs, (side)]
+        dtypes = self._order_outputs(list(self._engine.output_dtypes))
+        if any(dtypes[i] != np.float32 for i in (0, 1, 3)):
+            return "needs float32 boxes, scores and pair probabilities"
+        if any(dtype not in (np.int32, np.int64, np.float32) for dtype in dtypes[2:3] + dtypes[4:]):
+            return "needs int32, int64 or float32 labels and side"
+        return None
+
     def postprocess(
         self: Self,
         outputs: list[np.ndarray] | list[Buffer],
@@ -248,13 +263,13 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         nms_iou = nms_iou_thres if nms_iou_thres is not None else self._nms_iou_thres
         t0 = time.perf_counter()
-        data = postprocess_hand_interactions(
-            self._host_outputs(outputs),
+        data = self._postprocess_with(
+            partial(postprocess_hand_interactions, no_copy=no_copy),
+            outputs,
             ratios,
             padding,
             conf_thres,
             nms_iou,
-            no_copy=no_copy,
             input_size=self._input_size,
             verbose=verbose,
         )

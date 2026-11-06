@@ -3,6 +3,10 @@ Unreleased
 
 Added
 ^^^^^
+* ``postprocessor="cuda"`` on ``HandInteractionDetector`` (Hands23 and HOI-DETR forward it).
+  Unletterboxes boxes and runs the same class-aware NMS as ``postprocess_hand_interactions``
+  on the engine stream, gathering labels, pair probabilities, and side. The default stays
+  ``"cpu"``.
 * ``postprocessor="cuda"`` on ``Detector`` (YOLO-v10 and EfficientNMS) and ``Classifier``.
   Detection unletterboxes the kept boxes on the engine stream; classification writes the
   softmax, or copies the vector when ``softmax=False``. The default for both stays ``"cpu"``.
