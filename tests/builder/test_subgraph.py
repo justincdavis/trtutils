@@ -20,21 +20,6 @@ from trtutils.builder.onnx._subgraph import (  # noqa: E402
 pytestmark = pytest.mark.cpu
 
 
-def _gs_variable_is_hashable() -> bool:
-    """Check whether gs.Variable supports hashing (needed by extract_subgraph)."""
-    try:
-        hash(gs.Variable("probe"))
-    except TypeError:
-        return False
-    return True
-
-
-_skip_unhashable = pytest.mark.skipif(
-    not _gs_variable_is_hashable(),
-    reason="onnx_graphsurgeon Variable is unhashable in this version",
-)
-
-
 @pytest.fixture(scope="session")
 def simple_onnx_model(onnx_path) -> onnx.ModelProto:
     """Load the test ONNX model."""
@@ -67,7 +52,6 @@ def test_invalid_start_greater_than_end(simple_onnx_model) -> None:
         extract_subgraph(simple_onnx_model, 1, 0)
 
 
-@_skip_unhashable
 def test_extract_from_model_proto(simple_onnx_model) -> None:
     """extract_subgraph accepts an onnx.ModelProto and returns a submodel."""
     sub = extract_subgraph(simple_onnx_model, 0, 0)
@@ -75,14 +59,12 @@ def test_extract_from_model_proto(simple_onnx_model) -> None:
     assert len(sub.graph.node) > 0
 
 
-@_skip_unhashable
 def test_extract_from_gs_graph(simple_gs_graph) -> None:
     """extract_subgraph accepts a gs.Graph directly."""
     sub = extract_subgraph(simple_gs_graph, 0, 0)
     assert isinstance(sub, onnx.ModelProto)
 
 
-@_skip_unhashable
 def test_split_into_two(simple_onnx_model) -> None:
     """Splitting at one index produces two subgraphs."""
     parts = split_model(simple_onnx_model, [0])
@@ -109,7 +91,6 @@ def test_split_index_too_large_raises(simple_onnx_model, simple_gs_graph) -> Non
         split_model(simple_onnx_model, [len(simple_gs_graph.nodes)])
 
 
-@_skip_unhashable
 def test_extract_subgraph_from_file(onnx_path, tmp_path) -> None:
     """extract_subgraph_from_file writes a valid ONNX file."""
     output = tmp_path / "sub.onnx"
@@ -119,7 +100,6 @@ def test_extract_subgraph_from_file(onnx_path, tmp_path) -> None:
     assert isinstance(loaded, onnx.ModelProto)
 
 
-@_skip_unhashable
 def test_split_model_from_file(onnx_path, tmp_path) -> None:
     """split_model_from_file writes multiple ONNX files."""
     out_dir = tmp_path / "splits"
@@ -128,3 +108,14 @@ def test_split_model_from_file(onnx_path, tmp_path) -> None:
 
     assert (out_dir / "sub_0.onnx").exists()
     assert (out_dir / "sub_1.onnx").exists()
+
+
+def test_split_pieces_chain_and_validate(simple_onnx_model, simple_gs_graph) -> None:
+    """Split pieces cover all nodes, chain by tensor names, and pass the ONNX checker."""
+    parts = split_model(simple_onnx_model, [0])
+    for part in parts:
+        onnx.checker.check_model(part)
+    assert sum(len(p.graph.node) for p in parts) == len(simple_gs_graph.nodes)
+    out_names = {o.name for o in parts[0].graph.output}
+    in_names = {i.name for i in parts[1].graph.input}
+    assert out_names & in_names
