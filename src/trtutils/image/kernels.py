@@ -22,6 +22,8 @@ Attributes
     ImageNet normalization with scale/swap/transpose (float16 output)
 :attribute:`DET_CLS_POST` : Path
     Postprocess kernels for detection unletterbox and classification softmax.
+:attribute:`HOI_POST` : Path
+    Postprocess kernel for hand-object interaction: unletterbox, class-aware NMS, and gather.
 :attribute:`YOLO_NMS` : Path
     Postprocess kernels for YOLO-style heads: decode, sort, NMS, and gather.
 :attribute:`YOLO_OBB` : Path
@@ -78,6 +80,7 @@ IMAGENET_SST_F16: tuple[Path, str] = (
 )
 
 DET_CLS_POST: Path = _KERNEL_DIR / "det_cls_post.cu"
+HOI_POST: Path = _KERNEL_DIR / "hoi_post.cu"
 YOLO_NMS: Path = _KERNEL_DIR / "yolo_nms.cu"
 YOLO_OBB: Path = _KERNEL_DIR / "yolo_obb.cu"
 

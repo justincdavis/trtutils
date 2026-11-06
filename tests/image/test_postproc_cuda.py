@@ -28,6 +28,7 @@ from trtutils.image.postprocessors._cuda import letterbox_table, split_detection
 from trtutils.image.postprocessors._cuda_classifier import CUDAClsPostprocessor
 from trtutils.image.postprocessors._cuda_detection import CUDADetPostprocessor
 from trtutils.image.postprocessors._cuda_nms import YoloNms
+from trtutils.models import Hands23
 
 _RATIOS = [(0.5, 0.5), (0.25, 0.5)]
 _PADDING = [(4.0, 8.0), (2.0, 6.0)]
@@ -49,6 +50,7 @@ _CUDA_MODELS = [
     pytest.param(Detector, _engine("yolov10_engine"), "horse", id="detector"),
     pytest.param(Classifier, _engine("task_engine", "cls"), "horse", id="classifier"),
     pytest.param(OBBDetector, _engine("task_engine", "obb"), "aerial", id="obb"),
+    pytest.param(Hands23, _engine("hands23_engine"), "people", id="hand-interaction"),
 ]
 
 
