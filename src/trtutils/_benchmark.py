@@ -225,7 +225,8 @@ def benchmark_engines(
         dla_core: int | None = None
         device: int | None = None
         if isinstance(engine_info, tuple):
-            engine, dla_core = engine_info  # ty: ignore[invalid-assignment]
+            engine, dla_core, *rest = engine_info
+            device = rest[0] if rest else None
         else:
             engine = engine_info
         if isinstance(engine, str):
@@ -251,7 +252,10 @@ def benchmark_engines(
 
     # otherwise we need a parallel setup
     trt_engines = ParallelTRTEngines(
-        [(ep, dc) if dc is not None else ep for ep, dc in zip(temp_engines, dla_assignments)],
+        [
+            (ep, dc, dev) if dc is not None or dev is not None else ep
+            for ep, dc, dev in zip(temp_engines, dla_assignments, device_assignments)
+        ],
         warmup_iterations=warmup_iterations,
         warmup=warmup,
         cuda_graph=cuda_graph,

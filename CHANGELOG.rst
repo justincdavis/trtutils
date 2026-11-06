@@ -195,6 +195,7 @@ Fixed
 ^^^^^
 * ``SAHI.end2end`` final cross-slice merge NMS now honours per-call ``nms_iou_thres`` and
   ``agnostic_nms`` instead of always using the init values.
+* ``benchmark_engines`` accepts ``(engine, dla_core, device)`` tuples again (they raised ``ValueError``) and ``parallel=True`` now runs each engine on its device
 * ``extract_subgraph`` and ``split_model`` no longer raise ``unhashable type: 'Variable'`` with
   onnx-graphsurgeon 0.5.8; pieces keep the source opset, skip omitted optional inputs, and output
   only tensors later pieces read plus the graph outputs they make

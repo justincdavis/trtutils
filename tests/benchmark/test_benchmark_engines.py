@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from trtutils import BenchmarkResult, benchmark_engines
@@ -76,3 +79,36 @@ def test_benchmark_engines_tuple_input(engine_path, entry_factory) -> None:
     )
     assert len(results) == 1
     assert isinstance(results[0], BenchmarkResult)
+
+
+@pytest.mark.parametrize(
+    ("entries", "expected"),
+    [
+        pytest.param([("a.engine", None, 1)], [("a.engine", None, 1)], id="device-only"),
+        pytest.param([("a.engine", 0, 1)], [("a.engine", 0, 1)], id="dla-and-device"),
+        pytest.param(
+            [("a.engine", 0), "b.engine", ("c.engine", None, 2)],
+            [("a.engine", 0, None), "b.engine", ("c.engine", None, 2)],
+            id="mixed",
+        ),
+    ],
+)
+def test_benchmark_engines_parallel_forwards_devices(entries, expected) -> None:
+    """Parallel mode hands each engine's device to ParallelTRTEngines."""
+    expected = [(Path(e[0]), *e[1:]) if isinstance(e, tuple) else Path(e) for e in expected]
+    with patch("trtutils._benchmark.ParallelTRTEngines") as mock_cls:
+        mock_cls.return_value = MagicMock()
+        benchmark_engines(entries, iterations=1, warmup_iterations=1, parallel=True)
+    assert mock_cls.call_args.args[0] == expected
+
+
+def test_benchmark_engines_parallel_explicit_device(engine_path) -> None:
+    """Parallel mode runs with explicit (engine, dla_core, device) tuples."""
+    results = benchmark_engines(
+        [(engine_path, None, 0)] * 2,
+        iterations=ITERS,
+        warmup_iterations=WARMUP_ITERS,
+        parallel=True,
+    )
+    assert len(results) == 1
+    assert len(results[0].latency.raw) == ITERS
