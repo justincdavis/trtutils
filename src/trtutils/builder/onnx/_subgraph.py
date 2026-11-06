@@ -64,20 +64,28 @@ def extract_subgraph(
 
     # extract the subgraph with inputs/outputs
     slice_nodes = nodes[start_idx : end_idx + 1]
-    produced = {t for n in slice_nodes for t in n.outputs}
-    consumed = {t for n in slice_nodes for t in n.inputs if t is not None}
-    inputs = [t for t in consumed if t not in produced]
-    outputs = []
-    for t in produced:
-        for n in nodes[end_idx + 1 :]:
-            if t in n.inputs:
-                outputs.append(t)
-                break
+    # key by name: tensor names are unique and gs.Variable may be unhashable
+    produced = {t.name: t for n in slice_nodes for t in n.outputs}
+    # skip constants and omitted optional inputs (empty name)
+    consumed = {
+        t.name: t for n in slice_nodes for t in n.inputs if t.name and not isinstance(t, gs.Constant)
+    }
+    inputs = [t for name, t in consumed.items() if name not in produced]
+    # outputs: tensors later nodes read, plus graph outputs made in this slice
+    needed = {t.name for n in nodes[end_idx + 1 :] for t in n.inputs}
+    needed.update(t.name for t in graph.outputs)
+    outputs = [t for name, t in produced.items() if name in needed]
     if not outputs:
-        outputs = list(produced)
+        outputs = list(produced.values())
 
     # create the new subgraph
-    sub_g = gs.Graph(nodes=slice_nodes, inputs=inputs, outputs=outputs)
+    sub_g = gs.Graph(
+        nodes=slice_nodes,
+        inputs=inputs,
+        outputs=outputs,
+        opset=graph.opset,
+        import_domains=graph.import_domains,
+    )
     subgraph = sub_g.cleanup().toposort()
 
     # export and return
