@@ -49,7 +49,6 @@ class YoloNms(CudaPostprocessor):
         self._mask = self._kernel("yoloNmsMask")
         self._reduce = self._kernel("yoloNmsReduce")
         self._gather = self._kernel("yoloGather")
-        self._shape: tuple[int, int, int] | None = None
 
     def _allocate(self: Self, batch: int, num: int, max_det: int) -> None:
         self.count = device((batch,), np.int32)
@@ -66,7 +65,6 @@ class YoloNms(CudaPostprocessor):
         self._bits: Buffer | None = None
         self._keep = device((batch, max_det), np.int32)
         self.keep_count = device((batch,), np.int32)
-        self._shape = (batch, num, max_det)
 
     def rank(
         self: Self,
@@ -84,7 +82,7 @@ class YoloNms(CudaPostprocessor):
         Keeps scores above ``conf_thres`` (at or above with ``inclusive``); None keeps every anchor.
         """
         batch, channels, num = head.shape
-        if self._shape != (batch, num, max_det):
+        if self._resized(batch, num, max_det):
             self._allocate(batch, num, max_det)
         unfiltered = -math.inf if inclusive else 0.0
         conf = unfiltered if conf_thres is None else float(conf_thres)

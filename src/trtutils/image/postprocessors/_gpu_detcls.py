@@ -36,7 +36,6 @@ class CudaDetPostprocessor(CudaPostprocessor):
     def __init__(self: Self, stream: cudart.cudaStream_t) -> None:
         super().__init__(stream)
         self._unletterbox = self._kernel("detUnletterbox")
-        self._shape: tuple[int, int] | None = None
 
     def __call__(
         self: Self,
@@ -60,10 +59,9 @@ class CudaDetPostprocessor(CudaPostprocessor):
             strided = (boxes.device_ptr, 4, scores.device_ptr, 1, classes.device_ptr, 1)
             strided = (*strided, index_kind(classes.dtype))
             limits = (num_dets.device_ptr, index_kind(num_dets.dtype))
-        if self._shape != (batch, n):
+        if self._resized(batch, n):
             self._dets = mapped((batch, n, 6), np.float32)
             self._counts = mapped((batch,), np.int32)
-            self._shape = (batch, n)
         self._launch(
             self._unletterbox,
             (batch, 1, 1),
@@ -88,7 +86,6 @@ class CudaClsPostprocessor(CudaPostprocessor):
     def __init__(self: Self, stream: cudart.cudaStream_t) -> None:
         super().__init__(stream)
         self._softmax = self._kernel("clsSoftmax")
-        self._shape: tuple[int, int] | None = None
 
     def __call__(self: Self, outputs: list[Buffer], *, softmax: bool) -> list[list[np.ndarray]]:
         """
@@ -99,9 +96,8 @@ class CudaClsPostprocessor(CudaPostprocessor):
         logits = outputs[0]
         classes = int(logits.shape[-1])
         batch = int(logits.size // classes)
-        if self._shape != (batch, classes):
+        if self._resized(batch, classes):
             self._probs = mapped((batch, classes), np.float32)
-            self._shape = (batch, classes)
         self._launch(
             self._softmax,
             (batch, 1, 1),

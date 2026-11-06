@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+from functools import partial
 from typing import TYPE_CHECKING, overload
 
 import nvtx
@@ -211,16 +212,12 @@ class Classifier(ImageModel, ClassifierInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        device_outputs = self._device_outputs(outputs)
-        if device_outputs is not None:
-            data = self._cuda_post(device_outputs, softmax=self._softmax)
-        else:
-            data = postprocess_classifications(
-                self._host_outputs(outputs),
-                softmax=self._softmax,
-                no_copy=no_copy,
-                verbose=verbose,
-            )
+        data = self._postprocess_with(
+            partial(postprocess_classifications, no_copy=no_copy),
+            outputs,
+            softmax=self._softmax,
+            verbose=verbose,
+        )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
