@@ -42,7 +42,7 @@ class CUDAStage:
         kernel: Kernel,
         blocks: tuple[int, int, int],
         threads: tuple[int, int, int],
-        *args: float,
+        *args: float | tuple[str, float],
     ) -> None:
         kernel.call(blocks, threads, self._stream, cached_args(kernel, *args))
 

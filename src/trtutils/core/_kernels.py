@@ -374,12 +374,19 @@ def create_kernel_args(
     return ptrs, converted_args
 
 
+def f64(value: float) -> tuple[str, float]:
+    """Mark a :func:`cached_args` value to pass as a double instead of a float."""
+    return ("f64", value)
+
+
 @lru_cache(maxsize=1024)
-def cached_args(kernel: Kernel, *values: float) -> KernelArgs:
+def cached_args(kernel: Kernel, *values: float | tuple[str, float]) -> KernelArgs:
     """
     Memoized :meth:`Kernel.create_args` for scalar arguments.
 
     Pointers, shapes and thresholds repeat frame to frame, and packing the
-    arguments costs ~10-20 us per launch.
+    arguments costs ~10-20 us per launch. Wrap doubles with :func:`f64`.
     """
-    return kernel.create_args(*values)
+    return kernel.create_args(
+        *(np.array([v[1]], dtype=np.float64) if isinstance(v, tuple) else v for v in values)
+    )

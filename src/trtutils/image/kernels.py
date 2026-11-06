@@ -28,6 +28,8 @@ Attributes
     Postprocess kernels for YOLO-style heads: decode, sort, NMS, and gather.
 :attribute:`YOLO_OBB` : Path
     Postprocess kernels for oriented boxes: decode, probiou NMS, and keep.
+:attribute:`YOLO_SEG` : Path
+    Postprocess kernels for YOLO segmentation masks: clear, probabilities, and masks.
 
 """
 
@@ -83,6 +85,7 @@ DET_CLS_POST: Path = _KERNEL_DIR / "det_cls_post.cu"
 HOI_POST: Path = _KERNEL_DIR / "hoi_post.cu"
 YOLO_NMS: Path = _KERNEL_DIR / "yolo_nms.cu"
 YOLO_OBB: Path = _KERNEL_DIR / "yolo_obb.cu"
+YOLO_SEG: Path = _KERNEL_DIR / "yolo_seg.cu"
 
 # loadIndex() in _kernels/postprocess.cuh
 _INDEX_KIND = {np.dtype(np.int32): 0, np.dtype(np.float32): 1, np.dtype(np.int64): 2}
