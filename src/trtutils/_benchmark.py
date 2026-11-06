@@ -118,6 +118,7 @@ def benchmark_engine(
         A dataclass containing the results of the benchmark.
 
     """
+    warmup = warmup if warmup is not None else True
     if verbose:
         LOG.debug("Running benchmark_engine")
 
@@ -216,6 +217,7 @@ def benchmark_engines(
         If parallel was True, will only contain one item.
 
     """
+    warmup = warmup if warmup is not None else True
     temp_engines: list[Path | TRTEngine] = []
     dla_assignments: list[int | None] = []
     device_assignments: list[int | None] = []

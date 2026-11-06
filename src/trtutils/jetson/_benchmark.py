@@ -83,6 +83,7 @@ def benchmark_engine(
         A dataclass containing the results of the benchmark.
 
     """
+    warmup = warmup if warmup is not None else True
     loaded_engine: bool = False
     if isinstance(engine, (Path, str)):
         engine = TRTEngine(
@@ -210,6 +211,7 @@ def benchmark_engines(
         If parallel was True, will only contain one item.
 
     """
+    warmup = warmup if warmup is not None else True
     temp_engines: list[Path | TRTEngine] = []
     dla_assignments: list[int | None] = []
     for engine_info in engines:
