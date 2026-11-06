@@ -34,7 +34,6 @@ class CudaHoiPostprocessor(CudaPostprocessor):
     def __init__(self: Self, stream: cudart.cudaStream_t) -> None:
         super().__init__(stream)
         self._post = self._kernel("hoiPost")
-        self._shape: tuple[int, int, int] | None = None
 
     def _allocate(self: Self, batch: int, k: int, classes: int) -> None:
         self._rows = device((batch, k, 6), np.float32)
@@ -45,7 +44,6 @@ class CudaHoiPostprocessor(CudaPostprocessor):
         self._pairs = mapped((batch, k, k, classes), np.float32)
         self._side = mapped((batch, k, 1), np.int64)
         self._counts = mapped((batch,), np.int32)
-        self._shape = (batch, k, classes)
 
     def __call__(
         self: Self,
@@ -85,7 +83,7 @@ class CudaHoiPostprocessor(CudaPostprocessor):
         side = outputs[4] if len(outputs) == _WITH_SIDE else None
         batch, k, _ = boxes.shape
         classes = int(pairs.shape[-1])
-        if self._shape != (batch, k, classes):
+        if self._resized(batch, k, classes):
             self._allocate(batch, k, classes)
         self._launch(
             self._post,

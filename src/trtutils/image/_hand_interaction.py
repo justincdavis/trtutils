@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+from functools import partial
 from typing import TYPE_CHECKING, overload
 
 import numpy as np
@@ -262,22 +263,16 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         nms_iou = nms_iou_thres if nms_iou_thres is not None else self._nms_iou_thres
         t0 = time.perf_counter()
-        device_outputs = self._device_outputs(outputs)
-        if device_outputs is not None:
-            data = self._cuda_post(
-                device_outputs, ratios, padding, conf_thres, nms_iou, input_size=self._input_size
-            )
-        else:
-            data = postprocess_hand_interactions(
-                self._host_outputs(outputs),
-                ratios,
-                padding,
-                conf_thres,
-                nms_iou,
-                no_copy=no_copy,
-                input_size=self._input_size,
-                verbose=verbose,
-            )
+        data = self._postprocess_with(
+            partial(postprocess_hand_interactions, no_copy=no_copy),
+            outputs,
+            ratios,
+            padding,
+            conf_thres,
+            nms_iou,
+            input_size=self._input_size,
+            verbose=verbose,
+        )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
