@@ -242,3 +242,27 @@ def test_ppocr_pipeline(det_engine, rec_engine, image, expected) -> None:
         assert [t for _, t, _ in ocr(buf)] == texts
         for (box, _), (ref_box, _) in zip(ocr.detector.end2end(buf), ocr.detector.end2end(image)):
             np.testing.assert_array_equal(box, ref_box)
+
+
+def test_ocr_cuda_postprocess_matches_cpu(det_engine, rec_engine) -> None:
+    """postprocessor='cuda' keeps CPU preprocessing and matches the CPU boxes and CTC decode."""
+    assert PPOCRDetector._cuda_post_default is True
+    assert PPOCRRecognizer._cuda_post_default is True
+    image = _render(LINES)
+    cpu = PPOCR(det_engine, rec_engine, postprocessor="cpu", warmup=False)
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda", warmup=False)
+    assert cpu.detector._preprocessor_method == "cpu"
+    assert cuda.detector._preprocessor_method == "cpu"
+    assert cuda.recognizer._preprocessor_method == "cpu"
+
+    ref = cpu(image)
+    got = cuda(image)
+    assert len(got) == len(ref) > 0
+    for (box, text, score), (ref_box, ref_text, ref_score) in zip(got, ref):
+        np.testing.assert_array_equal(box, ref_box)
+        assert (text, score) == (ref_text, ref_score)
+
+    crops = [_line(text) for text in LINES]
+    for got_line, want_line in zip(cuda.recognizer.run(crops), cpu.recognizer.run(crops)):
+        for part, want in zip(got_line, want_line):
+            np.testing.assert_array_equal(part, want)
