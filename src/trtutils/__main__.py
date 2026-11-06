@@ -933,13 +933,13 @@ def _classify(args: SimpleNamespace) -> None:
         pre_t: float,
         run_t: float,
         post_t: float,
-        det_t: float,
+        cls_t: float,
     ) -> None:
         LOG.info(f"Found {cls_results[0]} with confidence {cls_results[1]}")
         LOG.info(f"Preprocessing time: {pre_t} ms")
         LOG.info(f"Run time: {run_t} ms")
         LOG.info(f"Postprocessing time: {post_t} ms")
-        LOG.info(f"Detection time: {det_t} ms")
+        LOG.info(f"Classification time: {cls_t} ms")
 
     def process_image(
         img: np.ndarray,
@@ -950,13 +950,13 @@ def _classify(args: SimpleNamespace) -> None:
         float,
         float,
     ]:
-        cls_results, pre_t, run_t, post_t, det_t = run(img)
-        log(cls_results, pre_t, run_t, post_t, det_t)
+        cls_results, pre_t, run_t, post_t, cls_t = run(img)
+        log(cls_results, pre_t, run_t, post_t, cls_t)
         times["pre"].append(pre_t)
         times["run"].append(run_t)
         times["post"].append(post_t)
-        times["det"].append(det_t)
-        return cls_results, pre_t, run_t, post_t, det_t
+        times["cls"].append(cls_t)
+        return cls_results, pre_t, run_t, post_t, cls_t
 
     def draw(
         img: np.ndarray,
@@ -964,14 +964,14 @@ def _classify(args: SimpleNamespace) -> None:
         pre_t: float,
         run_t: float,
         post_t: float,
-        det_t: float,
+        cls_t: float,
     ) -> np.ndarray:
         canvas = cv2ext.image.draw.text(img, f"CLASS: {cls_results[0]}", (50, 30))
         canvas = cv2ext.image.draw.text(canvas, f"CONF: {cls_results[1]:.2f}", (50, 60))
         canvas = cv2ext.image.draw.text(canvas, f"PRE:  {pre_t} ms", (10, 30))
         canvas = cv2ext.image.draw.text(canvas, f"RUN:  {run_t} ms", (10, 60))
         canvas = cv2ext.image.draw.text(canvas, f"POST: {post_t} ms", (10, 90))
-        return cv2ext.image.draw.text(canvas, f"CLS:  {det_t} ms", (10, 120))
+        return cv2ext.image.draw.text(canvas, f"CLS:  {cls_t} ms", (10, 120))
 
     if is_image:
         img = cv2.imread(str(input_path))
@@ -979,10 +979,10 @@ def _classify(args: SimpleNamespace) -> None:
             err_msg = f"Failed to read image: {input_path}"
             raise ValueError(err_msg)
 
-        cls_results, pre_t, run_t, post_t, det_t = process_image(img)
+        cls_results, pre_t, run_t, post_t, cls_t = process_image(img)
 
         if args.show:
-            canvas = draw(img, cls_results, pre_t, run_t, post_t, det_t)
+            canvas = draw(img, cls_results, pre_t, run_t, post_t, cls_t)
             cv2.imshow("CLASSIFY", canvas)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
@@ -1895,6 +1895,13 @@ def _main() -> None:
         choices=["cpu", "cuda", "trt"],
         default="trt",
         help="Preprocessor to use. Default is trt.",
+    )
+    classify_parser.add_argument(
+        "--resize_method",
+        "-rm",
+        choices=["letterbox", "linear"],
+        default="letterbox",
+        help="Method to resize images. Default is letterbox.",
     )
     classify_parser.add_argument(
         "--show",

@@ -136,6 +136,7 @@ def test_missing_required_args_exit_2(argv) -> None:
             "trtutils.__main__._classify",
             {
                 "preprocessor": "trt",
+                "resize_method": "letterbox",
                 "input_range": [0.0, 1.0],
                 "show": False,
                 "warmup": False,
