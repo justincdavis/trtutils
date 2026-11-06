@@ -917,13 +917,9 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        device_outputs = self._device_outputs(outputs)
-        if device_outputs is not None:
-            data = self._cuda_post(device_outputs)
-        else:
-            data = postprocess_text_recognition(
-                self._host_outputs(outputs), no_copy=no_copy, verbose=verbose
-            )
+        data = self._postprocess_with(
+            partial(postprocess_text_recognition, no_copy=no_copy), outputs, verbose=verbose
+        )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
