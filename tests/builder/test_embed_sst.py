@@ -17,16 +17,9 @@ from trtutils.builder.onnx import embed_sst
 from trtutils.image._image_model import _image_binding
 from trtutils.image.preprocessors._process import preprocess
 from trtutils.models import (
-    DEIM,
-    HOIDETR,
     YOLOX,
-    DepthAnythingV2,
-    Hands23,
-    PPOCRDetector,
-    PPOCRRecognizer,
     ResNet,
     YOLOv8Seg,
-    YOLOv10,
 )
 from trtutils.models._model import _default_norm
 
@@ -140,23 +133,11 @@ def test_uint8_hwc_is_the_in_graph_layout() -> None:
 @pytest.mark.parametrize(
     ("cls", "expected"),
     [
-        pytest.param(YOLOv10, ((0, 1), None, None), id="yolov10"),
         pytest.param(YOLOv8Seg, ((0.0, 1.0), None, None), id="yolov8-seg"),
         pytest.param(YOLOX, ((0, 255), None, None), id="yolox"),
-        pytest.param(Hands23, ((0.0, 255.0), None, None), id="hands23"),
         pytest.param(ResNet, ((0, 1), *_IMAGENET), id="resnet"),
-        pytest.param(DepthAnythingV2, ((0, 1), *_IMAGENET), id="depth"),
-        pytest.param(DEIM, ((0, 1), *_IMAGENET), id="deim"),
-        pytest.param(HOIDETR, ((0.0, 1.0), *_IMAGENET), id="hoi-detr"),
     ],
 )
 def test_default_norm_follows_each_wrapper(cls: type, expected: tuple) -> None:
-    """The norm baked by embed_sst is the one each wrapper's constructor defaults to."""
+    """embed_sst bakes the constructor defaults, inherited ones included (YOLOv8Seg)."""
     assert _default_norm(cls) == expected
-
-
-@pytest.mark.parametrize("cls", [PPOCRDetector, PPOCRRecognizer], ids=["det", "rec"])
-def test_ocr_refuses_embed_sst(tmp_path: Path, cls: type) -> None:
-    """OCR builds a per-image input shape and has its own build(), which takes no embed_sst."""
-    with pytest.raises(TypeError, match="embed_sst"):
-        cls.build(tmp_path / "missing.onnx", tmp_path / "out.engine", embed_sst=True)

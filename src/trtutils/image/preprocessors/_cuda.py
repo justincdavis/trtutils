@@ -143,10 +143,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         # choose sst kernel based on whether imagenet mean/std are provided
         self._use_imagenet: bool = self._mean is not None and self._std is not None
-        if self._use_imagenet:
-            self._sst_kernel = Kernel(IMAGENET_SST[0], IMAGENET_SST[1])
-        else:
-            self._sst_kernel = Kernel(SST_FAST[0], SST_FAST[1])
+        # normalize=False only resizes, so skip the NVRTC compile
+        if self._normalize:
+            sst = IMAGENET_SST if self._use_imagenet else SST_FAST
+            self._sst_kernel = Kernel(sst[0], sst[1])
 
         # Cache for _create_sst_args: avoid repacking kernel args for same batch size
         self._cached_sst_batch_size: int | None = None

@@ -82,7 +82,7 @@ class ImageModel:
     # task models set the enum used to resolve and order the engine outputs
     _OUTPUT_SCHEMA: ClassVar[type[Enum] | None] = None
 
-    def __init__(  # noqa: PLR0915
+    def __init__(
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
@@ -210,34 +210,22 @@ class ImageModel:
             self._resize_method: str = resize_method
             # Float NCHW is (batch, 3, H, W). uint8 NHWC is a letterboxed image whose
             # scale, channel swap, and transpose already live in the network.
-            input_size: tuple[int, ...] | None = None
-            input_spec = self._engine.input_spec[0]
-            self._image_input_index = 0
-            self._sst_in_graph = False
-            self._input_size = (0, 0)
-            for index, spec in enumerate(self._engine.input_spec):
-                found = _image_binding(tuple(spec[0]), spec[1])
-                if found is None:
-                    continue
-                (width, height), sst_in_graph = found
-                input_size = tuple(spec[0])
-                input_spec = spec
-                self._image_input_index = index
-                self._input_size = (width, height)
-                self._sst_in_graph = sst_in_graph
-                break
-
-            if input_size is None:
-                input_size = tuple(self._engine.input_spec[0][0])
+            for index, input_spec in enumerate(self._engine.input_spec):  # noqa: B007
+                found = _image_binding(tuple(input_spec[0]), input_spec[1])
+                if found is not None:
+                    break
+            else:
                 err_msg = (
                     "Expected an image input of shape (batch, 3, height, width) "
-                    f"or uint8 (batch, height, width, 3), found {input_size}"
+                    f"or uint8 (batch, height, width, 3), found {self._engine.input_spec[0][0]}"
                 )
                 raise ValueError(err_msg)
+            self._image_input_index = index
+            self._input_size, self._sst_in_graph = found
 
             # Extract batch size from engine (the max profile batch for a
             # dynamic-batch engine, which bounds what the preprocessors accept)
-            self._batch_size: int = input_size[0]
+            self._batch_size: int = input_spec[0][0]
             self._dtype = input_spec[1]
             self._input_range = input_range
             self._mean = mean
@@ -300,8 +288,9 @@ class ImageModel:
             self._dtype,
             resize=self._resize_method,
             stream=self._engine.stream,
-            mean=self._mean,
-            std=self._std,
+            # an in-graph normalize needs no mean/std buffers or ImageNet kernel
+            mean=None if self._sst_in_graph else self._mean,
+            std=None if self._sst_in_graph else self._std,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
