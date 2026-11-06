@@ -12,11 +12,84 @@ import numpy as np
 
 from trtutils._log import LOG
 
-from ._common import cxcywh_to_xyxy, filter_class_scores, nms_indices, unletterbox_boxes
+from ._common import (
+    cxcywh_to_xyxy,
+    filter_class_scores,
+    nms_indices,
+    original_size,
+    unletterbox_boxes,
+)
 from ._detection import _get_detections_core
+from ._gpu import mapped
 
 if TYPE_CHECKING:
+    from trtutils.core._buffer import Buffer
     from trtutils.image.types import Segmentation
+
+
+class MaskCanvas:
+    """
+    A reused (N, H, W) uint8 mask stack.
+
+    A new full-frame stack per frame makes the OS zero every page a mask
+    touches, which costs more than decoding the masks. A canvas keeps one
+    stack and clears only the boxes the previous frame wrote. A mapped
+    canvas lives in pinned memory the CUDA postprocessor writes directly.
+    """
+
+    def __init__(self, *, mapped: bool = False) -> None:
+        self._mapped = mapped
+        self._buffer: Buffer | None = None
+        self._stack = np.zeros((0, 0, 0), dtype=np.uint8)
+        # (index, y1, y2, x1, x2) of every box written since the last take
+        self.written: list[tuple[int, int, int, int, int]] = []
+
+    def take(self, n: int, height: int, width: int, *, clear: bool = True) -> np.ndarray:
+        """
+        Return a zeroed (n, height, width) view, growing the stack when needed.
+
+        With ``clear=False`` a reused stack keeps the previous boxes, listed in
+        :attr:`written`, for the caller to zero (the CUDA postprocessor does it
+        on the device); a new stack is already zero and ``written`` is empty.
+        """
+        stack = self._stack
+        if stack.shape[1:] != (height, width) or stack.shape[0] < n:
+            # a new frame size starts over, so one busy frame doesn't size every later one
+            depth = stack.shape[0] if stack.shape[1:] == (height, width) else 0
+            shape = (max(n, depth, 1), height, width)
+            if self._mapped:
+                self._buffer = None  # free the old stack before taking the new one
+                self._buffer = mapped(shape, np.uint8)
+                self._stack = self._buffer.array
+                self._stack.fill(0)
+            else:
+                self._stack = np.zeros(shape, dtype=np.uint8)
+            self.written = []
+        elif clear:
+            for idx, y1, y2, x1, x2 in self.written:
+                stack[idx, y1:y2, x1:x2] = 0
+            self.written = []
+        return self._stack[:n]
+
+    def capacity(self, height: int, width: int) -> int:
+        """How many (height, width) masks :meth:`take` hands out without reallocating."""
+        return self._stack.shape[0] if self._stack.shape[1:] == (height, width) else 0
+
+    def detach(self, masks: np.ndarray) -> np.ndarray:
+        """Copy ``masks``, a view from :meth:`take`, out of the canvas, box by box."""
+        out = np.zeros(masks.shape, dtype=np.uint8)
+        for idx, y1, y2, x1, x2 in self.written:
+            if idx < len(out):
+                out[idx, y1:y2, x1:x2] = masks[idx, y1:y2, x1:x2]
+        return out
+
+    @property
+    def device_ptr(self) -> int:
+        """The device address of a mapped canvas, valid after :meth:`take`."""
+        if self._buffer is None:
+            err_msg = "Only a mapped canvas has a device address"
+            raise ValueError(err_msg)
+        return self._buffer.device_ptr
 
 
 def postprocess_yolo_seg(
@@ -29,6 +102,7 @@ def postprocess_yolo_seg(
     *,
     max_det: int = 300,
     input_size: tuple[int, int],
+    canvases: list[MaskCanvas] | None = None,
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
@@ -61,6 +135,10 @@ def postprocess_yolo_seg(
     input_size : tuple[int, int]
         The network input (width, height), used to map the mask prototypes back
         to the letterboxed content region.
+    canvases : list[MaskCanvas], optional
+        One reused mask stack per image. The masks of each image are written
+        into its canvas and overwritten by the next call that uses it.
+        By default None, which allocates new mask arrays.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -91,7 +169,10 @@ def postprocess_yolo_seg(
         coeffs = coeffs[keep_idx]
 
         boxes = unletterbox_boxes(boxes, ratios[i], padding[i], input_size)
-        masks = _decode_masks(coeffs, proto, boxes, ratios[i], padding[i], input_size, mask_thres)
+        canvas = canvases[i] if canvases is not None else None
+        masks = _decode_masks(
+            coeffs, proto, boxes, ratios[i], padding[i], input_size, mask_thres, canvas
+        )
 
         results.append([boxes, scores, class_ids, masks])
     return results
@@ -106,6 +187,32 @@ def _decode_seg_core(
     return cxcywh_to_xyxy(pred), scores, class_ids, pred[:, -nm:]
 
 
+def _mask_geometry(
+    input_size: tuple[int, int],
+    ratios: tuple[float, float],
+    padding: tuple[float, float],
+    proto_hw: tuple[int, int],
+) -> tuple[int, int, float, float, float, float]:
+    """Original (width, height) and the proto-grid map of the letterbox content."""
+    input_w, input_h = input_size
+    pad_x, pad_y = padding
+    mh, mw = proto_hw
+    width, height = original_size(ratios, padding, input_size)
+    width, height = max(width, 1), max(height, 1)
+    # original pixel -> proto cell index, as an exact resize of the content region
+    stride_x = input_w / mw
+    stride_y = input_h / mh
+    x0 = max(int(np.floor(pad_x / stride_x)), 0)
+    y0 = max(int(np.floor(pad_y / stride_y)), 0)
+    x1 = max(min(int(np.ceil((input_w - pad_x) / stride_x)), mw), x0 + 1)
+    y1 = max(min(int(np.ceil((input_h - pad_y) / stride_y)), mh), y0 + 1)
+    scale_x = (x1 - x0) / width
+    scale_y = (y1 - y0) / height
+    off_x = x0 + 0.5 * scale_x - 0.5
+    off_y = y0 + 0.5 * scale_y - 0.5
+    return width, height, scale_x, scale_y, off_x, off_y
+
+
 def _decode_masks(
     coeffs: np.ndarray,
     proto: np.ndarray,
@@ -114,34 +221,23 @@ def _decode_masks(
     padding: tuple[float, float],
     input_size: tuple[int, int],
     mask_thres: float,
+    canvas: MaskCanvas | None = None,
 ) -> np.ndarray:
     _, mh, mw = proto.shape
-    ratio_width, ratio_height = ratios
-    pad_x, pad_y = padding
-
-    input_w, input_h = input_size
-
-    orig_w = max(round((input_w - 2 * pad_x) / ratio_width), 1)
-    orig_h = max(round((input_h - 2 * pad_y) / ratio_height), 1)
+    orig_w, orig_h, scale_x, scale_y, off_x, off_y = _mask_geometry(
+        input_size, ratios, padding, (mh, mw)
+    )
 
     if coeffs.shape[0] == 0:
-        return np.zeros((0, orig_h, orig_w), dtype=np.uint8)
+        # still take, so a reused canvas clears the previous frame's boxes
+        if canvas is None:
+            return np.zeros((0, orig_h, orig_w), dtype=np.uint8)
+        return canvas.take(0, orig_h, orig_w)
 
-    # map the letterbox content region into proto-grid coordinates
-    stride_x = input_w / mw
-    stride_y = input_h / mh
-    x0 = max(int(np.floor(pad_x / stride_x)), 0)
-    y0 = max(int(np.floor(pad_y / stride_y)), 0)
-    x1 = max(min(int(np.ceil((input_w - pad_x) / stride_x)), mw), x0 + 1)
-    y1 = max(min(int(np.ceil((input_h - pad_y) / stride_y)), mh), y0 + 1)
-
-    # original pixel -> proto cell index, as an exact resize of the content region
-    scale_x = (x1 - x0) / orig_w
-    scale_y = (y1 - y0) / orig_h
-    off_x = x0 + 0.5 * scale_x - 0.5
-    off_y = y0 + 0.5 * scale_y - 0.5
-
-    masks = np.zeros((coeffs.shape[0], orig_h, orig_w), dtype=np.uint8)
+    if canvas is not None:
+        masks = canvas.take(coeffs.shape[0], orig_h, orig_w)
+    else:
+        masks = np.zeros((coeffs.shape[0], orig_h, orig_w), dtype=np.uint8)
     for idx in range(coeffs.shape[0]):
         bx1 = max(int(np.floor(boxes[idx, 0])), 0)
         by1 = max(int(np.floor(boxes[idx, 1])), 0)
@@ -175,6 +271,8 @@ def _decode_masks(
             borderMode=cv2.BORDER_REPLICATE,
         )
         masks[idx, by1:by2, bx1:bx2] = resized >= mask_thres
+        if canvas is not None:
+            canvas.written.append((idx, by1, by2, bx1, bx2))
 
     return masks
 
