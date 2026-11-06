@@ -36,6 +36,11 @@ def mapped(shape: tuple[int, ...], dtype: type) -> Buffer:
     return Buffer.empty(shape, dtype, MemoryLocation.HOST, pinned=True, mapped=True)
 
 
+def image_ptr(buffer: Buffer, index: int) -> int:
+    """Return the device address of image ``index``'s slice of a (batch, ...) buffer."""
+    return buffer.device_ptr + index * buffer.nbytes // buffer.shape[0]
+
+
 def index_kind(dtype: np.dtype | type) -> int:
     """Return the loadIndex() kind of an index tensor (class ids, counts)."""
     kind = _INDEX_KIND.get(np.dtype(dtype))
@@ -97,9 +102,17 @@ class CudaPostprocessor:
     def __init__(self: Self, stream: cudart.cudaStream_t) -> None:
         self._stream = stream
         self._letter: Buffer | None = None
+        self._key: tuple[int, ...] | None = None
 
     def _kernel(self: Self, name: str) -> Kernel:
         return Kernel(self._FILE, name)
+
+    def _resized(self: Self, *key: int) -> bool:
+        """Whether the buffers must be (re)allocated for ``key`` (batch, sizes), then remember it."""
+        if key == self._key:
+            return False
+        self._key = key
+        return True
 
     def _launch(
         self: Self,

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+from functools import partial
 from typing import TYPE_CHECKING, overload
 
 import numpy as np
@@ -309,19 +310,15 @@ class Detector(ImageModel, DetectorInterface):
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         t0 = time.perf_counter()
-        device_outputs = self._device_outputs(outputs)
-        if device_outputs is not None:
-            data = self._cuda_post(device_outputs, ratios, padding, conf_thres, self._input_size)
-        else:
-            data = self._postprocess_fn(
-                self._host_outputs(outputs),
-                ratios=ratios,
-                padding=padding,
-                conf_thres=conf_thres,
-                input_size=self._input_size,
-                no_copy=no_copy,
-                verbose=verbose,
-            )
+        data = self._postprocess_with(
+            partial(self._postprocess_fn, no_copy=no_copy),
+            outputs,
+            ratios,
+            padding,
+            conf_thres,
+            self._input_size,
+            verbose=verbose,
+        )
         if self._class_map is not None:
             for result in data:
                 ids = result[2]

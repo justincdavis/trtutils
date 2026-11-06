@@ -416,6 +416,25 @@ class ImageModel:
         """Reorder outputs that the CPU postprocessor will read."""
         return self._order_outputs(cast("list[np.ndarray]", outputs))
 
+    def _postprocess_with(
+        self: Self,
+        cpu_fn: Callable[..., T],
+        outputs: list[np.ndarray] | list[Buffer],
+        *args: object,
+        verbose: bool | None = None,
+        **kwargs: object,
+    ) -> T:
+        """
+        Postprocess with the CUDA postprocessor when it reads the outputs, else ``cpu_fn``.
+
+        A CUDA postprocessor takes its CPU function's arguments, so both get
+        ``args`` and ``kwargs``; only ``cpu_fn`` gets ``verbose``.
+        """
+        device_outputs = self._device_outputs(outputs)
+        if device_outputs is not None:
+            return self._cuda_post(device_outputs, *args, **kwargs)
+        return cpu_fn(self._host_outputs(outputs), *args, verbose=verbose, **kwargs)
+
     @property
     def engine(self: Self) -> TRTEngine:
         """Get the underlying TRTEngine."""
