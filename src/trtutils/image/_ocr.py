@@ -911,8 +911,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         ValueError
             If no character dictionary is given, it does not match the
             engine's number of classes, preprocessor is not 'cpu', the output
-            schema string is invalid, or the engine outputs do not match the
-            requested schema.
+            schema string is invalid, the engine outputs do not match the
+            requested schema, or width_bucket is below 1.
 
         """
         if character_dict is None:
@@ -928,6 +928,9 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             chars = list(character_dict)
         use_space_char = use_space_char if use_space_char is not None else True
         self._characters: list[str] = ["blank", *chars] + ([" "] if use_space_char else [])
+        if width_bucket is not None and width_bucket < 1:
+            err_msg = f"width_bucket must be at least 1, got {width_bucket}."
+            raise ValueError(err_msg)
         self._width_bucket = width_bucket
 
         super().__init__(
@@ -945,10 +948,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=postprocessor != "cpu",
-            # one context per (batch size, width): the batch size is at most the engine's
-            # and the bucketed widths are max_width / width_bucket, so 64 holds the pairs a
-            # page stream uses; evicting one costs ~65 ms to rebuild, far worse than the
-            # few MiB each context holds
+            # one context per (batch size, width); 64 holds the pairs a page stream uses
             shape_contexts=64 if width_bucket is not None else None,
             postprocessor=postprocessor,
             no_warn=no_warn,

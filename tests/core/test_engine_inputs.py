@@ -402,14 +402,14 @@ def test_raw_exec_never_uses_the_graph(fake_graphs) -> None:
 
 
 def _pooled(
-    shape_contexts: int, *, fail_first: frozenset[int] = frozenset()
+    shape_contexts: int, *, fail_first: frozenset[int] = frozenset(), async_v3: bool = True
 ) -> tuple[TRTEngine, list[_FakeContext]]:
     """A pooled engine; the contexts it creates are listed in order after the first."""
-    eng, first = _make_engine(cuda_graph=True, shape_contexts=shape_contexts)
+    eng, first = _make_engine(cuda_graph=True, shape_contexts=shape_contexts, async_v3=async_v3)
     contexts = [first]
 
     def create() -> _FakeContext:
-        context = _FakeContext()
+        context = _FakeContext(dynamic=not async_v3)
         if len(contexts) in fail_first:
             context.reject_enqueue_at = 1
         contexts.append(context)
@@ -472,16 +472,9 @@ def test_failed_pool_construction_frees_workspace(monkeypatch, fake_cuda) -> Non
 
 def test_v2_pool_sets_max_binding_shape() -> None:
     """A pooled async_v2 context is given its max shape, including one rebuilt for that shape."""
-    eng, first = _make_engine(shape_contexts=1, async_v3=False)
+    eng, contexts = _pooled(1, async_v3=False)
+    first = contexts[0]
     assert first.shapes["input"] == (_MAX_BATCH, _FEATURES)
-    contexts = [first]
-
-    def create() -> _FakeContext:
-        context = _FakeContext(dynamic=True)
-        contexts.append(context)
-        return context
-
-    eng._create_context = create  # type: ignore[method-assign]
     eng.execute([_host(_MAX_BATCH)])
     assert first.shape_calls == []
     eng.execute([_host(2)])

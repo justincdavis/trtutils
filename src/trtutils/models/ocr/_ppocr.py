@@ -370,10 +370,8 @@ class PPOCR(OCR):
             preprocessing and the decodes on the GPU with results identical to the CPU
             path. By default None, which uses 'cuda'.
         width_bucket : int, optional
-            Round the recognizer's batch widths up to a multiple of this many pixels and keep
-            one execution context per width, see :class:`~trtutils.image.TextRecognizer`.
-            Faster steady state, but each width costs ~65 ms on first use and the extra
-            padding changes outputs slightly. By default None.
+            Round the recognizer's batch widths up to a multiple of this many pixels, see
+            :class:`~trtutils.image.TextRecognizer`. By default None.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.

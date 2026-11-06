@@ -16,10 +16,9 @@ import nvtx
 from ._flags import FLAGS
 from ._log import LOG
 from .compat._libs import trt
-from .core._buffer import Buffer, as_buffers
+from .core._buffer import Buffer, _DeviceAllocation, as_buffers
 from .core._graph import CUDAGraph
 from .core._interface import TRTEngineInterface
-from .core._memory import cuda_free, cuda_malloc
 from .core._stream import stream_synchronize
 
 if TYPE_CHECKING:
@@ -157,7 +156,7 @@ class TRTEngine(TRTEngineInterface):
             raise ValueError(err_msg)
         self._name = Path(engine_path).stem
         # the device memory the pool's contexts share, allocated with the first
-        self._shared_memory: int | None = None
+        self._shared_memory: _DeviceAllocation | None = None
         self._parked: OrderedDict[tuple[tuple[int, ...], ...], dict[str, Any]] = OrderedDict()
 
         if FLAGS.NVTX_ENABLED:
@@ -285,7 +284,7 @@ class TRTEngine(TRTEngineInterface):
     def _create_context(self: Self) -> Any:  # noqa: ANN401
         """Create an execution context that runs in the engine's shared device memory."""
         if self._shared_memory is None:
-            self._shared_memory = cuda_malloc(max(self._memsize, 1))
+            self._shared_memory = _DeviceAllocation(max(self._memsize, 1))
         if FLAGS.MEMSIZE_V2:
             strategy = trt.ExecutionContextAllocationStrategy.USER_MANAGED
             context = self._engine.create_execution_context(strategy)
@@ -295,9 +294,9 @@ class TRTEngine(TRTEngineInterface):
             err_msg = f"Failed to create an execution context for engine '{self._name}'."
             raise RuntimeError(err_msg)
         if FLAGS.MEMSIZE_V2:
-            context.set_device_memory(self._shared_memory, self._memsize)
+            context.set_device_memory(self._shared_memory.ptr, self._memsize)
         else:
-            context.device_memory = self._shared_memory
+            context.device_memory = self._shared_memory.ptr
         return context
 
     def _select_context(self: Self, key: tuple[tuple[int, ...], ...]) -> None:
@@ -307,8 +306,9 @@ class TRTEngine(TRTEngineInterface):
         self._parked[self._active_key] = {name: getattr(self, name) for name in _CONTEXT_STATE}
         state = self._parked.pop(key, None)
         if state is None:
-            # evicting is costly: the context is rebuilt (~65 ms) if its shapes come back
-            while len(self._parked) > cast("int", self._shape_contexts) - 1:
+            # evicting is costly: the context is rebuilt (~65 ms) if its shapes come back;
+            # the pool grows by at most one per call, so one eviction is enough
+            if len(self._parked) >= cast("int", self._shape_contexts):
                 stream_synchronize(self._stream)
                 _, evicted = self._parked.popitem(last=False)
                 for graph in evicted["_cuda_graphs"].values():
@@ -507,17 +507,14 @@ class TRTEngine(TRTEngineInterface):
 
     def __del__(self: Self) -> None:
         # init can fail after the workspace exists and before the graph state
-        # or _parked does; cleanup still has to reach cuda_free
+        # or _parked does; cleanup still has to free the workspace
         with contextlib.suppress(AttributeError, KeyError):
             self._clear_graphs()
+        # contexts go before the engine, and the workspace they share goes last
+        with contextlib.suppress(AttributeError):
+            self._parked.clear()
         super().__del__()
-        parked = getattr(self, "_parked", None)
-        if parked is not None:
-            parked.clear()
-        shared = getattr(self, "_shared_memory", None)
-        if shared is not None:
-            self._shared_memory = None
-            cuda_free(shared)
+        self._shared_memory = None
 
     def execute(
         self: Self,

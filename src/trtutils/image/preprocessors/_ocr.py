@@ -265,7 +265,7 @@ def text_recognition_widths(
     if width_bucket is not None:
         # only the padding grows: round up to a multiple of the bucket, so batches
         # share a few widths while each line keeps its resized width
-        batch_width = -(-batch_width // width_bucket) * width_bucket
+        batch_width = math.ceil(batch_width / width_bucket) * width_bucket
         if max_width is not None:
             batch_width = min(batch_width, max_width)
     return batch_width, widths

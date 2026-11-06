@@ -356,13 +356,6 @@ def test_ocr_regions_need_cuda(det_engine, rec_engine) -> None:
         recognizer.end2end_regions(frame, np.zeros((1, 4, 2)))
 
 
-def _same_results(got, want) -> None:
-    assert len(got) == len(want)
-    for (box, text, score), (ref_box, ref_text, ref_score) in zip(got, want):
-        np.testing.assert_array_equal(box, ref_box)
-        assert (text, score) == (ref_text, ref_score)
-
-
 _REC_SHAPES = [(1, 32), (3, 64), (2, 32), (3, 320), (1, 128), (3, 64), (2, 640), (1, 32)]
 
 
@@ -421,7 +414,7 @@ def test_ocr_bucketed_cuda_matches_cpu(det_engine, rec_engine, width_bucket, ima
     ref = cpu(image)
     assert len(ref) > 0
     for results in (cuda(image), cuda(image), cuda.end2end(image), cuda([image, image])[1]):
-        _same_results(results, ref)
+        _assert_lines(results, ref)
 
 
 @pytest.mark.parametrize(
@@ -441,6 +434,6 @@ def test_ocr_bucketed_ignores_previous_shapes(det_engine, rec_engine, names) -> 
     images = [_PAGES[name] for name in names]
     for _ in range(2):
         for name, image in zip(names, images):
-            _same_results(cuda(image), fresh[name])
+            _assert_lines(cuda(image), fresh[name])
     for name, results in zip(names, cuda(images)):
-        _same_results(results, fresh[name])
+        _assert_lines(results, fresh[name])

@@ -34,7 +34,7 @@ Added
   numpy arrays and any ``__cuda_array_interface__`` object (CuPy, PyTorch, ...) without
   copying; memory is reference counted so views and numpy arrays never outlive it
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
-* ``TRTEngine(shape_contexts=N)`` (also ``ImageModel``): opt-in pool of up to ``N`` execution
+* ``TRTEngine(shape_contexts=N)``: opt-in pool of up to ``N`` execution
   contexts, one per distinct tuple of input shapes, sharing one device memory block. A context
   never changes shape, so TensorRT skips its per-shape setup and every context replays its own
   CUDA graphs. Creating a context takes ~65 ms (paid on first use of each shape, so warm up with
@@ -245,9 +245,6 @@ Changed
 
 Fixed
 ^^^^^
-* ``TRTEngine(shape_contexts=N)`` on the async_v2 backend sets each fresh context's binding
-  shapes (a max-shape call was left at unspecified dynamic dims). Construction that fails
-  after allocating the shared workspace still frees it
 * ``Model.build()`` takes an explicit ``fp16`` and passes no fp16 flag with ``strongly_typed=True``;
   both raised before
 * ``YOLOv10.build`` and ``YOLOv13.build`` keep the depthwise convolutions in FP32: in FP16 the

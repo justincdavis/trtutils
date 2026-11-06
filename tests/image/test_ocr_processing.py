@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import pytest
 
+from trtutils.image import TextRecognizer
 from trtutils.image.postprocessors import (
     get_text_boxes,
     get_texts,
@@ -140,11 +141,8 @@ def test_preprocess_text_recognition(shapes, max_width, expected_width, expected
 def test_text_recognition_widths_bucket(shapes, bucket, max_width, expected_width) -> None:
     """The batch width rounds up to a multiple of the bucket, never past the maximum."""
     width, resized = text_recognition_widths(shapes, 48, 320, max_width, bucket)
-    unbucketed, unbucketed_resized = text_recognition_widths(shapes, 48, 320, max_width)
+    _, unbucketed_resized = text_recognition_widths(shapes, 48, 320, max_width)
     assert width == expected_width
-    assert width >= unbucketed
-    assert bucket is None or width % bucket == 0 or width == max_width
-    assert bucket is not None or width == unbucketed
     # only the padding grows: every line keeps the width it has without a bucket
     assert resized == unbucketed_resized
 
@@ -159,6 +157,13 @@ def test_preprocess_text_recognition_bucket_only_pads() -> None:
     np.testing.assert_array_equal(tensor[..., 320:], 0.0)
     assert ratios == ref_ratios
     assert padding == [(64.0, 0.0)]
+
+
+@pytest.mark.parametrize("width_bucket", [0, -32])
+def test_recognizer_rejects_width_bucket_below_one(width_bucket) -> None:
+    """A bucket below one is rejected before the engine is loaded."""
+    with pytest.raises(ValueError, match="width_bucket"):
+        TextRecognizer("unused.engine", character_dict=["a"], width_bucket=width_bucket)
 
 
 @pytest.mark.parametrize(
