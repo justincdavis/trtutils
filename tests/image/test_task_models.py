@@ -208,6 +208,20 @@ def test_obb_detector_rejects_linear_resize(task_engine) -> None:
         model.end2end(image)
 
 
+def test_obb_detector_cuda_postprocessor_is_default(task_engine) -> None:
+    """The default CUDA postprocessor gives the same oriented boxes as postprocessor='cpu'."""
+    image = cv2.imread(str(DATA_DIR / "aerial.jpg"))
+    cpu = OBBDetector(task_engine("obb"), postprocessor="cpu", warmup=False)
+    cuda = OBBDetector(task_engine("obb"), warmup=False)
+    assert cuda._postprocessor == "cuda"
+    assert cuda._preprocessor_method == "trt"
+
+    ref = cpu.end2end(image)
+    assert ref
+    for obbs in (cuda.end2end(image), cuda.get_obbs(cuda.run(image)), cuda.end2end(image)):
+        assert obbs == ref
+
+
 @pytest.mark.parametrize(("model_cls", "task", "image_name"), TASKS)
 def test_batch2_engine_matches_batch1(task_engine, images, model_cls, task, image_name) -> None:
     """A batch-2 engine gives each image the results the batch-1 engine gives it alone."""

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -158,6 +159,14 @@ def _probiou(rboxes1: np.ndarray, rboxes2: np.ndarray, eps: float = 1e-7) -> np.
     t3 = np.log(det / (4 * np.sqrt(dets) + eps) + eps) * 0.5
     bd = np.clip(t1 + t2 + t3, eps, 100.0)
     return 1 - np.sqrt(1.0 - np.exp(-bd) + eps)
+
+
+def _probiou_reach(nms_iou_thres: float, eps: float = 1e-7) -> float:
+    # probiou >= thres needs bd <= bd_max, and bd >= |d|^2 / (4 * trace(cov1 + cov2)),
+    # so pairs whose centers are farther apart than reach * trace cannot suppress
+    lim = 1 + eps - (1 - nms_iou_thres) ** 2
+    bd_max = -math.log(lim) if lim > 0 else math.inf
+    return 4.04 * bd_max  # 1% margin for float32 rounding
 
 
 def _rotated_nms_indices(
