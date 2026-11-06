@@ -171,6 +171,18 @@ def test_image_handler_rejects_invalid_extension(handler, subcommand, bad_input)
         handler(_args(subcommand, input=bad_input))
 
 
+@patch("trtutils.__main__._is_raw_outputs", new=lambda _: True)
+@patch("trtutils.__main__.cv2.imread", new=lambda _: MagicMock())
+@patch("trtutils.__main__.trtutils.image.Classifier")
+def test_classify_runs_and_forwards_resize_method(mock_cls) -> None:
+    """_classify completes on one image and forwards resize_method to Classifier."""
+    classifier = mock_cls.return_value
+    classifier.preprocess.return_value = (MagicMock(), None, None)
+    classifier.get_classifications.return_value = [[(3, 0.9)]]
+    _classify(_args("classify", resize_method="linear"))
+    assert mock_cls.call_args.kwargs["resize_method"] == "linear"
+
+
 def test_profile_nonexistent_engine_raises_file_not_found() -> None:
     """A missing engine file raises FileNotFoundError."""
     args = _args("profile", engine="/fake/nonexistent_abc123.engine")
