@@ -12,9 +12,18 @@ from trtutils.image.postprocessors import (
     get_classifications,
     get_detections,
     postprocess_classifications,
+    postprocess_depth,
     postprocess_detr,
+    postprocess_detr_lbs,
     postprocess_efficient_nms,
+    postprocess_hand_interactions,
     postprocess_rfdetr,
+    postprocess_rtdetrv3,
+    postprocess_text_detection,
+    postprocess_text_recognition,
+    postprocess_yolo_obb,
+    postprocess_yolo_pose,
+    postprocess_yolo_seg,
     postprocess_yolov10,
 )
 
@@ -255,3 +264,164 @@ def test_get_classifications(batch_size, top_k) -> None:
             assert isinstance(class_id, int)
             assert isinstance(confidence, float)
             assert 0.0 <= confidence <= 1.0
+
+
+def _rtdetrv3_output(batch_size: int) -> list[np.ndarray]:
+    """RT-DETRv3 outputs: combined (B * NUM_DETS, 6) rows of class, score, x1, y1, x2, y2 and counts (B,)."""
+    dets = np.concatenate(
+        [
+            np.stack([_classes(batch_size)[b], _scores(batch_size)[b], *_boxes(batch_size)[b].T], 1)
+            for b in range(batch_size)
+        ]
+    )
+    return [dets.astype(np.float32), np.full(batch_size, NUM_DETS, dtype=np.int32)]
+
+
+def _yolo_head_output(batch_size: int, channels: int) -> np.ndarray:
+    """(B, channels, 300) cxcywh + class scores + extras with sizeable boxes."""
+    rng = np.random.default_rng(0)
+    out = rng.random((batch_size, channels, 300), dtype=np.float32)
+    out[:, :2] *= 600
+    out[:, 2:4] = out[:, 2:4] * 100 + 20
+    return out
+
+
+def _seg_output(batch_size: int) -> list[np.ndarray]:
+    """YOLO-seg outputs: (B, 4 + 3 classes + 8 coeffs, 300) and prototypes (B, 8, 16, 16)."""
+    protos = np.random.default_rng(1).standard_normal((batch_size, 8, 16, 16), dtype=np.float32)
+    return [_yolo_head_output(batch_size, 15), protos]
+
+
+def _hand_output(batch_size: int) -> list[np.ndarray]:
+    """Hand interaction outputs: boxes (B, K, 4), scores, labels, pair_probs (B, K, K, 2), side."""
+    k = NUM_DETS
+    return [
+        _boxes(batch_size),
+        _scores(batch_size),
+        (np.arange(k) % 2).astype(np.int64)[None].repeat(batch_size, 0),
+        np.full((batch_size, k, k, 2), 0.6, dtype=np.float32),
+        (np.arange(k) % 2).astype(np.int64)[None].repeat(batch_size, 0),
+    ]
+
+
+def _prob_map_output(batch_size: int) -> list[np.ndarray]:
+    """(B, 1, 64, 128) probability maps with one text-like block."""
+    out = np.zeros((batch_size, 1, 64, 128), dtype=np.float32)
+    out[:, :, 20:40, 30:100] = 0.9
+    return [out]
+
+
+def _ratios(batch_size: int) -> tuple[list, list]:
+    """Non-trivial letterbox ratios and padding per image."""
+    return [(0.5, 0.5)] * batch_size, [(8.0, 16.0)] * batch_size
+
+
+_SIZED = {"input_size": INPUT_SIZE}
+
+
+@pytest.mark.parametrize(
+    ("postprocess", "make_output", "needs_geometry", "has_conf", "kwargs"),
+    [
+        pytest.param(postprocess_yolov10, _yolov10_output, True, True, _SIZED, id="yolov10"),
+        pytest.param(
+            postprocess_efficient_nms, _efficient_nms_output, True, True, _SIZED, id="efficient-nms"
+        ),
+        pytest.param(postprocess_rfdetr, _rfdetr_output, True, True, _SIZED, id="rfdetr"),
+        pytest.param(postprocess_detr, _detr_output, True, True, _SIZED, id="detr"),
+        pytest.param(
+            postprocess_detr_lbs,
+            lambda b: [_detr_output(b)[i] for i in (1, 2, 0)],
+            True,
+            True,
+            _SIZED,
+            id="detr-lbs",
+        ),
+        pytest.param(postprocess_rtdetrv3, _rtdetrv3_output, True, True, _SIZED, id="rtdetrv3"),
+        pytest.param(
+            postprocess_yolo_pose,
+            lambda b: [_yolo_head_output(b, 5 + 17 * 3)],
+            True,
+            True,
+            _SIZED,
+            id="yolo-pose",
+        ),
+        pytest.param(
+            postprocess_yolo_obb,
+            lambda b: [_yolo_head_output(b, 4 + 3 + 1)],
+            True,
+            True,
+            {},
+            id="yolo-obb",
+        ),
+        pytest.param(postprocess_yolo_seg, _seg_output, True, True, _SIZED, id="yolo-seg"),
+        pytest.param(
+            postprocess_hand_interactions, _hand_output, True, True, _SIZED, id="hand-interaction"
+        ),
+        pytest.param(
+            postprocess_text_detection, _prob_map_output, True, False, {}, id="text-detection"
+        ),
+        pytest.param(
+            postprocess_text_recognition,
+            lambda b: [np.random.default_rng(2).random((b, 20, 30), dtype=np.float32)],
+            False,
+            False,
+            {},
+            id="text-recognition",
+        ),
+        pytest.param(
+            postprocess_classifications,
+            _classification_output,
+            False,
+            False,
+            {},
+            id="classifier",
+        ),
+        pytest.param(
+            postprocess_depth,
+            lambda b: [np.random.default_rng(3).random((b, 1, 16, 16), dtype=np.float32) + 1],
+            False,
+            False,
+            {},
+            id="depth",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "conf_thres", [pytest.param(None, id="conf-none"), pytest.param(0.1, id="conf-set")]
+)
+def test_postprocess_leaves_raw_outputs_untouched(
+    postprocess, make_output, needs_geometry, has_conf, kwargs, conf_thres
+) -> None:
+    """Postprocessing must not modify the raw engine outputs, or a second call double-transforms."""
+    outputs = make_output(2)
+    originals = [o.copy() for o in outputs]
+    args = _ratios(2) if needs_geometry else ()
+    if conf_thres is not None:
+        if not has_conf:
+            pytest.skip("no confidence threshold")
+        kwargs = {**kwargs, "conf_thres": conf_thres}
+
+    postprocess(outputs, *args, **kwargs)
+
+    for out, original in zip(outputs, originals):
+        np.testing.assert_array_equal(out, original)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        pytest.param((2, 16), id="2d"),
+        pytest.param((1, 16, 16), id="3d"),
+        pytest.param((2, 16, 16), id="3d-batch"),
+    ],
+)
+def test_postprocess_depth_shape_and_dtype(shape) -> None:
+    """Depth maps keep each image's shape and dtype and are normalized to [0, 1]."""
+    out = np.random.default_rng(4).random(shape, dtype=np.float32) + 1
+    results = postprocess_depth([out])
+    assert len(results) == shape[0]
+    for result in results:
+        assert result[0].shape == (1, *shape[1:])
+        assert result[0].dtype == np.float32
+        assert result[0].min() == 0
+        assert result[0].max() == pytest.approx(1, abs=1e-6)
