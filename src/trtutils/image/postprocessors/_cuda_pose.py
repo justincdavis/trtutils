@@ -26,7 +26,6 @@ class CUDAPosePostprocessor(CUDAPostprocessor):
     def __init__(self: Self, stream: cudart.cudaStream_t) -> None:
         super().__init__(stream)
         self._nms = YoloNms(stream)
-        self._shape: tuple[int, int, int] | None = None
 
     def __call__(
         self: Self,
@@ -43,11 +42,10 @@ class CUDAPosePostprocessor(CUDAPostprocessor):
         head = outputs[0]
         batch, channels, _ = head.shape
         nk = (channels - 5) // 3
-        if self._shape != (batch, nk, max_det):
+        if self._resized(batch, nk, max_det):
             self._dets = Buffer.host_mapped((batch, max_det, 6), np.float32)
             self._kpts = Buffer.host_mapped((batch, max_det, nk * 3), np.float32)
             self._counts = Buffer.host_mapped((batch,), np.int32)
-            self._shape = (batch, nk, max_det)
         self._nms(head, 4, 1, conf_thres, nms_iou_thres, max_det)
         self._nms.gather(
             head,

@@ -8,8 +8,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from trtutils.image.postprocessors._cuda_pose import CUDAPosePostprocessor
 from trtutils.image.postprocessors._cpu_pose import postprocess_yolo_pose
+from trtutils.image.postprocessors._cuda_pose import CUDAPosePostprocessor
 
 _INPUT = (64, 64)
 
