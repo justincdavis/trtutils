@@ -11,7 +11,6 @@ import pytest
 from tests.conftest import DATA_DIR
 from tests.models.test_detectors import _assert_same_detections
 from tests.models.test_hand_interaction_models import _assert_interactions_close
-from trtutils.image import Detector
 from trtutils.models import RFDETR, DepthAnythingV2, Hands23, ResNet, RTDETRv3, YOLOv10
 
 
@@ -74,6 +73,7 @@ def _assert_close_depth(left, right) -> None:
         ),
     ],
 )
+# trt resolves to the CUDA preprocessor: its engine only normalizes
 @pytest.mark.parametrize("preprocessor", ["cuda", "trt"])
 def test_embedded_engine_matches_plain(
     build_model_engine, images, model_cls, onnx_path, image_name, assert_same, preprocessor
@@ -95,16 +95,12 @@ def test_embedded_engine_matches_plain(
 
 
 def test_embedded_engine_fixes_the_norm(build_model_engine) -> None:
-    """input_range, mean, and std are baked at build time and cannot change after."""
+    """input_range, mean, and std are baked at build time, and CPU preprocessing is refused."""
     engine = build_model_engine(YOLOv10, DATA_DIR / "yolov10" / "yolov10n_640.onnx", embed_sst=True)
     model = YOLOv10(engine, warmup=False)
     with pytest.raises(ValueError, match="fixed at build time"):
         model.update_input_range((0, 255))
     with pytest.raises(ValueError, match="fixed at build time"):
         model.update_mean_std((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-    with pytest.raises(ValueError, match="fixed at build time"):
-        YOLOv10(engine, input_range=(0, 255), warmup=False)
-    with pytest.raises(ValueError, match="fixed at build time"):
-        Detector(engine, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), warmup=False)
-    with pytest.raises(ValueError, match="cuda or trt"):
+    with pytest.raises(ValueError, match="cuda preprocessor"):
         YOLOv10(engine, preprocessor="cpu", warmup=False)

@@ -95,6 +95,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         """
         tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
+        self._normalize = normalize
         super().__init__(
             output_shape,
             output_range,
@@ -107,7 +108,6 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             tag,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
-            normalize=normalize,
         )
 
         self._nvtx_tags.update(

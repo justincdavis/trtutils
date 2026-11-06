@@ -3,7 +3,6 @@
 # MIT License
 from __future__ import annotations
 
-import inspect
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, Optional, Tuple, TypeVar, overload
@@ -35,27 +34,6 @@ _COLOR_CHANNELS = 3
 _IMAGE_RANK = 4
 
 _PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
-
-
-def default_norm(
-    cls: type,
-) -> tuple[
-    tuple[float, float], tuple[float, float, float] | None, tuple[float, float, float] | None
-]:
-    """
-    Return the ``input_range``, ``mean``, and ``std`` defaults of ``cls.__init__``.
-
-    ``Model.build(..., embed_sst=True)`` bakes these into the graph.
-    """
-    params = inspect.signature(cls.__init__).parameters
-
-    def default(name: str, fallback: Any) -> Any:  # noqa: ANN401
-        param = params.get(name)
-        if param is None or param.default is inspect.Parameter.empty:
-            return fallback
-        return param.default
-
-    return default("input_range", (0.0, 1.0)), default("mean", None), default("std", None)
 
 
 def _image_binding(
@@ -191,8 +169,6 @@ class ImageModel:
         ValueError
             If input size format is incorrect
             If model does not take 3 channel input
-            If scale, channel swap, and transpose are in the graph and input_range,
-            mean, or std differ from the class defaults
 
         """
         self._tag: str = f"{Path(engine_path).stem}"
@@ -266,8 +242,6 @@ class ImageModel:
             self._input_range = input_range
             self._mean = mean
             self._std = std
-            if self._sst_in_graph and (input_range, mean, std) != default_norm(type(self)):
-                self._raise_baked_norm()
 
             self._resolve_schema(output_schema)
 
@@ -355,7 +329,6 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
-            normalize=not self._sst_in_graph,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -471,24 +444,27 @@ class ImageModel:
         if method not in _PREPROCESSOR_METHODS:
             err_msg = f"Invalid preprocessing method {method!r}, options are: {list(_PREPROCESSOR_METHODS)}"
             raise ValueError(err_msg)
+        if self._sst_in_graph:
+            if method == "cpu":
+                err_msg = (
+                    "This engine swaps channels, normalizes, and transposes in the graph. "
+                    "Use the cuda preprocessor, which only resizes."
+                )
+                raise ValueError(err_msg)
+            # the TRT preprocessor's engine only normalizes; both resize with the same kernels
+            return "cuda"
         if method == "trt" and not FLAGS.TRT_HAS_UINT8:
             method = "cuda"
             LOG.warning(
                 "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
             )
-        if method == "cuda" and self._dtype != np.float32 and not self._sst_in_graph:
+        if method == "cuda" and self._dtype != np.float32:
             method = "cpu"
-        if self._sst_in_graph and method == "cpu":
-            err_msg = (
-                "This engine scales, swaps channels, and transposes in the graph. "
-                "Use the cuda or trt preprocessor, which only letterboxes."
-            )
-            raise ValueError(err_msg)
         return method
 
     def _raise_baked_norm(self: Self) -> None:
         err_msg = (
-            "This engine scales, swaps channels, and transposes in the graph. "
+            "This engine swaps channels, normalizes, and transposes in the graph. "
             "input_range, mean, and std are fixed at build time."
         )
         raise ValueError(err_msg)
