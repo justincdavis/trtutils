@@ -107,8 +107,8 @@ def embed_sst(
     graph.initializer.extend(
         [
             numpy_helper.from_array(np.array([2, 1, 0], np.int64), name=names["order"]),
-            numpy_helper.from_array(scale.astype(np.float32), name=names["scale"]),
-            numpy_helper.from_array(offset.astype(np.float32), name=names["offset"]),
+            numpy_helper.from_array(scale, name=names["scale"]),
+            numpy_helper.from_array(offset, name=names["offset"]),
         ]
     )
     front = [
