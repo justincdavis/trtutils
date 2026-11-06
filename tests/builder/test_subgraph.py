@@ -119,3 +119,45 @@ def test_split_pieces_chain_and_validate(simple_onnx_model, simple_gs_graph) -> 
     out_names = {o.name for o in parts[0].graph.output}
     in_names = {i.name for i in parts[1].graph.input}
     assert out_names & in_names
+
+
+def _model(nodes, outputs, initializers=()) -> onnx.ModelProto:
+    """Build a shape-inferred [1, 4] float model from nodes with the given graph outputs."""
+    x = onnx.helper.make_tensor_value_info("x", onnx.TensorProto.FLOAT, [1, 4])
+    outs = [onnx.helper.make_tensor_value_info(o, onnx.TensorProto.FLOAT, None) for o in outputs]
+    graph = onnx.helper.make_graph(nodes, "g", [x], outs, initializer=list(initializers))
+    return onnx.shape_inference.infer_shapes(onnx.helper.make_model(graph))
+
+
+def test_split_skips_omitted_optional_input() -> None:
+    """An omitted optional input (empty name) is not turned into a subgraph input."""
+    scales = onnx.helper.make_tensor("sc", onnx.TensorProto.FLOAT, [2], [1.0, 1.0])
+    nodes = [
+        onnx.helper.make_node("Relu", ["x"], ["a"]),
+        onnx.helper.make_node("Resize", ["a", "", "sc"], ["b"], mode="nearest"),
+        onnx.helper.make_node("Neg", ["b"], ["c"]),
+    ]
+    parts = split_model(_model(nodes, ["c"], [scales]), [0])
+    assert [i.name for i in parts[1].graph.input] == ["a"]
+    for part in parts:
+        onnx.checker.check_model(part)
+
+
+def test_split_keeps_source_opset() -> None:
+    """Pieces keep the source model's opset instead of the graphsurgeon default."""
+    nodes = [onnx.helper.make_node("Relu", ["x"], ["a"]), onnx.helper.make_node("Neg", ["a"], ["b"])]
+    model = _model(nodes, ["b"])
+    for part in split_model(model, [0]):
+        assert part.opset_import == model.opset_import
+
+
+def test_split_keeps_graph_output_from_middle_slice() -> None:
+    """A graph output produced in a non-final piece is an output of that piece."""
+    nodes = [
+        onnx.helper.make_node("Relu", ["x"], ["a"]),
+        onnx.helper.make_node("Neg", ["a"], ["b"]),
+        onnx.helper.make_node("Abs", ["b"], ["c"]),
+    ]
+    parts = split_model(_model(nodes, ["a", "c"]), [1])
+    assert {o.name for o in parts[0].graph.output} == {"a", "b"}
+    assert [o.name for o in parts[1].graph.output] == ["c"]

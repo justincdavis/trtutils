@@ -192,7 +192,8 @@ Changed
 Fixed
 ^^^^^
 * ``extract_subgraph`` and ``split_model`` no longer raise ``unhashable type: 'Variable'`` with
-  onnx-graphsurgeon 0.5.8
+  onnx-graphsurgeon 0.5.8; pieces keep the source opset, skip omitted optional inputs, and output
+  only tensors later pieces read plus the graph outputs they make
 * ``Model.build()`` takes an explicit ``fp16`` and passes no fp16 flag with ``strongly_typed=True``;
   both raised before
 * ``Hands23.build`` keeps the proposal decoding, box heads, and relation heads (including the
