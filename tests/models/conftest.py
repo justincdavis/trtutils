@@ -21,20 +21,35 @@ def build_model_engine() -> Callable[..., Path]:
     """
     Build and cache an engine via model_cls.build(), skipping if the ONNX is missing.
 
-    Factory: build_model_engine(model_cls, onnx_path, batch_size=1, opt_level=1). ONNX files are named <model>_<imgsz>.onnx.
+    Factory: build_model_engine(model_cls, onnx_path, batch_size=1, opt_level=1, embed_sst=False).
+    ONNX files are named <model>_<imgsz>.onnx.
     """
 
-    def _build(model_cls: type, onnx_path: Path, batch_size: int = 1, opt_level: int = 1) -> Path:
+    def _build(
+        model_cls: type,
+        onnx_path: Path,
+        batch_size: int = 1,
+        opt_level: int = 1,
+        *,
+        embed_sst: bool = False,
+    ) -> Path:
         if not onnx_path.exists():
             pytest.skip(f"missing {onnx_path}")
         ENGINES_DIR.mkdir(parents=True, exist_ok=True)
         engine_path = engine_cache_path(
-            f"{onnx_path.stem}_{model_cls.__name__}", batch_size, opt_level
+            f"{onnx_path.stem}_{model_cls.__name__}{'_sst' if embed_sst else ''}",
+            batch_size,
+            opt_level,
         )
         if not engine_path.exists():
             imgsz = int(onnx_path.stem.rsplit("_", 1)[1])
             model_cls.build(
-                onnx_path, engine_path, imgsz=imgsz, batch_size=batch_size, opt_level=opt_level
+                onnx_path,
+                engine_path,
+                imgsz=imgsz,
+                batch_size=batch_size,
+                opt_level=opt_level,
+                embed_sst=embed_sst,
             )
         return engine_path
 

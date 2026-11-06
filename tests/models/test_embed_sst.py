@@ -1,65 +1,110 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""An engine built with embed_sst matches a normal YOLOv10 engine on the same image."""
+"""An engine built with embed_sst matches the plain engine for every family with data/ ONNX."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import cv2
 import numpy as np
 import pytest
 
 from tests.conftest import DATA_DIR
+from tests.models.test_detectors import _assert_same_detections
+from tests.models.test_hand_interaction_models import _assert_interactions_close
 from trtutils.image import Detector
-from trtutils.models import YOLOv10
+from trtutils.models import RFDETR, DepthAnythingV2, Hands23, ResNet, RTDETRv3, YOLOv10
 
-if TYPE_CHECKING:
-    from pathlib import Path
 
-ONNX = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
-HORSE = DATA_DIR / "horse.jpg"
+def _assert_same_classes(left, right) -> None:
+    assert [cls_id for cls_id, _ in left] == [cls_id for cls_id, _ in right]
+    assert [score for _, score in left] == pytest.approx([score for _, score in right], abs=0.02)
+
+
+def _assert_close_depth(left, right) -> None:
+    # normalized to [0, 1]
+    assert np.abs(left - right).mean() < 0.01
 
 
 @pytest.mark.slow
-@pytest.mark.skipif(not ONNX.exists(), reason="yolov10n onnx is not in data/")
-def test_embedded_sst_matches_the_preprocessor(tmp_path: Path) -> None:
-    """embed_sst matches a normal engine, and preprocess returns the letterboxed uint8 image."""
-    plain = tmp_path / "plain.engine"
-    embedded = tmp_path / "embedded.engine"
-    YOLOv10.build(ONNX, plain, imgsz=640, opt_level=1)
-    YOLOv10.build(ONNX, embedded, imgsz=640, opt_level=1, embed_sst=True)
+@pytest.mark.parametrize(
+    ("model_cls", "onnx_path", "image_name", "assert_same"),
+    [
+        pytest.param(
+            YOLOv10,
+            DATA_DIR / "yolov10" / "yolov10n_640.onnx",
+            "horse",
+            _assert_same_detections,
+            id="yolov10",
+        ),
+        # image is the second of three inputs
+        pytest.param(
+            RTDETRv3,
+            DATA_DIR / "rtdetrv3" / "rtdetrv3_r18_640.onnx",
+            "horse",
+            _assert_same_detections,
+            id="rtdetrv3",
+        ),
+        pytest.param(
+            RFDETR,
+            DATA_DIR / "rfdetr" / "rfdetr_n_384.onnx",
+            "horse",
+            _assert_same_detections,
+            id="rfdetr",
+        ),
+        pytest.param(
+            ResNet,
+            DATA_DIR / "resnet" / "resnet18_224.onnx",
+            "horse",
+            _assert_same_classes,
+            id="resnet",
+        ),
+        pytest.param(
+            DepthAnythingV2,
+            DATA_DIR / "depth_anything_v2" / "depth_anything_v2_small_518.onnx",
+            "horse",
+            _assert_close_depth,
+            id="depth-anything-v2",
+        ),
+        pytest.param(
+            Hands23,
+            DATA_DIR / "hands23" / "hands23_x101_800.onnx",
+            "people",
+            _assert_interactions_close,
+            id="hands23",
+        ),
+    ],
+)
+@pytest.mark.parametrize("preprocessor", ["cuda", "trt"])
+def test_embedded_engine_matches_plain(
+    build_model_engine, images, model_cls, onnx_path, image_name, assert_same, preprocessor
+) -> None:
+    """end2end on the uint8 NHWC engine matches the float NCHW engine on the same image."""
+    plain = model_cls(build_model_engine(model_cls, onnx_path), warmup=False)
+    model = model_cls(
+        build_model_engine(model_cls, onnx_path, embed_sst=True),
+        preprocessor=preprocessor,
+        warmup=False,
+    )
+    image = images[image_name].array
+    assert_same(plain.end2end(image), model.end2end(image))
 
-    image = cv2.resize(cv2.imread(str(HORSE)), (1920, 1080))
-    reference = YOLOv10(plain, preprocessor="cuda", warmup_iterations=1).end2end(image)
-    got = YOLOv10(embedded, preprocessor="cuda", warmup_iterations=1).end2end(image)
-    assert len(reference) == len(got)
-    assert len(reference) > 0
-    for det, alt in zip(reference, got):
-        assert det[2] == alt[2]
-        assert abs(det[1] - alt[1]) < 1e-3
-        assert all(abs(a - b) <= 2 for a, b in zip(det[0], alt[0]))
-
-    model = YOLOv10(embedded, warmup_iterations=1, warmup=True)
     tensor, _, _ = model.preprocess(image)
-    cuda_tensor, _, _ = model.preprocess(image, method="cuda")
     assert tensor.dtype == np.uint8
-    assert cuda_tensor.dtype == np.uint8
-    assert tensor.shape == (1, 640, 640, 3)
+    assert tensor.shape == (1, *model.input_shape[::-1], 3)
     assert int(tensor.max()) > 0
-    np.testing.assert_array_equal(tensor, cuda_tensor)
 
+
+def test_embedded_engine_fixes_the_norm(build_model_engine) -> None:
+    """input_range, mean, and std are baked at build time and cannot change after."""
+    engine = build_model_engine(YOLOv10, DATA_DIR / "yolov10" / "yolov10n_640.onnx", embed_sst=True)
+    model = YOLOv10(engine, warmup=False)
     with pytest.raises(ValueError, match="fixed at build time"):
         model.update_input_range((0, 255))
     with pytest.raises(ValueError, match="fixed at build time"):
         model.update_mean_std((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
     with pytest.raises(ValueError, match="fixed at build time"):
-        YOLOv10(embedded, input_range=(0, 255), warmup=False)
+        YOLOv10(engine, input_range=(0, 255), warmup=False)
     with pytest.raises(ValueError, match="fixed at build time"):
-        Detector(
-            embedded,
-            mean=(0.485, 0.456, 0.406),
-            std=(0.229, 0.224, 0.225),
-            warmup=False,
-        )
+        Detector(engine, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), warmup=False)
+    with pytest.raises(ValueError, match="cuda or trt"):
+        YOLOv10(engine, preprocessor="cpu", warmup=False)
