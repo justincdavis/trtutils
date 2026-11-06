@@ -23,6 +23,7 @@ from trtutils.image.postprocessors._detection import postprocess_efficient_nms, 
 from trtutils.image.postprocessors._gpu import mapped, split_detections
 from trtutils.image.postprocessors._gpu_detcls import CudaClsPostprocessor, CudaDetPostprocessor
 from trtutils.image.postprocessors._gpu_nms import YoloNms
+from trtutils.models import Hands23
 
 _RATIOS = [(0.5, 0.5), (0.25, 0.5)]
 _PADDING = [(4.0, 8.0), (2.0, 6.0)]
@@ -43,6 +44,7 @@ def _engine(fixture: str, *args: str):
 _CUDA_MODELS = [
     pytest.param(Detector, _engine("yolov10_engine"), "horse", id="detector"),
     pytest.param(Classifier, _engine("task_engine", "cls"), "horse", id="classifier"),
+    pytest.param(Hands23, _engine("hands23_engine"), "people", id="hand-interaction"),
 ]
 
 
