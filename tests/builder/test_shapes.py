@@ -11,6 +11,8 @@ from onnx import TensorProto, helper
 
 from trtutils.builder.onnx._shapes import get_onnx_input, get_onnx_output, make_onnx_static
 
+pytestmark = pytest.mark.cpu
+
 # dims: int -> static, str -> dim_param, None -> dim with neither field set
 DYNAMIC_SHAPES = [
     pytest.param(["N", 3, 4, 4], (1, 3, 4, 4), id="dim-param-batch"),
