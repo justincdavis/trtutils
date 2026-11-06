@@ -188,6 +188,8 @@ Changed
 * ``Detector`` models with a scale-factor input treat an already preprocessed batch passed
   without ``ratios`` as unscaled, as they already did for its original size
 * GPU preprocessors raise ``ValueError`` for non-uint8 images instead of reading their bytes as uint8
+* ``trtutils benchmark`` drops its ``--warmup`` flag: warmup always runs, so it did nothing;
+  ``--warmup_iterations`` sets the count
 
 Fixed
 ^^^^^

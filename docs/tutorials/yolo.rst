@@ -126,13 +126,13 @@ If using CLI:
 
 .. code-block:: bash
 
-    python3 -m trtutils benchmark yolo.engine --iterations 1000 --tegra_interval 1
+    python3 -m trtutils benchmark -e yolo.engine --iterations 1000 --tegra_interval 1
 
     # On Jetson devices, you can also measure power consumption by adding the --jetson flag
     # This requires that jetsontools be installed via pip
     # pip install jetsontools
     # This is installed by default as a dependency from 0.6.0 onwards
-    python3 -m trtutils benchmark yolo.engine --iterations 1000 --tegra_interval 1 --jetson
+    python3 -m trtutils benchmark -e yolo.engine --iterations 1000 --tegra_interval 1 --jetson
 
 Troubleshooting
 ---------------

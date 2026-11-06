@@ -68,8 +68,6 @@ def _benchmark(args: SimpleNamespace) -> None:
             Milliseconds between tegrastats samples (Jetson only).
         - dla_core : int or None
             DLA core to use, if any.
-        - warmup : bool
-            Whether to perform warmup.
         - cuda_graph : bool
             Whether to enable CUDA graph capture for the engine. Off by default.
         - verbose : bool
@@ -1488,7 +1486,8 @@ def _main() -> None:
         action="store_true",
         help="Perform warmup iterations.",
     )
-    warmup_parser.add_argument(
+    warmup_iterations_parser = argparse.ArgumentParser(add_help=False)
+    warmup_iterations_parser.add_argument(
         "--warmup_iterations",
         "-wi",
         type=int,
@@ -1571,7 +1570,7 @@ def _main() -> None:
     benchmark_parser = subparsers.add_parser(
         "benchmark",
         help="Benchmark a given TensorRT engine.",
-        parents=[general_parser, dla_parser, warmup_parser],
+        parents=[general_parser, dla_parser, warmup_iterations_parser],
     )
     benchmark_parser.add_argument(
         "--engine",
@@ -1797,7 +1796,7 @@ def _main() -> None:
     detect_parser = subparsers.add_parser(
         "detect",
         help="Run YOLO object detection on an image or video.",
-        parents=[general_parser, dla_parser, warmup_parser, memory_parser],
+        parents=[general_parser, dla_parser, warmup_parser, warmup_iterations_parser, memory_parser],
     )
     detect_parser.add_argument(
         "--engine",
@@ -1867,7 +1866,7 @@ def _main() -> None:
     classify_parser = subparsers.add_parser(
         "classify",
         help="Run image classification on an image.",
-        parents=[general_parser, dla_parser, warmup_parser, memory_parser],
+        parents=[general_parser, dla_parser, warmup_parser, warmup_iterations_parser, memory_parser],
     )
     classify_parser.add_argument(
         "--engine",
@@ -1928,7 +1927,7 @@ def _main() -> None:
     profile_parser = subparsers.add_parser(
         "profile",
         help="Profile a TensorRT engine layer-by-layer.",
-        parents=[general_parser, dla_parser, warmup_parser],
+        parents=[general_parser, dla_parser, warmup_parser, warmup_iterations_parser],
     )
     profile_parser.add_argument(
         "--engine",

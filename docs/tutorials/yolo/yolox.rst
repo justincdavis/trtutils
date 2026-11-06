@@ -19,10 +19,10 @@ YOLOX models can be automatically downloaded and converted to ONNX format using 
 
     # Download and convert YOLOX models to ONNX
     # Available models: yoloxn, yoloxt, yoloxs, yoloxm, yoloxl, yoloxx, yolox_darknet
-    $ python3 -m trtutils download --model yoloxs --output yoloxs.onnx --imgsz 640 --opset 17 --accept
+    $ python3 -m trtutils download --model yoloxs --output yoloxs.onnx --imgsz 640 --opset 17
 
     # For other YOLOX variants
-    $ python3 -m trtutils download --model yoloxm --output yoloxm.onnx --imgsz 640 --opset 17 --accept
+    $ python3 -m trtutils download --model yoloxm --output yoloxm.onnx --imgsz 640 --opset 17
 
 Building TensorRT Engine
 ------------------------
@@ -31,14 +31,10 @@ Once you have the ONNX weights, build a TensorRT engine:
 
 .. code-block:: bash
 
-    python3 -m trtutils build_yolo \
-        --weights PATH_TO_WEIGHTS \
+    python3 -m trtutils build \
+        --onnx PATH_TO_WEIGHTS \
         --output PATH_TO_OUTPUT \
-        --fp16 \
-        --num_classes 80 \
-        --iou_threshold 0.5 \
-        --conf_threshold 0.25 \
-        --top_k 100
+        --fp16
 
 Alternatively, if you want to export the engine using the Python API:
 
