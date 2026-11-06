@@ -85,12 +85,12 @@ Command line:
 
 .. code-block:: console
 
-    $ python3 -m trtutils benchmark -m engine.engine -i 1000
+    $ python3 -m trtutils benchmark -e engine.engine -i 1000
 
     # If you are on a jetson device and installed the jetson dependencies
     # pass the -j flag to measure energy and power draw
 
-    $ python3 -m trtutils benchmark -m engine.engine -i 1000 -j    
+    $ python3 -m trtutils benchmark -e engine.engine -i 1000 -j
 
 Python:
 

@@ -49,8 +49,8 @@ Benchmark a TensorRT engine to measure its performance metrics.
     # Jetson benchmarking with energy/power metrics
     python3 -m trtutils benchmark --engine model.engine --jetson --tegra_interval 1
 
-    # With warmup
-    python3 -m trtutils benchmark --engine model.engine --warmup --warmup_iterations 200
+    # Custom warmup iterations (warmup always runs)
+    python3 -m trtutils benchmark --engine model.engine --warmup_iterations 200
 
 Options
 ^^^^^^^
@@ -59,8 +59,7 @@ Options
 * ``--iterations, -i``: Number of iterations to measure over (default: 1000)
 * ``--jetson, -j``: Use the Jetson-specific benchmarker to record energy and power draw metrics
 * ``--tegra_interval``: Milliseconds between each tegrastats sampling for Jetson benchmarking (default: 5)
-* ``--warmup``: Perform warmup iterations
-* ``--warmup_iterations, -wi``: Number of warmup iterations (default: 10)
+* ``--warmup_iterations, -wi``: Number of warmup iterations, always run before measuring (default: 10)
 
 Output
 ^^^^^^
@@ -421,20 +420,20 @@ Download a model from remote source and convert to ONNX format. This command sup
 .. code-block:: console
 
     # Download YOLOv8n
-    python3 -m trtutils download --model yolov8n --output yolov8n.onnx --accept
+    python3 -m trtutils download --model yolov8n --output yolov8n.onnx
 
     # Download YOLOv11m with custom settings
-    python3 -m trtutils download --model yolov11m --output yolov11m.onnx --imgsz 640 --opset 17 --accept
+    python3 -m trtutils download --model yolov11m --output yolov11m.onnx --imgsz 640 --opset 17
 
     # Download YOLOX small model
-    python3 -m trtutils download --model yoloxs --output yoloxs.onnx --imgsz 640 --opset 17 --accept
+    python3 -m trtutils download --model yoloxs --output yoloxs.onnx --imgsz 640 --opset 17
 
     # Download YOLOv10n at batch 8, or with a dynamic batch dimension
-    python3 -m trtutils download --model yolov10n --output yolov10n_b8.onnx --batch 8 --accept
-    python3 -m trtutils download --model yolov10n --output yolov10n_dyn.onnx --dynamic --accept
+    python3 -m trtutils download --model yolov10n --output yolov10n_b8.onnx --batch 8
+    python3 -m trtutils download --model yolov10n --output yolov10n_dyn.onnx --dynamic
 
     # Download RT-DETRv1 model
-    python3 -m trtutils download --model rtdetrv1_r18vd --output rtdetrv1.onnx --accept
+    python3 -m trtutils download --model rtdetrv1_r18vd --output rtdetrv1.onnx
 
 Options
 ^^^^^^^

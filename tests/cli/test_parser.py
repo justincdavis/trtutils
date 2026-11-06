@@ -157,6 +157,12 @@ def test_missing_required_args_exit_2(argv) -> None:
             },
             id="profile",
         ),
+        pytest.param(
+            ["trtutils", "detect", "--engine", _ENGINE, "--input", _IMG, "--warmup"],
+            "trtutils.__main__._detect",
+            {"warmup": True, "warmup_iterations": 10},
+            id="detect-warmup-flag",
+        ),
     ],
 )
 def test_subcommand_defaults(argv, mock_target, expected) -> None:
@@ -166,3 +172,14 @@ def test_subcommand_defaults(argv, mock_target, expected) -> None:
     args = mock.call_args[0][0]
     for key, value in expected.items():
         assert getattr(args, key) == value, f"{key}: got {getattr(args, key)!r}, expected {value!r}"
+
+
+def test_benchmark_namespace_keeps_warmup_iterations_only() -> None:
+    """Benchmark parses --warmup_iterations but defines no warmup attribute."""
+    with patch("sys.argv", ["trtutils", "benchmark", "--engine", _ENGINE]), patch(
+        "trtutils.__main__._benchmark"
+    ) as mock:
+        _main()
+    args = mock.call_args[0][0]
+    assert args.warmup_iterations == 10
+    assert not hasattr(args, "warmup")
