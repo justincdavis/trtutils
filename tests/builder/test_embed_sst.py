@@ -14,7 +14,7 @@ import pytest
 from onnx import TensorProto, helper
 
 from trtutils.builder.onnx import embed_sst
-from trtutils.image._image_model import _image_binding, default_norm
+from trtutils.image._image_model import _image_binding
 from trtutils.image.preprocessors._process import preprocess
 from trtutils.models import (
     DEIM,
@@ -28,6 +28,7 @@ from trtutils.models import (
     YOLOv8Seg,
     YOLOv10,
 )
+from trtutils.models._model import _default_norm
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -102,10 +103,11 @@ def test_embed_sst_matches_the_cpu_preprocessor(tmp_path: Path, input_range, mea
         pytest.param("missing", ["batch", 3, 8, 8], "no input", id="missing"),
         pytest.param("images", ["batch", 8, 8, 3], "must be", id="already-nhwc"),
         pytest.param("images", ["batch", 3, 8], "must be", id="rank-3"),
+        pytest.param("images", ["batch", 3, 16, 16], "must be", id="static-size-mismatch"),
     ],
 )
 def test_embed_sst_rejects_bad_inputs(tmp_path: Path, name, shape, match) -> None:
-    """Missing inputs and inputs that are not NCHW (e.g. already NHWC) are refused."""
+    """Missing inputs, non-NCHW inputs (e.g. already NHWC), and other static sizes are refused."""
     source = tmp_path / "in.onnx"
     _save_identity(
         source, [helper.make_tensor_value_info("images", TensorProto.FLOAT, shape)], shape
@@ -150,7 +152,7 @@ def test_uint8_hwc_is_the_in_graph_layout() -> None:
 )
 def test_default_norm_follows_each_wrapper(cls: type, expected: tuple) -> None:
     """The norm baked by embed_sst is the one each wrapper's constructor defaults to."""
-    assert default_norm(cls) == expected
+    assert _default_norm(cls) == expected
 
 
 @pytest.mark.parametrize("cls", [PPOCRDetector, PPOCRRecognizer], ids=["det", "rec"])

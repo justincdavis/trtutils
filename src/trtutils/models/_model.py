@@ -12,12 +12,28 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.builder._build import build_engine
 from trtutils.builder.onnx import embed_sst as embed_sst_graph
-from trtutils.image._image_model import default_norm
 
 from ._utils import download_model_internal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+
+def _default_norm(
+    cls: type,
+) -> tuple[
+    tuple[float, float], tuple[float, float, float] | None, tuple[float, float, float] | None
+]:
+    """Return the ``input_range``, ``mean``, and ``std`` defaults of ``cls.__init__``."""
+    params = inspect.signature(cls.__init__).parameters
+
+    def default(name: str, fallback: Any) -> Any:  # noqa: ANN401
+        param = params.get(name)
+        if param is None or param.default is inspect.Parameter.empty:
+            return fallback
+        return param.default
+
+    return default("input_range", (0.0, 1.0)), default("mean", None), default("std", None)
 
 
 class Model:
@@ -219,50 +235,49 @@ class Model:
             imgsz = cls._default_imgsz
         cls._validate_imgsz(imgsz)
         shapes = cls._make_shapes(batch_size, imgsz)
-        onnx_path = Path(onnx)
-        embedded: tempfile.TemporaryDirectory[str] | None = None
-        if embed_sst:
-            input_range, mean, std = default_norm(cls)
-            image_name = next(name for name, kind in cls._input_tensors if kind == "image")
-            shapes = [
-                ((name, (batch_size, imgsz, imgsz, 3)) if name == image_name else (name, shape))
-                for name, shape in shapes
-            ]
-            embedded = tempfile.TemporaryDirectory()
-            onnx_path = Path(embedded.name) / "embedded.onnx"
-            embed_sst_graph(
-                onnx,
-                onnx_path,
-                image_name,
-                height=imgsz,
-                width=imgsz,
-                input_range=input_range,
-                mean=mean,
-                std=std,
+        # the embedded copy lives until the engine is built (hooks read it too)
+        with tempfile.TemporaryDirectory() as tmp:
+            onnx_path = Path(onnx)
+            if embed_sst:
+                input_range, mean, std = _default_norm(cls)
+                image_name = next(name for name, kind in cls._input_tensors if kind == "image")
+                shapes = [
+                    ((name, (batch_size, imgsz, imgsz, 3)) if name == image_name else (name, shape))
+                    for name, shape in shapes
+                ]
+                onnx_path = Path(tmp) / "embedded.onnx"
+                embed_sst_graph(
+                    onnx,
+                    onnx_path,
+                    image_name,
+                    height=imgsz,
+                    width=imgsz,
+                    input_range=input_range,
+                    mean=mean,
+                    std=std,
+                )
+
+            # Collect overrides from hooks, tracking consumed kwargs
+            build_overrides: dict[str, Any] = {}
+            consumed_keys: set[str] = set()
+            for hook in cls._build_hooks:
+                overrides = hook(onnx=onnx_path, imgsz=imgsz, batch_size=batch_size, **kwargs)
+                consumed_keys.update(k for k in kwargs if k in inspect.signature(hook).parameters)
+                for key, val in overrides.items():
+                    if key in build_overrides and isinstance(build_overrides[key], list):
+                        build_overrides[key].extend(
+                            val if isinstance(val, list) else [val],
+                        )
+                    else:
+                        build_overrides[key] = val
+
+            # Forward unconsumed kwargs to build_engine for validation
+            remaining_kwargs = {k: v for k, v in kwargs.items() if k not in consumed_keys}
+            # an explicit fp16 wins; a strongly typed network takes its precision from the onnx
+            fp16 = remaining_kwargs.pop(
+                "fp16", cls._fp16 and not remaining_kwargs.get("strongly_typed", False)
             )
 
-        # Collect overrides from hooks, tracking consumed kwargs
-        build_overrides: dict[str, Any] = {}
-        consumed_keys: set[str] = set()
-        for hook in cls._build_hooks:
-            overrides = hook(onnx=onnx_path, imgsz=imgsz, batch_size=batch_size, **kwargs)
-            consumed_keys.update(k for k in kwargs if k in inspect.signature(hook).parameters)
-            for key, val in overrides.items():
-                if key in build_overrides and isinstance(build_overrides[key], list):
-                    build_overrides[key].extend(
-                        val if isinstance(val, list) else [val],
-                    )
-                else:
-                    build_overrides[key] = val
-
-        # Forward unconsumed kwargs to build_engine for validation
-        remaining_kwargs = {k: v for k, v in kwargs.items() if k not in consumed_keys}
-        # an explicit fp16 wins; a strongly typed network takes its precision from the onnx
-        fp16 = remaining_kwargs.pop(
-            "fp16", cls._fp16 and not remaining_kwargs.get("strongly_typed", False)
-        )
-
-        try:
             build_engine(
                 onnx=onnx_path,
                 output=output,
@@ -274,6 +289,3 @@ class Model:
                 **build_overrides,
                 **remaining_kwargs,
             )
-        finally:
-            if embedded is not None:
-                embedded.cleanup()

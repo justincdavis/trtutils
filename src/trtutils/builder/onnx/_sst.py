@@ -31,7 +31,7 @@ def embed_sst(
 
     The image input keeps its name and position and becomes uint8
     ``(batch, height, width, 3)``, the layout a resize kernel already writes. Nodes that
-    used to read that input now read the NCHW result. The new nodes swap BGR to RGB, cast,
+    used to read that input now read the NCHW result. The new nodes cast, swap BGR to RGB,
     and apply the same per-channel affine as the image preprocessors: ``input_range``
     alone maps ``[0, 255]`` onto it, ``mean`` and ``std`` give ``(x / 255 - mean) / std``.
     TensorRT folds these pointwise ops into the first layer. Resize stays outside.
@@ -58,8 +58,8 @@ def embed_sst(
     Raises
     ------
     ValueError
-        If ``image_name`` is missing or is not a 4D tensor with 3 channels
-        on axis 1, or only one of ``mean`` and ``std`` is set.
+        If ``image_name`` is missing or is not ``(batch, 3, height, width)``,
+        or only one of ``mean`` and ``std`` is set.
 
     """
     if (mean is None) != (std is None):
@@ -72,12 +72,15 @@ def embed_sst(
         err_msg = f"ONNX model has no input {image_name!r}"
         raise ValueError(err_msg)
     dims = graph.input[index].type.tensor_type.shape.dim
+    found = [dim.dim_value if dim.HasField("dim_value") else None for dim in dims]
+    # dynamic height/width (None) take any size; static ones must match
     if (
-        len(dims) != _IMAGE_RANK
-        or not dims[1].HasField("dim_value")
-        or dims[1].dim_value != _RGB_CHANNELS
+        len(found) != _IMAGE_RANK
+        or found[1] != _RGB_CHANNELS
+        or found[2] not in (None, height)
+        or found[3] not in (None, width)
     ):
-        err_msg = f"{image_name!r} must be (batch, 3, height, width), got rank {len(dims)}"
+        err_msg = f"{image_name!r} must be (batch, 3, {height}, {width}), got {found}"
         raise ValueError(err_msg)
 
     # same affine as the CPU and CUDA preprocessors
@@ -109,9 +112,10 @@ def embed_sst(
         ]
     )
     front = [
-        helper.make_node("Gather", [image_name, names["order"]], [names["rgb"]], axis=3),
-        helper.make_node("Cast", [names["rgb"]], [names["float"]], to=TensorProto.FLOAT),
-        helper.make_node("Mul", [names["float"], names["scale"]], [names["scaled"]]),
+        # TensorRT has no uint8 Gather, so cast first
+        helper.make_node("Cast", [image_name], [names["float"]], to=TensorProto.FLOAT),
+        helper.make_node("Gather", [names["float"], names["order"]], [names["rgb"]], axis=3),
+        helper.make_node("Mul", [names["rgb"], names["scale"]], [names["scaled"]]),
         helper.make_node("Add", [names["scaled"], names["offset"]], [names["norm"]]),
         helper.make_node("Transpose", [names["norm"]], [names["nchw"]], perm=[0, 3, 1, 2]),
     ]

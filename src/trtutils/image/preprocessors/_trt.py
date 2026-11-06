@@ -51,7 +51,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
         crop_pct: float = DEFAULT_CROP_PCT,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
-        normalize: bool = True,
     ) -> None:
         """
         Create a TRTPreprocessor for image processing models.
@@ -100,9 +99,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
-        normalize : bool, optional
-            When False, return the letterboxed uint8 HWC image and skip scale,
-            channel swap, and transpose. Default is True.
 
         Raises
         ------
@@ -124,7 +120,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
             crop_pct=crop_pct,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
-            normalize=normalize,
         )
 
         self._nvtx_tags.update(
@@ -145,10 +140,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
         )
-        if not self._normalize:
-            # preprocess() copies output_binding; the letterboxed image is this buffer
-            self._engine_output_binding = self._intermediate_binding
-            return
 
         # determine preprocessing mode, imagenet or yolo
         self._use_imagenet: bool = self._mean_buffer is not None and self._std_buffer is not None
@@ -280,10 +271,6 @@ class TRTPreprocessor(GPUImagePreprocessor):
             resize=resize,
             verbose=verbose,
         )
-        if not self._normalize:
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # trt_direct_preproc
-            return self._intermediate_binding.device[:batch_size], ratios_list, padding_list
 
         # run the engine on only the images given
         intermediate, *params = self._engine_inputs
