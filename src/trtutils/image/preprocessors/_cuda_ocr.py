@@ -217,12 +217,14 @@ class CudaTextCrops:
         mean: tuple[float, float, float] | None,
         std: tuple[float, float, float] | None,
         input_range: tuple[float, float],
+        width_bucket: int | None = None,
     ) -> None:
         file, _ = OCR_PRE
         self._warp = Kernel(file, "ocrWarpCrops")
         self._input = Kernel(file, "ocrRecInput")
         self._height = image_height
         self._max_width = max_width
+        self._width_bucket = width_bucket
         self._batch_size = batch_size
         self._lut = Buffer.from_array(
             text_recognition_lut(mean, std, input_range), MemoryLocation.DEVICE
@@ -283,7 +285,10 @@ class CudaTextCrops:
         for start in range(0, n, self._batch_size):
             idx = order[start : start + self._batch_size]
             width, widths = text_recognition_widths(
-                [shapes[i] for i in idx], self._height, max_width=self._max_width
+                [shapes[i] for i in idx],
+                self._height,
+                max_width=self._max_width,
+                width_bucket=self._width_bucket,
             )
             batches.append((start, start + len(idx), width))
             for k, (i, rw) in enumerate(zip(idx, widths)):
