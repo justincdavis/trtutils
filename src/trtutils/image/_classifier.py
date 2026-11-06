@@ -4,14 +4,13 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, cast, overload
+from typing import TYPE_CHECKING, overload
 
 import nvtx
 from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
-from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
 from ._schema import ClassifierOutputSchema
@@ -26,6 +25,7 @@ if TYPE_CHECKING:
     import numpy as np
     from typing_extensions import Self
 
+    from trtutils.core._buffer import Buffer
     from trtutils.image.types import Classification
 
     from ._image_model import _PostFn
@@ -35,8 +35,8 @@ class Classifier(ImageModel, ClassifierInterface):
     """Implementation of image classifiers."""
 
     _OUTPUT_SCHEMA = ClassifierOutputSchema
+    _CUDA_POSTPROCESSOR = CudaClsPostprocessor
     # opt in: a class-vector softmax is small, so the host stays the default
-    _cuda_postprocess = True
     _cuda_post_default = False
 
     def __init__(
@@ -163,7 +163,6 @@ class Classifier(ImageModel, ClassifierInterface):
         )
 
         self._softmax = softmax
-        self._cuda_post = CudaClsPostprocessor() if self._postprocessor == "cuda" else None
 
         # prepend with 'cls_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
@@ -211,13 +210,13 @@ class Classifier(ImageModel, ClassifierInterface):
         if verbose:
             LOG.debug(f"{self._tag}: postprocess")
 
-        ordered = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        if self._cuda_post is not None and isinstance(ordered[0], Buffer):
-            data = self._cuda_post(ordered[0], softmax=self._softmax, stream=self._engine.stream)
+        device_outputs = self._device_outputs(outputs)
+        if device_outputs is not None:
+            data = self._cuda_post(device_outputs, softmax=self._softmax)
         else:
             data = postprocess_classifications(
-                cast("list[np.ndarray]", ordered),
+                self._host_outputs(outputs),
                 softmax=self._softmax,
                 no_copy=no_copy,
                 verbose=verbose,

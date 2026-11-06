@@ -140,9 +140,11 @@ class Kernel:
                 kernel_code: str = f.read()
             self._name = name
             self._nvtx_tag_call = f"kernel::call [{name}]"
+            # sibling headers resolve with #include "name.cuh"
             self._module, self._kernel = compile_and_load_kernel(
                 kernel_code,
                 name,
+                [f"-I{kernel_file.resolve().parent}"],
                 verbose=verbose,
             )
             self._freed = False

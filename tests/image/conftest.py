@@ -1,17 +1,20 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Image test fixtures -- a built YOLOv10 engine shared by the image model tests."""
+"""Image test fixtures -- built engines, a CUDA stream, and device outputs for the image tests."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pytest
 
 from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR, ENGINES_DIR
 from trtutils.builder import build_engine
+from trtutils.core import create_stream, destroy_stream
+from trtutils.core._buffer import Buffer, MemoryLocation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -59,3 +62,17 @@ def task_engine(build_test_engine) -> Callable[[str], Path]:
         return build_test_engine(onnx_path, batch_size=batch_size)
 
     return _get
+
+
+@pytest.fixture
+def cuda_stream():
+    """Create a CUDA stream for the test, destroy after."""
+    stream = create_stream()
+    yield stream
+    destroy_stream(stream)
+
+
+@pytest.fixture
+def to_device() -> Callable[[np.ndarray], Buffer]:
+    """Copy a host array into a new device Buffer, as an engine output for the CUDA postprocessors."""
+    return lambda array: Buffer.from_array(np.ascontiguousarray(array), MemoryLocation.DEVICE)

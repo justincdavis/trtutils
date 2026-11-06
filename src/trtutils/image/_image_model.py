@@ -42,6 +42,8 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from .postprocessors._gpu import CudaPostprocessor
+
 _COLOR_CHANNELS = 3
 
 _PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
@@ -79,12 +81,10 @@ class ImageModel:
 
     # task models set the enum used to resolve and order the engine outputs
     _OUTPUT_SCHEMA: ClassVar[type[Enum] | None] = None
-    # whether postprocess() reads device outputs when postprocessor="cuda"
-    _cuda_postprocess: ClassVar[bool] = False
+    # the task's CUDA postprocessor, built on the engine stream for postprocessor="cuda"
+    _CUDA_POSTPROCESSOR: ClassVar[type[CudaPostprocessor] | None] = None
     # False keeps the CPU postprocessor as the default even when a CUDA one exists
     _cuda_post_default: ClassVar[bool] = True
-    # most (B, C, N) head anchors the CUDA postprocessor handles, None for no limit
-    _cuda_max_anchors: ClassVar[int | None] = None
 
     def __init__(  # noqa: PLR0915
         self: Self,
@@ -270,6 +270,8 @@ class ImageModel:
             # (update_input_range/update_mean_std rebuild them)
             self._preprocessor_method: str = self._resolve_method(preprocessor)
             self._postprocessor: str = self._resolve_postprocessor(postprocessor)
+            # each task calls its own postprocessor's signature, see postprocess()
+            self._cuda_post: Any = self._setup_cuda_post()
             self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
             self._preproc_cuda: CUDAPreprocessor | None = None
             self._preproc_trt: TRTPreprocessor | None = None
@@ -360,26 +362,33 @@ class ImageModel:
 
     def _resolve_postprocessor(self: Self, postprocessor: str | None) -> str:
         """Pick the postprocessor. CUDA is the default only when the task says so."""
-        valid = ("cpu", "cuda") if self._cuda_postprocess else ("cpu",)
-        limit = self._cuda_max_anchors
-        fits = all(dtype == np.float32 for dtype in self._engine.output_dtypes) and (
-            limit is None or all(shape[-1] <= limit for shape in self._engine.output_shapes)
-        )
+        has_cuda = self._CUDA_POSTPROCESSOR is not None
         if postprocessor is None:
-            use_cuda = self._cuda_postprocess and self._cuda_post_default and fits
+            use_cuda = has_cuda and self._cuda_post_default and self._cuda_unsupported() is None
             postprocessor = "cuda" if use_cuda else "cpu"
+        valid = ("cpu", "cuda") if has_cuda else ("cpu",)
         if postprocessor not in valid:
             err_msg = (
                 f"Invalid postprocessor '{postprocessor}' for {type(self).__name__}, "
                 f"expected one of {valid}"
             )
             raise ValueError(err_msg)
-        if postprocessor == "cuda" and not fits:
-            err_msg = (
-                f"The CUDA postprocessor needs float32 outputs and at most {limit} head anchors"
-            )
+        reason = self._cuda_unsupported() if postprocessor == "cuda" else None
+        if reason is not None:
+            err_msg = f"The CUDA postprocessor of {type(self).__name__} {reason}"
             raise ValueError(err_msg)
         return postprocessor
+
+    def _setup_cuda_post(self: Self) -> CudaPostprocessor | None:
+        if self._CUDA_POSTPROCESSOR is None or self._postprocessor != "cuda":
+            return None
+        return self._CUDA_POSTPROCESSOR(self._engine.stream)
+
+    def _cuda_unsupported(self: Self) -> str | None:
+        """Why the engine outputs do not fit the CUDA postprocessor, None when they do."""
+        if any(dtype != np.float32 for dtype in self._engine.output_dtypes):
+            return "needs float32 outputs"
+        return None
 
     def _configure_model(self: Self) -> None:
         """Configure model-specific state after engine load, before preprocessor creation."""
@@ -391,18 +400,21 @@ class ImageModel:
         if names != list(expected) and sorted(names) == sorted(expected):
             self._output_order = [names.index(name) for name in expected]
 
-    def _order_outputs(
-        self: Self, outputs: list[np.ndarray] | list[Buffer]
-    ) -> list[np.ndarray] | list[Buffer]:
+    def _order_outputs(self: Self, outputs: list[T]) -> list[T]:
         """Reorder raw outputs to the expected names, see :meth:`_set_output_order`."""
         if self._output_order is None:
             return outputs
-        ordered = [outputs[i] for i in self._output_order]
-        return cast("list[np.ndarray] | list[Buffer]", ordered)
+        return [outputs[i] for i in self._output_order]
+
+    def _device_outputs(self: Self, outputs: list[np.ndarray] | list[Buffer]) -> list[Buffer] | None:
+        """Return the reordered outputs when the CUDA postprocessor reads them, else None."""
+        if self._cuda_post is None or not isinstance(outputs[0], Buffer):
+            return None
+        return self._order_outputs(cast("list[Buffer]", outputs))
 
     def _host_outputs(self: Self, outputs: list[np.ndarray] | list[Buffer]) -> list[np.ndarray]:
         """Reorder outputs that the CPU postprocessor will read."""
-        return cast("list[np.ndarray]", self._order_outputs(outputs))
+        return self._order_outputs(cast("list[np.ndarray]", outputs))
 
     @property
     def engine(self: Self) -> TRTEngine:

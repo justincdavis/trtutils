@@ -20,6 +20,10 @@ Attributes
     ImageNet normalization with scale/swap/transpose (float32 output)
 :attribute:`IMAGENET_SST_F16` : tuple[Path, str]
     ImageNet normalization with scale/swap/transpose (float16 output)
+:attribute:`DET_CLS_POST` : Path
+    Postprocess kernels for detection unletterbox and classification softmax.
+:attribute:`YOLO_NMS` : Path
+    Postprocess kernels for YOLO-style heads: decode, sort, NMS, and gather.
 
 """
 
@@ -33,8 +37,6 @@ _SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
 _LETTERBOX_FILE = _KERNEL_DIR / "letterbox.cu"
 _LINEAR_FILE = _KERNEL_DIR / "linear.cu"
 _SST_IMAGENET_FILE = _KERNEL_DIR / "sst_imagenet.cu"
-_DET_CLS_POST_FILE = _KERNEL_DIR / "det_cls_post.cu"
-_YOLO_NMS_FILE = _KERNEL_DIR / "yolo_nms.cu"
 
 SST_FAST: tuple[Path, str] = (
     _SST_FAST_FILE,
@@ -71,12 +73,5 @@ IMAGENET_SST_F16: tuple[Path, str] = (
     "scaleSwapTransposeImagenet_f16",
 )
 
-DET_CLS_POST: tuple[Path, str] = (
-    _DET_CLS_POST_FILE,
-    "unletterboxV10",
-)
-
-YOLO_NMS: tuple[Path, str] = (
-    _YOLO_NMS_FILE,
-    "yoloDecode",
-)
+DET_CLS_POST: Path = _KERNEL_DIR / "det_cls_post.cu"
+YOLO_NMS: Path = _KERNEL_DIR / "yolo_nms.cu"
