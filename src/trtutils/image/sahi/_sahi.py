@@ -155,7 +155,8 @@ class SAHI:
             By default None
         nms_iou_thres : float
             The IOU threshold to use during the optional/additional
-            NMS operation. By default, None which will use value
+            NMS operation, both per slice and for the final merge
+            across slices. By default, None which will use value
             provided during initialization.
         extra_nms : bool, optional
             Whether or not to perform an additional NMS operation.
@@ -163,7 +164,8 @@ class SAHI:
             initialization.
         agnostic_nms: bool, optional
             Whether or not to perform class-agnostic NMS for the
-            optional/additional operation. By default None, which
+            optional/additional operation, both per slice and for the
+            final merge across slices. By default None, which
             will use value provided during initialization.
         verbose : bool, optional
             Whether or not to log additional information.
@@ -210,7 +212,9 @@ class SAHI:
                 LOG.info(f"SAHI: {len(sub_dets)} detections in slice {offset}")
             detections.extend(sub_dets)
 
-        dets = nms(detections, self._iou_threshold, agnostic=self._agnostic_nms)
+        merge_iou = nms_iou_thres if nms_iou_thres is not None else self._iou_threshold
+        merge_agnostic = agnostic_nms if agnostic_nms is not None else self._agnostic_nms
+        dets = nms(detections, merge_iou, agnostic=merge_agnostic)
 
         if verbose:
             LOG.info(f"SAHI: {len(dets)} detections overall")
