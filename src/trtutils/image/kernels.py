@@ -24,6 +24,8 @@ Attributes
     Postprocess kernels for detection unletterbox and classification softmax.
 :attribute:`YOLO_NMS` : Path
     Postprocess kernels for YOLO-style heads: decode, sort, NMS, and gather.
+:attribute:`OCR_POST` : Path
+    Postprocess kernels for OCR: CTC argmax and DB probability map binarization.
 
 """
 
@@ -75,3 +77,4 @@ IMAGENET_SST_F16: tuple[Path, str] = (
 
 DET_CLS_POST: Path = _KERNEL_DIR / "det_cls_post.cu"
 YOLO_NMS: Path = _KERNEL_DIR / "yolo_nms.cu"
+OCR_POST: Path = _KERNEL_DIR / "ocr_post.cu"

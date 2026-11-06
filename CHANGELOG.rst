@@ -3,6 +3,10 @@ Unreleased
 
 Added
 ^^^^^
+* ``postprocessor="cuda"`` on ``TextDetector`` and ``TextRecognizer`` (and the ``PPOCR``
+  wrappers). Detection binarizes the DB probability map on the engine stream; recognition
+  runs greedy CTC argmax there. Results match the CPU postprocessors. The default is
+  ``"cuda"``. Preprocessing stays on the CPU
 * ``postprocessor="cuda"`` on ``Detector`` (YOLO-v10 and EfficientNMS) and ``Classifier``.
   Detection unletterboxes the kept boxes on the engine stream; classification writes the
   softmax, or copies the vector when ``softmax=False``. The default for both stays ``"cpu"``.
