@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """
@@ -20,6 +20,10 @@ Attributes
     ImageNet normalization with scale/swap/transpose (float32 output)
 :attribute:`IMAGENET_SST_F16` : tuple[Path, str]
     ImageNet normalization with scale/swap/transpose (float16 output)
+:attribute:`DET_CLS_POST` : Path
+    Postprocess kernels for detection unletterbox and classification softmax.
+:attribute:`YOLO_NMS` : Path
+    Postprocess kernels for YOLO-style heads: decode, sort, NMS, and gather.
 
 """
 
@@ -68,3 +72,6 @@ IMAGENET_SST_F16: tuple[Path, str] = (
     _SST_IMAGENET_FILE,
     "scaleSwapTransposeImagenet_f16",
 )
+
+DET_CLS_POST: Path = _KERNEL_DIR / "det_cls_post.cu"
+YOLO_NMS: Path = _KERNEL_DIR / "yolo_nms.cu"

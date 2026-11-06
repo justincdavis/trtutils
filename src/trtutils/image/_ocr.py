@@ -233,7 +233,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -276,7 +276,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         t0 = time.perf_counter()
         data = postprocess_text_detection(
-            self._order_outputs(outputs),
+            self._host_outputs(outputs),
             ratios,
             padding,
             self._thresh,
@@ -859,7 +859,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -891,7 +891,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
 
         t0 = time.perf_counter()
         data = postprocess_text_recognition(
-            self._order_outputs(outputs), no_copy=no_copy, verbose=verbose
+            self._host_outputs(outputs), no_copy=no_copy, verbose=verbose
         )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)

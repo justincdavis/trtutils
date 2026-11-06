@@ -72,9 +72,20 @@ def clip_boxes(
     """
     if input_size is None:
         return np.clip(boxes, 0, None)
+    width, height = original_size(ratios, padding, input_size)
+    # bounds in the boxes' dtype, a python int list upcasts float32 boxes to float64
+    return np.clip(boxes, 0, np.array([width, height, width, height], dtype=boxes.dtype))
+
+
+def original_size(
+    ratios: tuple[float, float],
+    padding: tuple[float, float],
+    input_size: tuple[int, int],
+) -> tuple[int, int]:
+    """Recover the original image (width, height) from the preprocessing, as clip_boxes does."""
     width = round((input_size[0] - 2 * padding[0]) / ratios[0])
     height = round((input_size[1] - 2 * padding[1]) / ratios[1])
-    return np.clip(boxes, 0, [width, height, width, height])
+    return width, height
 
 
 def unletterbox_boxes(

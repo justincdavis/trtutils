@@ -56,6 +56,7 @@ class Segmenter(ImageModel, SegmenterInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -120,6 +121,9 @@ class Segmenter(ImageModel, SegmenterInterface):
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. Default is None, which
+            keeps 'cpu' unless the task's CUDA postprocessor is the default.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -149,6 +153,7 @@ class Segmenter(ImageModel, SegmenterInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -184,7 +189,7 @@ class Segmenter(ImageModel, SegmenterInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -236,7 +241,7 @@ class Segmenter(ImageModel, SegmenterInterface):
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         mask_thres = mask_thres if mask_thres is not None else self._mask_thres
-        outputs = self._order_outputs(outputs)
+        outputs = self._host_outputs(outputs)
         t0 = time.perf_counter()
         data = postprocess_yolo_seg(
             outputs,
