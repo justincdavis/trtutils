@@ -34,15 +34,13 @@ Added
   5-9% faster (about 0.5-0.7 ms, RTX 5080, TensorRT 10.15); detections match the original
   within FP16 noise and ONNX Runtime outputs are bit-identical. Assumes at least 1000 valid
   RPN proposals per image (1700+ seen). Re-download older Hands23 ONNX files to get it
-* ``Model.build(..., embed_sst=True)`` moves everything after resize into the ONNX
-  graph for every image wrapper except OCR. The engine input becomes uint8
-  ``(batch, imgsz, imgsz, 3)``. Resize (letterbox or linear) stays in the
-  preprocessor. YOLO scales by ``1/255`` and swaps BGR to RGB. YOLOX scales by
-  ``1``. Classifiers, depth models, DEIM, D-FINE, RF-DETR, and HOI-DETR also
-  subtract ImageNet mean and divide by std. OCR is refused: its height and width
-  change per image and it stays in BGR.
-  ``YOLOv10.build(onnx, engine, embed_sst=True)``,
-  ``ResNet.build(onnx, engine, embed_sst=True)``.
+* ``Model.build(..., embed_sst=True)`` moves the BGR-to-RGB swap, normalization (the
+  wrapper's default ``input_range``, or ``mean``/``std``), and HWC-to-CHW into the ONNX graph,
+  for every image wrapper except OCR. The engine input becomes uint8
+  ``(batch, imgsz, imgsz, 3)``; resize (letterbox or linear) stays in the CUDA/TRT
+  preprocessor, which then skips its normalize kernel. ``input_range``, ``mean`` and ``std``
+  are fixed at build time on such an engine. ``builder.onnx.embed_sst`` does the graph rewrite
+  alone. ``ResNet.build(onnx, engine, embed_sst=True)``
 * ``Detector(class_map=...)`` (and every detector wrapper): optional ``Mapping[int, int]`` that
   translates model class ids to output ids after postprocessing; unmapped ids pass through. Off
   by default
@@ -242,13 +240,6 @@ Fixed
   fixed the timing key
 * ``benchmark_engine`` and ``benchmark_engines`` (also in ``trtutils.jetson``) warm up when
   ``warmup`` is None, as documented; None used to skip warmup
-* ``GPUImagePreprocessor.preprocess`` on an ``embed_sst`` engine returned the unused SST
-  buffer: CUDA copied uninitialized float bytes and TRT raised ``AttributeError``
-  (also during ``warmup=True``). It now returns the letterboxed uint8 image
-* ``ImageModel.update_input_range`` / ``update_mean_std`` raise ``ValueError`` when scale,
-  channel swap, and transpose are in the graph, as does a constructor ``input_range``,
-  ``mean``, or ``std`` that differs from the class defaults. Those values are baked at
-  ``Model.build(..., embed_sst=True)``
 * ``Model.build()`` takes an explicit ``fp16`` and passes no fp16 flag with ``strongly_typed=True``;
   both raised before
 * ``Hands23.build`` keeps the proposal decoding, box heads, and relation heads (including the

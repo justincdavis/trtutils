@@ -7,7 +7,7 @@ Some basic utilties for using ONNX models.
 Functions
 ---------
 :func:`embed_sst`
-    Prepend scale, BGR swap, and HWC-to-CHW, and take uint8 HWC input.
+    Prepend BGR swap, normalization, and HWC-to-CHW, and take uint8 HWC input.
 :func:`extract_subgraph`
     Extract a subgraph from an ONNX model using layer indices.
 :func:`extract_subgraph_from_file`

@@ -52,12 +52,25 @@ _IMAGE_RANK = 4
 _PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
 
 
-def _signature_default(signature: inspect.Signature, name: str, fallback: object) -> object:
-    """Return an ``__init__`` default, or ``fallback`` when the parameter has none."""
-    parameter = signature.parameters.get(name)
-    if parameter is None or parameter.default is inspect.Parameter.empty:
-        return fallback
-    return parameter.default
+def default_norm(
+    cls: type,
+) -> tuple[
+    tuple[float, float], tuple[float, float, float] | None, tuple[float, float, float] | None
+]:
+    """
+    Return the ``input_range``, ``mean``, and ``std`` defaults of ``cls.__init__``.
+
+    ``Model.build(..., embed_sst=True)`` bakes these into the graph.
+    """
+    params = inspect.signature(cls.__init__).parameters
+
+    def default(name: str, fallback: Any) -> Any:  # noqa: ANN401
+        param = params.get(name)
+        if param is None or param.default is inspect.Parameter.empty:
+            return fallback
+        return param.default
+
+    return default("input_range", (0.0, 1.0)), default("mean", None), default("std", None)
 
 
 def _image_binding(
@@ -289,8 +302,8 @@ class ImageModel:
             self._input_range = input_range
             self._mean = mean
             self._std = std
-            if self._sst_in_graph:
-                self._check_baked_norm(input_range, mean, std)
+            if self._sst_in_graph and (input_range, mean, std) != default_norm(type(self)):
+                self._raise_baked_norm()
 
             self._resolve_schema(output_schema)
 
@@ -573,21 +586,6 @@ class ImageModel:
             )
             raise ValueError(err_msg)
         return method
-
-    def _check_baked_norm(
-        self: Self,
-        input_range: tuple[float, float],
-        mean: tuple[float, float, float] | None,
-        std: tuple[float, float, float] | None,
-    ) -> None:
-        """Raise when constructor norm differs from the values embed_sst baked in."""
-        signature = inspect.signature(type(self).__init__)
-        baked_range = _signature_default(signature, "input_range", (0.0, 1.0))
-        baked_mean = _signature_default(signature, "mean", None)
-        baked_std = _signature_default(signature, "std", None)
-        if input_range == baked_range and mean == baked_mean and std == baked_std:
-            return
-        self._raise_baked_norm()
 
     def _raise_baked_norm(self: Self) -> None:
         err_msg = (
