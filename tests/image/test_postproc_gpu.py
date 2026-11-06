@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from tests.conftest import DATA_DIR
-from trtutils.image import Classifier, Detector
+from trtutils.image import Classifier, Detector, Segmenter
 from trtutils.image.postprocessors._classifier import postprocess_classifications
 from trtutils.image.postprocessors._common import (
     clip_boxes,
@@ -43,6 +43,7 @@ def _engine(fixture: str, *args: str):
 _CUDA_MODELS = [
     pytest.param(Detector, _engine("yolov10_engine"), "horse", id="detector"),
     pytest.param(Classifier, _engine("task_engine", "cls"), "horse", id="classifier"),
+    pytest.param(Segmenter, _engine("task_engine", "seg"), "people", id="seg"),
 ]
 
 
