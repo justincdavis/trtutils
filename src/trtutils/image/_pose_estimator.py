@@ -15,6 +15,7 @@ from ._image_model import ImageModel
 from ._schema import PoseEstimatorOutputSchema
 from .interfaces import PoseEstimatorInterface
 from .postprocessors import get_poses, postprocess_yolo_pose
+from .postprocessors._gpu_pose import CudaPosePostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -33,6 +34,8 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
     """Implementation of pose estimation models (YOLO-style pose heads)."""
 
     _OUTPUT_SCHEMA = PoseEstimatorOutputSchema
+    _CUDA_POSTPROCESSOR = CudaPosePostprocessor
+    _cuda_post_default = True
 
     def __init__(
         self: Self,
@@ -231,18 +234,29 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
-        outputs = self._host_outputs(outputs)
         t0 = time.perf_counter()
-        data = postprocess_yolo_pose(
-            outputs,
-            ratios,
-            padding,
-            conf_thres,
-            nms_iou_thres,
-            max_det=self._max_det,
-            input_size=self._input_size,
-            verbose=verbose,
-        )
+        device_outputs = self._device_outputs(outputs)
+        if device_outputs is not None:
+            data = self._cuda_post(
+                device_outputs,
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                max_det=self._max_det,
+                input_size=self._input_size,
+            )
+        else:
+            data = postprocess_yolo_pose(
+                self._host_outputs(outputs),
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                max_det=self._max_det,
+                input_size=self._input_size,
+                verbose=verbose,
+            )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
