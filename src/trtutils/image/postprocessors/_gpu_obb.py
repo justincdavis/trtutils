@@ -34,7 +34,6 @@ class CudaObbPostprocessor(CudaPostprocessor):
         self._prep = self._kernel("obbPrep")
         self._suppress = self._kernel("obbSuppress")
         self._keep = self._kernel("obbKeep")
-        self._shape: tuple[int, int, int] | None = None
 
     def __call__(
         self: Self,
@@ -52,13 +51,12 @@ class CudaObbPostprocessor(CudaPostprocessor):
             raise ValueError(err_msg)
         head = outputs[0]
         batch, channels, num = head.shape
-        if self._shape != (batch, num, max_det):
+        if self._resized(batch, num, max_det):
             self._boxes = device((batch, num, 8), np.float32)
             self._alive = device((batch, num), np.uint8)
             # (enclosing xyxy, score, class, cx, cy, w, h, angle) rows
             self._rows = mapped((batch, max_det, 11), np.float32)
             self._counts = mapped((batch,), np.int32)
-            self._shape = (batch, num, max_det)
         letterbox = self._letterbox(ratios, padding, None)
         nms = self._nms
         nms.rank(head, 4, channels - 5, conf_thres, max_det, inclusive=True)

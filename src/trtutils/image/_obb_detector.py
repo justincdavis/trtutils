@@ -236,21 +236,16 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         t0 = time.perf_counter()
-        device_outputs = self._device_outputs(outputs)
-        if device_outputs is not None:
-            data = self._cuda_post(
-                device_outputs, ratios, padding, conf_thres, nms_iou_thres, max_det=self._max_det
-            )
-        else:
-            data = postprocess_yolo_obb(
-                self._host_outputs(outputs),
-                ratios,
-                padding,
-                conf_thres,
-                nms_iou_thres,
-                max_det=self._max_det,
-                verbose=verbose,
-            )
+        data = self._postprocess_with(
+            postprocess_yolo_obb,
+            outputs,
+            ratios,
+            padding,
+            conf_thres,
+            nms_iou_thres,
+            max_det=self._max_det,
+            verbose=verbose,
+        )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
