@@ -83,8 +83,6 @@ def _postprocess_yolov10_core(
     *,
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
-    ratio_width, ratio_height = ratios
-    pad_x, pad_y = padding
     output = outputs[0]
 
     bboxes = output[0, :, :4]
@@ -97,12 +95,7 @@ def _postprocess_yolov10_core(
         scores = scores[mask]
         class_ids = class_ids[mask]
 
-    adjusted_bboxes = bboxes
-    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width
-    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height
-    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width
-    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height
-    adjusted_bboxes = clip_boxes(adjusted_bboxes, ratios, padding, input_size)
+    adjusted_bboxes = unletterbox_boxes(bboxes, ratios, padding, input_size)
 
     if no_copy:
         return [adjusted_bboxes, scores, class_ids]
@@ -258,8 +251,6 @@ def _postprocess_efficient_nms_core(
     no_copy: bool | None = None,
 ) -> list[np.ndarray]:
     num_dets, bboxes, scores, class_ids = outputs
-    ratio_width, ratio_height = ratios
-    pad_x, pad_y = padding
 
     num_det_id = num_dets[0].item()
     bboxes = bboxes[0, :num_det_id]
@@ -272,13 +263,7 @@ def _postprocess_efficient_nms_core(
         scores = scores[mask]
         class_ids = class_ids[mask]
 
-    adjusted_bboxes = bboxes
-    adjusted_bboxes[:, 0] = (adjusted_bboxes[:, 0] - pad_x) / ratio_width
-    adjusted_bboxes[:, 1] = (adjusted_bboxes[:, 1] - pad_y) / ratio_height
-    adjusted_bboxes[:, 2] = (adjusted_bboxes[:, 2] - pad_x) / ratio_width
-    adjusted_bboxes[:, 3] = (adjusted_bboxes[:, 3] - pad_y) / ratio_height
-
-    adjusted_bboxes = clip_boxes(adjusted_bboxes, ratios, padding, input_size)
+    adjusted_bboxes = unletterbox_boxes(bboxes, ratios, padding, input_size)
 
     if no_copy:
         return [adjusted_bboxes, scores, class_ids]

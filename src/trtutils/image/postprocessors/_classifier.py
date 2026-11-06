@@ -64,10 +64,11 @@ def _postprocess_classifications_core(
 ) -> list[np.ndarray]:
     # convert logits to probabilities, unless the network already softmaxed them
     if softmax:
+        results = []
         for output in outputs:
             exp_values = np.exp(output - np.max(output, axis=-1, keepdims=True))
-            probabilities = exp_values / np.sum(exp_values, axis=-1, keepdims=True)
-            output[:] = probabilities
+            results.append(exp_values / np.sum(exp_values, axis=-1, keepdims=True))
+        return results
 
     if no_copy:
         return outputs

@@ -3,15 +3,18 @@
 # MIT License
 from __future__ import annotations
 
-import numpy as np
+from typing import TYPE_CHECKING
 
 from trtutils._log import LOG
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 def postprocess_depth(
     outputs: list[np.ndarray],
     *,
-    no_copy: bool | None = None,
+    no_copy: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
@@ -23,11 +26,8 @@ def postprocess_depth(
         The outputs from a depth estimation network with batch dimension.
         Expected shape is (B, 1, H, W) or (B, H, W).
     no_copy : bool, optional
-        If True, the outputs will not be copied out
-        from the cuda allocated host memory. Instead,
-        the host memory will be returned directly.
-        This memory WILL BE OVERWRITTEN INPLACE
-        by future inference calls.
+        Kept for interface symmetry with the other postprocessors. The depth maps are
+        always new arrays, so this has no effect.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -48,29 +48,14 @@ def postprocess_depth(
     results = []
     for i in range(batch_size):
         batch_outputs = [out[i : i + 1] for out in outputs]
-        result = _postprocess_depth_core(batch_outputs, no_copy=no_copy)
+        result = _postprocess_depth_core(batch_outputs)
         results.append(result)
     return results
 
 
-def _postprocess_depth_core(
-    outputs: list[np.ndarray],
-    *,
-    no_copy: bool | None = None,
-) -> list[np.ndarray]:
-    for output in outputs:
-        # ensure (1, H, W) shape
-        if output.ndim == 2 or (output.ndim == 3 and output.shape[0] != 1):  # noqa: PLR2004
-            output = np.expand_dims(output, axis=0)  # noqa: PLW2901
-
-        # min-max normalize to [0, 1]
-        d_min = output.min()
-        d_max = output.max()
-        output[:] = (output - d_min) / (d_max - d_min + 1e-8)
-
-    if no_copy:
-        return outputs
-    return [output.copy() for output in outputs]
+def _postprocess_depth_core(outputs: list[np.ndarray]) -> list[np.ndarray]:
+    # min-max normalize to [0, 1] into new arrays
+    return [(o - o.min()) / (o.max() - o.min() + 1e-8) for o in outputs]
 
 
 def get_depth_maps(
