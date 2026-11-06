@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 import dataclasses
+from contextlib import nullcontext
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -112,3 +115,26 @@ def test_benchmark_engines(
         assert len(result.latency.raw) == ITERS
         assert len(result.power_draw.raw) > 0
         assert len(result.energy.raw) > 0
+
+
+@pytest.mark.parametrize(
+    ("warmup", "expected_extra"),
+    [
+        pytest.param(None, 3, id="default-warms-up"),
+        pytest.param(True, 3, id="warmup"),
+        pytest.param(False, 0, id="no-warmup"),
+    ],
+)
+def test_benchmark_engine_warmup_default(monkeypatch, warmup, expected_extra) -> None:
+    """None warms up like True for an existing engine; False skips the warmup calls."""
+    module = "trtutils.jetson._benchmark"
+    monkeypatch.setattr(f"{module}.TegraStats", lambda *_a, **_k: nullcontext())
+    monkeypatch.setattr(f"{module}.parse_tegrastats", MagicMock())
+    monkeypatch.setattr(f"{module}.filter_data", MagicMock(return_value=([], [])))
+    monkeypatch.setattr(
+        f"{module}.get_powerdraw",
+        MagicMock(return_value={"VDD_TOTAL": SimpleNamespace(raw=[], mean=0.0)}),
+    )
+    engine = MagicMock()
+    benchmark_engine(engine, iterations=1, warmup_iterations=3, warmup=warmup)
+    assert engine.mock_execute.call_count == 1 + expected_extra

@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from trtutils import BenchmarkResult, Metric, TRTEngine, benchmark_engine
@@ -61,3 +63,34 @@ def test_benchmark_engine_iterations(engine_path, iterations) -> None:
     """benchmark_engine respects custom iteration counts."""
     result = benchmark_engine(engine_path, iterations=iterations, warmup=False)
     assert len(result.latency.raw) == iterations
+
+
+@pytest.mark.parametrize(
+    ("warmup", "expected_extra"),
+    [
+        pytest.param(None, 3, id="default-warms-up"),
+        pytest.param(True, 3, id="warmup"),
+        pytest.param(False, 0, id="no-warmup"),
+    ],
+)
+def test_benchmark_engine_warmup_existing_engine(warmup, expected_extra) -> None:
+    """None warms up like True for an existing engine; False skips the warmup calls."""
+    engine = MagicMock()
+    benchmark_engine(engine, iterations=1, warmup_iterations=3, warmup=warmup)
+    assert engine.mock_execute.call_count == 1 + expected_extra
+
+
+@pytest.mark.parametrize(
+    ("warmup", "expected"),
+    [
+        pytest.param(None, True, id="default-warms-up"),
+        pytest.param(True, True, id="warmup"),
+        pytest.param(False, False, id="no-warmup"),
+    ],
+)
+def test_benchmark_engine_warmup_path(monkeypatch, warmup, expected) -> None:
+    """A path input forwards a resolved warmup flag to TRTEngine."""
+    mock_cls = MagicMock()
+    monkeypatch.setattr("trtutils._benchmark.TRTEngine", mock_cls)
+    benchmark_engine("fake.engine", iterations=1, warmup=warmup)
+    assert mock_cls.call_args.kwargs["warmup"] is expected

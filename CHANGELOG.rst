@@ -196,6 +196,8 @@ Fixed
   only tensors later pieces read plus the graph outputs they make
 * ``trtutils classify`` no longer crashes: added the missing ``--resize_method`` option and
   fixed the timing key
+* ``benchmark_engine`` and ``benchmark_engines`` (also in ``trtutils.jetson``) warm up when
+  ``warmup`` is None, as documented; None used to skip warmup
 * ``Model.build()`` takes an explicit ``fp16`` and passes no fp16 flag with ``strongly_typed=True``;
   both raised before
 * ``Hands23.build`` keeps the proposal decoding, box heads, and relation heads (including the
