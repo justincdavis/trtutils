@@ -3,6 +3,9 @@ Unreleased
 
 Added
 ^^^^^
+* ``postprocessor="cuda"`` on ``OBBDetector`` decodes oriented boxes and runs probiou
+  NMS on the engine stream, copying back only the kept results. It is the default;
+  ``postprocessor="cpu"`` keeps the host path. The preprocessor default stays ``"trt"``
 * ``postprocessor="cuda"`` on ``Detector`` (YOLO-v10 and EfficientNMS) and ``Classifier``.
   Detection unletterboxes the kept boxes on the engine stream; classification writes the
   softmax, or copies the vector when ``softmax=False``. The default for both stays ``"cpu"``.

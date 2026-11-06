@@ -11,7 +11,7 @@ import pytest
 
 from tests.conftest import DATA_DIR
 from trtutils.core import Buffer
-from trtutils.image import Classifier, Detector
+from trtutils.image import Classifier, Detector, OBBDetector
 from trtutils.image.postprocessors._common import (
     clip_boxes,
     cxcywh_to_xyxy,
@@ -48,6 +48,7 @@ def _engine(fixture: str, *args: str):
 _CUDA_MODELS = [
     pytest.param(Detector, _engine("yolov10_engine"), "horse", id="detector"),
     pytest.param(Classifier, _engine("task_engine", "cls"), "horse", id="classifier"),
+    pytest.param(OBBDetector, _engine("task_engine", "obb"), "aerial", id="obb"),
 ]
 
 
