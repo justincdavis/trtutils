@@ -53,6 +53,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         crop_pct: float = DEFAULT_CROP_PCT,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        normalize: bool = True,
     ) -> None:
         """
         Create a GPUImagePreprocessor for image processing models.
@@ -98,6 +99,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        normalize : bool, optional
+            When False, return the letterboxed uint8 HWC image and skip scale,
+            channel swap, and transpose. Default is True.
 
         """
         super().__init__(
@@ -138,6 +142,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         # handle memory flags
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._unified_mem = unified_mem
+        self._normalize = normalize
 
         # handle stream
         self._stream: cudart.cudaStream_t
@@ -936,6 +941,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         crop_pct: float = DEFAULT_CROP_PCT,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        normalize: bool = True,
     ) -> None:
         """
         Create a CUDAPreprocessor for image processing models.
@@ -981,6 +987,9 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        normalize : bool, optional
+            When False, return the letterboxed uint8 HWC image and skip scale,
+            channel swap, and transpose. Default is True.
 
         """
         tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
@@ -997,6 +1006,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             crop_pct=crop_pct,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            normalize=normalize,
         )
 
         self._nvtx_tags.update(
@@ -1051,6 +1061,9 @@ class CUDAPreprocessor(GPUImagePreprocessor):
     @property
     def output_binding(self: Self) -> Binding:
         """Get the output binding for the CUDA preprocessor."""
+        # normalize=False leaves the letterboxed uint8 image in the SST input
+        if not self._normalize:
+            return self._sst_input_binding
         return self._output_binding
 
     def _reallocate_batch_buffers(self: Self, batch_size: int) -> None:
@@ -1207,6 +1220,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             resize=resize,
             verbose=verbose,
         )
+        if not self._normalize:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # cuda_direct_preproc
+            return self._sst_input_binding.device[:batch_size], ratios_list, padding_list
 
         # Create SST args for batched processing
         sst_args = self._create_sst_args(batch_size, verbose=verbose)

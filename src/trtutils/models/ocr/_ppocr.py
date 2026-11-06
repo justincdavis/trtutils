@@ -26,6 +26,7 @@ class PPOCRDetector(TextDetector, Model):
     _model_type = "ppocr_det"
     _friendly_name = "PP-OCR detection"
     _default_imgsz = 960
+    _embed_sst: ClassVar[bool] = False
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("x", "image")]
 
     def __init__(
@@ -164,6 +165,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
     _model_type = "ppocr_rec"
     _friendly_name = "PP-OCR recognition"
     _default_imgsz = 48
+    _embed_sst: ClassVar[bool] = False
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("x", "image")]
 
     def __init__(
