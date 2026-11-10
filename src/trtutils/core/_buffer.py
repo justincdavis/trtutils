@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import math
+from collections.abc import Sequence
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -1004,14 +1005,14 @@ class Buffer:
         return f"Buffer(shape={self._shape}, dtype={self._dtype}, {kind}{state})"
 
 
-def as_buffers(data: object) -> list[Buffer]:
+def as_buffers(data: Sequence[Buffer]) -> list[Buffer]:
     """
     Validate that every element of a sequence is a Buffer.
 
     Parameters
     ----------
-    data : object
-        The sequence of inputs given to an engine.
+    data : Sequence[Buffer]
+        The inputs given to an engine.
 
     Returns
     -------
@@ -1024,8 +1025,8 @@ def as_buffers(data: object) -> list[Buffer]:
         If ``data`` is not a sequence of Buffers.
 
     """
-    if not isinstance(data, (list, tuple)):
-        err_msg = f"Engine inputs must be a list of Buffers, got {type(data).__name__}."
+    if not isinstance(data, Sequence) or isinstance(data, (str, bytes)):
+        err_msg = f"Engine inputs must be a sequence of Buffers, got {type(data).__name__}."
         raise TypeError(err_msg)
     for item in data:
         if not isinstance(item, Buffer):

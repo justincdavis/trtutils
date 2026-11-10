@@ -100,6 +100,7 @@ class PPOCRDetector(TextDetector, Model):
         max_imgsz: int = 2048,
         fp16: bool = True,
         verbose: bool | None = None,
+        embed_sst: bool = False,
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """
@@ -133,10 +134,20 @@ class PPOCRDetector(TextDetector, Model):
             rounding of the FP32 reference (TensorRT may still use TF32).
         verbose : bool | None
             Enable verbose builder output.
+        embed_sst : bool
+            Not supported for PP-OCR; must be False. Normalization stays in the preprocessor.
         **kwargs : Any
             Additional keyword arguments forwarded to ``build_engine()``.
 
+        Raises
+        ------
+        ValueError
+            If ``embed_sst`` is True.
+
         """
+        if embed_sst:
+            err_msg = "embed_sst is not supported for PP-OCR models."
+            raise ValueError(err_msg)
         imgsz = imgsz if imgsz is not None else cls._default_imgsz
         build_engine(
             onnx=onnx,
@@ -231,6 +242,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         max_width: int = 3200,
         fp16: bool = True,
         verbose: bool | None = None,
+        embed_sst: bool = False,
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """
@@ -262,10 +274,20 @@ class PPOCRRecognizer(TextRecognizer, Model):
             rounding of the FP32 reference (TensorRT may still use TF32).
         verbose : bool | None
             Enable verbose builder output.
+        embed_sst : bool
+            Not supported for PP-OCR; must be False. Normalization stays in the preprocessor.
         **kwargs : Any
             Additional keyword arguments forwarded to ``build_engine()``.
 
+        Raises
+        ------
+        ValueError
+            If ``embed_sst`` is True.
+
         """
+        if embed_sst:
+            err_msg = "embed_sst is not supported for PP-OCR models."
+            raise ValueError(err_msg)
         height = imgsz if imgsz is not None else cls._default_imgsz
         build_engine(
             onnx=onnx,
