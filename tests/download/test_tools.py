@@ -9,6 +9,7 @@ import subprocess
 
 import pytest
 
+from trtutils.download import _simplify
 from trtutils.download._tools import (
     get_patches_dir,
     get_repo_cache_dir,
@@ -77,3 +78,19 @@ def test_deimv2_patch_exports_small_batch_without_grad(tmp_path) -> None:
     assert "torch.rand(2, 3, *img_size)" in patched
     assert "torch.rand(32" not in patched
     assert "torch.set_grad_enabled(False)" in patched
+
+
+def test_simplify_failure_names_each_tool(monkeypatch, tmp_path) -> None:
+    """When every tool fails, the error carries each tool's own output."""
+
+    def _fail(cmd, *, stdout, **_: object):
+        stdout.write(f"boom from {cmd[0].name}")
+        raise subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(_simplify, "run_uv_pip_install", lambda *_a, **_k: None)
+    monkeypatch.setattr(_simplify, "run_cmd", _fail)
+    model = tmp_path / "m.onnx"
+    model.write_bytes(b"")
+    with pytest.raises(RuntimeError, match="polygraphy: boom from polygraphy") as exc:
+        _simplify._run_simplify(model, tmp_path, tmp_path, ["polygraphy", "onnxslim"])
+    assert "onnxslim: boom from onnxslim" in str(exc.value)
