@@ -95,6 +95,13 @@ EXPORT_CASES = [
         {"input": [2, 3, 224, 224]},
         id="torchvision-batch2",
     ),
+    pytest.param("deit_tiny", {}, {"input": [1, 3, 224, 224]}, id="timm-deit-default-imgsz"),
+    pytest.param(
+        "deit_small_distilled", {"imgsz": 256}, {"input": [1, 3, 256, 256]}, id="timm-deit-custom"
+    ),
+    pytest.param(
+        "deit3_small_hr", {"dynamic": True}, {"input": [_BATCH, 3, 384, 384]}, id="timm-deit3-hr"
+    ),
     pytest.param(
         "depth_anything_v1_small",
         {},

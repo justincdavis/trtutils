@@ -12,7 +12,7 @@ import pytest
 
 from tests.download.conftest import ROUTING_CASES
 from trtutils.download import download, download_model, load_model_configs
-from trtutils.download._models import _torchvision, _ultralytics, _yolo
+from trtutils.download._models import _timm, _torchvision, _ultralytics, _yolo
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -25,6 +25,7 @@ _BATCH_EXPORTERS = {
     "export_yolov12",
     "export_yolov13",
     "export_torchvision_classifier",
+    "export_timm_classifier",
 }
 _SUPPORTED = [p for p in ROUTING_CASES if p.values[1] in _BATCH_EXPORTERS]
 _UNSUPPORTED = [p for p in ROUTING_CASES if p.values[1] not in _BATCH_EXPORTERS]
@@ -151,7 +152,7 @@ def run_cmd_calls(monkeypatch, tmp_path):
         cwd.mkdir(parents=True, exist_ok=True)
         (cwd / "out.onnx").touch()
 
-    for module in (_torchvision, _ultralytics, _yolo):
+    for module in (_timm, _torchvision, _ultralytics, _yolo):
         monkeypatch.setattr(module, "run_cmd", _run_cmd)
         for name in ("git_clone", "run_uv_pip_install", "run_download"):
             monkeypatch.setattr(module, name, lambda *_, **__: None, raising=False)
@@ -201,17 +202,43 @@ def test_yolo_cli_exporters_pass_batch_and_dynamic(
 @pytest.mark.parametrize(
     ("batch", "dynamic"), [(1, False), (4, False), (1, True)], ids=["b1", "b4", "dynamic"]
 )
+@pytest.mark.parametrize(
+    ("func", "model", "script"),
+    [
+        pytest.param(
+            _torchvision.export_torchvision_classifier,
+            "resnet18",
+            "_export_torchvision_classifier.py",
+            id="torchvision",
+        ),
+        pytest.param(
+            _timm.export_timm_classifier, "deit_tiny", "_export_timm_classifier.py", id="timm"
+        ),
+    ],
+)
 @pytest.mark.usefixtures("run_cmd_calls")
-def test_torchvision_export_script(tmp_path, batch, dynamic) -> None:
-    """The torchvision classifier traces at the batch and leaves it symbolic only when dynamic."""
-    _export(
-        _torchvision.export_torchvision_classifier,
-        "resnet18",
-        tmp_path,
-        batch=batch,
-        dynamic=dynamic,
-    )
-    script = (tmp_path / "_export_torchvision_classifier.py").read_text()
-    assert f"torch.randn({batch}, 3, imgsz, imgsz)" in script
+def test_classifier_export_script(tmp_path, func, model, script, batch, dynamic) -> None:
+    """The classifier exporters trace at the batch and leave it symbolic only when dynamic."""
+    _export(func, model, tmp_path, batch=batch, dynamic=dynamic)
+    content = (tmp_path / script).read_text()
+    assert f"torch.randn({batch}, 3, imgsz, imgsz)" in content
     axes = '{"input": {0: "batch_size"}, "output": {0: "batch_size"}}' if dynamic else "None"
-    assert f"dynamic_axes={axes}," in script
+    assert f"dynamic_axes={axes}," in content
+
+
+@pytest.mark.parametrize(
+    ("model", "imgsz", "expected"),
+    [
+        pytest.param("deit_tiny", None, 224, id="default"),
+        pytest.param("deit_base_hr", None, 384, id="hr-default"),
+        pytest.param("deit_tiny", 448, 448, id="custom"),
+        pytest.param("deit_tiny", 250, 240, id="rounded-to-patch"),
+        pytest.param("deit3_huge", 256, 252, id="huge-patch14"),
+    ],
+)
+@pytest.mark.usefixtures("run_cmd_calls")
+def test_timm_export_imgsz(tmp_path, model, imgsz, expected) -> None:
+    """The timm exporter defaults to the trained size and rounds down to the patch size."""
+    _export(_timm.export_timm_classifier, model, tmp_path, imgsz=imgsz)
+    script = (tmp_path / "_export_timm_classifier.py").read_text()
+    assert f"imgsz = {expected}\n" in script

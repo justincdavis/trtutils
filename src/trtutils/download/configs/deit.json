@@ -1,0 +1,10 @@
+{
+    "deit_tiny": {"url": "timm", "name": "deit_tiny_patch16_224.fb_in1k", "imgsz": "224", "patch": "16"},
+    "deit_small": {"url": "timm", "name": "deit_small_patch16_224.fb_in1k", "imgsz": "224", "patch": "16"},
+    "deit_base": {"url": "timm", "name": "deit_base_patch16_224.fb_in1k", "imgsz": "224", "patch": "16"},
+    "deit_base_hr": {"url": "timm", "name": "deit_base_patch16_384.fb_in1k", "imgsz": "384", "patch": "16"},
+    "deit_tiny_distilled": {"url": "timm", "name": "deit_tiny_distilled_patch16_224.fb_in1k", "imgsz": "224", "patch": "16"},
+    "deit_small_distilled": {"url": "timm", "name": "deit_small_distilled_patch16_224.fb_in1k", "imgsz": "224", "patch": "16"},
+    "deit_base_distilled": {"url": "timm", "name": "deit_base_distilled_patch16_224.fb_in1k", "imgsz": "224", "patch": "16"},
+    "deit_base_distilled_hr": {"url": "timm", "name": "deit_base_distilled_patch16_384.fb_in1k", "imgsz": "384", "patch": "16"}
+}

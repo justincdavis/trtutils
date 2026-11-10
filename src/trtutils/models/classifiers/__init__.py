@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from ._alexnet import AlexNet
 from ._convnext import ConvNeXt
+from ._deit import DeiT, DeiT3
 from ._densenet import DenseNet
 from ._efficientnet import EfficientNet, EfficientNetV2
 from ._googlenet import GoogLeNet
@@ -27,6 +28,8 @@ __all__ = [
     "VGG",
     "AlexNet",
     "ConvNeXt",
+    "DeiT",
+    "DeiT3",
     "DenseNet",
     "EfficientNet",
     "EfficientNetV2",

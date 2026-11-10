@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils import builder
 from trtutils.builder._build import build_engine
+from trtutils.download._download import load_model_configs
 
 from ._utils import download_model_internal
 
@@ -39,6 +40,9 @@ def _default_norm(
 class Model:
     """
     Mixin providing concrete build() and download() classmethods driven by class attributes.
+
+    ``download()`` also reads the model's download config: an ``imgsz`` entry
+    is its default size and a ``patch`` entry the divisor its size must have.
 
     Subclasses must define the following class attributes:
 
@@ -156,7 +160,8 @@ class Model:
         Users must ensure they comply with the model's license terms.
 
         """
-        expected_imgsz = cls._default_imgsz
+        config = load_model_configs().get(cls._model_type, {}).get(model, {})
+        expected_imgsz = int(config["imgsz"]) if "imgsz" in config else cls._default_imgsz
         if cls._model_imgszs is not None:
             for substring, size in cls._model_imgszs.items():
                 if substring in model:
@@ -170,6 +175,12 @@ class Model:
             raise ValueError(err_msg)
 
         cls._validate_imgsz(imgsz)
+        patch = config.get("patch")
+        if patch is not None and imgsz % int(patch) != 0:
+            err_msg = (
+                f"{cls._friendly_name} {model} requires imgsz divisible by {patch}, got {imgsz}"
+            )
+            raise ValueError(err_msg)
 
         download_model_internal(
             model_type=cls._model_type,
