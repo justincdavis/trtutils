@@ -96,7 +96,7 @@ class Detector(ImageModel, DetectorInterface):
             The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
         resize_method : str
             The type of resize algorithm to use.
-            The options are ['letterbox', 'linear'], default is 'letterbox'.
+            The options are ['letterbox', 'linear', 'center_crop'], default is 'letterbox'.
         conf_thres : float, optional
             The confidence threshold above which to generate detections.
             By default 0.1

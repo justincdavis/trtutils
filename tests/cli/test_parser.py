@@ -137,6 +137,7 @@ def test_missing_required_args_exit_2(argv) -> None:
             {
                 "preprocessor": "trt",
                 "resize_method": "letterbox",
+                "crop_pct": 0.875,
                 "input_range": [0.0, 1.0],
                 "show": False,
                 "warmup": False,

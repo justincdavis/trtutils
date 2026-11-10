@@ -97,7 +97,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
         resize_method : str
             The type of resize algorithm to use.
-            The options are ['letterbox', 'linear'], default is 'letterbox'.
+            The options are ['letterbox', 'linear', 'center_crop'], default is 'letterbox'.
         conf_thres : float
             The confidence threshold used to filter candidate boxes and as
             the NMS score threshold. By default 0.3.

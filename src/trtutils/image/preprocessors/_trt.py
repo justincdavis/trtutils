@@ -19,6 +19,7 @@ from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.core._stream import destroy_stream, stream_synchronize
 from trtutils.image.onnx_models import build_image_preproc, build_image_preproc_imagenet
 
+from ._base import DEFAULT_CROP_PCT
 from ._cuda import GPUImagePreprocessor
 
 if TYPE_CHECKING:
@@ -47,6 +48,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         threads: tuple[int, int, int] | None = None,
         tag: str | None = None,
         *,
+        crop_pct: float = DEFAULT_CROP_PCT,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
     ) -> None:
@@ -70,7 +72,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
-            Options are: ['letterbox', 'linear']
+            Options are: ['letterbox', 'linear', 'center_crop']
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -87,6 +89,9 @@ class TRTPreprocessor(GPUImagePreprocessor):
             The tag to prefix to all logging statements made.
             By default, 'TRTPreprocessor'
             If used within a model class, will be the model tag.
+        crop_pct : float
+            The fraction of the resized image kept by center_crop resizing.
+            By default 0.875 (resize 256, crop 224). Ignored by other methods.
         pagelocked_mem : bool, optional
             Whether or not to allocate output memory as pagelocked.
             By default, pagelocked memory will be used.
@@ -112,6 +117,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
             stream,
             threads,
             tag,
+            crop_pct=crop_pct,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
         )
@@ -219,7 +225,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
             The images to preprocess.
         resize : str
             The method to resize the image with.
-            By default letterbox, options are [letterbox, linear]
+            By default letterbox, options are [letterbox, linear, center_crop]
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional
