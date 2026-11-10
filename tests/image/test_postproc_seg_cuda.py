@@ -8,8 +8,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from trtutils.image.postprocessors._cuda_segmentation import CUDASegPostprocessor
 from trtutils.image.postprocessors._cpu_segmentation import MaskCanvas, postprocess_yolo_seg
+from trtutils.image.postprocessors._cuda_segmentation import CUDASegPostprocessor
 
 INPUT = (64, 64)
 

@@ -9,15 +9,14 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from trtutils.core._buffer import Buffer
 from trtutils.core._kernels import f64
 from trtutils.core._memory import memcpy_device_to_host_async, memcpy_host_to_device_async
 from trtutils.image.kernels import YOLO_SEG
 
-from trtutils.core._buffer import Buffer
-
+from ._cpu_segmentation import _mask_geometry
 from ._cuda import CUDAPostprocessor, split_detections
 from ._cuda_nms import YoloNms
-from ._cpu_segmentation import _mask_geometry
 
 if TYPE_CHECKING:
     from typing_extensions import Self

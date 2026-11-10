@@ -17,8 +17,8 @@ from ._image_model import ImageModel
 from ._schema import SegmenterOutputSchema
 from .interfaces import SegmenterInterface
 from .postprocessors import get_segmentations, postprocess_yolo_seg
-from .postprocessors._cuda_segmentation import CUDASegPostprocessor
 from .postprocessors._cpu_segmentation import MaskCanvas
+from .postprocessors._cuda_segmentation import CUDASegPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
