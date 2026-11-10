@@ -314,7 +314,8 @@ Options
 
 * ``--input_range, -r``: Input value range (default: [0.0, 1.0])
 * ``--preprocessor, -p``: Preprocessor to use (choices: cpu, cuda, trt; default: trt)
-* ``--resize_method``: Method to resize images (choices: letterbox, linear; default: letterbox)
+* ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear, center_crop; default: letterbox)
+* ``--crop_pct``: Fraction of the resized image kept by ``center_crop`` (default: 0.875)
 
 **Memory and Performance:**
 

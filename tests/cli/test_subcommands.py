@@ -94,6 +94,7 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "input_range": [0.0, 1.0],
         "preprocessor": "trt",
         "resize_method": "letterbox",
+        "crop_pct": 0.875,
         "dla_core": None,
         "warmup": True,
         "pagelocked_mem": False,
@@ -175,12 +176,13 @@ def test_image_handler_rejects_invalid_extension(handler, subcommand, bad_input)
 @patch("trtutils.__main__.cv2.imread", new=lambda _: MagicMock())
 @patch("trtutils.__main__.trtutils.image.Classifier")
 def test_classify_runs_and_forwards_resize_method(mock_cls) -> None:
-    """_classify completes on one image and forwards resize_method to Classifier."""
+    """_classify completes on one image and forwards resize_method and crop_pct to Classifier."""
     classifier = mock_cls.return_value
     classifier.preprocess.return_value = (MagicMock(), None, None)
     classifier.get_classifications.return_value = [[(3, 0.9)]]
-    _classify(_args("classify", resize_method="linear"))
-    assert mock_cls.call_args.kwargs["resize_method"] == "linear"
+    _classify(_args("classify", resize_method="center_crop", crop_pct=0.9))
+    assert mock_cls.call_args.kwargs["resize_method"] == "center_crop"
+    assert mock_cls.call_args.kwargs["crop_pct"] == 0.9
 
 
 def test_profile_nonexistent_engine_raises_file_not_found() -> None:

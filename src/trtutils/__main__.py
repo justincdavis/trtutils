@@ -19,6 +19,7 @@ from typing_extensions import TypeGuard
 import trtutils
 from trtutils._log import LOG
 from trtutils.core import cache as caching_tools
+from trtutils.image.preprocessors._base import DEFAULT_CROP_PCT, RESIZE_METHODS
 from trtutils.research import discover_submodules
 from trtutils.research import register_cli as research_register_cli
 from trtutils.trtexec._cli import cli_trtexec
@@ -853,7 +854,9 @@ def _classify(args: SimpleNamespace) -> None:
         - preprocessor : str
             Preprocessor type ('cpu', 'cuda', or 'trt').
         - resize_method : str
-            Image resize method ('letterbox' or 'linear').
+            Image resize method ('letterbox', 'linear', or 'center_crop').
+        - crop_pct : float
+            Fraction of the resized image kept by center_crop.
         - dla_core : int or None
             DLA core to use.
         - warmup : bool
@@ -893,6 +896,7 @@ def _classify(args: SimpleNamespace) -> None:
         warmup=args.warmup,
         pagelocked_mem=args.pagelocked_mem,
         unified_mem=args.unified_mem,
+        crop_pct=args.crop_pct,
         no_warn=args.no_warn,
         verbose=args.verbose,
     )
@@ -1898,9 +1902,15 @@ def _main() -> None:
     classify_parser.add_argument(
         "--resize_method",
         "-rm",
-        choices=["letterbox", "linear"],
+        choices=list(RESIZE_METHODS),
         default="letterbox",
         help="Method to resize images. Default is letterbox.",
+    )
+    classify_parser.add_argument(
+        "--crop_pct",
+        type=float,
+        default=DEFAULT_CROP_PCT,
+        help="Fraction of the resized image kept by center_crop. Default is 0.875.",
     )
     classify_parser.add_argument(
         "--show",

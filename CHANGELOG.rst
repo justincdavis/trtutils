@@ -25,6 +25,9 @@ Added
 * ``PoseEstimator`` postprocesses on the GPU by default. YOLO pose NMS and keypoint
   unletterbox run on the engine stream and match the CPU postprocessor.
   ``postprocessor="cpu"`` keeps the host path
+* ``resize_method="center_crop"`` with ``crop_pct`` (default 0.875): the torchvision/timm
+  ImageNet eval transform, resize to ``floor(imgsz / crop_pct)`` then center crop ``imgsz``
+* ``trtutils classify --crop_pct``, and ``--resize_method`` accepts ``center_crop``
 * Hands23 downloads now drop all 9 ``NonZero`` ops from the exported ONNX (ROIAlign over all
   rois merged with ``Where``, RPN zero-area filter as ``Where(valid, score, -1e4)``), so
   TensorRT no longer does nine blocking data-dependent-shape copies per run. ``end2end`` is
@@ -140,6 +143,8 @@ Added
 
 Changed
 ^^^^^^^
+* The torchvision classifier wrappers (not the YOLO ones) default to ``center_crop`` instead of
+  ``linear``, as their weights are evaluated; pass ``resize_method="linear"`` for the old outputs
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
   task models: an engine with unknown input or output names now raises a ``ValueError`` listing
   the valid schemas instead of guessing from the tensor count. Auto-detection reports ``DETR``

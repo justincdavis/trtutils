@@ -16,7 +16,13 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 
-from ._base import ImagePreprocessor
+from ._base import (
+    DEFAULT_CROP_PCT,
+    RESIZE_METHODS,
+    ImagePreprocessor,
+    crop_geometry,
+    validate_crop_pct,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -39,10 +45,11 @@ def preprocess(
     std: tuple[float, float, float] | None = None,
     out: np.ndarray | None = None,
     *,
+    crop_pct: float = DEFAULT_CROP_PCT,
     verbose: bool | None = None,
 ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
     """
-    Preprocess inputs for a YOLO network.
+    Preprocess inputs for an image model.
 
     Parameters
     ----------
@@ -58,7 +65,7 @@ def preprocess(
     method : str
         The method by which to resize the image.
         By default letterbox will be used.
-        Options are [letterbox, linear]
+        Options are [letterbox, linear, center_crop]
     mean : tuple[float, float, float], optional
         The mean to subtract from the image.
         By default, None, which will not subtract any mean.
@@ -68,6 +75,9 @@ def preprocess(
     out : np.ndarray, optional
         A batch tensor to write into, used when its shape and dtype match.
         By default None, which allocates a new tensor.
+    crop_pct : float
+        The fraction of the resized image kept by center_crop resizing.
+        By default 0.875 (resize 256, crop 224). Ignored by other methods.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -79,9 +89,11 @@ def preprocess(
     Raises
     ------
     ValueError
-        If the method for resizing is not 'letterbox' or 'linear'
+        If the method for resizing is not 'letterbox', 'linear', or 'center_crop'
     ValueError
         If only one of mean or std is provided
+    ValueError
+        If crop_pct is not in (0, 1]
 
     """
     # asses if mean and std are provided and valid
@@ -92,9 +104,10 @@ def preprocess(
         err_msg = "Std provided but mean is not"
         raise ValueError(err_msg)
 
-    if method not in ("letterbox", "linear"):
-        err_msg = "Unknown method for image resizing. Options are ['letterbox', 'linear']"
+    if method not in RESIZE_METHODS:
+        err_msg = f"Unknown method for image resizing. Options are {list(RESIZE_METHODS)}"
         raise ValueError(err_msg)
+    validate_crop_pct(crop_pct)
 
     # fold the normalization into one float32 multiply-add per pixel
     if mean is not None and std is not None:
@@ -118,6 +131,14 @@ def preprocess(
     for i, image in enumerate(images):
         if method == "letterbox":
             tensor, ratios, padding = letterbox(image, new_shape=input_shape)
+        elif method == "center_crop":
+            img_height, img_width = image.shape[:2]
+            (resized_w, resized_h, left, top), ratios, padding = crop_geometry(
+                img_width, img_height, input_shape, crop_pct
+            )
+            resized = cv2.resize(image, (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
+            out_width, out_height = input_shape
+            tensor = resized[top : top + out_height, left : left + out_width]
         else:
             tensor, ratios = resize_linear(image, new_shape=input_shape)
             padding = (0.0, 0.0)
@@ -153,6 +174,8 @@ class CPUPreprocessor(ImagePreprocessor):
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
         tag: str | None = None,
+        *,
+        crop_pct: float = DEFAULT_CROP_PCT,
     ) -> None:
         """
         Create a CPUPreprocessor for image processing models.
@@ -170,12 +193,12 @@ class CPUPreprocessor(ImagePreprocessor):
             Examples: np.float32, np.float16, np.uint8
         resize : str | Callable, optional
             The method to resize the image with.
-            Options are [letterbox, linear], will use method
+            Options are [letterbox, linear, center_crop], will use method
             provided in constructor by default.
             Can also be a function doing the whole preprocessing,
             (images, *, verbose) -> (batch tensor, ratios, padding), for models whose
             input shape changes per batch. The function normalizes itself,
-            so output_range, mean and std only apply to letterbox and linear,
+            so output_range, mean and std only apply to the named methods,
             and per-call resize and no_copy are not supported.
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
@@ -187,6 +210,9 @@ class CPUPreprocessor(ImagePreprocessor):
             The tag to prefix to all logging statements made.
             By default, 'CPUPreprocessor'
             If used within a model class, will be the model tag.
+        crop_pct : float
+            The fraction of the resized image kept by center_crop resizing.
+            By default 0.875 (resize 256, crop 224). Ignored by other methods.
 
         """
         tag = "CPUPreprocessor" if tag is None else f"{tag}.CPUPreprocessor"
@@ -200,6 +226,7 @@ class CPUPreprocessor(ImagePreprocessor):
             mean=mean,
             std=std,
             tag=tag,
+            crop_pct=crop_pct,
         )
 
         self._nvtx_tags.update(
@@ -271,7 +298,7 @@ class CPUPreprocessor(ImagePreprocessor):
             A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the image with.
-            By default letterbox, options are [letterbox, linear]
+            By default letterbox, options are [letterbox, linear, center_crop]
             Not supported when the preprocessor was built with a function.
         no_copy : bool, optional
             If True, write into a reused buffer and return a view of it,
@@ -328,7 +355,7 @@ class CPUPreprocessor(ImagePreprocessor):
             A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the image with.
-            By default letterbox, options are [letterbox, linear]
+            By default letterbox, options are [letterbox, linear, center_crop]
             Not supported when the preprocessor was built with a function.
         no_copy : bool, optional
             If True, write into a reused buffer and return a view of it,
@@ -395,6 +422,7 @@ class CPUPreprocessor(ImagePreprocessor):
             mean_tuple,
             std_tuple,
             out,
+            crop_pct=self._crop_pct,
             verbose=verbose,
         )
 

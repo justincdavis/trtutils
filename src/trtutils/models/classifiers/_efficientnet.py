@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 
 from trtutils.image._classifier import Classifier
+from trtutils.image.preprocessors._base import DEFAULT_CROP_PCT
 from trtutils.models._model import Model
 
 if TYPE_CHECKING:
@@ -28,7 +29,7 @@ class EfficientNet(Classifier, Model):
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0, 1),
         preprocessor: str = "trt",
-        resize_method: str = "linear",
+        resize_method: str = "center_crop",
         mean: tuple[float, float, float] | None = (0.485, 0.456, 0.406),
         std: tuple[float, float, float] | None = (0.229, 0.224, 0.225),
         dla_core: int | None = None,
@@ -40,6 +41,7 @@ class EfficientNet(Classifier, Model):
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
+        crop_pct: float = DEFAULT_CROP_PCT,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -60,6 +62,7 @@ class EfficientNet(Classifier, Model):
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
+            crop_pct=crop_pct,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -79,7 +82,7 @@ class EfficientNetV2(Classifier, Model):
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0, 1),
         preprocessor: str = "trt",
-        resize_method: str = "linear",
+        resize_method: str = "center_crop",
         mean: tuple[float, float, float] | None = (0.485, 0.456, 0.406),
         std: tuple[float, float, float] | None = (0.229, 0.224, 0.225),
         dla_core: int | None = None,
@@ -91,6 +94,7 @@ class EfficientNetV2(Classifier, Model):
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
+        crop_pct: float = DEFAULT_CROP_PCT,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -111,6 +115,7 @@ class EfficientNetV2(Classifier, Model):
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
+            crop_pct=crop_pct,
             no_warn=no_warn,
             verbose=verbose,
         )

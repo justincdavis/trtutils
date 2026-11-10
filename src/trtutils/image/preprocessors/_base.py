@@ -4,6 +4,7 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, overload
 
@@ -15,7 +16,6 @@ from trtutils._log import LOG
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from typing import ClassVar
 
     from typing_extensions import Self
 
@@ -25,11 +25,67 @@ if TYPE_CHECKING:
 _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
 
+RESIZE_METHODS = ("letterbox", "linear", "center_crop")
+DEFAULT_CROP_PCT = 0.875
+
+
+def validate_crop_pct(crop_pct: float) -> None:
+    """Raise ValueError unless the center crop fraction is in (0, 1]."""
+    if not 0.0 < crop_pct <= 1.0:
+        err_msg = f"crop_pct must be in (0, 1], got {crop_pct}"
+        raise ValueError(err_msg)
+
+
+def crop_geometry(
+    width: int,
+    height: int,
+    output_shape: tuple[int, int],
+    crop_pct: float = DEFAULT_CROP_PCT,
+) -> tuple[tuple[int, int, int, int], tuple[float, float], tuple[float, float]]:
+    """
+    Compute the resize, crop offset, ratios, and padding of a center crop.
+
+    Matches torchvision/timm ImageNet evaluation: resize the image so it covers
+    ``floor(output_shape / crop_pct)`` (the short side for a square output,
+    the long side truncated), then center crop output_shape with rounded
+    offsets. The padding is the negative crop offset, so ``(x - pad_x) / ratio_x``
+    maps output coordinates back to the input, as for letterbox and linear.
+
+    Parameters
+    ----------
+    width : int
+        The width of the input image.
+    height : int
+        The height of the input image.
+    output_shape : tuple[int, int]
+        The output shape, in the form (width, height).
+    crop_pct : float
+        The fraction of the resized image kept by the crop.
+        By default 0.875 (resize 256, crop 224).
+
+    Returns
+    -------
+    tuple[tuple[int, int, int, int], tuple[float, float], tuple[float, float]]
+        The resized size and crop offset (resized_width, resized_height, left, top),
+        the ratios, and the padding.
+
+    """
+    out_width, out_height = output_shape
+    scale_width = math.floor(out_width / crop_pct)
+    scale_height = math.floor(out_height / crop_pct)
+    scale = max(scale_width / width, scale_height / height)
+    # the side that sets the scale lands exactly on its size, the other truncates
+    resized_width = max(scale_width, int(width * scale))
+    resized_height = max(scale_height, int(height * scale))
+    left = round((resized_width - out_width) / 2)
+    top = round((resized_height - out_height) / 2)
+    ratios = (resized_width / width, resized_height / height)
+    padding = (-float(left), -float(top))
+    return (resized_width, resized_height, left, top), ratios, padding
+
 
 class ImagePreprocessor(ABC):
     """Abstract base class for image preprocessors."""
-
-    _valid_methods: ClassVar[list[str]] = ["letterbox", "linear"]
 
     def __init__(
         self: Self,
@@ -40,6 +96,8 @@ class ImagePreprocessor(ABC):
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
         tag: str | None = None,
+        *,
+        crop_pct: float = DEFAULT_CROP_PCT,
     ) -> None:
         """
         Create an ImagePreprocessor.
@@ -58,7 +116,7 @@ class ImagePreprocessor(ABC):
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
-            Options are: ['letterbox', 'linear']
+            Options are: ['letterbox', 'linear', 'center_crop']
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -69,11 +127,16 @@ class ImagePreprocessor(ABC):
             The tag to prefix to all logging statements made.
             By default, 'TRTPreprocessor'
             If used within a model class, will be the model tag.
+        crop_pct : float
+            The fraction of the resized image kept by center_crop resizing.
+            By default 0.875 (resize 256, crop 224). Ignored by other methods.
 
         Raises
         ------
         ValueError
             If the resize method is not valid
+        ValueError
+            If crop_pct is not in (0, 1]
 
         """
         # output info
@@ -97,6 +160,8 @@ class ImagePreprocessor(ABC):
             "preprocess": f"preproc::preprocess [{self._tag}]",
         }
 
+        validate_crop_pct(crop_pct)
+
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["init"])
 
@@ -107,12 +172,15 @@ class ImagePreprocessor(ABC):
             self.update_mean_std(mean, std)
 
         # check resize method
-        if resize not in ImagePreprocessor._valid_methods:
-            err_msg = f"{self._tag}: Unknown method for image resizing. Options are {ImagePreprocessor._valid_methods}"
+        if resize not in RESIZE_METHODS:
+            err_msg = (
+                f"{self._tag}: Unknown method for image resizing. Options are {list(RESIZE_METHODS)}"
+            )
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # init
             raise ValueError(err_msg)
         self._resize: str = resize
+        self._crop_pct: float = crop_pct
 
         # mark setup in logs
         LOG.debug(

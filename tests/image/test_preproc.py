@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import math
+
 import cv2
 import numpy as np
 import pytest
@@ -12,6 +14,7 @@ from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils import Buffer, MemoryLocation
 from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+from trtutils.image.preprocessors._base import crop_geometry
 from trtutils.image.preprocessors._cpu import preprocess
 
 SIZE = (640, 640)
@@ -32,7 +35,7 @@ PREPROCS = [
         pytest.param(TRTPreprocessor, id="trt"),
     ],
 )
-@pytest.mark.parametrize("resize", ["linear", "letterbox"])
+@pytest.mark.parametrize("resize", ["linear", "letterbox", "center_crop"])
 @pytest.mark.parametrize(
     ("norm", "tol"),
     [
@@ -61,7 +64,7 @@ def test_gpu_matches_cpu(images, gpu_cls, resize, norm, tol) -> None:
         pytest.param(TRTPreprocessor, id="trt"),
     ],
 )
-@pytest.mark.parametrize("resize", ["linear", "letterbox"])
+@pytest.mark.parametrize("resize", ["linear", "letterbox", "center_crop"])
 @pytest.mark.parametrize("out_size", [640, 1024])
 @pytest.mark.parametrize(
     "shape",
@@ -303,6 +306,71 @@ def test_preprocess_matches_reference(method, shape, input_range, norm, dtype, e
         np.testing.assert_array_equal(result, expected)
     else:
         np.testing.assert_allclose(result, expected, rtol=1e-3, atol=1e-5)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("image_hw", "output_shape", "crop_pct", "geometry"),
+    [
+        pytest.param((480, 640), (224, 224), 0.875, (341, 256, 58, 16), id="landscape"),
+        pytest.param((640, 480), (224, 224), 0.875, (256, 341, 16, 58), id="portrait"),
+        pytest.param((375, 500), (224, 224), 0.9, (330, 248, 53, 12), id="crop-0.9"),
+        pytest.param((480, 640), (224, 224), 1.0, (298, 224, 37, 0), id="no-crop"),
+        pytest.param((256, 256), (224, 224), 0.875, (256, 256, 16, 16), id="identity-scale"),
+        pytest.param((480, 640), (320, 160), 1.0, (320, 240, 0, 40), id="wide-output"),
+    ],
+)
+def test_crop_geometry(image_hw, output_shape, crop_pct, geometry) -> None:
+    """Resize to cover floor(output / crop_pct), then a rounded center crop, as torchvision."""
+    height, width = image_hw
+    result, ratios, padding = crop_geometry(width, height, output_shape, crop_pct)
+    assert result == geometry
+    resized_w, resized_h, left, top = geometry
+    # ratios are the resize scale and padding the negative crop offset
+    assert ratios == (resized_w / width, resized_h / height)
+    assert padding == (-left, -top)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("image_hw", "crop_pct"),
+    [
+        pytest.param((480, 640), 0.875, id="landscape"),
+        pytest.param((640, 480), 0.875, id="portrait"),
+        pytest.param((375, 500), 0.9, id="crop-0.9"),
+        pytest.param((480, 640), 1.0, id="no-crop"),
+    ],
+)
+def test_center_crop_matches_resize_then_crop(image_hw, crop_pct) -> None:
+    """center_crop equals torchvision Resize(floor(imgsz / crop_pct)) then CenterCrop(imgsz)."""
+    rng = np.random.default_rng(0)
+    image = rng.integers(0, 256, (*image_hw, 3), dtype=np.uint8)
+    imgsz = 224
+    height, width = image_hw
+    short = math.floor(imgsz / crop_pct)
+    if height <= width:
+        size = (int(short * width / height), short)
+    else:
+        size = (short, int(short * height / width))
+    resized = cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
+    top = round((resized.shape[0] - imgsz) / 2.0)
+    left = round((resized.shape[1] - imgsz) / 2.0)
+    expected = cv2.cvtColor(resized[top : top + imgsz, left : left + imgsz], cv2.COLOR_BGR2RGB)
+
+    result, _, _ = preprocess(
+        [image], (imgsz, imgsz), np.dtype(np.uint8), (0.0, 255.0), "center_crop", crop_pct=crop_pct
+    )
+    np.testing.assert_array_equal(result[0].transpose(1, 2, 0), expected)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("crop_pct", [0.0, -0.5, 1.5])
+def test_invalid_crop_pct_raises(random_images, crop_pct) -> None:
+    """crop_pct outside (0, 1] raises for the preprocess function and CPUPreprocessor."""
+    with pytest.raises(ValueError, match="crop_pct"):
+        preprocess(random_images(1), SIZE, DTYPE, RANGE, "center_crop", crop_pct=crop_pct)
+    with pytest.raises(ValueError, match="crop_pct"):
+        CPUPreprocessor(SIZE, RANGE, DTYPE, resize="center_crop", crop_pct=crop_pct)
 
 
 @pytest.mark.cpu

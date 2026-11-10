@@ -35,6 +35,7 @@ from .preprocessors import (
     GPUImagePreprocessor,
     TRTPreprocessor,
 )
+from .preprocessors._base import DEFAULT_CROP_PCT
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -107,6 +108,7 @@ class ImageModel:
         no_warn: bool | None = None,
         verbose: bool | None = None,
         output_schema: Enum | str | None = None,
+        crop_pct: float = DEFAULT_CROP_PCT,
     ) -> None:
         """
         Create an ImageModel object.
@@ -126,7 +128,7 @@ class ImageModel:
             The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
         resize_method : str
             The type of resize algorithm to use.
-            The options are ['letterbox', 'linear'], default is 'linear'.
+            The options are ['letterbox', 'linear', 'center_crop'], default is 'linear'.
         mean : tuple[float, float, float] | None, optional
             The mean values to use for the imagenet normalization.
             By default, None, which means no normalization will be applied.
@@ -173,6 +175,9 @@ class ImageModel:
             Override for the output schema, a member or member name of the
             subclass's schema enum. Ignored by models without one.
             Default is None, which auto-detects the schema from the engine.
+        crop_pct : float
+            The fraction of the resized image kept by center_crop resizing.
+            By default 0.875 (resize 256, crop 224). Ignored by other methods.
 
         Raises
         ------
@@ -218,6 +223,7 @@ class ImageModel:
             )
             self._unified_mem = self._engine.unified_mem
             self._resize_method: str = resize_method
+            self._crop_pct: float = crop_pct
             # Find the image input: 4D tensor with 3 channels (batch, 3, H, W)
             input_size: tuple[int, ...] | None = None
             input_spec = self._engine.input_spec[0]
@@ -302,6 +308,7 @@ class ImageModel:
             mean=self._mean,
             std=self._std,
             tag=self._tag,
+            crop_pct=self._crop_pct,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -324,6 +331,7 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
+            crop_pct=self._crop_pct,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -347,6 +355,7 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             tag=self._tag,
+            crop_pct=self._crop_pct,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -677,7 +686,7 @@ class ImageModel:
             A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the images with.
-            Options are [letterbox, linear].
+            Options are [letterbox, linear, center_crop].
             By default None, which will use the value passed
             during initialization.
         method : str, optional

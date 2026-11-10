@@ -21,7 +21,7 @@ from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
 from trtutils.image.kernels import IMAGENET_SST, LETTERBOX_RESIZE, LINEAR_RESIZE, SST_FAST
 
-from ._base import ImagePreprocessor
+from ._base import DEFAULT_CROP_PCT, RESIZE_METHODS, ImagePreprocessor, crop_geometry
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -50,6 +50,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         threads: tuple[int, int, int] | None = None,
         tag: str | None = None,
         *,
+        crop_pct: float = DEFAULT_CROP_PCT,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
     ) -> None:
@@ -70,7 +71,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
-            Options are: ['letterbox', 'linear']
+            Options are: ['letterbox', 'linear', 'center_crop']
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -87,6 +88,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The tag to prefix to all logging statements made.
             By default, 'TRTPreprocessor'
             If used within a model class, will be the model tag.
+        crop_pct : float
+            The fraction of the resized image kept by center_crop resizing.
+            By default 0.875 (resize 256, crop 224). Ignored by other methods.
         pagelocked_mem : bool, optional
             Whether or not to allocate output memory as pagelocked.
             By default, pagelocked memory will be used.
@@ -104,6 +108,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             mean=mean,
             std=std,
             tag=tag,
+            crop_pct=crop_pct,
         )
 
         self._nvtx_tags.update(
@@ -161,7 +166,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             1,
         )
 
-        # either letterbox or linear is used
+        # linear uses its own kernel, letterbox and center_crop share one
         self._linear_kernel = Kernel(LINEAR_RESIZE[0], LINEAR_RESIZE[1])
         self._letterbox_kernel = Kernel(LETTERBOX_RESIZE[0], LETTERBOX_RESIZE[1])
 
@@ -257,7 +262,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
             The method to resize the image with.
-            Options are [letterbox, linear], will use method
+            Options are [letterbox, linear, center_crop], will use method
             provided in constructor by default.
         no_copy : bool, optional
             If True, the outputs will not be copied out
@@ -345,9 +350,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         # valid the method
         resize = resize if resize is not None else self._resize
-        if resize not in self._valid_methods:
+        if resize not in RESIZE_METHODS:
             err_msg = (
-                f"{self._tag}: Unknown method for image resizing. Options are {self._valid_methods}"
+                f"{self._tag}: Unknown method for image resizing. Options are {list(RESIZE_METHODS)}"
             )
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # validate_input
@@ -415,7 +420,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         This method performs the complete preprocessing pipeline:
         1. Host-to-device copy of input images
-        2. Resize kernels (letterbox or linear)
+        2. Resize kernels (letterbox, linear, or center_crop)
         3. Normalization (SST) kernel
 
         Parameters
@@ -423,7 +428,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         images : Sequence[np.ndarray | Buffer]
             The images to preprocess (HWC format, uint8).
         resize : str, optional
-            The resize method. Options are ['letterbox', 'linear'].
+            The resize method. Options are ['letterbox', 'linear', 'center_crop'].
             If None, uses the configured default.
         no_warn : bool, optional
             If True, suppress warnings about usage.
@@ -493,7 +498,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
             The method to resize the image with.
-            Options are [letterbox, linear], will use method
+            Options are [letterbox, linear, center_crop], will use method
             provided in constructor by default.
         no_copy : bool, optional
             If True, the outputs will not be copied out
@@ -574,7 +579,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         width : int
             Input image width.
         method : str
-            Resize method ('letterbox' or 'linear').
+            Resize method ('letterbox', 'linear', or 'center_crop').
         input_ptr : int
             Device pointer to source image data.
         output_ptr : int
@@ -631,6 +636,16 @@ class GPUImagePreprocessor(ImagePreprocessor):
                     new_width,
                     new_height,
                 )
+            elif method == "center_crop":
+                if verbose:
+                    LOG.debug(f"{self._tag}: Making center crop args")
+
+                (resized_w, resized_h, left, top), ratios, padding = crop_geometry(
+                    width, height, self._o_shape, self._crop_pct
+                )
+                # a letterbox whose resized image overhangs the output on every side
+                resize_kernel = self._letterbox_kernel
+                geometry_args = (width, height, o_width, o_height, -left, -top, resized_w, resized_h)
             else:
                 if verbose:
                     LOG.debug(f"{self._tag}: Making linear args")
@@ -918,6 +933,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         threads: tuple[int, int, int] | None = None,
         tag: str | None = None,
         *,
+        crop_pct: float = DEFAULT_CROP_PCT,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
     ) -> None:
@@ -938,7 +954,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
-            Options are: ['letterbox', 'linear']
+            Options are: ['letterbox', 'linear', 'center_crop']
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -955,6 +971,9 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             The tag to prefix to all logging statements made.
             By default, 'CUDAPreprocessor'
             If used within a model class, will be the model tag.
+        crop_pct : float
+            The fraction of the resized image kept by center_crop resizing.
+            By default 0.875 (resize 256, crop 224). Ignored by other methods.
         pagelocked_mem : bool, optional
             Whether or not to allocate output memory as pagelocked.
             By default, pagelocked memory will be used.
@@ -975,6 +994,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             stream,
             threads,
             tag,
+            crop_pct=crop_pct,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
         )
@@ -1151,7 +1171,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             The images to preprocess.
         resize : str
             The method to resize the image with.
-            By default letterbox, options are [letterbox, linear]
+            By default letterbox, options are [letterbox, linear, center_crop]
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional

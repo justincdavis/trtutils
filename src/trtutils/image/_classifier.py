@@ -18,6 +18,7 @@ from ._schema import ClassifierOutputSchema
 from .interfaces import ClassifierInterface
 from .postprocessors import get_classifications, postprocess_classifications
 from .postprocessors._cuda_classifier import CUDAClsPostprocessor
+from .preprocessors._base import DEFAULT_CROP_PCT
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -60,6 +61,7 @@ class Classifier(ImageModel, ClassifierInterface):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         softmax: bool = True,
+        crop_pct: float = DEFAULT_CROP_PCT,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -81,7 +83,7 @@ class Classifier(ImageModel, ClassifierInterface):
             The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
         resize_method : str
             The type of resize algorithm to use.
-            The options are ['letterbox', 'linear'], default is 'linear'.
+            The options are ['letterbox', 'linear', 'center_crop'], default is 'linear'.
         mean : tuple[float, float, float] | None, optional
             The mean values to use for the imagenet normalization.
             By default, None, which means no normalization will be applied.
@@ -128,6 +130,9 @@ class Classifier(ImageModel, ClassifierInterface):
             softmax inside their ONNX graph, in which case this should be False
             to avoid a double softmax which would flatten the returned
             confidences.
+        crop_pct : float, optional
+            The fraction of the resized image kept by center_crop resizing.
+            By default 0.875 (resize 256, crop 224). Ignored by other methods.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -161,6 +166,7 @@ class Classifier(ImageModel, ClassifierInterface):
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
+            crop_pct=crop_pct,
         )
 
         self._softmax = softmax
