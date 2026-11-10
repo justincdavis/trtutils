@@ -12,9 +12,11 @@ import pytest
 
 from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR, ENGINES_DIR
+from trtutils._flags import FLAGS
 from trtutils.builder import build_engine
 from trtutils.core import create_stream, destroy_stream
 from trtutils.core._buffer import Buffer, MemoryLocation
+from trtutils.models import Hands23
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -22,6 +24,7 @@ if TYPE_CHECKING:
 
 YOLOV10_ONNX = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
 YOLOV10_DYN_ONNX = DATA_DIR / "yolov10" / "yolov10n_640_dyn.onnx"
+HANDS23_ONNX = DATA_DIR / "hands23" / "hands23_x101_800.onnx"
 
 
 @pytest.fixture(scope="session")
@@ -62,6 +65,20 @@ def task_engine(build_test_engine) -> Callable[[str], Path]:
         return build_test_engine(onnx_path, batch_size=batch_size)
 
     return _get
+
+
+@pytest.fixture(scope="session")
+def hands23_engine() -> Path:
+    """Build and cache a Hands23 engine as tests/models does, skipping if the ONNX is missing."""
+    if FLAGS.TRT_VERSION < (10, 0):
+        pytest.skip("TensorRT 8.6 cannot build Hands23 (OneHot shape tensor)")
+    if not HANDS23_ONNX.exists():
+        pytest.skip(f"missing {HANDS23_ONNX}")
+    engine_path = engine_cache_path(f"{HANDS23_ONNX.stem}_Hands23")
+    if not engine_path.exists():
+        ENGINES_DIR.mkdir(parents=True, exist_ok=True)
+        Hands23.build(HANDS23_ONNX, engine_path, imgsz=800, batch_size=1, opt_level=1)
+    return engine_path
 
 
 @pytest.fixture
