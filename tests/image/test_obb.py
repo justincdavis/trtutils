@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/postprocessors/_obb.py -- YOLO-style OBB decoding and NMS."""
+"""Tests for src/trtutils/image/postprocessors/_cpu_obb.py -- YOLO-style OBB decoding and NMS."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import math
 import numpy as np
 import pytest
 
-from trtutils.image.postprocessors._obb import (
+from trtutils.image.postprocessors._cpu_obb import (
     _probiou,
     _rotated_nms_indices,
     get_obb_detections,

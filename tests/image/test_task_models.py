@@ -190,7 +190,8 @@ def test_segmenter_mask_thres(task_engine, images) -> None:
     strict = Segmenter(task_engine("seg"), mask_thres=0.99, warmup=False)
     filled = Segmenter(task_engine("seg"), mask_thres=0.0, warmup=False)
 
-    default = strict.end2end(image)
+    # end2end masks live in a reused canvas, so keep a copy across calls
+    default = [(*seg[:3], seg[3].copy()) for seg in strict.end2end(image)]
     override = strict.end2end(image, mask_thres=0.0)
     via_run = filled.get_segmentations(filled.run(image))
     assert default
@@ -206,6 +207,20 @@ def test_obb_detector_rejects_linear_resize(task_engine) -> None:
     model = OBBDetector(task_engine("obb"), resize_method="linear", warmup=False)
     with pytest.raises(ValueError, match="uniform scaling"):
         model.end2end(image)
+
+
+def test_obb_detector_cuda_postprocessor_is_default(task_engine) -> None:
+    """The default CUDA postprocessor gives the same oriented boxes as postprocessor='cpu'."""
+    image = cv2.imread(str(DATA_DIR / "aerial.jpg"))
+    cpu = OBBDetector(task_engine("obb"), postprocessor="cpu", warmup=False)
+    cuda = OBBDetector(task_engine("obb"), warmup=False)
+    assert cuda._postprocessor == "cuda"
+    assert cuda._preprocessor_method == "trt"
+
+    ref = cpu.end2end(image)
+    assert ref
+    for obbs in (cuda.end2end(image), cuda.get_obbs(cuda.run(image)), cuda.end2end(image)):
+        assert obbs == ref
 
 
 @pytest.mark.parametrize(("model_cls", "task", "image_name"), TASKS)
@@ -248,6 +263,35 @@ def test_max_det_caps_score_sorted_results(
     scores = [r[1] for r in results]
     assert len(results) == max_det
     assert scores == sorted(scores, reverse=True)
+
+
+def test_segmenter_cpu_no_copy_postprocess_then_cuda(task_engine, images) -> None:
+    """A CPU no_copy postprocess of host outputs leaves the CUDA path's canvases working."""
+    image = images["horse"].array
+    ref = Segmenter(task_engine("seg"), postprocessor="cpu", warmup=False).end2end(image)
+    seg = Segmenter(task_engine("seg"), postprocessor="cuda", warmup=False)
+    tensor, ratios, padding = seg.preprocess(image)
+    raw = seg.run(tensor, ratios, padding, preprocessed=True, postprocess=False)
+    host = seg.get_segmentations(seg.postprocess(raw, ratios, padding, no_copy=True))[0]
+    assert _fields(host) == _fields(ref)
+    got = seg.end2end(image)
+    assert _fields(got) == _fields(ref)
+    for g, w in zip(got, ref):
+        np.testing.assert_array_equal(g[3], w[3])
+
+
+@pytest.mark.parametrize("image_name", ["people", "horse"])
+def test_segmenter_cuda_postprocessor_matches_cpu(task_engine, images, image_name: str) -> None:
+    """postprocessor="cuda" gives the CPU results exactly, through run() and end2end()."""
+    image = images[image_name].array
+    cpu = Segmenter(task_engine("seg"), postprocessor="cpu", warmup=False)
+    cuda = Segmenter(task_engine("seg"), postprocessor="cuda", warmup=False)
+
+    ref = cpu.end2end(image)
+    for segs in (cuda.end2end(image), cuda.get_segmentations(cuda.run(image)), cuda.end2end(image)):
+        assert _fields(segs) == _fields(ref)
+        for got, want in zip(segs, ref):
+            np.testing.assert_array_equal(got[3], want[3])
 
 
 def test_classifier_softmax_false_top_k(task_engine, images) -> None:

@@ -19,7 +19,7 @@ from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.core._stream import destroy_stream, stream_synchronize
 from trtutils.image.onnx_models import build_image_preproc, build_image_preproc_imagenet
 
-from ._image_preproc import GPUImagePreprocessor
+from ._cuda import GPUImagePreprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

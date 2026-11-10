@@ -1,14 +1,14 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/postprocessors/_pose.py -- YOLO-style keypoint decoding."""
+"""Tests for src/trtutils/image/postprocessors/_cpu_pose.py -- YOLO-style keypoint decoding."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from trtutils.image.postprocessors._pose import get_poses, postprocess_yolo_pose
+from trtutils.image.postprocessors._cpu_pose import get_poses, postprocess_yolo_pose
 
 pytestmark = pytest.mark.cpu
 

@@ -26,6 +26,7 @@ from .postprocessors import (
     postprocess_text_detection,
     postprocess_text_recognition,
 )
+from .postprocessors._cuda_ocr import CTCArgmax, DBBinarize
 from .preprocessors import (
     CPUPreprocessor,
     crop_text_region,
@@ -33,7 +34,7 @@ from .preprocessors import (
     preprocess_text_recognition,
     resize_text_detection,
 )
-from .preprocessors._ocr import _IMAGENET_MEAN, _IMAGENET_STD, _REC_MEAN, _REC_STD
+from .preprocessors._cpu_ocr import _IMAGENET_MEAN, _IMAGENET_STD, _REC_MEAN, _REC_STD
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -49,6 +50,8 @@ class TextDetector(ImageModel, TextDetectorInterface):
     """Implementation of DB (Differentiable Binarization) text detectors, as used by PaddleOCR."""
 
     _OUTPUT_SCHEMA = TextDetectorOutputSchema
+    _CUDA_POSTPROCESSOR = DBBinarize
+    _cuda_post_default = True
 
     def __init__(
         self: Self,
@@ -74,6 +77,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,  # noqa: ARG002
+        postprocessor: str | None = None,
         use_dilation: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -150,8 +154,12 @@ class TextDetector(ImageModel, TextDetectorInterface):
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
-            Unused, CUDA graphs are always disabled since the input shape
-            changes on almost every call.
+            Unused. CUDA graphs are enabled with the CUDA postprocessor, where they replay
+            when consecutive calls share an input shape, and disabled otherwise.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. 'cuda' binarizes the probability
+            map on the GPU and copies back the map the box extraction scores.
+            Preprocessing stays on the CPU. Default is None, which picks 'cuda'.
         use_dilation : bool, optional
             Whether or not to dilate the binarized map before extracting boxes.
             By default None, which means no dilation.
@@ -165,8 +173,9 @@ class TextDetector(ImageModel, TextDetectorInterface):
         Raises
         ------
         ValueError
-            If preprocessor is not 'cpu', the output schema string is invalid,
-            or the engine outputs do not match the requested schema.
+            If preprocessor is not 'cpu', postprocessor is not 'cpu' or 'cuda',
+            the output schema string is invalid, or the engine outputs do not
+            match the requested schema.
 
         """
         self._limit_side_len = limit_side_len
@@ -191,7 +200,8 @@ class TextDetector(ImageModel, TextDetectorInterface):
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
-            cuda_graph=False,
+            cuda_graph=postprocessor != "cpu",
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -233,7 +243,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -275,8 +285,15 @@ class TextDetector(ImageModel, TextDetectorInterface):
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         t0 = time.perf_counter()
+        device_outputs = self._device_outputs(outputs)
+        bitmaps = wait = None
+        if device_outputs is not None:
+            bitmaps, pred, wait = self._cuda_post(device_outputs, self._thresh)
+            host_outputs = [pred]
+        else:
+            host_outputs = self._host_outputs(outputs)
         data = postprocess_text_detection(
-            self._order_outputs(outputs),
+            host_outputs,
             ratios,
             padding,
             self._thresh,
@@ -284,6 +301,8 @@ class TextDetector(ImageModel, TextDetectorInterface):
             self._max_candidates,
             self._unclip_ratio,
             use_dilation=self._use_dilation,
+            bitmaps=bitmaps,
+            wait=wait,
             no_copy=no_copy,
             verbose=verbose,
         )
@@ -673,6 +692,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
     """Implementation of CTC text line recognizers, as used by PaddleOCR."""
 
     _OUTPUT_SCHEMA = TextRecognizerOutputSchema
+    _CUDA_POSTPROCESSOR = CTCArgmax
+    _cuda_post_default = True
 
     def __init__(
         self: Self,
@@ -693,6 +714,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,  # noqa: ARG002
+        postprocessor: str | None = None,
         use_space_char: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -756,8 +778,12 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
         cuda_graph : bool, optional
-            Unused, CUDA graphs are always disabled since the input shape
-            changes on almost every call.
+            Unused. CUDA graphs are enabled with the CUDA postprocessor, where they replay
+            when consecutive calls share an input shape, and disabled otherwise.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the CTC head
+            on the GPU and copies back the best class and its probability per
+            step. Preprocessing stays on the CPU. Default is None, which picks 'cuda'.
         use_space_char : bool, optional
             Whether or not the model has an extra trailing class for the space
             character. By default None, which means True.
@@ -772,9 +798,9 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         ------
         ValueError
             If no character dictionary is given, it does not match the
-            engine's number of classes, preprocessor is not 'cpu', the output
-            schema string is invalid, or the engine outputs do not match the
-            requested schema.
+            engine's number of classes, preprocessor is not 'cpu', postprocessor
+            is not 'cpu' or 'cuda', the output schema string is invalid, or the
+            engine outputs do not match the requested schema.
 
         """
         if character_dict is None:
@@ -805,7 +831,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             warmup=warmup,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
-            cuda_graph=False,
+            cuda_graph=postprocessor != "cpu",
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -859,7 +886,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -890,8 +917,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        data = postprocess_text_recognition(
-            self._order_outputs(outputs), no_copy=no_copy, verbose=verbose
+        data = self._postprocess_with(
+            partial(postprocess_text_recognition, no_copy=no_copy), outputs, verbose=verbose
         )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)

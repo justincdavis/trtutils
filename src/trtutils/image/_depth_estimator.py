@@ -52,6 +52,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -113,6 +114,9 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. Default is None, which
+            keeps 'cpu' unless the task's CUDA postprocessor is the default.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -142,6 +146,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -162,7 +167,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -194,7 +199,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        data = postprocess_depth(self._order_outputs(outputs), no_copy=no_copy, verbose=verbose)
+        data = postprocess_depth(self._host_outputs(outputs), no_copy=no_copy, verbose=verbose)
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 

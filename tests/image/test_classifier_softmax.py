@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/postprocessors/_classifier.py -- the softmax flag."""
+"""Tests for src/trtutils/image/postprocessors/_cpu_classifier.py -- the softmax flag."""
 
 from __future__ import annotations
 

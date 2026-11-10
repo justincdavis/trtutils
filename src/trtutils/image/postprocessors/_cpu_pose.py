@@ -22,7 +22,7 @@ import numpy as np
 from trtutils._log import LOG
 
 from ._common import clip_boxes, cxcywh_to_xyxy, nms_indices, unletterbox_boxes
-from ._detection import _get_detections_core
+from ._cpu_detection import _get_detections_core
 
 if TYPE_CHECKING:
     from trtutils.image.types import Pose

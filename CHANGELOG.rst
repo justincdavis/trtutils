@@ -3,6 +3,28 @@ Unreleased
 
 Added
 ^^^^^
+* ``postprocessor="cuda"`` on ``OBBDetector`` decodes oriented boxes and runs probiou
+  NMS on the engine stream, copying back only the kept results. It is the default;
+  ``postprocessor="cpu"`` keeps the host path. The preprocessor default stays ``"trt"``
+* ``postprocessor="cuda"`` on ``HandInteractionDetector`` (Hands23 and HOI-DETR forward it).
+  Unletterboxes boxes and runs the same class-aware NMS as ``postprocess_hand_interactions``
+  on the engine stream, gathering labels, pair probabilities, and side. The default stays
+  ``"cpu"``.
+* ``postprocessor="cuda"`` on ``Segmenter`` (the default when the engine fits). It runs
+  the YOLO mask head's NMS and mask decode on the engine stream and matches the CPU
+  masks. The preprocessor default stays ``"trt"``
+* ``postprocessor="cuda"`` on ``TextDetector`` and ``TextRecognizer`` (and the ``PPOCR``
+  wrappers). Detection binarizes the DB probability map on the engine stream; recognition
+  runs greedy CTC argmax there. Results match the CPU postprocessors. The default is
+  ``"cuda"``. Preprocessing stays on the CPU
+* ``postprocessor="cuda"`` on ``Detector`` (YOLO-v10 and EfficientNMS) and ``Classifier``.
+  Detection unletterboxes the kept boxes on the engine stream; classification writes the
+  softmax, or copies the vector when ``softmax=False``. The default for both stays ``"cpu"``.
+  Image models take ``postprocessor`` and can leave engine outputs on the device for a CUDA
+  postprocessor
+* ``PoseEstimator`` postprocesses on the GPU by default. YOLO pose NMS and keypoint
+  unletterbox run on the engine stream and match the CPU postprocessor.
+  ``postprocessor="cpu"`` keeps the host path
 * Hands23 downloads now drop all 9 ``NonZero`` ops from the exported ONNX (ROIAlign over all
   rois merged with ``Where``, RPN zero-area filter as ``Where(valid, score, -1e4)``), so
   TensorRT no longer does nine blocking data-dependent-shape copies per run. ``end2end`` is

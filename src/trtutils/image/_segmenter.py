@@ -17,6 +17,8 @@ from ._image_model import ImageModel
 from ._schema import SegmenterOutputSchema
 from .interfaces import SegmenterInterface
 from .postprocessors import get_segmentations, postprocess_yolo_seg
+from .postprocessors._cpu_segmentation import MaskCanvas
+from .postprocessors._cuda_segmentation import CUDASegPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -33,6 +35,8 @@ class Segmenter(ImageModel, SegmenterInterface):
     """Implementation of instance segmentation models (YOLO-style ``output0`` + ``output1`` prototypes)."""
 
     _OUTPUT_SCHEMA = SegmenterOutputSchema
+    _CUDA_POSTPROCESSOR = CUDASegPostprocessor
+    _cuda_post_default = True
 
     def __init__(
         self: Self,
@@ -56,6 +60,7 @@ class Segmenter(ImageModel, SegmenterInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -120,6 +125,10 @@ class Segmenter(ImageModel, SegmenterInterface):
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
+            on the GPU and copies back only the final results. Default is None,
+            which picks 'cuda' when the engine fits, else 'cpu'.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -149,6 +158,7 @@ class Segmenter(ImageModel, SegmenterInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -170,6 +180,8 @@ class Segmenter(ImageModel, SegmenterInterface):
         self._nms_iou: float = nms_iou_thres
         self._max_det: int = max_det
         self._mask_thres: float = mask_thres
+        # reused mask stacks per batch slot, pageable (no_copy CPU path) and mapped (CUDA path)
+        self._canvases: dict[bool, list[MaskCanvas]] = {False: [], True: []}
 
         if self._verbose:
             LOG.debug(f"{self._tag}: Output schema: {self._output_schema}")
@@ -184,7 +196,7 @@ class Segmenter(ImageModel, SegmenterInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -199,7 +211,7 @@ class Segmenter(ImageModel, SegmenterInterface):
 
         Parameters
         ----------
-        outputs : list[np.ndarray]
+        outputs : list[np.ndarray] | list[Buffer]
             The raw outputs from the engine to postprocess.
         ratios : list[tuple[float, float]]
             The rescale ratios used during preprocessing for each image.
@@ -215,7 +227,10 @@ class Segmenter(ImageModel, SegmenterInterface):
             The threshold applied to the sigmoid mask logits.
             If not passed, will use value from constructor.
         no_copy : bool, optional
-            Unused, results are always new arrays.
+            If True, masks are written into a reused buffer per batch slot,
+            which the next call with no_copy overwrites. This skips zeroing a
+            new full-frame mask stack each frame. By default None, which
+            returns new mask arrays.
         verbose : bool, optional
             Whether or not to log additional information.
 
@@ -226,7 +241,6 @@ class Segmenter(ImageModel, SegmenterInterface):
             [bboxes, scores, class_ids, masks].
 
         """
-        del no_copy  # results are always new arrays
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["seg_postprocess"])
 
@@ -236,19 +250,38 @@ class Segmenter(ImageModel, SegmenterInterface):
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         mask_thres = mask_thres if mask_thres is not None else self._mask_thres
-        outputs = self._order_outputs(outputs)
+        batch = outputs[0].shape[0]
         t0 = time.perf_counter()
-        data = postprocess_yolo_seg(
-            outputs,
-            ratios,
-            padding,
-            conf_thres,
-            nms_iou_thres,
-            max_det=self._max_det,
-            input_size=self._input_size,
-            mask_thres=mask_thres,
-            verbose=verbose,
-        )
+        device_outputs = self._device_outputs(outputs)
+        if device_outputs is not None:
+            canvases = self._mask_canvases(batch, mapped=True)
+            data = self._cuda_post(
+                device_outputs,
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                mask_thres,
+                max_det=self._max_det,
+                input_size=self._input_size,
+                canvases=canvases,
+            )
+            if not no_copy:
+                for image, canvas in zip(data, canvases):
+                    image[3] = canvas.detach(image[3])
+        else:
+            data = postprocess_yolo_seg(
+                self._host_outputs(outputs),
+                ratios,
+                padding,
+                conf_thres,
+                nms_iou_thres,
+                max_det=self._max_det,
+                input_size=self._input_size,
+                mask_thres=mask_thres,
+                canvases=self._mask_canvases(batch, mapped=False) if no_copy else None,
+                verbose=verbose,
+            )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 
@@ -256,6 +289,12 @@ class Segmenter(ImageModel, SegmenterInterface):
             nvtx.pop_range()  # postprocess
 
         return data
+
+    def _mask_canvases(self: Self, batch: int, *, mapped: bool) -> list[MaskCanvas]:
+        """Return the reused canvases of the first ``batch`` slots, mapped for the CUDA path."""
+        pool = self._canvases[mapped]
+        pool.extend(MaskCanvas(mapped=mapped) for _ in range(batch - len(pool)))
+        return pool[:batch]
 
     def _post_fn(
         self: Self,

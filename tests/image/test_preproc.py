@@ -12,7 +12,7 @@ from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils import Buffer, MemoryLocation
 from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
-from trtutils.image.preprocessors._process import preprocess
+from trtutils.image.preprocessors._cpu import preprocess
 
 SIZE = (640, 640)
 RANGE = (0.0, 1.0)

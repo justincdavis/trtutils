@@ -1,32 +1,21 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Kernel test fixtures -- a CUDA stream and a launch helper for the image kernels."""
+"""Kernel test helpers -- a launch helper for the image kernels (cuda_stream is in tests/image)."""
 
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from trtutils.core import (
     Kernel,
     create_binding,
-    create_stream,
-    destroy_stream,
     memcpy_device_to_host_async,
     memcpy_host_to_device_async,
     stream_synchronize,
 )
 
 THREADS = (32, 32, 1)
-
-
-@pytest.fixture
-def cuda_stream():
-    """Create a CUDA stream for the test, destroy after."""
-    stream = create_stream()
-    yield stream
-    destroy_stream(stream)
 
 
 def run_kernel(stream, spec, args, output, blocks) -> np.ndarray:

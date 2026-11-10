@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+from functools import partial
 from typing import TYPE_CHECKING, overload
 
 import numpy as np
@@ -26,6 +27,7 @@ from .postprocessors import (
     postprocess_rtdetrv3,
     postprocess_yolov10,
 )
+from .postprocessors._cuda_detection import CUDADetPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -41,6 +43,12 @@ class Detector(ImageModel, DetectorInterface):
     """Implementation of object detectors."""
 
     _OUTPUT_SCHEMA = OutputSchema
+    _CUDA_POSTPROCESSOR = CUDADetPostprocessor
+    # opt in: unletterboxing a few hundred boxes does not always beat the host
+    _cuda_post_default = False
+    _CUDA_SCHEMAS = frozenset(
+        {OutputSchema.YOLO_V10, OutputSchema.EFFICIENT_NMS, OutputSchema.EFFICIENT_NMS_2}
+    )
 
     def __init__(
         self: Self,
@@ -63,6 +71,7 @@ class Detector(ImageModel, DetectorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         class_map: Mapping[int, int] | None = None,
@@ -137,6 +146,9 @@ class Detector(ImageModel, DetectorInterface):
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. Default is None, which
+            keeps 'cpu' unless the task's CUDA postprocessor is the default.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -176,6 +188,7 @@ class Detector(ImageModel, DetectorInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -253,7 +266,7 @@ class Detector(ImageModel, DetectorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -297,13 +310,13 @@ class Detector(ImageModel, DetectorInterface):
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         t0 = time.perf_counter()
-        data = self._postprocess_fn(
-            self._order_outputs(outputs),
-            ratios=ratios,
-            padding=padding,
-            conf_thres=conf_thres,
-            input_size=self._input_size,
-            no_copy=no_copy,
+        data = self._postprocess_with(
+            partial(self._postprocess_fn, no_copy=no_copy),
+            outputs,
+            ratios,
+            padding,
+            conf_thres,
+            self._input_size,
             verbose=verbose,
         )
         if self._class_map is not None:
@@ -317,6 +330,17 @@ class Detector(ImageModel, DetectorInterface):
             nvtx.pop_range()  # postprocess
 
         return data
+
+    def _cuda_unsupported(self: Self) -> str | None:
+        """CUDA unletterboxes YOLO-v10 rows and EfficientNMS float32 boxes and scores."""
+        if self._output_schema not in self._CUDA_SCHEMAS:
+            return f"supports YOLO_V10 and EfficientNMS, not {self._output_schema.name}"
+        dtypes = self._order_outputs(list(self._engine.output_dtypes))
+        # EfficientNMS: [num_dets, boxes, scores, classes], the ids may be integers
+        floats = dtypes[1:3] if len(dtypes) > 1 else dtypes
+        if any(dtype != np.float32 for dtype in floats):
+            return "needs float32 boxes and scores"
+        return None
 
     def _post_fn(self: Self, conf_thres: float | None, *, verbose: bool | None) -> _PostFn:
         """Bridge ``_run_core`` / ``_end2end_core`` to :meth:`postprocess`."""

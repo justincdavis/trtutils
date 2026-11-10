@@ -15,6 +15,7 @@ from ._image_model import ImageModel
 from ._schema import PoseEstimatorOutputSchema
 from .interfaces import PoseEstimatorInterface
 from .postprocessors import get_poses, postprocess_yolo_pose
+from .postprocessors._cuda_pose import CUDAPosePostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -33,6 +34,8 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
     """Implementation of pose estimation models (YOLO-style pose heads)."""
 
     _OUTPUT_SCHEMA = PoseEstimatorOutputSchema
+    _CUDA_POSTPROCESSOR = CUDAPosePostprocessor
+    _cuda_post_default = True
 
     def __init__(
         self: Self,
@@ -55,6 +58,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -116,6 +120,9 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         cuda_graph : bool, optional
             Whether or not to enable CUDA graph capture for optimized execution.
             Only effective with async_v3 backend. Default is True.
+        postprocessor : str, optional
+            Where to postprocess, 'cpu' or 'cuda'. Default is None, which
+            keeps 'cpu' unless the task's CUDA postprocessor is the default.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -145,6 +152,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
@@ -179,7 +187,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
 
     def postprocess(
         self: Self,
-        outputs: list[np.ndarray],
+        outputs: list[np.ndarray] | list[Buffer],
         ratios: list[tuple[float, float]],
         padding: list[tuple[float, float]],
         conf_thres: float | None = None,
@@ -226,9 +234,9 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
-        outputs = self._order_outputs(outputs)
         t0 = time.perf_counter()
-        data = postprocess_yolo_pose(
+        data = self._postprocess_with(
+            postprocess_yolo_pose,
             outputs,
             ratios,
             padding,
