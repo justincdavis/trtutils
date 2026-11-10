@@ -27,6 +27,7 @@ from .postprocessors import (
     postprocess_rtdetrv3,
     postprocess_yolov10,
 )
+from .postprocessors._common import original_size
 from .postprocessors._cuda_detection import CUDADetPostprocessor
 
 if TYPE_CHECKING:
@@ -784,16 +785,22 @@ class Detector(ImageModel, DetectorInterface):
         image: Buffer,
         images: Sequence[np.ndarray | Buffer] | None,
         ratios: list[tuple[float, float]] | None,
+        padding: list[tuple[float, float]] | None,
         /,
     ) -> list[Buffer]:
         """Build engine inputs, adding per-image orig size / scale factor arrays per input schema."""
         extras: list[Buffer] = []
         if self._use_image_size:
-            if images is None or self._input_schema == InputSchema.RT_DETR_V3:
+            if images is not None and self._input_schema != InputSchema.RT_DETR_V3:
+                sizes = [img.shape[:2] for img in images]
+            elif ratios is not None and padding is not None and not self._use_scale_factor:
+                # preprocessed batch: recover each original size so boxes come back in image coords
+                sizes = [
+                    original_size(r, p, self._input_size)[::-1] for r, p in zip(ratios, padding)
+                ]
+            else:
                 # the model input size: paddle boxes come back in this canvas, postprocess unletterboxes
                 sizes = [(self._input_size[1], self._input_size[0])] * image.shape[0]
-            else:
-                sizes = [img.shape[:2] for img in images]
             if self._input_schema == InputSchema.RT_DETR:
                 # rt-detr scales boxes by (width, height); paddle's im_shape is (height, width)
                 sizes = [(w, h) for h, w in sizes]

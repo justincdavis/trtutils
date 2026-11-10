@@ -841,7 +841,7 @@ class ImageModel:
             if len(images) != 1:
                 err_msg = "Preprocessed inputs must be a list containing a single batch tensor."
                 raise ValueError(err_msg)
-            return self.engine_inputs(host_input(images[0]), None, ratios), ratios, padding
+            return self.engine_inputs(host_input(images[0]), None, ratios, padding), ratios, padding
         preprocessor = self.get_preprocessor(method)
         t0 = time.perf_counter()
         if isinstance(preprocessor, GPUImagePreprocessor):
@@ -854,7 +854,7 @@ class ImageModel:
             )
             image = host_input(tensor)
         self._pre_profile = (t0, time.perf_counter())
-        return self.engine_inputs(image, images, ratios), ratios, padding
+        return self.engine_inputs(image, images, ratios, padding), ratios, padding
 
     def infer(
         self: Self,
@@ -964,6 +964,7 @@ class ImageModel:
         image: Buffer,
         _images: Sequence[np.ndarray | Buffer] | None,
         _ratios: list[tuple[float, float]] | None,
+        _padding: list[tuple[float, float]] | None,
         /,
     ) -> list[Buffer]:
         """
@@ -981,6 +982,8 @@ class ImageModel:
             already preprocessed batch.
         _ratios : list[tuple[float, float]] | None
             The scaling ratios from preprocessing.
+        _padding : list[tuple[float, float]] | None
+            The padding from preprocessing.
 
         Returns
         -------

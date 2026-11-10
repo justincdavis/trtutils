@@ -79,10 +79,7 @@ class SAHI:
 
         # allocate the executor to process contiguous patchs in parallel
         cpu_cores = os.cpu_count()
-        if cpu_cores is None:
-            cpu_cores = 1
-        else:
-            cpu_cores -= 1
+        cpu_cores = 1 if cpu_cores is None else max(cpu_cores - 1, 1)
         self._executor = ThreadPoolExecutor(max_workers=cpu_cores)
         self._lock = Lock()
         if FLAGS.NVTX_ENABLED:

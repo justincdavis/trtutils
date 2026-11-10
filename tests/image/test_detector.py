@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 import pytest
@@ -171,3 +173,22 @@ def test_detector_class_map(yolov10_engine, images, class_map) -> None:
     mapped = Detector(yolov10_engine, class_map=class_map, warmup=False)
     expected = [(b, s, class_map.get(c, c)) for b, s, c in plain.end2end(image, conf_thres=0.0)]
     assert mapped.end2end(image, conf_thres=0.0) == expected
+
+
+def test_detector_detr_preprocessed_matches_end2end(build_test_engine, images) -> None:
+    """DETR run() on a preprocessed batch plus ratios/padding returns original-image boxes."""
+    onnx = Path(__file__).parents[2] / "data" / "rtdetrv1" / "rtdetrv1_r18_640.onnx"
+    if not onnx.exists():
+        pytest.skip(f"missing {onnx}")
+    model = Detector(build_test_engine(onnx), preprocessor="cpu", warmup=False)
+    image = images["horse"].array
+    assert image.shape[0] != image.shape[1]
+    tensor, ratios, padding = model.preprocess([image])
+    outputs = model.run(tensor, ratios, padding, preprocessed=True)
+    got = model.get_detections(outputs)
+    expected = model.end2end(image)
+    assert len(got) == len(expected)
+    for (box, score, cls_id), (e_box, e_score, e_cls_id) in zip(got, expected):
+        assert cls_id == e_cls_id
+        assert score == pytest.approx(e_score, abs=1e-2)
+        assert box == pytest.approx(e_box, abs=2.0)
