@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import gc
+import weakref
+
 import numpy as np
 import pytest
 
@@ -60,3 +63,21 @@ def test_parallel_engines_take_every_result_before_raising() -> None:
         ]
     finally:
         engines.stop()
+
+
+def test_queued_engine_is_collected_without_stop() -> None:
+    """Dropping an unstopped QueuedTRTEngine frees it and ends its worker thread."""
+    queued = QueuedTRTEngine(_FakeEngine("fake"))
+    thread = queued._thread
+    ref = weakref.ref(queued)
+    del queued
+    gc.collect()
+    assert ref() is None
+    thread.join(timeout=5.0)
+    assert not thread.is_alive()
+
+
+def test_queued_engine_del_survives_failed_init() -> None:
+    """__del__ after an __init__ that failed before the thread existed does not raise."""
+    queued = QueuedTRTEngine.__new__(QueuedTRTEngine)
+    queued.__del__()

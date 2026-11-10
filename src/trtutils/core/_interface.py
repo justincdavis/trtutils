@@ -470,10 +470,10 @@ class TRTEngineInterface(ABC):
             # generate in input datatype directly instead of casting (if possible)
             rand_input: list[Buffer] = []
             for shape, dtype in self.input_spec:
-                if np.issubdtype(dtype, np.floating):
+                if dtype in (np.float32, np.float64):
                     rand_arr = self._rng.random(size=shape, dtype=dtype)
                 else:
-                    # fallback to cast if not supported
+                    # Generator.random only supports float32/float64, cast the rest
                     rand_arr = self._rng.random(size=shape, dtype=np.float32).astype(dtype)
                 rand_input.append(Buffer.wrap(rand_arr))
             self._rand_input = rand_input
