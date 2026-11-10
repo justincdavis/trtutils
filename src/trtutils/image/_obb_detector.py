@@ -15,6 +15,7 @@ from ._image_model import ImageModel
 from ._schema import OBBDetectorOutputSchema
 from .interfaces import OBBDetectorInterface
 from .postprocessors import get_obb_detections, postprocess_yolo_obb
+from .postprocessors._cuda_obb import CUDAObbPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -33,6 +34,8 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
     """Implementation of oriented bounding box detectors (YOLO-style OBB heads)."""
 
     _OUTPUT_SCHEMA = OBBDetectorOutputSchema
+    _CUDA_POSTPROCESSOR = CUDAObbPostprocessor
+    _cuda_post_default = True
 
     def __init__(
         self: Self,
@@ -118,8 +121,9 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
             Whether or not to enable CUDA graph capture for optimized execution.
             Only effective with async_v3 backend. Default is True.
         postprocessor : str, optional
-            Where to postprocess, 'cpu' or 'cuda'. Default is None, which
-            keeps 'cpu' unless the task's CUDA postprocessor is the default.
+            Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes oriented boxes
+            on the GPU and copies back only the final results. Default is None,
+            which picks 'cuda'.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -198,7 +202,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
 
         Parameters
         ----------
-        outputs : list[np.ndarray]
+        outputs : list[np.ndarray] | list[Buffer]
             The raw outputs from the engine to postprocess.
         ratios : list[tuple[float, float]]
             The rescale ratios used during preprocessing for each image.
@@ -231,9 +235,9 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
 
         conf_thres = conf_thres if conf_thres is not None else self._conf_thres
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
-        outputs = self._host_outputs(outputs)
         t0 = time.perf_counter()
-        data = postprocess_yolo_obb(
+        data = self._postprocess_with(
+            postprocess_yolo_obb,
             outputs,
             ratios,
             padding,
