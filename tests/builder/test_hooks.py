@@ -90,6 +90,18 @@ class TestYOLOEfficientNMS:
         result = hook(mock_network)
         assert result is mock_network
 
+    def test_end2end_passthrough(self) -> None:
+        """A network that already ends in EfficientNMS (YOLOv9 end2end) passes through."""
+        hook = yolo_efficient_nms_hook(num_classes=80)
+        mock_network = MagicMock()
+        mock_output = MagicMock()
+        mock_output.name = "num_dets"
+        mock_output.shape = (1, 1)
+        mock_network.get_output.return_value = mock_output
+        result = hook(mock_network)
+        assert result is mock_network
+        mock_network.mark_output.assert_not_called()
+
     def test_yolov8_modification(self) -> None:
         """YOLOv8-style (N, channels, boxes) adds NMS plugin with 4 outputs."""
         hook = yolo_efficient_nms_hook(num_classes=80)

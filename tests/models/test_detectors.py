@@ -33,7 +33,7 @@ from trtutils.models import (
     YOLOv13,
     YOLOv26,
 )
-from trtutils.models._hooks import depthwise_fp32_build_hook
+from trtutils.models._hooks import depthwise_fp32_build_hook, nms_build_hook
 
 DETECTORS = [
     pytest.param(YOLOv3, DATA_DIR / "yolov3" / "yolov3t_640.onnx", id="yolov3"),
@@ -131,6 +131,11 @@ def test_build_pins_depthwise_convs_fp32(model_cls, onnx_path, num_depthwise) ->
     assert overrides["prefer_precision_constraints"] is True
     assert len(overrides["layer_precision"]) == num_depthwise
     assert {dtype for _idx, dtype in overrides["layer_precision"]} == {trt.DataType.FLOAT}
+
+
+def test_yolov9_adds_nms_for_ultralytics_exports() -> None:
+    """The yolov9u models export a raw output0 head, so YOLOv9 builds must add EfficientNMS."""
+    assert nms_build_hook in YOLOv9._build_hooks
 
 
 def test_rfdetr_class_map_horse(build_model_engine, images) -> None:

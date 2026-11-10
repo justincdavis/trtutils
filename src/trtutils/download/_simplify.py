@@ -94,6 +94,9 @@ def simplify(
             )
 
 
+_ERR_TAIL_CHARS = 500
+
+
 def _build_tool_cmd(
     tool_name: str,
     tool_type: str,
@@ -137,6 +140,7 @@ def _run_simplify(
 
     current_input = model_path
     intermediates: list[Path] = []
+    failures: list[str] = []
 
     for tool_name in tools:
         tool_type = _TOOL_REGISTRY[tool_name]
@@ -145,9 +149,15 @@ def _run_simplify(
             LOG.info(f"Running {tool_name} on {current_input.stem}")
             cmd = _build_tool_cmd(tool_name, tool_type, bin_path, current_input, output_path)
             # tools (polygraphy shape inference) leave temp files behind: confine them
-            with tempfile.TemporaryDirectory() as tool_tmp:
+            with tempfile.TemporaryDirectory() as tool_tmp, tempfile.TemporaryFile("w+") as log:
                 env = {**os.environ, "TMPDIR": tool_tmp}
-                run_cmd(cmd, env=env, verbose=verbose)
+                try:
+                    run_cmd(cmd, env=env, verbose=verbose, stdout=log, stderr=subprocess.STDOUT)
+                except subprocess.CalledProcessError:
+                    log.seek(0)
+                    tail = log.read()[-_ERR_TAIL_CHARS:].strip()
+                    failures.append(f"{tool_name}: {tail}")
+                    raise
             intermediates.append(output_path)
             current_input = output_path
         except subprocess.CalledProcessError:
@@ -159,7 +169,7 @@ def _run_simplify(
         for path in intermediates:
             if path.exists():
                 path.unlink()
-        err_msg = "All simplification tools failed"
+        err_msg = "All simplification tools failed:\n" + "\n".join(failures)
         raise RuntimeError(err_msg)
 
     shutil.move(str(current_input), str(model_path))

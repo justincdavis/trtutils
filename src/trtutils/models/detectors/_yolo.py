@@ -323,6 +323,7 @@ class YOLOv9(Detector, Model):
     _friendly_name = "YOLOv9"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [nms_build_hook]
 
     def __init__(
         self: Self,

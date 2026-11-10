@@ -139,6 +139,10 @@ def yolo_efficient_nms_hook(
         if network.get_output(0).shape == (1, 300, 6):
             return network
 
+        # the network already ends in EfficientNMS (e.g. YOLOv9 end2end exports)
+        if network.get_output(0).name == "num_dets":
+            return network
+
         # get the number of channels for the output
         # two cases:
         # 1. YOLOv8 style output: (N, num_classes + bbox_dim, num_boxes)
