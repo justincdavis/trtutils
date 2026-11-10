@@ -1,5 +1,5 @@
---- export_onnx.py	2026-02-04 13:47:36.471562151 -0600
-+++ export_onnx_modified.py	2026-02-04 13:48:07.942685488 -0600
+--- export_onnx.py
++++ export_onnx_modified.py
 @@ -54,6 +54,13 @@
          action="store_true",
          help="decode in inference or not"
@@ -24,7 +24,15 @@
      if not args.experiment_name:
          args.experiment_name = exp.exp_name
  
-@@ -88,7 +98,7 @@
+@@ -79,6 +89,7 @@
+     ckpt = torch.load(ckpt_file, map_location="cpu")
+ 
+     model.eval()
++    torch.set_grad_enabled(False)
+     if "model" in ckpt:
+         ckpt = ckpt["model"]
+     model.load_state_dict(ckpt)
+@@ -88,7 +99,7 @@
      logger.info("loading checkpoint done.")
      dummy_input = torch.randn(args.batch_size, 3, exp.test_size[0], exp.test_size[1])
  
@@ -33,7 +41,7 @@
          model,
          dummy_input,
          args.output_name,
-@@ -102,15 +112,13 @@
+@@ -102,15 +113,13 @@
  
      if not args.no_onnxsim:
          import onnx

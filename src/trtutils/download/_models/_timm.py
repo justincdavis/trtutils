@@ -51,6 +51,8 @@ output_path = "{output_name}"
 # distilled models average their class and distillation heads in eval mode
 model = timm.create_model("{config["name"]}", pretrained=True, img_size=imgsz)
 model.eval()
+# exports never need gradients
+torch.set_grad_enabled(False)
 dummy_input = torch.randn({batch}, 3, imgsz, imgsz)
 torch.onnx.export(
     model,

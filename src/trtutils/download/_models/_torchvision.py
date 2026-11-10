@@ -52,6 +52,8 @@ output_path = model_name + ".onnx"
 
 model = getattr(models, model_name)(weights="DEFAULT")
 model.eval()
+# exports never need gradients
+torch.set_grad_enabled(False)
 dummy_input = torch.randn({batch}, 3, imgsz, imgsz)
 torch.onnx.export(
     model,

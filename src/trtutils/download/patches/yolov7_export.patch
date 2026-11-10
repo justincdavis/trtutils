@@ -1,5 +1,5 @@
---- export.py	2025-10-18 21:32:26.370397260 -0500
-+++ export_fix.py	2025-10-18 21:33:00.500170163 -0500
+--- export.py
++++ export_fix.py
 @@ -34,6 +34,7 @@
      parser.add_argument('--include-nms', action='store_true', help='export end2end onnx')
      parser.add_argument('--fp16', action='store_true', help='CoreML FP16 half-precision export')
@@ -8,7 +8,15 @@
      opt = parser.parse_args()
      opt.img_size *= 2 if len(opt.img_size) == 1 else 1  # expand
      opt.dynamic = opt.dynamic and not opt.end2end
-@@ -156,7 +157,7 @@
+@@ -41,6 +42,7 @@
+     print(opt)
+     set_logging()
+     t = time.time()
++    torch.set_grad_enabled(False)
+ 
+     # Load PyTorch model
+     device = select_device(opt.device)
+@@ -156,7 +158,7 @@
              else:
                  model.model[-1].concat = True
  

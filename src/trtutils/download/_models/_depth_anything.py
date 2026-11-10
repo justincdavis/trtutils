@@ -72,6 +72,8 @@ encoder = "{encoder}"
 
 depth_anything = DepthAnything.from_pretrained(f"LiheYoung/depth_anything_{{encoder}}14")
 depth_anything = depth_anything.to("cpu").eval()
+# exports never need gradients
+torch.set_grad_enabled(False)
 
 dummy_input = torch.ones((3, {imgsz}, {imgsz})).unsqueeze(0)
 
@@ -178,6 +180,8 @@ model_configs = {{
 depth_anything = DepthAnythingV2(**model_configs[encoder])
 depth_anything.load_state_dict(torch.load('depth_anything_v2_{encoder}.pth', map_location='cpu'))
 depth_anything = depth_anything.to('cpu').eval()
+# exports never need gradients
+torch.set_grad_enabled(False)
 
 dummy_input = torch.ones((3, {imgsz}, {imgsz})).unsqueeze(0)
 
