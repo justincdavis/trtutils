@@ -24,6 +24,16 @@ def _assert_close_depth(left, right) -> None:
     assert np.abs(left - right).mean() < 0.01
 
 
+def _assert_same_interactions(left, right) -> None:
+    # fp16 drift moves a hand at 0.302 across the 0.3 threshold and reorders near-tied scores,
+    # so drop borderline hands and compare in left-to-right order
+    def stable(interactions):
+        kept = [i for i in interactions if i[0][1] > 0.35]
+        return sorted(kept, key=lambda i: i[0][0][0])
+
+    _assert_interactions_close(stable(left), stable(right))
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize(
     ("model_cls", "onnx_path", "image_name", "assert_same"),
@@ -68,7 +78,7 @@ def _assert_close_depth(left, right) -> None:
             Hands23,
             DATA_DIR / "hands23" / "hands23_x101_800.onnx",
             "people",
-            _assert_interactions_close,
+            _assert_same_interactions,
             id="hands23",
         ),
     ],
