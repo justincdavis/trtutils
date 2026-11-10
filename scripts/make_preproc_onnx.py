@@ -5,10 +5,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import torch
 import onnx
 import onnxsim
-
+import torch
 
 OPSET = 20
 

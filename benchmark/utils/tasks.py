@@ -84,7 +84,7 @@ def build_task_models() -> list[TaskModel]:
     for cls in vars(models).values():
         is_model = inspect.isclass(cls) and issubclass(cls, Model)
         if is_model and any(issubclass(cls, base) for base in TASKS):
-            by_type.setdefault(cls._model_type, []).append(cls)  # noqa: SLF001
+            by_type.setdefault(cls._model_type, []).append(cls)
     specs = []
     for model_type, names in load_model_configs().items():
         for name in names:

@@ -44,10 +44,9 @@ def main():
             f.write(f".. _examples_{relative_path.replace('.py', '')}:\n\n")
             f.write(f"Example: {relative_path}\n")
             f.write(f"{'=' * (len(relative_path) + 9)}\n\n")
-            f.write(f".. code-block:: python\n\n")
+            f.write(".. code-block:: python\n\n")
             with open(os.path.join("examples", relative_path)) as example_f:
-                for line in example_f.readlines():
-                    f.write(f"\t{line}")
+                f.writelines(f"\t{line}" for line in example_f)
             f.write("\n")
 
     # create the examples.rst file

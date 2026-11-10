@@ -6,10 +6,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import torch
-import torchvision
 import onnx
 import onnxslim
+import torch
+import torchvision
 
 
 def main(args: argparse.Namespace) -> None:

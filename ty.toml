@@ -3,5 +3,5 @@ root = [".", "src"]
 python-version = "3.8"
 
 [rules]
-unresolved-import = "ignore"
+import-not-found = "ignore"
 unused-type-ignore-comment = "ignore"

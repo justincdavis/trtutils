@@ -7,9 +7,9 @@ import contextlib
 import io
 from pathlib import Path
 
-import torch
 import onnx
 import onnxsim
+import torch
 
 
 class Simple(torch.nn.Module):
@@ -40,7 +40,7 @@ def main() -> None:
             onnx_model,
             check_n=5,
             perform_optimization=True,
-        )    
+        )
     onnx.save(model_simp, onnx_path)
 
 
