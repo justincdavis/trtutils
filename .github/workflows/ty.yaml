@@ -18,5 +18,11 @@ jobs:
           pip install --upgrade pip
           pip install ".[ci]" ".[test]"
 
+      # one interpreter, every supported target: ty checks version-gated code per version
       - name: Type Check
-        run: ./ci/run_type_check.sh
+        run: |
+          for version in 3.8 3.9 3.10 3.11 3.12 3.13 3.14 3.15; do
+            echo "::group::Python ${version}"
+            ./ci/run_type_check.sh --python-version "${version}"
+            echo "::endgroup::"
+          done

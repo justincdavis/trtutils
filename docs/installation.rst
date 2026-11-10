@@ -9,7 +9,7 @@ to install trtutils into a virtual environment to ensure dependency isolation.
 System Requirements
 -------------------
 
-- Python 3.8 or later
+- Python 3.8 to 3.15
 - CUDA toolkit
 - TensorRT
 - NVIDIA GPU or Jetson device
@@ -27,6 +27,8 @@ matches the CUDA version present on the system:
     $ pip install "trtutils[cu11]"  # CUDA 11
 
 Each of these installs a matching ``cuda-python`` and ``tensorrt`` package.
+NVIDIA publishes the ``tensorrt`` wheels for Python 3.8 to 3.14, so on
+Python 3.15 install TensorRT by other means (see below).
 
 On Jetson devices TensorRT is provided by Jetpack, so use the Jetpack extra
 instead, which installs only ``cuda-python``:
