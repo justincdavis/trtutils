@@ -15,7 +15,7 @@ from onnx import TensorProto, helper
 
 from trtutils.builder.onnx import embed_sst
 from trtutils.image._image_model import _image_binding
-from trtutils.image.preprocessors._process import preprocess
+from trtutils.image.preprocessors._cpu import preprocess
 from trtutils.models import (
     YOLOX,
     ResNet,
@@ -37,7 +37,9 @@ def _save_identity(path: Path, inputs: list, shape: list) -> None:
         inputs,
         [helper.make_tensor_value_info("out", TensorProto.FLOAT, shape)],
     )
-    onnx.save(helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)]), path)
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
+    model.ir_version = 8  # loadable by older onnxruntime
+    onnx.save(model, path)
 
 
 @pytest.mark.parametrize(
