@@ -14,7 +14,7 @@ from trtutils.core._buffer import Buffer, MemoryLocation
 from trtutils.core._memory import memcpy_device_to_host_async
 from trtutils.image.kernels import OCR_POST
 
-from ._gpu import CudaPostprocessor, mapped
+from ._cuda import CUDAPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 _THREADS = 256
 
 
-class CtcArgmax(CudaPostprocessor):
+class CTCArgmax(CUDAPostprocessor):
     """Greedy CTC decode of a (B, T, C) float32 head: best class and its probability per step."""
 
     _FILE = OCR_POST
@@ -43,8 +43,8 @@ class CtcArgmax(CudaPostprocessor):
         rows = batch * steps
         # the input width changes per batch, so the buffers only grow
         if rows > self._rows:
-            self._idx = mapped((rows,), np.int32)
-            self._prob = mapped((rows,), np.float32)
+            self._idx = Buffer.host_mapped((rows,), np.int32)
+            self._prob = Buffer.host_mapped((rows,), np.float32)
             self._rows = rows
         self._launch(
             self._argmax,
@@ -61,7 +61,7 @@ class CtcArgmax(CudaPostprocessor):
         return [[i, p] for i, p in zip(idx, prob)]
 
 
-class DbBinarize(CudaPostprocessor):
+class DBBinarize(CUDAPostprocessor):
     """
     Threshold a (B, 1, H, W) float32 DB probability map on the device.
 
@@ -86,7 +86,7 @@ class DbBinarize(CudaPostprocessor):
         count = probs.size
         # the input shape changes per image, so the buffers only grow
         if count > self._capacity:
-            self._bitmap = mapped((count,), np.uint8)
+            self._bitmap = Buffer.host_mapped((count,), np.uint8)
             self._pred = Buffer.empty((count,), np.float32, MemoryLocation.HOST, pinned=True)
             self._capacity = count
         self._launch(

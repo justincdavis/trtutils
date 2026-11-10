@@ -1,18 +1,18 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/postprocessors/_gpu_ocr.py -- CUDA OCR postprocessing parity."""
+"""Tests for src/trtutils/image/postprocessors/_cuda_ocr.py -- CUDA OCR postprocessing parity."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from trtutils.image.postprocessors._gpu_ocr import CtcArgmax, DbBinarize
-from trtutils.image.postprocessors._ocr import (
+from trtutils.image.postprocessors._cpu_ocr import (
     postprocess_text_detection,
     postprocess_text_recognition,
 )
+from trtutils.image.postprocessors._cuda_ocr import CTCArgmax, DBBinarize
 
 
 def _ctc(
@@ -38,7 +38,7 @@ def _ctc(
 def test_cuda_ctc_matches_cpu(cuda_stream, to_device, batch, steps, classes, ties) -> None:
     """Indices and probabilities match postprocess_text_recognition, dtypes included."""
     probs = _ctc(np.random.default_rng(0), batch, steps, classes, ties=ties)
-    post = CtcArgmax(cuda_stream)
+    post = CTCArgmax(cuda_stream)
     # twice, then a smaller batch, so the grown buffers are reused
     for run in (probs, probs, probs[:1]):
         ref = postprocess_text_recognition([run])
@@ -85,7 +85,7 @@ def test_cuda_det_matches_cpu(
     if thresh < 0.9:
         assert any(len(boxes) for boxes, _ in ref)
 
-    post = DbBinarize(cuda_stream)
+    post = DBBinarize(cuda_stream)
     for _ in range(2):
         device = to_device(maps)
         bitmaps, pred, wait = post([device], thresh)

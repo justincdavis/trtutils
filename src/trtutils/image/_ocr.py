@@ -26,7 +26,7 @@ from .postprocessors import (
     postprocess_text_detection,
     postprocess_text_recognition,
 )
-from .postprocessors._gpu_ocr import CtcArgmax, DbBinarize
+from .postprocessors._cuda_ocr import CTCArgmax, DBBinarize
 from .preprocessors import (
     CPUPreprocessor,
     crop_text_region,
@@ -50,7 +50,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
     """Implementation of DB (Differentiable Binarization) text detectors, as used by PaddleOCR."""
 
     _OUTPUT_SCHEMA = TextDetectorOutputSchema
-    _CUDA_POSTPROCESSOR = DbBinarize
+    _CUDA_POSTPROCESSOR = DBBinarize
     _cuda_post_default = True
 
     def __init__(
@@ -692,7 +692,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
     """Implementation of CTC text line recognizers, as used by PaddleOCR."""
 
     _OUTPUT_SCHEMA = TextRecognizerOutputSchema
-    _CUDA_POSTPROCESSOR = CtcArgmax
+    _CUDA_POSTPROCESSOR = CTCArgmax
     _cuda_post_default = True
 
     def __init__(
