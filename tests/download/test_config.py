@@ -29,6 +29,8 @@ _EXPECTED_FAMILIES = [
     "deimv2",
     "rfdetr",
     "torchvision_classifier",
+    "deit",
+    "deit3",
     "depth_anything_v1",
     "depth_anything_v2",
     "depth_anything_v3",
@@ -75,6 +77,14 @@ _EXPECTED_MODELS = [
     "alexnet",
     "resnet18",
     "vgg11",
+    "deit_tiny",
+    "deit_base_hr",
+    "deit_base_distilled",
+    "deit_base_distilled_hr",
+    "deit3_medium",
+    "deit3_huge",
+    "deit3_large_in22k_hr",
+    "deit3_huge_in22k",
     "depth_anything_v1_small",
     "depth_anything_v2_small",
     "depth_anything_v3_mono_large",
@@ -140,3 +150,17 @@ def test_task_config_export_args(model_configs, version) -> None:
             assert config.get("imgsz") == imgsz
             raw_head = version == "yolov26" and task != "cls"
             assert config.get("end2end") == ("False" if raw_head else None)
+
+
+@pytest.mark.parametrize("family", ["deit", "deit3"])
+def test_timm_configs(model_configs, family) -> None:
+    """DeiT configs name a pretrained timm model and its trained size and patch size."""
+    for model, config in model_configs[family].items():
+        assert config["url"] == "timm"
+        assert model.startswith(f"{family}_")
+        assert "_patch" not in model
+        trained = "384" if model.endswith("_hr") else "224"
+        assert config["imgsz"] == trained
+        assert config["name"].split(".")[0].endswith(f"_{trained}")
+        assert config["patch"] == ("14" if "huge" in model else "16")
+        assert ("in22k" in config["name"]) == ("_in22k" in model)

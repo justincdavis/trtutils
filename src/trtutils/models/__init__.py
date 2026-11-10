@@ -50,6 +50,10 @@ Classes
     Alias for the Classifier class with args preset for AlexNet.
 :class:`ConvNeXt`
     Alias for the Classifier class with args preset for ConvNeXt.
+:class:`DeiT`
+    Alias for the Classifier class with args preset for DeiT.
+:class:`DeiT3`
+    Alias for the Classifier class with args preset for DeiT III.
 :class:`DenseNet`
     Alias for the Classifier class with args preset for DenseNet.
 :class:`EfficientNet`
@@ -137,6 +141,8 @@ from .classifiers import (
     VGG,
     AlexNet,
     ConvNeXt,
+    DeiT,
+    DeiT3,
     DenseNet,
     EfficientNet,
     EfficientNetV2,
@@ -201,6 +207,8 @@ __all__ = [
     "AlexNet",
     "ConvNeXt",
     "DEIMv2",
+    "DeiT",
+    "DeiT3",
     "DenseNet",
     "DepthAnythingV1",
     "DepthAnythingV2",

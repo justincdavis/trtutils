@@ -9,7 +9,7 @@ import pytest
 
 from tests.conftest import DATA_DIR
 from trtutils.image._schema import ClassifierOutputSchema
-from trtutils.models import EfficientNet, MobileNetV3, ResNet
+from trtutils.models import DeiT, DeiT3, EfficientNet, MobileNetV3, ResNet
 
 CLASSIFIERS = [
     pytest.param(ResNet, DATA_DIR / "resnet" / "resnet18_224.onnx", id="resnet18"),
@@ -21,6 +21,11 @@ CLASSIFIERS = [
         DATA_DIR / "mobilenet" / "mobilenet_v3_small_224.onnx",
         id="mobilenet-v3-small",
     ),
+    pytest.param(DeiT, DATA_DIR / "deit" / "deit_tiny_224.onnx", id="deit-tiny"),
+    pytest.param(
+        DeiT, DATA_DIR / "deit" / "deit_small_distilled_224.onnx", id="deit-small-distilled"
+    ),
+    pytest.param(DeiT3, DATA_DIR / "deit3" / "deit3_small_224.onnx", id="deit3-small"),
 ]
 
 

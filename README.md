@@ -123,7 +123,7 @@ all commands (`benchmark`, `build`, `build_yolo`, `build_dla`, `quantize`,
 
 ## Supported Models
 
-The models listed in the [documentation](https://justincdavis.github.io/trtutils/models.html) are officially supported for inference, including the YOLO family (v3, v5, v7 through v13, v26, YOLOX), DETR-based detectors (RT-DETR v1/v2/v3, D-FINE, DEIM, DEIMv2, RF-DETR), torchvision classifiers, DepthAnything V1/V2/V3, and HOI-DETR/Hands23.
+The models listed in the [documentation](https://justincdavis.github.io/trtutils/models.html) are officially supported for inference, including the YOLO family (v3, v5, v7 through v13, v26, YOLOX), DETR-based detectors (RT-DETR v1/v2/v3, D-FINE, DEIM, DEIMv2, RF-DETR), torchvision classifiers, DeiT/DeiT III, DepthAnything V1/V2/V3, and HOI-DETR/Hands23.
 
 ## Documentation
 

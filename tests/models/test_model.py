@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 import trtutils.models as models
-from trtutils.models import RFDETR, DEIMv2, RTDETRv1, YOLOv8, YOLOv10
+from trtutils.models import RFDETR, DEIMv2, DeiT, DeiT3, RTDETRv1, YOLOv8, YOLOv10
 from trtutils.models._model import Model
 
 pytestmark = pytest.mark.cpu
@@ -93,6 +93,11 @@ def test_validate_imgsz_rejects(model_cls, imgsz, match) -> None:
         pytest.param(DEIMv2, "deimv2_femto", None, 416, id="variant-femto"),
         pytest.param(DEIMv2, "deimv2_s", None, 640, id="variant-fallback"),
         pytest.param(DEIMv2, "deimv2_atto", 320, 320, id="variant-explicit"),
+        pytest.param(DeiT, "deit_base", None, 224, id="deit-default"),
+        pytest.param(DeiT, "deit_base_hr", None, 384, id="deit-hr-default"),
+        pytest.param(DeiT, "deit_base_hr", 448, 448, id="deit-hr-custom"),
+        pytest.param(DeiT, "deit_tiny", 320, 320, id="deit-custom"),
+        pytest.param(DeiT3, "deit3_huge", 252, 252, id="deit3-huge-patch14"),
     ],
 )
 def test_download_resolves_imgsz(tmp_path, model_cls, model, imgsz, expected) -> None:
@@ -107,6 +112,9 @@ def test_download_resolves_imgsz(tmp_path, model_cls, model, imgsz, expected) ->
     [
         pytest.param(YOLOv10, "fake_model_xyz", None, "not supported", id="unknown-model"),
         pytest.param(DEIMv2, "deimv2_atto", 640, "requires imgsz of 320", id="variant-mismatch"),
+        pytest.param(DeiT, "deit3_small", None, "not supported", id="deit-other-family"),
+        pytest.param(DeiT, "deit_tiny", 250, "divisible by 16", id="deit-patch"),
+        pytest.param(DeiT3, "deit3_huge", 256, "divisible by 14", id="deit3-huge-patch"),
     ],
 )
 def test_download_rejects(tmp_path, model_cls, model, imgsz, match) -> None:

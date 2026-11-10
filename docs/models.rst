@@ -96,7 +96,29 @@ Classification
 
    - See: `PyTorch Vision Classification Models <https://docs.pytorch.org/vision/main/models.html#classification>`_
 
-2. **Ultralytics YOLO** - YOLOv8, YOLOv11, and YOLOv26 classification heads
+2. **DeiT** (``DeiT``) - ImageNet-1k classifiers, exported through timm
+
+   - ``deit_tiny``, ``deit_small``, ``deit_base``, ``deit_base_hr``
+   - Distilled: ``deit_tiny_distilled``, ``deit_small_distilled``, ``deit_base_distilled``,
+     ``deit_base_distilled_hr`` (class and distillation heads averaged, one output)
+   - GitHub: `facebookresearch/deit <https://github.com/facebookresearch/deit>`_
+   - Apache-2.0 licensed
+
+3. **DeiT III** (``DeiT3``) - ImageNet-1k classifiers, exported through timm
+
+   - ``deit3_small``, ``deit3_medium``, ``deit3_base``, ``deit3_large``, ``deit3_huge``,
+     ``deit3_small_hr``, ``deit3_base_hr``, ``deit3_large_hr``
+   - ImageNet-22k pretrained: the same names with ``_in22k`` (e.g. ``deit3_base_in22k``,
+     ``deit3_base_in22k_hr``)
+   - GitHub: `facebookresearch/deit <https://github.com/facebookresearch/deit>`_
+   - Apache-2.0 licensed
+
+   DeiT and DeiT III download at any ``imgsz`` divisible by the patch size (16, or 14 for
+   ``deit3_huge``); timm resamples the position embeddings. ``_hr`` models are fine-tuned at
+   384 and default to it, the others to 224. Both wrappers preprocess with ``center_crop`` and
+   ``crop_pct=0.9``; the ``_hr`` and ``_in22k`` weights were evaluated with ``crop_pct=1.0``.
+
+4. **Ultralytics YOLO** - YOLOv8, YOLOv11, and YOLOv26 classification heads
 
    - YOLOv8: ``yolov8n-cls``, ``yolov8s-cls``, ``yolov8m-cls``, ``yolov8l-cls``, ``yolov8x-cls``
    - YOLOv11: ``yolov11n-cls``, ``yolov11s-cls``, ``yolov11m-cls``, ``yolov11l-cls``, ``yolov11x-cls``

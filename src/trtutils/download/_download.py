@@ -27,6 +27,7 @@ from ._models import (
     export_rtdetrv1,
     export_rtdetrv2,
     export_rtdetrv3,
+    export_timm_classifier,
     export_torchvision_classifier,
     export_ultralytics,
     export_yolov7,
@@ -112,7 +113,7 @@ def download_model(  # noqa: C901, PLR0912, PLR0915
         Export the created virtual environment's requirements to this path using uv pip freeze.
     batch : int, optional
         The batch size to export at, by default 1. Only the ultralytics,
-        YOLOv10/12/13, and torchvision exporters accept a batch above 1.
+        YOLOv10/12/13, torchvision, and timm exporters accept a batch above 1.
     dynamic : bool, optional
         Leave the batch dimension symbolic (ultralytics and YOLOv10/12/13 also
         leave height and width symbolic). Same exporters as batch. By default
@@ -170,6 +171,8 @@ def download_model(  # noqa: C901, PLR0912, PLR0915
     export_func = None
     if config.get("url") == "torchvision_classifier":
         export_func = export_torchvision_classifier
+    elif config.get("url") == "timm":
+        export_func = export_timm_classifier
     elif config.get("url") == "ultralytics":
         export_func = export_ultralytics
     elif "deim" in model and "deimv2" not in model:
@@ -222,6 +225,7 @@ def download_model(  # noqa: C901, PLR0912, PLR0915
     # only these exporters' upstream tooling can set a batch size or a dynamic batch
     supported = export_func in (
         export_torchvision_classifier,
+        export_timm_classifier,
         export_ultralytics,
         export_yolov10,
         export_yolov12,
@@ -313,7 +317,7 @@ def download(
         Export the created virtual environment's requirements to this path using uv pip freeze.
     batch : int, optional
         The batch size to export at, by default 1. Only the ultralytics,
-        YOLOv10/12/13, and torchvision exporters accept a batch above 1.
+        YOLOv10/12/13, torchvision, and timm exporters accept a batch above 1.
     dynamic : bool, optional
         Leave the batch dimension symbolic (ultralytics and YOLOv10/12/13 also
         leave height and width symbolic). Same exporters as batch. By default

@@ -28,6 +28,8 @@ Added
 * ``resize_method="center_crop"`` with ``crop_pct`` (default 0.875): the torchvision/timm
   ImageNet eval transform, resize to ``floor(imgsz / crop_pct)`` then center crop ``imgsz``
 * ``trtutils classify --crop_pct``, and ``--resize_method`` accepts ``center_crop``
+* ``models.DeiT`` / ``models.DeiT3`` and a timm exporter for DeiT (plain and distilled) and
+  DeiT III; any ``imgsz`` divisible by the patch size, ``_hr`` models default to 384
 * Hands23 downloads now drop all 9 ``NonZero`` ops from the exported ONNX (ROIAlign over all
   rois merged with ``Where``, RPN zero-area filter as ``Where(valid, score, -1e4)``), so
   TensorRT no longer does nine blocking data-dependent-shape copies per run. ``end2end`` is
