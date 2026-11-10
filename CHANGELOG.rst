@@ -109,7 +109,7 @@ Performance
   RTX 5080
 * ``hybrid`` preprocessing: yolo11n end2end 0.86 ms on 1080p (RTX 5080), vs 0.98 ms with
   ``"cuda"``
-* PPOCR with the default CUDA postprocessors: 14-line 1080p page about 7.0 ms on an RTX 5080;
+* PPOCR with the default CUDA postprocessors: 14-line 1080p page about 7.0 ms on an RTX 5080
 
 Fixed
 ^^^^^
