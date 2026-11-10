@@ -188,6 +188,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         use_space_char: bool | None = None,
+        width_bucket: int | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -211,6 +212,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
             use_space_char=use_space_char,
+            width_bucket=width_bucket,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -308,6 +310,7 @@ class PPOCR(OCR):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         postprocessor: str | None = None,
+        width_bucket: int | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -366,6 +369,9 @@ class PPOCR(OCR):
             the image once and runs detector preprocessing, text line crops, recognizer
             preprocessing and the decodes on the GPU with results identical to the CPU
             path. By default None, which uses 'cuda'.
+        width_bucket : int, optional
+            Round the recognizer's batch widths up to a multiple of this many pixels, see
+            :class:`~trtutils.image.TextRecognizer`. By default None.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -400,6 +406,7 @@ class PPOCR(OCR):
                 pagelocked_mem=pagelocked_mem,
                 unified_mem=unified_mem,
                 postprocessor=postprocessor,
+                width_bucket=width_bucket,
                 no_warn=no_warn,
                 verbose=verbose,
             ),
