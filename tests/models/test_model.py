@@ -173,3 +173,12 @@ def test_ppocr_build_fp16(tmp_path, model_cls, kwargs, fp16) -> None:
     with patch("trtutils.models.ocr._ppocr.build_engine") as mock_build:
         model_cls.build(tmp_path / "fake.onnx", tmp_path / "out.engine", **kwargs)
     assert mock_build.call_args.kwargs["fp16"] is fp16
+
+
+@pytest.mark.parametrize("model_cls", [PPOCRDetector, PPOCRRecognizer])
+def test_ppocr_build_rejects_embed_sst(model_cls: type[Model]) -> None:
+    """PP-OCR does not embed the SST, so embed_sst=True raises before any build work."""
+    with patch("trtutils.models.ocr._ppocr.build_engine") as build:
+        with pytest.raises(ValueError, match="embed_sst"):
+            model_cls.build("model.onnx", "model.engine", embed_sst=True)
+    build.assert_not_called()

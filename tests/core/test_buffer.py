@@ -13,6 +13,7 @@ The remaining tests run against the real runtime.
 from __future__ import annotations
 
 import gc
+from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any
 
@@ -325,6 +326,17 @@ class TestInterop:
             Buffer.wrap(foreign)
 
 
+class _CustomSequence(Sequence):
+    def __init__(self, items: list[Buffer]) -> None:
+        self._items = items
+
+    def __getitem__(self, index: int) -> Buffer:
+        return self._items[index]
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+
 @pytest.mark.cpu
 class TestAsBuffers:
     """Engine input validation."""
@@ -334,11 +346,16 @@ class TestAsBuffers:
         assert as_buffers([buf]) == [buf]
         assert as_buffers((buf,)) == [buf]
 
+    def test_accepts_any_sequence(self) -> None:
+        buf = Buffer.wrap(np.zeros(2))
+        assert as_buffers(_CustomSequence([buf])) == [buf]
+
     @pytest.mark.parametrize(
         "data",
         [
             pytest.param([np.zeros(2)], id="list-of-arrays"),
             pytest.param(np.zeros(2), id="bare-array"),
+            pytest.param("", id="empty-str"),
         ],
     )
     def test_rejects_non_buffers(self, data) -> None:
