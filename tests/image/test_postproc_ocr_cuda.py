@@ -114,3 +114,20 @@ def test_cuda_det_matches_cpu(
             for g, w in zip(got, want):
                 np.testing.assert_array_equal(g, w)
                 assert g.dtype == w.dtype
+
+
+def test_cuda_det_slots_keep_earlier_maps(cuda_stream, to_device) -> None:
+    """Maps enqueued into two slots before one sync both read back as their own image's."""
+    maps = [_prob_map(np.random.default_rng(seed), 1, 96, 160) for seed in (2, 3)]
+    ratios, pads = [(0.5, 0.5)], [(0.0, 0.0)]
+    post = DBBinarize(cuda_stream)
+    for _ in range(2):
+        devices = [to_device(m) for m in maps]
+        jobs = [post.enqueue(device, 0.3, slot) for slot, device in enumerate(devices)]
+        post._sync()
+        for (bitmaps, pred), host in zip(jobs, maps):
+            np.testing.assert_array_equal(pred, host)
+            ours = postprocess_text_detection([pred], ratios, pads, 0.3, 0.6, bitmaps=bitmaps)
+            ref = postprocess_text_detection([host], ratios, pads, 0.3, 0.6)
+            for got, want in zip(ours[0], ref[0]):
+                np.testing.assert_array_equal(got, want)

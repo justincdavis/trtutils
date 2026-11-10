@@ -154,6 +154,8 @@ Added
   yolo11n-cls 0.66 -> 0.38 ms end2end vs ``"cuda"``, yolo11n 0.98 -> 0.86 ms, Depth Anything v2
   small 1.95 -> 1.81 ms. The default is ``"cuda"``; the CPU resize costs more on weaker CPUs.
   ``trtutils detect`` / ``classify --preprocessor hybrid`` select it too
+* ``OCR`` with ``postprocessor="cuda"`` overlaps the pages of a batch: page i + 1 is detected
+  while page i is recognized, with the same results. PPOCRv4 7.1 -> 5.6 ms per 1080p page
 
 Changed
 ^^^^^^^
