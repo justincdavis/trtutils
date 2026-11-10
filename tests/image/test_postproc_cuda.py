@@ -11,7 +11,7 @@ import pytest
 
 from tests.conftest import DATA_DIR
 from trtutils.core import Buffer
-from trtutils.image import Classifier, Detector, OBBDetector, Segmenter
+from trtutils.image import Classifier, Detector, OBBDetector, PoseEstimator, Segmenter
 from trtutils.image.postprocessors._common import (
     clip_boxes,
     cxcywh_to_xyxy,
@@ -52,6 +52,7 @@ _CUDA_MODELS = [
     pytest.param(OBBDetector, _engine("task_engine", "obb"), "aerial", id="obb"),
     pytest.param(Hands23, _engine("hands23_engine"), "people", id="hand-interaction"),
     pytest.param(Segmenter, _engine("task_engine", "seg"), "people", id="seg"),
+    pytest.param(PoseEstimator, _engine("task_engine", "pose"), "people", id="pose"),
 ]
 
 
