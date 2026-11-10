@@ -35,7 +35,7 @@ python3 -m pytest tests/engine/test_engine.py::test_init_default_args -v
 Library code follows [.agents/docs/SRC_CODE_STYLE.md](.agents/docs/SRC_CODE_STYLE.md) and tests
 follow [.agents/docs/TEST_CODE_STYLE.md](.agents/docs/TEST_CODE_STYLE.md). The essentials:
 
-- Python 3.8, line length 101, ruff + ty; `from __future__ import annotations` everywhere.
+- Supports Python 3.8-3.15 (write 3.8-compatible code), line length 101, ruff + ty; `from __future__ import annotations` everywhere.
 - Simple code, minimal try/except, short lowercase comments, no prints (`trtutils.LOG`).
 - File-level imports only; per-call defaults use `is not None`, never `or`.
 - NumPy docstrings on public APIs; user-facing changes get a `CHANGELOG.rst` entry.
