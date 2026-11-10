@@ -106,6 +106,18 @@ class Model:
             raise ValueError(err_msg)
 
     @classmethod
+    def _onnx_imgsz(cls, onnx: Path | str) -> int | None:
+        """Read the static square size of the ONNX image input, or None when unknown."""
+        if not Path(onnx).is_file():
+            return None
+        image_name = next(name for name, kind in cls._input_tensors if kind == "image")
+        # builder.onnx loads lazily: onnx is an optional extra
+        try:
+            return builder.onnx.get_static_imgsz(Path(onnx), image_name)
+        except ImportError:
+            return None
+
+    @classmethod
     def _make_shapes(
         cls,
         batch_size: int,
@@ -223,7 +235,9 @@ class Model:
         output : Path | str
             Output path for the built engine.
         imgsz : int, optional
-            Input image size used for shapes.
+            Input image size used for shapes. When omitted, the static square size of the
+            ONNX image input is used, falling back to the class default for dynamic,
+            non-square, or non-NCHW inputs.
         batch_size : int
             Batch size for the engine. Default is 1.
         dla_core : int | None
@@ -244,11 +258,16 @@ class Model:
         Raises
         ------
         ValueError
-            If ``embed_sst`` is set and the class sets only one of mean and std.
+            If ``embed_sst`` is set and the class sets only one of mean and std, or if
+            ``imgsz`` differs from the ONNX's static image size.
 
         """
+        onnx_imgsz = cls._onnx_imgsz(onnx)
         if imgsz is None:
-            imgsz = cls._default_imgsz
+            imgsz = cls._default_imgsz if onnx_imgsz is None else onnx_imgsz
+        elif onnx_imgsz is not None and imgsz != onnx_imgsz:
+            err_msg = f"{cls._friendly_name} ONNX has a static size of {onnx_imgsz}, got {imgsz}"
+            raise ValueError(err_msg)
         cls._validate_imgsz(imgsz)
         shapes = cls._make_shapes(batch_size, imgsz)
         # the embedded copy lives until the engine is built (hooks read it too)

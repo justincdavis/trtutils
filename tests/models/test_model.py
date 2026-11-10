@@ -199,3 +199,72 @@ def test_input_tensor_names_match_onnx(model_cls) -> None:
     initializers = {init.name for init in graph.initializer}
     onnx_names = {i.name for i in graph.input if i.name not in initializers}
     assert {name for name, _kind in model_cls._input_tensors} == onnx_names
+
+
+def _write_onnx(path, shape, name="input") -> None:
+    """Write a one-node ONNX model with a single input of the given shape."""
+    inp = onnx.helper.make_tensor_value_info(name, onnx.TensorProto.FLOAT, shape)
+    out = onnx.helper.make_tensor_value_info("out", onnx.TensorProto.FLOAT, shape)
+    graph = onnx.helper.make_graph(
+        [onnx.helper.make_node("Relu", [name], ["out"])], "g", [inp], [out]
+    )
+    onnx.save(onnx.helper.make_model(graph), str(path))
+
+
+def _built_shapes(model_cls, onnx_path, tmp_path, **kwargs: int):
+    with patch("trtutils.models._model.build_engine") as mock_build:
+        model_cls.build(onnx_path, tmp_path / "out.engine", **kwargs)
+    return dict(mock_build.call_args.kwargs["shapes"])
+
+
+@pytest.mark.parametrize(
+    ("shape", "expected"),
+    [
+        pytest.param([1, 3, 384, 384], 384, id="static"),
+        pytest.param([1, 3, "h", "w"], 576, id="symbolic-hw"),
+        pytest.param([1, 3, 384, 320], 576, id="non-square"),
+        pytest.param([1, 384, 384, 3], 576, id="nhwc"),
+    ],
+)
+def test_build_infers_imgsz_from_onnx(tmp_path, shape, expected) -> None:
+    """build() without imgsz uses the ONNX's static square H/W, else the class default."""
+    path = tmp_path / "m.onnx"
+    _write_onnx(path, shape)
+    shapes = _built_shapes(RFDETR, path, tmp_path)
+    assert shapes["input"] == (1, 3, expected, expected)
+
+
+def test_build_explicit_imgsz_matching_onnx(tmp_path) -> None:
+    """An explicit imgsz equal to the ONNX size builds normally."""
+    path = tmp_path / "m.onnx"
+    _write_onnx(path, [1, 3, 384, 384])
+    assert _built_shapes(RFDETR, path, tmp_path, imgsz=384)["input"] == (1, 3, 384, 384)
+
+
+def test_build_explicit_imgsz_contradicting_onnx_raises(tmp_path) -> None:
+    """An explicit imgsz that differs from the static ONNX size raises before building."""
+    path = tmp_path / "m.onnx"
+    _write_onnx(path, [1, 3, 384, 384])
+    with patch("trtutils.models._model.build_engine") as mock_build:
+        with pytest.raises(ValueError, match=r"384.*576"):
+            RFDETR.build(path, tmp_path / "out.engine", imgsz=576)
+    mock_build.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "rel", "expected"),
+    [
+        pytest.param(RFDETR, "rfdetr/rfdetr_n_384.onnx", 384, id="rfdetr_n"),
+        pytest.param(RFDETR, "rfdetr/rfdetr_s_512.onnx", 512, id="rfdetr_s"),
+        pytest.param(DEIMv2, "deimv2/deimv2_atto_320.onnx", 320, id="deimv2_atto"),
+        pytest.param(DEIMv2, "deimv2/deimv2_femto_416.onnx", 416, id="deimv2_femto"),
+    ],
+)
+def test_build_infers_imgsz_real_onnx(tmp_path, model_cls, rel, expected) -> None:
+    """build() without imgsz picks the fixed size of the real per-variant exports."""
+    path = DATA_DIR / rel
+    if not path.exists():
+        pytest.skip(f"{path} missing")
+    shapes = _built_shapes(model_cls, path, tmp_path)
+    image_name = next(n for n, kind in model_cls._input_tensors if kind == "image")
+    assert shapes[image_name] == (1, 3, expected, expected)
