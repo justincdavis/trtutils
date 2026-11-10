@@ -96,7 +96,7 @@ class RTDETRv2(Detector, Model):
     # tensorrt 8.6 fp16 engines lose the detections (horse 0.38 vs 0.97 at fp32)
     _fp16: ClassVar[bool] = FLAGS.TRT_VERSION >= (10, 0)
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
-        ("image", "image"),
+        ("images", "image"),
         ("orig_target_sizes", "size"),
     ]
 

@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import cv2
+import numpy as np
+import onnxruntime as ort
 import pytest
 
 from tests.conftest import DATA_DIR
@@ -155,3 +157,34 @@ def test_rtdetrv3_large_image_boxes(build_model_engine, name) -> None:
         assert 0 <= y1 < y2 <= height
         # a garbage box would be clipped to a sliver or to the whole image corner
         assert (x2 - x1) * (y2 - y1) < 0.5 * width * height
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "onnx_path"),
+    [
+        pytest.param(DEIM, DATA_DIR / "deim" / "deim_dfine_n_640.onnx", id="deim"),
+        pytest.param(DEIMv2, DATA_DIR / "deimv2" / "deimv2_n_640.onnx", id="deimv2"),
+    ],
+)
+def test_deim_boxes_non_square_match_onnxruntime(build_model_engine, model_cls, onnx_path) -> None:
+    """DEIM boxes on a non-square image match onnxruntime fed the upstream stretched input."""
+    engine = build_model_engine(model_cls, onnx_path, opt_level=3)
+    model = model_cls(engine, warmup=False, conf_thres=0.5)
+    image = cv2.imread(str(DATA_DIR / "horse.jpg"))
+    height, width = image.shape[:2]
+    assert height != width
+
+    stretched = cv2.resize(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), (640, 640))
+    mean = np.array([0.485, 0.456, 0.406], np.float32)
+    std = np.array([0.229, 0.224, 0.225], np.float32)
+    blob = ((stretched.astype(np.float32) / 255 - mean) / std).transpose(2, 0, 1)[None]
+    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    _labels, boxes, scores = session.run(
+        None, {"images": blob, "orig_target_sizes": np.array([[width, height]], np.int64)}
+    )
+    reference = boxes[0][scores[0] > 0.5]
+    assert len(reference) == 1
+
+    detections = model.end2end(image)
+    assert detections
+    assert max(_iou(bbox, reference[0]) for bbox, _score, _cls in detections) > 0.85

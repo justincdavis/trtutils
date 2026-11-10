@@ -29,6 +29,7 @@ class RFDETR(Detector, Model):
     _friendly_name = "RF-DETR"
     _default_imgsz = 576
     _imgsz_divisor = 32
+    _model_imgszs: ClassVar[dict[str, int] | None] = {"rfdetr_n": 384, "rfdetr_s": 512}
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("input", "image")]
 
     def __init__(
