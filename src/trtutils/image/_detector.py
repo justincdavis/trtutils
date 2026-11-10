@@ -27,7 +27,7 @@ from .postprocessors import (
     postprocess_rtdetrv3,
     postprocess_yolov10,
 )
-from .postprocessors._gpu_detcls import CudaDetPostprocessor
+from .postprocessors._cuda_detection import CUDADetPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -43,7 +43,7 @@ class Detector(ImageModel, DetectorInterface):
     """Implementation of object detectors."""
 
     _OUTPUT_SCHEMA = OutputSchema
-    _CUDA_POSTPROCESSOR = CudaDetPostprocessor
+    _CUDA_POSTPROCESSOR = CUDADetPostprocessor
     # opt in: unletterboxing a few hundred boxes does not always beat the host
     _cuda_post_default = False
     _CUDA_SCHEMAS = frozenset(

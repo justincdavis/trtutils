@@ -4,7 +4,7 @@
 
 #include "postprocess.cuh"
 
-#define NMS_MAX_ROWS 4096  // _NMS_ROWS in _gpu_nms.py
+#define NMS_MAX_ROWS 4096  // _NMS_ROWS in _cuda_nms.py
 
 // whether box b overlaps box a (both x1, y1, x2, y2) by IoU above iouThres, as opencv's NMS,
 // which computes IoU on double (x, y, w, h) rects built from float32 xywh

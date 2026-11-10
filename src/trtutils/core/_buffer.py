@@ -306,6 +306,52 @@ class Buffer:
         return buffer
 
     @classmethod
+    def device(
+        cls: type[Self], shape: tuple[int, ...] | list[int] | int, dtype: np.dtype | type
+    ) -> Self:
+        """
+        Allocate a new, uninitialized device Buffer.
+
+        Parameters
+        ----------
+        shape : tuple[int, ...] | list[int] | int
+            The shape of the buffer.
+        dtype : np.dtype | type
+            The datatype of the elements.
+
+        Returns
+        -------
+        Buffer
+            The new device buffer.
+
+        """
+        return cls.empty(shape, dtype, MemoryLocation.DEVICE)
+
+    @classmethod
+    def host_mapped(
+        cls: type[Self], shape: tuple[int, ...] | list[int] | int, dtype: np.dtype | type
+    ) -> Self:
+        """
+        Allocate a new pinned host Buffer mapped into the device address space.
+
+        Kernels can write it directly; read it on the host after a stream sync.
+
+        Parameters
+        ----------
+        shape : tuple[int, ...] | list[int] | int
+            The shape of the buffer.
+        dtype : np.dtype | type
+            The datatype of the elements.
+
+        Returns
+        -------
+        Buffer
+            The new mapped host buffer.
+
+        """
+        return cls.empty(shape, dtype, MemoryLocation.HOST, pinned=True, mapped=True)
+
+    @classmethod
     def from_array(
         cls: type[Self],
         array: np.ndarray,

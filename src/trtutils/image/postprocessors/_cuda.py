@@ -5,49 +5,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils.core._buffer import Buffer, MemoryLocation
-from trtutils.core._kernels import Kernel, cached_args
-from trtutils.core._stream import stream_synchronize
+from trtutils.core._buffer import Buffer
+from trtutils.image._cuda import CUDAStage
 
 from ._common import original_size
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
-
-# loadIndex() in postprocess.cuh
-_INDEX_KIND = {np.dtype(np.int32): 0, np.dtype(np.float32): 1, np.dtype(np.int64): 2}
-
-
-def device(shape: tuple[int, ...], dtype: type) -> Buffer:
-    """Device memory for intermediate results."""
-    return Buffer.empty(shape, dtype, MemoryLocation.DEVICE)
-
-
-def mapped(shape: tuple[int, ...], dtype: type) -> Buffer:
-    """Pinned host memory the kernels write directly, read after a stream sync."""
-    return Buffer.empty(shape, dtype, MemoryLocation.HOST, pinned=True, mapped=True)
-
-
-def image_ptr(buffer: Buffer, index: int) -> int:
-    """Return the device address of image ``index``'s slice of a (batch, ...) buffer."""
-    return buffer.device_ptr + index * buffer.nbytes // buffer.shape[0]
-
-
-def index_kind(dtype: np.dtype | type) -> int:
-    """Return the loadIndex() kind of an index tensor (class ids, counts)."""
-    kind = _INDEX_KIND.get(np.dtype(dtype))
-    if kind is None:
-        err_msg = f"CUDA postprocess index tensors must be int32, int64, or float32, got {dtype}"
-        raise ValueError(err_msg)
-    return kind
 
 
 def letterbox_table(
@@ -89,7 +59,7 @@ def split_detections(
     return results
 
 
-class CudaPostprocessor:
+class CUDAPostprocessor(CUDAStage):
     """
     Base of the CUDA postprocessors: kernels from one file, launched on one stream.
 
@@ -97,34 +67,9 @@ class CudaPostprocessor:
     the engine outputs as device Buffers, and returns the same per-image host arrays.
     """
 
-    _FILE: ClassVar[Path]
-
     def __init__(self: Self, stream: cudart.cudaStream_t) -> None:
-        self._stream = stream
+        super().__init__(stream)
         self._letter: Buffer | None = None
-        self._key: tuple[int, ...] | None = None
-
-    def _kernel(self: Self, name: str) -> Kernel:
-        return Kernel(self._FILE, name)
-
-    def _resized(self: Self, *key: int) -> bool:
-        """Whether the buffers must be (re)allocated for ``key`` (batch, sizes), then remember it."""
-        if key == self._key:
-            return False
-        self._key = key
-        return True
-
-    def _launch(
-        self: Self,
-        kernel: Kernel,
-        blocks: tuple[int, int, int],
-        threads: tuple[int, int, int],
-        *args: float,
-    ) -> None:
-        kernel.call(blocks, threads, self._stream, cached_args(kernel, *args))
-
-    def _sync(self: Self) -> None:
-        stream_synchronize(self._stream)
 
     def _letterbox(
         self: Self,
@@ -135,6 +80,6 @@ class CudaPostprocessor:
         """Fill the letterbox table for this batch and return its device address."""
         table = letterbox_table(ratios, padding, input_size)
         if self._letter is None or self._letter.shape != table.shape:
-            self._letter = mapped(table.shape, np.float32)
+            self._letter = Buffer.host_mapped(table.shape, np.float32)
         self._letter.array[:] = table
         return self._letter.device_ptr

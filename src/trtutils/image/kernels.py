@@ -31,6 +31,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+
 _KERNEL_DIR = Path(__file__).parent / "_kernels"
 _SST_FILE = _KERNEL_DIR / "sst.cu"
 _SST_FAST_FILE = _KERNEL_DIR / "sst_opt.cu"
@@ -75,3 +77,15 @@ IMAGENET_SST_F16: tuple[Path, str] = (
 
 DET_CLS_POST: Path = _KERNEL_DIR / "det_cls_post.cu"
 YOLO_NMS: Path = _KERNEL_DIR / "yolo_nms.cu"
+
+# loadIndex() in _kernels/postprocess.cuh
+_INDEX_KIND = {np.dtype(np.int32): 0, np.dtype(np.float32): 1, np.dtype(np.int64): 2}
+
+
+def index_kind(dtype: np.dtype | type) -> int:
+    """Return the loadIndex() kind of an index tensor (class ids, counts)."""
+    kind = _INDEX_KIND.get(np.dtype(dtype))
+    if kind is None:
+        err_msg = f"CUDA postprocess index tensors must be int32, int64, or float32, got {dtype}"
+        raise ValueError(err_msg)
+    return kind

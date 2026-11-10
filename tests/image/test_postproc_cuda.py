@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils.core import Buffer
 from trtutils.image import Classifier, Detector
-from trtutils.image.postprocessors._classifier import postprocess_classifications
 from trtutils.image.postprocessors._common import (
     clip_boxes,
     cxcywh_to_xyxy,
@@ -19,10 +19,15 @@ from trtutils.image.postprocessors._common import (
     nms_indices,
     unletterbox_boxes,
 )
-from trtutils.image.postprocessors._detection import postprocess_efficient_nms, postprocess_yolov10
-from trtutils.image.postprocessors._gpu import mapped, split_detections
-from trtutils.image.postprocessors._gpu_detcls import CudaClsPostprocessor, CudaDetPostprocessor
-from trtutils.image.postprocessors._gpu_nms import YoloNms
+from trtutils.image.postprocessors._cpu_classifier import postprocess_classifications
+from trtutils.image.postprocessors._cpu_detection import (
+    postprocess_efficient_nms,
+    postprocess_yolov10,
+)
+from trtutils.image.postprocessors._cuda import split_detections
+from trtutils.image.postprocessors._cuda_classifier import CUDAClsPostprocessor
+from trtutils.image.postprocessors._cuda_detection import CUDADetPostprocessor
+from trtutils.image.postprocessors._cuda_nms import YoloNms
 
 _RATIOS = [(0.5, 0.5), (0.25, 0.5)]
 _PADDING = [(4.0, 8.0), (2.0, 6.0)]
@@ -95,7 +100,7 @@ def test_cuda_yolov10_matches_cpu(cuda_stream, to_device) -> None:
     rows[:, :, 4] = np.array([0.9, 0.05, 0.4, 0.0, 0.2], np.float32)
     rows[:, :, 5] = np.array([1, 2, 3, 0, 4], np.float32)
     cpu = postprocess_yolov10([rows.copy()], _RATIOS, _PADDING, 0.3, _INPUT)
-    gpu = CudaDetPostprocessor(cuda_stream)([to_device(rows)], _RATIOS, _PADDING, 0.3, _INPUT)
+    gpu = CUDADetPostprocessor(cuda_stream)([to_device(rows)], _RATIOS, _PADDING, 0.3, _INPUT)
     _assert_detections_match(gpu, cpu)
 
 
@@ -113,7 +118,7 @@ def test_cuda_efficient_nms_matches_cpu(cuda_stream, to_device, ids) -> None:
     cpu = postprocess_efficient_nms(
         [part.copy() for part in outputs], _RATIOS, _PADDING, None, _INPUT
     )
-    gpu = CudaDetPostprocessor(cuda_stream)(
+    gpu = CUDADetPostprocessor(cuda_stream)(
         [to_device(part) for part in outputs], _RATIOS, _PADDING, None, _INPUT
     )
     _assert_detections_match(gpu, cpu)
@@ -150,9 +155,9 @@ def test_cuda_nms_gather_matches_cpu(cuda_stream, to_device, num) -> None:
     cpu = _reference_nms(head, 0.5, max_det, n_extra)
 
     nms = YoloNms(cuda_stream)
-    dets = mapped((2, max_det, 6), np.float32)
-    points = mapped((2, max_det, n_extra), np.float32)
-    counts = mapped((2,), np.int32)
+    dets = Buffer.host_mapped((2, max_det, 6), np.float32)
+    points = Buffer.host_mapped((2, max_det, n_extra), np.float32)
+    counts = Buffer.host_mapped((2,), np.int32)
     letterbox = nms._letterbox(_RATIOS, _PADDING, _INPUT)
     device_head = to_device(head)
     nms(device_head, 4, nc, None, 0.5, max_det)
@@ -176,7 +181,7 @@ def test_cuda_softmax_matches_cpu(cuda_stream, to_device) -> None:
     """The class vector matches a host softmax, and softmax=False copies the logits."""
     rng = np.random.default_rng(1)
     logits = rng.standard_normal((3, 17)).astype(np.float32)
-    cuda = CudaClsPostprocessor(cuda_stream)
+    cuda = CUDAClsPostprocessor(cuda_stream)
     for softmax in (True, False):
         cpu = postprocess_classifications([logits.copy()], softmax=softmax)
         gpu = cuda([to_device(logits)], softmax=softmax)

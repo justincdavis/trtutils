@@ -34,16 +34,15 @@ Functions
 
 from __future__ import annotations
 
-from ._cpu import CPUPreprocessor
-from ._cuda import CUDAPreprocessor
-from ._image_preproc import GPUImagePreprocessor, ImagePreprocessor
-from ._ocr import (
+from ._base import ImagePreprocessor
+from ._cpu import CPUPreprocessor, preprocess
+from ._cpu_ocr import (
     crop_text_region,
     preprocess_text_detection,
     preprocess_text_recognition,
     resize_text_detection,
 )
-from ._process import preprocess
+from ._cuda import CUDAPreprocessor, GPUImagePreprocessor
 from ._trt import TRTPreprocessor
 
 __all__ = [

@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
-    from .postprocessors._gpu import CudaPostprocessor
+    from .postprocessors._cuda import CUDAPostprocessor
 
 _COLOR_CHANNELS = 3
 
@@ -82,7 +82,7 @@ class ImageModel:
     # task models set the enum used to resolve and order the engine outputs
     _OUTPUT_SCHEMA: ClassVar[type[Enum] | None] = None
     # the task's CUDA postprocessor, built on the engine stream for postprocessor="cuda"
-    _CUDA_POSTPROCESSOR: ClassVar[type[CudaPostprocessor] | None] = None
+    _CUDA_POSTPROCESSOR: ClassVar[type[CUDAPostprocessor] | None] = None
     # False keeps the CPU postprocessor as the default even when a CUDA one exists
     _cuda_post_default: ClassVar[bool] = True
 
@@ -379,7 +379,7 @@ class ImageModel:
             raise ValueError(err_msg)
         return postprocessor
 
-    def _setup_cuda_post(self: Self) -> CudaPostprocessor | None:
+    def _setup_cuda_post(self: Self) -> CUDAPostprocessor | None:
         if self._CUDA_POSTPROCESSOR is None or self._postprocessor != "cuda":
             return None
         return self._CUDA_POSTPROCESSOR(self._engine.stream)

@@ -13,7 +13,7 @@ import numpy as np
 from trtutils._log import LOG
 
 from ._common import cxcywh_to_xyxy, filter_class_scores, nms_indices, unletterbox_boxes
-from ._detection import _get_detections_core
+from ._cpu_detection import _get_detections_core
 
 if TYPE_CHECKING:
     from trtutils.image.types import Segmentation

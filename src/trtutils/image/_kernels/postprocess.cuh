@@ -1,7 +1,7 @@
 // Device helpers shared by the postprocess kernels.
 #pragma once
 
-// a row of the (batch, 6) letterbox table built by letterbox_table() in _gpu.py: resize ratio,
+// a row of the (batch, 6) letterbox table built by letterbox_table() in postprocessors/_cuda.py: resize ratio,
 // padding, and the original image size boxes clip to (infinity when unknown)
 struct Letterbox {
     float rx, ry, px, py, width, height;
@@ -21,7 +21,7 @@ __device__ __forceinline__ float unletterY(const float y, const Letterbox& lb) {
     return fminf(fmaxf((y - lb.py) / lb.ry, 0.0f), lb.height);
 }
 
-// index tensors (class ids, counts) come as int32, float32 or int64, see index_kind() in _gpu.py
+// index tensors (class ids, counts) come as int32, float32 or int64, see index_kind() in image/kernels.py
 __device__ __forceinline__ int loadIndex(const void* __restrict__ base, const int kind, const size_t i) {
     if (kind == 1) return (int)((const float*)base)[i];
     if (kind == 2) return (int)((const long long*)base)[i];

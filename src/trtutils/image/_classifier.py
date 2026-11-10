@@ -17,7 +17,7 @@ from ._image_model import ImageModel
 from ._schema import ClassifierOutputSchema
 from .interfaces import ClassifierInterface
 from .postprocessors import get_classifications, postprocess_classifications
-from .postprocessors._gpu_detcls import CudaClsPostprocessor
+from .postprocessors._cuda_classifier import CUDAClsPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -36,7 +36,7 @@ class Classifier(ImageModel, ClassifierInterface):
     """Implementation of image classifiers."""
 
     _OUTPUT_SCHEMA = ClassifierOutputSchema
-    _CUDA_POSTPROCESSOR = CudaClsPostprocessor
+    _CUDA_POSTPROCESSOR = CUDAClsPostprocessor
     # opt in: a class-vector softmax is small, so the host stays the default
     _cuda_post_default = False
 

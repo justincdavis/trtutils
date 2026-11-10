@@ -61,9 +61,9 @@ from __future__ import annotations
 
 from trtutils.image.types import HandInteraction, OBBDetection, Pose, Segmentation
 
-from ._classifier import get_classifications, postprocess_classifications
-from ._depth import get_depth_maps, postprocess_depth
-from ._detection import (
+from ._cpu_classifier import get_classifications, postprocess_classifications
+from ._cpu_depth import get_depth_maps, postprocess_depth
+from ._cpu_detection import (
     get_detections,
     postprocess_detr,
     postprocess_detr_lbs,
@@ -72,17 +72,17 @@ from ._detection import (
     postprocess_rtdetrv3,
     postprocess_yolov10,
 )
-from ._hand_interaction import get_interactions, postprocess_hand_interactions
-from ._obb import get_obb_detections, postprocess_yolo_obb
-from ._ocr import (
+from ._cpu_hand_interaction import get_interactions, postprocess_hand_interactions
+from ._cpu_obb import get_obb_detections, postprocess_yolo_obb
+from ._cpu_ocr import (
     get_text_boxes,
     get_texts,
     postprocess_text_detection,
     postprocess_text_recognition,
     sort_text_boxes,
 )
-from ._pose import get_poses, postprocess_yolo_pose
-from ._segmentation import get_segmentations, postprocess_yolo_seg
+from ._cpu_pose import get_poses, postprocess_yolo_pose
+from ._cpu_segmentation import get_segmentations, postprocess_yolo_seg
 
 __all__ = [
     "HandInteraction",

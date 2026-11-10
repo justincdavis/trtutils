@@ -33,7 +33,7 @@ from .preprocessors import (
     preprocess_text_recognition,
     resize_text_detection,
 )
-from .preprocessors._ocr import _IMAGENET_MEAN, _IMAGENET_STD, _REC_MEAN, _REC_STD
+from .preprocessors._cpu_ocr import _IMAGENET_MEAN, _IMAGENET_STD, _REC_MEAN, _REC_STD
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

@@ -11,15 +11,15 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils.compat._libs import cudart
+from trtutils.core._buffer import Buffer
 from trtutils.core._cuda import cuda_call
 from trtutils.image.kernels import YOLO_NMS
 
-from ._gpu import CudaPostprocessor, device
+from ._cuda import CUDAPostprocessor
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-    from trtutils.core._buffer import Buffer
 
 # column stripes per row block of the NMS mask kernel
 _NMS_STRIPES = 16
@@ -29,7 +29,7 @@ _RANK_SLICES = 16  # RANK_SLICES in yolo_nms.cu
 _NMS_ROWS = 4096
 
 
-class YoloNms(CudaPostprocessor):
+class YoloNms(CUDAPostprocessor):
     """
     Decode, sort, class-aware NMS and gather of a (B, C, N) YOLO head on the device.
 
@@ -51,20 +51,20 @@ class YoloNms(CudaPostprocessor):
         self._gather = self._kernel("yoloGather")
 
     def _allocate(self: Self, batch: int, num: int, max_det: int) -> None:
-        self.count = device((batch,), np.int32)
-        self._cand_anchor = device((batch, num), np.int32)
-        self._cand_score = device((batch, num), np.float32)
-        self._cand_cls = device((batch, num), np.int32)
-        self._cand_rank = device((batch, num), np.int32)
-        self.sort_anchor = device((batch, num), np.int32)
-        self.sort_score = device((batch, num), np.float32)
-        self.sort_cls = device((batch, num), np.int32)
-        self.sort_box = device((batch, num, 4), np.float32)
+        self.count = Buffer.device((batch,), np.int32)
+        self._cand_anchor = Buffer.device((batch, num), np.int32)
+        self._cand_score = Buffer.device((batch, num), np.float32)
+        self._cand_cls = Buffer.device((batch, num), np.int32)
+        self._cand_rank = Buffer.device((batch, num), np.int32)
+        self.sort_anchor = Buffer.device((batch, num), np.int32)
+        self.sort_score = Buffer.device((batch, num), np.float32)
+        self.sort_cls = Buffer.device((batch, num), np.int32)
+        self.sort_box = Buffer.device((batch, num, 4), np.float32)
         self._rows = min(num, _NMS_ROWS)
         # allocated by the first __call__, rank() alone (OBB) does not use it
         self._bits: Buffer | None = None
-        self._keep = device((batch, max_det), np.int32)
-        self.keep_count = device((batch,), np.int32)
+        self._keep = Buffer.device((batch, max_det), np.int32)
+        self.keep_count = Buffer.device((batch,), np.int32)
 
     def rank(
         self: Self,
@@ -151,7 +151,7 @@ class YoloNms(CudaPostprocessor):
         self.rank(head, cls_start, nc, conf_thres, max_det)
         rows = self._rows
         if self._bits is None:
-            self._bits = device((batch, rows, math.ceil(rows / 64)), np.uint64)
+            self._bits = Buffer.device((batch, rows, math.ceil(rows / 64)), np.uint64)
         self._launch(
             self._mask,
             (math.ceil(rows / 64), _NMS_STRIPES, batch),
