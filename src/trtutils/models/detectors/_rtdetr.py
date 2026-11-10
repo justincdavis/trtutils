@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class RTDETRv1(Detector, Model):
-    """Alias of DETR with default args for RT-DETRv1."""
+    """Alias of Detector with default args for RT-DETRv1."""
 
     _model_type = "rtdetrv1"
     _friendly_name = "RT-DETRv1"
@@ -87,7 +87,7 @@ class RTDETRv1(Detector, Model):
 
 
 class RTDETRv2(Detector, Model):
-    """Alias of DETR with default args for RT-DETRv2."""
+    """Alias of Detector with default args for RT-DETRv2."""
 
     _model_type = "rtdetrv2"
     _friendly_name = "RT-DETRv2"
@@ -156,7 +156,7 @@ class RTDETRv2(Detector, Model):
 
 
 class RTDETRv3(Detector, Model):
-    """Alias of DETR with default args for RT-DETRv3."""
+    """Alias of Detector with default args for RT-DETRv3."""
 
     _model_type = "rtdetrv3"
     _friendly_name = "RT-DETRv3"

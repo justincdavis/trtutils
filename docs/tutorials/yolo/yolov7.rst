@@ -19,8 +19,8 @@ YOLOv7 models can be automatically downloaded and converted to ONNX format using
 .. code-block:: bash
 
     # Download and convert YOLOv7 models to ONNX
-    # Available models: yolov7, yolov7x, yolov7-w6, yolov7-e6, yolov7-d6, yolov7-e6e
-    $ python3 -m trtutils download --model yolov7 --output yolov7.onnx --imgsz 640 --opset 17
+    # Available models: yolov7t, yolov7m, yolov7x, yolov7w6, yolov7e6, yolov7d6, yolov7e6e
+    $ python3 -m trtutils download --model yolov7m --output yolov7.onnx --imgsz 640 --opset 17
 
     # For other YOLOv7 variants
     $ python3 -m trtutils download --model yolov7x --output yolov7x.onnx --imgsz 640 --opset 17

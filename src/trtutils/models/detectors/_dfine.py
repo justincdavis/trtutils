@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 class DFINE(Detector, Model):
-    """Alias of DETR with default args for D-FINE."""
+    """Alias of Detector with default args for D-FINE."""
 
     _model_type = "dfine"
     _friendly_name = "D-FINE"

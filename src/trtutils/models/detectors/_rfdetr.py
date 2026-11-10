@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 class RFDETR(Detector, Model):
     """
-    Alias of DETR with default args for RF-DETR.
+    Alias of Detector with default args for RF-DETR.
 
     Resizes with a plain square resize (``resize_method="linear"``) like upstream RF-DETR, and
     returns the model's own class index (stock COCO weights use COCO category ids, horse is 19).

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 class DEIM(Detector, Model):
-    """Alias of DETR with default args for DEIM."""
+    """Alias of Detector with default args for DEIM."""
 
     _model_type = "deim"
     _friendly_name = "DEIM"
@@ -84,7 +84,7 @@ class DEIM(Detector, Model):
 
 
 class DEIMv2(Detector, Model):
-    """Alias of DETR with default args for DEIMv2."""
+    """Alias of Detector with default args for DEIMv2."""
 
     _model_type = "deimv2"
     _friendly_name = "DEIMv2"

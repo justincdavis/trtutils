@@ -99,7 +99,15 @@ _INDEX_KIND = {np.dtype(np.int32): 0, np.dtype(np.float32): 1, np.dtype(np.int64
 
 
 def index_kind(dtype: np.dtype | type) -> int:
-    """Return the loadIndex() kind of an index tensor (class ids, counts)."""
+    """
+    Return the loadIndex() kind of an index tensor (class ids, counts).
+
+    Raises
+    ------
+    ValueError
+        If dtype is not int32, int64, or float32.
+
+    """
     kind = _INDEX_KIND.get(np.dtype(dtype))
     if kind is None:
         err_msg = f"CUDA postprocess index tensors must be int32, int64, or float32, got {dtype}"

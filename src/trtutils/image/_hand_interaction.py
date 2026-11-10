@@ -595,7 +595,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         Returns
         -------
         list[HandInteraction] | list[list[HandInteraction]]
-            For single image: list[HandInteraction] — (hand, first, second, side, contact) per hand.
+            For single image: list[HandInteraction], one per hand, as (hand, first, second, side,
+            contact). hand is (bbox, score), first and second are (bbox, score) or None, and
+            side and contact are int or None.
             For batch: list[list[HandInteraction]] — interactions per image.
 
         """
@@ -682,7 +684,9 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         Returns
         -------
         list[HandInteraction] | list[list[HandInteraction]]
-            For single image: list[HandInteraction] — (hand, first, second, side, contact) per hand.
+            For single image: list[HandInteraction], one per hand, as (hand, first, second, side,
+            contact). hand is (bbox, score), first and second are (bbox, score) or None, and
+            side and contact are int or None.
             For batch: list[list[HandInteraction]] — interactions per image.
 
         """

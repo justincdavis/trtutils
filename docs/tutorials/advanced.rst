@@ -31,8 +31,8 @@ Bindings
 
 :py:class:`~trtutils.core.Binding` manages CUDA-allocated memory. 
 You can create bindings directly if you allocate memory manually with :py:func:`~trtutils.core.cuda_malloc` 
-or :py:func:`~trtutils.core.allocate_pagelocked`. CudaMalloc allocates memory 
-directly on the GPU and allocate_pagelocked allocates page-locked memory to share between 
+or :py:func:`~trtutils.core.allocate_pinned_memory`. CudaMalloc allocates memory
+directly on the GPU and allocate_pinned_memory allocates page-locked memory to share between 
 CUDA and the CPU. Pagelocked memory can enable large speedup on some systems. 
 You can also create a binding with :py:func:`~trtutils.core.create_binding` which 
 automatically allocates memory based on a given Numpy array.

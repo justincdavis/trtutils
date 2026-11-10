@@ -154,8 +154,13 @@ class Model:
         verbose : bool | None
             Print verbose output.
 
-        Note
-        ----
+        Raises
+        ------
+        ValueError
+            If imgsz is invalid for the model, or not divisible by its patch size.
+
+        Notes
+        -----
         Models downloaded through this method may have license restrictions.
         Users must ensure they comply with the model's license terms.
 

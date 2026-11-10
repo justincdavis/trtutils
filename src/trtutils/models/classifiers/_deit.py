@@ -76,7 +76,7 @@ class DeiT(Classifier, Model):
 
 class DeiT3(DeiT):
     """
-    Alias of Classifier with default args for DeiT III.
+    Alias of DeiT with default args for DeiT III.
 
     Same defaults and download rules as DeiT; ``deit3_huge`` uses a patch
     size of 14. ``*_in22k`` models are pretrained on ImageNet-22k and
