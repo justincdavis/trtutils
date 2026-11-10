@@ -8,8 +8,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from trtutils.image.postprocessors._gpu_hoi import CudaHoiPostprocessor
-from trtutils.image.postprocessors._hand_interaction import postprocess_hand_interactions
+from trtutils.image.postprocessors._cpu_hand_interaction import postprocess_hand_interactions
+from trtutils.image.postprocessors._cuda_hand_interaction import CUDAHoiPostprocessor
 
 _RATIOS = [(1.0, 1.0), (0.37, 0.21)]
 _PADDING = [(0.0, 0.0), (3.3, 1.7)]
@@ -82,7 +82,7 @@ def test_cuda_hoi_matches_cpu(
     cpu = postprocess_hand_interactions(
         [part.copy() for part in outputs], _RATIOS, _PADDING, conf, iou, input_size=input_size
     )
-    gpu = CudaHoiPostprocessor(cuda_stream)(
+    gpu = CUDAHoiPostprocessor(cuda_stream)(
         [to_device(part) for part in outputs], _RATIOS, _PADDING, conf, iou, input_size=input_size
     )
     assert len(gpu) == len(cpu)

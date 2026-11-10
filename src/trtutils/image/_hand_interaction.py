@@ -18,7 +18,7 @@ from ._image_model import ImageModel
 from ._schema import HandInteractionOutputSchema
 from .interfaces import HandInteractionDetectorInterface
 from .postprocessors import get_interactions, postprocess_hand_interactions
-from .postprocessors._gpu_hoi import CudaHoiPostprocessor
+from .postprocessors._cuda_hand_interaction import CUDAHoiPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -49,7 +49,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     """
 
     _OUTPUT_SCHEMA = HandInteractionOutputSchema
-    _CUDA_POSTPROCESSOR = CudaHoiPostprocessor
+    _CUDA_POSTPROCESSOR = CUDAHoiPostprocessor
     # opt in: NMS of a fixed top-k (about 100) is not clearly faster than the host
     _cuda_post_default = False
 

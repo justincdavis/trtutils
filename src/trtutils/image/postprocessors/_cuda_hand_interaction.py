@@ -9,20 +9,20 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils.image.kernels import HOI_POST
+from trtutils.core._buffer import Buffer
+from trtutils.image.kernels import HOI_POST, index_kind
 
-from ._gpu import CudaPostprocessor, device, index_kind, mapped, split_detections
+from ._cuda import CUDAPostprocessor, split_detections
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
-    from trtutils.core._buffer import Buffer
 
 _WITH_SIDE = 5
 
 
-class CudaHoiPostprocessor(CudaPostprocessor):
+class CUDAHoiPostprocessor(CUDAPostprocessor):
     """
     Unletterbox and class-aware NMS for a hand-object interaction batch.
 
@@ -36,14 +36,14 @@ class CudaHoiPostprocessor(CudaPostprocessor):
         self._post = self._kernel("hoiPost")
 
     def _allocate(self: Self, batch: int, k: int, classes: int) -> None:
-        self._rows = device((batch, k, 6), np.float32)
-        self._src = device((batch, k), np.int32)
-        self._order = device((batch, k), np.int32)
-        self._keep = device((batch, k), np.int32)
-        self._dets = mapped((batch, k, 6), np.float32)
-        self._pairs = mapped((batch, k, k, classes), np.float32)
-        self._side = mapped((batch, k, 1), np.int64)
-        self._counts = mapped((batch,), np.int32)
+        self._rows = Buffer.device((batch, k, 6), np.float32)
+        self._src = Buffer.device((batch, k), np.int32)
+        self._order = Buffer.device((batch, k), np.int32)
+        self._keep = Buffer.device((batch, k), np.int32)
+        self._dets = Buffer.host_mapped((batch, k, 6), np.float32)
+        self._pairs = Buffer.host_mapped((batch, k, k, classes), np.float32)
+        self._side = Buffer.host_mapped((batch, k, 1), np.int64)
+        self._counts = Buffer.host_mapped((batch,), np.int32)
 
     def __call__(
         self: Self,
