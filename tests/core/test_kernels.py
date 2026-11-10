@@ -50,6 +50,17 @@ def test_create_kernel_args() -> None:
     assert len(ptrs) == 2
 
 
+@pytest.mark.cpu
+@pytest.mark.parametrize("value", [-1, -123456, -(2**31), 7])
+def test_create_kernel_args_signed_int(value: int) -> None:
+    """Negative ints pack as 8-byte two's complement; the low 4 bytes read as a C int."""
+    _, arrays = create_kernel_args(value)
+    raw = arrays[0].tobytes()
+    assert int.from_bytes(raw, "little", signed=True) == value
+    assert int.from_bytes(raw[:4], "little", signed=True) == value
+    assert KernelArgs.from_values(value).keepalive[0].tobytes() == raw
+
+
 @pytest.mark.parametrize(
     "dtype",
     [

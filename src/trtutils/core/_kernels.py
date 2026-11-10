@@ -349,7 +349,7 @@ def create_kernel_args(
     converted_args: list[np.ndarray] = []
     for arg in args:
         if isinstance(arg, int):
-            converted_args.append(np.array([arg], dtype=np.uint64))
+            converted_args.append(np.array([arg], dtype=np.int64 if arg < 0 else np.uint64))
         elif isinstance(arg, float):
             converted_args.append(np.array([arg], dtype=np.float32))
         elif isinstance(arg, np.ndarray):
