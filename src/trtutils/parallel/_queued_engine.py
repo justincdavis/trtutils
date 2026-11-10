@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from queue import Empty, Queue
-from threading import Thread
+from threading import Event, Thread
 from typing import TYPE_CHECKING
 
 import nvtx
@@ -59,7 +59,7 @@ class QueuedTRTEngine:
             from a path. By default None, which lets TRTEngine decide.
 
         """
-        self._stopped = False  # flag for if user stopped thread
+        self._stopped = Event()  # set when the user stops the thread
         self._engine: TRTEngine
         if isinstance(engine, TRTEngine):
             self._engine = engine
@@ -85,7 +85,14 @@ class QueuedTRTEngine:
         self._output_queue: Queue[list[np.ndarray] | Exception] = Queue()
         self._thread = Thread(
             target=self._run,
-            args=(),
+            # the worker must not hold self, or an unstopped engine is never collected
+            args=(
+                self._engine,
+                self._input_queue,
+                self._output_queue,
+                self._stopped,
+                self._nvtx_tags["_run"],
+            ),
             daemon=True,
         )
         self._thread.start()
@@ -93,7 +100,8 @@ class QueuedTRTEngine:
             nvtx.pop_range()  # init
 
     def __del__(self: Self) -> None:
-        self.stop()
+        if hasattr(self, "_thread"):
+            self.stop()
 
     @property
     def input_spec(self: Self) -> list[tuple[list[int], np.dtype]]:
@@ -195,7 +203,7 @@ class QueuedTRTEngine:
         self: Self,
     ) -> None:
         """Stop the thread containing the TRTEngine."""
-        self._stopped = True
+        self._stopped.set()
         self._thread.join()
 
     def submit(
@@ -282,27 +290,32 @@ class QueuedTRTEngine:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()
 
+    @staticmethod
     def _run(
-        self: Self,
+        engine: TRTEngine,
+        input_queue: Queue[list[Buffer]],
+        output_queue: Queue[list[np.ndarray] | Exception],
+        stopped: Event,
+        nvtx_tag: str,
     ) -> None:
-        while not self._stopped:
+        while not stopped.is_set():
             try:
-                inputs = self._input_queue.get(timeout=0.1)
+                inputs = input_queue.get(timeout=0.1)
             except Empty:
                 continue
 
             if FLAGS.NVTX_ENABLED:
-                nvtx.push_range(self._nvtx_tags["_run"])
+                nvtx.push_range(nvtx_tag)
             result: list[np.ndarray] | Exception
             try:
-                result = self._engine(inputs)
+                result = engine(inputs)
             except Exception as err:
                 # hand the error to retrieve(), which raises it in the caller's
                 # thread, and keep serving later inputs; the traceback is logged
                 # through LOG's stdlib logger
-                logging.getLogger("trtutils").exception("%s: execution failed", self._engine.name)
+                logging.getLogger("trtutils").exception("%s: execution failed", engine.name)
                 result = err
             finally:
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()
-            self._output_queue.put(result)
+            output_queue.put(result)

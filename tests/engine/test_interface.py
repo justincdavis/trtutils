@@ -5,10 +5,14 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import numpy as np
 import pytest
 
 from trtutils import TRTEngine
 from trtutils._flags import FLAGS
+from trtutils.core._interface import TRTEngineInterface
 
 
 @pytest.mark.parametrize(
@@ -44,3 +48,18 @@ def test_backend_invalid_raises(engine_path) -> None:
     """Invalid backend raises ValueError."""
     with pytest.raises(ValueError, match="Invalid backend"):
         TRTEngine(engine_path, backend="invalid")
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64, np.int32])
+def test_get_random_input_dtypes(dtype) -> None:
+    """get_random_input handles every dtype, including float16 which Generator.random rejects."""
+    fake = SimpleNamespace(
+        _rand_input=None,
+        _verbose=False,
+        _rng=np.random.default_rng(),
+        input_spec=[([2, 3], np.dtype(dtype))],
+    )
+    (buf,) = TRTEngineInterface.get_random_input(fake)
+    assert buf.dtype == np.dtype(dtype)
+    assert buf.shape == (2, 3)

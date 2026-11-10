@@ -241,6 +241,9 @@ def profile_engine(  # noqa: C901
     # attach profiler
     profiler = LayerProfiler()
     engine.context.profiler = profiler
+    # graph replays do not call the profiler, so run uncaptured
+    graph_enabled = engine._cuda_graph_enabled  # noqa: SLF001
+    engine._cuda_graph_enabled = False  # noqa: SLF001
 
     # do warmup iterations
     # always do a single pass regardless of warmup_iterations
@@ -261,6 +264,9 @@ def profile_engine(  # noqa: C901
 
         if verbose and (idx + 1) % 10 == 0:
             LOG.info(f"Completed {idx + 1}/{iterations} iterations")
+
+    engine._cuda_graph_enabled = graph_enabled  # noqa: SLF001
+    engine.context.profiler = None
 
     layer_stats = profiler.get_statistics()
 
