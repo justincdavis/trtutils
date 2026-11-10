@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+_NCHW = ("N", 3, "H", "W")
+
+
 def get_onnx_input(onnx_path: Path) -> tuple[str, tuple[int, ...]]:
     """
     Read the first input tensor name and shape from an ONNX model.
@@ -35,6 +38,36 @@ def get_onnx_input(onnx_path: Path) -> tuple[str, tuple[int, ...]]:
     name = inp.name
     dims = tuple(d.dim_value if d.dim_value > 0 else 1 for d in inp.type.tensor_type.shape.dim)
     return name, dims
+
+
+def get_static_imgsz(onnx_path: Path, input_name: str) -> int | None:
+    """
+    Read the static square image size of an NCHW ONNX input without loading weights.
+
+    Parameters
+    ----------
+    onnx_path : Path
+        Path to the ONNX model file.
+    input_name : str
+        Name of the image input tensor.
+
+    Returns
+    -------
+    int | None
+        The size when the input is ``(N, 3, S, S)`` with static equal H and W, else None.
+
+    """
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    for inp in model.graph.input:
+        if inp.name != input_name:
+            continue
+        dims = [d.dim_value for d in inp.type.tensor_type.shape.dim]
+        if len(dims) != len(_NCHW):
+            continue
+        _, channels, height, width = dims
+        if channels == _NCHW[1] and height > 0 and height == width:
+            return height
+    return None
 
 
 def get_onnx_output(onnx_path: Path) -> tuple[str, tuple[int, ...]]:

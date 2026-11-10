@@ -18,6 +18,8 @@ Functions
     Split an ONNX model file into sequential pipeline subgraphs.
 :func:`get_onnx_input`
     Read the first input tensor name and shape from an ONNX model.
+:func:`get_static_imgsz`
+    Read the static square image size of an NCHW ONNX input.
 :func:`make_onnx_static`
     Set any dynamic dimensions in the ONNX model to 1 (batch size).
 
@@ -25,7 +27,7 @@ Functions
 
 from __future__ import annotations
 
-from ._shapes import get_onnx_input, make_onnx_static
+from ._shapes import get_onnx_input, get_static_imgsz, make_onnx_static
 from ._sst import embed_sst
 from ._subgraph import (
     extract_subgraph,
@@ -39,6 +41,7 @@ __all__ = [
     "extract_subgraph",
     "extract_subgraph_from_file",
     "get_onnx_input",
+    "get_static_imgsz",
     "make_onnx_static",
     "split_model",
     "split_model_from_file",
