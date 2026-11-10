@@ -7,7 +7,7 @@
         "coco_map_50": 48.0,
         "imgsz": 640
     },
-    "yolov13m": {
+    "yolov13l": {
         "coco_map_50": 53.4,
         "imgsz": 640
     }
