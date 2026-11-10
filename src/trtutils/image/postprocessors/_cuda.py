@@ -71,8 +71,8 @@ class CUDAPostprocessor(CUDAStage):
     def __init__(self: Self, stream: cudart.cudaStream_t) -> None:
         super().__init__(stream)
         # pinned host staging for the letterbox table, copied to the device each call
-        self._letter_host = Buffer.empty((1, 6), np.float32, pinned=True)
-        self._letter = Buffer.device((1, 6), np.float32)
+        self._letter_host: Buffer | None = None
+        self._letter: Buffer | None = None
 
     def _letterbox(
         self: Self,
@@ -82,7 +82,7 @@ class CUDAPostprocessor(CUDAStage):
     ) -> int:
         """Copy the letterbox table for this batch to the device and return its address."""
         table = letterbox_table(ratios, padding, input_size)
-        if self._letter.shape != table.shape:
+        if self._letter is None or self._letter_host is None or self._letter.shape != table.shape:
             self._letter_host = Buffer.empty(table.shape, np.float32, pinned=True)
             self._letter = Buffer.device(table.shape, np.float32)
         self._letter_host.array[:] = table

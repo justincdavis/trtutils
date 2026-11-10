@@ -24,7 +24,7 @@ from trtutils.image.postprocessors._cpu_detection import (
     postprocess_efficient_nms,
     postprocess_yolov10,
 )
-from trtutils.image.postprocessors._cuda import split_detections
+from trtutils.image.postprocessors._cuda import letterbox_table, split_detections
 from trtutils.image.postprocessors._cuda_classifier import CUDAClsPostprocessor
 from trtutils.image.postprocessors._cuda_detection import CUDADetPostprocessor
 from trtutils.image.postprocessors._cuda_nms import YoloNms
@@ -158,12 +158,12 @@ def test_cuda_nms_gather_matches_cpu(cuda_stream, to_device, num) -> None:
     dets = Buffer.host_mapped((2, max_det, 6), np.float32)
     points = Buffer.host_mapped((2, max_det, n_extra), np.float32)
     counts = Buffer.host_mapped((2,), np.int32)
-    letterbox = nms._letterbox(_RATIOS, _PADDING, _INPUT)
+    letterbox = to_device(letterbox_table(_RATIOS, _PADDING, _INPUT))
     device_head = to_device(head)
     nms(device_head, 4, nc, None, 0.5, max_det)
     nms.gather(
         device_head,
-        letterbox,
+        letterbox.device_ptr,
         dets.device_ptr,
         counts.device_ptr,
         extra_start=4 + nc,

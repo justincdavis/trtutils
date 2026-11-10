@@ -13,9 +13,8 @@ import numpy as np
 from trtutils.compat._libs import cudart
 from trtutils.core._buffer import Buffer
 from trtutils.core._cuda import cuda_call
+from trtutils.image._cuda import CUDAStage
 from trtutils.image.kernels import YOLO_NMS
-
-from ._cuda import CUDAPostprocessor
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -29,7 +28,7 @@ _RANK_SLICES = 16  # RANK_SLICES in yolo_nms.cu
 _NMS_ROWS = 4096
 
 
-class YoloNms(CUDAPostprocessor):
+class YoloNms(CUDAStage):
     """
     Decode, sort, class-aware NMS and gather of a (B, C, N) YOLO head on the device.
 
