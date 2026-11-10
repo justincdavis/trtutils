@@ -10,8 +10,8 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from trtutils import builder
 from trtutils.builder._build import build_engine
-from trtutils.builder.onnx import embed_sst as embed_sst_graph
 
 from ._utils import download_model_internal
 
@@ -246,7 +246,8 @@ class Model:
                     for name, shape in shapes
                 ]
                 onnx_path = Path(tmp) / "embedded.onnx"
-                embed_sst_graph(
+                # builder.onnx loads lazily: onnx is an optional extra
+                builder.onnx.embed_sst(
                     onnx,
                     onnx_path,
                     image_name,
