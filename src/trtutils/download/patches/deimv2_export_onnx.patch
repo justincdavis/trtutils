@@ -1,0 +1,19 @@
+--- DEIMv2/tools/deployment/export_onnx.py
++++ DEIMv2/tools/deployment/export_onnx_fix.py
+@@ -23,6 +23,7 @@
+ def main(args, ):
+     """main
+     """
++    torch.set_grad_enabled(False)
+     cfg = YAMLConfig(args.config, resume=args.resume)
+ 
+     if 'HGNetv2' in cfg.yaml_cfg:
+@@ -56,7 +57,7 @@
+     model = Model()
+ 
+     img_size = cfg.yaml_cfg["eval_spatial_size"]
+-    data = torch.rand(32, 3, *img_size)
++    data = torch.rand(2, 3, *img_size)
+     size = torch.tensor([img_size])
+     _ = model(data, size)
+ 

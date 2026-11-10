@@ -131,6 +131,12 @@ def export_deimv2(
         verbose=verbose,
     )
     run_download(deim_dir, config, python_path, no_cache=no_cache, verbose=verbose)
+    run_patch(
+        deim_dir,
+        str((get_patches_dir() / "deimv2_export_onnx.patch").resolve()),
+        "tools/deployment/export_onnx.py",
+        verbose=verbose,
+    )
     config_folder = "deimv2"
     run_cmd(
         [

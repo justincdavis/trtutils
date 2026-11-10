@@ -5,9 +5,16 @@
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
-from trtutils.download._tools import handle_batch
+from trtutils.download._tools import (
+    get_patches_dir,
+    get_repo_cache_dir,
+    handle_batch,
+    run_patch,
+)
 
 pytestmark = pytest.mark.cpu
 
@@ -45,3 +52,28 @@ def test_handle_batch_rejects(batch, dynamic, supported, error, match) -> None:
     """Non-positive batches, dynamic plus a batch, or anything above 1 on an unsupported exporter."""
     with pytest.raises(error, match=match):
         handle_batch(batch, "fam", dynamic=dynamic, supported=supported)
+
+
+_DEIMV2_PIN = "19d5b19a58c229dd7ad5f079947bbe398e005d01"
+
+
+def test_deimv2_patch_exports_small_batch_without_grad(tmp_path) -> None:
+    """The DEIMv2 patch applies to the pinned script, traces batch 2 and disables autograd."""
+    repo = get_repo_cache_dir() / "DEIMv2"
+    if not repo.exists():
+        pytest.skip("DEIMv2 repo is not cached")
+    script = tmp_path / "export_onnx.py"
+    shown = subprocess.run(  # noqa: S603
+        ["git", "-C", str(repo), "show", f"{_DEIMV2_PIN}:tools/deployment/export_onnx.py"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if shown.returncode != 0:
+        pytest.skip("pinned DEIMv2 commit is not cached")
+    script.write_text(shown.stdout)
+    run_patch(tmp_path, str(get_patches_dir() / "deimv2_export_onnx.patch"), script.name)
+    patched = script.read_text()
+    assert "torch.rand(2, 3, *img_size)" in patched
+    assert "torch.rand(32" not in patched
+    assert "torch.set_grad_enabled(False)" in patched
