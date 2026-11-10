@@ -46,6 +46,8 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "output": _FAKE_OUT_ENGINE,
         "int8": False,
         "fp16": False,
+        "fp8": False,
+        "strongly_typed": False,
         "calibration_dir": None,
         "input_shape": None,
         "input_dtype": None,
@@ -60,6 +62,7 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "optimization_level": 3,
         "dla_core": None,
         "calibration_cache": None,
+        "device": "gpu",
         "gpu_fallback": False,
         "direct_io": False,
         "prefer_precision_constraints": False,
@@ -157,6 +160,14 @@ def test_build_int8_calibration_dir_without_input_shape_raises() -> None:
     args = _args("build", int8=True, calibration_dir="/fake/calib", input_shape=None)
     with pytest.raises(ValueError, match="Input shape must be provided"):
         _build(args)
+
+
+@pytest.mark.parametrize("device", ["gpu", "dla"])
+def test_build_forwards_device(device) -> None:
+    """--device reaches build_engine as default_device."""
+    with patch("trtutils.__main__.trtutils.build_engine") as mock_build:
+        _build(_args("build", device=device))
+    assert mock_build.call_args.kwargs["default_device"] == device
 
 
 @pytest.mark.parametrize(

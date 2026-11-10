@@ -124,6 +124,8 @@ def clear(*, no_warn: bool | None = None) -> None:
     if not no_warn:
         LOG.warning("Engine cache is being cleared")
     cache_dir = get_cache_dir()
+    if not cache_dir.exists():
+        return
     _delete_folder(cache_dir)
     cache_dir.mkdir()
 

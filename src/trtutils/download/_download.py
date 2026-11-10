@@ -343,6 +343,7 @@ def download(
 
     """
     check_uv_version()
+    output = Path(output)
 
     with tempfile.TemporaryDirectory() as temp_dir:
         model_path = download_model(

@@ -324,6 +324,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
         timing_cache=args.timing_cache,
         workspace=args.workspace,
         dla_core=args.dla_core,
+        default_device=args.device,
         calibration_cache=args.calibration_cache,
         data_batcher=batcher,
         shapes=shapes,
