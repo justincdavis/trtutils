@@ -57,7 +57,7 @@ def test_handle_batch_rejects(batch, dynamic, supported, error, match) -> None:
 _DEIMV2_PIN = "19d5b19a58c229dd7ad5f079947bbe398e005d01"
 
 
-def test_deimv2_patch_exports_batch_one_without_grad(tmp_path) -> None:
+def test_deimv2_patch_exports_small_batch_without_grad(tmp_path) -> None:
     """The DEIMv2 patch applies to the pinned script, traces batch 2 and disables autograd."""
     repo = get_repo_cache_dir() / "DEIMv2"
     if not repo.exists():
