@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -125,6 +125,12 @@ def yolo_efficient_nms_hook(
     -------
     Callable[[trt.INetworkDefinition], trt.INetworkDefinition]
         A hook that can be used to modify a network.
+
+    Raises
+    ------
+    RuntimeError
+        Raised by the hook when the network has no YOLO-like output with num_classes
+        channels, or when the EfficientNMS_TRT plugin is not registered.
 
     """
 

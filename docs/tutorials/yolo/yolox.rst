@@ -43,7 +43,7 @@ Alternatively, if you want to export the engine using the Python API:
     from trtutils.builder import build_engine, hooks
 
     build_engine(
-        weights="yolox.onnx",
+        onnx="yolox.onnx",
         output="yolox.engine",
         fp16=True,
         hooks=[hooks.yolo_efficient_nms_hook(

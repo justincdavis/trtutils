@@ -19,7 +19,7 @@ RT-DETRv3 models can be automatically downloaded and converted to ONNX format us
 .. code-block:: bash
 
     # Download and convert RT-DETRv3 models to ONNX
-    # Available models: rtdetrv3_r18, rtdetrv3_r34, rtdetrv3_r50, rtdetrv3_r101
+    # Available models: rtdetrv3_r18, rtdetrv3_r34, rtdetrv3_r50
     $ python3 -m trtutils download --model rtdetrv3_r18 --output rtdetrv3_r18.onnx --imgsz 640 --opset 16
 
     # For other RT-DETRv3 variants

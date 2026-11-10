@@ -165,9 +165,9 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         trt.ProfilingVerbosity.DETAILED
         DETAILED is recommended for best layer names when using profile_engine.
         By default, None (uses TensorRT's default).
-    tiling_optimization_level : int, optional
+    tiling_optimization_level : trt.TilingOptimizationLevel | None, optional
         Tiling optimization level to enable cross-kernel tiled inference.
-        By default, 0 (no tiling optimization).
+        By default, None (uses TensorRT's default).
     tiling_l2_cache_limit : int, None, optional
         L2 cache limit (in bytes) for tiling optimization.
         By default, None (TensorRT manages the default value).

@@ -79,7 +79,7 @@ def benchmark_engine(
 
     Returns
     -------
-    BenchmarkResult
+    JetsonBenchmarkResult
         A dataclass containing the results of the benchmark.
 
     """

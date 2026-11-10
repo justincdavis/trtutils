@@ -27,8 +27,8 @@ Example:
     build_engine(
         "yolo.onnx",
         "yolo.engine",
-        precision="fp16",
-        workspace_size=1 << 30,  # 1GB
+        fp16=True,
+        workspace=1024,  # MiB (1GB)
     )
 
 Running YOLO Inference
@@ -145,7 +145,7 @@ Common issues and solutions:
    - Check if your PyTorch weights are valid
 
 2. **Engine Creation Fails**
-   - Ensure you have enough GPU memory (workspace_size parameter)
+   - Ensure you have enough GPU memory (workspace parameter)
    - Check if the ONNX weights are valid
    - Try different ONNX opset versions
 

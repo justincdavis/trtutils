@@ -18,11 +18,11 @@ YOLOv9 models can be automatically downloaded and converted to ONNX format using
 .. code-block:: bash
 
     # Download and convert YOLOv9 models to ONNX
-    # Available models: yolov9, yolov9-c, yolov9-e, yolov9-m, yolov9-s, yolov9-t
-    $ python3 -m trtutils download --model yolov9 --output yolov9.onnx --imgsz 640 --opset 17
+    # Available models: yolov9t, yolov9s, yolov9m, yolov9c, yolov9e
+    $ python3 -m trtutils download --model yolov9c --output yolov9.onnx --imgsz 640 --opset 17
 
     # For other YOLOv9 variants
-    $ python3 -m trtutils download --model yolov9-c --output yolov9-c.onnx --imgsz 640 --opset 17
+    $ python3 -m trtutils download --model yolov9e --output yolov9e.onnx --imgsz 640 --opset 17
 
 Building TensorRT Engine
 ------------------------

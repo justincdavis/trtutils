@@ -226,6 +226,12 @@ def build_dla_engine(  # noqa: C901, PLR0912, PLR0915
     verbose : bool, optional
         Whether to print verbose output, by default False
 
+    Raises
+    ------
+    ValueError
+        If strongly_typed is set together with data_batcher, calibration_cache or fp8,
+        or if strongly_typed is not set and no data_batcher is provided.
+
     """
     # validate strongly_typed vs. incompatible args
     if strongly_typed:

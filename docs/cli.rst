@@ -1,3 +1,5 @@
+.. _cli:
+
 TRTUtils CLI Documentation
 ==========================
 
@@ -434,7 +436,7 @@ Download a model from remote source and convert to ONNX format. This command sup
     python3 -m trtutils download --model yolov10n --output yolov10n_dyn.onnx --dynamic
 
     # Download RT-DETRv1 model
-    python3 -m trtutils download --model rtdetrv1_r18vd --output rtdetrv1.onnx
+    python3 -m trtutils download --model rtdetrv1_r18 --output rtdetrv1.onnx
 
 Options
 ^^^^^^^
@@ -454,7 +456,6 @@ Options
   range of batch sizes (Ultralytics and YOLOv10/12/13 also leave height and width
   symbolic). Cannot be combined with ``--batch``. Torchvision classifiers export
   dynamic by default
-* ``--accept``: Accept the license terms for the model. If not provided, you will be prompted.
 
 Supported Models
 ^^^^^^^^^^^^^^^^
