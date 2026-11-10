@@ -5,6 +5,10 @@
 
 from __future__ import annotations
 
+import os
+import threading
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
@@ -217,3 +221,36 @@ class TestImageBatcher:
         batcher._close()
         assert not batcher._thread.is_alive()
         assert batcher._event.is_set()
+
+
+@pytest.mark.cpu
+class TestImageBatcherFailures:
+    """Worker-thread failures and low-core machines."""
+
+    def test_worker_error_propagates(self, tmp_path, close_batcher) -> None:
+        """An unreadable image raises from get_next_batch instead of hanging."""
+        (tmp_path / "0.png").write_bytes(b"not an image")
+        (tmp_path / "1.png").write_bytes(b"not an image")
+        batcher = ImageBatcher(tmp_path, shape=(8, 8, 3), dtype=np.float32, batch_size=2)
+        close_batcher.append(batcher)
+        result: list[BaseException] = []
+
+        def call() -> None:
+            try:
+                batcher.get_next_batch()
+            except BaseException as e:
+                result.append(e)
+
+        t = threading.Thread(target=call, daemon=True)
+        t.start()
+        t.join(timeout=10)
+        assert not t.is_alive(), "get_next_batch hung"
+        assert isinstance(result[0], FileNotFoundError)
+
+    @pytest.mark.parametrize("cores", [1, None], ids=["one-core", "unknown"])
+    def test_low_core_count(self, test_image_dir, close_batcher, cores) -> None:
+        """ImageBatcher builds when os.cpu_count is 1 or None."""
+        with patch.object(os, "cpu_count", return_value=cores):
+            batcher = ImageBatcher(test_image_dir, shape=(8, 8, 3), dtype=np.float32, batch_size=2)
+        close_batcher.append(batcher)
+        assert batcher.get_next_batch() is not None

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -106,3 +106,32 @@ def test_cache_edge_cases(tmp_path) -> None:
     cal._cache_path = None
     assert cal.read_calibration_cache() is None
     cal.write_calibration_cache(b"some data")  # should not raise
+
+
+@patch("trtutils.builder._calibrator.cuda_free")
+@patch("trtutils.builder._calibrator.memcpy_host_to_device")
+@patch("trtutils.builder._calibrator.cuda_malloc", return_value=1234)
+def test_get_batch_reuses_allocation(malloc, memcpy, free) -> None:
+    """get_batch allocates device memory once across batches and frees it on close."""
+    cal = EngineCalibrator()
+    mock_batcher = MagicMock()
+    mock_batcher.get_next_batch.return_value = np.zeros((1, 3, 8, 8), dtype=np.float32)
+    cal.set_batcher(mock_batcher)
+
+    for _ in range(3):
+        assert cal.get_batch(["input"]) == [1234]
+    assert malloc.call_count == 1
+    assert memcpy.call_count == 3
+    cal.close()
+    free.assert_called_once_with(1234)
+    cal.close()
+    free.assert_called_once()
+
+
+def test_close_removes_temp_cache() -> None:
+    """Close deletes the temporary cache file but keeps a user-provided one."""
+    cal = EngineCalibrator()
+    cal.write_calibration_cache(b"x")
+    assert cal._cache_path.exists()
+    cal.close()
+    assert not cal._cache_path.exists()

@@ -4,13 +4,14 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import contextlib
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
-from trtutils.core._memory import cuda_malloc, memcpy_host_to_device
+from trtutils.core._memory import cuda_free, cuda_malloc, memcpy_host_to_device
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -36,6 +37,9 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         """
         super().__init__()
 
+        self._temp_cache = calibration_cache is None
+        self._ptr: int | None = None
+        self._ptr_size = 0
         if calibration_cache is not None:
             self._cache_path: Path = Path(calibration_cache).resolve()
         else:
@@ -93,11 +97,30 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         if batch is None:
             return None
 
-        # allocate GPU memory for the batch
-        # return the GPU pointer
-        ptr = cuda_malloc(batch.nbytes)
-        memcpy_host_to_device(ptr, batch)
-        return [ptr]
+        # reuse one device allocation, growing only if a batch is larger
+        if self._ptr is None or batch.nbytes > self._ptr_size:
+            self._free()
+            self._ptr = cuda_malloc(batch.nbytes)
+            self._ptr_size = batch.nbytes
+        memcpy_host_to_device(self._ptr, batch)
+        return [self._ptr]
+
+    def _free(self: Self) -> None:
+        if self._ptr is not None:
+            cuda_free(self._ptr)
+            self._ptr = None
+            self._ptr_size = 0
+
+    def close(self: Self) -> None:
+        """Free the device buffer and delete a temporary cache file."""
+        self._free()
+        if self._temp_cache:
+            with contextlib.suppress(OSError):
+                self._cache_path.unlink()
+
+    def __del__(self: Self) -> None:
+        with contextlib.suppress(Exception):
+            self.close()
 
     def read_calibration_cache(self: Self) -> bytes | None:
         """

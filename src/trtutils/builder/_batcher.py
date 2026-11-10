@@ -248,10 +248,11 @@ class ImageBatcher(AbstractBatcher):
         if cpu_cores is None:
             cpu_cores = 1
         self._pool = concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(self._batch, cpu_cores - 1),
+            max_workers=max(1, min(self._batch, cpu_cores - 1)),
         )
         self._event: Event = Event()
         self._queue: Queue[np.ndarray] = Queue(maxsize=3)
+        self._error: Exception | None = None
         self._thread: Thread = Thread(target=self._run, daemon=True)
 
         atexit.register(self._close)
@@ -305,6 +306,13 @@ class ImageBatcher(AbstractBatcher):
         return new_img
 
     def _run(self: Self) -> None:
+        try:
+            self._load_batches()
+        except Exception as e:  # noqa: BLE001
+            # surface worker failures to get_next_batch
+            self._error = e
+
+    def _load_batches(self: Self) -> None:
         # for each batch get the images
         for idx, image_paths in enumerate(self._batches):
             if self._event.is_set():
@@ -348,6 +356,8 @@ class ImageBatcher(AbstractBatcher):
             return None
 
         while not self._event.is_set():
+            if self._error is not None and self._queue.empty():
+                raise self._error
             with contextlib.suppress(Empty):
                 batch = self._queue.get(timeout=0.1)
                 self._current_batch += 1
