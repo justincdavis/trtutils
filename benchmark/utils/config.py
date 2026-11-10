@@ -39,7 +39,7 @@ ULTRALYTICS_MODELS = [
     "yolov26m",
     "yolov13n",
     "yolov13s",
-    "yolov13m",
+    "yolov13l",
     "yolov12n",
     "yolov12s",
     "yolov12m",

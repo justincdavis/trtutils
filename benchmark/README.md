@@ -93,7 +93,7 @@ These models support all image sizes: 160, 320, 480, 640, 800, 960, 1120, 1280
 
 | Family | Models |
 |--------|--------|
-| YOLOv13 | yolov13n, yolov13s, yolov13m |
+| YOLOv13 | yolov13n, yolov13s, yolov13l |
 | YOLOv12 | yolov12n, yolov12s, yolov12m |
 | YOLOv11 | yolov11n, yolov11s, yolov11m |
 | YOLOv10 | yolov10n, yolov10s, yolov10m |
