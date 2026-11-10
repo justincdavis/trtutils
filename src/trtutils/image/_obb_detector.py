@@ -15,7 +15,7 @@ from ._image_model import ImageModel
 from ._schema import OBBDetectorOutputSchema
 from .interfaces import OBBDetectorInterface
 from .postprocessors import get_obb_detections, postprocess_yolo_obb
-from .postprocessors._gpu_obb import CudaObbPostprocessor
+from .postprocessors._cuda_obb import CUDAObbPostprocessor
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -34,7 +34,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
     """Implementation of oriented bounding box detectors (YOLO-style OBB heads)."""
 
     _OUTPUT_SCHEMA = OBBDetectorOutputSchema
-    _CUDA_POSTPROCESSOR = CudaObbPostprocessor
+    _CUDA_POSTPROCESSOR = CUDAObbPostprocessor
     _cuda_post_default = True
 
     def __init__(

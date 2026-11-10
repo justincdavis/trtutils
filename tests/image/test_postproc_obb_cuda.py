@@ -8,8 +8,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from trtutils.image.postprocessors._gpu_obb import CudaObbPostprocessor
-from trtutils.image.postprocessors._obb import postprocess_yolo_obb
+from trtutils.image.postprocessors._cpu_obb import postprocess_yolo_obb
+from trtutils.image.postprocessors._cuda_obb import CUDAObbPostprocessor
 
 
 def _obb_head(rng: np.random.Generator, batch: int, num: int, nc: int) -> np.ndarray:
@@ -46,7 +46,7 @@ def test_cuda_obb_matches_cpu(
     ref = postprocess_yolo_obb([head], ratios, padding, conf_thres, nms_iou_thres, max_det=max_det)
 
     outputs = [to_device(head)]
-    post = CudaObbPostprocessor(cuda_stream)
+    post = CUDAObbPostprocessor(cuda_stream)
     # twice, so the second run reuses the buffers
     for _ in range(2):
         ours = post(outputs, ratios, padding, conf_thres, nms_iou_thres, max_det=max_det)
@@ -66,6 +66,6 @@ def test_cuda_obb_rejects_nonuniform_scale(cuda_stream, to_device) -> None:
     """Like the CPU path, a non-uniform resize ratio raises."""
     head = _obb_head(np.random.default_rng(0), 1, num=10, nc=3)
     with pytest.raises(ValueError, match="uniform"):
-        CudaObbPostprocessor(cuda_stream)(
+        CUDAObbPostprocessor(cuda_stream)(
             [to_device(head)], [(0.5, 0.25)], [(0.0, 0.0)], 0.1, 0.5, max_det=10
         )

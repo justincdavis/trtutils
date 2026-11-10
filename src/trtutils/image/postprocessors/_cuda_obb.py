@@ -10,20 +10,20 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from trtutils.core._buffer import Buffer
 from trtutils.image.kernels import YOLO_OBB
 
-from ._gpu import CudaPostprocessor, device, mapped, split_detections
-from ._gpu_nms import YoloNms
-from ._obb import _probiou_reach
+from ._cpu_obb import _probiou_reach
+from ._cuda import CUDAPostprocessor, split_detections
+from ._cuda_nms import YoloNms
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
-    from trtutils.core._buffer import Buffer
 
 
-class CudaObbPostprocessor(CudaPostprocessor):
+class CUDAObbPostprocessor(CUDAPostprocessor):
     """YOLO oriented box postprocessing on the device, see ``postprocess_yolo_obb``."""
 
     _FILE = YOLO_OBB
@@ -52,11 +52,11 @@ class CudaObbPostprocessor(CudaPostprocessor):
         head = outputs[0]
         batch, channels, num = head.shape
         if self._resized(batch, num, max_det):
-            self._boxes = device((batch, num, 8), np.float32)
-            self._alive = device((batch, num), np.uint8)
+            self._boxes = Buffer.device((batch, num, 8), np.float32)
+            self._alive = Buffer.device((batch, num), np.uint8)
             # (enclosing xyxy, score, class, cx, cy, w, h, angle) rows
-            self._rows = mapped((batch, max_det, 11), np.float32)
-            self._counts = mapped((batch,), np.int32)
+            self._rows = Buffer.host_mapped((batch, max_det, 11), np.float32)
+            self._counts = Buffer.host_mapped((batch,), np.int32)
         letterbox = self._letterbox(ratios, padding, None)
         nms = self._nms
         nms.rank(head, 4, channels - 5, conf_thres, max_det, inclusive=True)
