@@ -1,6 +1,14 @@
---- rtdetrv2_pytorch/tools/export_onnx.py	2025-09-26 20:42:56.942999592 -0700
-+++ rtdetrv2_pytorch_fix/tools/export_onnx.py	2025-09-26 20:43:58.113036177 -0700
-@@ -59,7 +59,7 @@
+--- rtdetrv2_pytorch/tools/export_onnx.py
++++ rtdetrv2_pytorch_fix/tools/export_onnx.py
+@@ -42,6 +42,7 @@
+             return outputs
+ 
+     model = Model()
++    torch.set_grad_enabled(False)
+ 
+     data = torch.rand(1, 3, args.input_size, args.input_size)
+     size = torch.tensor([[args.input_size, args.input_size]])
+@@ -59,7 +60,7 @@
          input_names=['images', 'orig_target_sizes'],
          output_names=['labels', 'boxes', 'scores'],
          dynamic_axes=dynamic_axes,
@@ -9,7 +17,7 @@
          verbose=False,
          do_constant_folding=True,
      )
-@@ -90,7 +90,7 @@
+@@ -90,7 +91,7 @@
      parser.add_argument('--input_size', '-s', type=int, default=640)
      parser.add_argument('--check',  action='store_true', default=False,)
      parser.add_argument('--simplify',  action='store_true', default=False,)

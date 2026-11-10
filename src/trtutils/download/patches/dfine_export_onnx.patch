@@ -1,8 +1,10 @@
---- D-FINE/tools/deployment/export_onnx.py	2025-09-26 22:27:14.753349744 -0700
-+++ D-FINE/tools/deployment/export_onnx_fix.py	2025-09-26 22:28:24.368619480 -0700
-@@ -55,8 +55,8 @@
+--- D-FINE/tools/deployment/export_onnx.py
++++ D-FINE/tools/deployment/export_onnx_fix.py
+@@ -54,9 +54,10 @@
+             return outputs
  
      model = Model()
++    torch.set_grad_enabled(False)
  
 -    data = torch.rand(32, 3, 640, 640)
 -    size = torch.tensor([[640, 640]])
@@ -11,7 +13,7 @@
      _ = model(data, size)
  
      dynamic_axes = {
-@@ -75,7 +75,7 @@
+@@ -75,7 +76,7 @@
          input_names=["images", "orig_target_sizes"],
          output_names=["labels", "boxes", "scores"],
          dynamic_axes=dynamic_axes,
@@ -20,7 +22,7 @@
          verbose=False,
          do_constant_folding=True,
      )
-@@ -124,5 +124,15 @@
+@@ -124,5 +125,15 @@
          action="store_true",
          default=True,
      )

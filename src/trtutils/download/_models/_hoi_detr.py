@@ -117,6 +117,8 @@ if "pretrained" in cfg.model:
 det = build_detector(cfg.model, test_cfg=cfg.get("test_cfg"))
 load_checkpoint(det, WEIGHTS, map_location="cpu")
 det.eval()
+# exports never need gradients
+torch.set_grad_enabled(False)
 
 
 class Wrapper(nn.Module):

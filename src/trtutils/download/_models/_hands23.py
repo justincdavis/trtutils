@@ -133,6 +133,8 @@ cfg.INPUT.MAX_SIZE_TEST = S
 det_model = build_model(cfg)
 DetectionCheckpointer(det_model).load(WEIGHTS)
 det_model.eval()
+# exports never need gradients
+torch.set_grad_enabled(False)
 
 
 def _sdf_scalar(hmin, hmax, val):

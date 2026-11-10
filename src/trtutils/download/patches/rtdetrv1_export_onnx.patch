@@ -1,6 +1,13 @@
---- rtdetr_pytorch/tools/export_onnx.py	2025-09-26 19:16:38.145773950 -0700
-+++ rtdetr_pytorch_fix/tools/export_onnx.py	2025-09-26 19:18:42.045568082 -0700
-@@ -50,17 +50,17 @@
+--- rtdetr_pytorch/tools/export_onnx.py
++++ rtdetr_pytorch_fix/tools/export_onnx.py
+@@ -44,23 +44,24 @@
+     
+ 
+     model = Model()
++    torch.set_grad_enabled(False)
+ 
+     dynamic_axes = {
+         'images': {0: 'N', },
          'orig_target_sizes': {0: 'N'}
      }
  
@@ -22,7 +29,7 @@
          verbose=False
      )
  
-@@ -141,6 +141,8 @@
+@@ -141,6 +142,8 @@
      parser.add_argument('--file-name', '-f', type=str, default='model.onnx')
      parser.add_argument('--check',  action='store_true', default=False,)
      parser.add_argument('--simplify',  action='store_true', default=False,)
