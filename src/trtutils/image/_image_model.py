@@ -107,6 +107,7 @@ class ImageModel:
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        shape_contexts: int | None = None,
         postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -164,6 +165,9 @@ class ImageModel:
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        shape_contexts : int, optional
+            The most per-shape execution contexts the engine keeps, see
+            :class:`~trtutils.TRTEngine`. Default is None, which uses one context.
         postprocessor : str, optional
             Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
             on the GPU and copies back only the final results. Default is None,
@@ -222,6 +226,7 @@ class ImageModel:
                 pagelocked_mem=self._pagelocked_mem,
                 unified_mem=unified_mem,
                 cuda_graph=cuda_graph,
+                shape_contexts=shape_contexts,
                 stream=stream,
                 no_warn=no_warn,
                 verbose=verbose,
