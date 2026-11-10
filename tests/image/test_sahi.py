@@ -85,3 +85,13 @@ def test_sahi_merge_nms_per_call_overrides(dets, init_kwargs, call_kwargs, expec
     sahi = SAHI(_StubDetector(dets), iou_threshold=0.5, **init_kwargs)
     image = np.zeros((100, 100, 3), dtype=np.uint8)
     assert len(sahi.end2end(image, **call_kwargs)) == expected
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    "cpu_count", [pytest.param(1, id="one-cpu"), pytest.param(None, id="unknown")]
+)
+def test_sahi_init_single_cpu(monkeypatch, cpu_count) -> None:
+    """SAHI builds its executor with at least one worker on a 1-CPU or unknown host."""
+    monkeypatch.setattr("os.cpu_count", lambda: cpu_count)
+    SAHI(_StubDetector([]))

@@ -333,7 +333,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         t0 = time.perf_counter()
         tensor, ratios, padding = self._cuda_pre(images)
         self._pre_profile = (t0, time.perf_counter())
-        return self.engine_inputs(tensor, images, ratios), ratios, padding
+        return self.engine_inputs(tensor, images, ratios, padding), ratios, padding
 
     def _resolve_method(self: Self, method: str) -> str:
         if method != "cpu":
@@ -1510,7 +1510,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         """Preprocess batch ``index`` of the crops on the device and enqueue the engine."""
         tensor = cast("CUDATextCrops", self._cuda_crops).batch_input(plan, index)
         t0 = time.perf_counter()
-        outputs = self._engine.raw_exec(self.engine_inputs(tensor, None, None), graph=True)
+        outputs = self._engine.raw_exec(self.engine_inputs(tensor, None, None, None), graph=True)
         self._infer_profile = (t0, time.perf_counter())
         return outputs
 
