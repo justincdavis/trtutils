@@ -44,7 +44,10 @@ def load_stages(results_dir: Path) -> list[dict]:
     stages = []
     for path in sorted(results_dir.glob("stage-*.json")):
         with path.open("r") as f:
-            stages.append(json.load(f))
+            doc = json.load(f)
+        # tasks-only snapshots have nothing to plot here
+        if "optimize" in doc or "batch" in doc:
+            stages.append(doc)
     return stages
 
 

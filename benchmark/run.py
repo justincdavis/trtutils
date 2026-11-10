@@ -7,7 +7,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import json
+import statistics
 import warnings
+from pathlib import Path
 
 from utils.config import (
     BATCH_FRAMEWORKS,
@@ -287,6 +291,82 @@ def cmd_table(args: argparse.Namespace) -> None:
     generate_tables(skip_devices=skip)
 
 
+def cmd_tasks(args: argparse.Namespace) -> None:
+    """Run per-stage benchmarks of one model per task on a 1080p frame."""
+    from utils.tasks import run_tasks, select_task_models
+
+    if args.list:
+        picked = select_task_models(args.model, args.task, all_models=args.all)
+        for m in picked:
+            print(f"{m.task:18}{m.cls.__name__:20}{m.name}")
+        print(f"{len(picked)} models")
+        return
+    run_tasks(
+        args.device,
+        args.model,
+        args.preprocessors,
+        args.warmup,
+        args.iterations,
+        postprocessors=tuple(args.postprocessors),
+        overwrite=args.overwrite,
+        stage=args.stage,
+        tasks=args.task,
+        all_models=args.all,
+    )
+
+
+def cmd_compare(args: argparse.Namespace) -> None:
+    """Compare per-stage medians of two sets of tasks result or stage JSON files."""
+    fields = ["end2end", "preprocess", "infer", "postprocess", "extract"]
+
+    def load(paths: list[str]) -> tuple[dict, list[dict]]:
+        # key -> field -> per-file medians, plus flat rows for the csv
+        meds: dict = {}
+        rows: list[dict] = []
+        for run, path in enumerate(paths):
+            doc = json.loads(Path(path).read_text())
+            # a stage snapshot (has "device") may hold no tasks section
+            entries = doc.get("tasks", {}).get("data", {}) if "device" in doc else doc
+            for key, e in entries.items():
+                vals = {"end2end": e["end2end"]["median"]}
+                vals.update({s: v["median"] for s, v in e["stages"].items()})
+                for f in fields:
+                    meds.setdefault(key, {}).setdefault(f, []).append(vals[f])
+                rows.append(
+                    {
+                        "run": run,
+                        "task": e["task"],
+                        "model": e["model"],
+                        "pre": e["preprocessor"],
+                        # results from before the postprocessor sweep ran the CPU one
+                        "post": e.get("postprocessor", "cpu"),
+                        **vals,
+                    }
+                )
+        return meds, rows
+
+    (a, rows_a), (b, rows_b) = load(args.a), load(args.vs)
+    print(f"{'key':<28} {'stage':<12} {'A(ms)':>8} {'B(ms)':>8} {'delta%':>8}")
+    for key in sorted(a.keys() & b.keys()):
+        for f in fields:
+            ma, mb = statistics.median(a[key][f]), statistics.median(b[key][f])
+            delta = (mb - ma) / ma * 100 if ma else 0.0
+            print(f"{key:<28} {f:<12} {ma:>8.3f} {mb:>8.3f} {delta:>+8.1f}")
+
+    if args.csv is not None:
+        labels = args.labels or ["A", "B"]
+        with Path(args.csv).open("w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(
+                ["run", "revision", "task", "model", "preprocessor", "postprocessor", "end2end_ms", "preprocess_ms", "infer_ms", "postprocess_ms", "extract_ms"]
+            )
+            for rev, rows in zip(labels, (rows_a, rows_b)):
+                for r in rows:
+                    w.writerow(
+                        [r["run"], rev, r["task"], r["model"], r["pre"], r["post"], *(r[x] for x in fields)]
+                    )
+
+
 def cmd_bootstrap(args: argparse.Namespace) -> None:
     """Download models upfront."""
     from utils.runners import bootstrap_models
@@ -387,6 +467,30 @@ def main() -> None:
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--skip-devices", type=str, default="")
     p.set_defaults(func=cmd_table)
+
+    # --- tasks ---
+    p = subparsers.add_parser("tasks", help="Per-stage latency per task on a 1080p frame")
+    p.add_argument("--device", required=True)
+    p.add_argument("--model", nargs="+", default=None, help="Model names (overrides selection)")
+    p.add_argument("--task", nargs="+", default=None, help="Only these tasks, e.g. detection ocr")
+    p.add_argument("--all", action="store_true", help="Every model, not the first per class")
+    p.add_argument("--list", action="store_true", help="Print the selected models and exit")
+    p.add_argument("--preprocessors", nargs="+", default=["cpu", "cuda", "trt"])
+    p.add_argument("--postprocessors", nargs="+", default=["cpu", "cuda"], choices=["cpu", "cuda"])
+    p.add_argument("--warmup", type=int, default=20)
+    p.add_argument("--iterations", type=int, default=200)
+    p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--nvtx", action="store_true")
+    p.add_argument("--stage", default=None, help="Measure fresh into a stage snapshot")
+    p.set_defaults(func=cmd_tasks)
+
+    # --- compare ---
+    p = subparsers.add_parser("compare", help="Compare two sets of tasks/stage JSON files")
+    p.add_argument("a", nargs="+", metavar="A")
+    p.add_argument("--vs", nargs="+", required=True, metavar="B")
+    p.add_argument("--labels", nargs=2, default=None, help="Revision labels for A and B")
+    p.add_argument("--csv", default=None)
+    p.set_defaults(func=cmd_compare)
 
     # --- bootstrap ---
     p = subparsers.add_parser("bootstrap", help="Download models upfront")

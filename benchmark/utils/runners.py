@@ -12,6 +12,7 @@ import json
 import subprocess
 import time
 import warnings
+from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -427,20 +428,25 @@ def run_benchmark(
     return None
 
 
-def _trtutils_git_sha() -> str | None:
-    """Git SHA of the trtutils checkout actually imported, or None outside a repo."""
+def trtutils_provenance() -> dict:
+    """Git SHA, dirty flag and UTC timestamp of the trtutils checkout actually imported."""
     src_dir = Path(trtutils.__file__).resolve().parent
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=src_dir,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except (subprocess.CalledProcessError, OSError):
-        return None
-    return result.stdout.strip()
+
+    def git(*cmd: str) -> str | None:
+        try:
+            out = subprocess.run(
+                ["git", *cmd], cwd=src_dir, capture_output=True, text=True, check=True
+            )
+        except (subprocess.CalledProcessError, OSError):
+            return None
+        return out.stdout.strip()
+
+    status = git("status", "--porcelain", "--untracked-files=no")
+    return {
+        "trtutils_sha": git("rev-parse", "HEAD"),
+        "dirty": None if status is None else bool(status),
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
 
 
 def write_stage_snapshot(device: str, stage: str, section: str, payload: dict) -> None:
@@ -449,7 +455,7 @@ def write_stage_snapshot(device: str, stage: str, section: str, payload: dict) -
 
     ``optimize`` and ``batch`` each own a section of the same stage file, so
     running them in either order (or re-running one) never discards the other.
-    Each section records the trtutils git SHA it measured.
+    Each section records the trtutils git SHA, dirty flag and timestamp it measured.
     """
     out_dir = DATA_DIR / "perf-series" / device
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -459,7 +465,7 @@ def write_stage_snapshot(device: str, stage: str, section: str, payload: dict) -
         with out_path.open("r") as f:
             snapshot = json.load(f)
     snapshot.update({"device": device, "stage": stage})
-    snapshot[section] = {**payload, "trtutils_sha": _trtutils_git_sha()}
+    snapshot[section] = {**payload, **trtutils_provenance()}
     with out_path.open("w") as f:
         json.dump(snapshot, f, indent=2)
     print(f"Wrote stage snapshot: {out_path} [{section}]")
