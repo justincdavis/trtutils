@@ -3,12 +3,9 @@
 # MIT License
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import numpy as np
 
 from trtutils._log import LOG
-
-if TYPE_CHECKING:
-    import numpy as np
 
 
 def postprocess_depth(
@@ -54,8 +51,14 @@ def postprocess_depth(
 
 
 def _postprocess_depth_core(outputs: list[np.ndarray]) -> list[np.ndarray]:
-    # min-max normalize to [0, 1] into new arrays
-    return [(o - o.min()) / (o.max() - o.min() + 1e-8) for o in outputs]
+    # min-max normalize to [0, 1] into one new array each, divided in place
+    results = []
+    for output in outputs:
+        d_min = output.min()
+        normed = np.subtract(output, d_min)
+        np.divide(normed, output.max() - d_min + 1e-8, out=normed)
+        results.append(normed)
+    return results
 
 
 def get_depth_maps(

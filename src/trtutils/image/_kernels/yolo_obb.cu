@@ -49,7 +49,7 @@ void obbPrep(
     dst[7] = mul(mul(sub(varW, varH), cs), sn);
 }
 
-// probiou between sorted boxes i and j, as _probiou
+// probiou between sorted boxes i and j, as _probiou_terms
 __device__ float probiou(const float* __restrict__ p, const float* __restrict__ q) {
     const float eps = 1e-7f;
     const float dx = sub(p[0], q[0]);
@@ -110,7 +110,8 @@ void obbSuppress(
 }
 
 // first maxDet survivors in rank order as rows of (enclosing xyxy, score, class, cx, cy, w, h,
-// angle). One thread per image: the list is the conf-filtered candidates, small next to the NMS
+// angle), one block per image: each thread takes a contiguous run of the candidates and an
+// exclusive block scan of the survivor counts gives every survivor its row
 extern "C" __global__
 void obbKeep(
     const int N,
@@ -123,11 +124,39 @@ void obbKeep(
     float* __restrict__ dets,
     int* __restrict__ keepCount
 ) {
+    __shared__ int warpSums[32];
     const int b = blockIdx.y;
+    const int t = threadIdx.x;
     const int n = count[b];
     const size_t base = (size_t)b * N;
-    int pos = 0;
-    for (int k = 0; k < n && pos < maxDet; ++k) {
+    const int chunk = (n + blockDim.x - 1) / blockDim.x;
+    const int lo = min(t * chunk, n);
+    const int hi = min(lo + chunk, n);
+    int mine = 0;
+    for (int k = lo; k < hi; ++k) mine += alive[base + k];
+    // shuffles within warps, then over the warp totals (blockDim is a multiple of 32)
+    const int lane = t & 31;
+    const int warp = t >> 5;
+    const int warps = blockDim.x >> 5;
+    int inc = mine;
+    for (int d = 1; d < 32; d <<= 1) {
+        const int v = __shfl_up_sync(0xffffffffu, inc, d);
+        if (lane >= d) inc += v;
+    }
+    if (lane == 31) warpSums[warp] = inc;
+    __syncthreads();
+    if (warp == 0) {
+        int w = lane < warps ? warpSums[lane] : 0;
+        for (int d = 1; d < 32; d <<= 1) {
+            const int v = __shfl_up_sync(0xffffffffu, w, d);
+            if (lane >= d) w += v;
+        }
+        warpSums[lane] = w;
+    }
+    __syncthreads();
+    if (t == 0) keepCount[b] = min(warpSums[warps - 1], maxDet);
+    int pos = inc - mine + (warp > 0 ? warpSums[warp - 1] : 0);
+    for (int k = lo; k < hi && pos < maxDet; ++k) {
         if (!alive[base + k]) continue;
         const float* r = rb + (base + k) * 8;
         const float cs = cosf(r[4]);
@@ -144,5 +173,4 @@ void obbKeep(
         for (int m = 0; m < 5; ++m) row[6 + m] = r[m];
         ++pos;
     }
-    keepCount[b] = pos;
 }

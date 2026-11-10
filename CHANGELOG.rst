@@ -166,6 +166,16 @@ Changed
 * The CUDA and TensorRT preprocessors copy images of 3 MB and more through pinned memory in
   overlapping chunks (``memcpy_host_to_device_staged_async``), and memoize their resize kernel
   arguments: 1080p preprocess 0.61 -> 0.56 ms on an RTX 5080
+* OBB rotated NMS on the CPU runs in float32 on small score-ordered blocks and skips pairs too
+  far apart to overlap: same results, yolo11n-obb postprocess 28 ms -> 5 ms on 1080p frames.
+  The CUDA OBB postprocessor gathers its survivors with a block-wide scan instead of one thread
+* ``get_detections`` (and segmentation/pose result extraction) converts results in bulk instead
+  of per numpy scalar: same tuples, 168 -> 42 us per image with 240 detections
+* The DB text detection postprocess computes the unclip area and box score bounds with plain
+  floats and scales a frame's boxes in one batch: same boxes and scores, OCR postprocess
+  2.1 -> 1.6 ms on a 14-line 1080p page
+* Depth maps are normalized into one new array, divided in place, instead of two temporaries:
+  same values
 * The torchvision classifier wrappers (not the YOLO ones) default to ``center_crop`` instead of
   ``linear``, as their weights are evaluated; pass ``resize_method="linear"`` for the old outputs
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other
