@@ -9,9 +9,9 @@ from pathlib import Path
 
 import cv2
 import cv2ext
-import numpy as np
-import trtutils
 from trtutils.impls.yolo import YOLO
+
+import trtutils
 
 
 def main() -> None:

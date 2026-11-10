@@ -18,11 +18,11 @@ from trtutils.models import (
     DEIM,
     DFINE,
     RFDETR,
+    YOLOX,
     DEIMv2,
     RTDETRv1,
     RTDETRv2,
     RTDETRv3,
-    YOLOX,
     YOLOv3,
     YOLOv5,
     YOLOv7,
@@ -80,11 +80,11 @@ def benchmark_model(
 
     # build
     if not engine_path.exists():
-        print(f"  Building engine...")
+        print("  Building engine...")
         cls.build(onnx_path, engine_path, imgsz=imgsz)
 
     # baseline (no graph)
-    print(f"  Benchmarking baseline (no CUDA Graph)...")
+    print("  Benchmarking baseline (no CUDA Graph)...")
     detector = cls(
         engine_path,
         warmup=True,
@@ -102,7 +102,7 @@ def benchmark_model(
     del detector
 
     # cuda graph
-    print(f"  Benchmarking CUDA Graph...")
+    print("  Benchmarking CUDA Graph...")
     try:
         detector = cls(
             engine_path,

@@ -2,9 +2,9 @@
 # Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
+import json
 import subprocess
 from pathlib import Path
-import json
 
 # Global path definitions
 ROOT_DIR = Path(__file__).parent.parent
@@ -44,7 +44,7 @@ def generate_rst_docs():
     # Load device info blurbs
     device_info_path = BENCHMARK_DIR / "info" / "device_info.json"
     if device_info_path.exists():
-        with open(device_info_path, "r") as f:
+        with open(device_info_path) as f:
             device_info = json.load(f)
     else:
         device_info = {}
@@ -148,7 +148,7 @@ Performance Table
 The following table shows detailed performance metrics for all tested models:
 
 """)
-            with open(device_file, "r") as table_file:
+            with open(device_file) as table_file:
                 f.write(table_file.read())
 
 
