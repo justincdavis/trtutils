@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils.core._buffer import Buffer
+from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.image._cuda import CUDAStage
 
 from ._common import original_size
@@ -69,7 +70,9 @@ class CUDAPostprocessor(CUDAStage):
 
     def __init__(self: Self, stream: cudart.cudaStream_t) -> None:
         super().__init__(stream)
-        self._letter: Buffer | None = None
+        # pinned host staging for the letterbox table, copied to the device each call
+        self._letter_host = Buffer.empty((1, 6), np.float32, pinned=True)
+        self._letter = Buffer.device((1, 6), np.float32)
 
     def _letterbox(
         self: Self,
@@ -77,9 +80,11 @@ class CUDAPostprocessor(CUDAStage):
         padding: list[tuple[float, float]],
         input_size: tuple[int, int] | None,
     ) -> int:
-        """Fill the letterbox table for this batch and return its device address."""
+        """Copy the letterbox table for this batch to the device and return its address."""
         table = letterbox_table(ratios, padding, input_size)
-        if self._letter is None or self._letter.shape != table.shape:
-            self._letter = Buffer.host_mapped(table.shape, np.float32)
-        self._letter.array[:] = table
+        if self._letter.shape != table.shape:
+            self._letter_host = Buffer.empty(table.shape, np.float32, pinned=True)
+            self._letter = Buffer.device(table.shape, np.float32)
+        self._letter_host.array[:] = table
+        memcpy_host_to_device_async(self._letter.device_ptr, self._letter_host.array, self._stream)
         return self._letter.device_ptr
