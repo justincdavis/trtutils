@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
 
 import cv2
 import numpy as np
@@ -16,6 +17,7 @@ from typing_extensions import Literal
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
+from trtutils.core._stream import stream_synchronize
 
 from ._image_model import ImageModel
 from ._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
@@ -35,6 +37,17 @@ from .preprocessors import (
     resize_text_detection,
 )
 from .preprocessors._cpu_ocr import _IMAGENET_MEAN, _IMAGENET_STD, _REC_MEAN, _REC_STD
+from .preprocessors._cuda_ocr import (
+    CropPlan,
+    CUDATextCrops,
+    CUDATextDetectionInput,
+    DeviceFrame,
+    is_bgr_frame,
+)
+
+# cubic perspective crops cost ~1 ms per text line and cv2 runs each on one
+# thread while releasing the GIL, so the lines of an image crop in parallel
+_CROP_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="trtutils-ocr-crop")
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -52,6 +65,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
     _OUTPUT_SCHEMA = TextDetectorOutputSchema
     _CUDA_POSTPROCESSOR = DBBinarize
     _cuda_post_default = True
+    _non_blocking_stream = True
 
     def __init__(
         self: Self,
@@ -157,9 +171,10 @@ class TextDetector(ImageModel, TextDetectorInterface):
             Unused. CUDA graphs are enabled with the CUDA postprocessor, where they replay
             when consecutive calls share an input shape, and disabled otherwise.
         postprocessor : str, optional
-            Where to postprocess, 'cpu' or 'cuda'. 'cuda' binarizes the probability
-            map on the GPU and copies back the map the box extraction scores.
-            Preprocessing stays on the CPU. Default is None, which picks 'cuda'.
+            Where to pre- and postprocess, 'cpu' or 'cuda'. 'cuda' resizes and normalizes
+            uint8 BGR images on the GPU (exactly the CPU values), binarizes the probability
+            map there and copies back only what the box extraction needs. Default is None,
+            which picks 'cuda'.
         use_dilation : bool, optional
             Whether or not to dilate the binarized map before extracting boxes.
             By default None, which means no dilation.
@@ -207,6 +222,8 @@ class TextDetector(ImageModel, TextDetectorInterface):
             output_schema=output_schema,
         )
 
+        self._cuda_pre = self._setup_cuda_pre()
+
         # prepend with 'tdet_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
             {
@@ -234,6 +251,82 @@ class TextDetector(ImageModel, TextDetectorInterface):
         return CPUPreprocessor(
             self._input_size, self._input_range, self._dtype, resize=fn, tag=self._tag
         )
+
+    def _setup_cuda_pre(self: Self) -> CUDATextDetectionInput | None:
+        # the postprocessor="cuda" models also preprocess on the device (bit-exact with the CPU)
+        if self._postprocessor != "cuda" or self._dtype != np.float32:
+            return None
+        width, height = self._input_size
+        return CUDATextDetectionInput(
+            self._engine.stream,
+            self._limit_side_len,
+            self._limit_type,
+            (height, width),
+            self._mean,
+            self._std,
+            self._input_range,
+        )
+
+    def _update_preprocessors(self: Self) -> None:
+        super()._update_preprocessors()
+        self._cuda_pre = self._setup_cuda_pre()
+
+    @property
+    def cuda_preprocess(self: Self) -> bool:
+        """Whether uint8 BGR images are resized and normalized on the GPU (``postprocessor="cuda"``)."""
+        return self._cuda_pre is not None
+
+    def prepare_inputs(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        method: str | None = None,
+        *,
+        preprocessed: bool = False,
+        ratios: list[tuple[float, float]] | None = None,
+        padding: list[tuple[float, float]] | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[list[Buffer], list[tuple[float, float]] | None, list[tuple[float, float]] | None]:
+        """
+        Get the inputs of the engine call for a batch of images.
+
+        With ``postprocessor="cuda"``, uint8 HWC BGR images (host or device) are resized
+        and normalized on the GPU, with exactly the values of the CPU preprocessing.
+        Everything else is preprocessed as in :meth:`ImageModel.prepare_inputs`.
+
+        Parameters
+        ----------
+        images : Sequence[np.ndarray | Buffer]
+            The images to preprocess, or a single already preprocessed batch tensor.
+        method : str, optional
+            The preprocessor to use, only 'cpu'. By default None.
+        preprocessed : bool, optional
+            Whether ``images`` holds an already preprocessed batch tensor.
+        ratios : list[tuple[float, float]], optional
+            The ratios of an already preprocessed batch.
+        padding : list[tuple[float, float]], optional
+            The padding of an already preprocessed batch.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        tuple[list[Buffer], list[tuple[float, float]] | None, list[tuple[float, float]] | None]
+            The engine inputs, and the ratios and padding per image.
+
+        """
+        if self._cuda_pre is None or preprocessed or not all(is_bgr_frame(img) for img in images):
+            return super().prepare_inputs(
+                images,
+                method,
+                preprocessed=preprocessed,
+                ratios=ratios,
+                padding=padding,
+                verbose=verbose,
+            )
+        t0 = time.perf_counter()
+        tensor, ratios, padding = self._cuda_pre(images)
+        self._pre_profile = (t0, time.perf_counter())
+        return self.engine_inputs(tensor, images, ratios), ratios, padding
 
     def _resolve_method(self: Self, method: str) -> str:
         if method != "cpu":
@@ -694,6 +787,7 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
     _OUTPUT_SCHEMA = TextRecognizerOutputSchema
     _CUDA_POSTPROCESSOR = CTCArgmax
     _cuda_post_default = True
+    _non_blocking_stream = True
 
     def __init__(
         self: Self,
@@ -783,7 +877,9 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         postprocessor : str, optional
             Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the CTC head
             on the GPU and copies back the best class and its probability per
-            step. Preprocessing stays on the CPU. Default is None, which picks 'cuda'.
+            step, and enables :meth:`end2end_regions`, which crops and preprocesses
+            text lines on the GPU (exactly the CPU values). Default is None, which
+            picks 'cuda'.
         use_space_char : bool, optional
             Whether or not the model has an extra trailing class for the space
             character. By default None, which means True.
@@ -846,6 +942,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             )
             raise ValueError(err_msg)
 
+        self._cuda_crops = self._setup_cuda_crops()
+
         # prepend with 'trec_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
             {
@@ -877,6 +975,29 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         return CPUPreprocessor(
             self._input_size, self._input_range, self._dtype, resize=fn, tag=self._tag
         )
+
+    def _setup_cuda_crops(self: Self) -> CUDATextCrops | None:
+        if self._postprocessor != "cuda" or self._dtype != np.float32:
+            return None
+        width, height = self._input_size
+        return CUDATextCrops(
+            self._engine.stream,
+            height,
+            width,
+            self._batch_size,
+            self._mean,
+            self._std,
+            self._input_range,
+        )
+
+    def _update_preprocessors(self: Self) -> None:
+        super()._update_preprocessors()
+        self._cuda_crops = self._setup_cuda_crops()
+
+    @property
+    def cuda_crops(self: Self) -> bool:
+        """Whether :meth:`end2end_regions` is available (``postprocessor="cuda"``)."""
+        return self._cuda_crops is not None
 
     def _resolve_method(self: Self, method: str) -> str:
         if method != "cpu":
@@ -1211,7 +1332,9 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
         for start in range(0, len(order), self._batch_size):
             batch_idx = order[start : start + self._batch_size]
             # outputs are consumed by get_texts() inside this call, so skip their copies
-            outputs, _, _ = self.infer([lines[i] for i in batch_idx], no_copy=True, verbose=verbose)
+            outputs, _, _ = self._infer_post(
+                [lines[i] for i in batch_idx], no_copy=True, verbose=verbose
+            )
             batch = self.postprocess(outputs, no_copy=True, verbose=verbose)
             for i, text in zip(batch_idx, self.get_texts(batch, verbose=verbose)):
                 results[i] = text
@@ -1220,6 +1343,112 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             nvtx.pop_range()  # end2end
 
         return results
+
+    def end2end_regions(
+        self: Self,
+        frame: Buffer,
+        boxes: np.ndarray,
+        *,
+        verbose: bool | None = None,
+    ) -> list[Text]:
+        """
+        Recognize the text of boxes in an image, cropping and preprocessing on the GPU.
+
+        Gives exactly the result of :meth:`end2end` on
+        ``[crop_text_region(image, box) for box in boxes]``, but the crops are
+        cut from the device image and fed to the engine without leaving the GPU.
+
+        Parameters
+        ----------
+        frame : Buffer
+            The (H, W, 3) uint8 BGR image on the device.
+        boxes : np.ndarray
+            The (N, 4, 2) corner points (TL, TR, BR, BL) of the text boxes.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        list[Text]
+            One Text (text, confidence) per box in input order.
+
+        Raises
+        ------
+        RuntimeError
+            If the recognizer was not created with ``postprocessor="cuda"``.
+
+        """
+        ctc = self._cuda_post
+        if self._cuda_crops is None or ctc is None:
+            err_msg = "end2end_regions requires postprocessor='cuda' and a float32 engine input"
+            raise RuntimeError(err_msg)
+        if len(boxes) == 0:
+            return []
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["end2end"])
+
+        if verbose:
+            LOG.debug(f"{self._tag}: end2end_regions, {len(boxes)} boxes")
+
+        plan = self.prepare_regions(frame, boxes)
+        # every batch is enqueued before one sync: TensorRT spends ~1 ms of host time on
+        # each new input shape, which then overlaps the previous batch on the GPU
+        shapes = []
+        for index in range(len(plan.batches)):
+            outputs = self._order_outputs(self._infer_regions(plan, index))
+            ctc.enqueue(outputs[0], index)
+            shapes.append(outputs[0].shape)
+        t0 = time.perf_counter()
+        stream_synchronize(self._engine.stream)
+        results: list[Text] = [("", 0.0)] * len(boxes)
+        for index, (start, stop, _) in enumerate(plan.batches):
+            batch = ctc.read(shapes[index], index)
+            for i, text in zip(plan.order[start:stop], self.get_texts(batch, verbose=verbose)):
+                results[i] = text
+        self._post_profile = (t0, time.perf_counter())
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # end2end
+
+        return results
+
+    def prepare_regions(self: Self, frame: Buffer, boxes: np.ndarray) -> CropPlan:
+        """
+        Enqueue the perspective crops of ``boxes`` from a device image.
+
+        Parameters
+        ----------
+        frame : Buffer
+            The (H, W, 3) uint8 BGR image on the device.
+        boxes : np.ndarray
+            The (N, 4, 2) corner points of the text boxes.
+
+        Returns
+        -------
+        CropPlan
+            The crops on the device and their recognizer batches.
+
+        Raises
+        ------
+        RuntimeError
+            If the recognizer was not created with ``postprocessor="cuda"``.
+
+        """
+        if self._cuda_crops is None:
+            err_msg = "prepare_regions requires postprocessor='cuda' and a float32 engine input"
+            raise RuntimeError(err_msg)
+        t0 = time.perf_counter()
+        plan = self._cuda_crops.plan(frame, boxes)
+        self._pre_profile = (t0, time.perf_counter())
+        return plan
+
+    def _infer_regions(self: Self, plan: CropPlan, index: int) -> list[Buffer]:
+        """Preprocess batch ``index`` of the crops on the device and enqueue the engine."""
+        tensor = cast("CUDATextCrops", self._cuda_crops).batch_input(plan, index)
+        t0 = time.perf_counter()
+        outputs = self._engine.raw_exec(self.engine_inputs(tensor, None, None), graph=True)
+        self._infer_profile = (t0, time.perf_counter())
+        return outputs
 
 
 class OCR:
@@ -1282,6 +1511,17 @@ class OCR:
         self._width_height_ratio = width_height_ratio
         self._max_side_len = max_side_len
         self._min_side_len = min_side_len
+        # with postprocessor="cuda" on both models the image is uploaded once and cut
+        # into text lines on the GPU, the results equal the CPU crops exactly
+        self._gpu: tuple[TextDetector, TextRecognizer] | None = None
+        if (
+            isinstance(detector, TextDetector)
+            and isinstance(recognizer, TextRecognizer)
+            and detector.cuda_preprocess
+            and recognizer.cuda_crops
+        ):
+            self._gpu = (detector, recognizer)
+        self._frame = DeviceFrame()
         if verbose:
             LOG.debug(f"Creating OCR: {detector.name} + {recognizer.name}")
 
@@ -1320,13 +1560,23 @@ class OCR:
             pad = int(abs(new_h - h) / 2)
             img = cv2.copyMakeBorder(img, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
-        text_boxes = self._detector.end2end(img, box_conf_thres, verbose=verbose)
+        gpu = self._gpu
+        frame = None
+        if gpu is not None and is_bgr_frame(img):
+            frame = self._frame(img, gpu[0].engine.stream)
+        text_boxes = self._detector.end2end(
+            img if frame is None else frame, box_conf_thres, verbose=verbose
+        )
         if not text_boxes:
             return []
         boxes = np.stack([box for box, _ in text_boxes])
-        lines = self._recognizer.end2end(
-            [crop_text_region(img, box) for box in boxes], verbose=verbose
-        )
+        if gpu is not None and frame is not None:
+            # the recognizer's stream waits for the frame upload on the detector's: the
+            # detector synced its stream before returning the boxes
+            lines = gpu[1].end2end_regions(frame, boxes, verbose=verbose)
+        else:
+            crops = list(_CROP_POOL.map(partial(crop_text_region, img), boxes))
+            lines = self._recognizer.end2end(crops, verbose=verbose)
 
         out_boxes = (boxes - np.array([0, pad], np.float32)) * scale
         out_boxes = np.clip(out_boxes, 0, np.array([raw_w, raw_h], np.float32))

@@ -176,6 +176,24 @@ Changed
   2.1 -> 1.6 ms on a 14-line 1080p page
 * Depth maps are normalized into one new array, divided in place, instead of two temporaries:
   same values
+* ``PPOCR`` with ``postprocessor="cuda"`` (the default) runs end to end on the GPU: the image is
+  uploaded once, ``TextDetector`` resizes and normalizes it there, and the new
+  ``TextRecognizer.end2end_regions`` cuts the text lines out of the device image
+  (``cv2.warpPerspective`` cubic, rotated crops included) and fills the recognizer input without
+  a host round trip. Kernels mirror OpenCV's fixed point ``resize`` and ``warpPerspective``, so
+  boxes, texts and scores equal the CPU path exactly (on x86 OpenCV 4.11).
+  ``TextRecognizer.end2end`` decodes CTC on the GPU too. 14-line 1080p page on an RTX 5080:
+  21 -> 10.7 ms
+* ``PPOCR`` with ``postprocessor="cpu"`` crops the detected text lines on a thread pool: same
+  results, 41 -> 26 ms on a 14-line 1080p page
+* ``PPOCRDetector.build`` and ``PPOCRRecognizer.build`` default to ``fp16=True``, like the other
+  models. On 24 rendered pages FP16 changed ~4% of recognized lines, with the same character error
+  rate against the ground truth (2.38% FP32, 2.41% FP16); 14-line page 10.7 -> 8.2 ms on an RTX
+  5080. Pass ``fp16=False`` for the FP32 behavior
+* ``PPOCR`` enqueues every recognizer batch before one stream sync, and ``TextDetector`` /
+  ``TextRecognizer`` run their engines on non-blocking streams, so TensorRT's own synchronous
+  copies stop waiting on queued work: 14-line page 8.2 -> 7.0 ms on an RTX 5080.
+  ``create_stream(non_blocking=True)`` makes one
 * The torchvision classifier wrappers (not the YOLO ones) default to ``center_crop`` instead of
   ``linear``, as their weights are evaluated; pass ``resize_method="linear"`` for the old outputs
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other

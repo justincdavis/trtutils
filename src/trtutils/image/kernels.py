@@ -32,6 +32,9 @@ Attributes
     Postprocess kernels for YOLO segmentation masks: clear, probabilities, and masks.
 :attribute:`OCR_POST` : Path
     Postprocess kernels for OCR: CTC argmax and DB probability map binarization.
+:attribute:`OCR_PRE` : Path
+    Preprocess kernels for OCR, bit-exact with OpenCV: text detection resize, text box
+    crops, and the text recognition input.
 
 """
 
@@ -89,6 +92,7 @@ YOLO_NMS: Path = _KERNEL_DIR / "yolo_nms.cu"
 YOLO_OBB: Path = _KERNEL_DIR / "yolo_obb.cu"
 YOLO_SEG: Path = _KERNEL_DIR / "yolo_seg.cu"
 OCR_POST: Path = _KERNEL_DIR / "ocr_post.cu"
+OCR_PRE: Path = _KERNEL_DIR / "ocr_pre.cu"
 
 # loadIndex() in _kernels/postprocess.cuh
 _INDEX_KIND = {np.dtype(np.int32): 0, np.dtype(np.float32): 1, np.dtype(np.int64): 2}

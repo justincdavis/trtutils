@@ -227,7 +227,8 @@ falling back to cuda). `--preprocessors` defaults to `cpu cuda trt hybrid`, and 
 preprocessor runs with each of `--postprocessors` (default `cpu cuda`); `cuda` runs where the
 task has a CUDA postprocessor (every task but depth) and the engine's outputs fit it (detection
 needs YOLO-v10 or EfficientNMS outputs); its results are keyed
-`<model>/<preprocessor>/cuda-post`. ONNX files and engines live in
+`<model>/<preprocessor>/cuda-post`. OCR ignores `--preprocessors`: it runs as `cpu` with the
+CPU postprocessor and as `cuda` with the CUDA one, which also preprocesses and crops on the GPU. ONNX files and engines live in
 `data/tasks/<trtutils sha>[-dirty]/` and are downloaded and built on first use. Each model runs
 `end2end` once without instrumentation for the end-to-end time, then again with its stages
 timed; every stage syncs the device, so GPU preprocessing is not billed to inference and the

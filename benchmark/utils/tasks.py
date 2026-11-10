@@ -199,21 +199,42 @@ class StageTimer:
     Wrap a model's stage methods to attribute end2end time to stages.
 
     Every stage syncs the device before its clock stops, so GPU work is billed to
-    the stage that queued it: ``prepare_inputs`` (preprocessing) to preprocess, the
-    engine to infer, and a CUDA postprocessor's kernels to postprocess. ``infer``
-    and ``_infer_post`` (end2end's path, which skips ``infer`` with
-    ``postprocessor="cuda"``) cover preprocessing plus the engine; whatever is left
-    of the end2end call (result extraction, OCR crops) is ``extract``.
+    the stage that queued it: ``prepare_inputs`` and ``prepare_regions``
+    (preprocessing, with the OCR page upload) to preprocess, the engine
+    (``infer``, ``_infer_post``, ``_infer_regions``) to infer, and a CUDA
+    postprocessor's kernels (``postprocess``, the recognizer's CTC ``enqueue`` /
+    ``read``) to postprocess. A stage nested in another is taken out of its parent
+    (``_infer_post`` calls ``prepare_inputs``); what remains of the end2end call
+    (result extraction, CPU OCR crops) is ``extract``.
     """
 
-    def __init__(self, image_models: list[Any]) -> None:
+    _WRAPPED = (
+        ("prepare_inputs", "preprocess"),
+        ("prepare_regions", "preprocess"),
+        ("infer", "infer"),
+        ("_infer_post", "infer"),
+        ("_infer_regions", "infer"),
+        ("postprocess", "postprocess"),
+    )
+
+    def __init__(self, model: Any) -> None:  # noqa: ANN401
         self.times: dict[str, float] = dict.fromkeys(STAGES, 0.0)
         self._active: set[str] = set()
-        for m in image_models:
-            m.prepare_inputs = self._wrap(m.prepare_inputs, "preprocess")
-            m.infer = self._wrap(m.infer, "infer")
-            m._infer_post = self._wrap(m._infer_post, "infer")  # noqa: SLF001
-            m.postprocess = self._wrap(m.postprocess, "postprocess")
+        # time spent in stages nested in each running stage
+        self._children: list[float] = []
+        # the OCR page upload runs before detector.end2end
+        upload = getattr(model, "_frame", None)
+        if callable(upload):
+            model._frame = self._wrap(upload, "preprocess")  # noqa: SLF001
+        for m in _image_models(model):
+            for name, stage in self._WRAPPED:
+                if hasattr(m, name):
+                    setattr(m, name, self._wrap(getattr(m, name), stage))
+            # end2end_regions decodes CTC outside postprocess
+            post = getattr(m, "_cuda_post", None)
+            for name in ("enqueue", "read"):
+                if hasattr(post, name):
+                    setattr(post, name, self._wrap(getattr(post, name), "postprocess"))
 
     def _wrap(self, fn: Callable[..., Any], stage: str) -> Callable[..., Any]:
         def timed(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
@@ -221,13 +242,17 @@ class StageTimer:
             if stage in self._active:
                 return fn(*args, **kwargs)
             self._active.add(stage)
+            self._children.append(0.0)
             t0 = time.perf_counter()
             try:
                 out = fn(*args, **kwargs)
                 _sync()
             finally:
                 self._active.discard(stage)
-                self.times[stage] += time.perf_counter() - t0
+                elapsed = time.perf_counter() - t0
+                self.times[stage] += elapsed - self._children.pop()
+                if self._children:
+                    self._children[-1] += elapsed
             return out
 
         return timed
@@ -238,13 +263,11 @@ class StageTimer:
     def split(self, total: float) -> dict[str, float]:
         """Per-stage seconds for one end2end call that took ``total`` seconds."""
         t = self.times
-        # infer wraps prepare_inputs, so take preprocessing back out of it
-        infer = t["infer"] - t["preprocess"]
         return {
             "preprocess": t["preprocess"],
-            "infer": infer,
+            "infer": t["infer"],
             "postprocess": t["postprocess"],
-            "extract": total - t["infer"] - t["postprocess"],
+            "extract": total - t["preprocess"] - t["infer"] - t["postprocess"],
         }
 
 
@@ -257,7 +280,11 @@ def _image_models(model: Any) -> list[Any]:  # noqa: ANN401
 
 def _resolved(model: Any) -> str:  # noqa: ANN401
     """The preprocessor a model actually runs (OCR: its detector's)."""
-    return (model if hasattr(model, "prepare_inputs") else model._detector)._preprocessor_method  # noqa: SLF001
+    det = _image_models(model)[0]
+    # OCR with postprocessor="cuda" preprocesses on the GPU; the constructor method stays "cpu"
+    if getattr(det, "cuda_preprocess", False):
+        return "cuda"
+    return det._preprocessor_method  # noqa: SLF001
 
 
 def _key(name: str, pre: str, post: str) -> str:
@@ -295,7 +322,7 @@ def bench_task(
         model.end2end(image)
         totals.append(time.perf_counter() - t0)
 
-    timer = StageTimer(_image_models(model))
+    timer = StageTimer(model)
     stages: dict[str, list[float]] = {s: [] for s in STAGES}
     for _ in tqdm(range(iterations), desc=f"{key} stages"):
         timer.reset()
@@ -347,9 +374,13 @@ def run_tasks(
     data: dict[str, Any] = {} if stage is not None else get_data(device, "tasks", [])
     cached = 0
     for spec in select_task_models(names, tasks, all_models=all_models):
-        # OCR preprocesses on the CPU only
-        pres = ["cpu"] if spec.parts else preprocessors
-        for prep, post in itertools.product(pres, postprocessors):
+        # OCR preprocesses on the CPU, or on the GPU with its CUDA postprocessor
+        runs = (
+            [("cuda" if post == "cuda" else "cpu", post) for post in postprocessors]
+            if spec.parts
+            else list(itertools.product(preprocessors, postprocessors))
+        )
+        for prep, post in runs:
             key = _key(spec.name, prep, post)
             if key in data and not overwrite:
                 print(f"Skipping {key} (already exists)")

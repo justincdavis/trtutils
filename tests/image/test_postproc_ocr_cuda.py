@@ -50,6 +50,23 @@ def test_cuda_ctc_matches_cpu(cuda_stream, to_device, batch, steps, classes, tie
                 assert g.dtype == w.dtype
 
 
+def test_cuda_ctc_slots_decode_before_one_sync(cuda_stream, to_device) -> None:
+    """Batches enqueued into their own slots read back after a single sync, each exactly."""
+    rng = np.random.default_rng(1)
+    heads = [_ctc(rng, batch, steps, 97, ties=True) for batch, steps in ((3, 40), (1, 80), (2, 25))]
+    post = CTCArgmax(cuda_stream)
+    for _ in range(2):
+        devices = [to_device(head) for head in heads]
+        for slot, device in enumerate(devices):
+            post.enqueue(device, slot)
+        post._sync()
+        for slot, head in enumerate(heads):
+            ours = post.read(head.shape, slot)
+            for got, want in zip(ours, postprocess_text_recognition([head])):
+                for g, w in zip(got, want):
+                    np.testing.assert_array_equal(g, w)
+
+
 def _prob_map(rng: np.random.Generator, batch: int, height: int, width: int) -> np.ndarray:
     """Noisy background with a few high-probability text blobs and a mid-probability one."""
     maps = rng.uniform(0, 0.25, size=(batch, 1, height, width)).astype(np.float32)

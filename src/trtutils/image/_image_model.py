@@ -27,6 +27,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 from trtutils.core._device import Device
+from trtutils.core._stream import create_stream
 
 from ._schema import resolve_schema
 from .preprocessors import (
@@ -108,6 +109,9 @@ class ImageModel:
     _CUDA_POSTPROCESSOR: ClassVar[type[CUDAPostprocessor] | None] = None
     # False keeps the CPU postprocessor as the default even when a CUDA one exists
     _cuda_post_default: ClassVar[bool] = True
+    # run the engine on a non-blocking stream, for models that sync it explicitly: TensorRT's
+    # own synchronous copies then don't wait on work queued on the stream
+    _non_blocking_stream: ClassVar[bool] = False
 
     def __init__(
         self: Self,
@@ -232,6 +236,10 @@ class ImageModel:
 
             self._device = device
             self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+            stream = None
+            if self._non_blocking_stream:
+                with Device(device):
+                    stream = create_stream(non_blocking=True)
             self._engine = TRTEngine(
                 engine_path=engine_path,
                 warmup_iterations=warmup_iterations,
@@ -242,6 +250,7 @@ class ImageModel:
                 pagelocked_mem=self._pagelocked_mem,
                 unified_mem=unified_mem,
                 cuda_graph=cuda_graph,
+                stream=stream,
                 no_warn=no_warn,
                 verbose=verbose,
             )
