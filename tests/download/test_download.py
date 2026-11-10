@@ -89,6 +89,22 @@ def test_download_calls_download_model_and_copies(tmp_path) -> None:
         mock_copy.assert_called_once()
 
 
+def test_download_accepts_str_output(tmp_path) -> None:
+    """A str output (Python API) works: sidecar copy uses output.parent."""
+    model = tmp_path / "fake" / "model.onnx"
+    model.parent.mkdir()
+    model.write_text("x")
+    model.with_name("model.onnx.data").write_text("w")
+    output = tmp_path / "out" / "output.onnx"
+    output.parent.mkdir()
+    with patch("trtutils.download._download.check_uv_version"), patch(
+        "trtutils.download._download.download_model", return_value=model
+    ):
+        download("yolov10n", str(output))
+    assert output.exists()
+    assert (output.parent / "model.onnx.data").exists()
+
+
 @pytest.mark.parametrize(
     ("imgsz", "default", "kwargs", "expected"),
     [

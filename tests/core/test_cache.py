@@ -90,6 +90,13 @@ def test_store_delete_source(patched_cache_dir, tmp_path, delete_source) -> None
 
 
 @pytest.mark.cpu
+def test_clear_missing_dir_is_noop(patched_cache_dir) -> None:
+    """clear() on a fresh install (no cache dir) does not raise."""
+    patched_cache_dir.rmdir()
+    cache.clear(no_warn=True)
+
+
+@pytest.mark.cpu
 def test_clear_recreates_empty_dir(patched_cache_dir, tmp_path) -> None:
     """clear() removes contents and recreates the directory."""
     src = tmp_path / "test.engine"
