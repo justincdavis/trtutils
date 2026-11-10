@@ -214,6 +214,7 @@ result extraction:
 ```bash
 python benchmark/run.py tasks --device MyDevice
 python benchmark/run.py tasks --device MyDevice --model yolov11n-seg --preprocessors cuda
+python benchmark/run.py tasks --device MyDevice --task detection --postprocessors cuda
 ```
 
 By default the first (smallest) model of every wrapper class runs (e.g. yolov11n, yolov8n-seg,
@@ -222,11 +223,14 @@ resnet18, depth_anything_v2_small, hands23_x101, ppocrv4). `--all` runs every do
 detection ocr ...` limits the tasks, `--model NAME ...` picks exact names (unknown names raise),
 and `--list` prints the selection without running. A model that fails to download or build is
 logged and skipped, and so is a preprocessor the model resolves to something else (e.g. trt
-falling back to cuda). ONNX files and engines live in `data/tasks/<trtutils sha>[-dirty]/` and
-are downloaded and built on first use. Each model runs `end2end` once without
-instrumentation for the end-to-end time, then again with its stages timed; preprocessing syncs
-the device so GPU preprocessing is not billed to inference. Results are saved to
-`data/tasks/{device}.json`.
+falling back to cuda). Every preprocessor runs with each of `--postprocessors` (default `cpu
+cuda`); `cuda` runs where the task has a CUDA postprocessor (every task but depth) and the
+engine's outputs fit it (detection needs YOLO-v10 or EfficientNMS outputs); its results are
+keyed `<model>/<preprocessor>/cuda-post`. ONNX files and engines live in
+`data/tasks/<trtutils sha>[-dirty]/` and are downloaded and built on first use. Each model runs
+`end2end` once without instrumentation for the end-to-end time, then again with its stages
+timed; every stage syncs the device, so GPU preprocessing is not billed to inference and the
+engine is not billed to a CUDA postprocessor. Results are saved to `data/tasks/{device}.json`.
 
 ### Perf Series
 

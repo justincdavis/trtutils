@@ -307,6 +307,7 @@ def cmd_tasks(args: argparse.Namespace) -> None:
         args.preprocessors,
         args.warmup,
         args.iterations,
+        postprocessors=tuple(args.postprocessors),
         overwrite=args.overwrite,
         stage=args.stage,
         tasks=args.task,
@@ -337,6 +338,8 @@ def cmd_compare(args: argparse.Namespace) -> None:
                         "task": e["task"],
                         "model": e["model"],
                         "pre": e["preprocessor"],
+                        # results from before the postprocessor sweep ran the CPU one
+                        "post": e.get("postprocessor", "cpu"),
                         **vals,
                     }
                 )
@@ -355,12 +358,12 @@ def cmd_compare(args: argparse.Namespace) -> None:
         with Path(args.csv).open("w", newline="") as f:
             w = csv.writer(f)
             w.writerow(
-                ["run", "revision", "task", "model", "preprocessor", "end2end_ms", "preprocess_ms", "infer_ms", "postprocess_ms", "extract_ms"]
+                ["run", "revision", "task", "model", "preprocessor", "postprocessor", "end2end_ms", "preprocess_ms", "infer_ms", "postprocess_ms", "extract_ms"]
             )
             for rev, rows in zip(labels, (rows_a, rows_b)):
                 for r in rows:
                     w.writerow(
-                        [r["run"], rev, r["task"], r["model"], r["pre"], *(r[x] for x in fields)]
+                        [r["run"], rev, r["task"], r["model"], r["pre"], r["post"], *(r[x] for x in fields)]
                     )
 
 
@@ -473,6 +476,7 @@ def main() -> None:
     p.add_argument("--all", action="store_true", help="Every model, not the first per class")
     p.add_argument("--list", action="store_true", help="Print the selected models and exit")
     p.add_argument("--preprocessors", nargs="+", default=["cpu", "cuda", "trt"])
+    p.add_argument("--postprocessors", nargs="+", default=["cpu", "cuda"], choices=["cpu", "cuda"])
     p.add_argument("--warmup", type=int, default=20)
     p.add_argument("--iterations", type=int, default=200)
     p.add_argument("--overwrite", action="store_true")

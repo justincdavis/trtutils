@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import itertools
 import re
 import time
 from dataclasses import dataclass, field
@@ -173,14 +174,20 @@ def _engine(cls: Any, name: str) -> Path:  # noqa: ANN401
     return engine
 
 
-def load_model(spec: TaskModel, preprocessor: str) -> Any:  # noqa: ANN401
-    """Build (if needed) and load the model of ``spec`` with ``preprocessor``."""
+def load_model(spec: TaskModel, preprocessor: str, postprocessor: str = "cpu") -> Any:  # noqa: ANN401
+    """Build (if needed) and load the model of ``spec`` with the given pre/postprocessor."""
     if spec.parts:
         det = _engine(spec.parts["det"], f"{spec.name}_det")
         rec = _engine(spec.parts["rec"], f"{spec.name}_rec")
-        return spec.cls(det, rec, warmup=True)
+        return spec.cls(det, rec, postprocessor=postprocessor, warmup=True)
     engine = _engine(spec.cls, spec.name)
-    return spec.cls(engine, preprocessor=preprocessor, warmup=True)
+    return spec.cls(engine, preprocessor=preprocessor, postprocessor=postprocessor, warmup=True)
+
+
+def _has_cuda_post(spec: TaskModel) -> bool:
+    """Whether the task has a CUDA postprocessor (OCR: both of its parts)."""
+    classes = spec.parts.values() if spec.parts else [spec.cls]
+    return all(c._CUDA_POSTPROCESSOR is not None for c in classes)  # noqa: SLF001
 
 
 def _sync() -> None:
@@ -191,26 +198,36 @@ class StageTimer:
     """
     Wrap a model's stage methods to attribute end2end time to stages.
 
-    ``prepare_inputs`` (preprocessing) syncs the device so GPU preprocessing is
-    not billed to the engine; ``infer`` covers preprocessing plus the engine;
-    ``postprocess`` is timed as is; whatever is left of the end2end call
-    (result extraction, OCR crops) is ``extract``.
+    Every stage syncs the device before its clock stops, so GPU work is billed to
+    the stage that queued it: ``prepare_inputs`` (preprocessing) to preprocess, the
+    engine to infer, and a CUDA postprocessor's kernels to postprocess. ``infer``
+    and ``_infer_post`` (end2end's path, which skips ``infer`` with
+    ``postprocessor="cuda"``) cover preprocessing plus the engine; whatever is left
+    of the end2end call (result extraction, OCR crops) is ``extract``.
     """
 
     def __init__(self, image_models: list[Any]) -> None:
         self.times: dict[str, float] = dict.fromkeys(STAGES, 0.0)
+        self._active: set[str] = set()
         for m in image_models:
-            m.prepare_inputs = self._wrap(m.prepare_inputs, "preprocess", sync=True)
+            m.prepare_inputs = self._wrap(m.prepare_inputs, "preprocess")
             m.infer = self._wrap(m.infer, "infer")
+            m._infer_post = self._wrap(m._infer_post, "infer")  # noqa: SLF001
             m.postprocess = self._wrap(m.postprocess, "postprocess")
 
-    def _wrap(self, fn: Callable[..., Any], stage: str, *, sync: bool = False) -> Callable[..., Any]:
+    def _wrap(self, fn: Callable[..., Any], stage: str) -> Callable[..., Any]:
         def timed(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+            # _infer_post calls infer on the CPU postprocessor path, count it once
+            if stage in self._active:
+                return fn(*args, **kwargs)
+            self._active.add(stage)
             t0 = time.perf_counter()
-            out = fn(*args, **kwargs)
-            if sync:
+            try:
+                out = fn(*args, **kwargs)
                 _sync()
-            self.times[stage] += time.perf_counter() - t0
+            finally:
+                self._active.discard(stage)
+                self.times[stage] += time.perf_counter() - t0
             return out
 
         return timed
@@ -243,31 +260,44 @@ def _resolved(model: Any) -> str:  # noqa: ANN401
     return (model if hasattr(model, "prepare_inputs") else model._detector)._preprocessor_method  # noqa: SLF001
 
 
+def _key(name: str, pre: str, post: str) -> str:
+    return f"{name}/{pre}" + ("" if post == "cpu" else f"/{post}-post")
+
+
 def bench_task(
     spec: TaskModel,
     preprocessor: str,
     warmup: int,
     iterations: int,
+    postprocessor: str = "cpu",
 ) -> dict[str, Any] | None:
     """Time ``iterations`` end2end calls, both plain and split into stages (None if skipped)."""
     image = load_frame(spec.image)
-    model = load_model(spec, preprocessor)
+    key = _key(spec.name, preprocessor, postprocessor)
+    try:
+        model = load_model(spec, preprocessor, postprocessor)
+    except ValueError as e:
+        # the engine's outputs do not fit the CUDA postprocessor (e.g. a YOLOv8 head)
+        if postprocessor == "cpu":
+            raise
+        print(f"\tSkipping {key}: {e}")
+        return None
     if _resolved(model) != preprocessor:
-        print(f"\tSkipping {spec.name}/{preprocessor}: ran as {_resolved(model)}")
+        print(f"\tSkipping {key}: ran as {_resolved(model)}")
         return None
     for _ in range(warmup):
         model.end2end(image)
 
     # plain end2end latency, no extra syncs
     totals = []
-    for _ in tqdm(range(iterations), desc=f"{spec.name} {preprocessor} e2e"):
+    for _ in tqdm(range(iterations), desc=f"{key} e2e"):
         t0 = time.perf_counter()
         model.end2end(image)
         totals.append(time.perf_counter() - t0)
 
     timer = StageTimer(_image_models(model))
     stages: dict[str, list[float]] = {s: [] for s in STAGES}
-    for _ in tqdm(range(iterations), desc=f"{spec.name} {preprocessor} stages"):
+    for _ in tqdm(range(iterations), desc=f"{key} stages"):
         timer.reset()
         t0 = time.perf_counter()
         model.end2end(image)
@@ -279,6 +309,7 @@ def bench_task(
         "task": spec.task,
         "model": spec.name,
         "preprocessor": preprocessor,
+        "postprocessor": postprocessor,
         "frame": list(FRAME_SIZE),
         "end2end": compute_results(totals),
         "stages": {s: compute_results(v) for s, v in stages.items()},
@@ -298,6 +329,7 @@ def run_tasks(
     warmup: int,
     iterations: int,
     *,
+    postprocessors: tuple[str, ...] = ("cpu", "cuda"),
     overwrite: bool = False,
     stage: str | None = None,
     tasks: list[str] | None = None,
@@ -306,6 +338,9 @@ def run_tasks(
     """
     Benchmark the task models picked by ``select_task_models``; a model that fails is skipped.
 
+    Each model runs with every preprocessor and every postprocessor in ``postprocessors``;
+    "cuda" is skipped for tasks and engines without a CUDA postprocessor.
+
     Results go to data/tasks/<device>.json (cached by key unless ``overwrite``), or, with
     ``stage``, are always measured fresh into data/perf-series/<device>/stage-<stage>.json.
     """
@@ -313,15 +348,19 @@ def run_tasks(
     cached = 0
     for spec in select_task_models(names, tasks, all_models=all_models):
         # OCR preprocesses on the CPU only
-        for prep in ["cpu"] if spec.parts else preprocessors:
-            key = f"{spec.name}/{prep}"
+        pres = ["cpu"] if spec.parts else preprocessors
+        for prep, post in itertools.product(pres, postprocessors):
+            key = _key(spec.name, prep, post)
             if key in data and not overwrite:
                 print(f"Skipping {key} (already exists)")
                 cached += 1
                 continue
+            if post == "cuda" and not _has_cuda_post(spec):
+                print(f"Skipping {key}: no CUDA postprocessor")
+                continue
             print(f"Benchmarking {key}")
             try:
-                res = bench_task(spec, prep, warmup, iterations)
+                res = bench_task(spec, prep, warmup, iterations, post)
             except Exception as e:  # noqa: BLE001
                 print(f"\tFAILED {key}: {type(e).__name__}: {e}")
                 continue

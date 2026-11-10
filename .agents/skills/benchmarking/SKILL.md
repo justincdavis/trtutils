@@ -53,7 +53,9 @@ discarded and noise reported.
   postprocess/extract) and prints medians. Engines are cached per trtutils sha, so A/B sides never share them. Without `--stage` it caches by key in
   `data/tasks/<device>.json`; `--stage NAME` always measures fresh into
   `data/perf-series/<device>/stage-NAME.json` (its own `tasks` section; `plot --patch-series` skips it)
-  with `trtutils_sha`, `dirty` and `timestamp`.
+  with `trtutils_sha`, `dirty` and `timestamp`. `--postprocessors` (default `cpu cuda`) sweeps
+  the postprocessor too; CUDA rows are keyed `<model>/<pre>/cuda-post` and skipped where the
+  task or engine has no CUDA postprocessor.
 - `compare A [A ...] --vs B [B ...] [--labels LA LB] [--csv PATH]` matches keys across stage
   or tasks files and prints median A, median B and delta % per key and stage (median of
   per-file medians when a side has several files).
