@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -143,7 +144,10 @@ def _run_simplify(
         try:
             LOG.info(f"Running {tool_name} on {current_input.stem}")
             cmd = _build_tool_cmd(tool_name, tool_type, bin_path, current_input, output_path)
-            run_cmd(cmd, verbose=verbose)
+            # tools (polygraphy shape inference) leave temp files behind: confine them
+            with tempfile.TemporaryDirectory() as tool_tmp:
+                env = {**os.environ, "TMPDIR": tool_tmp}
+                run_cmd(cmd, env=env, verbose=verbose)
             intermediates.append(output_path)
             current_input = output_path
         except subprocess.CalledProcessError:
