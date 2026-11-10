@@ -34,6 +34,13 @@ Added
   5-9% faster (about 0.5-0.7 ms, RTX 5080, TensorRT 10.15); detections match the original
   within FP16 noise and ONNX Runtime outputs are bit-identical. Assumes at least 1000 valid
   RPN proposals per image (1700+ seen). Re-download older Hands23 ONNX files to get it
+* ``Model.build(..., embed_sst=True)`` moves the BGR-to-RGB swap, normalization (the
+  wrapper's default ``input_range``, or ``mean``/``std``), and HWC-to-CHW into the ONNX graph,
+  for every image wrapper except OCR. The engine input becomes uint8
+  ``(batch, imgsz, imgsz, 3)``; resize (letterbox or linear) stays in the CUDA/TRT
+  preprocessor, which then skips its normalize kernel. ``input_range``, ``mean`` and ``std``
+  are fixed at build time on such an engine. ``builder.onnx.embed_sst`` does the graph rewrite
+  alone. ``ResNet.build(onnx, engine, embed_sst=True)``
 * ``Detector(class_map=...)`` (and every detector wrapper): optional ``Mapping[int, int]`` that
   translates model class ids to output ids after postprocessing; unmapped ids pass through. Off
   by default

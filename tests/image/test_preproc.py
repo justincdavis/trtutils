@@ -100,6 +100,21 @@ def test_trt_runs_submitted_batch(random_images, count, norm) -> None:
     np.testing.assert_array_equal(batch, np.concatenate(singles))
 
 
+@pytest.mark.parametrize("resize", ["letterbox", "linear"])
+def test_preprocess_without_normalize_returns_uint8_hwc(images, resize) -> None:
+    """normalize=False preprocess returns the resized uint8 image, not the unused SST buffer."""
+    image = images["horse"].array
+    if resize == "letterbox":
+        expected, _, _ = letterbox(image, new_shape=SIZE)
+    else:
+        expected, _ = resize_linear(image, new_shape=SIZE)
+    gpu = CUDAPreprocessor(SIZE, RANGE, DTYPE, resize=resize, normalize=False)
+    result, _, _ = gpu.preprocess(image)
+    assert result.dtype == np.uint8
+    assert result.shape == (1, *expected.shape)
+    assert np.abs(result[0].astype(np.int32) - expected.astype(np.int32)).mean() < 1.0
+
+
 def test_trt_batch_size_exceeded_raises(random_images) -> None:
     """Submitting more images than the configured batch size raises ValueError."""
     trt_preproc = TRTPreprocessor(SIZE, RANGE, DTYPE, batch_size=4)

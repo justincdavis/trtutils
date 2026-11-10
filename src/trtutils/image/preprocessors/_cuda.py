@@ -936,6 +936,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         crop_pct: float = DEFAULT_CROP_PCT,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        normalize: bool = True,
     ) -> None:
         """
         Create a CUDAPreprocessor for image processing models.
@@ -981,9 +982,13 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        normalize : bool, optional
+            When False, return the letterboxed uint8 HWC image and skip scale,
+            channel swap, and transpose. Default is True.
 
         """
         tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
+        self._normalize = normalize
         super().__init__(
             output_shape,
             output_range,
@@ -1032,10 +1037,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         # choose sst kernel based on whether imagenet mean/std are provided
         self._use_imagenet: bool = self._mean is not None and self._std is not None
-        if self._use_imagenet:
-            self._sst_kernel = Kernel(IMAGENET_SST[0], IMAGENET_SST[1])
-        else:
-            self._sst_kernel = Kernel(SST_FAST[0], SST_FAST[1])
+        # normalize=False only resizes, so skip the NVRTC compile
+        if self._normalize:
+            sst = IMAGENET_SST if self._use_imagenet else SST_FAST
+            self._sst_kernel = Kernel(sst[0], sst[1])
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -1051,6 +1056,9 @@ class CUDAPreprocessor(GPUImagePreprocessor):
     @property
     def output_binding(self: Self) -> Binding:
         """Get the output binding for the CUDA preprocessor."""
+        # normalize=False leaves the letterboxed uint8 image in the SST input
+        if not self._normalize:
+            return self._sst_input_binding
         return self._output_binding
 
     def _reallocate_batch_buffers(self: Self, batch_size: int) -> None:
@@ -1207,6 +1215,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             resize=resize,
             verbose=verbose,
         )
+        if not self._normalize:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # cuda_direct_preproc
+            return self._sst_input_binding.device[:batch_size], ratios_list, padding_list
 
         # Create SST args for batched processing
         sst_args = self._create_sst_args(batch_size, verbose=verbose)

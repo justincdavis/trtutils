@@ -6,15 +6,34 @@
 from __future__ import annotations
 
 import inspect
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from trtutils import builder
 from trtutils.builder._build import build_engine
 
 from ._utils import download_model_internal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
+
+
+def _default_norm(
+    cls: type,
+) -> tuple[
+    tuple[float, float], tuple[float, float, float] | None, tuple[float, float, float] | None
+]:
+    """Return the ``input_range``, ``mean``, and ``std`` defaults of ``cls.__init__``."""
+    params = inspect.signature(cls.__init__).parameters
+
+    def default(name: str, fallback: Any) -> Any:  # noqa: ANN401
+        param = params.get(name)
+        if param is None or param.default is inspect.Parameter.empty:
+            return fallback
+        return param.default
+
+    return default("input_range", (0.0, 1.0)), default("mean", None), default("std", None)
 
 
 class Model:
@@ -175,6 +194,7 @@ class Model:
         opt_level: int = 3,
         *,
         verbose: bool | None = None,
+        embed_sst: bool = False,
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """
@@ -196,45 +216,77 @@ class Model:
             TensorRT builder optimization level (0-5). Default is 3.
         verbose : bool | None
             Enable verbose builder output.
+        embed_sst : bool
+            Prepend the BGR swap, the class's default ``input_range`` / ``mean`` /
+            ``std`` normalization, and HWC-to-CHW to the ONNX image input, and build
+            the engine on uint8 ``(batch, imgsz, imgsz, 3)``. Resize stays in the
+            preprocessor. Default is False.
         **kwargs : Any
             Additional keyword arguments. Consumed first by build hooks,
             then remaining kwargs are forwarded to ``build_engine()``.
+
+        Raises
+        ------
+        ValueError
+            If ``embed_sst`` is set and the class sets only one of mean and std.
 
         """
         if imgsz is None:
             imgsz = cls._default_imgsz
         cls._validate_imgsz(imgsz)
         shapes = cls._make_shapes(batch_size, imgsz)
+        # the embedded copy lives until the engine is built (hooks read it too)
+        with tempfile.TemporaryDirectory() as tmp:
+            onnx_path = Path(onnx)
+            if embed_sst:
+                input_range, mean, std = _default_norm(cls)
+                image_name = next(name for name, kind in cls._input_tensors if kind == "image")
+                shapes = [
+                    ((name, (batch_size, imgsz, imgsz, 3)) if name == image_name else (name, shape))
+                    for name, shape in shapes
+                ]
+                onnx_path = Path(tmp) / "embedded.onnx"
+                # builder.onnx loads lazily: onnx is an optional extra
+                builder.onnx.embed_sst(
+                    onnx,
+                    onnx_path,
+                    image_name,
+                    height=imgsz,
+                    width=imgsz,
+                    input_range=input_range,
+                    mean=mean,
+                    std=std,
+                )
 
-        # Collect overrides from hooks, tracking consumed kwargs
-        build_overrides: dict[str, Any] = {}
-        consumed_keys: set[str] = set()
-        for hook in cls._build_hooks:
-            overrides = hook(onnx=onnx, imgsz=imgsz, batch_size=batch_size, **kwargs)
-            consumed_keys.update(k for k in kwargs if k in inspect.signature(hook).parameters)
-            for key, val in overrides.items():
-                if key in build_overrides and isinstance(build_overrides[key], list):
-                    build_overrides[key].extend(
-                        val if isinstance(val, list) else [val],
-                    )
-                else:
-                    build_overrides[key] = val
+            # Collect overrides from hooks, tracking consumed kwargs
+            build_overrides: dict[str, Any] = {}
+            consumed_keys: set[str] = set()
+            for hook in cls._build_hooks:
+                overrides = hook(onnx=onnx_path, imgsz=imgsz, batch_size=batch_size, **kwargs)
+                consumed_keys.update(k for k in kwargs if k in inspect.signature(hook).parameters)
+                for key, val in overrides.items():
+                    if key in build_overrides and isinstance(build_overrides[key], list):
+                        build_overrides[key].extend(
+                            val if isinstance(val, list) else [val],
+                        )
+                    else:
+                        build_overrides[key] = val
 
-        # Forward unconsumed kwargs to build_engine for validation
-        remaining_kwargs = {k: v for k, v in kwargs.items() if k not in consumed_keys}
-        # an explicit fp16 wins; a strongly typed network takes its precision from the onnx
-        fp16 = remaining_kwargs.pop(
-            "fp16", cls._fp16 and not remaining_kwargs.get("strongly_typed", False)
-        )
+            # Forward unconsumed kwargs to build_engine for validation
+            remaining_kwargs = {k: v for k, v in kwargs.items() if k not in consumed_keys}
+            # an explicit fp16 wins; a strongly typed network takes its precision from the onnx
+            fp16 = remaining_kwargs.pop(
+                "fp16", cls._fp16 and not remaining_kwargs.get("strongly_typed", False)
+            )
 
-        build_engine(
-            onnx=onnx,
-            output=output,
-            shapes=shapes,
-            fp16=fp16,
-            dla_core=dla_core,
-            optimization_level=opt_level,
-            verbose=verbose,
-            **build_overrides,
-            **remaining_kwargs,
-        )
+            build_engine(
+                onnx=onnx_path,
+                output=output,
+                shapes=shapes,
+                fp16=fp16,
+                dla_core=dla_core,
+                optimization_level=opt_level,
+                verbose=verbose,
+                **build_overrides,
+                **remaining_kwargs,
+            )
