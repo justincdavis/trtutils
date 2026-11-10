@@ -42,7 +42,7 @@ DEPTH_ESTIMATORS = [
 
 
 @pytest.mark.parametrize(("model_cls", "onnx_path"), DEPTH_ESTIMATORS)
-@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt"])
+@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt", "hybrid"])
 def test_depth_estimator_end2end(
     build_model_engine, images, model_cls, onnx_path, preprocessor
 ) -> None:

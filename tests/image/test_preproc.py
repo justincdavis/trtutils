@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/preprocessors/ -- CPU, CUDA, and TRT preprocessors."""
+"""Tests for src/trtutils/image/preprocessors/ -- CPU, CUDA, TRT, and hybrid preprocessors."""
 
 from __future__ import annotations
 
@@ -13,7 +13,12 @@ import pytest
 from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils import Buffer, MemoryLocation
-from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, TRTPreprocessor
+from trtutils.image.preprocessors import (
+    CPUPreprocessor,
+    CUDAPreprocessor,
+    HybridPreprocessor,
+    TRTPreprocessor,
+)
 from trtutils.image.preprocessors._base import crop_geometry
 from trtutils.image.preprocessors._cpu import preprocess
 
@@ -26,6 +31,44 @@ PREPROCS = [
     pytest.param(CUDAPreprocessor, {}, id="cuda"),
     pytest.param(TRTPreprocessor, {"batch_size": 4}, id="trt"),
 ]
+BUFFER_PLACEMENTS = [
+    pytest.param({"location": MemoryLocation.DEVICE}, id="device"),
+    pytest.param({"pinned": True, "mapped": True}, id="mapped"),
+    pytest.param({"pinned": True, "mapped": False}, id="pinned"),
+    pytest.param({"pinned": False}, id="pageable"),
+]
+HYBRID = pytest.param(HybridPreprocessor, {}, id="hybrid")
+
+
+@pytest.mark.parametrize("resize", ["linear", "letterbox", "center_crop"])
+@pytest.mark.parametrize(
+    ("norm", "atol"),
+    [
+        pytest.param({}, 0.0, id="raw"),
+        pytest.param(IMAGENET, 1e-6, id="imagenet"),
+    ],
+)
+def test_hybrid_matches_cpu(images, resize, norm, atol) -> None:
+    """Hybrid resizes exactly as the CPU path; only the float32 normalization order differs."""
+    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=resize, **norm)
+    hybrid = HybridPreprocessor(SIZE, RANGE, DTYPE, resize=resize, **norm)
+    batch = [image.array for image in images.values()]
+    for imgs in (batch, batch[:1], batch):
+        expected, ratios, padding = cpu.preprocess(imgs)
+        result, hybrid_ratios, hybrid_padding = hybrid.preprocess(imgs)
+        assert hybrid_ratios == ratios
+        assert hybrid_padding == padding
+        np.testing.assert_allclose(result, expected, rtol=0, atol=atol)
+
+
+@pytest.mark.parametrize("placement", BUFFER_PLACEMENTS[:2])
+def test_hybrid_device_buffers_resize_on_gpu(images, placement) -> None:
+    """Device-visible Buffers skip the CPU resize and give the CUDA preprocessor's result."""
+    batch = [Buffer.from_array(image.array, **placement) for image in images.values()]
+    expected = CUDAPreprocessor(SIZE, RANGE, DTYPE).preprocess(batch)
+    result = HybridPreprocessor(SIZE, RANGE, DTYPE).preprocess(batch)
+    np.testing.assert_array_equal(result[0], expected[0])
+    assert result[1:] == expected[1:]
 
 
 @pytest.mark.parametrize(
@@ -122,7 +165,7 @@ def test_trt_batch_size_exceeded_raises(random_images) -> None:
         trt_preproc.preprocess(random_images(5))
 
 
-@pytest.mark.parametrize(("preproc_cls", "kwargs"), PREPROCS)
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), [*PREPROCS, HYBRID])
 def test_batch_matches_single(random_images, preproc_cls, kwargs) -> None:
     """Batches of varying size reproduce the single-image tensors, ratios, and padding exactly."""
     preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
@@ -166,6 +209,8 @@ SHAPES = [(1080, 1920), (480, 640), (2160, 3840), (720, 1280), (512, 512)]
         pytest.param([[s] for s in SHAPES], id="single"),
         pytest.param([[s] * n for n, s in zip((3, 1, 2, 4, 2), SHAPES)], id="homogeneous"),
         pytest.param([SHAPES[:4], SHAPES[1:], SHAPES[::2]], id="heterogeneous"),
+        # chunked pinned uploads, the second into a larger stage
+        pytest.param([[(1280, 1920)], [(1081, 1919)]], id="large-staged"),
     ],
 )
 def test_reused_staging_matches_fresh(gpu_cls, memory, calls) -> None:
@@ -234,14 +279,6 @@ def test_strided_views_match_contiguous(gpu_cls, memory, widths) -> None:
     np.testing.assert_array_equal(result[0], expected[0])
 
 
-BUFFER_PLACEMENTS = [
-    pytest.param({"location": MemoryLocation.DEVICE}, id="device"),
-    pytest.param({"pinned": True, "mapped": True}, id="mapped"),
-    pytest.param({"pinned": True, "mapped": False}, id="pinned"),
-    pytest.param({"pinned": False}, id="pageable"),
-]
-
-
 @pytest.mark.parametrize(("preproc_cls", "kwargs"), PREPROCS)
 @pytest.mark.parametrize("placement", BUFFER_PLACEMENTS)
 @pytest.mark.parametrize(
@@ -268,7 +305,7 @@ def test_buffer_input_matches_ndarray(preproc_cls, kwargs, placement, shapes) ->
     np.testing.assert_array_equal(single[0], expected[0][:1])
 
 
-@pytest.mark.parametrize(("gpu_cls", "kwargs"), PREPROCS[1:])
+@pytest.mark.parametrize(("gpu_cls", "kwargs"), [*PREPROCS[1:], HYBRID])
 @pytest.mark.parametrize("position", [0, 1], ids=["first", "second"])
 @pytest.mark.parametrize("as_buffer", [False, True], ids=["ndarray", "device"])
 def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:

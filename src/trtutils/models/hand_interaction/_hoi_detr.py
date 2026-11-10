@@ -30,7 +30,7 @@ class HOIDETR(HandInteractionDetector, Model):
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
-        preprocessor: str = "trt",
+        preprocessor: str = "cuda",
         resize_method: str = "letterbox",
         conf_thres: float = 0.3,
         pair_thres: float = 0.5,

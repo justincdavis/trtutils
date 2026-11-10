@@ -645,7 +645,7 @@ def _detect(args: SimpleNamespace) -> None:
         - input_range : list[float]
             Input value range.
         - preprocessor : str
-            Preprocessor type ('cpu', 'cuda', or 'trt').
+            Preprocessor type ('cpu', 'cuda', 'trt', or 'hybrid').
         - resize_method : str
             Image resize method ('letterbox' or 'linear').
         - conf_thres : float
@@ -852,7 +852,7 @@ def _classify(args: SimpleNamespace) -> None:
         - input_range : list[float]
             Input value range.
         - preprocessor : str
-            Preprocessor type ('cpu', 'cuda', or 'trt').
+            Preprocessor type ('cpu', 'cuda', 'trt', or 'hybrid').
         - resize_method : str
             Image resize method ('letterbox', 'linear', or 'center_crop').
         - crop_pct : float
@@ -1838,9 +1838,9 @@ def _main() -> None:
     detect_parser.add_argument(
         "--preprocessor",
         "-p",
-        choices=["cpu", "cuda", "trt"],
-        default="trt",
-        help="Preprocessor to use. Default is trt.",
+        choices=["cpu", "cuda", "trt", "hybrid"],
+        default="cuda",
+        help="Preprocessor to use. Default is cuda.",
     )
     detect_parser.add_argument(
         "--resize_method",
@@ -1895,9 +1895,9 @@ def _main() -> None:
     classify_parser.add_argument(
         "--preprocessor",
         "-p",
-        choices=["cpu", "cuda", "trt"],
-        default="trt",
-        help="Preprocessor to use. Default is trt.",
+        choices=["cpu", "cuda", "trt", "hybrid"],
+        default="cuda",
+        help="Preprocessor to use. Default is cuda.",
     )
     classify_parser.add_argument(
         "--resize_method",

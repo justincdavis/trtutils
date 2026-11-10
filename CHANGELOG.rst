@@ -5,14 +5,14 @@ Added
 ^^^^^
 * ``postprocessor="cuda"`` on ``OBBDetector`` decodes oriented boxes and runs probiou
   NMS on the engine stream, copying back only the kept results. It is the default;
-  ``postprocessor="cpu"`` keeps the host path. The preprocessor default stays ``"trt"``
+  ``postprocessor="cpu"`` keeps the host path
 * ``postprocessor="cuda"`` on ``HandInteractionDetector`` (Hands23 and HOI-DETR forward it).
   Unletterboxes boxes and runs the same class-aware NMS as ``postprocess_hand_interactions``
   on the engine stream, gathering labels, pair probabilities, and side. The default stays
   ``"cpu"``.
 * ``postprocessor="cuda"`` on ``Segmenter`` (the default when the engine fits). It runs
   the YOLO mask head's NMS and mask decode on the engine stream and matches the CPU
-  masks. The preprocessor default stays ``"trt"``
+  masks
 * ``postprocessor="cuda"`` on ``TextDetector`` and ``TextRecognizer`` (and the ``PPOCR``
   wrappers). Detection binarizes the DB probability map on the engine stream; recognition
   runs greedy CTC argmax there. Results match the CPU postprocessors. The default is
@@ -149,9 +149,23 @@ Added
   is matched against the engine's output names in any order, and a wrong engine raises
   ``ValueError``
 * ``image.types`` aliases ``Segmentation``, ``Pose``, ``OBBDetection`` and ``RBox``
+* ``preprocessor="hybrid"`` and ``HybridPreprocessor``: resize on the CPU (the exact pixels of
+  ``"cpu"``), upload only the resized image and normalize on the GPU. 1080p frame on an RTX 5080:
+  yolo11n-cls 0.66 -> 0.38 ms end2end vs ``"cuda"``, yolo11n 0.98 -> 0.86 ms, Depth Anything v2
+  small 1.95 -> 1.81 ms. The default is ``"cuda"``; the CPU resize costs more on weaker CPUs.
+  ``trtutils detect`` / ``classify --preprocessor hybrid`` select it too
 
 Changed
 ^^^^^^^
+* The default preprocessor of every image model, wrapper and the ``detect`` / ``classify``
+  CLI is now ``"cuda"`` instead of ``"trt"``: within 0.04 ms of it on all 24 benchmarked
+  models (1080p frames, RTX 5080), and it needs no second engine per model. Input pixels change
+  slightly, since the TensorRT resize differs; pass ``preprocessor="trt"`` for the old
+  behavior. ``"hybrid"`` (CPU resize, GPU normalize) is faster still for small inputs such as
+  224 px classifiers
+* The CUDA and TensorRT preprocessors copy images of 3 MB and more through pinned memory in
+  overlapping chunks (``memcpy_host_to_device_staged_async``), and memoize their resize kernel
+  arguments: 1080p preprocess 0.61 -> 0.56 ms on an RTX 5080
 * The torchvision classifier wrappers (not the YOLO ones) default to ``center_crop`` instead of
   ``linear``, as their weights are evaluated; pass ``resize_method="linear"`` for the old outputs
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other

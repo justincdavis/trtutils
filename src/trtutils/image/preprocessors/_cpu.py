@@ -35,6 +35,46 @@ _COLOR_CHANNELS = 3
 PreprocessFn = Callable[..., Tuple[np.ndarray, List[Tuple[float, float]], List[Tuple[float, float]]]]
 
 
+def resize_image(
+    image: np.ndarray,
+    input_shape: tuple[int, int],
+    method: str,
+    crop_pct: float = DEFAULT_CROP_PCT,
+) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    """
+    Resize one HWC image to ``input_shape`` (width, height) as :func:`preprocess` does.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        The image to resize.
+    input_shape : tuple[int, int]
+        The (width, height) to resize to.
+    method : str
+        The resize method, one of [letterbox, linear, center_crop].
+    crop_pct : float
+        The fraction of the resized image kept by center_crop resizing.
+
+    Returns
+    -------
+    tuple[np.ndarray, tuple[float, float], tuple[float, float]]
+        The resized image, its ratios and its padding.
+
+    """
+    if method == "letterbox":
+        return letterbox(image, new_shape=input_shape)
+    if method == "center_crop":
+        img_height, img_width = image.shape[:2]
+        (resized_w, resized_h, left, top), ratios, padding = crop_geometry(
+            img_width, img_height, input_shape, crop_pct
+        )
+        resized = cv2.resize(image, (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
+        out_width, out_height = input_shape
+        return resized[top : top + out_height, left : left + out_width], ratios, padding
+    tensor, ratios = resize_linear(image, new_shape=input_shape)
+    return tensor, ratios, (0.0, 0.0)
+
+
 def preprocess(
     images: list[np.ndarray],
     input_shape: tuple[int, int],
@@ -129,19 +169,7 @@ def preprocess(
     ratios_list: list[tuple[float, float]] = []
     padding_list: list[tuple[float, float]] = []
     for i, image in enumerate(images):
-        if method == "letterbox":
-            tensor, ratios, padding = letterbox(image, new_shape=input_shape)
-        elif method == "center_crop":
-            img_height, img_width = image.shape[:2]
-            (resized_w, resized_h, left, top), ratios, padding = crop_geometry(
-                img_width, img_height, input_shape, crop_pct
-            )
-            resized = cv2.resize(image, (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
-            out_width, out_height = input_shape
-            tensor = resized[top : top + out_height, left : left + out_width]
-        else:
-            tensor, ratios = resize_linear(image, new_shape=input_shape)
-            padding = (0.0, 0.0)
+        tensor, ratios, padding = resize_image(image, input_shape, method, crop_pct)
         tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
 
         # writing the transposed view straight into the slot does HWC->CHW,

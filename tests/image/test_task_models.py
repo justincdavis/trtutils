@@ -24,6 +24,7 @@ PREPROCS = [
     pytest.param("cpu", id="cpu"),
     pytest.param("cuda", id="cuda"),
     pytest.param("trt", id="trt"),
+    pytest.param("hybrid", id="hybrid"),
 ]
 TASKS = [
     pytest.param(Segmenter, "seg", "people", id="seg"),
@@ -215,7 +216,7 @@ def test_obb_detector_cuda_postprocessor_is_default(task_engine) -> None:
     cpu = OBBDetector(task_engine("obb"), postprocessor="cpu", warmup=False)
     cuda = OBBDetector(task_engine("obb"), warmup=False)
     assert cuda._postprocessor == "cuda"
-    assert cuda._preprocessor_method == "trt"
+    assert cuda._preprocessor_method == "cuda"
 
     ref = cpu.end2end(image)
     assert ref
