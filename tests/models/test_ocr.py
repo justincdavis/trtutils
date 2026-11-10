@@ -11,8 +11,10 @@ import pytest
 
 from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR
+from trtutils import TRTEngine
 from trtutils.core import Buffer, MemoryLocation
 from trtutils.image._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
+from trtutils.image.preprocessors import crop_text_region
 from trtutils.models import PPOCR, PPOCRDetector, PPOCRRecognizer
 
 DET_ONNX = DATA_DIR / "ppocr" / "ppocrv4_det_736.onnx"
@@ -50,16 +52,33 @@ def _blank(height: int, width: int) -> np.ndarray:
     return np.full((height, width, 3), 255, np.uint8)
 
 
+def _page(*, rotate: bool = False) -> np.ndarray:
+    """A 1080p page of 14 text lines (more crops than a recognizer batch), optionally turned upright."""
+    image = np.full((1080, 1920, 3), 255, np.uint8)
+    for i in range(14):
+        line = f"Line {i + 1}: the quick brown fox jumps over the lazy dog {1000 + 37 * i}"
+        cv2.putText(image, line, (60, 70 + 72 * i), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 3)
+    return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE) if rotate else image
+
+
+def _assert_lines(got: list, ref: list) -> None:
+    """Each line's box, text and score match."""
+    assert len(got) == len(ref)
+    for (box, text, score), (ref_box, ref_text, ref_score) in zip(got, ref):
+        np.testing.assert_array_equal(box, ref_box)
+        assert (text, score) == (ref_text, ref_score)
+
+
 @pytest.fixture(scope="module")
 def det_engine(build_model_engine):
-    """Dynamic-shape PP-OCR detection engine."""
-    return build_model_engine(PPOCRDetector, DET_ONNX)
+    """Dynamic-shape PP-OCR detection engine, FP16 as the build default."""
+    return build_model_engine(PPOCRDetector, DET_ONNX, tag="fp16")
 
 
 @pytest.fixture(scope="module")
 def small_det_engine(det_engine):  # det_engine skips when the onnx is missing
     """Detection engine whose profile tops out at batch 2 and 320x320."""
-    path = engine_cache_path(f"{DET_ONNX.stem}_PPOCRDetector_img320_max320", 2)
+    path = engine_cache_path(f"{DET_ONNX.stem}_PPOCRDetector_img320_max320_fp16", 2)
     if not path.exists():
         PPOCRDetector.build(DET_ONNX, path, imgsz=320, batch_size=2, max_imgsz=320, opt_level=1)
     return path
@@ -68,7 +87,7 @@ def small_det_engine(det_engine):  # det_engine skips when the onnx is missing
 @pytest.fixture(scope="module")
 def rec_engine(build_model_engine):
     """Dynamic-shape PP-OCR recognition engine, batch 3 so the three LINES crops fit one run."""
-    return build_model_engine(PPOCRRecognizer, REC_ONNX, batch_size=len(LINES))
+    return build_model_engine(PPOCRRecognizer, REC_ONNX, batch_size=len(LINES), tag="fp16")
 
 
 @pytest.mark.parametrize(
@@ -244,25 +263,187 @@ def test_ppocr_pipeline(det_engine, rec_engine, image, expected) -> None:
             np.testing.assert_array_equal(box, ref_box)
 
 
-def test_ocr_cuda_postprocess_matches_cpu(det_engine, rec_engine) -> None:
-    """postprocessor='cuda' keeps CPU preprocessing and matches the CPU boxes and CTC decode."""
+@pytest.mark.parametrize(
+    "image",
+    [
+        pytest.param(_render(LINES), id="lines"),
+        pytest.param(_render(LINES[:1], 1400), id="one-wide-line-padded"),
+        pytest.param(_page(), id="page"),
+        pytest.param(_page(rotate=True), id="page-rotated"),
+    ],
+)
+def test_ocr_cuda_matches_cpu(det_engine, rec_engine, image) -> None:
+    """postprocessor='cuda' (GPU preprocessing, crops and decode) gives the CPU result exactly."""
     assert PPOCRDetector._cuda_post_default is True
     assert PPOCRRecognizer._cuda_post_default is True
-    image = _render(LINES)
     cpu = PPOCR(det_engine, rec_engine, postprocessor="cpu", warmup=False)
     cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda", warmup=False)
-    assert cpu.detector._preprocessor_method == "cpu"
+    # the constructor method stays cpu; the cuda models preprocess on the device
     assert cuda.detector._preprocessor_method == "cpu"
     assert cuda.recognizer._preprocessor_method == "cpu"
+    assert (cpu._gpu, cpu.detector.cuda_preprocess, cpu.recognizer.cuda_crops) == (
+        None,
+        False,
+        False,
+    )
+    assert cuda._gpu is not None
 
     ref = cpu(image)
-    got = cuda(image)
-    assert len(got) == len(ref) > 0
-    for (box, text, score), (ref_box, ref_text, ref_score) in zip(got, ref):
-        np.testing.assert_array_equal(box, ref_box)
-        assert (text, score) == (ref_text, ref_score)
+    assert len(ref) > 0
+    for results in (cuda(image), cuda.end2end(image), cuda([image, image])[1]):
+        _assert_lines(results, ref)
 
-    crops = [_line(text) for text in LINES]
-    for got_line, want_line in zip(cuda.recognizer.run(crops), cpu.recognizer.run(crops)):
-        for part, want in zip(got_line, want_line):
-            np.testing.assert_array_equal(part, want)
+    # the detector's boxes through the GPU crops equal the CPU crops, texts and scores exactly
+    boxes = np.stack([box for box, _ in cpu.detector.end2end(image)])
+    frame = Buffer.from_array(image, MemoryLocation.DEVICE)
+    want = cpu.recognizer.end2end([crop_text_region(image, box) for box in boxes])
+    assert cuda.recognizer.end2end_regions(frame, boxes) == want
+
+
+def test_ocr_cuda_result_ignores_previous_shapes(det_engine, rec_engine) -> None:
+    """A page gives the same lines after images of other shapes, whose graphs it must not replay stale."""
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda")
+    page = _page()
+    ref = [cuda(page) for _ in range(3)][-1]
+    assert len(ref) > 0
+    for other in (_render(LINES[:1], 1400), _blank(200, 300), _page(rotate=True)):
+        cuda(other)
+        for results in (cuda(page), cuda(page)):
+            _assert_lines(results, ref)
+
+
+_PAGES = {
+    "page": _page(),
+    "rotated": _page(rotate=True),
+    "lines": _render(LINES),
+    "padded": _render(LINES[:1], 1400),
+    "blank": _blank(200, 300),
+}
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        pytest.param(["page", "lines"], id="two"),
+        pytest.param(["blank", "page", "lines"], id="blank-first"),
+        pytest.param(["page", "lines", "blank"], id="blank-last"),
+        pytest.param(["page", "blank", "blank", "lines"], id="blanks-between"),
+        pytest.param(["blank", "blank"], id="all-blank"),
+        pytest.param(["page", "rotated", "lines", "padded", "page", "rotated", "lines"], id="mixed"),
+    ],
+)
+def test_ocr_cuda_pipeline_matches_pages(det_engine, rec_engine, names) -> None:
+    """A batch overlaps detection and recognition across pages, with each page's result exactly."""
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda")
+    images = [_PAGES[name] for name in names]
+    want = [cuda(image) for image in images]
+    got = cuda(images)
+    assert len(got) == len(want)
+    for results, ref in zip(got, want):
+        _assert_lines(results, ref)
+
+
+def test_ocr_cuda_recognizer_and_empty(det_engine, rec_engine) -> None:
+    """The CUDA recognizer decodes crops as the CPU one, and an image without text gives nothing."""
+    cpu = PPOCR(det_engine, rec_engine, postprocessor="cpu")
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda")
+    crops = [_line(t) for t in LINES]
+    for got, want in zip(cuda.recognizer.run(crops), cpu.recognizer.run(crops)):
+        for g, w in zip(got, want):
+            np.testing.assert_array_equal(g, w)
+    assert cuda.recognizer.end2end(crops) == cpu.recognizer.end2end(crops)
+    assert cuda.detector.end2end(_blank(30, 4000)) == []
+    assert cuda(_blank(200, 300)) == []
+    frame = Buffer.from_array(_blank(40, 40), MemoryLocation.DEVICE)
+    assert cuda.recognizer.end2end_regions(frame, np.zeros((0, 4, 2), np.float32)) == []
+
+
+def test_ocr_regions_need_cuda(det_engine, rec_engine) -> None:
+    """The CPU recognizer has no GPU crops."""
+    recognizer = PPOCR(det_engine, rec_engine, postprocessor="cpu").recognizer
+    frame = Buffer.from_array(_blank(40, 40), MemoryLocation.DEVICE)
+    with pytest.raises(RuntimeError, match="postprocessor"):
+        recognizer.end2end_regions(frame, np.zeros((1, 4, 2)))
+
+
+_REC_SHAPES = [(1, 32), (3, 64), (2, 32), (3, 320), (1, 128), (3, 64), (2, 640), (1, 32)]
+
+
+@pytest.mark.parametrize("shape_contexts", [8, 3])
+def test_engine_shape_contexts_match_single_context(rec_engine, shape_contexts) -> None:
+    """Cycling through shapes with a context per shape gives a single context's outputs exactly."""
+    ref = TRTEngine(rec_engine, warmup=False)
+    pooled = TRTEngine(rec_engine, warmup=False, shape_contexts=shape_contexts)
+    rng = np.random.default_rng(0)
+    inputs = {s: rng.normal(size=(s[0], 3, 48, s[1])).astype(np.float32) for s in set(_REC_SHAPES)}
+    for _ in range(4):
+        for shape in _REC_SHAPES:
+            data = [Buffer.wrap(inputs[shape])]
+            want = ref.execute(data)
+            got = pooled.execute(data)
+            assert pooled.active_input_shapes == [inputs[shape].shape]
+            for g, w in zip(got, want):
+                np.testing.assert_array_equal(g, w)
+    # the pool also holds the context made at the engine's max shape, which no input uses;
+    # when every shape fits, the repeated cycle leaves each context a graph to replay
+    assert len(pooled._parked) + 1 == min(shape_contexts, len(inputs) + 1)
+    if shape_contexts > len(inputs):
+        graphs = [pooled._cuda_graphs, *(state["_cuda_graphs"] for state in pooled._parked.values())]
+        assert sum(len(g) for g in graphs) == len(inputs)
+
+
+def test_ocr_without_width_bucket_has_no_pool(det_engine, rec_engine) -> None:
+    """The default recognizer pads to the widest line with a single context."""
+    recognizer = PPOCR(det_engine, rec_engine).recognizer
+    assert recognizer._width_bucket is None
+    assert recognizer._engine._shape_contexts is None
+    bucketed = PPOCR(det_engine, rec_engine, width_bucket=32).recognizer
+    assert bucketed._engine._shape_contexts is not None
+
+
+@pytest.mark.parametrize("width_bucket", [32, 100, 5000])
+def test_ocr_bucket_widths(rec_engine, width_bucket) -> None:
+    """Batch widths are multiples of the bucket, capped at the engine's maximum width."""
+    recognizer = PPOCRRecognizer(rec_engine, postprocessor="cpu", width_bucket=width_bucket)
+    max_width = recognizer._input_size[0]
+    for text in ("a", LINES[0], LINES[1] * 3):
+        recognizer.run([_line(text)])
+        width = recognizer._engine.active_input_shapes[0][3]
+        assert width % width_bucket == 0 or width == max_width
+        assert width <= max_width
+
+
+@pytest.mark.parametrize("width_bucket", [32, 128])
+@pytest.mark.parametrize(
+    "image", [pytest.param(_render(LINES), id="lines"), pytest.param(_page(), id="page")]
+)
+def test_ocr_bucketed_cuda_matches_cpu(det_engine, rec_engine, width_bucket, image) -> None:
+    """With a bucket the CPU and CUDA paths still agree exactly."""
+    cpu = PPOCR(det_engine, rec_engine, postprocessor="cpu", width_bucket=width_bucket)
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda", width_bucket=width_bucket)
+    ref = cpu(image)
+    assert len(ref) > 0
+    for results in (cuda(image), cuda(image), cuda.end2end(image), cuda([image, image])[1]):
+        _assert_lines(results, ref)
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        pytest.param(["page", "lines", "padded", "page", "lines"], id="mixed"),
+        pytest.param(["page", "blank", "rotated", "lines", "page", "rotated"], id="blank-between"),
+    ],
+)
+def test_ocr_bucketed_ignores_previous_shapes(det_engine, rec_engine, names) -> None:
+    """A page's result with a bucket equals a fresh model's, batched or one by one."""
+    cuda = PPOCR(det_engine, rec_engine, postprocessor="cuda", width_bucket=32)
+    fresh = {
+        name: PPOCR(det_engine, rec_engine, postprocessor="cuda", width_bucket=32)(_PAGES[name])
+        for name in set(names)
+    }
+    images = [_PAGES[name] for name in names]
+    for _ in range(2):
+        for name, image in zip(names, images):
+            _assert_lines(cuda(image), fresh[name])
+    for name, results in zip(names, cuda(images)):
+        _assert_lines(results, fresh[name])

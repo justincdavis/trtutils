@@ -26,6 +26,7 @@ from trtutils.image.postprocessors import (
     postprocess_yolo_seg,
     postprocess_yolov10,
 )
+from trtutils.image.postprocessors._cpu_detection import _get_detections_core
 
 pytestmark = pytest.mark.cpu
 
@@ -420,8 +421,28 @@ def test_postprocess_depth_shape_and_dtype(shape) -> None:
     out = np.random.default_rng(4).random(shape, dtype=np.float32) + 1
     results = postprocess_depth([out])
     assert len(results) == shape[0]
-    for result in results:
+    for i, result in enumerate(results):
+        image = out[i : i + 1]
+        expected = (image - image.min()) / (image.max() - image.min() + 1e-8)
+        np.testing.assert_array_equal(result[0], expected)
         assert result[0].shape == (1, *shape[1:])
         assert result[0].dtype == np.float32
         assert result[0].min() == 0
         assert result[0].max() == pytest.approx(1, abs=1e-6)
+
+
+@pytest.mark.parametrize("conf_thres", [None, 0.0, 0.5, 1.1])
+def test_get_detections_core_matches_scalar_loop(conf_thres) -> None:
+    """The vectorized conversion equals per-element int()/float() casts, negatives included."""
+    rng = np.random.default_rng(0)
+    bboxes = rng.uniform(-50.0, 700.0, (64, 4)).astype(np.float32)
+    scores = rng.uniform(0.0, 1.0, 64).astype(np.float32)
+    scores[:4] = 0.5  # exactly at the threshold
+    class_ids = rng.integers(0, 80, 64)
+    thres = 0.0 if conf_thres is None else conf_thres
+    expected = [
+        ((int(b[0]), int(b[1]), int(b[2]), int(b[3])), float(s), int(c))
+        for b, s, c in zip(bboxes, scores, class_ids)
+        if s >= thres
+    ]
+    assert _get_detections_core([bboxes, scores, class_ids], conf_thres) == expected

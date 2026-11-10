@@ -27,12 +27,14 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._buffer import Buffer
 from trtutils.core._device import Device
+from trtutils.core._stream import create_stream
 
 from ._schema import resolve_schema
 from .preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
     GPUImagePreprocessor,
+    HybridPreprocessor,
     TRTPreprocessor,
 )
 from .preprocessors._base import DEFAULT_CROP_PCT
@@ -48,7 +50,8 @@ if TYPE_CHECKING:
 _COLOR_CHANNELS = 3
 _IMAGE_RANK = 4
 
-_PREPROCESSOR_METHODS = ("cpu", "cuda", "trt")
+_PREPROCESSOR_METHODS = ("cpu", "cuda", "trt", "hybrid")
+_GPUPre = TypeVar("_GPUPre", bound=CUDAPreprocessor)
 
 
 def _image_binding(
@@ -106,13 +109,16 @@ class ImageModel:
     _CUDA_POSTPROCESSOR: ClassVar[type[CUDAPostprocessor] | None] = None
     # False keeps the CPU postprocessor as the default even when a CUDA one exists
     _cuda_post_default: ClassVar[bool] = True
+    # run the engine on a non-blocking stream, for models that sync it explicitly: TensorRT's
+    # own synchronous copies then don't wait on work queued on the stream
+    _non_blocking_stream: ClassVar[bool] = False
 
     def __init__(
         self: Self,
         engine_path: Path | str,
         warmup_iterations: int = 10,
         input_range: tuple[float, float] = (0.0, 1.0),
-        preprocessor: str = "trt",
+        preprocessor: str = "cuda",
         resize_method: str = "linear",
         mean: tuple[float, float, float] | None = None,
         std: tuple[float, float, float] | None = None,
@@ -124,6 +130,7 @@ class ImageModel:
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        shape_contexts: int | None = None,
         postprocessor: str | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
@@ -145,7 +152,9 @@ class ImageModel:
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt'], default is 'trt'.
+            The options are ['cpu', 'cuda', 'trt', 'hybrid'], default is 'cuda'.
+            'hybrid' resizes on the CPU and normalizes on the GPU, uploading only
+            the resized image, which wins for inputs much smaller than the frame.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear', 'center_crop'], default is 'linear'.
@@ -180,6 +189,9 @@ class ImageModel:
             repeats and replays it afterwards, for run() and end2end() alike.
             Preprocessing and postprocessing run outside the graphs.
             Only effective with async_v3 backend. Default is True.
+        shape_contexts : int, optional
+            The most per-shape execution contexts the engine keeps, see
+            :class:`~trtutils.TRTEngine`. Default is None, which uses one context.
         postprocessor : str, optional
             Where to postprocess, 'cpu' or 'cuda'. 'cuda' decodes the engine outputs
             on the GPU and copies back only the final results. Default is None,
@@ -228,6 +240,10 @@ class ImageModel:
 
             self._device = device
             self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
+            stream = None
+            if self._non_blocking_stream:
+                with Device(device):
+                    stream = create_stream(non_blocking=True)
             self._engine = TRTEngine(
                 engine_path=engine_path,
                 warmup_iterations=warmup_iterations,
@@ -238,6 +254,8 @@ class ImageModel:
                 pagelocked_mem=self._pagelocked_mem,
                 unified_mem=unified_mem,
                 cuda_graph=cuda_graph,
+                shape_contexts=shape_contexts,
+                stream=stream,
                 no_warn=no_warn,
                 verbose=verbose,
             )
@@ -282,6 +300,7 @@ class ImageModel:
             self._cuda_post: Any = self._setup_cuda_post()
             self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
             self._preproc_cuda: CUDAPreprocessor | None = None
+            self._preproc_hybrid: HybridPreprocessor | None = None
             self._preproc_trt: TRTPreprocessor | None = None
             default_preprocessor = self.get_preprocessor()
 
@@ -318,11 +337,11 @@ class ImageModel:
 
         return result
 
-    def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
+    def _setup_cuda_preproc(self: Self, cls: type[_GPUPre]) -> _GPUPre:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["_setup_cuda_preproc"])
 
-        result = CUDAPreprocessor(
+        result = cls(
             self._input_size,
             self._input_range,
             self._dtype,
@@ -492,9 +511,9 @@ class ImageModel:
         Parameters
         ----------
         method : str, optional
-            Options are 'cpu', 'cuda', or 'trt'. 'trt' falls back to 'cuda'
-            on platforms without UINT8 support, and 'cuda' to 'cpu' for
-            models whose input is not float32. By default None, which
+            Options are 'cpu', 'cuda', 'trt', or 'hybrid'. 'trt' falls back to
+            'cuda' on platforms without UINT8 support, and 'cuda' and 'hybrid'
+            to 'cpu' for models whose input is not float32. By default None, which
             returns the preprocessor stated in the constructor.
 
         Returns
@@ -505,15 +524,20 @@ class ImageModel:
         Raises
         ------
         ValueError
-            If the method is not 'cpu', 'cuda', or 'trt'.
+            If the method is not 'cpu', 'cuda', 'trt', or 'hybrid'.
 
         """
         method = self._preprocessor_method if method is None else self._resolve_method(method)
         if method == "cuda":
             if self._preproc_cuda is None:
                 with Device(self._device):
-                    self._preproc_cuda = self._setup_cuda_preproc()
+                    self._preproc_cuda = self._setup_cuda_preproc(CUDAPreprocessor)
             return self._preproc_cuda
+        if method == "hybrid":
+            if self._preproc_hybrid is None:
+                with Device(self._device):
+                    self._preproc_hybrid = self._setup_cuda_preproc(HybridPreprocessor)
+            return self._preproc_hybrid
         if method == "trt":
             if self._preproc_trt is None:
                 with Device(self._device):
@@ -528,7 +552,7 @@ class ImageModel:
         Raises
         ------
         ValueError
-            If the method is not 'cpu', 'cuda', or 'trt'.
+            If the method is not 'cpu', 'cuda', 'trt', or 'hybrid'.
 
         """
         if method not in _PREPROCESSOR_METHODS:
@@ -542,13 +566,13 @@ class ImageModel:
                 )
                 raise ValueError(err_msg)
             # the TRT preprocessor's engine only normalizes; both resize with the same kernels
-            return "cuda"
+            return "hybrid" if method == "hybrid" else "cuda"
         if method == "trt" and not FLAGS.TRT_HAS_UINT8:
             method = "cuda"
             LOG.warning(
                 "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
             )
-        if method == "cuda" and self._dtype != np.float32:
+        if method in ("cuda", "hybrid") and self._dtype != np.float32:
             method = "cpu"
         return method
 
@@ -563,7 +587,9 @@ class ImageModel:
         if self._preproc_cpu is not None:
             self._preproc_cpu = self._setup_cpu_preproc()
         if self._preproc_cuda is not None:
-            self._preproc_cuda = self._setup_cuda_preproc()
+            self._preproc_cuda = self._setup_cuda_preproc(CUDAPreprocessor)
+        if self._preproc_hybrid is not None:
+            self._preproc_hybrid = self._setup_cuda_preproc(HybridPreprocessor)
         if self._preproc_trt is not None:
             self._preproc_trt = self._setup_trt_preproc()
 
@@ -721,7 +747,7 @@ class ImageModel:
             during initialization.
         method : str, optional
             The underlying preprocessor to use.
-            Options are 'cpu', 'cuda', or 'trt'. By default None, which
+            Options are 'cpu', 'cuda', 'trt', or 'hybrid'. By default None, which
             will use the preprocessor stated in the constructor.
         no_copy : bool, optional
             If True and using CUDA, do not copy the
@@ -739,7 +765,7 @@ class ImageModel:
         Raises
         ------
         ValueError
-            If the method is not 'cpu', 'cuda', or 'trt'.
+            If the method is not 'cpu', 'cuda', 'trt', or 'hybrid'.
 
         """
         preprocessor = self.get_preprocessor(method)

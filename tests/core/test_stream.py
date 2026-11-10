@@ -5,14 +5,26 @@
 
 from __future__ import annotations
 
+import pytest
+
 from trtutils.compat._libs import cudart
+from trtutils.core._cuda import cuda_call
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
 
 
-def test_create_stream_type() -> None:
-    """create_stream() returns a cudaStream_t."""
-    stream = create_stream()
+@pytest.mark.parametrize(
+    ("non_blocking", "flags"),
+    [
+        # cudaStreamDefault, cudaStreamNonBlocking
+        pytest.param(False, 0, id="blocking"),
+        pytest.param(True, 1, id="non-blocking"),
+    ],
+)
+def test_create_stream_type(non_blocking, flags) -> None:
+    """create_stream() returns a cudaStream_t with the requested blocking flag."""
+    stream = create_stream(non_blocking=non_blocking)
     assert isinstance(stream, cudart.cudaStream_t)
+    assert int(cuda_call(cudart.cudaStreamGetFlags(stream))) == flags
     destroy_stream(stream)
 
 

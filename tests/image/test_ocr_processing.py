@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import pytest
 
+from trtutils.image import TextRecognizer
 from trtutils.image.postprocessors import (
     get_text_boxes,
     get_texts,
@@ -24,6 +25,7 @@ from trtutils.image.preprocessors import (
     preprocess_text_recognition,
     resize_text_detection,
 )
+from trtutils.image.preprocessors._cpu_ocr import text_recognition_widths
 
 pytestmark = pytest.mark.cpu
 
@@ -123,6 +125,48 @@ def test_preprocess_text_recognition(shapes, max_width, expected_width, expected
 
 
 @pytest.mark.parametrize(
+    ("shapes", "bucket", "max_width", "expected_width"),
+    [
+        pytest.param([(48, 48)], None, None, 320, id="no-bucket-min-width"),
+        pytest.param([(48, 48)], 32, None, 320, id="min-width-is-a-bucket"),
+        pytest.param([(48, 48)], 128, None, 384, id="min-width-rounds-up"),
+        pytest.param([(10, 500)], 32, None, 2400, id="already-a-multiple"),
+        pytest.param([(10, 520)], 32, None, 2496, id="rounds-up"),
+        pytest.param([(10, 520)], 100, None, 2500, id="odd-bucket"),
+        pytest.param([(10, 2000)], 32, 1000, 1000, id="capped-at-max-width"),
+        pytest.param([(10, 2000)], 128, 1000, 1000, id="cap-is-not-a-multiple"),
+        pytest.param([(24, 48), (10, 520)], 32, 3200, 2496, id="widest-line"),
+    ],
+)
+def test_text_recognition_widths_bucket(shapes, bucket, max_width, expected_width) -> None:
+    """The batch width rounds up to a multiple of the bucket, never past the maximum."""
+    width, resized = text_recognition_widths(shapes, 48, 320, max_width, bucket)
+    _, unbucketed_resized = text_recognition_widths(shapes, 48, 320, max_width)
+    assert width == expected_width
+    # only the padding grows: every line keeps the width it has without a bucket
+    assert resized == unbucketed_resized
+
+
+def test_preprocess_text_recognition_bucket_only_pads() -> None:
+    """Bucketing adds zero padding on the right and leaves the lines' pixels unchanged."""
+    lines = [np.random.default_rng(0).integers(0, 255, (30, 200, 3), np.uint8)]
+    ref, ref_ratios, _ = preprocess_text_recognition(lines)
+    tensor, ratios, padding = preprocess_text_recognition(lines, width_bucket=128)
+    assert (ref.shape[-1], tensor.shape[-1]) == (320, 384)
+    np.testing.assert_array_equal(tensor[..., :320], ref)
+    np.testing.assert_array_equal(tensor[..., 320:], 0.0)
+    assert ratios == ref_ratios
+    assert padding == [(64.0, 0.0)]
+
+
+@pytest.mark.parametrize("width_bucket", [0, -32])
+def test_recognizer_rejects_width_bucket_below_one(width_bucket) -> None:
+    """A bucket below one is rejected before the engine is loaded."""
+    with pytest.raises(ValueError, match="width_bucket"):
+        TextRecognizer("unused.engine", character_dict=["a"], width_bucket=width_bucket)
+
+
+@pytest.mark.parametrize(
     ("box", "expected"),
     [
         pytest.param([[20, 10], [120, 10], [120, 40], [20, 40]], (30, 100, 3), id="axis-aligned"),
@@ -159,6 +203,36 @@ def test_postprocess_text_detection(prob_map, pad, expected) -> None:
     assert [float(s) for s in scores] == [score for _box, score in text_boxes]
     for (box, _score), ref in zip(text_boxes, boxes):
         np.testing.assert_array_equal(box, ref)
+
+
+@pytest.mark.parametrize("first", ["empty", "thin"])
+def test_postprocess_text_detection_waits_for_late_images(first) -> None:
+    """Scoring waits for the map once, even when an earlier image never scores a box."""
+    probs = np.stack([np.zeros((160, 320), np.float32), _prob_map()])
+    if first == "thin":
+        probs[0, 140:142, 10:20] = 0.9  # a contour culled before scoring
+    maps = np.zeros_like(probs)[:, None]  # filled in by wait, as the async copy lands
+    calls = []
+
+    def wait() -> None:
+        calls.append(1)
+        maps[:, 0] = probs
+
+    outputs = postprocess_text_detection(
+        [maps],
+        [(320 / 640, 160 / 480)] * 2,
+        [(0.0, 0.0)] * 2,
+        0.3,
+        0.5,
+        1000,
+        1.6,
+        use_dilation=True,
+        bitmaps=(probs > 0.3).astype(np.uint8)[:, None],
+        wait=wait,
+    )
+    assert len(outputs[0][0]) == 0
+    np.testing.assert_array_equal(outputs[1][0], REFERENCE_BOXES.astype(np.float32))
+    assert calls == [1]
 
 
 def test_sort_text_boxes_reading_order() -> None:

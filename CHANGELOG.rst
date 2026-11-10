@@ -5,14 +5,14 @@ Added
 ^^^^^
 * ``postprocessor="cuda"`` on ``OBBDetector`` decodes oriented boxes and runs probiou
   NMS on the engine stream, copying back only the kept results. It is the default;
-  ``postprocessor="cpu"`` keeps the host path. The preprocessor default stays ``"trt"``
+  ``postprocessor="cpu"`` keeps the host path
 * ``postprocessor="cuda"`` on ``HandInteractionDetector`` (Hands23 and HOI-DETR forward it).
   Unletterboxes boxes and runs the same class-aware NMS as ``postprocess_hand_interactions``
   on the engine stream, gathering labels, pair probabilities, and side. The default stays
   ``"cpu"``.
 * ``postprocessor="cuda"`` on ``Segmenter`` (the default when the engine fits). It runs
   the YOLO mask head's NMS and mask decode on the engine stream and matches the CPU
-  masks. The preprocessor default stays ``"trt"``
+  masks
 * ``postprocessor="cuda"`` on ``TextDetector`` and ``TextRecognizer`` (and the ``PPOCR``
   wrappers). Detection binarizes the DB probability map on the engine stream; recognition
   runs greedy CTC argmax there. Results match the CPU postprocessors. The default is
@@ -74,6 +74,19 @@ Added
   numpy arrays and any ``__cuda_array_interface__`` object (CuPy, PyTorch, ...) without
   copying; memory is reference counted so views and numpy arrays never outlive it
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
+* ``TRTEngine(shape_contexts=N)`` (and ``ImageModel(shape_contexts=N)``): opt-in pool of up to
+  ``N`` execution contexts, one per distinct tuple of input shapes, sharing one device memory
+  block. A context never changes shape, so TensorRT skips its per-shape setup and every context
+  replays its own CUDA graphs. Creating a context takes ~65 ms (paid on first use of each shape,
+  so warm up with every shape in use), and evicting the least recently used context when more
+  shapes than ``N`` are in use pays it again: size ``N`` above the number of shapes. Off by
+  default
+* ``width_bucket`` on ``TextRecognizer`` / ``PPOCRRecognizer`` / ``PPOCR``: round each recognizer
+  batch width up to a multiple of this many pixels and keep one engine context per
+  (batch size, width). On 24 rendered pages this cut steady-state OCR from ~3.4 to ~2.4
+  ms/page, at ~65 ms of warmup per width. The extra padding changes outputs slightly (CER
+  unchanged at 32, higher at larger buckets). Off by default, which keeps outputs identical.
+  ``preprocess_text_recognition(width_bucket=)`` pads the same way
 * ``build_engine(shapes=[(name, (min_shape, opt_shape, max_shape))])`` builds a dynamic
   optimization profile; malformed triples raise ``ValueError`` and non-integer dims
   raise ``TypeError``
@@ -149,9 +162,53 @@ Added
   is matched against the engine's output names in any order, and a wrong engine raises
   ``ValueError``
 * ``image.types`` aliases ``Segmentation``, ``Pose``, ``OBBDetection`` and ``RBox``
+* ``preprocessor="hybrid"`` and ``HybridPreprocessor``: resize on the CPU (the exact pixels of
+  ``"cpu"``), upload only the resized image and normalize on the GPU. 1080p frame on an RTX 5080:
+  yolo11n-cls 0.66 -> 0.38 ms end2end vs ``"cuda"``, yolo11n 0.98 -> 0.86 ms, Depth Anything v2
+  small 1.95 -> 1.81 ms. The default is ``"cuda"``; the CPU resize costs more on weaker CPUs.
+  ``trtutils detect`` / ``classify --preprocessor hybrid`` select it too
+* ``OCR`` with ``postprocessor="cuda"`` overlaps the pages of a batch: page i + 1 is detected
+  while page i is recognized, with the same results. PPOCRv4 7.1 -> 5.6 ms per 1080p page
 
 Changed
 ^^^^^^^
+* The default preprocessor of every image model, wrapper and the ``detect`` / ``classify``
+  CLI is now ``"cuda"`` instead of ``"trt"``: within 0.04 ms of it on all 24 benchmarked
+  models (1080p frames, RTX 5080), and it needs no second engine per model. Input pixels change
+  slightly, since the TensorRT resize differs; pass ``preprocessor="trt"`` for the old
+  behavior. ``"hybrid"`` (CPU resize, GPU normalize) is faster still for small inputs such as
+  224 px classifiers
+* The CUDA and TensorRT preprocessors copy images of 3 MB and more through pinned memory in
+  overlapping chunks (``memcpy_host_to_device_staged_async``), and memoize their resize kernel
+  arguments: 1080p preprocess 0.61 -> 0.56 ms on an RTX 5080
+* OBB rotated NMS on the CPU runs in float32 on small score-ordered blocks and skips pairs too
+  far apart to overlap: same results, yolo11n-obb postprocess 28 ms -> 5 ms on 1080p frames.
+  The CUDA OBB postprocessor gathers its survivors with a block-wide scan instead of one thread
+* ``get_detections`` (and segmentation/pose result extraction) converts results in bulk instead
+  of per numpy scalar: same tuples, 168 -> 42 us per image with 240 detections
+* The DB text detection postprocess computes the unclip area and box score bounds with plain
+  floats and scales a frame's boxes in one batch: same boxes and scores, OCR postprocess
+  2.1 -> 1.6 ms on a 14-line 1080p page
+* Depth maps are normalized into one new array, divided in place, instead of two temporaries:
+  same values
+* ``PPOCR`` with ``postprocessor="cuda"`` (the default) runs end to end on the GPU: the image is
+  uploaded once, ``TextDetector`` resizes and normalizes it there, and the new
+  ``TextRecognizer.end2end_regions`` cuts the text lines out of the device image
+  (``cv2.warpPerspective`` cubic, rotated crops included) and fills the recognizer input without
+  a host round trip. Kernels mirror OpenCV's fixed point ``resize`` and ``warpPerspective``, so
+  boxes, texts and scores equal the CPU path exactly (on x86 OpenCV 4.11).
+  ``TextRecognizer.end2end`` decodes CTC on the GPU too. 14-line 1080p page on an RTX 5080:
+  21 -> 10.7 ms
+* ``PPOCR`` with ``postprocessor="cpu"`` crops the detected text lines on a thread pool: same
+  results, 41 -> 26 ms on a 14-line 1080p page
+* ``PPOCRDetector.build`` and ``PPOCRRecognizer.build`` default to ``fp16=True``, like the other
+  models. On 24 rendered pages FP16 changed ~4% of recognized lines, with the same character error
+  rate against the ground truth (2.38% FP32, 2.41% FP16); 14-line page 10.7 -> 8.2 ms on an RTX
+  5080. Pass ``fp16=False`` for the FP32 behavior
+* ``PPOCR`` enqueues every recognizer batch before one stream sync, and ``TextDetector`` /
+  ``TextRecognizer`` run their engines on non-blocking streams, so TensorRT's own synchronous
+  copies stop waiting on queued work: 14-line page 8.2 -> 7.0 ms on an RTX 5080.
+  ``create_stream(non_blocking=True)`` makes one
 * The torchvision classifier wrappers (not the YOLO ones) default to ``center_crop`` instead of
   ``linear``, as their weights are evaluated; pass ``resize_method="linear"`` for the old outputs
 * ``Detector`` resolves its input and output schemas with the same name-matching as the other

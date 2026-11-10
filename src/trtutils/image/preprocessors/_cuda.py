@@ -17,11 +17,15 @@ from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
 from trtutils.core._buffer import Buffer
 from trtutils.core._kernels import Kernel, cached_args
-from trtutils.core._memory import memcpy_host_to_device_async
+from trtutils.core._memory import (
+    memcpy_host_to_device_async,
+    memcpy_host_to_device_staged_async,
+)
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
 from trtutils.image.kernels import IMAGENET_SST, LETTERBOX_RESIZE, LINEAR_RESIZE, SST_FAST
 
 from ._base import DEFAULT_CROP_PCT, RESIZE_METHODS, ImagePreprocessor, crop_geometry
+from ._cpu import resize_image
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -663,13 +667,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             self._cached_resize_key = cache_key
             self._cached_resize_result = (resize_kernel, ratios, padding, geometry_args)
 
-        resize_args = resize_kernel.create_args(
-            input_ptr,
-            output_ptr,
-            *geometry_args,
-            input_stride,
-            output_stride,
-            verbose=verbose,
+        # pointers and geometry repeat frame to frame, so the packed args are memoized
+        resize_args = cached_args(
+            resize_kernel, input_ptr, output_ptr, *geometry_args, input_stride, output_stride
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -681,13 +681,19 @@ class GPUImagePreprocessor(ImagePreprocessor):
         """Get a device pointer to one image, staging host images in the input binding."""
         if isinstance(image, Buffer):
             return image.device_ptr
+        binding = self._input_binding
         if self._pagelocked_mem and self._unified_mem:
             # the kernel for the previous image may still read this mapped buffer
             stream_synchronize(self._stream)
-            self._input_binding.host_allocation.reshape(-1)[: image.size] = image.reshape(-1)
+            binding.host_allocation.reshape(-1)[: image.size] = image.reshape(-1)
+        elif self._pagelocked_mem:
+            # large images go through the pinned binding in chunks that overlap their DMA
+            memcpy_host_to_device_staged_async(
+                binding.allocation, image, binding.host_allocation, self._stream
+            )
         else:
-            memcpy_host_to_device_async(self._input_binding.allocation, image, self._stream)
-        return self._input_binding.allocation
+            memcpy_host_to_device_async(binding.allocation, image, self._stream)
+        return binding.allocation
 
     def _resize_single_image_to_batch(
         self: Self,
@@ -1241,3 +1247,46 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             nvtx.pop_range()  # cuda_direct_preproc
 
         return self._output_binding.device[:batch_size], ratios_list, padding_list
+
+
+class HybridPreprocessor(CUDAPreprocessor):
+    """
+    Resize on the CPU as :class:`CPUPreprocessor` does, then normalize on the GPU.
+
+    Only the resized image is uploaded instead of the full frame, which wins
+    when the model input is much smaller than the frame (classifiers). The
+    pixels are exactly the CPU path's. Device Buffers are resized on the GPU
+    as in :class:`CUDAPreprocessor`.
+    """
+
+    def _resize_images_to_batch(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        batch_buffer_ptr: int,
+        resize: str | None = None,
+        *,
+        verbose: bool | None = None,
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        # host Buffers the kernels cannot read are resized on the CPU too
+        arrays = [
+            img.array if isinstance(img, Buffer) and not img.device_visible else img
+            for img in images
+        ]
+        host = [img for img in arrays if isinstance(img, np.ndarray)]
+        if not host or len(host) != len(arrays):
+            return super()._resize_images_to_batch(images, batch_buffer_ptr, resize, verbose=verbose)
+        methods = [self._validate_input(img, resize, verbose=verbose) for img in host]
+        o_width, o_height = self._o_shape
+        staging = self._reallocate_batch_input(len(host), o_height, o_width)
+        # the previous upload may still read the pinned staging
+        if self._pagelocked_mem:
+            stream_synchronize(self._stream)
+        ratios_list: list[tuple[float, float]] = []
+        padding_list: list[tuple[float, float]] = []
+        for i, (image, method) in enumerate(zip(host, methods)):
+            resized, ratios, padding = resize_image(image, self._o_shape, method, self._crop_pct)
+            np.copyto(staging[i], resized)
+            ratios_list.append(ratios)
+            padding_list.append(padding)
+        memcpy_host_to_device_async(batch_buffer_ptr, staging, self._stream)
+        return ratios_list, padding_list

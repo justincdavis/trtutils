@@ -475,7 +475,7 @@ def main() -> None:
     p.add_argument("--task", nargs="+", default=None, help="Only these tasks, e.g. detection ocr")
     p.add_argument("--all", action="store_true", help="Every model, not the first per class")
     p.add_argument("--list", action="store_true", help="Print the selected models and exit")
-    p.add_argument("--preprocessors", nargs="+", default=["cpu", "cuda", "trt"])
+    p.add_argument("--preprocessors", nargs="+", default=["cpu", "cuda", "trt", "hybrid"])
     p.add_argument("--postprocessors", nargs="+", default=["cpu", "cuda"], choices=["cpu", "cuda"])
     p.add_argument("--warmup", type=int, default=20)
     p.add_argument("--iterations", type=int, default=200)

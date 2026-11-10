@@ -85,10 +85,11 @@ class CUDAObbPostprocessor(CUDAPostprocessor):
             _probiou_reach(nms_iou_thres),
             self._alive.ptr,
         )
+        # one block per image, scanning the survivor counts
         self._launch(
             self._keep,
             (1, batch, 1),
-            (1, 1, 1),
+            (1024, 1, 1),
             num,
             max_det,
             nms.count.ptr,

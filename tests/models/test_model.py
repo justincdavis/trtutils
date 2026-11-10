@@ -10,7 +10,17 @@ from unittest.mock import patch
 import pytest
 
 import trtutils.models as models
-from trtutils.models import RFDETR, DEIMv2, DeiT, DeiT3, RTDETRv1, YOLOv8, YOLOv10
+from trtutils.models import (
+    RFDETR,
+    DEIMv2,
+    DeiT,
+    DeiT3,
+    PPOCRDetector,
+    PPOCRRecognizer,
+    RTDETRv1,
+    YOLOv8,
+    YOLOv10,
+)
 from trtutils.models._model import Model
 
 pytestmark = pytest.mark.cpu
@@ -148,3 +158,18 @@ def test_build_fp16(tmp_path, kwargs, fp16) -> None:
     for key, value in kwargs.items():
         if key != "fp16":
             assert call[key] == value
+
+
+@pytest.mark.parametrize("model_cls", [PPOCRDetector, PPOCRRecognizer])
+@pytest.mark.parametrize(
+    ("kwargs", "fp16"),
+    [
+        pytest.param({}, True, id="default"),
+        pytest.param({"fp16": False}, False, id="fp16-off"),
+    ],
+)
+def test_ppocr_build_fp16(tmp_path, model_cls, kwargs, fp16) -> None:
+    """The PP-OCR builds default to fp16 like the other models, and take an explicit fp16."""
+    with patch("trtutils.models.ocr._ppocr.build_engine") as mock_build:
+        model_cls.build(tmp_path / "fake.onnx", tmp_path / "out.engine", **kwargs)
+    assert mock_build.call_args.kwargs["fp16"] is fp16
