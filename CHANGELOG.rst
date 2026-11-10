@@ -10,6 +10,9 @@ Added
   Unletterboxes boxes and runs the same class-aware NMS as ``postprocess_hand_interactions``
   on the engine stream, gathering labels, pair probabilities, and side. The default stays
   ``"cpu"``.
+* ``postprocessor="cuda"`` on ``Segmenter`` (the default when the engine fits). It runs
+  the YOLO mask head's NMS and mask decode on the engine stream and matches the CPU
+  masks. The preprocessor default stays ``"trt"``
 * ``postprocessor="cuda"`` on ``Detector`` (YOLO-v10 and EfficientNMS) and ``Classifier``.
   Detection unletterboxes the kept boxes on the engine stream; classification writes the
   softmax, or copies the vector when ``softmax=False``. The default for both stays ``"cpu"``.
