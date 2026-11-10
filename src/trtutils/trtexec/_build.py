@@ -155,11 +155,11 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
             shapes_str = shapes_str[:-1]
 
     # generate initial command with weight input
-    command = ""
+    command: list[str] = []
     if weights.suffix == ".onnx":
-        command += f" --onnx={weights_path_str}"
+        command.append(f"--onnx={weights_path_str}")
     elif weights.suffix == ".prototxt":
-        command += f" --deploy={weights_path_str}"
+        command.append(f"--deploy={weights_path_str}")
 
     # check length, if zero something went wrong
     if len(command) == 0:
@@ -167,31 +167,33 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         err_msg += " This is an internal error, please report."
         raise RuntimeError(err_msg)
 
-    command += f" --saveEngine={output_path_str}"
+    command.append(f"--saveEngine={output_path_str}")
     if FLAGS.TRT_10:
-        command += " --skipInference"
+        command.append("--skipInference")
     if isinstance(use_dla_core, int):
-        command += f" --useDLACore={use_dla_core}"
-        command += " --memPoolSize=dlaSRAM:1"
+        command += [f"--useDLACore={use_dla_core}", "--memPoolSize=dlaSRAM:1"]
     if fp16:
-        command += " --fp16"
+        command.append("--fp16")
     if int8:
-        command += " --int8"
+        command.append("--int8")
     if fp8:
-        command += " --fp8"
+        command.append("--fp8")
     if best:
-        command += " --best"
+        command.append("--best")
     if allow_gpu_fallback:
-        command += " --allowGPUFallback"
+        command.append("--allowGPUFallback")
     if shapes_str:
-        command += f" --shapes={shapes_str}"
+        command.append(f"--shapes={shapes_str}")
     if workspace:
-        command += f" --workspace={workspace}"
+        # --workspace was removed in TRT 10, --memPoolSize exists since 8.4 (MiB)
+        if FLAGS.TRT_VERSION >= (8, 4):
+            command.append(f"--memPoolSize=workspace:{workspace}")
+        else:
+            command.append(f"--workspace={workspace}")
 
     # handle additional arguments
     if add_args:
-        for arg in add_args:
-            command += f" {arg}"
+        command += add_args
 
     # debug print
     LOG.debug(f"TRTEXEC Command: {command}")

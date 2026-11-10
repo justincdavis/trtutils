@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from trtutils._flags import FLAGS
 from trtutils.trtexec._build import build_engine
 
 if TYPE_CHECKING:
@@ -80,3 +81,47 @@ def test_build_from_onnx(tmp_path, simple_onnx_path) -> None:
     assert success is True
     assert output.exists()
     assert output.stat().st_size > 0
+
+
+def _captured_command(monkeypatch, weights: Path, output: Path, **kwargs: object) -> list[str]:
+    calls = []
+
+    def fake_run(command, *_args: object, **_kwargs: object):
+        calls.append(command)
+        return True, "", ""
+
+    monkeypatch.setattr("trtutils.trtexec._build.run_trtexec", fake_run)
+    build_engine(weights, output, **kwargs)
+    return list(calls[0])
+
+
+@pytest.mark.cpu
+def test_build_engine_spaced_paths_stay_whole(monkeypatch, tmp_path: Path) -> None:
+    """Paths containing spaces reach run_trtexec as single arguments."""
+    d = tmp_path / "a dir"
+    d.mkdir()
+    weights = d / "my model.onnx"
+    weights.write_text("fake onnx")
+    output = d / "my out.engine"
+    argv = _captured_command(monkeypatch, weights, output)
+    assert f"--onnx={weights.resolve()}" in argv
+    assert f"--saveEngine={output.resolve()}" in argv
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [
+        pytest.param((8, 6), "--memPoolSize=workspace:512", id="trt8.6"),
+        pytest.param((10, 3), "--memPoolSize=workspace:512", id="trt10"),
+        pytest.param((8, 0), "--workspace=512", id="trt8.0"),
+    ],
+)
+def test_build_engine_workspace_flag(monkeypatch, tmp_path: Path, version, expected) -> None:
+    """Workspace uses --memPoolSize on TRT >= 8.4 and --workspace before."""
+    monkeypatch.setattr(FLAGS, "TRT_VERSION", version)
+    weights = tmp_path / "model.onnx"
+    weights.write_text("fake onnx")
+    argv = _captured_command(monkeypatch, weights, tmp_path / "o.engine", workspace=512)
+    assert expected in argv
+    assert sum(a.startswith(("--workspace", "--memPoolSize=workspace")) for a in argv) == 1
