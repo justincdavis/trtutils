@@ -6,33 +6,37 @@ Welcome to trtutils
 Features
 --------
 
-- Simple, high-level interface for TensorRT inference
-- Automatic CUDA memory management, CUDA graphs, and pagelocked/unified memory
-- Support for arbitrary TensorRT engines on CUDA 11, 12, and 13
-- Engine building from ONNX, including strongly typed, DLA, and quantized builds
-- Built-in preprocessing and postprocessing capabilities
-- End-to-end image models for detection, classification, depth estimation, hand-object interaction, and OCR
-- Model download and ONNX export for many popular architectures
+- ``TRTEngine`` runs any TensorRT engine, with async_v2 and async_v3 backends, CUDA graphs, and pagelocked or unified memory
+- ``Buffer`` inputs on the host or the device; ``Buffer.wrap`` views NumPy, CuPy, and PyTorch arrays without copying
+- Image models in ``trtutils.image``: ``Detector``, ``Classifier``, ``Segmenter``, ``PoseEstimator``, ``OBBDetector``, ``DepthEstimator``, ``HandInteractionDetector``, and ``OCR`` (text detection plus recognition)
+- SAHI (sliced inference) for any detector, with ``SAHI``
+- Preprocessing on the CPU, CUDA, or TensorRT (``preprocessor="cpu" | "cuda" | "trt" | "hybrid"``), and CPU or CUDA postprocessing (``postprocessor="cpu" | "cuda"``)
+- Pre-configured ``trtutils.models`` wrappers with ``download()`` and ``build()``
+- ``Model.build`` reads the image size from the ONNX; ``embed_sst=True`` moves BGR-to-RGB, normalization, and layout into the engine, which then takes uint8 images
+- Model download and ONNX export with ``trtutils download`` or ``Model.download()``
+- Engine building from ONNX, including FP16, FP8, INT8, strongly typed, DLA, and dynamic-shape builds
+- Benchmarking, profiling, and NVTX instrumentation (with Jetson energy/power metrics)
 - Comprehensive type hints and documentation
-- Performance benchmarking, profiling, and monitoring
 
 Quick Start
 -----------
 
 .. code-block:: python
 
+    import numpy as np
+
     from trtutils import Buffer, TRTEngine
 
     # Load your TensorRT engine
-    engine = TRTEngine("path_to_engine")
+    engine = TRTEngine("yolov10n_640.engine")
 
     # Get input specifications
     print(engine.input_shapes)  # Expected input shapes
     print(engine.input_dtypes)  # Expected input data types
 
     # Run inference: every input is a Buffer, on the host or the device
-    inputs = [Buffer.wrap(array) for array in read_your_data()]
-    outputs = engine.execute(inputs)
+    image = np.zeros(engine.input_shapes[0], dtype=engine.input_dtypes[0])
+    outputs = engine.execute([Buffer.wrap(image)])  # NumPy arrays are wrapped without a copy
 
 Documentation
 -------------
