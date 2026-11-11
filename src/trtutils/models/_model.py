@@ -17,7 +17,7 @@ from trtutils.download._download import load_model_configs
 from ._utils import download_model_internal
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
 
 def _default_norm(
@@ -142,7 +142,7 @@ class Model:
         imgsz: int | None = None,
         opset: int = 17,
         *,
-        simplify: bool = True,
+        simplify: Sequence[str] | bool | None = True,
         no_cache: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -159,8 +159,10 @@ class Model:
             The image size to use for the model.
         opset : int
             The ONNX opset to use for the model. Default is 17.
-        simplify : bool
-            Whether to simplify the ONNX model after export. Default is True.
+        simplify : Sequence[str] or bool, optional
+            Whether and how to simplify the ONNX model after export. True (default) runs
+            the default tools (polygraphy, onnxslim), a sequence of tool names runs those
+            in order (valid: "polygraphy", "onnxslim", "onnxsim"), False or None skips it.
         no_cache : bool | None
             Disable caching of downloaded weights and repos.
         verbose : bool | None
