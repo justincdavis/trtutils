@@ -3,11 +3,12 @@
 # MIT License
 from __future__ import annotations
 
-import atexit
 import concurrent.futures
 import contextlib
 import os
+import weakref
 from abc import ABC, abstractmethod
+from functools import partial
 from pathlib import Path
 from queue import Empty, Full, Queue
 from threading import Event, Thread
@@ -20,6 +21,8 @@ from cv2ext.image import letterbox, rescale
 from trtutils._log import LOG
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from typing_extensions import Self
 
 
@@ -100,6 +103,36 @@ class AbstractBatcher(ABC):
         LOG.info(f"Saved calibration data to {output}")
 
         return output
+
+
+def _load_image(
+    image_path: Path,
+    *,
+    resize_method: str,
+    width: int,
+    height: int,
+    input_scale: tuple[float, float],
+    order: str,
+    dtype: np.dtype | type[np.generic],
+) -> np.ndarray:
+    img = cv2.imread(str(image_path.resolve()))
+    if img is None:
+        err_msg = f"Failed to load image from {image_path}"
+        raise FileNotFoundError(err_msg)
+
+    # resize and rescale the image
+    if resize_method == "letterbox":
+        resized_img, _, _ = letterbox(img, (width, height))
+    else:
+        resized_img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LINEAR)
+    rescaled_img = rescale(resized_img, input_scale)
+
+    # run the transpose operations and make contiguous
+    new_img: np.ndarray = rescaled_img[np.newaxis, :]
+    if order == "NCHW":
+        new_img = np.transpose(new_img, (0, 3, 1, 2))
+    new_img = new_img.astype(dtype)
+    return np.ascontiguousarray(new_img)
 
 
 class ImageBatcher(AbstractBatcher):
@@ -252,10 +285,35 @@ class ImageBatcher(AbstractBatcher):
         )
         self._event: Event = Event()
         self._queue: Queue[np.ndarray] = Queue(maxsize=3)
-        self._error: Exception | None = None
-        self._thread: Thread = Thread(target=self._run, daemon=True)
-
-        atexit.register(self._close)
+        # one-slot box the worker reports a failure through
+        self._error: list[Exception] = []
+        load = partial(
+            _load_image,
+            resize_method=self._resize_method,
+            width=self._width,
+            height=self._height,
+            input_scale=self._input_scale,
+            order=self._order,
+            dtype=self._dtype,
+        )
+        # the worker must not hold self, or an unclosed batcher is never collected
+        self._thread: Thread = Thread(
+            target=self._run,
+            args=(
+                self._pool,
+                self._batches,
+                load,
+                self._data_shape,
+                self._dtype,
+                self._queue,
+                self._event,
+                self._error,
+            ),
+            kwargs={"verbose": self._verbose},
+            daemon=True,
+        )
+        # finalize also runs at exit, and holds only what stopping needs
+        self._finalizer = weakref.finalize(self, self._stop, self._event, self._thread)
 
         self._thread.start()
 
@@ -269,78 +327,50 @@ class ImageBatcher(AbstractBatcher):
         """Get the batch size."""
         return self._batch
 
+    @staticmethod
+    def _stop(event: Event, thread: Thread) -> None:
+        event.set()
+        thread.join()
+
     def _close(self: Self) -> None:
-        self._event.set()
-        self._thread.join()
+        self._finalizer()
 
-    def _get_image(self: Self, image_path: Path) -> np.ndarray:
-        # read image
-        img = cv2.imread(str(image_path.resolve()))
-        if img is None:
-            err_msg = f"Failed to load image from {image_path}"
-            raise FileNotFoundError(err_msg)
-
-        # resize and rescale the image
-        if self._resize_method == "letterbox":
-            resized_img, _, _ = letterbox(img, (self._width, self._height))
-        else:
-            resized_img = cv2.resize(
-                img,
-                (self._width, self._height),
-                interpolation=cv2.INTER_LINEAR,
-            )
-        rescaled_img = rescale(resized_img, self._input_scale)
-
-        # run the transpose operations and make contiguous
-        new_img: np.ndarray = rescaled_img[np.newaxis, :]
-        if self._order == "NCHW":
-            new_img = np.transpose(new_img, (0, 3, 1, 2))
-        else:
-            new_img = np.transpose(new_img, (0, 1, 2, 3))
-
-        new_img = new_img.astype(self._dtype)
-
-        if not new_img.flags["C_CONTIGUOUS"]:
-            new_img = np.ascontiguousarray(new_img)
-
-        return new_img
-
-    def _run(self: Self) -> None:
+    @staticmethod
+    def _run(
+        pool: concurrent.futures.ThreadPoolExecutor,
+        batches: list[list[Path]],
+        load: Callable[[Path], np.ndarray],
+        data_shape: tuple[int, int, int, int],
+        dtype: np.dtype | type[np.generic],
+        queue: Queue[np.ndarray],
+        event: Event,
+        error: list[Exception],
+        *,
+        verbose: bool | None,
+    ) -> None:
         try:
-            self._load_batches()
+            for idx, image_paths in enumerate(batches):
+                if event.is_set():
+                    return
+
+                LOG.debug(f"ImageBatcher getting batch: {idx}")
+
+                data = np.zeros(data_shape, dtype=dtype)
+                for i, img in enumerate(pool.map(load, image_paths)):
+                    data[i] = img
+
+                # keep trying to put images into the queue
+                while not event.is_set():
+                    try:
+                        queue.put(data, timeout=0.1)
+                    except Full:
+                        continue
+                    if verbose:
+                        LOG.debug(f"ImageBatcher put batch: {idx} / {len(batches)}")
+                    break
         except Exception as e:  # noqa: BLE001
             # surface worker failures to get_next_batch
-            self._error = e
-
-    def _load_batches(self: Self) -> None:
-        # for each batch get the images
-        for idx, image_paths in enumerate(self._batches):
-            if self._event.is_set():
-                return
-
-            LOG.debug(f"ImageBatcher getting batch: {idx}")
-
-            # get the batch
-            results = list(self._pool.map(self._get_image, image_paths))
-            data = np.zeros(self._data_shape, dtype=self._dtype)
-
-            for i, img in enumerate(results):
-                data[i] = img
-
-            if not data.flags["C_CONTIGUOUS"]:
-                data = np.ascontiguousarray(data)
-
-            # keep trying to put images into the queue
-            while not self._event.is_set():
-                try:
-                    self._queue.put(data, timeout=0.1)
-
-                    if self._verbose:
-                        LOG.debug(f"ImageBatcher put batch: {idx} / {len(self._batches)}")
-
-                    break
-                except Full:
-                    continue
+            error.append(e)
 
     def get_next_batch(self: Self) -> np.ndarray | None:
         """
@@ -356,8 +386,8 @@ class ImageBatcher(AbstractBatcher):
             return None
 
         while not self._event.is_set():
-            if self._error is not None and self._queue.empty():
-                raise self._error
+            if self._error and self._queue.empty():
+                raise self._error[0]
             with contextlib.suppress(Empty):
                 batch = self._queue.get(timeout=0.1)
                 self._current_batch += 1
