@@ -69,7 +69,8 @@ def export_yolox(
     )
     run_download(yolox_dir, config, python_path, no_cache=no_cache, verbose=verbose)
     # Use exp_file instead of name to avoid module import issues
-    exp_file = yolox_dir / "exps" / "default" / f"{config['name']}.py"
+    # yolox_darknet's exp is upstream's yolov3.py
+    exp_file = yolox_dir / "exps" / "default" / f"{config.get('exp', config['name'])}.py"
     # Set PYTHONPATH so yolox imports work without installing the package
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH")

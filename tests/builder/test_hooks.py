@@ -102,9 +102,16 @@ class TestYOLOEfficientNMS:
         assert result is mock_network
         mock_network.mark_output.assert_not_called()
 
-    def test_yolov8_modification(self) -> None:
-        """YOLOv8-style (N, channels, boxes) adds NMS plugin with 4 outputs."""
-        hook = yolo_efficient_nms_hook(num_classes=80)
+    @pytest.mark.parametrize(
+        ("box_scale", "scales"),
+        [
+            pytest.param(None, [], id="unscaled"),
+            pytest.param(640, [640], id="scaled-rtdetr"),
+        ],
+    )
+    def test_yolov8_modification(self, box_scale, scales) -> None:
+        """YOLOv8-style (N, channels, boxes) adds NMS plugin with 4 outputs, box_scale scales boxes."""
+        hook = yolo_efficient_nms_hook(num_classes=80, box_scale=box_scale)
         mock_network = _setup_yolo_network(output_shape=(1, 84, 8400))
         mock_shape_layer, mock_registry = _patch_trt_for_hook()
 
@@ -127,6 +134,8 @@ class TestYOLOEfficientNMS:
         assert result is mock_network
         mock_network.unmark_output.assert_called()
         assert mock_network.mark_output.call_count == 4
+        consts = mock_network.add_constant.call_args_list
+        assert [c.args[1].item() for c in consts if c.args[0] == (1, 1, 1)] == scales
 
     def test_yolox_modification(self) -> None:
         """YOLOX-style (N, boxes, classes+5) uses objectness multiply, marks 4 outputs."""

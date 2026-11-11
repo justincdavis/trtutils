@@ -148,7 +148,6 @@ def export_deimv2(
             config["name"] + ".pth",
             "--opset",
             str(opset),
-            "--simplify",
         ],
         cwd=deim_dir,
         verbose=verbose,

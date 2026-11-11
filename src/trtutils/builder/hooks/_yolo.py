@@ -90,6 +90,7 @@ def yolo_efficient_nms_hook(
     box_coding: str = "center_size",
     *,
     class_agnostic: bool | None = None,
+    box_scale: float | None = None,
 ) -> Callable[[trt.INetworkDefinition], trt.INetworkDefinition]:
     """
     Create a hook to add EfficientNMS_TRT plugin to YOLO-like output network.
@@ -120,6 +121,9 @@ def yolo_efficient_nms_hook(
     box_coding : str, optional
         Coding of the bounding boxes.
         Default is "center_size".
+    box_scale : float, optional
+        Factor multiplied into the box coordinates before NMS, for heads that emit
+        normalized boxes (Ultralytics RT-DETR). By default None, boxes are used as is.
 
     Returns
     -------
@@ -163,6 +167,11 @@ def yolo_efficient_nms_hook(
         old_outputs = [network.get_output(i) for i in range(network.num_outputs)]
         yolo_out = _transpose_nc_to_nlc(network, raw_out, channel_count)
         boxes = _slice_dynamic(network, yolo_out, [0, 0, 0], 4)
+        if box_scale is not None:
+            scale = network.add_constant((1, 1, 1), np.array([[[box_scale]]], dtype=np.float32))
+            boxes = network.add_elementwise(
+                boxes, scale.get_output(0), trt.ElementWiseOperation.PROD
+            ).get_output(0)
 
         # assess if objectness is present
         # objectness has dimension 4 for bboxes, 1 for objectness, and num_classes for classes

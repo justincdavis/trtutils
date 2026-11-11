@@ -3,15 +3,16 @@
 # MIT License
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils._flags import FLAGS
 from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
+from trtutils.models._hooks import rtdetr_build_hook
 from trtutils.models._model import Model
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
     from pathlib import Path
 
     from typing_extensions import Self
@@ -26,6 +27,7 @@ class RTDETRv1(Detector, Model):
     _valid_imgszs: ClassVar[list[int] | None] = [640]
     # tensorrt 8.6 fp16 engines lose the detections (horse 0.38 vs 0.97 at fp32)
     _fp16: ClassVar[bool] = FLAGS.TRT_VERSION >= (10, 0)
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [rtdetr_build_hook]
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
         ("images", "image"),
         ("orig_target_sizes", "size"),
@@ -68,8 +70,6 @@ class RTDETRv1(Detector, Model):
             nms_iou_thres=nms_iou_thres,
             mean=mean,
             std=std,
-            input_schema=InputSchema.RT_DETR,
-            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             device=device,
             backend=backend,

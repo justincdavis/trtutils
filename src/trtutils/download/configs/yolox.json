@@ -32,6 +32,7 @@
     "yolox_darknet": {
         "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_darknet.pth",
         "name": "yolox_darknet",
+        "exp": "yolov3",
         "version": "yolox-darknet"
     }
 }
