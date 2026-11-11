@@ -101,18 +101,14 @@ def identify_quantize_speedups_by_layer(  # noqa: C901
         The path to the ONNX model.
     build_func : BuildFunc | None, optional
         A callable responsible for building engines. It must accept
-        ``(onnx, output, *, fp16=None, int8=None)`` (or **kwargs including these)
+        ``(onnx, output, *, fp16=None, int8=None)`` (or ``**kwargs`` including these)
         and build an engine at ``output`` with the requested precision flags.
-
-        - When ``build_func`` is ``None`` (default), a thin wrapper over
-          :func:`trtutils.builder.build_engine` is used with:
-
-          - ``workspace`` forwarded from this function
-          - ``profiling_verbosity=trt.ProfilingVerbosity.DETAILED``
-          - ``verbose`` forwarded from this function
-
-        - To customize calibration, shapes, timing cache, hooks, etc., pass a
-          ``functools.partial`` or custom function that captures those arguments.
+        When ``build_func`` is ``None`` (default), a thin wrapper over
+        :func:`trtutils.builder.build_engine` forwards ``workspace`` and
+        ``verbose`` and sets ``profiling_verbosity`` to
+        ``trt.ProfilingVerbosity.DETAILED``. To customize calibration, shapes,
+        timing cache, or hooks, pass a ``functools.partial`` or another function
+        that captures those arguments.
     iterations : int, optional
         The number of profiling iterations to run, by default 100.
     warmup_iterations : int, optional
@@ -129,11 +125,9 @@ def identify_quantize_speedups_by_layer(  # noqa: C901
     Returns
     -------
     tuple[ProfilerResult, ProfilerResult, list[tuple[str, float]]]
-        A tuple containing:
-        - FP16 profiling results
-        - INT8 profiling results
-        - List of (layer_name, speedup_percent) tuples in execution order.
-          Positive values indicate INT8 is faster, negative values indicate INT8 is slower.
+        FP16 profiling results, INT8 profiling results, and
+        ``(layer_name, speedup_percent)`` pairs in execution order.
+        Positive values mean INT8 is faster. Negative values mean INT8 is slower.
 
     Raises
     ------

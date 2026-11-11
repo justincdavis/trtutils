@@ -48,9 +48,6 @@ myst_enable_extensions = [
     "substitution",
 ]
 
-# List of patterns, relative to source directory, that match files and
-# directories to ignore when looking for source files.
-exclude_patterns = ["**/modules.rst"]
 source_suffix = {
     ".rst": "restructuredtext",
     ".md": "markdown",
@@ -86,7 +83,7 @@ templates_path = ["_templates"]
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**/modules.rst"]
 
 autodoc_default_options = {
     "member-order": "bysource",
@@ -119,5 +116,5 @@ html_sidebars = {
 }
 
 html_css_files = [
-    "center.cs",  # Make sure this path is correct relative to _static
+    "center.css",
 ]

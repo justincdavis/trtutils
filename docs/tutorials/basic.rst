@@ -106,6 +106,7 @@ Python:
 
     # a smaller tegra_interval means more measurements
     results = benchmark_engine("engine.engine", iterations=1000, tegra_interval=1)
+    # latency is seconds; energy is millijoules; power_draw is milliwatts
     print(results.latency.mean)
     print(results.energy.mean)
     print(results.power_draw.mean)

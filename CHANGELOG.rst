@@ -113,6 +113,14 @@ Performance
 
 Fixed
 ^^^^^
+* Docs: the kernel tutorial loads a ``.cu`` file, the YOLO parallel example matches
+  ``ParallelDetector`` (one batch per model), and the Python benchmark snippets
+  label latency as seconds and Jetson power/energy as milliwatts and millijoules.
+  The CLI reference lists ``--nvtx``, ``--fp8``, ``--strongly_typed``,
+  ``--cuda_graph``, and the download flags ``--list_models``, ``--simplify``,
+  ``--no_cache``, and ``--requirements_export``. The examples index includes
+  segmentation, pose, OBB, and DeiT, and the 3090 benchmark page is linked.
+  README separates the ``cu12`` TensorRT 10 wheel from JetPack 6's system TensorRT
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see
   a half-written engine
 * ``build_engine(default_device="dla")`` without ``dla_core`` uses DLA core 0. TensorRT had

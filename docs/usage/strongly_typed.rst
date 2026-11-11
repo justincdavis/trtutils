@@ -224,10 +224,9 @@ Common errors
   ``data_batcher``. Strongly-typed networks have no calibration step; scales
   must live in the ONNX Q/DQ nodes. Remove the calibration arguments.
 
-``"strongly_typed=True derives precision from the ONNX graph; remove
-fp16/int8/fp8 builder flags."``
+``"strongly_typed=True derives precision from the ONNX graph; remove fp16/int8/fp8 builder flags."``
   You passed ``strongly_typed=True`` together with precision flags. Drop the
-  flags — precision is now the ONNX's job.
+  flags. Precision comes from the ONNX graph.
 
 ``"Installed TensorRT does not support strongly-typed networks"``
   The installed TensorRT version predates the ``STRONGLY_TYPED`` network
