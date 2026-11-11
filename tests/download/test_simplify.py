@@ -17,13 +17,17 @@ from trtutils.download import _simplify
 pytestmark = pytest.mark.cpu
 
 
-def _fake_run_cmd(cmd, *, env=None, verbose=None, **_kwargs: object) -> int:
+def _fake_run_cmd(cmd, *, cwd=None, env=None, verbose=None, **_kwargs: object) -> int:
     # like polygraphy: drop a temp file in TMPDIR, then fail or write the output
     tmp_dir = (env if env is not None else os.environ)["TMPDIR"]
     with tempfile.NamedTemporaryFile(
         prefix="tmp_polygraphy_", suffix=".onnx", dir=tmp_dir, delete=False
     ):
         pass
+    # like onnxruntime symbolic shape inference: temp model + external data in cwd
+    work_dir = Path(cwd) if cwd is not None else Path.cwd()
+    (work_dir / "sym_shape_infer_temp.onnx").write_bytes(b"x")
+    (work_dir / "00000000-0000-0000-0000-000000000000.data").write_bytes(b"x")
     if "polygraphy" in str(cmd[0]) and "fail" in os.environ.get("SIMPLIFY_TEST", ""):
         raise subprocess.CalledProcessError(1, cmd)
     Path(cmd[-1]).write_bytes(b"simplified")
@@ -41,6 +45,10 @@ def test_simplify_leaves_no_temp_files(tmp_path, monkeypatch, first_fails) -> No
     monkeypatch.setattr(_simplify, "run_cmd", _fake_run_cmd)
     monkeypatch.setattr(_simplify, "run_uv_pip_install", lambda *_a, **_k: None)
 
+    caller_cwd = tmp_path / "cwd"
+    caller_cwd.mkdir()
+    monkeypatch.chdir(caller_cwd)
+
     model = tmp_path / "model.onnx"
     model.write_bytes(b"original")
     bin_path = tmp_path / "venv" / "bin"
@@ -48,4 +56,5 @@ def test_simplify_leaves_no_temp_files(tmp_path, monkeypatch, first_fails) -> No
 
     assert model.read_bytes() == b"simplified"
     assert list(tmp_dir.iterdir()) == []
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["model.onnx", "tmp"]
+    assert list(caller_cwd.iterdir()) == []
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["cwd", "model.onnx", "tmp"]
