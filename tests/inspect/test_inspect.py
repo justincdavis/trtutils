@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import pytest
+import tensorrt as trt
 
+from trtutils import FLAGS
 from trtutils.inspect import LayerInfo, get_engine_names, inspect_engine, inspect_onnx_layers
 
 
@@ -103,3 +105,52 @@ def test_inspect_onnx_layers_nonexistent_raises() -> None:
     """Nonexistent ONNX file raises FileNotFoundError."""
     with pytest.raises(FileNotFoundError):
         inspect_onnx_layers("nonexistent_model_abc123.onnx")
+
+
+class _FakeEngine:
+    """Explicit-batch engine as TRT 8.6 reports it: max_batch_size is always 1."""
+
+    max_batch_size = 1
+    has_implicit_batch_dimension = False
+    device_memory_size = 0
+    device_memory_size_v2 = 0
+    num_io_tensors = 2
+
+    def __init__(self, in_shape) -> None:
+        self._in_shape = in_shape
+
+    def get_tensor_name(self, i):
+        return ("in", "out")[i]
+
+    def get_tensor_shape(self, name):
+        return self._in_shape if name == "in" else (1, 10)
+
+    def get_tensor_dtype(self, name):
+        return trt.float32
+
+    def get_tensor_format(self, name):
+        return trt.TensorFormat.LINEAR
+
+    def get_tensor_mode(self, name):
+        return trt.TensorIOMode.INPUT if name == "in" else trt.TensorIOMode.OUTPUT
+
+    def get_tensor_profile_shape(self, name, profile):
+        return [(1, 3, 640, 640), (2, 3, 640, 640), (8, 3, 640, 640)]
+
+    def get_profile_shape(self, profile, name):
+        return self.get_tensor_profile_shape(name, profile)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("in_shape", "expected"),
+    [
+        pytest.param((4, 3, 640, 640), 4, id="static"),
+        pytest.param((-1, 3, 640, 640), 8, id="dynamic-profile-max"),
+    ],
+)
+def test_inspect_engine_batch_size_explicit_batch(monkeypatch, in_shape, expected) -> None:
+    """Batch size comes from the input shape / profile max, not max_batch_size (always 1)."""
+    monkeypatch.setattr(FLAGS, "TRT_10", True)
+    _, batch_size, _, _ = inspect_engine(_FakeEngine(in_shape))
+    assert batch_size == expected
