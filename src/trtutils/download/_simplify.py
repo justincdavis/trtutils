@@ -138,6 +138,8 @@ def _run_simplify(
         verbose=verbose,
     )
 
+    # tools run in a temp cwd, so paths handed to them must be absolute
+    model_path = model_path.resolve()
     current_input = model_path
     intermediates: list[Path] = []
     failures: list[str] = []
@@ -148,11 +150,18 @@ def _run_simplify(
         try:
             LOG.info(f"Running {tool_name} on {current_input.stem}")
             cmd = _build_tool_cmd(tool_name, tool_type, bin_path, current_input, output_path)
-            # tools (polygraphy shape inference) leave temp files behind: confine them
+            # polygraphy/onnxslim shape inference leaves TMPDIR and cwd temp files: confine both
             with tempfile.TemporaryDirectory() as tool_tmp, tempfile.TemporaryFile("w+") as log:
                 env = {**os.environ, "TMPDIR": tool_tmp}
                 try:
-                    run_cmd(cmd, env=env, verbose=verbose, stdout=log, stderr=subprocess.STDOUT)
+                    run_cmd(
+                        cmd,
+                        cwd=Path(tool_tmp),
+                        env=env,
+                        verbose=verbose,
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                    )
                 except subprocess.CalledProcessError:
                     log.seek(0)
                     tail = log.read()[-_ERR_TAIL_CHARS:].strip()
