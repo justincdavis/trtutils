@@ -446,3 +446,12 @@ def test_get_detections_core_matches_scalar_loop(conf_thres) -> None:
         if s >= thres
     ]
     assert _get_detections_core([bboxes, scores, class_ids], conf_thres) == expected
+
+
+@pytest.mark.cpu
+def test_postprocess_depth_constant_fp16_is_finite() -> None:
+    """A constant fp16 depth map normalizes to zeros, not NaN (1e-8 underflows in fp16)."""
+    out = np.full((1, 1, 8, 8), 3.0, dtype=np.float16)
+    depth = postprocess_depth([out])[0][0]
+    assert np.isfinite(depth).all()
+    assert (depth == 0).all()

@@ -13,7 +13,25 @@ from trtutils.core._engine import create_engine
 from trtutils.core._stream import destroy_stream
 
 
-def inspect_engine(  # noqa: C901, PLR0912
+def _get_batch_size(engine: trt.ICudaEngine, input_tensors: list) -> int:
+    # explicit-batch engines report max_batch_size == 1 on TRT 8, so read the input shape
+    batch_size: int = 0
+    if getattr(engine, "has_implicit_batch_dimension", False):
+        batch_size = engine.max_batch_size
+    elif input_tensors:
+        name, shape, _, _ = input_tensors[0]
+        if shape and len(shape) > 0:
+            batch_size = shape[0]
+            if batch_size < 0:
+                # dynamic batch: report the max of the first profile
+                if FLAGS.TRT_10:
+                    batch_size = engine.get_tensor_profile_shape(name, 0)[2][0]
+                else:
+                    batch_size = engine.get_profile_shape(0, name)[2][0]
+    return batch_size
+
+
+def inspect_engine(
     engine: Path | str | trt.ICudaEngine,
     *,
     verbose: bool | None = None,
@@ -75,14 +93,7 @@ def inspect_engine(  # noqa: C901, PLR0912
         else:
             output_tensors.append((tensor_name, shape, dtype, fmt))
 
-    batch_size: int = 0
-    try:
-        batch_size = engine.max_batch_size
-    except AttributeError:
-        if input_tensors:
-            _, shape, _, _ = input_tensors[0]
-            if shape and len(shape) > 0:
-                batch_size = shape[0]
+    batch_size = _get_batch_size(engine, input_tensors)
 
     if verbose:
         LOG.info("Engine Info:")

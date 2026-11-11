@@ -55,8 +55,9 @@ def _postprocess_depth_core(outputs: list[np.ndarray]) -> list[np.ndarray]:
     results = []
     for output in outputs:
         d_min = output.min()
-        normed = np.subtract(output, d_min)
-        np.divide(normed, output.max() - d_min + 1e-8, out=normed)
+        # float32: 1e-8 underflows to 0 in float16, turning a constant map into NaN
+        normed = np.subtract(output, d_min, dtype=np.float32)
+        np.divide(normed, np.float32(output.max()) - np.float32(d_min) + 1e-8, out=normed)
         results.append(normed)
     return results
 
