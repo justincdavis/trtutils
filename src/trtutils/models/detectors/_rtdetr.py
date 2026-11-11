@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from trtutils._flags import FLAGS
 from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
-from trtutils.models._hooks import rtdetr_build_hook
+from trtutils.models._hooks import depthwise_fp32_build_hook, rtdetr_build_hook
 from trtutils.models._model import Model
 
 if TYPE_CHECKING:
@@ -27,7 +27,11 @@ class RTDETRv1(Detector, Model):
     _valid_imgszs: ClassVar[list[int] | None] = [640]
     # tensorrt 8.6 fp16 engines lose the detections (horse 0.38 vs 0.97 at fp32)
     _fp16: ClassVar[bool] = FLAGS.TRT_VERSION >= (10, 0)
-    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [rtdetr_build_hook]
+    # HGNetv2 backbones (rtdetr-l/x) hit the broken FP16 depthwise kernel, see the hook docstring
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [
+        rtdetr_build_hook,
+        depthwise_fp32_build_hook,
+    ]
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
         ("images", "image"),
         ("orig_target_sizes", "size"),
