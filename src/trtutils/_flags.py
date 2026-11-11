@@ -209,7 +209,7 @@ _parse_doc = getattr(getattr(trt, "OnnxParser", None), "parse", None).__doc__ or
 FLAGS.ONNX_PARSE_PATH = "path" in _parse_doc
 FLAGS.EXPLICIT_BATCH_FLAG = hasattr(trt.NetworkDefinitionCreationFlag, "EXPLICIT_BATCH")
 FLAGS.INT8_CALIBRATION = hasattr(trt, "IInt8EntropyCalibrator2")
-FLAGS.WEAK_TYPING = hasattr(trt.BuilderFlag, "FP16")
+FLAGS.WEAK_TYPING = hasattr(getattr(trt, "BuilderFlag", None), "FP16")
 FLAGS.PLUGIN_CREATOR_LOOKUP = hasattr(getattr(trt, "IPluginRegistry", None), "get_plugin_creator")
 
 # Set system flags
