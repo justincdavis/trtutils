@@ -33,6 +33,9 @@ _no_hands23_onnx = pytest.mark.skipif(
 _trt86_hands23 = pytest.mark.skipif(
     FLAGS.TRT_VERSION < (10, 0), reason="TensorRT 8.6 cannot build Hands23 (OneHot shape tensor)"
 )
+_needs_weak_typing = pytest.mark.skipif(
+    not FLAGS.WEAK_TYPING, reason="per-layer precision was removed in TensorRT 11"
+)
 MODELS = [
     pytest.param(HOIDETR, HOI_DETR_ONNX, id="hoi-detr", marks=_trt86_hoi),
     pytest.param(Hands23, HANDS23_ONNX, id="hands23", marks=_trt86_hands23),
@@ -298,6 +301,7 @@ def _assert_pair_score_path_pinned(pinned, names) -> None:
         assert names.index(name) in pinned_idx
 
 
+@_needs_weak_typing
 @_trt86_hands23
 @_no_hands23_onnx
 def test_hands23_fp32_hook_overrides() -> None:
@@ -326,6 +330,7 @@ def test_hands23_fp32_hook_skips_strongly_typed() -> None:
     assert hands23_fp32_build_hook(onnx=HANDS23_ONNX, strongly_typed=True) == {}
 
 
+@_needs_weak_typing
 @_trt86_hands23
 @_no_hands23_onnx
 def test_hands23_fp32_build_keeps_sides(images, tmp_path) -> None:

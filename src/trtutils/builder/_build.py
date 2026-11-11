@@ -18,9 +18,12 @@ from trtutils.core import cache as caching_tools
 from trtutils.core._device import Device
 from trtutils.core.cache import query_timing_cache, save_timing_cache_to_global
 
-from ._calibrator import EngineCalibrator
 from ._onnx import read_onnx
-from ._utils import get_check_dla
+from ._utils import check_implicit_calibration, get_check_dla
+
+# trt 11 removed the implicit calibrators
+if FLAGS.INT8_CALIBRATION:
+    from ._calibrator import EngineCalibrator
 
 ProgressBar = None
 if FLAGS.BUILD_PROGRESS:
@@ -229,6 +232,25 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         and gpu_fallback is False
 
     """
+    # strongly typed builds report these through their own checks below
+    check_implicit_calibration(
+        requested=not strongly_typed
+        and (calibration_cache is not None or data_batcher is not None or bool(int8))
+    )
+
+    if not FLAGS.WEAK_TYPING and (
+        prefer_precision_constraints
+        or reject_empty_algorithms
+        or (not strongly_typed and (fp16 or fp8 or layer_precision is not None))
+    ):
+        err_msg = (
+            "Weakly-typed networks were removed in TensorRT 11: the fp16, fp8, "
+            "prefer_precision_constraints, reject_empty_algorithms and layer_precision "
+            "options are unavailable. Precision comes from the ONNX graph, so export "
+            "the ONNX at the wanted precision and drop these options."
+        )
+        raise RuntimeError(err_msg)
+
     # load libnvinfer plugins
     CONFIG.load_plugins()
 
@@ -374,7 +396,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
             for idx in range(network.num_inputs):
                 inp = network.get_input(idx)
                 if inp.name == tensor_name:
-                    if not strongly_typed:
+                    if FLAGS.WEAK_TYPING and not strongly_typed:
                         inp.dtype = tensor_dtype
                     inp.allowed_formats = 1 << int(tensor_format)
                     found = True
@@ -388,7 +410,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
             for idx in range(network.num_outputs):
                 out = network.get_output(idx)
                 if out.name == tensor_name:
-                    if not strongly_typed:
+                    if FLAGS.WEAK_TYPING and not strongly_typed:
                         out.dtype = tensor_dtype
                     out.allowed_formats = 1 << int(tensor_format)
                     found = True
@@ -399,7 +421,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
 
     # setup the precision sets -- skipped under strongly_typed since the
     # precision is carried by the ONNX graph itself
-    if not strongly_typed:
+    if FLAGS.WEAK_TYPING and not strongly_typed:
         if fp16 or fp8 or int8:
             # want to enable fp16 for int8, fp8, and fp16 since fp16 may be faster
             if not builder.platform_has_fast_fp16:

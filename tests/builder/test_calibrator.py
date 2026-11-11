@@ -11,6 +11,11 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
+from trtutils._flags import FLAGS
+
+if not FLAGS.INT8_CALIBRATION:
+    pytest.skip("implicit INT8 calibration removed in TensorRT 11", allow_module_level=True)
+
 from trtutils.builder._calibrator import EngineCalibrator
 
 

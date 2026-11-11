@@ -66,6 +66,16 @@ class Flags:
     EXPLICIT_BATCH_FLAG : bool
         Whether trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH exists.
         Removed in TensorRT 11, where networks are always explicit batch.
+    INT8_CALIBRATION : bool
+        Whether trt.IInt8EntropyCalibrator2 exists, i.e. implicit INT8
+        calibration is available. Removed in TensorRT 11.
+    WEAK_TYPING : bool
+        Whether trt.BuilderFlag.FP16 exists, i.e. weakly-typed networks with
+        builder precision flags and per-layer precision are available.
+        Removed in TensorRT 11, where precision comes from the ONNX graph.
+    PLUGIN_CREATOR_LOOKUP : bool
+        Whether trt.IPluginRegistry.get_plugin_creator exists. Removed in
+        TensorRT 11, use get_creator there.
     SM_ARCH : str
         The GPU architecture name. E.g. "turing", "blackwell".
     DEVICE_NAME : str
@@ -98,6 +108,9 @@ class Flags:
     STRONGLY_TYPED_SUPPORTED: bool = False
     ONNX_PARSE_PATH: bool = False
     EXPLICIT_BATCH_FLAG: bool = False
+    INT8_CALIBRATION: bool = False
+    WEAK_TYPING: bool = False
+    PLUGIN_CREATOR_LOOKUP: bool = False
     TRT_HAS_UINT8: bool = False
     TRT_HAS_INT64: bool = False
     NEW_CAN_RUN_ON_DLA: bool = False
@@ -195,6 +208,9 @@ FLAGS.STRONGLY_TYPED_SUPPORTED = hasattr(
 _parse_doc = getattr(getattr(trt, "OnnxParser", None), "parse", None).__doc__ or ""
 FLAGS.ONNX_PARSE_PATH = "path" in _parse_doc
 FLAGS.EXPLICIT_BATCH_FLAG = hasattr(trt.NetworkDefinitionCreationFlag, "EXPLICIT_BATCH")
+FLAGS.INT8_CALIBRATION = hasattr(trt, "IInt8EntropyCalibrator2")
+FLAGS.WEAK_TYPING = hasattr(getattr(trt, "BuilderFlag", None), "FP16")
+FLAGS.PLUGIN_CREATOR_LOOKUP = hasattr(getattr(trt, "IPluginRegistry", None), "get_plugin_creator")
 
 # Set system flags
 FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()

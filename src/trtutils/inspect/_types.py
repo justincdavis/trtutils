@@ -25,8 +25,8 @@ class LayerInfo:
         The name of the layer.
     layer_type : str
         The type of the layer (e.g., ``"CONVOLUTION"``, ``"POOLING"``).
-    precision : trt.DataType
-        The precision of the layer.
+    precision : trt.DataType or None
+        The precision of the layer, None on TensorRT 11 (no per-layer precision).
     input_tensor_size : int
         Total size of all input tensors in bytes.
     output_tensor_size : int
@@ -39,7 +39,7 @@ class LayerInfo:
     index: int
     name: str
     layer_type: str
-    precision: trt.DataType
+    precision: trt.DataType | None
     input_tensor_size: int
     output_tensor_size: int
     dla_compatible: bool

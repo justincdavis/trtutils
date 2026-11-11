@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.builder._onnx import read_onnx
 from trtutils.builder.hooks import yolo_efficient_nms_hook
@@ -127,6 +128,9 @@ def depthwise_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]: 
         Build engine overrides containing the layer_precision list.
 
     """
+    # trt 11 has no per-layer precision, the build is FP32 from the onnx
+    if not FLAGS.WEAK_TYPING:
+        return {}
     network, _, _, _ = read_onnx(onnx)
     layer_precision = []
     for idx in range(network.num_layers):
@@ -165,7 +169,7 @@ def hands23_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict[str, Any
 
     """
     # unnamed so Model.build does not consume strongly_typed before build_engine sees it
-    if kwargs.get("strongly_typed"):
+    if kwargs.get("strongly_typed") or not FLAGS.WEAK_TYPING:
         return {}
     network, _, _, _ = read_onnx(onnx)
     names = [network.get_layer(idx).name for idx in range(network.num_layers)]

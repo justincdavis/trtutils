@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.builder._dla import can_run_on_dla
 from trtutils.builder._onnx import read_onnx
@@ -96,7 +97,7 @@ def inspect_onnx_layers(  # noqa: C901
             index=idx,
             name=trt_layer.name,
             layer_type=layer_type,
-            precision=trt_layer.precision,
+            precision=trt_layer.precision if FLAGS.WEAK_TYPING else None,
             input_tensor_size=input_size,
             output_tensor_size=output_size,
             dla_compatible=idx in dla_layer_indices,

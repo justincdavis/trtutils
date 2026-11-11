@@ -12,6 +12,7 @@ import onnxruntime as ort
 import pytest
 
 from tests.conftest import DATA_DIR
+from trtutils._flags import FLAGS
 from trtutils.compat._libs import trt
 from trtutils.image import COCO91_TO_COCO80
 from trtutils.models import (
@@ -123,6 +124,7 @@ def test_detector_end2end(build_model_engine, images, model_cls, onnx_path, prep
         pytest.param(YOLOv13, DATA_DIR / "yolov13" / "yolov13n_640.onnx", 42, id="yolov13"),
     ],
 )
+@pytest.mark.skipif(not FLAGS.WEAK_TYPING, reason="per-layer precision was removed in TensorRT 11")
 def test_build_pins_depthwise_convs_fp32(model_cls, onnx_path, num_depthwise) -> None:
     """Builds force FP32 on every depthwise conv and make TensorRT obey it."""
     if not onnx_path.exists():
