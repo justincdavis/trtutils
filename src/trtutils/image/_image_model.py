@@ -297,7 +297,7 @@ class ImageModel:
             self._preprocessor_method: str = self._resolve_method(preprocessor)
             self._postprocessor: str = self._resolve_postprocessor(postprocessor)
             # each task calls its own postprocessor's signature, see postprocess()
-            self._cuda_post: Any = self._setup_cuda_post()
+            self._cuda_post: CUDAPostprocessor | None = self._setup_cuda_post()
             self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
             self._preproc_cuda: CUDAPreprocessor | None = None
             self._preproc_hybrid: HybridPreprocessor | None = None
@@ -416,6 +416,13 @@ class ImageModel:
             return None
         return self._CUDA_POSTPROCESSOR(self._engine.stream)
 
+    def _require_cuda_post(self: Self) -> CUDAPostprocessor:
+        """Return the CUDA postprocessor, for call sites that checked the outputs are on device."""
+        if self._cuda_post is None:
+            err_msg = f"{type(self).__name__} has no CUDA postprocessor"
+            raise RuntimeError(err_msg)
+        return self._cuda_post
+
     def _cuda_unsupported(self: Self) -> str | None:
         """Why the engine outputs do not fit the CUDA postprocessor, None when they do."""
         if any(dtype != np.float32 for dtype in self._engine.output_dtypes):
@@ -464,7 +471,7 @@ class ImageModel:
         """
         device_outputs = self._device_outputs(outputs)
         if device_outputs is not None:
-            return self._cuda_post(device_outputs, *args, **kwargs)
+            return self._require_cuda_post()(device_outputs, *args, **kwargs)
         return cpu_fn(self._host_outputs(outputs), *args, verbose=verbose, **kwargs)
 
     @property

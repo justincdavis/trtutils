@@ -388,7 +388,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
         device_outputs = self._device_outputs(outputs)
         bitmaps = wait = None
         if device_outputs is not None:
-            bitmaps, pred, wait = self._cuda_post(device_outputs, self._thresh)
+            bitmaps, pred, wait = self._require_cuda_post()(device_outputs, self._thresh)
             host_outputs = [pred]
         else:
             host_outputs = self._host_outputs(outputs)
@@ -679,7 +679,7 @@ class TextDetector(ImageModel, TextDetectorInterface):
             raise RuntimeError(err_msg)
         outputs, ratios, padding = self._infer_post([frame])
         probs = self._order_outputs(cast("list[Buffer]", outputs))[0]
-        bitmaps, pred = self._cuda_post.enqueue(probs, self._thresh, slot)
+        bitmaps, pred = cast("DBBinarize", self._cuda_post).enqueue(probs, self._thresh, slot)
         return bitmaps, pred, ratios or [], padding or []
 
     def _read_frame(self: Self, job: _FrameJob, conf_thres: float | None) -> list[TextBox]:

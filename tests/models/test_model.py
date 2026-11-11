@@ -268,3 +268,27 @@ def test_build_infers_imgsz_real_onnx(tmp_path, model_cls, rel, expected) -> Non
     shapes = _built_shapes(model_cls, path, tmp_path)
     image_name = next(n for n, kind in model_cls._input_tensors if kind == "image")
     assert shapes[image_name] == (1, 3, expected, expected)
+
+
+@pytest.mark.parametrize(
+    "simplify",
+    [
+        pytest.param(True, id="true"),
+        pytest.param(False, id="false"),
+        pytest.param(None, id="none"),
+        pytest.param(["onnxslim", "polygraphy"], id="tools"),
+    ],
+)
+def test_download_forwards_simplify(simplify, tmp_path) -> None:
+    """Model.download hands every accepted simplify value to the exporter unchanged."""
+    with patch("trtutils.models._utils._download") as mock_dl:
+        YOLOv8.download("yolov8n", tmp_path / "m.onnx", simplify=simplify)
+    mock_dl.assert_called_once()
+    assert mock_dl.call_args.kwargs["simplify"] == simplify
+
+
+def test_download_simplify_defaults_to_true(tmp_path) -> None:
+    """Model.download keeps simplifying by default."""
+    with patch("trtutils.models._utils._download") as mock_dl:
+        YOLOv8.download("yolov8n", tmp_path / "m.onnx")
+    assert mock_dl.call_args.kwargs["simplify"] is True

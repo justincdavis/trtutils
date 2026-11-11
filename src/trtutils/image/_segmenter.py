@@ -255,7 +255,7 @@ class Segmenter(ImageModel, SegmenterInterface):
         device_outputs = self._device_outputs(outputs)
         if device_outputs is not None:
             canvases = self._mask_canvases(batch, mapped=True)
-            data = self._cuda_post(
+            data = self._require_cuda_post()(
                 device_outputs,
                 ratios,
                 padding,

@@ -1215,8 +1215,9 @@ def _download(args: SimpleNamespace) -> None:
             Enable verbose output.
         - no_cache : bool
             Disable caching of downloaded weights, repos, and uv packages.
-        - simplify : bool
-            Simplify the ONNX model using onnxsim after exporting.
+        - simplify : list[str] | None
+            None skips simplification, an empty list runs the default tools
+            (polygraphy, onnxslim), otherwise the named tools run in order.
 
     """
     if args.list_models:

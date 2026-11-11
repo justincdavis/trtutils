@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -16,6 +16,8 @@ from trtutils.image._cuda import CUDAStage
 from ._common import original_size
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
@@ -67,6 +69,9 @@ class CUDAPostprocessor(CUDAStage):
     A task's CUDA postprocessor is called like its CPU postprocess function, with
     the engine outputs as device Buffers, and returns the same per-image host arrays.
     """
+
+    # each task defines its own arguments and result
+    __call__: Callable[..., Any]
 
     def __init__(self: Self, stream: cudart.cudaStream_t) -> None:
         super().__init__(stream)

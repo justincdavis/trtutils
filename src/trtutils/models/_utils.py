@@ -64,7 +64,9 @@ def download_model_internal(
     opset : int, optional
         ONNX opset to use during export.
     simplify : Sequence[str] or bool, optional
-        Whether to simplify the ONNX model after export.
+        Whether and how to simplify the ONNX model after export. True runs the default
+        tools (polygraphy, onnxslim), a sequence of tool names runs those in order,
+        False or None skips it.
     no_cache : bool, optional
         Disable caching of downloaded weights and repos.
     verbose : bool, optional
