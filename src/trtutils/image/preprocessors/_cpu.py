@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Callable, List, Tuple, overload
 import cv2
 import numpy as np
 import nvtx
-from cv2ext.image import letterbox, resize_linear
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
@@ -33,6 +32,40 @@ _COLOR_CHANNELS = 3
 
 # (images, *, verbose) -> (batch tensor, ratios, padding)
 PreprocessFn = Callable[..., Tuple[np.ndarray, List[Tuple[float, float]], List[Tuple[float, float]]]]
+
+
+def letterbox(
+    image: np.ndarray,
+    new_shape: tuple[int, int],
+) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
+    """Resize keeping aspect ratio and pad with gray, returns (image, ratios, padding)."""
+    h, w = image.shape[:2]
+    r = min(new_shape[1] / h, new_shape[0] / w)
+    new_unpad = (round(w * r), round(h * r))
+    dw = (new_shape[0] - new_unpad[0]) / 2
+    dh = (new_shape[1] - new_unpad[1]) / 2
+    if (w, h) != new_unpad:
+        image = cv2.resize(image, new_unpad, interpolation=cv2.INTER_LINEAR)
+    image = cv2.copyMakeBorder(
+        image,
+        round(dh - 0.1),
+        round(dh + 0.1),
+        round(dw - 0.1),
+        round(dw + 0.1),
+        cv2.BORDER_CONSTANT,
+        value=(114, 114, 114),
+    )
+    return image, (r, r), (dw, dh)
+
+
+def resize_linear(
+    image: np.ndarray,
+    new_shape: tuple[int, int],
+) -> tuple[np.ndarray, tuple[float, float]]:
+    """Resize to new_shape (width, height), returns (image, ratios)."""
+    h, w = image.shape[:2]
+    resized = cv2.resize(image, new_shape, interpolation=cv2.INTER_LINEAR)
+    return resized, (new_shape[1] / w, new_shape[0] / h)
 
 
 def resize_image(

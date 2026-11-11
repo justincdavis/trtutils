@@ -48,6 +48,13 @@ Classes
 :class:`ImageModel`
     Base class for models which process images.
 
+Functions
+---------
+:func:`draw_bboxes`
+    Draw bounding boxes (with optional score/class tags) on an image.
+:func:`draw_text`
+    Draw text on an image.
+
 Constants
 ---------
 :data:`COCO91_TO_COCO80`
@@ -69,6 +76,7 @@ from ._class_maps import COCO91_TO_COCO80
 from ._classifier import Classifier
 from ._depth_estimator import DepthEstimator
 from ._detector import Detector
+from ._draw import draw_bboxes, draw_text
 from ._hand_interaction import HandInteractionDetector
 from ._image_model import ImageModel
 from ._obb_detector import OBBDetector
@@ -91,6 +99,8 @@ __all__ = [
     "Segmenter",
     "TextDetector",
     "TextRecognizer",
+    "draw_bboxes",
+    "draw_text",
     "interfaces",
     "kernels",
     "onnx_models",

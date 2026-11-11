@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2024-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 from __future__ import annotations
@@ -8,10 +8,10 @@ import time
 from pathlib import Path
 
 import cv2
-import cv2ext
 from trtutils.impls.yolo import YOLO
 
 import trtutils
+from trtutils.image import draw_bboxes
 
 
 def main() -> None:
@@ -53,7 +53,7 @@ def main() -> None:
 
     bboxes = [bbox for (bbox, _, _) in detections]
 
-    canvas = cv2ext.bboxes.draw_bboxes(img, bboxes)
+    canvas = draw_bboxes(img, bboxes)
     canvas = cv2.resize(canvas, None, fx=3.0, fy=3.0)
 
     cv2.imshow("Detections", canvas)

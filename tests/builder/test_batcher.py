@@ -11,6 +11,7 @@ import threading
 import weakref
 from unittest.mock import patch
 
+import cv2
 import numpy as np
 import pytest
 
@@ -129,6 +130,34 @@ class TestImageBatcher:
                 dtype=np.float32,
                 resize_method="invalid",
             )
+
+    @pytest.mark.parametrize("scale", [(1.0, 1.0), (1.0, 0.0)], ids=["equal", "inverted"])
+    def test_init_invalid_input_scale(self, test_image_dir, scale) -> None:
+        """ValueError when the input_scale low value is not below the high value."""
+        with pytest.raises(ValueError, match="input_scale"):
+            ImageBatcher(test_image_dir, shape=(8, 8, 3), dtype=np.float32, input_scale=scale)
+
+    @pytest.mark.parametrize(
+        ("scale", "low", "high"),
+        [
+            pytest.param((0.0, 1.0), 0.0, 1.0, id="unit"),
+            pytest.param((-1.0, 1.0), -1.0, 1.0, id="signed"),
+            pytest.param((0.0, 255.0), 0.0, 255.0, id="identity"),
+        ],
+    )
+    def test_input_scale_values(self, tmp_path, close_batcher, scale, low, high) -> None:
+        """Pixels 0 and 255 map to the low and high values of input_scale."""
+        img = np.zeros((8, 8, 3), dtype=np.uint8)
+        img[:, 4:] = 255
+        cv2.imwrite(str(tmp_path / "0.png"), img)
+        batcher = ImageBatcher(
+            tmp_path, shape=(8, 8, 3), dtype=np.float32, batch_size=1, input_scale=scale
+        )
+        close_batcher.append(batcher)
+        batch = batcher.get_next_batch()
+        assert batch.shape == (1, 3, 8, 8)
+        assert batch[0, :, :, :4] == pytest.approx(low)
+        assert batch[0, :, :, 4:] == pytest.approx(high)
 
     def test_init_invalid_order(self, test_image_dir) -> None:
         """ValueError for invalid order."""

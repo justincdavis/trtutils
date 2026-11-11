@@ -16,9 +16,9 @@ from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
-from cv2ext.image import letterbox, rescale
 
 from trtutils._log import LOG
+from trtutils.image.preprocessors._cpu import letterbox
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -125,7 +125,8 @@ def _load_image(
         resized_img, _, _ = letterbox(img, (width, height))
     else:
         resized_img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LINEAR)
-    rescaled_img = rescale(resized_img, input_scale)
+    low, high = input_scale
+    rescaled_img = resized_img.astype(float) / 255.0 * (high - low) + low
 
     # run the transpose operations and make contiguous
     new_img: np.ndarray = rescaled_img[np.newaxis, :]
@@ -201,6 +202,9 @@ class ImageBatcher(AbstractBatcher):
         valid_resize_methods = ["letterbox", "linear"]
         if resize_method not in valid_resize_methods:
             err_msg = f"Invalid resize method found, options are: {valid_resize_methods}"
+            raise ValueError(err_msg)
+        if input_scale[0] >= input_scale[1]:
+            err_msg = "Low value of input_scale must be less than the high value."
             raise ValueError(err_msg)
         self._resize_method = resize_method
         self._input_scale = input_scale

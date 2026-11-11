@@ -10,6 +10,7 @@ import pytest
 
 from trtutils.image.postprocessors._common import (
     cxcywh_to_xyxy,
+    nms,
     nms_indices,
     unletterbox_boxes,
 )
@@ -66,3 +67,59 @@ def test_unletterbox_boxes_exact_and_clipped() -> None:
     boxes = np.array([[14.0, 24.0, 34.0, 44.0], [0.0, 0.0, 14.0, 24.0]], dtype=np.float32)
     out = unletterbox_boxes(boxes, (0.5, 0.25), (4.0, 4.0))
     np.testing.assert_allclose(out, [[20.0, 80.0, 60.0, 160.0], [0.0, 0.0, 20.0, 80.0]])
+
+
+def _reference_nms(dets, iou_threshold, agnostic):
+    """Greedy NMS over (bbox, score, class) in pure python, integer IoU as cv2ext computed it."""
+    dets = sorted(dets, key=lambda d: d[1], reverse=True)
+    keep = [True] * len(dets)
+    for i, (a, _, ca) in enumerate(dets):
+        if not keep[i]:
+            continue
+        for j in range(i + 1, len(dets)):
+            b, _, cb = dets[j]
+            if not keep[j] or (not agnostic and ca != cb):
+                continue
+            inter = max(0, min(a[2], b[2]) - max(a[0], b[0])) * max(
+                0, min(a[3], b[3]) - max(a[1], b[1])
+            )
+            union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+            if union and inter / union > iou_threshold:
+                keep[j] = False
+    return [d for d, k in zip(dets, keep) if k]
+
+
+_DETS = [
+    ((0, 0, 100, 100), 0.8, 0),
+    ((5, 5, 105, 105), 0.9, 0),
+    ((0, 0, 100, 100), 0.7, 1),
+    ((200, 200, 300, 300), 0.6, 0),
+]
+
+
+@pytest.mark.parametrize(
+    ("dets", "agnostic", "expected"),
+    [
+        pytest.param(_DETS, None, [_DETS[1], _DETS[2], _DETS[3]], id="class-aware"),
+        pytest.param(_DETS, True, [_DETS[1], _DETS[3]], id="agnostic"),
+        pytest.param([], None, [], id="empty"),
+    ],
+)
+def test_nms(dets, agnostic, expected) -> None:
+    """Nms keeps the highest scoring box per overlap group, sorted by score, same objects."""
+    assert nms(dets, 0.5, agnostic=agnostic) == expected
+
+
+def test_nms_matches_reference() -> None:
+    """Nms agrees with the pure python greedy reference on random detections."""
+    rng = np.random.default_rng(0)
+    for _ in range(50):
+        xy = rng.integers(0, 200, (30, 2))
+        wh = rng.integers(1, 100, (30, 2))
+        dets = [
+            ((int(x), int(y), int(x + w), int(y + h)), float(s), int(c))
+            for (x, y), (w, h), s, c in zip(xy, wh, rng.uniform(0.01, 1, 30), rng.integers(0, 3, 30))
+        ]
+        for agnostic in (None, True):
+            for thres in (0.3, 0.5, 0.7):
+                assert nms(dets, thres, agnostic=agnostic) == _reference_nms(dets, thres, agnostic)

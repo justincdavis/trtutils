@@ -43,7 +43,7 @@ pip install "trtutils[cu11]"
 On Jetson devices, TensorRT is provided by Jetpack, so use the matching `jp5`,
 `jp6`, or `jp7` extra instead, which installs `cuda-python` only.
 
-`opencv-python` and `cv2ext` are base dependencies, installed with every extra.
+`opencv-python` is a base dependency, installed with every extra.
 
 Supported versions:
 

@@ -161,6 +161,8 @@ Removed
   the ``trtutils.image`` models
 * ``trtutils yolo`` CLI subcommand. Use ``trtutils detect`` / ``trtutils classify``
 * ``TRTEngine.direct_exec``. ``execute`` reads device Buffers in place
+* ``cv2ext`` dependency. The few helpers trtutils used now live in ``trtutils.image``
+  (``draw_bboxes``, ``draw_text``) and the CPU preprocessing/postprocessing modules
 
 0.6.1 (2025-06-17)
 ------------------

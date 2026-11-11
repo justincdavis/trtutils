@@ -10,7 +10,6 @@ import math
 import cv2
 import numpy as np
 import pytest
-from cv2ext.image import letterbox, rescale, resize_linear
 
 from trtutils import Buffer, MemoryLocation
 from trtutils.image.preprocessors import (
@@ -20,7 +19,7 @@ from trtutils.image.preprocessors import (
     TRTPreprocessor,
 )
 from trtutils.image.preprocessors._base import crop_geometry
-from trtutils.image.preprocessors._cpu import preprocess
+from trtutils.image.preprocessors._cpu import letterbox, preprocess, resize_linear
 
 SIZE = (640, 640)
 RANGE = (0.0, 1.0)
@@ -327,7 +326,11 @@ def _reference_preprocess(images, input_shape, dtype, input_range, method, mean,
         else:
             tensor, _ = resize_linear(image, new_shape=input_shape)
         tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
-        tensor = (tensor / 255.0 - mean) / std if mean is not None else rescale(tensor, input_range)
+        tensor = (
+            (tensor / 255.0 - mean) / std
+            if mean is not None
+            else tensor / 255.0 * (input_range[1] - input_range[0]) + input_range[0]
+        )
         tensors.append(np.transpose(tensor[np.newaxis], (0, 3, 1, 2)).astype(dtype))
     return np.concatenate(tensors, axis=0)
 
@@ -504,3 +507,35 @@ def test_cpu_preprocess_fn_rejects_fixed_options(kwargs) -> None:
     cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=_half_size_fn)
     with pytest.raises(ValueError, match="not supported with a preprocessing function"):
         cpu.preprocess(np.zeros((64, 64, 3), np.uint8), **kwargs)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("image_hw", "new_shape", "ratio", "padding", "inner"),
+    [
+        pytest.param((100, 200), (640, 640), 3.2, (0.0, 160.0), (320, 640), id="wide-to-square"),
+        pytest.param((200, 100), (640, 640), 3.2, (160.0, 0.0), (640, 320), id="tall-to-square"),
+        pytest.param((50, 50), (100, 100), 2.0, (0.0, 0.0), (100, 100), id="exact-no-pad"),
+        pytest.param((101, 200), (200, 200), 1.0, (0.0, 49.5), (101, 200), id="odd-pad-split"),
+    ],
+)
+def test_letterbox(image_hw, new_shape, ratio, padding, inner) -> None:
+    """Letterbox keeps the aspect ratio, pads with 114 and reports ratio and padding."""
+    image = np.full((*image_hw, 3), 7, dtype=np.uint8)
+    out, ratios, pads = letterbox(image, new_shape)
+    assert out.shape == (new_shape[1], new_shape[0], 3)
+    assert ratios == (ratio, ratio)
+    assert pads == padding
+    top = round(padding[1] - 0.1)
+    left = round(padding[0] - 0.1)
+    assert np.all(out[top : top + inner[0], left : left + inner[1]] == 7)
+    assert (out == 114).sum() == out.size - inner[0] * inner[1] * 3
+
+
+@pytest.mark.cpu
+def test_resize_linear() -> None:
+    """resize_linear matches cv2.resize and returns (new_h / w, new_w / h), as cv2ext did."""
+    image = np.random.default_rng(0).integers(0, 255, (30, 60, 3), dtype=np.uint8)
+    out, ratios = resize_linear(image, (120, 90))
+    assert np.array_equal(out, cv2.resize(image, (120, 90), interpolation=cv2.INTER_LINEAR))
+    assert ratios == (1.5, 4.0)
