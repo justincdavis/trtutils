@@ -86,12 +86,16 @@ Each model receives its own batch, so the input is a list of batches:
             print(f"Class: {class_id}, Confidence: {confidence}")
             print(f"Bounding Box: {bbox}")
 
-    # submit and retrieve move raw outputs, not parsed detections
+    # submit/retrieve split end2end into two calls; retrieve returns the
+    # postprocessed tensors, which get_detections turns into detections
     yolo.submit(batches)
     outputs, ratios, paddings = yolo.retrieve()
+    results = yolo.get_detections(outputs)
 
+    # or drive a single model
     yolo.submit_model([cv2.imread("image0.jpg")], 0)
     output, ratios, padding = yolo.retrieve_model(0)
+    detections = yolo.get_detections_model(output, 0)
 
 Benchmarking
 ^^^^^^^^^^^^

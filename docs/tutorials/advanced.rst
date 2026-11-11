@@ -126,6 +126,7 @@ program. A short version:
         kernel_path = Path(f.name)
 
     kernel = Kernel(kernel_path, "scaleSwapTranspose")
+    kernel_path.unlink()
 
     height, width = 640, 640
     scale, offset = 1.0 / 255.0, 0.0
@@ -145,8 +146,10 @@ program. A short version:
 
     stream = create_stream()
     memcpy_host_to_device_async(input_binding.allocation, input_arr, stream)
-    # one thread per pixel per channel
-    kernel.call((height, width, 3), (1, 1, 1), stream, args)
+    # 16x16 threads per block, one block row per channel
+    threads = (16, 16, 1)
+    blocks = ((height + 15) // 16, (width + 15) // 16, 3)
+    kernel.call(blocks, threads, stream, args)
     memcpy_device_to_host_async(output_binding.host_allocation, output_binding.allocation, stream)
     stream_synchronize(stream)
     print(output_binding.host_allocation.shape)

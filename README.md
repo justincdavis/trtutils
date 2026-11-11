@@ -48,7 +48,7 @@ On Jetson devices, TensorRT is provided by Jetpack, so use the matching `jp5`,
 Supported versions:
 
 - Python 3.8 to 3.15. NVIDIA's `tensorrt` wheels cover Python 3.8 to 3.14, so on 3.15 install TensorRT another way
-- `cu11` installs TensorRT 8.x (`tensorrt_cu11`). `jp5` uses the TensorRT that JetPack 5 already provides
+- `cu11` installs TensorRT 10.x (`tensorrt_cu11`, whose last release is 10.13). `jp5` uses the TensorRT 8.x that JetPack 5 already provides
 - `cu12` installs TensorRT 10.x (`tensorrt_cu12`, below 11). `jp6` uses the TensorRT that JetPack 6 provides, 8.6 through 10.x
 - `cu13` installs TensorRT 10.13 through 10.x (`tensorrt_cu13`). `jp7` uses the TensorRT that JetPack 7 provides. TensorRT 11 is not supported yet
 
