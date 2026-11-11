@@ -40,8 +40,7 @@ Once you have the ONNX weights, you can build a TensorRT engine using trtutils:
         --onnx $ONNX_PATH \
         --output $OUTPUT_PATH \
         --fp16 \
-        --shape images:1,3,640,640 \
-        --shape orig_image_size:1,2
+        --shape input:1,3,384,384
 
 Alternatively, if you want to export the engine using the Python API:
 
@@ -54,7 +53,7 @@ Alternatively, if you want to export the engine using the Python API:
         onnx="rfdetr_n.onnx",
         output="rfdetr_n.engine",
         fp16=True,
-        shapes=[("images", (1, 3, 640, 640)), ("orig_image_size", (1, 2))],
+        shapes=[("input", (1, 3, 384, 384))],
     )
 
     # For Jetson devices with DLA support
@@ -64,7 +63,7 @@ Alternatively, if you want to export the engine using the Python API:
         int8=True,  # Orin series optimize for int8
         fp16=True,  # Can use fp16 on Xavier series
         dla_core=0,  # Use DLA core 0
-        shapes=[("images", (1, 3, 640, 640)), ("orig_image_size", (1, 2))],
+        shapes=[("input", (1, 3, 384, 384))],
     )
 
 Running Inference

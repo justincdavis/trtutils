@@ -20,7 +20,7 @@ DEIMv2 models can be automatically downloaded and converted to ONNX format using
 
     # Download and convert DEIMv2 models to ONNX
     # Available models: deimv2_atto, deimv2_femto, deimv2_pico, deimv2_n, deimv2_s, deimv2_m, deimv2_l, deimv2_x
-    $ python3 -m trtutils download --model deimv2_atto --output deimv2_atto.onnx --imgsz 640 --opset 17
+    $ python3 -m trtutils download --model deimv2_atto --output deimv2_atto.onnx --imgsz 320 --opset 17
 
     # For other DEIMv2 variants
     $ python3 -m trtutils download --model deimv2_n --output deimv2_n.onnx --imgsz 640 --opset 17
@@ -39,8 +39,8 @@ Once you have the ONNX weights, you can build a TensorRT engine using trtutils:
         --onnx $ONNX_PATH \
         --output $OUTPUT_PATH \
         --fp16 \
-        --shape images:1,3,640,640 \
-        --shape orig_image_size:1,2
+        --shape images:1,3,320,320 \
+        --shape orig_target_sizes:1,2
 
 Alternatively, if you want to export the engine using the Python API:
 
@@ -53,7 +53,7 @@ Alternatively, if you want to export the engine using the Python API:
         onnx="deimv2_atto.onnx",
         output="deimv2_atto.engine",
         fp16=True,
-        shapes=[("images", (1, 3, 640, 640)), ("orig_image_size", (1, 2))],
+        shapes=[("images", (1, 3, 320, 320)), ("orig_target_sizes", (1, 2))],
     )
 
     # For Jetson devices with DLA support
@@ -63,7 +63,7 @@ Alternatively, if you want to export the engine using the Python API:
         int8=True,  # Orin series optimize for int8
         fp16=True,  # Can use fp16 on Xavier series
         dla_core=0,  # Use DLA core 0
-        shapes=[("images", (1, 3, 640, 640)), ("orig_image_size", (1, 2))],
+        shapes=[("images", (1, 3, 320, 320)), ("orig_target_sizes", (1, 2))],
     )
 
 Running Inference
