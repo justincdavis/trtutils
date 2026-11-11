@@ -12,13 +12,15 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 
 ## Features
 
-- Simple, high-level interface for TensorRT inference
-- Automatic CUDA memory management, CUDA graphs, and pagelocked/unified memory
-- Support for arbitrary TensorRT engines, on CUDA 11, 12, and 13 with the corresponding TensorRT versions
-- Engine building from ONNX, including strongly typed, DLA, and quantized builds
-- Ready-to-use image models: detection, classification, depth estimation, hand-object interaction, and OCR
-- CPU, CUDA, and TensorRT preprocessing with built-in postprocessing
-- Model download and ONNX export for many popular architectures
+- `TRTEngine` runs any TensorRT engine, with async_v2 and async_v3 backends, CUDA graphs, and pagelocked or unified memory
+- `Buffer` inputs on the host or the device; `Buffer.wrap` views NumPy, CuPy, and PyTorch arrays without copying
+- Image models in `trtutils.image`: `Detector`, `Classifier`, `Segmenter`, `PoseEstimator`, `OBBDetector`, `DepthEstimator`, `HandInteractionDetector`, and `OCR` (text detection plus recognition)
+- SAHI (sliced inference) for any detector, with `SAHI`
+- Preprocessing on the CPU, CUDA, or TensorRT (`preprocessor="cpu" | "cuda" | "trt" | "hybrid"`), and CPU or CUDA postprocessing (`postprocessor="cpu" | "cuda"`)
+- Pre-configured `trtutils.models` wrappers with `download()` and `build()`
+- `Model.build` reads the image size from the ONNX; `embed_sst=True` moves BGR-to-RGB, normalization, and layout into the engine, which then takes uint8 images
+- Model download and ONNX export with `trtutils download` or `Model.download()`
+- Engine building from ONNX, including FP16, FP8, INT8, strongly typed, DLA, and dynamic-shape builds
 - Benchmarking, profiling, and NVTX instrumentation (with Jetson energy/power metrics)
 - Comprehensive type hints and documentation
 
@@ -41,20 +43,32 @@ pip install "trtutils[cu11]"
 On Jetson devices, TensorRT is provided by Jetpack, so use the matching `jp5`,
 `jp6`, or `jp7` extra instead, which installs `cuda-python` only.
 
+`opencv-python` and `cv2ext` are base dependencies, installed with every extra.
+
+Supported versions:
+
+- Python 3.8 to 3.15. NVIDIA's `tensorrt` wheels cover Python 3.8 to 3.14, so on 3.15 install TensorRT another way
+- CUDA 11 (`cu11`, `jp5`): TensorRT 8.x
+- CUDA 12 (`cu12`, `jp6`): TensorRT 8.6 on JetPack 6 through 10.x
+- CUDA 13 (`cu13`, `jp7`): TensorRT 10.13 and newer
+
 Additional extras:
 
 ```bash
 # ONNX graph utilities used by the builder
 pip install "trtutils[onnx]"
 
-# Quantization CLI/API tools
-pip install "trtutils[quantize]"
-
-# SAHI (sliced inference) integration
-pip install "trtutils[sahi]"
-
 # Numba JIT acceleration for CPU operations
 pip install "trtutils[jit]"
+
+# Quantization CLI/API tools (NVIDIA ModelOpt)
+pip install "trtutils[quantize]"
+
+# PyTorch and torchvision, for trtutils.compat
+pip install "trtutils[torch]"
+
+# SAHI library and Ultralytics, for trtutils.compat.sahi
+pip install "trtutils[sahi]"
 
 # Development
 pip install "trtutils[dev]"
@@ -67,18 +81,20 @@ pip install "trtutils[dev]"
 The `TRTEngine` class provides a simple interface for running any TensorRT engine:
 
 ```python
+import numpy as np
+
 from trtutils import Buffer, TRTEngine
 
 # Load your TensorRT engine
-engine = TRTEngine("path_to_engine")
+engine = TRTEngine("yolov10n_640.engine")
 
 # Get input specifications
 print(engine.input_shapes)  # Expected input shapes
 print(engine.input_dtypes)  # Expected input data types
 
 # Run inference: every input is a Buffer, on the host or the device
-inputs = [Buffer.wrap(array) for array in read_your_data()]  # zero-copy numpy views
-outputs = engine.execute(inputs)
+image = np.zeros(engine.input_shapes[0], dtype=engine.input_dtypes[0])
+outputs = engine.execute([Buffer.wrap(image)])  # NumPy arrays are wrapped without a copy
 
 # GPU-resident data (CuPy, PyTorch, ...) is read in place, with no host round trip
 outputs = engine.execute([Buffer.wrap(cupy_array)])
@@ -90,8 +106,9 @@ shape of the Buffers it is given and returns outputs of the matching shape.
 
 ### End-to-End Image Models
 
-`Detector`, `Classifier`, `DepthEstimator`, and `HandInteractionDetector` bundle
-preprocessing and postprocessing around an engine:
+The task models in `trtutils.image` (`Detector`, `Classifier`, `Segmenter`,
+`PoseEstimator`, `OBBDetector`, `DepthEstimator`, `HandInteractionDetector`, and
+`OCR`) bundle preprocessing and postprocessing around an engine:
 
 ```python
 import cv2
@@ -103,6 +120,20 @@ detector = Detector("yolov8n.engine", warmup=True, preprocessor="cuda")
 image = cv2.imread("image.jpg")
 bboxes = detector.end2end([image])[0]
 ```
+
+### Building and Downloading Models
+
+The wrappers in `trtutils.models` download an upstream model, export it to ONNX,
+and build an engine. `build()` reads the image size from the ONNX file.
+
+```python
+from trtutils.models import YOLOv8
+
+YOLOv8.download("yolov8n", "yolov8n.onnx")
+YOLOv8.build("yolov8n.onnx", "yolov8n.engine")
+```
+
+Downloaded models may have license restrictions, which you are responsible for following.
 
 ### Command Line
 
@@ -119,11 +150,23 @@ python3 -m trtutils benchmark --engine yolov8n.engine --iterations 1000
 
 See the [CLI reference](https://justincdavis.github.io/trtutils/cli.html) for
 all commands (`benchmark`, `build`, `build_yolo`, `build_dla`, `quantize`,
-`detect`, `classify`, `inspect`, `profile`, `download`, `trtexec`, and more).
+`generate_calibration`, `detect`, `classify`, `inspect`, `profile`, `download`,
+`trtexec`, `clear_cache`, and more).
 
 ## Supported Models
 
-The models listed in the [documentation](https://justincdavis.github.io/trtutils/models.html) are officially supported for inference, including the YOLO family (v3, v5, v7 through v13, v26, YOLOX), DETR-based detectors (RT-DETR v1/v2/v3, D-FINE, DEIM, DEIMv2, RF-DETR), torchvision classifiers, DeiT/DeiT III, DepthAnything V1/V2/V3, and HOI-DETR/Hands23.
+Every family below has a download config. `python3 -m trtutils download --list_models` prints
+the exact names accepted by `--model`, and the [documentation](https://justincdavis.github.io/trtutils/models.html)
+describes each family.
+
+- **Detection**: YOLOX; YOLOv3, v5, v7, v8, v9, v10, v11, v12, v13, and v26; RT-DETR v1, v2, and v3; D-FINE; DEIM; DEIMv2; RF-DETR
+- **Classification**: torchvision classifiers (AlexNet, ConvNeXt, DenseNet, EfficientNet and EfficientNetV2, GoogLeNet, Inception v3, MaxViT, MNASNet, MobileNet, RegNet, ResNet and ResNeXt, ShuffleNet, SqueezeNet, Swin and Swin V2, VGG, ViT, Wide ResNet); DeiT and DeiT III; YOLOv8, v11, and v26 classifiers
+- **Segmentation**: YOLOv8, v11, and v26 (`-seg`)
+- **Pose estimation**: YOLOv8, v11, and v26 (`-pose`)
+- **Oriented bounding boxes**: YOLOv8, v11, and v26 (`-obb`)
+- **Depth estimation**: Depth-Anything V1, V2, and V3
+- **Hand-object interaction**: HOI-DETR and Hands23
+- **OCR**: PP-OCR text detection and recognition
 
 ## Documentation
 
@@ -132,11 +175,12 @@ For detailed documentation, including advanced usage, examples, and API referenc
 ## Examples
 
 Check out our [examples directory](examples/) for more detailed usage examples, including:
-- Basic engine usage
-- End-to-end image models (detection, classification, depth estimation, hand-object interaction)
-- Engine building and quantization
-- Benchmarking and profiling utilities
+- Basic engine usage (`engine.py`) and the Jetson helpers (`jetson.py`)
+- End-to-end image models (`image/`: detection, classification, segmentation, pose, OBB, depth, OCR, hand-object interaction, SAHI)
+- Engine building (`build.py`, `builder/dla.py`)
+- Benchmarking and profiling utilities (`benchmark.py`, `profile_engine.py`)
 
+<!-- BENCHMARK_RESULTS:BEGIN (replaced by the benchmark-results PR) -->
 ## Performance
 
 | Device            | YOLOv8m                                                                 | YOLOv8n                                                                 |
@@ -149,6 +193,7 @@ Check out our [examples directory](examples/) for more detailed usage examples, 
 | 3090              | ![3090 YOLOv8m](benchmark/plots/3090/yolov8m.png)                       | ![3090 YOLOv8n](benchmark/plots/3090/yolov8n.png)                       |
 | 3080Ti            | ![3080Ti YOLOv8m](benchmark/plots/3080Ti/yolov8m.png)                   | ![3080Ti YOLOv8n](benchmark/plots/3080Ti/yolov8n.png)                   |
 | TitanRTX          | ![TitanRTX YOLOv8m](benchmark/plots/TitanRTX/yolov8m.png)               | ![TitanRTX YOLOv8n](benchmark/plots/TitanRTX/yolov8n.png)               |
+<!-- BENCHMARK_RESULTS:END -->
 
 ## License
 
