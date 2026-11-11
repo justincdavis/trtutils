@@ -121,7 +121,7 @@ from ._log import LOG, set_log_level
 from ._nvtx import NVTX, disable_nvtx, enable_nvtx
 
 __author__ = "Justin Davis"
-__version__ = "0.7.0"
+__version__ = "1.0.0"
 
 import contextlib
 

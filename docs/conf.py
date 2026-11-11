@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
 project = "trtutils"
 copyright = "2024, Justin Davis"
 author = "Justin Davis"
-version = "0.7.0"
+version = "1.0.0"
 
 # make sure version is consistent, read as text since importing trtutils needs CUDA
 _init = os.path.join(os.path.dirname(__file__), "..", "src", "trtutils", "__init__.py")
