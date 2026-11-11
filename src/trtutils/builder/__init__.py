@@ -18,7 +18,7 @@ Classes
 :class:`AbstractBatcher`
     Abstract base class for data batching classes.
 :class:`EngineCalibrator`
-    Calibrates an engine during quantization.
+    Calibrates an engine during quantization. Not available on TensorRT 11+.
 :class:`ImageBatcher`
     Batches images for calibration during engine building.
 :class:`SyntheticBatcher`
@@ -45,10 +45,11 @@ import contextlib
 import importlib
 from typing import TYPE_CHECKING
 
+from trtutils._flags import FLAGS
+
 from . import hooks
 from ._batcher import AbstractBatcher, ImageBatcher, SyntheticBatcher
 from ._build import build_engine
-from ._calibrator import EngineCalibrator
 from ._dla import build_dla_engine, can_run_on_dla
 from ._onnx import read_onnx
 
@@ -57,7 +58,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AbstractBatcher",
-    "EngineCalibrator",
     "ImageBatcher",
     "SyntheticBatcher",
     "build_dla_engine",
@@ -68,6 +68,12 @@ __all__ = [
     "quantize",
     "read_onnx",
 ]
+
+# trt 11 removed the implicit calibrators
+if FLAGS.INT8_CALIBRATION:
+    from ._calibrator import EngineCalibrator
+
+    __all__ += ["EngineCalibrator"]
 
 with contextlib.suppress(AttributeError):
     from ._progress import ProgressBar

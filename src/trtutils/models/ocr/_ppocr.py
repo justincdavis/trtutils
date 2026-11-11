@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from trtutils._flags import FLAGS
 from trtutils.builder._build import build_engine
 from trtutils.image._ocr import OCR, TextDetector, TextRecognizer
 from trtutils.models._model import Model
@@ -162,7 +163,8 @@ class PPOCRDetector(TextDetector, Model):
                     ),
                 ),
             ],
-            fp16=fp16,
+            # trt 11 has no fp16 flag, precision comes from the onnx
+            fp16=fp16 and FLAGS.WEAK_TYPING,
             dla_core=dla_core,
             optimization_level=opt_level,
             verbose=verbose,
@@ -302,7 +304,8 @@ class PPOCRRecognizer(TextRecognizer, Model):
                     ),
                 ),
             ],
-            fp16=fp16,
+            # trt 11 has no fp16 flag, precision comes from the onnx
+            fp16=fp16 and FLAGS.WEAK_TYPING,
             dla_core=dla_core,
             optimization_level=opt_level,
             verbose=verbose,

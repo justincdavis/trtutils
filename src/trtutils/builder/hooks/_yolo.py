@@ -188,7 +188,10 @@ def yolo_efficient_nms_hook(
 
         # create the efficient nms plugin instance
         registry = trt.get_plugin_registry()
-        eff_creator = registry.get_plugin_creator("EfficientNMS_TRT", "1", "")
+        if FLAGS.PLUGIN_CREATOR_LOOKUP:
+            eff_creator = registry.get_plugin_creator("EfficientNMS_TRT", "1", "")
+        else:
+            eff_creator = registry.get_creator("EfficientNMS_TRT", "1", "")
         if eff_creator is None:
             err_msg = "EfficientNMS_TRT plugin not found."
             raise RuntimeError(err_msg)

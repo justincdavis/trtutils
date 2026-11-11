@@ -72,6 +72,7 @@ def _patch_trt_for_hook():
 
     mock_registry = MagicMock()
     mock_registry.get_plugin_creator.return_value = mock_creator
+    mock_registry.get_creator.return_value = mock_creator
 
     return mock_shape_layer, mock_registry
 
@@ -136,6 +137,25 @@ class TestYOLOEfficientNMS:
         assert mock_network.mark_output.call_count == 4
         consts = mock_network.add_constant.call_args_list
         assert [c.args[1].item() for c in consts if c.args[0] == (1, 1, 1)] == scales
+
+    def test_creator_lookup_without_get_plugin_creator(self) -> None:
+        """Trt 11 removed get_plugin_creator, the hook falls back to get_creator."""
+        hook = yolo_efficient_nms_hook(num_classes=80)
+        mock_network = _setup_yolo_network(output_shape=(1, 84, 8400))
+        mock_shape_layer, mock_registry = _patch_trt_for_hook()
+        mock_registry.get_plugin_creator.side_effect = AttributeError
+
+        with patch("trtutils.builder.hooks._yolo.trt") as mock_trt, patch(
+            "trtutils.builder.hooks._yolo.FLAGS"
+        ) as mock_flags:
+            mock_flags.TRT_HAS_INT64 = False
+            mock_flags.PLUGIN_CREATOR_LOOKUP = False
+            mock_network.add_shape.return_value = mock_shape_layer
+            mock_trt.get_plugin_registry.return_value = mock_registry
+            result = hook(mock_network)
+
+        assert result is mock_network
+        mock_registry.get_creator.assert_called_once_with("EfficientNMS_TRT", "1", "")
 
     def test_yolox_modification(self) -> None:
         """YOLOX-style (N, boxes, classes+5) uses objectness multiply, marks 4 outputs."""

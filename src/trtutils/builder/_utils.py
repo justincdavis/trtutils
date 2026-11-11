@@ -33,3 +33,27 @@ def get_check_dla(config: trt.IBuilderConfig) -> Callable[[trt.ILayer], bool]:
         config.can_run_on_DLA if FLAGS.NEW_CAN_RUN_ON_DLA else config.canRunOnDLA
     )
     return check_dla
+
+
+def check_implicit_calibration(*, requested: bool) -> None:
+    """
+    Raise if implicit INT8 calibration is requested but TensorRT removed it.
+
+    Parameters
+    ----------
+    requested : bool
+        Whether the caller asked for a calibrator, cache, batcher or weakly-typed INT8.
+
+    Raises
+    ------
+    RuntimeError
+        If requested and the installed TensorRT has no implicit calibrators.
+
+    """
+    if requested and not FLAGS.INT8_CALIBRATION:
+        err_msg = (
+            "Implicit INT8 calibration was removed in TensorRT 11. Use explicit "
+            "quantization instead: quantize the ONNX with trtutils.builder.quantize "
+            "(modelopt) and build with strongly_typed=True."
+        )
+        raise RuntimeError(err_msg)

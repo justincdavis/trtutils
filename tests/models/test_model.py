@@ -12,6 +12,7 @@ import pytest
 
 import trtutils.models as models
 from tests.conftest import DATA_DIR
+from trtutils._flags import FLAGS
 from trtutils.models import (
     RFDETR,
     DEIMv2,
@@ -148,7 +149,7 @@ def test_build_unknown_kwargs_raises(tmp_path) -> None:
 @pytest.mark.parametrize(
     ("kwargs", "fp16"),
     [
-        pytest.param({}, True, id="default"),
+        pytest.param({}, FLAGS.WEAK_TYPING, id="default"),
         pytest.param({"fp16": False}, False, id="fp16-off"),
         pytest.param({"fp16": True, "fp8": True}, True, id="fp16-with-fp8"),
         pytest.param({"strongly_typed": True}, False, id="strongly-typed"),
@@ -169,7 +170,7 @@ def test_build_fp16(tmp_path, kwargs, fp16) -> None:
 @pytest.mark.parametrize(
     ("kwargs", "fp16"),
     [
-        pytest.param({}, True, id="default"),
+        pytest.param({}, FLAGS.WEAK_TYPING, id="default"),
         pytest.param({"fp16": False}, False, id="fp16-off"),
     ],
 )

@@ -6,12 +6,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
 
 from ._build import build_engine
 from ._onnx import read_onnx
-from ._utils import get_check_dla
+from ._utils import check_implicit_calibration, get_check_dla
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -93,8 +94,9 @@ def can_run_on_dla(
         last_layer_dla = dla_valid
 
         if verbose_layers:
+            precision = layer.precision if FLAGS.WEAK_TYPING else None
             LOG.info(
-                f"Layer {idx}: {layer.name}, {layer.type}, {layer.precision}, {layer.metadata}",
+                f"Layer {idx}: {layer.name}, {layer.type}, {precision}, {layer.metadata}",
             )
             LOG.info(f"\tDLA: {dla_valid}")
 
@@ -233,6 +235,8 @@ def build_dla_engine(  # noqa: C901, PLR0912, PLR0915
         or if strongly_typed is not set and no data_batcher is provided.
 
     """
+    check_implicit_calibration(requested=not strongly_typed)
+
     # validate strongly_typed vs. incompatible args
     if strongly_typed:
         if data_batcher is not None:

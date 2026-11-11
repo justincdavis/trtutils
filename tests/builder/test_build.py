@@ -24,6 +24,9 @@ _BLACKWELL_WEAK_FAIL_REASON = (
 _needs_trt10_int8 = pytest.mark.skipif(
     REAL_FLAGS.TRT_VERSION < (10, 0), reason="int8 without calibration scales needs TensorRT 10"
 )
+_needs_weak_typing = pytest.mark.skipif(
+    not REAL_FLAGS.WEAK_TYPING, reason="weakly-typed networks were removed in TensorRT 11"
+)
 _needs_trt10_fp8 = pytest.mark.skipif(
     REAL_FLAGS.TRT_VERSION < (10, 0), reason="weakly-typed fp8 needs TensorRT 10"
 )
@@ -78,6 +81,7 @@ _needs_trt10_fp8 = pytest.mark.skipif(
         ),
     ],
 )
+@_needs_weak_typing
 def test_build_precision(
     onnx_path,
     output_engine_path,
@@ -113,6 +117,7 @@ def test_build_precision(
         pytest.param("fp8", "cache", id="fp8-cache", marks=_needs_trt10_fp8),
     ],
 )
+@_needs_weak_typing
 def test_build_precision_calibration(
     onnx_path,
     output_engine_path,
@@ -378,6 +383,7 @@ def test_output_tensor_format(onnx_path, output_engine_path, valid: bool) -> Non
         pytest.param(None, [(0, None)], {}, id="device-none-skip"),
     ],
 )
+@_needs_weak_typing
 def test_layer_settings(
     onnx_path, output_engine_path, layer_precision, layer_device, extra_kwargs
 ) -> None:
@@ -484,6 +490,7 @@ def test_build_strongly_typed_rejects_calibration_args(
     not REAL_FLAGS.IS_BLACKWELL,
     reason="Blackwell-only helpful-error check",
 )
+@_needs_weak_typing
 def test_build_blackwell_int8_fp8_rejects_weakly_typed(onnx_path, output_engine_path) -> None:
     """On Blackwell, int8+fp8 without strongly_typed=True raises with a docs pointer."""
     with pytest.raises(ValueError, match=r"strongly_typed=True.*strongly_typed\.rst"):

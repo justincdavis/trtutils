@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
+from trtutils._flags import FLAGS
 from trtutils.builder._build import build_engine
 from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
@@ -87,7 +88,7 @@ def build_image_preproc(
                 # any batch up to batch_size runs at its own size
                 ("input", ((1, *full[1:]), full, full)),
             ],
-            fp16=True,
+            fp16=FLAGS.WEAK_TYPING,
             cache=True,
         )
 
@@ -158,7 +159,7 @@ def build_image_preproc_imagenet(
                 ("mean", (1, 3, 1, 1)),
                 ("std", (1, 3, 1, 1)),
             ],
-            fp16=True,
+            fp16=FLAGS.WEAK_TYPING,
             cache=True,
         )
 

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils import builder
+from trtutils._flags import FLAGS
 from trtutils.builder._build import build_engine
 from trtutils.download._download import load_model_configs
 
@@ -311,9 +312,13 @@ class Model:
 
             # Forward unconsumed kwargs to build_engine for validation
             remaining_kwargs = {k: v for k, v in kwargs.items() if k not in consumed_keys}
-            # an explicit fp16 wins; a strongly typed network takes its precision from the onnx
+            # an explicit fp16 wins; a strongly typed network (always, on trt 11) takes
+            # its precision from the onnx
             fp16 = remaining_kwargs.pop(
-                "fp16", cls._fp16 and not remaining_kwargs.get("strongly_typed", False)
+                "fp16",
+                cls._fp16
+                and FLAGS.WEAK_TYPING
+                and not remaining_kwargs.get("strongly_typed", False),
             )
 
             build_engine(
