@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 from unittest.mock import patch
 
 import pytest
 
 from tests.download.conftest import ROUTING_CASES
-from trtutils.download import download, download_model
+from trtutils.download import download, download_model, load_model_configs
+from trtutils.download._models import export_deimv2, export_yolox
 from trtutils.download._simplify import simplify
 from trtutils.download._tools import check_uv_available, handle_imgsz
 from trtutils.models._utils import get_valid_models
@@ -156,3 +158,34 @@ def test_get_valid_models_invalid_family_raises() -> None:
     """get_valid_models raises KeyError for an unknown family."""
     with pytest.raises(KeyError):
         get_valid_models("nonexistent_family")
+
+
+def _exported_cmd(export_func, module, config, tmp_path, model) -> list[str]:
+    """Run an exporter with everything but the export command mocked, return that command."""
+    with ExitStack() as stack:
+        for name in ("git_clone", "run_patch", "run_uv_pip_install", "run_download", "shutil.move"):
+            stack.enter_context(patch(f"trtutils.download._models.{module}.{name}"))
+        run_cmd = stack.enter_context(patch(f"trtutils.download._models.{module}.run_cmd"))
+        export_func(tmp_path, config, tmp_path / "py", tmp_path / "bin", model, 17)
+    return [str(part) for part in run_cmd.call_args.args[0]]
+
+
+@pytest.mark.parametrize(
+    ("model", "exp_name"),
+    [
+        pytest.param("yoloxs", "yolox_s", id="yolox_s"),
+        pytest.param("yolox_darknet", "yolov3", id="darknet-uses-yolov3-exp"),
+    ],
+)
+def test_export_yolox_exp_file(tmp_path, model, exp_name) -> None:
+    """The YOLOX exporter picks the upstream exp file, darknet's is yolov3.py."""
+    config = load_model_configs()["yolox"][model]
+    cmd = _exported_cmd(export_yolox, "_yolox", config, tmp_path, model)
+    assert cmd[cmd.index("-f") + 1].endswith(f"exps/default/{exp_name}.py")
+
+
+def test_export_deimv2_skips_onnxsim(tmp_path) -> None:
+    """DEIMv2's own --simplify (onnxsim) crashes on the L/X rope backbone, trtutils simplifies after."""
+    config = load_model_configs()["deimv2"]["deimv2_l"]
+    cmd = _exported_cmd(export_deimv2, "_deim", config, tmp_path, "deimv2_l")
+    assert "--simplify" not in cmd

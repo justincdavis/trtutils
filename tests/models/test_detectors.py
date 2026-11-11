@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
+import onnx
 import onnxruntime as ort
 import pytest
 
@@ -33,7 +34,7 @@ from trtutils.models import (
     YOLOv13,
     YOLOv26,
 )
-from trtutils.models._hooks import depthwise_fp32_build_hook, nms_build_hook
+from trtutils.models._hooks import depthwise_fp32_build_hook, nms_build_hook, rtdetr_build_hook
 
 DETECTORS = [
     pytest.param(YOLOv3, DATA_DIR / "yolov3" / "yolov3t_640.onnx", id="yolov3"),
@@ -193,3 +194,29 @@ def test_deim_boxes_non_square_match_onnxruntime(build_model_engine, model_cls, 
     detections = model.end2end(image)
     assert detections
     assert max(_iou(bbox, reference[0]) for bbox, _score, _cls in detections) > 0.85
+
+
+def _write_head_onnx(path, output_name):
+    graph = onnx.helper.make_graph(
+        [onnx.helper.make_node("Identity", ["images"], [output_name])],
+        "head",
+        [onnx.helper.make_tensor_value_info("images", onnx.TensorProto.FLOAT, [1, 300, 84])],
+        [onnx.helper.make_tensor_value_info(output_name, onnx.TensorProto.FLOAT, [1, 300, 84])],
+    )
+    onnx.save(onnx.helper.make_model(graph), path)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("output_name", "adds_nms"),
+    [
+        pytest.param("output0", True, id="ultralytics-single-head"),
+        pytest.param("labels", False, id="original-decoded"),
+    ],
+)
+def test_rtdetr_hook_only_for_ultralytics_exports(tmp_path, output_name, adds_nms) -> None:
+    """Only the single-head Ultralytics rtdetr-l/x exports get EfficientNMS added."""
+    assert rtdetr_build_hook in RTDETRv1._build_hooks
+    path = tmp_path / "head.onnx"
+    _write_head_onnx(path, output_name)
+    assert bool(rtdetr_build_hook(onnx=path, imgsz=640)) is adds_nms

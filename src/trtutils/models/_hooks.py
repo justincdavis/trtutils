@@ -56,6 +56,57 @@ def nms_build_hook(
     }
 
 
+def rtdetr_build_hook(
+    *,
+    onnx: Path | str,
+    imgsz: int,
+    conf_threshold: float = 0.25,
+    iou_threshold: float = 0.5,
+    top_k: int = 100,
+    **_: Any,  # noqa: ANN401
+) -> dict[str, Any]:
+    """
+    Build hook that adds EfficientNMS to an Ultralytics RT-DETR export.
+
+    The Ultralytics exports (rtdetr-l, rtdetr-x) have a single ``output0`` head of normalized
+    (cx, cy, w, h) boxes plus class scores. The boxes are scaled to pixels and passed through
+    EfficientNMS. Exports from the original RT-DETR repository already decode their
+    boxes, so they get no overrides.
+
+    Parameters
+    ----------
+    onnx : Path | str
+        Path to the ONNX model.
+    imgsz : int
+        Input image size, the factor that turns normalized boxes into pixels.
+    conf_threshold : float
+        Confidence threshold for EfficientNMS.
+    iou_threshold : float
+        IoU threshold for EfficientNMS.
+    top_k : int
+        Maximum number of detections to keep.
+
+    Returns
+    -------
+    dict[str, Any]
+        Build engine overrides containing hooks list, or an empty dict.
+
+    """
+    network, _, _, _ = read_onnx(onnx)
+    if network.get_output(0).name != "output0":
+        return {}
+    return {
+        "hooks": [
+            yolo_efficient_nms_hook(
+                conf_threshold=conf_threshold,
+                iou_threshold=iou_threshold,
+                top_k=top_k,
+                box_scale=imgsz,
+            ),
+        ],
+    }
+
+
 def depthwise_fp32_build_hook(*, onnx: Path | str, **_: Any) -> dict[str, Any]:  # noqa: ANN401
     """
     Build hook that forces FP32 for the depthwise convolutions.

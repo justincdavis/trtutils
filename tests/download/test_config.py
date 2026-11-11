@@ -164,3 +164,16 @@ def test_timm_configs(model_configs, family) -> None:
         assert config["name"].split(".")[0].endswith(f"_{trained}")
         assert config["patch"] == ("14" if "huge" in model else "16")
         assert ("in22k" in config["name"]) == ("_in22k" in model)
+
+
+def test_dfine_obj2coco_configs_in_objects365_dir(model_configs) -> None:
+    """Upstream keeps the obj2coco yml files in configs/dfine/objects365/, the coco ones at top."""
+    for config in model_configs["dfine"].values():
+        in_dir = config["config"].startswith("objects365/")
+        assert in_dir == ("obj2coco" in config["config"]), config["config"]
+
+
+def test_dfine_weight_names_match_urls(model_configs) -> None:
+    """The exporter loads <name>.pth, which run_download saves under the URL's filename."""
+    for config in model_configs["dfine"].values():
+        assert config["url"].rsplit("/", 1)[1] == config["name"] + ".pth"
