@@ -50,7 +50,7 @@ Supported versions:
 - Python 3.8 to 3.15. NVIDIA's `tensorrt` wheels cover Python 3.8 to 3.14, so on 3.15 install TensorRT another way
 - CUDA 11 (`cu11`, `jp5`): TensorRT 8.x
 - CUDA 12 (`cu12`, `jp6`): TensorRT 8.6 on JetPack 6 through 10.x
-- CUDA 13 (`cu13`, `jp7`): TensorRT 10.13 and newer
+- CUDA 13 (`cu13`, `jp7`): TensorRT 10.13 through 10.x (TensorRT 11 is not supported yet)
 
 Additional extras:
 
