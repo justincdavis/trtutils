@@ -3,24 +3,67 @@
 # MIT License
 from __future__ import annotations
 
+import math
 import os
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from typing import TYPE_CHECKING
 
+import cv2
 import numpy as np
 import nvtx
-from cv2ext.bboxes import nms
-from cv2ext.image import patch as patch_image
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.image.postprocessors._common import nms
 
 if TYPE_CHECKING:
     from typing_extensions import Self
 
     from trtutils.image.interfaces import DetectorInterface
     from trtutils.image.types import Detection
+
+
+def patch_image(
+    image: np.ndarray,
+    patch_size: tuple[int, int],
+    overlap: tuple[float, float],
+) -> tuple[list[np.ndarray], list[tuple[int, int]], tuple[int, int]]:
+    """
+    Split an image into overlapping patches.
+
+    The image is resized so the patches tile it exactly. patch_size is (width, height) and
+    overlap is the (x, y) fraction of a patch shared with its neighbor. Returns the patches,
+    their (x, y) offsets and the (width, height) of the resized image the offsets refer to.
+    """
+    patch_w, patch_h = patch_size
+    pad_x = int(overlap[0] * patch_w)
+    pad_y = int(overlap[1] * patch_h)
+    if pad_x >= patch_w or pad_y >= patch_h:
+        err_msg = f"Overlap {overlap} leaves no stride for patch size {patch_size}"
+        raise ValueError(err_msg)
+
+    def tiling(patch_dim: int, image_dim: int, pad: int) -> tuple[int, int]:
+        if image_dim < patch_dim:
+            return patch_dim, 1
+        stride = patch_dim - pad
+        count = math.ceil((image_dim - patch_dim) / stride) + 1
+        return stride * (count - 1) + patch_dim, count
+
+    height, width = image.shape[:2]
+    new_w, num_w = tiling(patch_w, width, pad_x)
+    new_h, num_h = tiling(patch_h, height, pad_y)
+    resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+
+    patches: list[np.ndarray] = []
+    offsets: list[tuple[int, int]] = []
+    for i in range(num_h):
+        for j in range(num_w):
+            x = j * (patch_w - pad_x)
+            y = i * (patch_h - pad_y)
+            patches.append(resized[y : y + patch_h, x : x + patch_w])
+            offsets.append((x, y))
+    return patches, offsets, (new_w, new_h)
 
 
 class SAHI:

@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 """Demo showcasing YOLO inference on a webcam."""
@@ -10,9 +10,10 @@ import time
 from pathlib import Path
 from statistics import mean
 
-import cv2ext
+import cv2
 
 from trtutils import build_engine
+from trtutils.image import draw_bboxes, draw_text
 from trtutils.models import YOLO
 
 _ONNX = Path(__file__).parent / "data" / "yolov10n.onnx"
@@ -37,10 +38,13 @@ def _main(source: str) -> None:
         resize_method="letterbox",
     )
 
-    display = cv2ext.Display("YOLO Demo")
-    for fid, frame in cv2ext.IterableVideo(source, buffersize=3, use_thread=True):
-        if display.stopped:
+    cap = cv2.VideoCapture(source)
+    fid = -1
+    while True:
+        got, frame = cap.read()
+        if not got:
             break
+        fid += 1
 
         t0 = time.time()
         dets = yolo.end2end([frame])[0]
@@ -50,12 +54,15 @@ def _main(source: str) -> None:
         fps_buffer[fid % _FPS_BUFFER_SIZE] = fps
         avg_fps = mean(fps_buffer)
 
-        canvas = cv2ext.bboxes.draw_bboxes(frame, [bbox for bbox, _, _ in dets])
-        cv2ext.image.draw.text(canvas, f"{avg_fps:.2f} FPS", (10, 30))
-        display.update(canvas)
+        canvas = draw_bboxes(frame, [bbox for bbox, _, _ in dets])
+        draw_text(canvas, f"{avg_fps:.2f} FPS", (10, 30))
+        cv2.imshow("YOLO Demo", canvas)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
 
     del yolo
-    display.stop()
+    cap.release()
+    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

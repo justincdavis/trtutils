@@ -6,11 +6,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-from cv2ext.bboxes import nms
 
 from trtutils._log import LOG
 
-from ._common import clip_boxes, unletterbox_boxes
+from ._common import clip_boxes, nms, unletterbox_boxes
 
 if TYPE_CHECKING:
     from trtutils.image.types import Detection

@@ -14,8 +14,8 @@ from queue import Empty, Full, Queue
 from typing import TYPE_CHECKING
 
 import cv2
-import cv2ext
 
+from trtutils.image import draw_bboxes, draw_text
 from trtutils.models import YOLOX
 
 if TYPE_CHECKING:
@@ -44,11 +44,16 @@ FINISHED = 0
 
 
 def _feed_frames(
-    video: cv2ext.IterableVideo,
+    video: cv2.VideoCapture,
     stream_id: int,
     in_queue: Queue[tuple[int, int, np.ndarray]],
 ) -> None:
-    for i, frame in video:
+    i = -1
+    while True:
+        got, frame = video.read()
+        if not got:
+            break
+        i += 1
         while True:
             try:
                 in_queue.put((stream_id, i, frame), timeout=0.25)
@@ -119,8 +124,8 @@ def _main() -> None:
             )
         )
 
-    videos = [cv2ext.IterableVideo(video_file) for video_file in VIDEO_FILES]
-    total_frames = sum(len(video) for video in videos)
+    videos = [cv2.VideoCapture(str(video_file)) for video_file in VIDEO_FILES]
+    total_frames = sum(int(video.get(cv2.CAP_PROP_FRAME_COUNT)) for video in videos)
 
     in_queue = Queue(maxsize=100)
     out_queue = Queue(maxsize=100 if args.display else 0)
@@ -144,8 +149,10 @@ def _main() -> None:
         while len(VIDEO_FILES) > FINISHED:
             stream_id, frame_id, frame, dets = out_queue.get(timeout=0.25)
             # print(f"Frame {frame_id} from stream {stream_id} fetched")
-            canvas = cv2ext.detection.draw_detections(frame, dets)
-            canvas = cv2ext.image.draw.text(canvas, str(frame_id), (10, 30), color=(0, 255, 0))
+            canvas = draw_bboxes(
+                frame, [d[0] for d in dets], [d[1] for d in dets], [d[2] for d in dets]
+            )
+            canvas = draw_text(canvas, str(frame_id), (10, 30), color=(0, 255, 0))
             cv2.imshow(window_names[stream_id], canvas)
             if counter % 10 == 0:
                 cv2.waitKey(1)

@@ -5,8 +5,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import cv2
 import numpy as np
+
+if TYPE_CHECKING:
+    from trtutils.image.types import Detection
 
 
 def nms_indices(
@@ -34,6 +39,22 @@ def nms_indices(
     )
     # opencv returns the kept indices sorted by score
     return np.asarray(raw_idx, dtype=int).ravel()[:max_det]
+
+
+def nms(
+    dets: list[Detection],
+    iou_threshold: float = 0.5,
+    *,
+    agnostic: bool | None = None,
+) -> list[Detection]:
+    """NMS over (bbox, score, class_id) detections, returns the kept ones by descending score."""
+    if not dets:
+        return []
+    boxes = np.array([d[0] for d in dets], dtype=np.float32)
+    scores = np.array([d[1] for d in dets], dtype=np.float32)
+    labels = np.array([0 if agnostic else d[2] for d in dets], dtype=np.int32)
+    keep = nms_indices(boxes, scores, labels, -1.0, iou_threshold)
+    return [dets[i] for i in keep]
 
 
 # not jitted: numba rejects axis= on max/argmax
