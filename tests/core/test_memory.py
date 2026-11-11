@@ -5,9 +5,13 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
+from trtutils._flags import FLAGS
+from trtutils.core import _memory
 from trtutils.core._memory import (
     allocate_managed_memory,
     allocate_pinned_memory,
@@ -326,3 +330,22 @@ def test_free_device_ptrs(count: int) -> None:
     """free_device_ptrs frees zero or more pointers."""
     ptrs = [cuda_malloc(1024) for _ in range(count)]
     free_device_ptrs(ptrs)
+
+
+@pytest.mark.parametrize("nvtx_enabled", [True, False])
+@pytest.mark.parametrize("use_stream", [False, True], ids=["sync", "async"])
+def test_device_to_host_rejection_balances_nvtx(monkeypatch, nvtx_enabled, use_stream) -> None:
+    """A non-contiguous destination raises without leaving an NVTX range open."""
+    ranges: list[str | None] = []
+    monkeypatch.setattr(FLAGS, "NVTX_ENABLED", nvtx_enabled)
+    monkeypatch.setattr(
+        _memory,
+        "nvtx",
+        SimpleNamespace(push_range=ranges.append, pop_range=lambda: ranges.append(None)),
+    )
+    host = np.zeros((4, 4), dtype=np.float32)[:, ::2]
+    args = (host, 0, None) if use_stream else (host, 0)
+    func = memcpy_device_to_host_async if use_stream else memcpy_device_to_host
+    with pytest.raises(ValueError, match="C-contiguous"):
+        func(*args)
+    assert ranges.count(None) == len(ranges) - ranges.count(None)

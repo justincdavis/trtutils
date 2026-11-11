@@ -174,9 +174,11 @@ class CUDAGraph:
         """
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range("cuda_graph::start")
-        cuda_stream_begin_capture(self._stream)
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()
+        try:
+            cuda_stream_begin_capture(self._stream)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()
 
     def stop(self: Self) -> bool:
         """
@@ -237,10 +239,11 @@ class CUDAGraph:
         """Destroy the graph and graph executable, resetting state."""
         graph_exec, self._graph_exec = self._graph_exec, None
         graph, self._graph = self._graph, None
-        with contextlib.suppress(RuntimeError):
-            if graph_exec is not None:
+        if graph_exec is not None:
+            with contextlib.suppress(RuntimeError):
                 cuda_graph_exec_destroy(graph_exec)
-            if graph is not None:
+        if graph is not None:
+            with contextlib.suppress(RuntimeError):
                 cuda_graph_destroy(graph)
 
     @property

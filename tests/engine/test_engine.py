@@ -12,8 +12,10 @@ import pytest
 
 from trtutils import TRTEngine
 from trtutils._flags import FLAGS
+from trtutils.core import _interface
 from trtutils.core._bindings import Binding
 from trtutils.core._graph import CUDAGraph
+from trtutils.core._stream import create_stream, destroy_stream
 
 from .conftest import ENGINE_PATHS
 
@@ -282,3 +284,21 @@ class TestEngine:
         assert self.engine.output_spec is self.engine.output_spec
         assert self.engine.input_shapes is self.engine.input_shapes
         assert self.engine.input_dtypes is self.engine.input_dtypes
+
+
+def test_engine_destroys_only_its_own_stream(engine_path, monkeypatch) -> None:
+    """The stream an engine created is destroyed with it; a passed-in one is left alone."""
+    destroyed: list[object] = []
+    monkeypatch.setattr(_interface, "destroy_stream", destroyed.append)
+    own = TRTEngine(engine_path)
+    own_stream = own.stream
+    del own
+    assert destroyed == [own_stream]
+
+    destroyed.clear()
+    shared = create_stream()
+    eng = TRTEngine(engine_path, stream=shared)
+    del eng
+    assert destroyed == []
+    monkeypatch.undo()
+    destroy_stream(shared)

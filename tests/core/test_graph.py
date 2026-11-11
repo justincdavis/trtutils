@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from trtutils.compat._libs import cudart
@@ -108,3 +110,48 @@ def test_cuda_graph_low_level_lifecycle(cuda_stream, mode) -> None:
     # cleanup
     cuda_graph_exec_destroy(graph_exec)
     cuda_graph_destroy(graph)
+
+
+def test_cuda_graph_invalidate_destroys_graph_when_exec_destroy_fails(
+    cuda_stream, monkeypatch
+) -> None:
+    """A failing exec destroy still destroys the graph."""
+    graph = CUDAGraph(cuda_stream)
+    with graph:
+        pass
+    destroyed = []
+    real_destroy = _graph.cuda_graph_destroy
+
+    def fail_exec(_exec) -> None:
+        msg = "boom"
+        raise RuntimeError(msg)
+
+    def spy(g) -> None:
+        destroyed.append(g)
+        real_destroy(g)
+
+    monkeypatch.setattr(_graph, "cuda_graph_exec_destroy", fail_exec)
+    monkeypatch.setattr(_graph, "cuda_graph_destroy", spy)
+    graph.invalidate()
+    assert len(destroyed) == 1
+
+
+@pytest.mark.parametrize("nvtx_enabled", [True, False])
+def test_cuda_graph_start_failure_balances_nvtx(cuda_stream, monkeypatch, nvtx_enabled) -> None:
+    """A failed begin-capture does not leave the NVTX range open."""
+    ranges: list[str | None] = []
+    monkeypatch.setattr(_graph.FLAGS, "NVTX_ENABLED", nvtx_enabled)
+    monkeypatch.setattr(
+        _graph,
+        "nvtx",
+        SimpleNamespace(push_range=ranges.append, pop_range=lambda: ranges.append(None)),
+    )
+
+    def fail(_stream) -> None:
+        msg = "boom"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(_graph, "cuda_stream_begin_capture", fail)
+    with pytest.raises(RuntimeError, match="boom"):
+        CUDAGraph(cuda_stream).start()
+    assert ranges.count(None) == len(ranges) - ranges.count(None)

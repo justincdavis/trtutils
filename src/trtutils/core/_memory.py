@@ -67,11 +67,11 @@ def memcpy_device_to_host(host_arr: np.ndarray, device_ptr: int) -> None:
         If host_arr is not C-contiguous.
 
     """
-    if FLAGS.NVTX_ENABLED:
-        nvtx.push_range("core::memcpy_device_to_host")
     if not host_arr.flags.c_contiguous:
         err_msg = "host_arr must be C-contiguous to copy into"
         raise ValueError(err_msg)
+    if FLAGS.NVTX_ENABLED:
+        nvtx.push_range("core::memcpy_device_to_host")
     nbytes = host_arr.size * host_arr.itemsize
     # LOG.debug(f"MemcpyDtoH: {device_ptr} with size: {nbytes}")
     cuda_call(
@@ -189,11 +189,11 @@ def memcpy_device_to_host_async(
         If host_arr is not C-contiguous.
 
     """
-    if FLAGS.NVTX_ENABLED:
-        nvtx.push_range("core::memcpy_device_to_host_async")
     if not host_arr.flags.c_contiguous:
         err_msg = "host_arr must be C-contiguous to copy into"
         raise ValueError(err_msg)
+    if FLAGS.NVTX_ENABLED:
+        nvtx.push_range("core::memcpy_device_to_host_async")
     nbytes = host_arr.size * host_arr.itemsize
     # LOG.debug(f"MemcpyDtoH_Async: {device_ptr} with size: {nbytes}")
     cuda_call(

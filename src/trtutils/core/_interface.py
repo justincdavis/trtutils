@@ -20,6 +20,7 @@ from ._bindings import Binding, allocate_bindings
 from ._buffer import Buffer
 from ._device import Device
 from ._engine import create_engine, get_engine_names
+from ._stream import destroy_stream
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -86,6 +87,7 @@ class TRTEngineInterface(ABC):
             self._unified_mem = unified_mem if unified_mem is not None else FLAGS.IS_JETSON
             self._verbose = verbose
 
+            self._own_stream = stream is None
             with self._device_guard:
                 # engine, context, logger, and CUDA stream
                 self._engine, self._context, self._logger, self._stream = create_engine(
@@ -374,6 +376,12 @@ class TRTEngineInterface(ABC):
         attrs = ["_context", "_engine"]
         for attr in attrs:
             _del(self, attr)
+
+        # only a stream the engine created is its to destroy
+        with contextlib.suppress(AttributeError, RuntimeError):
+            if self._own_stream:
+                with self._device_guard:
+                    destroy_stream(self._stream)
 
     @abstractmethod
     def execute(
