@@ -449,7 +449,7 @@ Options
 **Optional:**
 
 * ``--opset``: ONNX opset version to use (default: 17)
-* ``--imgsz``: Image size to use for the model (default: 640)
+* ``--imgsz``: Image size to use for the model (default: the model's own size, usually 640)
 * ``--batch``: Export at a fixed batch size (default: 1). Supported by the Ultralytics
   models, YOLOv10/12/13, and torchvision classifiers; other families raise an error
 * ``--dynamic``: Export with a symbolic batch dimension so one ONNX builds engines for a
@@ -484,8 +484,8 @@ Notes
 
 * The download process will create a temporary virtual environment to handle dependencies
 * Some models may have license restrictions (GPL-3.0, AGPL-3.0, Apache-2.0)
-* RT-DETRv3 and RF-DETR do not support custom input sizes
-* DEIMv2 does not support custom input sizes
+* RT-DETRv3 is fixed at 640; RF-DETR is fixed per variant (rfdetr_n 384, rfdetr_s 512, rfdetr_m 576)
+* DEIMv2 is fixed per variant (deimv2_atto 320, deimv2_femto 416, all others 640)
 
 Inspect
 ~~~~~~~

@@ -31,7 +31,7 @@ Once you have the ONNX weights, build a TensorRT engine:
 
 .. code-block:: bash
 
-    # build_yolo is an alias for the 'build' command with '--yolo' passed to it
+    # build_yolo is the 'build' command with YOLO NMS injected
     python3 -m trtutils build_yolo \
         --onnx PATH_TO_WEIGHTS \
         --output PATH_TO_OUTPUT \
