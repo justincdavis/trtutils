@@ -220,6 +220,9 @@ def gridsample_debug_build_hook(**_: Any) -> dict[str, Any]:  # noqa: ANN401
         Build engine overrides containing the network hook.
 
     """
+    # mark_debug arrived in TensorRT 10
+    if not hasattr(getattr(trt, "INetworkDefinition", None), "mark_debug"):
+        return {}
     return {"hooks": [_mark_gridsample_inputs]}
 
 
@@ -247,7 +250,7 @@ def vit_attention_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict[st
 
     """
     # unnamed so Model.build does not consume strongly_typed before build_engine sees it
-    if kwargs.get("strongly_typed"):
+    if kwargs.get("strongly_typed") or not FLAGS.WEAK_TYPING:
         return {}
     network, _, _, _ = read_onnx(onnx)
     layer_precision = []
