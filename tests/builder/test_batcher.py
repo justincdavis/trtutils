@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+import gc
 import os
 import threading
+import weakref
 from unittest.mock import patch
 
 import numpy as np
@@ -254,3 +256,18 @@ class TestImageBatcherFailures:
             batcher = ImageBatcher(test_image_dir, shape=(8, 8, 3), dtype=np.float32, batch_size=2)
         close_batcher.append(batcher)
         assert batcher.get_next_batch() is not None
+
+
+@pytest.mark.cpu
+def test_unclosed_image_batcher_is_collected(test_image_dir) -> None:
+    """Dropping an unconsumed ImageBatcher frees it and ends its worker thread."""
+    batcher = ImageBatcher(test_image_dir, shape=(32, 32, 3), dtype=np.float32, batch_size=1)
+    # more batches than the queue holds, so the worker blocks on a full queue
+    assert batcher.num_batches > 3
+    thread = batcher._thread
+    ref = weakref.ref(batcher)
+    del batcher
+    gc.collect()
+    assert ref() is None
+    thread.join(timeout=5.0)
+    assert not thread.is_alive()
