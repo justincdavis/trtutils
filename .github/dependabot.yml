@@ -17,3 +17,8 @@ updates:
       # pinned per-extra to the CUDA major (cu11/cu12/cu13, jp5/jp6/jp7);
       # dependabot tries to unify the four constraints into one range
       - dependency-name: "cuda-python"
+      # TensorRT 11 removed IInt8EntropyCalibrator2 and EXPLICIT_BATCH
+      - dependency-name: "tensorrt_cu12"
+        versions: [">=11"]
+      - dependency-name: "tensorrt_cu13"
+        versions: [">=11"]
