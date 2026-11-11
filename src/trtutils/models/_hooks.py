@@ -194,3 +194,69 @@ def hands23_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict[str, Any
         if layer.num_outputs and layer.get_output(0).dtype == trt.DataType.FLOAT:
             layer_precision.append((idx, trt.DataType.FLOAT))
     return {"layer_precision": layer_precision, "prefer_precision_constraints": True}
+
+
+def _mark_gridsample_inputs(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
+    for idx in range(network.num_layers):
+        layer = network.get_layer(idx)
+        if layer.type == trt.LayerType.GRID_SAMPLE:
+            network.mark_debug(layer.get_input(0))
+    return network
+
+
+def gridsample_debug_build_hook(**_: Any) -> dict[str, Any]:  # noqa: ANN401
+    """
+    Build hook that keeps the value input of every GridSample out of fused kernels.
+
+    TensorRT 10.15 (RTX 5080) miscompiles the deformable cross attention of the larger D-FINE
+    and DEIMv2 models (dfine_l/x, deimv2_l): the decoder reads wrong values and the engine
+    returns junk in FP16 and FP32 while onnxruntime is right. Marking the GridSample value
+    tensors as debug tensors forces TensorRT to materialize them, which avoids the bad
+    fusion at the cost of a few small copies.
+
+    Returns
+    -------
+    dict[str, Any]
+        Build engine overrides containing the network hook.
+
+    """
+    return {"hooks": [_mark_gridsample_inputs]}
+
+
+def vit_attention_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
+    """
+    Build hook that forces FP32 for the QK matmul and softmax of ViT attention blocks.
+
+    The DINOv3 backbones of the larger DEIMv2 models produce attention logits in the
+    millions (2.6e6 in deimv2_l), which overflow FP16 to inf and then NaN. The ``attn/MatMul``
+    and ``attn/Softmax`` layers are pinned to FP32; the rest of the backbone stays FP16. A
+    strongly typed build returns no overrides, because ``build_engine`` rejects layer
+    precision in that mode.
+
+    Parameters
+    ----------
+    onnx : Path | str
+        Path to the ONNX model.
+    **kwargs : Any
+        Extra arguments from ``Model.build``. ``strongly_typed`` is read here.
+
+    Returns
+    -------
+    dict[str, Any]
+        Build engine overrides containing the layer_precision list, or an empty dict.
+
+    """
+    # unnamed so Model.build does not consume strongly_typed before build_engine sees it
+    if kwargs.get("strongly_typed"):
+        return {}
+    network, _, _, _ = read_onnx(onnx)
+    layer_precision = []
+    for idx in range(network.num_layers):
+        layer = network.get_layer(idx)
+        is_qk = layer.type == trt.LayerType.MATRIX_MULTIPLY and layer.name.endswith("/attn/MatMul")
+        is_softmax = layer.type == trt.LayerType.SOFTMAX and layer.name.endswith("/attn/Softmax")
+        if is_qk or is_softmax:
+            layer_precision.append((idx, trt.DataType.FLOAT))
+    if not layer_precision:
+        return {}
+    return {"layer_precision": layer_precision, "prefer_precision_constraints": True}

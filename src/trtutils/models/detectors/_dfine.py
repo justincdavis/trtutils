@@ -3,14 +3,15 @@
 # MIT License
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
+from trtutils.models._hooks import depthwise_fp32_build_hook, gridsample_debug_build_hook
 from trtutils.models._model import Model
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
     from pathlib import Path
 
     from typing_extensions import Self
@@ -23,6 +24,10 @@ class DFINE(Detector, Model):
     _friendly_name = "D-FINE"
     _default_imgsz = 640
     _valid_imgszs: ClassVar[list[int] | None] = [640]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [
+        gridsample_debug_build_hook,
+        depthwise_fp32_build_hook,
+    ]
     _input_tensors: ClassVar[list[tuple[str, str]]] = [
         ("images", "image"),
         ("orig_target_sizes", "size"),

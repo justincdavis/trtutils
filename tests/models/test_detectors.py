@@ -13,6 +13,7 @@ import pytest
 
 from tests.conftest import DATA_DIR
 from trtutils._flags import FLAGS
+from trtutils.builder._onnx import read_onnx
 from trtutils.compat._libs import trt
 from trtutils.image import COCO91_TO_COCO80
 from trtutils.models import (
@@ -35,7 +36,13 @@ from trtutils.models import (
     YOLOv13,
     YOLOv26,
 )
-from trtutils.models._hooks import depthwise_fp32_build_hook, nms_build_hook, rtdetr_build_hook
+from trtutils.models._hooks import (
+    depthwise_fp32_build_hook,
+    gridsample_debug_build_hook,
+    nms_build_hook,
+    rtdetr_build_hook,
+    vit_attention_fp32_build_hook,
+)
 
 DETECTORS = [
     pytest.param(YOLOv3, DATA_DIR / "yolov3" / "yolov3t_640.onnx", id="yolov3"),
@@ -219,6 +226,72 @@ def _write_head_onnx(path, output_name):
 def test_rtdetr_hook_only_for_ultralytics_exports(tmp_path, output_name, adds_nms) -> None:
     """Only the single-head Ultralytics rtdetr-l/x exports get EfficientNMS added."""
     assert rtdetr_build_hook in RTDETRv1._build_hooks
+    assert depthwise_fp32_build_hook in RTDETRv1._build_hooks
     path = tmp_path / "head.onnx"
     _write_head_onnx(path, output_name)
     assert bool(rtdetr_build_hook(onnx=path, imgsz=640)) is adds_nms
+
+
+def _write_gridsample_onnx(path):
+    value = onnx.helper.make_tensor_value_info("value", onnx.TensorProto.FLOAT, [1, 1, 4, 4])
+    grid = onnx.helper.make_tensor_value_info("grid", onnx.TensorProto.FLOAT, [1, 2, 2, 2])
+    out = onnx.helper.make_tensor_value_info("out", onnx.TensorProto.FLOAT, [1, 1, 2, 2])
+    node = onnx.helper.make_node("GridSample", ["value", "grid"], ["out"], name="gs")
+    graph = onnx.helper.make_graph([node], "gs", [value, grid], [out])
+    onnx.save(onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 16)]), path)
+
+
+@pytest.mark.cpu
+def test_gridsample_hook_marks_value_input_as_debug(tmp_path) -> None:
+    """The hook turns each GridSample value tensor into a debug tensor, leaving the grid alone."""
+    for model_cls in (DFINE, DEIM, DEIMv2):
+        assert gridsample_debug_build_hook in model_cls._build_hooks
+    # the HGNetv2 backbones of D-FINE/DEIM hit the broken FP16 depthwise kernel too
+    for model_cls in (DFINE, DEIM):
+        assert depthwise_fp32_build_hook in model_cls._build_hooks
+    path = tmp_path / "gs.onnx"
+    _write_gridsample_onnx(path)
+    network, _, _, _ = read_onnx(path)
+    (hook,) = gridsample_debug_build_hook()["hooks"]
+    hook(network)
+    sample = next(
+        network.get_layer(i)
+        for i in range(network.num_layers)
+        if network.get_layer(i).type == trt.LayerType.GRID_SAMPLE
+    )
+    assert network.is_debug_tensor(sample.get_input(0))
+    assert not network.is_debug_tensor(sample.get_input(1))
+
+
+def _write_attention_onnx(path):
+    shape = [1, 4, 4]
+    info = onnx.helper.make_tensor_value_info
+    names = ["blocks.0/attn/MatMul", "blocks.0/attn/Softmax", "blocks.0/attn/MatMul_1", "mlp/MatMul"]
+    nodes = [
+        onnx.helper.make_node("MatMul", ["q", "k"], ["s"], name=names[0]),
+        onnx.helper.make_node("Softmax", ["s"], ["p"], name=names[1], axis=-1),
+        onnx.helper.make_node("MatMul", ["p", "v"], ["a"], name=names[2]),
+        onnx.helper.make_node("MatMul", ["a", "v"], ["out"], name=names[3]),
+    ]
+    graph = onnx.helper.make_graph(
+        nodes,
+        "attn",
+        [info(n, onnx.TensorProto.FLOAT, shape) for n in ("q", "k", "v")],
+        [info("out", onnx.TensorProto.FLOAT, shape)],
+    )
+    onnx.save(onnx.helper.make_model(graph), path)
+
+
+@pytest.mark.cpu
+def test_vit_attention_hook_pins_only_qk_matmul_and_softmax(tmp_path) -> None:
+    """Only the attention logits (QK matmul and softmax) are pinned, not the AV or MLP matmuls."""
+    assert vit_attention_fp32_build_hook in DEIMv2._build_hooks
+    path = tmp_path / "attn.onnx"
+    _write_attention_onnx(path)
+    overrides = vit_attention_fp32_build_hook(onnx=path)
+    network, _, _, _ = read_onnx(path)
+    pinned = {network.get_layer(idx).name for idx, _dtype in overrides["layer_precision"]}
+    assert pinned == {"blocks.0/attn/MatMul", "blocks.0/attn/Softmax"}
+    assert {dtype for _idx, dtype in overrides["layer_precision"]} == {trt.DataType.FLOAT}
+    assert overrides["prefer_precision_constraints"] is True
+    assert vit_attention_fp32_build_hook(onnx=path, strongly_typed=True) == {}
