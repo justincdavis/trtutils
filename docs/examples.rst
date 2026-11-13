@@ -17,6 +17,10 @@ Examples
     examples/trtexec.rst
     examples/detector.rst
     examples/classifier.rst
+    examples/deit.rst
+    examples/segmenter.rst
+    examples/pose_estimator.rst
+    examples/obb_detector.rst
     examples/sahi.rst
     examples/depth_estimator.rst
     examples/hand_interaction.rst

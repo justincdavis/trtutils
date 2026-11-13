@@ -34,6 +34,7 @@ These options are available for most commands:
 * ``--dla_core``: DLA core to assign DLA layers of the engine to (default: None)
 * ``--log_level``: Set the log level (choices: DEBUG, INFO, WARNING, ERROR, CRITICAL; default: INFO)
 * ``--verbose``: Enable verbose output
+* ``--nvtx``: Enable NVTX markers for profiling with Nsight Systems
 
 Commands
 --------
@@ -62,6 +63,7 @@ Options
 * ``--jetson, -j``: Use the Jetson-specific benchmarker to record energy and power draw metrics
 * ``--tegra_interval``: Milliseconds between each tegrastats sampling for Jetson benchmarking (default: 5)
 * ``--warmup_iterations, -wi``: Number of warmup iterations, always run before measuring (default: 10)
+* ``--cuda_graph``: Enable CUDA graph capture for the engine (off by default)
 
 Output
 ^^^^^^
@@ -115,7 +117,9 @@ Options
 * ``--optimization_level``: TensorRT builder optimization level (0-5). Default is 3.
 * ``--shape, -s``: Fix input binding shapes. Format: NAME:dim1,dim2[,dim3...]. Can be specified multiple times for multiple inputs
 * ``--fp16``: Quantize the engine to FP16 precision
+* ``--fp8``: Enable FP8 precision. Requires compute capability 8.9 or newer
 * ``--int8``: Quantize the engine to INT8 precision
+* ``--strongly_typed``: Build a strongly-typed network. Precision comes from the ONNX graph (Q/DQ nodes and explicit dtypes). Mutually exclusive with ``--fp16``, ``--int8``, ``--fp8``, and the calibration arguments
 * ``--gpu_fallback``: Allow GPU fallback for unsupported layers when building for DLA
 
 **Caching and Optimization:**
@@ -233,8 +237,10 @@ Options
 
 * ``--max_chunks``: Maximum number of DLA chunks to assign (default: 1)
 * ``--min_layers``: Minimum number of layers in a chunk to be assigned to DLA (default: 20)
+* ``--fp8``: Enable FP8 precision for GPU layers. Requires compute capability 8.9 or newer
+* ``--strongly_typed``: Build from a pre-quantized ONNX (Q/DQ nodes). Skips calibration; precision comes from the graph
 
-**Other options:** Same as the ``build`` command for calibration, caching, and optimization settings.
+**Other options:** Same as the ``build`` command for calibration, caching, and optimization settings. ``--device``, ``--fp16``, ``--int8``, and ``--gpu_fallback`` belong to ``build`` and ``build_yolo``, not ``build_dla``. Calibration (``--calibration_dir``, ``--input_shape``, ``--input_dtype``) is required unless ``--strongly_typed`` is set.
 
 Can Run on DLA
 ~~~~~~~~~~~~~~
@@ -441,13 +447,14 @@ Download a model from remote source and convert to ONNX format. This command sup
 Options
 ^^^^^^^
 
-**Required:**
+**Required** (not needed with ``--list_models``):
 
 * ``--model``: Name of the model to download. See :ref:`Supported Models <models>` for available models
 * ``--output``: Path to save the ONNX model file
 
 **Optional:**
 
+* ``--list_models``: Print the model names ``--model`` accepts and exit
 * ``--opset``: ONNX opset version to use (default: 17)
 * ``--imgsz``: Image size to use for the model (default: the model's own size, usually 640)
 * ``--batch``: Export at a fixed batch size (default: 1). Supported by the Ultralytics
@@ -456,6 +463,11 @@ Options
   range of batch sizes (Ultralytics and YOLOv10/12/13 also leave height and width
   symbolic). Cannot be combined with ``--batch``. Torchvision classifiers export
   dynamic by default
+* ``--simplify``: Simplify the exported ONNX. With no arguments, runs polygraphy then
+  onnxslim. Name tools and order explicitly, for example
+  ``--simplify polygraphy onnxslim onnxsim``
+* ``--no_cache``: Do not cache downloaded weights, repositories, or uv packages
+* ``--requirements_export``: Write ``uv pip freeze`` of the exporter environment to this path
 
 Supported Models
 ^^^^^^^^^^^^^^^^

@@ -71,20 +71,33 @@ stream which can be used to execute the engine.
 CUDA Kernel Compilation
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-It may be nessecary to define preprocessing or postprocessing operations
+It may be necessary to define preprocessing or postprocessing operations
 for your TensorRT engine with a CUDA kernel if the CPU is not fast enough.
-trtutils provides a small wrapper around NVRTC (NVIDIA real-time compiler) 
-which allows you to define CUDA kernels as Python strings and compile at 
-runtime.
+trtutils provides a small wrapper around NVRTC (NVIDIA real-time compiler)
+which compiles a CUDA source file at runtime.
 
-An example of compiling a kernel:
+:class:`~trtutils.core.Kernel` reads CUDA source from a ``.cu`` file.
+``create_args`` packs device pointers and scalar arguments, and ``call``
+launches the kernel on a stream. See ``examples/kernel.py`` for a complete
+program. A short version:
 
 .. code-block:: python
 
-    # kernel which handles preprocessing for a YOLO model
-    # after the image has been resize to the models input size
-    # this assumes the model takes RGB and image is BGR (OpenCV)
-    KERNEL_CODE = """\
+    import tempfile
+    from pathlib import Path
+
+    import numpy as np
+
+    from trtutils.core import (
+        Kernel,
+        create_binding,
+        create_stream,
+        memcpy_device_to_host_async,
+        memcpy_host_to_device_async,
+        stream_synchronize,
+    )
+
+    kernel_code = """\
     extern "C" __global__
     void scaleSwapTranspose(
         const unsigned char* __restrict__ inputArr,
@@ -108,58 +121,36 @@ An example of compiling a kernel:
     }
     """
 
-    from trtutils.core import Kernel
+    with tempfile.NamedTemporaryFile("w", suffix=".cu", delete=False) as f:
+        f.write(kernel_code)
+        kernel_path = Path(f.name)
 
-    # compile and load kernel
-    kernel = Kernel(KERNEL_CODE, "scaleSwapTranspose")
+    kernel = Kernel(kernel_path, "scaleSwapTranspose")
+    kernel_path.unlink()
 
-    # to run the kernel need input and output CUDA data
-    import numpy as np
-    from trtutils.core import create_binding
-
-    input_arr = np.zeros((640, 640, 3), dtype=np.uint8)
-    output_arr = np.zeros((1, 3, 640, 640), dtype=np.float32)
-
+    height, width = 640, 640
+    scale, offset = 1.0 / 255.0, 0.0
+    input_arr = np.zeros((height, width, 3), dtype=np.uint8)
+    output_arr = np.zeros((1, 3, height, width), dtype=np.float32)
     input_binding = create_binding(input_arr)
     output_binding = create_binding(output_arr)
 
-    # create some args for the kernel
-    # the args is a pointer to an array of pointers
-    # a new arg array has to be created for each call to cuLaunchKernel
-    input_arg: np.ndarray = np.array(
-        [input_binding.allocation],
-        dtype=np.uint64,
-    )
-    output_arg: np.ndarray = np.array(
-        [output_binding.allocation],
-        dtype=np.uint64,
-    )
-    # assume no scale and offset
     args = kernel.create_args(
         input_binding.allocation,
         output_binding.allocation,
-        height,
-        width,
         scale,
         offset,
+        height,
+        width,
     )
-
-    # launch the kernel
-    from trtutils.core import create_stream, stream_synchronize, memcpy_host_to_device_async, memcpy_device_to_host_async
 
     stream = create_stream()
-    memcpy_host_to_device_async(
-        input_binding.allocation,
-        input_arr,
-        stream,
-    )
-    kernel.call((32, 32, 1), (32, 32, 1), stream, args)
-    memcpy_device_to_host_async(
-        output_binding.host_allocation,
-        output_binding.allocation,
-        stream,
-    )
+    memcpy_host_to_device_async(input_binding.allocation, input_arr, stream)
+    # 16x16 threads per block, one block row per channel
+    threads = (16, 16, 1)
+    blocks = ((height + 15) // 16, (width + 15) // 16, 3)
+    kernel.call(blocks, threads, stream, args)
+    memcpy_device_to_host_async(output_binding.host_allocation, output_binding.allocation, stream)
     stream_synchronize(stream)
-
-    # print the completed output shape
     print(output_binding.host_allocation.shape)
+    kernel.free()

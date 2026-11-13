@@ -63,7 +63,8 @@ Advanced Features
 Parallel Execution
 ^^^^^^^^^^^^^^^^^^
 
-You can run multiple YOLO models in parallel using the :py:class:`~trtutils.parallel.image.ParallelDetector` class:
+You can run multiple YOLO models in parallel using the :py:class:`~trtutils.parallel.image.ParallelDetector` class.
+Each model receives its own batch, so the input is a list of batches:
 
 .. code-block:: python
 
@@ -74,24 +75,27 @@ You can run multiple YOLO models in parallel using the :py:class:`~trtutils.para
         [EngineInfo("yolo1.engine"), EngineInfo("yolo2.engine")],
     )
 
-    # Run inference on multiple images
-    images = [cv2.imread(f"image{i}.jpg") for i in range(2)]
-    results = yolo.end2end(images)
+    # one batch (a list of images) per model
+    batches = [[cv2.imread(f"image{i}.jpg")] for i in range(2)]
+    results = yolo.end2end(batches)
 
-    # OR
-    yolo.submit(images)
-    results = yolo.retrieve()
-
-    # OR
-    yolo.submit_model(images[0], 0)
-    single_result = yolo.retrieve_model(0)
-
-    # print results
-    for i, result in enumerate(results):
+    # results[model][image] is a list of (bbox, confidence, class_id)
+    for i, model_dets in enumerate(results):
         print(f"Results for model {i}:")
-        for bbox, confidence, class_id in result:
+        for bbox, confidence, class_id in model_dets[0]:
             print(f"Class: {class_id}, Confidence: {confidence}")
             print(f"Bounding Box: {bbox}")
+
+    # submit/retrieve split end2end into two calls; retrieve returns the
+    # postprocessed tensors, which get_detections turns into detections
+    yolo.submit(batches)
+    outputs, ratios, paddings = yolo.retrieve()
+    results = yolo.get_detections(outputs)
+
+    # or drive a single model
+    yolo.submit_model([cv2.imread("image0.jpg")], 0)
+    output, ratios, padding = yolo.retrieve_model(0)
+    detections = yolo.get_detections_model(output, 0)
 
 Benchmarking
 ^^^^^^^^^^^^
@@ -106,12 +110,14 @@ If using Python API:
 
     from trtutils import benchmark_engine
 
-    # Run 1000 iterations
+    # latency.mean is seconds. The CLI prints the same value in milliseconds.
     results = benchmark_engine("yolo.engine", iterations=1000)
-    print(f"Average latency: {results.latency.mean:.2f}ms")
-    print(f"Throughput: {1000/results.latency.mean:.2f} FPS")
+    print(f"Average latency: {results.latency.mean * 1000:.2f} ms")
+    print(f"Throughput: {1 / results.latency.mean:.2f} FPS")
 
-    # On Jetson devices, you can also measure power consumption
+    # On Jetson devices, you can also measure power consumption.
+    # power_draw is milliwatts and energy is millijoules per iteration.
+    # The CLI prints watts and joules.
     from trtutils.jetson import benchmark_engine as jetson_benchmark
 
     results = jetson_benchmark(
@@ -119,8 +125,8 @@ If using Python API:
         iterations=1000,
         tegra_interval=1  # More frequent power measurements
     )
-    print(f"Average power draw: {results.power_draw.mean:.2f}W")
-    print(f"Total energy used: {results.energy.mean:.2f}J")
+    print(f"Average power draw: {results.power_draw.mean / 1000:.2f} W")
+    print(f"Mean energy per iteration: {results.energy.mean / 1000:.2f} J")
 
 If using CLI:
 

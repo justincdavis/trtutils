@@ -109,11 +109,7 @@ Install support for the JIT compiler:
 
     $ pip install "trtutils[jit]"
 
-This installs:
-- Numba
-- LLVM-Lite
-
-This enables the use of :func:`trtutils.enable_jit` to accelerate some CPU operations.
+This installs Numba, which :func:`trtutils.enable_jit` uses to accelerate some CPU operations.
 
 Development Tools
 ~~~~~~~~~~~~~~~~~
