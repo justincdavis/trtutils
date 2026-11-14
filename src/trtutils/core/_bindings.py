@@ -4,6 +4,7 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -16,6 +17,8 @@ from trtutils.compat._libs import trt
 from ._buffer import DEVICE_ALIGNMENT, Buffer, MemoryLocation
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from typing_extensions import Self
 
     from trtutils.compat._libs import cudart
@@ -26,6 +29,46 @@ def _prefix(buffer: Buffer, shape: tuple[int, ...]) -> Buffer:
     return buffer if shape == buffer.shape else buffer.view(shape)
 
 
+def _format_nbytes(
+    shape: tuple[int, ...],
+    itemsize: int,
+    vectorized_dim: int = -1,
+    components: int = 1,
+    strides: tuple[int, ...] | None = None,
+) -> int:
+    """
+    Get the bytes a tensor spans in its TensorRT format.
+
+    A vectorized format (CHW16, HWC8, ...) stores ``vectorized_dim`` as
+    vectors of ``components`` scalars, padded to a whole number of vectors,
+    and its strides count those vectors. The layout spans at least the
+    dense array of vectors; TensorRT's strides add any further padding, such
+    as the row alignment of the DLA formats.
+    """
+    vectors = [-(-d // components) if i == vectorized_dim else d for i, d in enumerate(shape)]
+    nbytes = math.prod(vectors) * components * itemsize
+    if strides is not None and len(strides) == len(shape) and nbytes > 0:
+        span = max((s * n for s, n in zip(strides, vectors)), default=1)
+        nbytes = max(nbytes, span * components * itemsize)
+    return nbytes
+
+
+def _trt_layout(
+    engine: trt.IEngine, context: trt.IExecutionContext, index: int, name: str
+) -> tuple[tuple[int, ...], int, int]:
+    """Get the strides, vectorized dim and components per element of an I/O tensor."""
+    if FLAGS.TRT_10:
+        strides = context.get_tensor_strides(name)
+        vectorized_dim = engine.get_tensor_vectorized_dim(name)
+        # TensorRT returns -1 components for a format that is not vectorized
+        components = engine.get_tensor_components_per_element(name) if vectorized_dim >= 0 else 1
+    else:
+        strides = context.get_strides(index)
+        vectorized_dim = engine.get_binding_vectorized_dim(index)
+        components = engine.get_binding_components_per_element(index) if vectorized_dim >= 0 else 1
+    return tuple(int(s) for s in strides), int(vectorized_dim), int(components)
+
+
 class Binding:
     """
     A TensorRT I/O tensor: its metadata plus a host and a device :class:`Buffer`.
@@ -33,6 +76,16 @@ class Binding:
     Both buffers are allocated at the tensor's max (profile) shape. With
     unified memory the device buffer is the device alias of the mapped host
     buffer, so there is a single allocation and no copies are needed.
+
+    The buffers hold the tensor in its TensorRT format (:attr:`tensor_format`),
+    the bytes TensorRT reads and writes; no layout conversion is done. LINEAR
+    is the dense row-major array of the shape. Other formats reorder it (HWC)
+    and may pad it: vectorized formats (CHW16, HWC8, ...) round the
+    vectorized dim up to whole vectors and DLA formats align rows, so the
+    layout spans :attr:`nbytes`, more than the shape holds. The buffers of a
+    padded tensor are flat, over the whole layout, and views at the tensor
+    shape see only its leading bytes. :attr:`strides`, :attr:`vectorized_dim`
+    and :attr:`components_per_element` describe the layout.
     """
 
     def __init__(
@@ -46,6 +99,9 @@ class Binding:
         host: Buffer,
         device: Buffer,
         tensor_format: trt.TensorFormat = trt.TensorFormat.LINEAR,
+        strides: Sequence[int] | None = None,
+        vectorized_dim: int = -1,
+        components_per_element: int = 1,
         min_shape: tuple[int, ...] | list[int] | None = None,
     ) -> None:
         """
@@ -67,8 +123,16 @@ class Binding:
             The host buffer.
         device : Buffer
             The device buffer, or the device alias of a mapped host buffer.
+            Its size is :attr:`nbytes`.
         tensor_format : trt.TensorFormat, optional
             The format of the tensor.
+        strides : Sequence[int], optional
+            The strides of the tensor in its format at the allocated shape.
+            By default None, which means row-major.
+        vectorized_dim : int, optional
+            The dimension the format vectorizes, or -1 (the default) for none.
+        components_per_element : int, optional
+            The scalars per vector of a vectorized format. By default 1.
         min_shape : tuple[int, ...] | list[int], optional
             The smallest shape the tensor accepts (the min profile shape of a
             dynamic input). By default None, which means the allocated shape.
@@ -82,12 +146,23 @@ class Binding:
         self._host = host
         self._device = device
         self._tensor_format = tensor_format
+        self._strides = (
+            tuple(int(s) for s in strides)
+            if strides is not None
+            else tuple(math.prod(self._shape[i + 1 :]) for i in range(len(self._shape)))
+        )
+        self._vectorized_dim = int(vectorized_dim)
+        self._components = int(components_per_element)
+        self._nbytes = device.nbytes
         self._min_shape = self._shape if min_shape is None else tuple(int(d) for d in min_shape)
-        # the last shape check() accepted, so a repeated shape skips the bounds test
-        self._checked_shape = self._shape
+        # the last shape check() accepted, so a repeated shape skips the bounds
+        # and size tests; a layout larger than the max shape is tested there too
+        self._checked_shape: tuple[int, ...] | None = (
+            self._shape if self._nbytes <= math.prod(self._shape) * self._dtype.itemsize else None
+        )
         # (host, device) views of the leading elements for the last shape
         # staged or fetched, which stays the same from call to call
-        self._view_shape = self._shape
+        self._view_shape = host.shape
         self._view_pair = (host, device)
 
     @property
@@ -120,9 +195,51 @@ class Binding:
         """The largest shape the tensor accepts, which is its allocated shape."""
         return self._shape
 
+    @property
+    def nbytes(self: Self) -> int:
+        """
+        The bytes the tensor spans in its format at the allocated shape.
+
+        This is the size of the host and device buffers. It exceeds
+        ``prod(shape) * dtype.itemsize`` when the format pads the tensor.
+        """
+        return self._nbytes
+
+    @property
+    def strides(self: Self) -> tuple[int, ...]:
+        """
+        The strides of the tensor in its format at the allocated shape.
+
+        They count elements, which are vectors of :attr:`components_per_element`
+        scalars in a vectorized format. Row-major for LINEAR.
+        """
+        return self._strides
+
+    @property
+    def vectorized_dim(self: Self) -> int:
+        """The dimension the format packs into vectors, or -1 if it is not vectorized."""
+        return self._vectorized_dim
+
+    @property
+    def components_per_element(self: Self) -> int:
+        """The scalars per vector of a vectorized format; 1 otherwise."""
+        return self._components
+
+    def _nbytes_at(self: Self, shape: tuple[int, ...]) -> int:
+        """Get the bytes the tensor spans in its format at a shape within its bounds."""
+        if shape == self._shape:
+            return self._nbytes
+        # below the max shape the GPU formats pack their vectors densely; the
+        # DLA formats, which also align rows, only run at static shapes
+        return _format_nbytes(shape, self._dtype.itemsize, self._vectorized_dim, self._components)
+
     def check(self: Self, buffer: Buffer, engine: str) -> None:
         """
         Check that a Buffer can be bound to the tensor: same dtype, shape within bounds.
+
+        The Buffer must also hold the tensor's whole layout, which a Buffer of
+        the tensor shape cannot when the format pads the tensor (see
+        :attr:`nbytes`): TensorRT would read past it.
 
         Parameters
         ----------
@@ -134,7 +251,8 @@ class Binding:
         Raises
         ------
         ValueError
-            If the dtype differs or the shape is outside the min/max bounds.
+            If the dtype differs, the shape is outside the min/max bounds, or
+            the Buffer is smaller than the tensor's layout at that shape.
 
         """
         if buffer.dtype != self._dtype:
@@ -158,6 +276,16 @@ class Binding:
                 f"Input '{self._name}' of engine '{engine}' got shape {shape}, expected {expected}."
             )
             raise ValueError(err_msg)
+        needed = self._nbytes_at(shape)
+        if buffer.nbytes < needed:
+            fmt = getattr(self._tensor_format, "name", self._tensor_format)
+            err_msg = (
+                f"Input '{self._name}' of engine '{engine}' is stored as {fmt}, which takes "
+                f"{needed} bytes at shape {shape}, but the Buffer holds {buffer.nbytes}. A Buffer "
+                "of the tensor shape cannot hold a layout that pads it; build the engine with "
+                "trt.TensorFormat.LINEAR for this input."
+            )
+            raise ValueError(err_msg)
         self._checked_shape = shape
 
     @property
@@ -167,12 +295,16 @@ class Binding:
 
     @property
     def host(self: Self) -> Buffer:
-        """The host buffer, at the allocated shape."""
+        """The host buffer, at the allocated shape (flat over the layout if the format pads it)."""
         return self._host
 
     @property
     def device(self: Self) -> Buffer:
-        """The device buffer (the device alias of the host buffer with unified memory)."""
+        """
+        The device buffer (the device alias of the host buffer with unified memory).
+
+        It has the shape of :attr:`host`.
+        """
         return self._device
 
     @property
@@ -187,7 +319,7 @@ class Binding:
 
     @property
     def host_allocation(self: Self) -> np.ndarray:
-        """The host array of the binding, at the allocated shape."""
+        """The host array of the binding, shaped like :attr:`host`."""
         return self._host.array
 
     @property
@@ -261,7 +393,7 @@ class Binding:
         Parameters
         ----------
         shape : tuple[int, ...] | list[int], optional
-            The shape of the data to fetch. Defaults to the allocated shape.
+            The shape of the data to fetch. Defaults to the whole host buffer.
         stream : cudart.cudaStream_t, optional
             The stream to enqueue the copy on. The caller must synchronize
             it before reading the result.
@@ -272,7 +404,7 @@ class Binding:
             The host view holding the data.
 
         """
-        host, device = self._views(tuple(shape) if shape is not None else self._shape)
+        host, device = self._views(tuple(shape) if shape is not None else self._host.shape)
         if not self.unified_mem:
             host.copy_from(device, stream)
         return host
@@ -288,7 +420,7 @@ class Binding:
         self._host.free()
         self._device.free()
         # cached views would otherwise keep the memory alive
-        self._view_shape = self._shape
+        self._view_shape = self._host.shape
         self._view_pair = (self._host, self._device)
 
     def __repr__(self: Self) -> str:
@@ -319,9 +451,15 @@ def create_binding(
     pagelocked_mem: bool | None = None,
     unified_mem: bool | None = None,
     min_shape: tuple[int, ...] | None = None,
+    strides: Sequence[int] | None = None,
+    vectorized_dim: int = -1,
+    components_per_element: int = 1,
 ) -> Binding:
     """
     Create a binding for a TensorRT engine.
+
+    The buffers are sized for the tensor's layout in its format; a layout
+    that pads the tensor is allocated flat (see :class:`Binding`).
 
     Parameters
     ----------
@@ -347,6 +485,13 @@ def create_binding(
     min_shape : tuple[int, ...], optional
         The smallest shape the tensor accepts. By default None, which means
         the shape of ``array``.
+    strides : Sequence[int], optional
+        The strides of the tensor in its format, as TensorRT reports them.
+        By default None, which means row-major.
+    vectorized_dim : int, optional
+        The dimension the format vectorizes, or -1 (the default) for none.
+    components_per_element : int, optional
+        The scalars per vector of a vectorized format. By default 1.
 
     Returns
     -------
@@ -356,20 +501,28 @@ def create_binding(
     """
     pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
     shape = tuple(array.shape)
+    nbytes = _format_nbytes(
+        shape,
+        array.dtype.itemsize,
+        vectorized_dim,
+        components_per_element,
+        None if strides is None else tuple(strides),
+    )
+    alloc_shape = shape if nbytes == array.nbytes else (nbytes // array.dtype.itemsize,)
 
     if pagelocked_mem and unified_mem:
-        host = Buffer.empty(shape, array.dtype, MemoryLocation.HOST, pinned=True, mapped=True)
+        host = Buffer.empty(alloc_shape, array.dtype, MemoryLocation.HOST, pinned=True, mapped=True)
         # the device alias holds the host array (and through it the pinned
         # allocation), so it stays valid independently of the host Buffer
         device = Buffer.from_ptr(
-            host.device_ptr, shape, array.dtype, MemoryLocation.DEVICE, owner=host.array
+            host.device_ptr, alloc_shape, array.dtype, MemoryLocation.DEVICE, owner=host.array
         )
     else:
-        host = Buffer.empty(shape, array.dtype, MemoryLocation.HOST, pinned=pagelocked_mem)
-        device = Buffer.empty(shape, array.dtype, MemoryLocation.DEVICE)
+        host = Buffer.empty(alloc_shape, array.dtype, MemoryLocation.HOST, pinned=pagelocked_mem)
+        device = Buffer.empty(alloc_shape, array.dtype, MemoryLocation.DEVICE)
 
     if use_array_data:
-        np.copyto(host.array, array)
+        np.copyto(_prefix(host, shape).array, array)
 
     return Binding(
         bind_id,
@@ -380,6 +533,9 @@ def create_binding(
         host=host,
         device=device,
         tensor_format=tensor_format,
+        strides=strides,
+        vectorized_dim=vectorized_dim,
+        components_per_element=components_per_element,
         min_shape=min_shape,
     )
 
@@ -486,6 +642,12 @@ def allocate_bindings(  # noqa: C901, PLR0912, PLR0915
 
         LOG.debug(f"Allocating for I/O tensor: {name} - is_input: {is_input}")
 
+        # other formats reorder the tensor and may pad it past prod(shape) * itemsize
+        strides: tuple[int, ...] | None = None
+        vectorized_dim, components = -1, 1
+        if data_format != trt.TensorFormat.LINEAR:
+            strides, vectorized_dim, components = _trt_layout(engine, context, i, name)
+
         # allocate memory and create binding
         binding = create_binding(
             np.zeros(shape, dtype),
@@ -496,7 +658,22 @@ def allocate_bindings(  # noqa: C901, PLR0912, PLR0915
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             min_shape=min_shape,
+            strides=strides,
+            vectorized_dim=vectorized_dim,
+            components_per_element=components,
         )
+        dense = math.prod(binding.shape) * dtype.itemsize
+        if binding.nbytes > dense:
+            effect = (
+                "TRTEngine cannot take it as a Buffer of that shape"
+                if is_input
+                else "TRTEngine outputs of that shape hold only the leading bytes; "
+                "Binding.device holds the whole layout"
+            )
+            LOG.warning(
+                f"I/O tensor '{name}' is stored as {data_format.name}, which pads its shape "
+                f"{binding.shape} from {dense} to {binding.nbytes} bytes: {effect}."
+            )
 
         allocations.append(binding.allocation)
         if is_input:

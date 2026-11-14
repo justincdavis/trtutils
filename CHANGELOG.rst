@@ -77,6 +77,10 @@ Added
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)
+* ``Binding.nbytes``, ``strides``, ``vectorized_dim`` and ``components_per_element`` describe an
+  I/O tensor's layout in its TensorRT format. Bindings hold I/O in that format, unconverted; a
+  layout larger than the shape is allocated flat, and outputs at the tensor shape hold its
+  leading bytes
 
 Changed
 ^^^^^^^
@@ -131,6 +135,12 @@ Fixed
 * ``memcpy_device_to_host*`` raises ``ValueError`` on a non-contiguous destination instead of
   writing raw bytes over its parent array
 * ``TRTEngine``: an enqueue rejected by TensorRT raises instead of returning the previous outputs
+* ``TRTEngine`` / ``allocate_bindings`` size each I/O binding by the bytes its TensorRT format
+  spans, not ``prod(shape) * itemsize``. Formats that pad the tensor (``CHW16``, ``CHW32``,
+  ``HWC8`` and other vectorized formats with a partial vector, ``DLA_LINEAR`` / ``DLA_HWC4``
+  with unaligned rows) made GPU engines write past their bindings into neighboring allocations
+  and DLA engines fail to enqueue. An input Buffer smaller than its layout raises ``ValueError``,
+  and the failed-enqueue error names that DLA cause
 * ``TRTEngine``: inputs with dynamic non-batch dimensions are allocated at their max profile shape
 * ``TRTEngine``, ``CUDAPreprocessor`` and ``TRTPreprocessor`` destroy the stream they created
   once. A second ``__del__`` (an explicit call, then garbage collection) destroyed the stale handle
