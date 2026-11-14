@@ -201,16 +201,17 @@ def _staging_copies(binding: Binding, src: Buffer, stream) -> list[tuple[str, bo
     return [] if kind is None else [(kind, stream is not None)]
 
 
-def _meta_binding(shape=(4, 3), dtype=_F32, *, name="x", **kwargs: object) -> Binding:
-    """A Binding over pageable host Buffers, for logic that never touches its memory."""
+def _meta_binding(shape=(4, 3), dtype=_F32, *, name="x", alloc=None, **kwargs: object) -> Binding:
+    """A Binding over pageable host Buffers of shape ``alloc``, for logic that never touches them."""
+    alloc = shape if alloc is None else alloc
     return Binding(
         0,
         name,
         dtype,
         list(shape),
         is_input=True,
-        host=Buffer.empty(shape, dtype, pinned=False),
-        device=Buffer.empty(shape, dtype, pinned=False),
+        host=Buffer.empty(alloc, dtype, pinned=False),
+        device=Buffer.empty(alloc, dtype, pinned=False),
         **kwargs,
     )
 
@@ -261,6 +262,10 @@ def test_binding_metadata(dtype, shape, min_shape, is_input) -> None:
     assert binding.host_allocation is host.array
     assert binding.allocation == device.ptr
     assert (binding.pagelocked_mem, binding.unified_mem) == (False, False)
+    # LINEAR unless told otherwise: row-major, not vectorized, sized by the buffers
+    assert binding.strides == tuple(math.prod(dims[i + 1 :]) for i in range(len(dims)))
+    assert (binding.vectorized_dim, binding.components_per_element) == (-1, 1)
+    assert binding.nbytes == device.nbytes
 
 
 @pytest.mark.cpu
@@ -294,6 +299,10 @@ def test_shape_hands_out_a_copy() -> None:
         "host",
         "device",
         "tensor_format",
+        "nbytes",
+        "strides",
+        "vectorized_dim",
+        "components_per_element",
         "allocation",
         "host_allocation",
         "pagelocked_mem",
@@ -388,6 +397,43 @@ def test_check_remembers_only_accepted_shapes() -> None:
         binding.check(Buffer.wrap(np.zeros((2, 5), np.float64)), "net")
 
 
+# (1, 3, 4, 6) fp16 in CHW16: C padded to 16, 768 bytes where the shape holds 144; formats
+# are named by strings, which messages print as is (the CPU TensorRT stub only has LINEAR)
+_CHW16 = {"vectorized_dim": 1, "components_per_element": 16}
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("bounds", "alloc", "layout", "shape", "needed"),
+    [
+        pytest.param(((1, 3, 4, 6), None), (384,), {**_CHW16, "tensor_format": "CHW16"}, (1, 3, 4, 6), 768, id="static-vectorized"),
+        pytest.param(((2, 3, 4, 6), (1, 3, 1, 1)), (768,), {**_CHW16, "tensor_format": "CHW16"}, (1, 3, 2, 2), 128, id="dynamic-vectorized"),
+        pytest.param(((1, 16, 4, 6), (1, 1, 4, 6)), None, {**_CHW16, "tensor_format": "CHW16"}, (1, 12, 4, 6), 768, id="dynamic-vectorized-dim"),
+        pytest.param(((1, 3, 4, 48), None), (768,), {"strides": (768, 256, 64, 1), "tensor_format": "DLA_LINEAR"}, (1, 3, 4, 48), 1536, id="static-padded-rows"),
+        pytest.param(((1, 16, 4, 6), (1, 16, 1, 1)), None, {**_CHW16, "tensor_format": "CHW16"}, (1, 16, 2, 3), None, id="whole-vectors"),
+        pytest.param(((2, 3, 4, 6), (1, 3, 1, 1)), None, {"strides": (72, 1, 18, 3), "tensor_format": "HWC"}, (1, 3, 2, 2), None, id="reordered"),
+    ],
+)  # fmt: skip
+def test_check_rejects_buffers_smaller_than_the_layout(bounds, alloc, layout, shape, needed) -> None:
+    """A Buffer of the tensor shape is rejected, every time, when the format pads that shape."""
+    max_shape, min_shape = bounds
+    binding = _meta_binding(
+        max_shape, np.float16, name="images", alloc=alloc, min_shape=min_shape, **layout
+    )
+    buffer = Buffer.wrap(np.zeros(shape, np.float16))
+    if needed is None:
+        binding.check(buffer, "net")
+        return
+    message = (
+        f"Input 'images' of engine 'net' is stored as {layout['tensor_format']}, which takes "
+        f"{needed} bytes at "
+        f"shape {shape}, but the Buffer holds {buffer.nbytes}."
+    )
+    for _ in range(2):
+        with pytest.raises(ValueError, match=f"^{re.escape(message)}"):
+            binding.check(buffer, "net")
+
+
 _CREATE_DEFAULTS = {
     "bind_id": 0,
     "name": "binding",
@@ -442,6 +488,37 @@ def test_create_binding_shape_dtype(make_binding, dtype, shape) -> None:
         assert (buffer.shape, buffer.dtype) == (shape, np.dtype(dtype))
         assert buffer.nbytes == math.prod(shape) * np.dtype(dtype).itemsize
     assert binding.host_allocation.shape == shape
+
+
+@pytest.mark.parametrize("memory", MEMORY)
+@pytest.mark.parametrize(
+    ("shape", "layout", "nbytes"),
+    [
+        pytest.param((1, 3, 4, 6), {}, 144, id="linear"),
+        pytest.param((1, 3, 4, 6), {"strides": (72, 1, 18, 3)}, 144, id="reordered"),
+        pytest.param((1, 3, 4, 6), {**_CHW16, "strides": (24, 24, 6, 1)}, 768, id="vectorized"),
+        pytest.param((1, 16, 4, 6), {**_CHW16, "strides": (24, 24, 6, 1)}, 768, id="whole-vectors"),
+        pytest.param((1, 3, 4, 48), {"strides": (768, 256, 64, 1)}, 1536, id="padded-rows"),
+        # TensorRT reports empty strides for a tensor whose shape is unresolved
+        pytest.param((1, 3, 4, 6), {**_CHW16, "strides": ()}, 768, id="unresolved-strides"),
+        pytest.param((1, 3, 4, 6), {**_CHW16, "strides": (6, 6, 3, 1)}, 768, id="stale-strides"),
+    ],
+)  # fmt: skip
+def test_create_binding_sizes_the_layout(make_binding, memory, shape, layout, nbytes) -> None:
+    """Buffers span the layout, flat when it exceeds the shape, with the array data leading."""
+    data = np.arange(math.prod(shape), dtype=np.float16).reshape(shape)
+    binding = make_binding(array=data, use_array_data=True, **memory, **layout)
+    alloc = shape if nbytes == data.nbytes else (nbytes // 2,)
+    assert binding.shape == list(shape)
+    assert binding.nbytes == nbytes
+    for buffer in (binding.host, binding.device):
+        assert (buffer.shape, buffer.nbytes) == (alloc, nbytes)
+    assert binding.strides == layout.get("strides", (72, 24, 6, 1))
+    assert binding.vectorized_dim == layout.get("vectorized_dim", -1)
+    assert binding.components_per_element == layout.get("components_per_element", 1)
+    np.testing.assert_array_equal(binding.host_allocation.reshape(-1)[: data.size], data.reshape(-1))
+    # the default fetch covers the whole layout
+    assert binding.fetch() is binding.host
 
 
 @pytest.mark.parametrize(

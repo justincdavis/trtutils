@@ -451,7 +451,9 @@ class TRTEngine(TRTEngineInterface):
         if ok is False:
             err_msg = (
                 f"TensorRT failed to enqueue engine '{self._name}' at input shapes "
-                f"{self._input_shapes}; check that the shapes are consistent with each other."
+                f"{self._input_shapes} (the TensorRT error above has the cause). Check that the "
+                "shapes are consistent with each other; a DLA also fails to enqueue an input "
+                "smaller than its format's layout (Binding.nbytes)."
             )
             raise RuntimeError(err_msg)
 
