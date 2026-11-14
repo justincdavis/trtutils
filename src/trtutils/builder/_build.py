@@ -443,9 +443,11 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
             if calibration_cache is None and data_batcher is None:
                 err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
                 LOG.warning(err_msg)
-            config.int8_calibrator = EngineCalibrator(calibration_cache=calibration_cache)
+            calibrator = EngineCalibrator(calibration_cache=calibration_cache)
+            calibrator.set_input_dtypes(_input_dtypes(network))
             if data_batcher is not None:
-                config.int8_calibrator.set_batcher(data_batcher)
+                calibrator.set_batcher(data_batcher)
+            config.int8_calibrator = calibrator
 
     # assign the default device
     config.default_device_type = default_device
@@ -548,6 +550,16 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
 
     if cache:
         caching_tools.store(output_path, overwrite=False, delete_source=False)
+
+
+def _input_dtypes(network: trt.INetworkDefinition) -> dict[str, np.dtype]:
+    """Numpy dtype of each network input with one (bfloat16, fp8 and int4 have none)."""
+    dtypes: dict[str, np.dtype] = {}
+    for idx in range(network.num_inputs):
+        tensor = network.get_input(idx)
+        with contextlib.suppress(TypeError):
+            dtypes[tensor.name] = np.dtype(trt.nptype(tensor.dtype))
+    return dtypes
 
 
 def _dims(input_name: str, shape: object) -> tuple[int, ...]:

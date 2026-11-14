@@ -140,3 +140,34 @@ def test_close_removes_temp_cache() -> None:
     assert cal._cache_path.exists()
     cal.close()
     assert not cal._cache_path.exists()
+
+
+@pytest.mark.parametrize(
+    ("batch_dtype", "input_dtypes", "expected"),
+    [
+        pytest.param(np.float32, {"input": np.float16}, np.float16, id="cast-to-input-dtype"),
+        pytest.param(np.float16, {"input": np.float16}, np.float16, id="matching-dtype"),
+        pytest.param(np.float32, {"other": np.float16}, np.float32, id="unknown-input"),
+    ],
+)
+@patch("trtutils.builder._calibrator.cuda_free")
+@patch("trtutils.builder._calibrator.memcpy_host_to_device")
+@patch("trtutils.builder._calibrator.cuda_malloc", return_value=1234)
+def test_get_batch_matches_input_dtype(
+    malloc, memcpy, free, batch_dtype, input_dtypes, expected
+) -> None:
+    """get_batch copies batches in the input dtype TensorRT reads them as."""
+    cal = EngineCalibrator()
+    cal.set_input_dtypes(input_dtypes)
+    batch = np.linspace(-2.0, 2.0, 48).astype(batch_dtype).reshape(1, 3, 4, 4)
+    mock_batcher = MagicMock()
+    mock_batcher.get_next_batch.return_value = batch
+    cal.set_batcher(mock_batcher)
+
+    assert cal.get_batch(["input"]) == [1234]
+    sent = memcpy.call_args.args[1]
+    assert sent.dtype == expected
+    np.testing.assert_array_equal(sent, batch.astype(expected))
+    malloc.assert_called_once_with(sent.nbytes)
+    cal.close()
+    free.assert_called_once_with(1234)
