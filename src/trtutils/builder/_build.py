@@ -150,10 +150,14 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     input_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
         A list of (name, dtype format) to allow deep specification of input layers.
         For example, input_tensor_formats=[("input", trt.DataType.UINT8, trt.TensorFormat.HWC)]
+        TensorRT may insert reformat layers between the tensor and the first
+        layer to honor the format; pass ``direct_io=True`` to forbid them.
         By default, None
     output_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
         A list of (name, dtype format) to allow deep specification of output layers.
         For example, output_tensor_formats=[("output", trt.DataType.HALF, trt.TensorFormat.LINEAR)]
+        TensorRT may insert reformat layers to honor the format; pass
+        ``direct_io=True`` to forbid them.
         By default, None
     hooks : list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]], optional
         An optional list of 'hook' functions to modify the TensorRT network before
@@ -182,7 +186,11 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         when building the engine for DLA.
         By default, False
     direct_io : bool
-        Use direct IO for the engine.
+        Forbid TensorRT from inserting reformat layers between the network and
+        the I/O tensors given in ``input_tensor_formats`` / ``output_tensor_formats``.
+        The build fails if a requested format needs a reformat, for example
+        LINEAR fp16 DLA I/O whose rows are not 64-byte aligned.
+        Specifying tensor formats does not enable this.
         By default, False
     prefer_precision_constraints : bool
         Whether or not to prefer precision constraints.
@@ -384,10 +392,9 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         config.set_flag(trt.BuilderFlag.PREFER_PRECISION_CONSTRAINTS)
     if reject_empty_algorithms:
         config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
-    # handle custom datatype/format for input/output tensors
-    if (input_tensor_formats is not None or output_tensor_formats is not None) and not direct_io:
-        LOG.warning("Direct IO not enabled, but some tensor formats specified. Enabling direct IO.")
-        direct_io = True
+    # allowed formats only fix the I/O layout; direct io additionally forbids
+    # the reformat layers some layouts need (e.g. unaligned DLA rows), so it
+    # stays opt-in
     if direct_io:
         config.set_flag(trt.BuilderFlag.DIRECT_IO)
     if input_tensor_formats is not None:
@@ -436,9 +443,11 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
             if calibration_cache is None and data_batcher is None:
                 err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
                 LOG.warning(err_msg)
-            config.int8_calibrator = EngineCalibrator(calibration_cache=calibration_cache)
+            calibrator = EngineCalibrator(calibration_cache=calibration_cache)
+            calibrator.set_input_dtypes(_input_dtypes(network))
             if data_batcher is not None:
-                config.int8_calibrator.set_batcher(data_batcher)
+                calibrator.set_batcher(data_batcher)
+            config.int8_calibrator = calibrator
 
     # assign the default device
     config.default_device_type = default_device
@@ -530,12 +539,27 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
 
     if engine_bytes is None:
         err_msg = "Failed to build engine."
+        if direct_io:
+            err_msg += (
+                " direct_io=True forbids I/O reformats; if the log reports no conformant"
+                " implementation, retry without direct_io."
+            )
         raise RuntimeError(err_msg)
 
     caching_tools.write_atomic(output_path, memoryview(engine_bytes))
 
     if cache:
         caching_tools.store(output_path, overwrite=False, delete_source=False)
+
+
+def _input_dtypes(network: trt.INetworkDefinition) -> dict[str, np.dtype]:
+    """Numpy dtype of each network input with one (bfloat16, fp8 and int4 have none)."""
+    dtypes: dict[str, np.dtype] = {}
+    for idx in range(network.num_inputs):
+        tensor = network.get_input(idx)
+        with contextlib.suppress(TypeError):
+            dtypes[tensor.name] = np.dtype(trt.nptype(tensor.dtype))
+    return dtypes
 
 
 def _dims(input_name: str, shape: object) -> tuple[int, ...]:

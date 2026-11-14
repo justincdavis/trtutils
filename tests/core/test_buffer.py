@@ -82,6 +82,51 @@ class TestConstruction:
         with pytest.raises(ValueError, match="-1"):
             Buffer.empty((-1, 3), np.float32, pinned=False)
 
+    @pytest.mark.parametrize(
+        ("shape", "match"),
+        [
+            pytest.param((-2, 3), "Invalid shape", id="negative-dim"),
+            pytest.param((-1, 3), "-1", id="inferred-dim"),
+            pytest.param((-1, -1), "-1", id="two-inferred-dims"),
+        ],
+    )
+    def test_from_ptr_rejects_negative_dims(self, shape, match) -> None:
+        with pytest.raises(ValueError, match=match):
+            Buffer.from_ptr(1024, shape, np.float32)
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            pytest.param(
+                lambda: Buffer.from_ptr(1024, (np.int64(2), np.int32(3)), np.float32),
+                id="from-ptr",
+            ),
+            pytest.param(
+                lambda: Buffer.wrap(
+                    SimpleNamespace(
+                        __cuda_array_interface__={
+                            "shape": (np.int64(2), np.int64(3)),
+                            "typestr": "<f4",
+                            "data": (1024, False),
+                            "version": 3,
+                        }
+                    )
+                ),
+                id="wrap-cuda-array",
+            ),
+            pytest.param(
+                lambda: Buffer.wrap(np.zeros((2, 3), np.float32)).view((np.int64(2), np.int64(3))),
+                id="full-view",
+            ),
+        ],
+    )
+    def test_shapes_are_plain_ints(self, make) -> None:
+        """Numpy integer dims are normalized on every construction path."""
+        buf = make()
+        assert buf.shape == (2, 3)
+        assert all(type(dim) is int for dim in buf.shape)
+        assert buf.dtype == np.float32
+
     def test_properties(self) -> None:
         buf = Buffer.wrap(np.zeros((2, 3, 4), dtype=np.float16))
         assert buf.ndim == 3
@@ -104,6 +149,33 @@ class TestViews:
     def test_view_larger_than_buffer_raises(self) -> None:
         with pytest.raises(ValueError, match="exceeds"):
             Buffer.wrap(np.zeros(4)).view((5,))
+
+    @pytest.mark.parametrize(
+        "location",
+        [
+            pytest.param(MemoryLocation.HOST, id="host"),
+            pytest.param(MemoryLocation.DEVICE, id="device"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "as_shape",
+        [pytest.param(tuple, id="tuple"), pytest.param(list, id="list")],
+    )
+    def test_full_view_is_a_fresh_buffer(self, fake_cuda, location, as_shape) -> None:
+        """A view at the full shape (how raw_exec returns outputs) never aliases its source."""
+        src = Buffer.empty((2, 3), np.float16, location)
+        ptr = src.ptr
+        view = src.view(as_shape(src.shape))
+        assert view is not src
+        assert (view.ptr, view.shape, view.dtype) == (ptr, src.shape, src.dtype)
+        if location == MemoryLocation.HOST:
+            view.array[:] = 7
+            np.testing.assert_array_equal(src.array, 7)
+        view.free()
+        assert src.ptr == ptr
+        src.free()
+        with pytest.raises(RuntimeError, match="freed"):
+            src.view(src.shape)
 
     def test_reshape_infers_dim(self) -> None:
         buf = Buffer.wrap(np.zeros(12, dtype=np.float32)).reshape((-1, 4))
@@ -282,7 +354,9 @@ class TestInterop:
         assert buf.device_visible
         assert buf.device_ptr == buf.ptr
         assert buf[1].device_ptr == buf.device_ptr + 4
-        assert hasattr(buf, "__cuda_array_interface__")
+        assert buf[1].__cuda_array_interface__["data"] == (buf.device_ptr + 4, False)
+        buf.free()
+        assert not hasattr(buf, "__cuda_array_interface__")
 
     def test_unmapped_host_has_no_device_ptr(self) -> None:
         with pytest.raises(ValueError, match="not mapped"):

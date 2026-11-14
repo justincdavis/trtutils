@@ -195,8 +195,11 @@ class TRTPreprocessor(GPUImagePreprocessor):
             self._engine_inputs.extend([self._mean_buffer.device, self._std_buffer.device])
 
     def __del__(self: Self) -> None:
+        # destroy an owned stream once: a stale handle crashes or frees a stream
+        # that reused it
         with contextlib.suppress(AttributeError, RuntimeError):
             if self._own_stream:
+                self._own_stream = False
                 destroy_stream(self._stream)
         with contextlib.suppress(AttributeError):
             del self._intermediate_binding

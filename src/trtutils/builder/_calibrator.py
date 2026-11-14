@@ -9,11 +9,15 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
 from trtutils.core._memory import cuda_free, cuda_malloc, memcpy_host_to_device
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from typing_extensions import Self
 
     from ._batcher import AbstractBatcher
@@ -50,10 +54,28 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
                 " Calibration data will not persist across runs."
             )
         self._batcher: AbstractBatcher | None = None
+        self._input_dtypes: dict[str, np.dtype] = {}
+        self._warned_dtype = False
 
     def set_batcher(self: Self, batcher: AbstractBatcher) -> None:
         """Set the batcher."""
         self._batcher = batcher
+
+    def set_input_dtypes(self: Self, dtypes: Mapping[str, np.dtype | type[np.generic]]) -> None:
+        """
+        Set the dtype of each network input, by input name.
+
+        TensorRT reads a calibration batch as raw bytes of the input's dtype, so
+        ``get_batch`` casts batches of any other dtype to it. ``build_engine`` sets
+        this from the network after hooks and tensor formats are applied.
+
+        Parameters
+        ----------
+        dtypes : Mapping[str, np.dtype | type[np.generic]]
+            The numpy dtype of each network input, keyed by input name.
+
+        """
+        self._input_dtypes = {name: np.dtype(dtype) for name, dtype in dtypes.items()}
 
     def get_batch_size(self: Self) -> int:
         """
@@ -71,7 +93,7 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             return self._batcher.batch_size
         return 1
 
-    def get_batch(self: Self, names: list[str]) -> list[int] | None:  # noqa: ARG002
+    def get_batch(self: Self, names: list[str]) -> list[int] | None:
         """
         Get the next batch of data.
 
@@ -96,6 +118,18 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         batch = self._batcher.get_next_batch()
         if batch is None:
             return None
+
+        # tensorrt reads the buffer as raw bytes of the input dtype, so a float32 batch
+        # for a float16 input would calibrate on garbage (inf scales, broken engine)
+        expected = self._input_dtypes.get(names[0]) if names else None
+        if expected is not None and batch.dtype != expected:
+            if not self._warned_dtype:
+                LOG.warning(
+                    f"Calibration batch dtype {batch.dtype} does not match the dtype of"
+                    f" network input '{names[0]}' ({expected}), casting batches to {expected}."
+                )
+                self._warned_dtype = True
+            batch = batch.astype(expected)
 
         # reuse one device allocation, growing only if a batch is larger
         if self._ptr is None or batch.nbytes > self._ptr_size:

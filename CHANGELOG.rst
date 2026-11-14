@@ -57,6 +57,10 @@ Added
 * ``TRTEngine`` CUDA graphs (``cuda_graph``): one graph per input configuration (shapes and
   device addresses), captured on the second run at unchanged shapes. The 8 most recent are kept
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
+* ``TRTEngine.execute`` / ``raw_exec`` / ``__call__`` / ``mock_execute`` take a mapping of input
+  name to ``Buffer`` as well as a sequence in ``input_names`` order. Outputs come back in
+  ``output_names`` order, which is not necessarily the ONNX order: TensorRT 8.6 can order
+  same-shape outputs differently, so label them with ``zip(engine.output_names, outputs)``
 * ``QueuedTRTEngine.retrieve_result``: returns the next output, or the error the engine raised
   for that input, without raising it
 * ``parallel.image.ParallelDetector``: runs image detectors in parallel threads
@@ -73,6 +77,10 @@ Added
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)
+* ``Binding.nbytes``, ``strides``, ``vectorized_dim`` and ``components_per_element`` describe an
+  I/O tensor's layout in its TensorRT format. Bindings hold I/O in that format, unconverted; a
+  layout larger than the shape is allocated flat, and outputs at the tensor shape hold its
+  leading bytes
 
 Changed
 ^^^^^^^
@@ -110,6 +118,9 @@ Performance
 * ``hybrid`` preprocessing: yolo11n end2end 0.86 ms on 1080p (RTX 5080), vs 0.98 ms with
   ``"cuda"``
 * PPOCR with the default CUDA postprocessors: 14-line 1080p page about 7.0 ms on an RTX 5080
+* Less host work per ``Buffer`` and per ``TRTEngine.raw_exec`` call. On a Jetson AGX Orin, the
+  trtutils time of ``raw_exec([Buffer.wrap(tensor)])`` drops from 21.3 to 14.9 us, ``raw_exec``
+  with a reused Buffer from 12.0 to 7.7 us, and ``Buffer.from_ptr`` from 4.4 to 2.5 us
 
 Fixed
 ^^^^^
@@ -118,11 +129,21 @@ Fixed
 * ``build_engine(default_device="dla")`` without ``dla_core`` uses DLA core 0. TensorRT had
   selected no core, so the build failed
 * ``read_onnx`` raises ``RuntimeError`` on a file TensorRT 8.6 "parses" into an empty network
+* ``build_engine`` no longer enables ``DIRECT_IO`` when ``input_tensor_formats`` /
+  ``output_tensor_formats`` are given. It forbade I/O reformats, so DLA builds whose rows are not
+  64-byte aligned (e.g. fp16 LINEAR with W=48) failed with "no conformant implementation exists".
+  Pass ``direct_io=True`` to keep the old behavior
 * ``memcpy_host_to_device*`` gathers non-contiguous arrays before copying. They copied raw strided
   bytes, which corrupted crops and other views
 * ``memcpy_device_to_host*`` raises ``ValueError`` on a non-contiguous destination instead of
   writing raw bytes over its parent array
 * ``TRTEngine``: an enqueue rejected by TensorRT raises instead of returning the previous outputs
+* ``TRTEngine`` / ``allocate_bindings`` size each I/O binding by the bytes its TensorRT format
+  spans, not ``prod(shape) * itemsize``. Formats that pad the tensor (``CHW16``, ``CHW32``,
+  ``HWC8`` and other vectorized formats with a partial vector, ``DLA_LINEAR`` / ``DLA_HWC4``
+  with unaligned rows) made GPU engines write past their bindings into neighboring allocations
+  and DLA engines fail to enqueue. An input Buffer smaller than its layout raises ``ValueError``,
+  and the failed-enqueue error names that DLA cause
 * ``TRTEngine``: inputs with dynamic non-batch dimensions are allocated at their max profile shape
 * ``TRTEngine``: a DLA that reads a device input in place no longer reads stale data after the
   input's memory is freed and its address handed out again (PyTorch does this after
@@ -132,6 +153,9 @@ Fixed
   unchanged. Built with ``ProfilingVerbosity.DETAILED``, only the inputs a DLA layer reads
   directly are checked; at the default ``LAYER_NAMES_ONLY`` (TensorRT and ``build_engine``),
   which cannot tell DLA layers from GPU ones, every input is
+* ``TRTEngine``, ``CUDAPreprocessor`` and ``TRTPreprocessor`` destroy the stream they created
+  once. A second ``__del__`` (an explicit call, then garbage collection) destroyed the stale handle
+  again, which segfaults on Jetson (CUDA 12.2) or frees another stream that reused the handle
 * ``TRTEngine(backend="async_v2")`` / ``"async_v3"`` raises ``ValueError`` at construction when the
   installed TensorRT lacks the backend, instead of failing at the first execute
 * Pinned host memory is freed only when no Buffer view or numpy array references it, fixing a
@@ -150,6 +174,10 @@ Fixed
   batcher's ``get_next_batch``
 * INT8 calibration no longer fails with zero worker threads on a 1-CPU machine
 * INT8 calibration reuses one device buffer for its batches. It previously leaked one per batch
+* INT8 calibration casts each batch to the dtype of its network input. TensorRT reads the batch
+  as raw bytes of that dtype, so float32 batches for a float16 input (set by a hook or
+  ``input_tensor_formats``) calibrated on garbage: infinite scales, layers moved off the DLA, or a
+  crash during the build
 * A ``QueuedTRTEngine`` that is not stopped is now garbage collected. Its worker thread used to
   hold a reference to the engine
 * ``get_random_input`` no longer fails on float16 inputs
