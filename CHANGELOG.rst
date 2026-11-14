@@ -118,6 +118,9 @@ Performance
 * ``hybrid`` preprocessing: yolo11n end2end 0.86 ms on 1080p (RTX 5080), vs 0.98 ms with
   ``"cuda"``
 * PPOCR with the default CUDA postprocessors: 14-line 1080p page about 7.0 ms on an RTX 5080
+* Less host work per ``Buffer`` and per ``TRTEngine.raw_exec`` call. On a Jetson AGX Orin, the
+  trtutils time of ``raw_exec([Buffer.wrap(tensor)])`` drops from 21.3 to 14.9 us, ``raw_exec``
+  with a reused Buffer from 12.0 to 7.7 us, and ``Buffer.from_ptr`` from 4.4 to 2.5 us
 
 Fixed
 ^^^^^
