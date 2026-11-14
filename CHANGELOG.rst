@@ -142,6 +142,10 @@ Fixed
   batcher's ``get_next_batch``
 * INT8 calibration no longer fails with zero worker threads on a 1-CPU machine
 * INT8 calibration reuses one device buffer for its batches. It previously leaked one per batch
+* INT8 calibration casts each batch to the dtype of its network input. TensorRT reads the batch
+  as raw bytes of that dtype, so float32 batches for a float16 input (set by a hook or
+  ``input_tensor_formats``) calibrated on garbage: infinite scales, layers moved off the DLA, or a
+  crash during the build
 * A ``QueuedTRTEngine`` that is not stopped is now garbage collected. Its worker thread used to
   hold a reference to the engine
 * ``get_random_input`` no longer fails on float16 inputs

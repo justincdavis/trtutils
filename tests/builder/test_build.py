@@ -5,12 +5,15 @@
 
 from __future__ import annotations
 
+import struct
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from trtutils._flags import FLAGS as REAL_FLAGS
+from trtutils.builder._batcher import SyntheticBatcher
 from trtutils.builder._build import build_engine
 from trtutils.builder.onnx._shapes import get_onnx_input, get_onnx_output
 from trtutils.compat._libs import trt
@@ -135,6 +138,46 @@ def test_build_precision_calibration(
     build_engine(onnx_path, output_engine_path, **kwargs)
     assert output_engine_path.exists()
     assert output_engine_path.stat().st_size > 0
+
+
+@pytest.mark.skipif(
+    REAL_FLAGS.IS_BLACKWELL,
+    reason="Runtime INT8/FP8 calibration is a weakly-typed concept; see test_build_strongly_typed_from_qdq.",
+)
+@_needs_weak_typing
+def test_int8_calibration_casts_batches_to_input_dtype(
+    onnx_path,
+    output_engine_path,
+    calibration_cache_path,
+) -> None:
+    """float32 batches for a float16 input are cast, not read as float16 bytes."""
+
+    def fp16_input(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
+        network.get_input(0).dtype = trt.float16
+        return network
+
+    batcher = SyntheticBatcher(
+        shape=(3, 160, 160),
+        dtype=np.dtype(np.float32),
+        batch_size=1,
+        num_batches=2,
+        order="NCHW",
+    )
+    build_engine(
+        onnx_path,
+        output_engine_path,
+        int8=True,
+        data_batcher=batcher,
+        calibration_cache=calibration_cache_path,
+        hooks=[fp16_input],
+        optimization_level=1,
+    )
+    lines = calibration_cache_path.read_text().splitlines()[1:]
+    scales = dict(line.split(": ") for line in lines)
+    scale = struct.unpack(">f", bytes.fromhex(scales["input"]))[0]
+    # synthetic data lies in [0, 1], so the input scale is about 1/127. Read as
+    # float16 bytes, the float32 data held inf/nan and gave an infinite scale.
+    assert 0.0 < scale < 0.02
 
 
 def test_build_cache(onnx_path, output_engine_path) -> None:
