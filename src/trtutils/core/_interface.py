@@ -20,6 +20,7 @@ from trtutils._log import LOG
 from ._bindings import Binding, allocate_bindings
 from ._buffer import Buffer
 from ._device import Device
+from ._dla import DLAInputBinding, DLAMemoryGuard, dla_input_names
 from ._engine import create_engine, get_engine_names
 from ._stream import destroy_stream
 
@@ -61,6 +62,9 @@ class TRTEngineInterface(ABC):
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+            Pass it for any engine with DLA layers: it also enables the check
+            that keeps a DLA from reading stale data at device addresses freed
+            and handed out again (see ``core._dla.DLAMemoryGuard``).
         device : int, optional
             The CUDA device index to use for this engine. Default is None,
             which uses the current device.
@@ -112,6 +116,16 @@ class TRTEngineInterface(ABC):
                     pagelocked_mem=self._pagelocked_mem,
                     unified_mem=self._unified_mem,
                 )
+
+            # inputs a DLA reads in place check their device memory before each bind;
+            # they share one guard, since TensorRT keeps the DLA registrations of
+            # all of them for the life of each context
+            dla_inputs = dla_input_names(self._engine, self._input_names, dla_core)
+            if dla_inputs:
+                guard = DLAMemoryGuard()
+                for i_binding in self._inputs:
+                    if i_binding.name in dla_inputs:
+                        DLAInputBinding.convert(i_binding, guard)
 
             # store useful properties about the engine
             self._memsize: int = 0
