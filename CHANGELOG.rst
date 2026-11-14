@@ -124,6 +124,11 @@ Fixed
   writing raw bytes over its parent array
 * ``TRTEngine``: an enqueue rejected by TensorRT raises instead of returning the previous outputs
 * ``TRTEngine``: inputs with dynamic non-batch dimensions are allocated at their max profile shape
+* ``TRTEngine``: a DLA that reads a device input in place no longer reads stale data after the
+  input's memory is freed and its address handed out again (PyTorch does this after
+  ``torch.cuda.empty_cache()``). TensorRT keeps the DLA mapping of every input address it has
+  seen, so such an input is copied into the engine's binding instead. Engines built below
+  ``ProfilingVerbosity.DETAILED`` that may contain DLA layers have every input checked
 * ``TRTEngine(backend="async_v2")`` / ``"async_v3"`` raises ``ValueError`` at construction when the
   installed TensorRT lacks the backend, instead of failing at the first execute
 * Pinned host memory is freed only when no Buffer view or numpy array references it, fixing a

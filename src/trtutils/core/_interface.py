@@ -19,6 +19,7 @@ from trtutils._log import LOG
 from ._bindings import Binding, allocate_bindings
 from ._buffer import Buffer
 from ._device import Device
+from ._dla import DLAMemoryGuard, dla_input_names
 from ._engine import create_engine, get_engine_names
 from ._stream import destroy_stream
 
@@ -108,6 +109,15 @@ class TRTEngineInterface(ABC):
                     pagelocked_mem=self._pagelocked_mem,
                     unified_mem=self._unified_mem,
                 )
+
+            # inputs a DLA reads in place share one guard, since TensorRT keeps the
+            # DLA registrations of all of them for the life of each context
+            dla_inputs = dla_input_names(self._engine, self._input_names)
+            if dla_inputs:
+                guard = DLAMemoryGuard()
+                for i_binding in self._inputs:
+                    if i_binding.name in dla_inputs:
+                        i_binding.dla_guard = guard
 
             # store useful properties about the engine
             self._memsize: int = 0
