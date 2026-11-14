@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,9 +27,12 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from numpy.random import Generator
-    from typing_extensions import Self
+    from typing_extensions import Self, TypeAlias
 
     from trtutils.compat._libs import cuda, cudart, trt
+
+    # engine inputs: positional in ``input_names`` order, or keyed by input name
+    EngineInputs: TypeAlias = "Sequence[Buffer] | Mapping[str, Buffer]"
 
 
 class TRTEngineInterface(ABC):
@@ -265,7 +269,12 @@ class TRTEngineInterface(ABC):
     @property
     def input_names(self: Self) -> list[str]:
         """
-        Get the names of the input tensors of the network.
+        Get the names of the input tensors of the network, in engine order.
+
+        A sequence passed to :meth:`execute` / :meth:`raw_exec` is matched to
+        the inputs in this order. TensorRT does not promise that it is the
+        ONNX ``graph.input`` order, so pass a mapping of input name to Buffer
+        instead of relying on it.
 
         Returns
         -------
@@ -317,7 +326,12 @@ class TRTEngineInterface(ABC):
     @property
     def output_names(self: Self) -> list[str]:
         """
-        Get the names of the output tensors of the network.
+        Get the names of the output tensors of the network, in engine order.
+
+        :meth:`execute` and :meth:`raw_exec` return the outputs in this order,
+        which is not necessarily the ONNX ``graph.output`` order: TensorRT 8.6,
+        for one, orders them by where their producing nodes appear in the graph.
+        Label outputs with ``dict(zip(engine.output_names, outputs))``.
 
         Returns
         -------
@@ -352,6 +366,30 @@ class TRTEngineInterface(ABC):
 
         """
         return self._outputs
+
+    def _inputs_in_engine_order(self: Self, data: EngineInputs) -> Sequence[Buffer]:
+        """
+        Order inputs keyed by name into engine order; sequences pass through unchanged.
+
+        Raises
+        ------
+        ValueError
+            If a mapping misses an engine input or names a tensor that is not one.
+
+        """
+        if not isinstance(data, Mapping):
+            return data
+        names = self._input_names
+        missing = [name for name in names if name not in data]
+        unknown = [key for key in data if key not in names]
+        if missing or unknown:
+            err_msg = f"Engine '{self._name}' has inputs {names}"
+            if missing:
+                err_msg += f"; missing {missing}"
+            if unknown:
+                err_msg += f"; unknown {unknown}"
+            raise ValueError(err_msg + ".")
+        return [data[name] for name in names]
 
     def __del__(self: Self) -> None:
         # NOTE: handle stream sync/cleanup better
@@ -388,7 +426,7 @@ class TRTEngineInterface(ABC):
     @abstractmethod
     def execute(
         self: Self,
-        data: Sequence[Buffer],
+        data: EngineInputs,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -399,8 +437,10 @@ class TRTEngineInterface(ABC):
 
         Parameters
         ----------
-        data : Sequence[Buffer]
-            One Buffer per engine input, on the host or the device.
+        data : Sequence[Buffer] | Mapping[str, Buffer]
+            One Buffer per engine input, on the host or the device: a
+            sequence in :attr:`input_names` order, or a mapping from input
+            name to Buffer.
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -417,14 +457,14 @@ class TRTEngineInterface(ABC):
         Returns
         -------
         list[np.ndarray]
-            The outputs of the network.
+            The outputs of the network, in :attr:`output_names` order.
 
         """
 
     @abstractmethod
     def raw_exec(
         self: Self,
-        data: Sequence[Buffer],
+        data: EngineInputs,
         *,
         verbose: bool | None = None,
         debug: bool | None = None,
@@ -434,8 +474,10 @@ class TRTEngineInterface(ABC):
 
         Parameters
         ----------
-        data : Sequence[Buffer]
-            One Buffer per engine input, on the host or the device.
+        data : Sequence[Buffer] | Mapping[str, Buffer]
+            One Buffer per engine input, on the host or the device: a
+            sequence in :attr:`input_names` order, or a mapping from input
+            name to Buffer.
         verbose : bool, optional
             Whether or not to output additional information
             to stdout. If not provided, will default to overall
@@ -498,7 +540,7 @@ class TRTEngineInterface(ABC):
 
     def __call__(
         self: Self,
-        data: Sequence[Buffer],
+        data: EngineInputs,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -509,8 +551,10 @@ class TRTEngineInterface(ABC):
 
         Parameters
         ----------
-        data : Sequence[Buffer]
-            One Buffer per engine input, on the host or the device.
+        data : Sequence[Buffer] | Mapping[str, Buffer]
+            One Buffer per engine input, on the host or the device: a
+            sequence in :attr:`input_names` order, or a mapping from input
+            name to Buffer.
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -527,14 +571,14 @@ class TRTEngineInterface(ABC):
         Returns
         -------
         list[np.ndarray]
-            The outputs of the network.
+            The outputs of the network, in :attr:`output_names` order.
 
         """
         return self.execute(data, no_copy=no_copy, verbose=verbose, debug=debug)
 
     def mock_execute(
         self: Self,
-        data: Sequence[Buffer] | None = None,
+        data: EngineInputs | None = None,
         *,
         verbose: bool | None = None,
         debug: bool | None = None,
@@ -547,7 +591,7 @@ class TRTEngineInterface(ABC):
 
         Parameters
         ----------
-        data : Sequence[Buffer], optional
+        data : Sequence[Buffer] | Mapping[str, Buffer], optional
             The inputs to the network, by default None
             If None, random inputs will be generated.
         verbose : bool, optional
@@ -560,7 +604,7 @@ class TRTEngineInterface(ABC):
         Returns
         -------
         list[np.ndarray]
-            The outputs of the network.
+            The outputs of the network, in :attr:`output_names` order.
 
         """
         verbose = verbose if verbose is not None else self._verbose
