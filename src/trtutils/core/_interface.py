@@ -377,9 +377,11 @@ class TRTEngineInterface(ABC):
         for attr in attrs:
             _del(self, attr)
 
-        # only a stream the engine created is its to destroy
+        # only a stream the engine created is its to destroy, and only once:
+        # destroying a stale handle crashes or frees a stream that reused it
         with contextlib.suppress(AttributeError, RuntimeError):
             if self._own_stream:
+                self._own_stream = False
                 with self._device_guard:
                     destroy_stream(self._stream)
 

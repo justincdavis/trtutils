@@ -286,19 +286,28 @@ class TestEngine:
         assert self.engine.input_dtypes is self.engine.input_dtypes
 
 
-def test_engine_destroys_only_its_own_stream(engine_path, monkeypatch) -> None:
-    """The stream an engine created is destroyed with it; a passed-in one is left alone."""
+@pytest.mark.parametrize(
+    "explicit_dels",
+    [pytest.param(0, id="del-only"), pytest.param(2, id="explicit-del-twice")],
+)
+def test_engine_destroys_only_its_own_stream(engine_path, monkeypatch, explicit_dels) -> None:
+    """The stream an engine created is destroyed with it, once; a passed-in one is left alone."""
     destroyed: list[object] = []
     monkeypatch.setattr(_interface, "destroy_stream", destroyed.append)
     own = TRTEngine(engine_path)
     own_stream = own.stream
+    for _ in range(explicit_dels):
+        own.__del__()
     del own
     assert destroyed == [own_stream]
 
     destroyed.clear()
     shared = create_stream()
     eng = TRTEngine(engine_path, stream=shared)
+    for _ in range(explicit_dels):
+        eng.__del__()
     del eng
     assert destroyed == []
     monkeypatch.undo()
     destroy_stream(shared)
+    destroy_stream(own_stream)

@@ -12,11 +12,14 @@ import numpy as np
 import pytest
 
 from trtutils import Buffer, MemoryLocation
+from trtutils.core import destroy_stream
 from trtutils.image.preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
     HybridPreprocessor,
     TRTPreprocessor,
+    _cuda,
+    _trt,
 )
 from trtutils.image.preprocessors._base import crop_geometry
 from trtutils.image.preprocessors._cpu import letterbox, preprocess, resize_linear
@@ -276,6 +279,28 @@ def test_strided_views_match_contiguous(gpu_cls, memory, widths) -> None:
     expected = preproc.preprocess([np.ascontiguousarray(v) for v in views])
     result = preproc.preprocess(views)
     np.testing.assert_array_equal(result[0], expected[0])
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("gpu_cls", "module"),
+    [
+        pytest.param(CUDAPreprocessor, _cuda, id="cuda"),
+        pytest.param(TRTPreprocessor, _trt, id="trt"),
+    ],
+)
+def test_gpu_destroys_own_stream_once(gpu_cls, module, monkeypatch) -> None:
+    """Repeated __del__ calls destroy the stream the preprocessor created exactly once."""
+    destroyed: list[object] = []
+    monkeypatch.setattr(module, "destroy_stream", destroyed.append)
+    preproc = gpu_cls(SIZE, RANGE, DTYPE)
+    stream = preproc._stream
+    preproc.__del__()
+    preproc.__del__()
+    del preproc
+    assert destroyed == [stream]
+    monkeypatch.undo()
+    destroy_stream(stream)
 
 
 @pytest.mark.parametrize(("preproc_cls", "kwargs"), PREPROCS)

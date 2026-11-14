@@ -124,6 +124,9 @@ Fixed
   writing raw bytes over its parent array
 * ``TRTEngine``: an enqueue rejected by TensorRT raises instead of returning the previous outputs
 * ``TRTEngine``: inputs with dynamic non-batch dimensions are allocated at their max profile shape
+* ``TRTEngine``, ``CUDAPreprocessor`` and ``TRTPreprocessor`` destroy the stream they created
+  once. A second ``__del__`` (an explicit call, then garbage collection) destroyed the stale handle
+  again, which segfaults on Jetson (CUDA 12.2) or frees another stream that reused the handle
 * ``TRTEngine(backend="async_v2")`` / ``"async_v3"`` raises ``ValueError`` at construction when the
   installed TensorRT lacks the backend, instead of failing at the first execute
 * Pinned host memory is freed only when no Buffer view or numpy array references it, fixing a
