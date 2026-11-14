@@ -22,13 +22,14 @@ from .core._interface import TRTEngineInterface
 from .core._stream import stream_synchronize
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
     from typing import ClassVar
 
     import numpy as np
     from typing_extensions import Self
 
     from trtutils.compat._libs import cuda
+
+    from .core._interface import EngineInputs
 
     # the shape and device address of every input
     _GraphKey = tuple[tuple[tuple[int, ...], ...], tuple[int, ...]]
@@ -364,17 +365,18 @@ class TRTEngine(TRTEngineInterface):
             self._allocations[binding.index] = address
         self._input_addresses[index] = address
 
-    def _validate_inputs(self: Self, data: Sequence[Buffer]) -> list[Buffer]:
+    def _validate_inputs(self: Self, data: EngineInputs) -> list[Buffer]:
         """
         Check the inputs against the engine without touching the context.
 
         Raises
         ------
         ValueError
-            If the number of inputs, a dtype, or a shape does not match the engine.
+            If the number of inputs, a dtype, or a shape does not match the
+            engine, or a mapping does not name exactly the engine inputs.
 
         """
-        inputs = as_buffers(data)
+        inputs = as_buffers(self._inputs_in_engine_order(data))
         if len(inputs) != len(self._inputs):
             err_msg = f"Engine '{self._name}' expects {len(self._inputs)} inputs, got {len(inputs)}."
             raise ValueError(err_msg)
@@ -382,7 +384,7 @@ class TRTEngine(TRTEngineInterface):
             binding.check(buffer, self._name)
         return inputs
 
-    def _bind_inputs(self: Self, data: Sequence[Buffer]) -> None:
+    def _bind_inputs(self: Self, data: EngineInputs) -> None:
         """
         Point the context at the given inputs, updating shapes and addresses as needed.
 
@@ -518,7 +520,7 @@ class TRTEngine(TRTEngineInterface):
 
     def execute(
         self: Self,
-        data: Sequence[Buffer],
+        data: EngineInputs,
         *,
         no_copy: bool | None = None,
         verbose: bool | None = None,
@@ -535,9 +537,13 @@ class TRTEngine(TRTEngineInterface):
 
         Parameters
         ----------
-        data : Sequence[Buffer]
-            One Buffer per engine input. Wrap numpy arrays or CUDA arrays
-            (CuPy, PyTorch, ...) with :meth:`Buffer.wrap`.
+        data : Sequence[Buffer] | Mapping[str, Buffer]
+            One Buffer per engine input: a sequence in :attr:`input_names`
+            order, or a mapping from input name to Buffer. TensorRT does not
+            promise to keep the ONNX input order, and inputs of the same
+            shape and dtype cannot be told apart, so a mapping is the safe
+            form. Wrap numpy arrays or CUDA arrays (CuPy, PyTorch, ...) with
+            :meth:`Buffer.wrap`.
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -554,7 +560,8 @@ class TRTEngine(TRTEngineInterface):
         Returns
         -------
         list[np.ndarray]
-            The outputs of the network.
+            The outputs of the network, in :attr:`output_names` order, which
+            is not necessarily the ONNX output order.
 
         Notes
         -----
@@ -582,7 +589,7 @@ class TRTEngine(TRTEngineInterface):
 
         return [o.array if no_copy else o.array.copy() for o in outputs]
 
-    def _run(self: Self, data: Sequence[Buffer], *, allow_graph: bool, debug: bool | None) -> None:
+    def _run(self: Self, data: EngineInputs, *, allow_graph: bool, debug: bool | None) -> None:
         """Bind the inputs and enqueue one execution on the engine stream."""
         self._bind_inputs(data)
         if debug:
@@ -650,7 +657,7 @@ class TRTEngine(TRTEngineInterface):
 
     def raw_exec(
         self: Self,
-        data: Sequence[Buffer],
+        data: EngineInputs,
         *,
         graph: bool | None = None,
         verbose: bool | None = None,
@@ -666,8 +673,8 @@ class TRTEngine(TRTEngineInterface):
 
         Parameters
         ----------
-        data : Sequence[Buffer]
-            One Buffer per engine input.
+        data : Sequence[Buffer] | Mapping[str, Buffer]
+            One Buffer per engine input, as in :meth:`execute`.
         graph : bool, optional
             Whether to replay the engine's own CUDA graph, as :meth:`execute`
             does, for callers that consume the outputs on the device right
@@ -682,7 +689,8 @@ class TRTEngine(TRTEngineInterface):
         Returns
         -------
         list[Buffer]
-            Device views of the outputs, shaped to the executed input shapes.
+            Device views of the outputs, shaped to the executed input shapes,
+            in :attr:`output_names` order.
 
         Notes
         -----

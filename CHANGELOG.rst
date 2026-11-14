@@ -57,6 +57,10 @@ Added
 * ``TRTEngine`` CUDA graphs (``cuda_graph``): one graph per input configuration (shapes and
   device addresses), captured on the second run at unchanged shapes. The 8 most recent are kept
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
+* ``TRTEngine.execute`` / ``raw_exec`` / ``__call__`` / ``mock_execute`` take a mapping of input
+  name to ``Buffer`` as well as a sequence in ``input_names`` order. Outputs come back in
+  ``output_names`` order, which is not necessarily the ONNX order: TensorRT 8.6 can order
+  same-shape outputs differently, so label them with ``zip(engine.output_names, outputs)``
 * ``QueuedTRTEngine.retrieve_result``: returns the next output, or the error the engine raised
   for that input, without raising it
 * ``parallel.image.ParallelDetector``: runs image detectors in parallel threads
