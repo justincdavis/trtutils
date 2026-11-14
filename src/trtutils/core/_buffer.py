@@ -128,7 +128,9 @@ def _normalize_shape(
     size: int | None = None,
 ) -> tuple[int, ...]:
     """Resolve a shape, inferring a single -1 dimension from ``size`` when given."""
-    dims = (shape,) if isinstance(shape, int) else tuple(int(d) for d in shape)
+    dims = (shape,) if isinstance(shape, int) else tuple(map(int, shape))
+    if not dims or min(dims) >= 0:
+        return dims
     if dims.count(-1) > 1 or (-1 in dims and size is None):
         err_msg = f"Cannot infer the -1 dimension of shape {dims}."
         raise ValueError(err_msg)
@@ -226,16 +228,59 @@ class Buffer:
         if location == MemoryLocation.HOST and array is None:
             err_msg = "Host buffers require a backing numpy array."
             raise ValueError(err_msg)
+        self._init(
+            location,
+            np.dtype(dtype),
+            tuple(map(int, shape)),
+            int(ptr),
+            array,
+            owner,
+            pinned,
+            mapped_ptr,
+            readonly,
+        )
+
+    def _init(
+        self: Self,
+        location: MemoryLocation,
+        dtype: np.dtype,
+        shape: tuple[int, ...],
+        ptr: int,
+        array: np.ndarray | None,
+        owner: object | None,
+        pinned: bool,  # noqa: FBT001
+        mapped_ptr: int | None,
+        readonly: bool,  # noqa: FBT001
+    ) -> None:
         self._location = location
-        self._dtype = np.dtype(dtype)
-        self._shape = tuple(int(d) for d in shape)
-        self._ptr = int(ptr)
+        self._dtype = dtype
+        self._shape = shape
+        self._ptr = ptr
         self._array = array
         self._owner = owner
         self._pinned = pinned
         self._mapped_ptr = mapped_ptr
         self._readonly = readonly
         self._released = False
+
+    @classmethod
+    def _create(
+        cls: type[Self],
+        location: MemoryLocation,
+        dtype: np.dtype,
+        shape: tuple[int, ...],
+        ptr: int,
+        array: np.ndarray | None = None,
+        owner: object | None = None,
+        pinned: bool = False,  # noqa: FBT001, FBT002
+        mapped_ptr: int | None = None,
+        readonly: bool = False,  # noqa: FBT001, FBT002
+    ) -> Self:
+        """Build a Buffer from fields already normalized (np.dtype, tuple of ints, int pointer)."""
+        # skips __init__'s conversions, which dominate the per-call cost of wrap/view
+        buffer = cls.__new__(cls)
+        cls._init(buffer, location, dtype, shape, ptr, array, owner, pinned, mapped_ptr, readonly)
+        return buffer
 
     # ------------------------------------------------------------------
     # constructors
@@ -436,7 +481,7 @@ class Buffer:
                     f"shape {obj.shape}. Use Buffer.from_array (copies) or np.ascontiguousarray."
                 )
                 raise ValueError(err_msg)
-            return cls(
+            return cls._create(
                 MemoryLocation.HOST,
                 obj.dtype,
                 obj.shape,
@@ -455,7 +500,7 @@ class Buffer:
 
     @classmethod
     def _from_cuda_array_interface(cls: type[Self], obj: object, interface: dict) -> Self:
-        shape = tuple(int(d) for d in interface["shape"])
+        shape = tuple(map(int, interface["shape"]))
         dtype = np.dtype(interface["typestr"])
         if interface.get("mask") is not None:
             err_msg = "Masked CUDA arrays are not supported."
@@ -471,7 +516,7 @@ class Buffer:
         if stream is not None:
             stream_synchronize(cudart.cudaStream_t(int(stream)))
         ptr, readonly = interface["data"]
-        return cls(
+        return cls._create(
             MemoryLocation.DEVICE,
             dtype,
             shape,
@@ -516,11 +561,12 @@ class Buffer:
 
         """
         dtype = np.dtype(dtype)
-        dims = _normalize_shape(tuple(shape))
+        dims = _normalize_shape(shape)
+        ptr = int(ptr)
         array: np.ndarray | None = None
         if location == MemoryLocation.HOST:
-            array = _host_array(int(ptr), dims, dtype, owner)
-        return cls(location, dtype, dims, ptr, array=array, owner=owner)
+            array = _host_array(ptr, dims, dtype, owner)
+        return cls._create(location, dtype, dims, ptr, array, owner)
 
     # ------------------------------------------------------------------
     # properties
@@ -671,6 +717,9 @@ class Buffer:
 
         """
         self._check_alive()
+        if isinstance(shape, tuple) and shape == self._shape:
+            # the whole buffer, e.g. an engine output at its full shape
+            return self._subview(0, self._shape)
         dims = _normalize_shape(shape)
         count = math.prod(dims)
         if count > self.size:
@@ -773,16 +822,16 @@ class Buffer:
         if self._array is not None:
             count = math.prod(shape)
             array = self._array.reshape(-1)[offset_elems : offset_elems + count].reshape(shape)
-        return Buffer(
+        return Buffer._create(
             self._location,
             self._dtype,
             shape,
             self._ptr + offset,
-            array=array,
-            owner=self._owner,
-            pinned=self._pinned,
-            mapped_ptr=self._mapped_ptr + offset if self._mapped_ptr is not None else None,
-            readonly=self._readonly,
+            array,
+            self._owner,
+            self._pinned,
+            self._mapped_ptr + offset if self._mapped_ptr is not None else None,
+            self._readonly,
         )
 
     # ------------------------------------------------------------------
@@ -929,13 +978,15 @@ class Buffer:
             by other libraries behave correctly.
 
         """
-        if not self.device_visible or self._released:
+        # read per output by torch.as_tensor / cupy.asarray, so no property calls
+        ptr = self._ptr if self._location == MemoryLocation.DEVICE else self._mapped_ptr
+        if ptr is None or self._released:
             err_msg = "Buffer is not device-addressable."
             raise AttributeError(err_msg)
         return {
             "shape": self._shape,
             "typestr": self._dtype.str,
-            "data": (self.device_ptr, self._readonly),
+            "data": (ptr, self._readonly),
             "strides": None,
             "version": 3,
         }
@@ -1025,7 +1076,10 @@ def as_buffers(data: Sequence[Buffer]) -> list[Buffer]:
         If ``data`` is not a sequence of Buffers.
 
     """
-    if not isinstance(data, Sequence) or isinstance(data, (str, bytes)):
+    # lists and tuples skip the slower abstract Sequence check
+    if not isinstance(data, (list, tuple)) and (
+        not isinstance(data, Sequence) or isinstance(data, (str, bytes))
+    ):
         err_msg = f"Engine inputs must be a sequence of Buffers, got {type(data).__name__}."
         raise TypeError(err_msg)
     for item in data:
