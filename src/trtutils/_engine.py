@@ -111,6 +111,9 @@ class TRTEngine(TRTEngineInterface):
         dla_core : int, optional
             The DLA core to assign DLA layers of the engine to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.
+            Pass it for any engine with DLA layers: it also enables the check
+            that keeps a DLA from reading stale data at device addresses freed
+            and handed out again (see ``core._dla.DLAMemoryGuard``).
         device : int, optional
             The CUDA device index to use for this engine. Default is None,
             which uses the current device.

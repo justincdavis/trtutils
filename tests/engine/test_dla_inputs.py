@@ -10,8 +10,8 @@ import pytest
 
 from trtutils import TRTEngine
 from trtutils.compat._libs import trt
-from trtutils.core import Buffer, stream_synchronize
-from trtutils.core._dla import DLAMemoryGuard, dla_input_names
+from trtutils.core import Binding, Buffer, stream_synchronize
+from trtutils.core._dla import DLAInputBinding, DLAMemoryGuard, dla_input_names
 
 # CUDA hands a freed allocation this large back out with new pages, which is
 # what a stale DLA read needs to show; small ones keep their pages
@@ -19,33 +19,49 @@ _ALLOC_ELEMS = 8 << 20
 _SHAPE = (1, 16, 32, 32)
 
 
-def _build(path, *, device: str, dtype: trt.DataType, verbosity: trt.ProfilingVerbosity):
-    """Build a one-conv engine, on the DLA with no GPU layer before it when possible."""
-    logger = trt.Logger(trt.Logger.ERROR)
-    builder = trt.Builder(logger)
+def _build(path, net: str, verbosity: trt.ProfilingVerbosity):
+    """
+    Build a small engine.
+
+    ``dla``: an fp16 conv whose input the DLA reads directly. ``dla-mixed``: the
+    same plus an fp32 input added to its output, which a GPU reformat feeds to
+    the DLA. ``gpu-conv``: the conv on the GPU. ``gpu-layernorm``: a layer norm,
+    which TensorRT compiles into a Myelin ForeignNode on the GPU.
+    """
+    builder = trt.Builder(trt.Logger(trt.Logger.ERROR))
     network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
-    x = network.add_input("input", dtype, _SHAPE)
-    weights = np.random.default_rng(0).standard_normal((16, 16, 3, 3)).astype(np.float32) * 0.1
-    conv = network.add_convolution_nd(
-        x, 16, (3, 3), trt.Weights(weights), trt.Weights(np.zeros(16, dtype=np.float32))
-    )
-    conv.padding_nd = (1, 1)
-    y = conv.get_output(0)
-    y.name = "output"
-    network.mark_output(y)
-    for tensor in (x, y):
-        tensor.dtype = dtype
-        tensor.allowed_formats = 1 << int(trt.TensorFormat.LINEAR)
     config = builder.create_builder_config()
-    config.set_flag(trt.BuilderFlag.FP16)
     config.profiling_verbosity = verbosity
-    if device == "dla":
-        config.default_device_type = trt.DeviceType.DLA
-        config.DLA_core = 0
-        config.set_flag(trt.BuilderFlag.GPU_FALLBACK)
-        if dtype == trt.float16:
+    if net == "gpu-layernorm":
+        x = network.add_input("input", trt.float32, (1, 32, 64))
+        scale = network.add_constant((1, 1, 64), np.ones((1, 1, 64), dtype=np.float32))
+        bias = network.add_constant((1, 1, 64), np.zeros((1, 1, 64), dtype=np.float32))
+        norm = network.add_normalization(x, scale.get_output(0), bias.get_output(0), 1 << 2)
+        y = norm.get_output(0)
+    else:
+        x = network.add_input("input", trt.float16, _SHAPE)
+        weights = np.random.default_rng(0).standard_normal((16, 16, 3, 3)).astype(np.float32)
+        weights *= 0.1
+        conv = network.add_convolution_nd(
+            x, 16, (3, 3), trt.Weights(weights), trt.Weights(np.zeros(16, dtype=np.float32))
+        )
+        conv.padding_nd = (1, 1)
+        y = conv.get_output(0)
+        if net == "dla-mixed":
+            other = network.add_input("other", trt.float32, _SHAPE)
+            y = network.add_elementwise(y, other, trt.ElementWiseOperation.SUM).get_output(0)
+        for tensor in (x, y):
+            tensor.dtype = trt.float16
+            tensor.allowed_formats = 1 << int(trt.TensorFormat.LINEAR)
+        config.set_flag(trt.BuilderFlag.FP16)
+        if net != "gpu-conv":
+            config.default_device_type = trt.DeviceType.DLA
+            config.DLA_core = 0
+            config.set_flag(trt.BuilderFlag.GPU_FALLBACK)
             # fp16 rows of 64 bytes are valid DLA input; forbid a GPU reformat anyway
             config.set_flag(trt.BuilderFlag.DIRECT_IO)
+    y.name = "output"
+    network.mark_output(y)
     path.write_bytes(bytes(builder.build_serialized_network(network, config)))
     return path
 
@@ -54,7 +70,7 @@ def _build(path, *, device: str, dtype: trt.DataType, verbosity: trt.ProfilingVe
 def dla_engine_path(tmp_path_factory):
     """A DLA engine whose fp16 input the DLA reads in place."""
     path = tmp_path_factory.mktemp("dla") / "direct.engine"
-    return _build(path, device="dla", dtype=trt.float16, verbosity=trt.ProfilingVerbosity.DETAILED)
+    return _build(path, "dla", trt.ProfilingVerbosity.DETAILED)
 
 
 def test_guard_refuses_reissued_allocation() -> None:
@@ -82,34 +98,41 @@ def test_guard_refuses_reissued_allocation() -> None:
 
 @pytest.mark.dla
 @pytest.mark.parametrize(
-    ("device", "dtype", "verbosity", "expected"),
+    ("net", "verbosity", "dla_core", "expected"),
     [
-        pytest.param("dla", "float16", "DETAILED", ["input"], id="dla-reads-input"),
-        pytest.param("dla", "float32", "DETAILED", [], id="dla-after-gpu-reformat"),
-        pytest.param("dla", "float16", "LAYER_NAMES_ONLY", ["input"], id="dla-names-only"),
-        pytest.param("dla", "float16", "NONE", ["input"], id="dla-no-layer-info"),
-        pytest.param("gpu", "float16", "LAYER_NAMES_ONLY", [], id="gpu-names-only"),
-        pytest.param("gpu", "float16", "DETAILED", [], id="gpu-detailed"),
+        pytest.param("gpu-layernorm", "LAYER_NAMES_ONLY", None, [], id="gpu-myelin-names-only"),
+        pytest.param("gpu-conv", "DETAILED", None, [], id="gpu-detailed"),
+        pytest.param("gpu-conv", "DETAILED", 0, [], id="gpu-detailed-dla-core"),
+        pytest.param("dla-mixed", "DETAILED", 0, ["input"], id="dla-detailed-dla-core"),
+        pytest.param("dla-mixed", "DETAILED", None, [], id="dla-detailed-no-dla-core"),
+        pytest.param(
+            "dla-mixed", "LAYER_NAMES_ONLY", 0, ["input", "other"], id="dla-names-only-dla-core"
+        ),
+        pytest.param("dla-mixed", "NONE", 0, ["input", "other"], id="dla-no-layer-info-dla-core"),
+        pytest.param("dla-mixed", "LAYER_NAMES_ONLY", None, [], id="dla-names-only-no-dla-core"),
     ],
 )
-def test_dla_input_names(tmp_path, device, dtype, verbosity, expected) -> None:
-    """Inputs a DLA reads in place are found, conservatively without per-layer detail."""
-    path = _build(
-        tmp_path / "net.engine",
-        device=device,
-        dtype=getattr(trt, dtype),
-        verbosity=getattr(trt.ProfilingVerbosity, verbosity),
-    )
-    engine = TRTEngine(path, warmup=False, cuda_graph=False)
-    assert dla_input_names(engine.engine, engine.input_names) == expected
-    assert [b.dla_guard is not None for b in engine.input_bindings] == [bool(expected)]
+def test_dla_inputs_get_guarded_bind(tmp_path, net, verbosity, dla_core, expected) -> None:
+    """Exactly the inputs a DLA reads in place get a guarded bind; the rest keep Binding.bind."""
+    path = _build(tmp_path / "net.engine", net, getattr(trt.ProfilingVerbosity, verbosity))
+    engine = TRTEngine(path, warmup=False, cuda_graph=False, dla_core=dla_core)
+    if net == "gpu-layernorm":
+        # names only, a Myelin subgraph looks like a DLA one
+        info = engine.engine.create_engine_inspector().get_engine_information(
+            trt.LayerInformationFormat.JSON
+        )
+        assert "ForeignNode" in info
+    assert dla_input_names(engine.engine, engine.input_names, dla_core) == expected
+    guarded = [b.name for b in engine.input_bindings if isinstance(b, DLAInputBinding)]
+    assert guarded == expected
+    assert all(type(b) is Binding for b in engine.input_bindings if b.name not in expected)
 
 
 @pytest.mark.dla
 @pytest.mark.regression
 def test_dla_reads_input_at_reissued_address(dla_engine_path) -> None:
     """A DLA reading its input in place sees new data at an address freed and handed out again."""
-    engine = TRTEngine(dla_engine_path, warmup=False, cuda_graph=False)
+    engine = TRTEngine(dla_engine_path, warmup=False, cuda_graph=False, dla_core=0)
     rng = np.random.default_rng(0)
     seen: set[int] = set()
     reissued = 0

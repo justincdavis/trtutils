@@ -127,8 +127,11 @@ Fixed
 * ``TRTEngine``: a DLA that reads a device input in place no longer reads stale data after the
   input's memory is freed and its address handed out again (PyTorch does this after
   ``torch.cuda.empty_cache()``). TensorRT keeps the DLA mapping of every input address it has
-  seen, so such an input is copied into the engine's binding instead. Engines built below
-  ``ProfilingVerbosity.DETAILED`` that may contain DLA layers have every input checked
+  seen, so such an input is copied into the engine's binding instead. The check applies to
+  engines loaded with ``dla_core``, so pass it for DLA engines; other engines load and run
+  unchanged. Built with ``ProfilingVerbosity.DETAILED``, only the inputs a DLA layer reads
+  directly are checked; at the default ``LAYER_NAMES_ONLY`` (TensorRT and ``build_engine``),
+  which cannot tell DLA layers from GPU ones, every input is
 * ``TRTEngine(backend="async_v2")`` / ``"async_v3"`` raises ``ValueError`` at construction when the
   installed TensorRT lacks the backend, instead of failing at the first execute
 * Pinned host memory is freed only when no Buffer view or numpy array references it, fixing a

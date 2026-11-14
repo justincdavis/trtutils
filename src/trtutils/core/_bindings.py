@@ -20,8 +20,6 @@ if TYPE_CHECKING:
 
     from trtutils.compat._libs import cudart
 
-    from ._dla import DLAMemoryGuard
-
 
 def _prefix(buffer: Buffer, shape: tuple[int, ...]) -> Buffer:
     """View the leading elements of a buffer, reusing the buffer itself at its full shape."""
@@ -91,7 +89,6 @@ class Binding:
         # staged or fetched, which stays the same from call to call
         self._view_shape = self._shape
         self._view_pair = (host, device)
-        self._dla_guard: DLAMemoryGuard | None = None
 
     @property
     def index(self: Self) -> int:
@@ -194,15 +191,6 @@ class Binding:
         return self._host.array
 
     @property
-    def dla_guard(self: Self) -> DLAMemoryGuard | None:
-        """The guard for an input a DLA reads in place, which :meth:`bind` consults."""
-        return self._dla_guard
-
-    @dla_guard.setter
-    def dla_guard(self: Self, guard: DLAMemoryGuard | None) -> None:
-        self._dla_guard = guard
-
-    @property
     def pagelocked_mem(self: Self) -> bool:
         """Whether the host buffer is pagelocked."""
         return self._host.pinned
@@ -218,9 +206,6 @@ class Binding:
 
         Device Buffers and mapped host Buffers at 256-byte aligned addresses
         are returned as is; anything else is copied in with :meth:`stage`.
-        For an input a DLA reads in place, memory at an address that was
-        freed and handed out again since TensorRT registered it with the DLA
-        is copied in as well (see ``DLAMemoryGuard``).
 
         Parameters
         ----------
@@ -235,11 +220,7 @@ class Binding:
             ``src`` itself, or the device view of the staged data.
 
         """
-        if (
-            src.device_visible
-            and src.device_ptr % DEVICE_ALIGNMENT == 0
-            and (self._dla_guard is None or self._dla_guard.can_read(src.device_ptr))
-        ):
+        if src.device_visible and src.device_ptr % DEVICE_ALIGNMENT == 0:
             return src
         return self.stage(src, stream)
 
