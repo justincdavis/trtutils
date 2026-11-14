@@ -5,14 +5,18 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from trtutils.builder._build import build_engine
 from trtutils.builder._dla import build_dla_engine, can_run_on_dla
 from trtutils.builder._onnx import read_onnx
 from trtutils.builder._utils import get_check_dla
 from trtutils.compat._libs import trt
+from trtutils.core._engine import create_engine
+from trtutils.core._stream import destroy_stream
 
 pytestmark = pytest.mark.jetson
 
@@ -89,6 +93,52 @@ def test_build_dla_engine(
     )
     assert output_engine_path.exists()
     assert output_engine_path.stat().st_size > 0
+
+
+@pytest.mark.dla
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    ("width", "direct_io", "layer_types"),
+    [
+        # 48 fp16 values are 96 bytes, so DLA needs a reformat to aligned rows
+        pytest.param(48, False, ["Reformat", "DLA", "Reformat"], id="unaligned-rows"),
+        # aligned rows need no reformat, but without direct_io TensorRT may still
+        # time one in, so only direct_io pins the layout
+        pytest.param(64, True, ["DLA"], id="aligned-rows-direct-io"),
+        pytest.param(48, True, None, id="unaligned-rows-direct-io"),
+    ],
+)
+def test_build_engine_dla_fp16_io_formats(
+    conv_onnx, output_engine_path, width: int, direct_io: bool, layer_types
+) -> None:
+    """fp16 I/O formats build on DLA; direct_io only builds when rows need no reformat."""
+    kwargs = {
+        "default_device": trt.DeviceType.DLA,
+        "dla_core": 0,
+        "gpu_fallback": True,
+        "fp16": True,
+        "input_tensor_formats": [("in_0", trt.DataType.HALF, trt.TensorFormat.LINEAR)],
+        "output_tensor_formats": [("out_0", trt.DataType.HALF, trt.TensorFormat.LINEAR)],
+        "direct_io": direct_io,
+        "profiling_verbosity": trt.ProfilingVerbosity.DETAILED,
+    }
+    onnx = conv_onnx(16, 64, width)
+    if layer_types is None:
+        with pytest.raises(RuntimeError, match="forbids I/O reformats"):
+            build_engine(onnx, output_engine_path, **kwargs)
+        return
+    build_engine(onnx, output_engine_path, **kwargs)
+    engine, _context, _logger, stream = create_engine(output_engine_path, dla_core=0)
+    try:
+        info = json.loads(
+            engine.create_engine_inspector().get_engine_information(trt.LayerInformationFormat.JSON)
+        )
+        assert [layer["LayerType"] for layer in info["Layers"]] == layer_types
+        for name in ("in_0", "out_0"):
+            assert engine.get_tensor_dtype(name) == trt.DataType.HALF
+            assert engine.get_tensor_format(name) == trt.TensorFormat.LINEAR
+    finally:
+        destroy_stream(stream)
 
 
 def test_bad_onnx_raises(invalid_onnx_file, output_engine_path, synthetic_batcher) -> None:

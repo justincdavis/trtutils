@@ -118,6 +118,10 @@ Fixed
 * ``build_engine(default_device="dla")`` without ``dla_core`` uses DLA core 0. TensorRT had
   selected no core, so the build failed
 * ``read_onnx`` raises ``RuntimeError`` on a file TensorRT 8.6 "parses" into an empty network
+* ``build_engine`` no longer enables ``DIRECT_IO`` when ``input_tensor_formats`` /
+  ``output_tensor_formats`` are given. It forbade I/O reformats, so DLA builds whose rows are not
+  64-byte aligned (e.g. fp16 LINEAR with W=48) failed with "no conformant implementation exists".
+  Pass ``direct_io=True`` to keep the old behavior
 * ``memcpy_host_to_device*`` gathers non-contiguous arrays before copying. They copied raw strided
   bytes, which corrupted crops and other views
 * ``memcpy_device_to_host*`` raises ``ValueError`` on a non-contiguous destination instead of
