@@ -13,6 +13,7 @@ import numpy as np
 import onnx
 import pytest
 import tensorrt as trt
+from onnx import TensorProto, helper, numpy_helper
 
 from trtutils._flags import FLAGS
 from trtutils.builder import build_engine as _build_engine
@@ -230,6 +231,49 @@ def build_dynamic_engine() -> Callable[..., Path]:
 def simple_onnx_path() -> Path:
     """Path to a minimal ONNX model for core tests."""
     return BASE_DIR / "data" / "simple.onnx"
+
+
+@pytest.fixture(scope="session")
+def conv_onnx(tmp_path_factory) -> Callable[[int, int, int], Path]:
+    """
+    Conv-ReLU-conv ONNX mapping 'in_0' to 'out_0', both float32 (1, C, H, W).
+
+    Factory: conv_onnx(channels, height, width). Unlike simple.onnx it runs
+    fully on DLA, so the width sets whether fp16 rows are 64-byte aligned.
+    """
+    out_dir = tmp_path_factory.mktemp("conv_onnx")
+
+    def _make(channels: int, height: int, width: int) -> Path:
+        path = out_dir / f"conv_{channels}x{height}x{width}.onnx"
+        if path.exists():
+            return path
+        rng = np.random.default_rng(0)
+        kernel = (channels, channels, 3, 3)
+        weights = [
+            numpy_helper.from_array((rng.standard_normal(kernel) * 0.1).astype(np.float32), "w1"),
+            numpy_helper.from_array(np.zeros(channels, np.float32), "b1"),
+            numpy_helper.from_array((rng.standard_normal(kernel) * 0.1).astype(np.float32), "w2"),
+            numpy_helper.from_array(np.zeros(channels, np.float32), "b2"),
+        ]
+        nodes = [
+            helper.make_node("Conv", ["in_0", "w1", "b1"], ["c1"], pads=[1, 1, 1, 1]),
+            helper.make_node("Relu", ["c1"], ["r1"]),
+            helper.make_node("Conv", ["r1", "w2", "b2"], ["out_0"], pads=[1, 1, 1, 1]),
+        ]
+        shape = [1, channels, height, width]
+        graph = helper.make_graph(
+            nodes,
+            "conv",
+            [helper.make_tensor_value_info("in_0", TensorProto.FLOAT, shape)],
+            [helper.make_tensor_value_info("out_0", TensorProto.FLOAT, shape)],
+            initializer=weights,
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+        model.ir_version = 8
+        onnx.save(model, str(path))
+        return path
+
+    return _make
 
 
 @pytest.fixture(scope="session")

@@ -195,7 +195,9 @@ def build_dla_engine(  # noqa: C901, PLR0912, PLR0915
         Optimization level to apply to the TensorRT builder config (0-5).
         By default, 3.
     direct_io : bool
-        Use direct IO for the engine.
+        Forbid TensorRT from inserting reformat layers at the I/O tensors given in
+        ``input_tensor_formats`` / ``output_tensor_formats``. Specifying tensor
+        formats does not enable this.
         By default, False
     prefer_precision_constraints : bool
         Whether or not to prefer precision constraints.

@@ -15,6 +15,7 @@ from trtutils.builder._build import build_engine
 from trtutils.builder.onnx._shapes import get_onnx_input, get_onnx_output
 from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
+from trtutils.inspect import inspect_engine
 
 _BLACKWELL_WEAK_FAIL_REASON = (
     "Weakly-typed INT8/FP8 mixes require strongly_typed=True on Blackwell "
@@ -372,6 +373,29 @@ def test_output_tensor_format(onnx_path, output_engine_path, valid: bool) -> Non
                 output_tensor_formats=[(name, trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
                 optimization_level=1,
             )
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "direct_io",
+    [pytest.param(False, id="reformat-allowed"), pytest.param(True, id="direct-io")],
+)
+def test_tensor_format_needing_reformat(onnx_path, output_engine_path, direct_io: bool) -> None:
+    """Tensor formats leave TensorRT free to insert a reformat; only direct_io forbids one."""
+    name = get_onnx_input(onnx_path)[0]
+    # the elementwise layers of simple.onnx have no channel-last kernel
+    kwargs = {
+        "input_tensor_formats": [(name, trt.DataType.FLOAT, trt.TensorFormat.HWC)],
+        "direct_io": direct_io,
+        "optimization_level": 1,
+    }
+    if direct_io:
+        with pytest.raises(RuntimeError, match="forbids I/O reformats"):
+            build_engine(onnx_path, output_engine_path, **kwargs)
+        return
+    build_engine(onnx_path, output_engine_path, **kwargs)
+    _, _, inputs, _ = inspect_engine(output_engine_path)
+    assert [(n, fmt) for n, _, _, fmt in inputs] == [(name, trt.TensorFormat.HWC)]
 
 
 @pytest.mark.parametrize(
