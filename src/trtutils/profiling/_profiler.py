@@ -162,6 +162,13 @@ class LayerProfiler(trt.IProfiler):
         self._current_iteration.clear()
 
 
+class _NoOpProfiler(trt.IProfiler):
+    """Profiler that discards layer timings, attached in place of a detach."""
+
+    def report_layer_time(self: Self, layer_name: str, ms: float) -> None:
+        pass
+
+
 def profile_engine(  # noqa: C901
     engine: Path | str | TRTEngine,
     iterations: int = 100,
@@ -183,6 +190,11 @@ def profile_engine(  # noqa: C901
     -----
     For best results, build the engine with profiling_verbosity set to DETAILED
     when calling build_engine. Otherwise, layer names may be numeric indices.
+
+    TensorRT cannot detach a profiler from an execution context. A TRTEngine
+    passed in gets back the profiler its context had before, or a no-op one, so
+    its later executions keep a small per-layer timing overhead. Pass a path to
+    profile a temporary engine instead.
 
     Parameters
     ----------
@@ -239,6 +251,7 @@ def profile_engine(  # noqa: C901
         )
 
     # attach profiler
+    previous_profiler = engine.context.profiler
     profiler = LayerProfiler()
     engine.context.profiler = profiler
     # graph replays do not call the profiler, so run uncaptured
@@ -266,7 +279,10 @@ def profile_engine(  # noqa: C901
             LOG.info(f"Completed {idx + 1}/{iterations} iterations")
 
     engine._cuda_graph_enabled = graph_enabled  # noqa: SLF001
-    engine.context.profiler = None
+    # tensorrt rejects a None profiler, so put back the previous one or a no-op
+    engine.context.profiler = (
+        previous_profiler if previous_profiler is not None else _NoOpProfiler()
+    )
 
     layer_stats = profiler.get_statistics()
 
