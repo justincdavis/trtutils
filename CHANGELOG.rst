@@ -106,6 +106,10 @@ Changed
   optimization profile. A plain shape still sets a fixed shape, as in 0.6.1
 * ``create_stream(non_blocking=True)`` creates a stream that does not synchronize with the
   legacy default stream
+* ``build_engine(int8=True)`` without ``data_batcher`` or ``calibration_cache`` attaches no
+  calibrator and uses the dynamic ranges set on the network, e.g. by a hook. It used to attach a
+  calibrator that never got a batch and to write a temporary cache file. It warns only when some
+  tensors have no dynamic range, with their count
 
 Performance
 ^^^^^^^^^^^
