@@ -208,7 +208,14 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         If True, enable FP8 precision for the engine.
         Requires compute capability >= 8.9 (Ada Lovelace / Hopper or newer).
     int8 : bool, optional
-        If True, quantize the engine to INT8 precision.
+        If True, quantize the engine to INT8 precision. The scales come from
+        calibration with ``data_batcher`` or ``calibration_cache``. Without either,
+        no calibrator is attached and TensorRT uses the per-tensor dynamic ranges
+        set on the network, e.g. by a hook calling ``ITensor.set_dynamic_range``.
+        Tensors without a range run in higher precision (a warning gives the
+        count). On TensorRT 8.6 the build fails if no tensor has a range. Explicit
+        ranges are the way to fix INT8 precision on the DLA with TensorRT 8.6,
+        which rejects Q/DQ layers there.
     strongly_typed : bool, optional
         If True, build a strongly-typed network whose precision is entirely
         determined by the ONNX graph (Q/DQ nodes, explicit dtypes). Required
@@ -441,13 +448,21 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
                 LOG.warning("Platform does not have native fast INT8.")
             config.set_flag(trt.BuilderFlag.INT8)
             if calibration_cache is None and data_batcher is None:
-                err_msg = "Neither calibration cache or data batcher passed during model building, INT8 build will not be accurate."
-                LOG.warning(err_msg)
-            calibrator = EngineCalibrator(calibration_cache=calibration_cache)
-            calibrator.set_input_dtypes(_input_dtypes(network))
-            if data_batcher is not None:
-                calibrator.set_batcher(data_batcher)
-            config.int8_calibrator = calibrator
+                # without calibration data tensorrt uses the dynamic ranges set on the
+                # network (e.g. by a hook); a calibrator would never get a batch
+                missing, total = _missing_dynamic_ranges(network)
+                if missing:
+                    LOG.warning(
+                        f"INT8 without calibration data: {missing} of {total} tensors have no"
+                        " dynamic range and will run in higher precision. Pass data_batcher or"
+                        " calibration_cache, or set the ranges with a hook."
+                    )
+            else:
+                calibrator = EngineCalibrator(calibration_cache=calibration_cache)
+                calibrator.set_input_dtypes(_input_dtypes(network))
+                if data_batcher is not None:
+                    calibrator.set_batcher(data_batcher)
+                config.int8_calibrator = calibrator
 
     # assign the default device
     config.default_device_type = default_device
@@ -560,6 +575,26 @@ def _input_dtypes(network: trt.INetworkDefinition) -> dict[str, np.dtype]:
         with contextlib.suppress(TypeError):
             dtypes[tensor.name] = np.dtype(trt.nptype(tensor.dtype))
     return dtypes
+
+
+def _missing_dynamic_ranges(network: trt.INetworkDefinition) -> tuple[int, int]:
+    """
+    Count the tensors INT8 can quantize that have no dynamic range.
+
+    These are the float32, float16 and int8 network inputs and layer outputs.
+
+    Returns
+    -------
+    tuple[int, int]
+        The number of those tensors without a dynamic range, and their total.
+
+    """
+    tensors = [network.get_input(idx) for idx in range(network.num_inputs)]
+    for idx in range(network.num_layers):
+        layer = network.get_layer(idx)
+        tensors.extend(layer.get_output(out) for out in range(layer.num_outputs))
+    quantizable = [t for t in tensors if t.dtype in (trt.float32, trt.float16, trt.int8)]
+    return sum(t.dynamic_range is None for t in quantizable), len(quantizable)
 
 
 def _dims(input_name: str, shape: object) -> tuple[int, ...]:

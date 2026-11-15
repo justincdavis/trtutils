@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import struct
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,8 @@ import numpy as np
 import pytest
 
 from trtutils._flags import FLAGS as REAL_FLAGS
+from trtutils._log import LOG
+from trtutils.builder import _build
 from trtutils.builder._batcher import SyntheticBatcher
 from trtutils.builder._build import build_engine
 from trtutils.builder.onnx._shapes import get_onnx_input, get_onnx_output
@@ -139,6 +142,72 @@ def test_build_precision_calibration(
     build_engine(onnx_path, output_engine_path, **kwargs)
     assert output_engine_path.exists()
     assert output_engine_path.stat().st_size > 0
+
+
+@pytest.mark.skipif(
+    REAL_FLAGS.IS_BLACKWELL,
+    reason="Runtime INT8/FP8 calibration is a weakly-typed concept; see test_build_strongly_typed_from_qdq.",
+)
+@pytest.mark.parametrize(
+    "ranged",
+    [
+        pytest.param("all", id="every-tensor-ranged"),
+        pytest.param("inputs", id="input-ranged-only"),
+    ],
+)
+@_needs_weak_typing
+def test_build_int8_dynamic_ranges_without_calibration(
+    onnx_path,
+    output_engine_path,
+    tmp_path,
+    monkeypatch,
+    ranged: str,
+) -> None:
+    """int8 without calibration data attaches no calibrator and uses the set dynamic ranges."""
+    counts: dict[str, int] = {}
+
+    def set_ranges(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
+        inputs = [network.get_input(idx) for idx in range(network.num_inputs)]
+        outputs = [
+            network.get_layer(idx).get_output(out)
+            for idx in range(network.num_layers)
+            for out in range(network.get_layer(idx).num_outputs)
+        ]
+        tensors = inputs + outputs if ranged == "all" else inputs
+        for tensor in tensors:
+            tensor.set_dynamic_range(-2.0, 2.0)
+        counts["total"] = len(inputs) + len(outputs)
+        counts["missing"] = counts["total"] - len(tensors)
+        return network
+
+    # a calibrator without a cache path writes a temporary file
+    temp_dir = tmp_path / "tmp"
+    temp_dir.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp_dir))
+    with patch.object(_build, "EngineCalibrator", wraps=_build.EngineCalibrator) as calibrator:
+        with patch.object(LOG, "warning", wraps=LOG.warning) as warning:
+            build_engine(
+                onnx_path,
+                output_engine_path,
+                int8=True,
+                hooks=[set_ranges],
+                optimization_level=1,
+            )
+
+    assert output_engine_path.stat().st_size > 0
+    calibrator.assert_not_called()
+    assert list(temp_dir.iterdir()) == []
+    messages = [str(call.args[0]) for call in warning.call_args_list if call.args]
+    assert not [m for m in messages if "Neither calibration cache" in m or "temporary file" in m]
+    missing = [m for m in messages if m.startswith("INT8 without calibration data")]
+    if ranged == "all":
+        assert missing == []
+    else:
+        assert counts["missing"] > 0
+        assert len(missing) == 1
+        assert (
+            f"{counts['missing']} of {counts['total']} tensors have no dynamic range" in missing[0]
+        )
 
 
 @pytest.mark.skipif(
