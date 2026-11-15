@@ -239,7 +239,8 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     Raises
     ------
     RuntimeError
-        If the ONNX model cannot be parsed
+        If the ONNX model cannot be parsed. The message lists the TensorRT
+        ONNX parser errors.
     RuntimeError
         If the TensorRT engines fails to build
     ValueError
