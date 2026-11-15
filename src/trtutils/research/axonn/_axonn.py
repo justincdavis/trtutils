@@ -487,7 +487,8 @@ def build_engine(
     optimization_level : int, optional
         TensorRT optimization level (0-5). Default 3.
     direct_io : bool, optional
-        Use direct I/O. Default False.
+        Set TensorRT's DIRECT_IO flag. It only forbids reformats at I/O tensors with
+        explicit formats, and AxoNN sets none, so it has no effect. Default False.
     prefer_precision_constraints : bool, optional
         Prefer precision constraints. Default False.
     reject_empty_algorithms : bool, optional

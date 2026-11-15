@@ -203,6 +203,17 @@ def _parse_shapes_arg(
     return parsed
 
 
+def _warn_direct_io(direct_io: bool) -> None:  # noqa: FBT001
+    """Warn that --direct_io constrains nothing, since the CLI sets no I/O tensor formats."""
+    if direct_io:
+        LOG.warning(
+            "--direct_io has no effect: TensorRT's DIRECT_IO only forbids reformats at I/O "
+            "tensors with explicit formats, which the CLI cannot set. Use "
+            "trtutils.build_engine(input_tensor_formats=..., output_tensor_formats=..., "
+            "direct_io=True) instead."
+        )
+
+
 def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
     """
     Build a TensorRT engine from an ONNX model.
@@ -253,7 +264,8 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
         - gpu_fallback : bool
             Allow GPU fallback for DLA.
         - direct_io : bool
-            Use direct IO.
+            Accepted for compatibility; has no effect because the CLI sets no I/O
+            tensor formats. Logs a warning.
         - prefer_precision_constraints : bool
             Prefer precision constraints.
         - reject_empty_algorithms : bool
@@ -275,6 +287,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
     """
     if args.int8:
         LOG.warning("Build API is unstable and experimental with INT8 quantization.")
+    _warn_direct_io(args.direct_io)
 
     # Create ImageBatcher if calibration directory is provided
     batcher = None
@@ -550,7 +563,8 @@ def _build_dla(args: SimpleNamespace) -> None:
         - shape : list[str] or None
             Fixed input shapes specification.
         - direct_io : bool
-            Use direct IO.
+            Accepted for compatibility; has no effect because the CLI sets no I/O
+            tensor formats. Logs a warning.
         - prefer_precision_constraints : bool
             Prefer precision constraints.
         - reject_empty_algorithms : bool
@@ -568,6 +582,8 @@ def _build_dla(args: SimpleNamespace) -> None:
         If required DLA build parameters are missing.
 
     """
+    _warn_direct_io(args.direct_io)
+
     # strongly_typed skips calibration entirely; precision is in the ONNX graph
     batcher = None
     if not args.strongly_typed:
@@ -1413,7 +1429,12 @@ def _main() -> None:
     build_common_parser.add_argument(
         "--direct_io",
         action="store_true",
-        help="Use direct IO for the engine.",
+        help=(
+            "No effect, kept for compatibility (logs a warning). TensorRT's DIRECT_IO only "
+            "forbids reformat layers at I/O tensors with explicit formats, which the CLI "
+            "cannot set; use trtutils.build_engine(input_tensor_formats=..., "
+            "output_tensor_formats=..., direct_io=True) instead."
+        ),
     )
     build_common_parser.add_argument(
         "--prefer_precision_constraints",

@@ -181,6 +181,7 @@ Fixed
 * ``trtexec`` builds use ``--memPoolSize=workspace`` for the workspace size on TensorRT 8.4 and
   later. TensorRT 10 removed ``--workspace``
 * ``trtutils build --device`` was parsed but not passed to ``build_engine``
+* CLI ``--direct_io`` warns that it has no effect: DIRECT_IO needs I/O formats the CLI cannot set
 * ``core.cache.clear`` (``clear_cache`` in 0.6.1) no longer raises ``FileNotFoundError`` when the
   cache directory does not exist
 * INT8 calibration no longer hangs when an image fails to load. The error is raised from the

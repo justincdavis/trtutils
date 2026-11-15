@@ -127,7 +127,7 @@ Options
 * ``--timing_cache, -tc``: Path to store timing cache data
 * ``--calibration_cache, -cc``: Path to store calibration cache data
 * ``--cache``: Cache the engine in the trtutils engine cache
-* ``--direct_io``: Use direct IO for the engine
+* ``--direct_io``: No effect, kept for compatibility (logs a warning). TensorRT's DIRECT_IO only forbids reformat layers at I/O tensors with explicit formats, which the CLI cannot set. Use ``trtutils.build_engine(input_tensor_formats=..., output_tensor_formats=..., direct_io=True)`` instead
 * ``--prefer_precision_constraints``: Prefer precision constraints
 * ``--reject_empty_algorithms``: Reject empty algorithms
 * ``--ignore_timing_mismatch``: Allow different CUDA device timing caches to be used

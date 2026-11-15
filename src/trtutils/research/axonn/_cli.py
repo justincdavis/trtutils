@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils.__main__ import _parse_shapes_arg
+from trtutils.__main__ import _parse_shapes_arg, _warn_direct_io
 from trtutils._log import LOG
 from trtutils.builder import ImageBatcher, SyntheticBatcher
 from trtutils.builder.onnx import get_onnx_input, make_onnx_static
@@ -57,7 +57,8 @@ def _axonn_build(args: SimpleNamespace) -> None:
         - shape : list[str] | None
             Input binding shapes as NAME:dim1,dim2,... Default is None.
         - direct_io : bool
-            Use direct IO for the engine.
+            Accepted for compatibility; has no effect because AxoNN sets no I/O
+            tensor formats. Logs a warning.
         - prefer_precision_constraints : bool
             Prefer precision constraints.
         - reject_empty_algorithms : bool
@@ -104,6 +105,8 @@ def _axonn_build(args: SimpleNamespace) -> None:
             Number of synthetic calibration batches. Default is 10.
 
     """
+    _warn_direct_io(args.direct_io)
+
     onnx_path = Path(args.onnx)
     output_path = Path(args.output)
 

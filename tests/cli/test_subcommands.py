@@ -14,12 +14,14 @@ import pytest
 from trtutils.__main__ import (
     _benchmark,
     _build,
+    _build_dla,
     _classify,
     _clear_cache,
     _detect,
     _download,
     _profile,
 )
+from trtutils._log import LOG
 
 pytestmark = pytest.mark.cpu
 
@@ -168,6 +170,28 @@ def test_build_forwards_device(device) -> None:
     with patch("trtutils.__main__.trtutils.build_engine") as mock_build:
         _build(_args("build", device=device))
     assert mock_build.call_args.kwargs["default_device"] == device
+
+
+@pytest.mark.parametrize("direct_io", [True, False])
+@pytest.mark.parametrize(
+    ("handler", "build_target", "overrides"),
+    [
+        pytest.param(_build, "trtutils.__main__.trtutils.build_engine", {}, id="build"),
+        pytest.param(
+            _build_dla,
+            "trtutils.__main__.trtutils.builder.build_dla_engine",
+            {"strongly_typed": True, "max_chunks": 1, "min_layers": 20},
+            id="build-dla",
+        ),
+    ],
+)
+def test_build_direct_io_warns_no_effect(handler, build_target, overrides, direct_io) -> None:
+    """--direct_io is still forwarded, and logs that it has no effect without tensor formats."""
+    with patch(build_target) as mock_build, patch.object(LOG, "warning") as warning:
+        handler(_args("build", direct_io=direct_io, **overrides))
+    assert mock_build.call_args.kwargs["direct_io"] is direct_io
+    warned = any("--direct_io has no effect" in str(c.args[0]) for c in warning.call_args_list)
+    assert warned is direct_io
 
 
 @pytest.mark.parametrize(
