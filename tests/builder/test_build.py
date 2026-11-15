@@ -631,7 +631,11 @@ def test_output_tensor_format(onnx_path, output_engine_path, valid: bool) -> Non
         pytest.param("no-weak", trt.DataType.FLOAT, trt.DataType.FLOAT, id="no-weak-same"),
         pytest.param("no-weak", trt.DataType.HALF, None, id="no-weak-differs"),
         pytest.param(
-            "strong", trt.DataType.HALF, None, id="strongly-typed-differs", marks=_needs_strong_typing
+            "strong",
+            trt.DataType.HALF,
+            None,
+            id="strongly-typed-differs",
+            marks=_needs_strong_typing,
         ),
     ],
 )
