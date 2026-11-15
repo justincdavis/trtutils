@@ -1,13 +1,14 @@
 [build-system]
 requires = [
     "setuptools>=64",
+    "setuptools-scm>=8",
     "tomli; python_version < '3.11'",
 ]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "trtutils"
-version = "1.0.0"
+dynamic = ["version"]
 authors = [
   {name="Justin Davis", email="davisjustin302@gmail.com"},
 ]
@@ -172,23 +173,12 @@ dev = [
     "trtutils[sahi]",
     "twine>=4.0.0",
     "wheel>=0.37.0",
-    "bumpver>=2023.1126",
     "pyclean>=2.7.0",
     "pre-commit>=4.5.0",
 ]
 
-[tool.bumpver]
-current_version = "1.0.0"
-version_pattern = "MAJOR.MINOR.PATCH"
-commit_message  = "Bump version {old_version} -> {new_version}"
-commit          = true
-tag             = true
-push            = false
-
-[tool.bumpver.file_patterns]
-"pyproject.toml" = ['current_version = "{version}"', 'version = "{version}"']
-"src/trtutils/__init__.py" = ["{version}"]
-"docs/conf.py" = ["{version}"]
+[tool.setuptools_scm]
+fallback_version = "0.0.0"
 
 [tool.coverage.run]
 source = ["src/trtutils"]
