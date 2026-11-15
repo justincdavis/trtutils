@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
+from tests.builder.conftest import ListBatcher
 from trtutils._flags import FLAGS as REAL_FLAGS
 from trtutils._log import LOG
 from trtutils.builder import _build
@@ -297,6 +298,74 @@ def test_int8_calibration_of_int8_input(
     # ~25% above the amax). Copied as int8, the batch was read as float32 bytes (4x
     # past its end) and gave scales around 1e36.
     assert 0.3 < scale < 0.8
+
+
+@pytest.mark.skipif(
+    REAL_FLAGS.IS_BLACKWELL,
+    reason="Runtime INT8/FP8 calibration is a weakly-typed concept; see test_build_strongly_typed_from_qdq.",
+)
+@pytest.mark.parametrize(
+    "kind",
+    [
+        pytest.param("list", id="list-batches"),
+        pytest.param("dict", id="dict-batches"),
+    ],
+)
+@_needs_weak_typing
+def test_int8_calibration_of_two_inputs(
+    two_input_onnx_path,
+    output_engine_path,
+    calibration_cache_path,
+    kind,
+) -> None:
+    """A two-input network calibrates from list or dict batches, each input on its own data."""
+    rng = np.random.default_rng(0)
+    batches: list = []
+    for _ in range(4):
+        a = rng.uniform(0.0, 1.0, (1, 3, 16, 16)).astype(np.float32)
+        # float64 batches for b are cast to float32
+        b = rng.uniform(-4.0, 4.0, (1, 3, 16, 16))
+        batches.append([a, b] if kind == "list" else {"b": b, "a": a})
+    build_engine(
+        two_input_onnx_path,
+        output_engine_path,
+        int8=True,
+        data_batcher=ListBatcher(batches),
+        calibration_cache=calibration_cache_path,
+        optimization_level=1,
+    )
+    assert output_engine_path.exists()
+    scales = _calibration_scales(calibration_cache_path)
+    # a in [0, 1] and b in [-4, 4] give input scales of about 1/127 and 4/127, which
+    # swapped inputs or one buffer for both would not
+    assert 0.006 < scales["a"] < 0.012
+    assert 0.025 < scales["b"] < 0.05
+    # y sums the three channels of a + b, so |y| <= 15 and its scale is at most 15/127
+    assert 0.0 < scales["y"] < 0.15
+
+
+@pytest.mark.skipif(
+    REAL_FLAGS.IS_BLACKWELL,
+    reason="Runtime INT8/FP8 calibration is a weakly-typed concept; see test_build_strongly_typed_from_qdq.",
+)
+@_needs_weak_typing
+def test_int8_calibration_batch_mismatch_raises(
+    two_input_onnx_path,
+    output_engine_path,
+    calibration_cache_path,
+) -> None:
+    """A batch with one array for a two-input network fails the build with its ValueError."""
+    batch = np.zeros((1, 3, 16, 16), dtype=np.float32)
+    with pytest.raises(ValueError, match=r"network has 2 inputs \['a', 'b'\]"):
+        build_engine(
+            two_input_onnx_path,
+            output_engine_path,
+            int8=True,
+            data_batcher=ListBatcher([[batch], [batch]]),
+            calibration_cache=calibration_cache_path,
+            optimization_level=1,
+        )
+    assert not output_engine_path.exists()
 
 
 def _calibration_scales(cache: Path) -> dict[str, float]:

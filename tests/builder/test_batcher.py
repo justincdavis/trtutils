@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 import pytest
 
-from tests.builder.conftest import drain_batches
+from tests.builder.conftest import ListBatcher, drain_batches
 from trtutils.builder._batcher import ImageBatcher, SyntheticBatcher
 
 
@@ -300,3 +300,13 @@ def test_unclosed_image_batcher_is_collected(test_image_dir) -> None:
     assert ref() is None
     thread.join(timeout=5.0)
     assert not thread.is_alive()
+
+
+@pytest.mark.cpu
+def test_save_calibration_data_rejects_multi_input_batches(tmp_path) -> None:
+    """save_calibration_data raises TypeError on list batches instead of saving mixed data."""
+    batch = np.zeros((1, 3, 4, 4), dtype=np.float32)
+    batcher = ListBatcher([[batch, batch]])
+    with pytest.raises(TypeError, match="single-input batches"):
+        batcher.save_calibration_data(tmp_path / "calib.npy")
+    assert not (tmp_path / "calib.npy").exists()

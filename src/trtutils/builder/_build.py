@@ -126,7 +126,9 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     calibration_cache : Path, str, optional
         The path to the calibration cache.
     data_batcher : AbstractBatcher, optional
-        The data batcher to use for calibration.
+        The data batcher to use for calibration. Its batches are one array for
+        a single-input network, or a list of arrays in network input order or a
+        dict of arrays keyed by input name for a network with several inputs.
     dla_core : int, optional
         The DLA core to build the engine for.
         By default, None: core 0 when ``default_device`` is DLA, otherwise the GPU.
@@ -246,6 +248,10 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     ValueError
         If layer is manually assigned to DLA and DLA is not supported
         and gpu_fallback is False
+    ValueError
+        If a calibration batch does not have one array per network input.
+        Any other error raised while reading calibration batches is raised
+        after the build as well.
 
     """
     # strongly typed builds report these through their own checks below
@@ -436,6 +442,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
 
     # setup the precision sets -- skipped under strongly_typed since the
     # precision is carried by the ONNX graph itself
+    calibrator: EngineCalibrator | None = None
     if FLAGS.WEAK_TYPING and not strongly_typed:
         if fp16 or fp8 or int8:
             # want to enable fp16 for int8, fp8, and fp16 since fp16 may be faster
@@ -552,6 +559,10 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         post_t_cache = config.get_timing_cache()
         with timing_cache_path.open("wb") as f:
             f.write(memoryview(post_t_cache.serialize()))
+
+    # tensorrt only prints an error raised while calibrating and stops calibrating
+    if calibrator is not None and calibrator.error is not None:
+        raise calibrator.error
 
     if engine_bytes is None:
         err_msg = "Failed to build engine."

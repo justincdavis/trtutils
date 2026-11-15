@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,7 +17,7 @@ from trtutils.compat._libs import trt
 from trtutils.core._memory import cuda_free, cuda_malloc, memcpy_host_to_device
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Sequence
 
     from typing_extensions import Self
 
@@ -42,8 +43,9 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         super().__init__()
 
         self._temp_cache = calibration_cache is None
-        self._ptr: int | None = None
-        self._ptr_size = 0
+        # one reused device allocation (pointer, size) per network input
+        self._buffers: dict[str, tuple[int, int]] = {}
+        self._error: Exception | None = None
         if calibration_cache is not None:
             self._cache_path: Path = Path(calibration_cache).resolve()
         else:
@@ -55,7 +57,23 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             )
         self._batcher: AbstractBatcher | None = None
         self._batch_dtypes: dict[str, np.dtype] = {}
-        self._warned_dtype = False
+        self._warned_dtype: set[str] = set()
+
+    @property
+    def error(self: Self) -> Exception | None:
+        """
+        The error raised by ``get_batch``, if any.
+
+        TensorRT only prints an error raised while it calibrates and treats it as
+        the end of the data, so ``build_engine`` raises it after the build.
+
+        Returns
+        -------
+        Exception | None
+            The error, or None if every batch was read.
+
+        """
+        return self._error
 
     def set_batcher(self: Self, batcher: AbstractBatcher) -> None:
         """Set the batcher."""
@@ -106,58 +124,81 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         """
         Get the next batch of data.
 
-        Overrides from trt.IInt8EntropyCalibrator2. A batch is copied in the dtype
-        TensorRT reads the input as (see ``set_input_dtypes``) and cast to it first
-        if needed: float32 for an int8 input, the input's own dtype otherwise.
+        Overrides from trt.IInt8EntropyCalibrator2. The batcher may return one
+        array for a single-input network, a list or tuple of arrays in network
+        input order, or a dict of arrays keyed by input name. Each array is
+        copied to its own reused device buffer in the dtype TensorRT reads that
+        input as (see ``set_input_dtypes``), cast to it first if needed: float32
+        for an int8 input, the input's own dtype otherwise.
 
         Parameters
         ----------
         names : list[str]
-            The list of inputs, if useful to define the batch.
+            The network inputs TensorRT wants a batch for, in network input order.
 
         Returns
         -------
-        list[int]
-            GPU-Memory pointers of the next batch
+        list[int] | None
+            GPU-Memory pointers of the next batch, one per name in ``names``,
+            or None when there is no more data.
+
+        Raises
+        ------
+        ValueError
+            If the batch does not have one array per network input, or a dict
+            batch is not keyed by the network input names.
+        TypeError
+            If the batch is not an array, a list or tuple, or a dict.
 
         """
-        # if we dont have an image batcher, dont handle calibration
+        try:
+            return self._get_batch(names)
+        except Exception as err:
+            # tensorrt swallows errors raised here, build_engine raises it after the build
+            self._error = err
+            raise
+
+    def _get_batch(self: Self, names: list[str]) -> list[int] | None:
+        # if we dont have a batcher, dont handle calibration
         if self._batcher is None:
             return None
-
-        # if we do load the image
         batch = self._batcher.get_next_batch()
         if batch is None:
             return None
 
-        # tensorrt reads the buffer as raw bytes of the bound dtype, so a float32 batch
-        # for a float16 input would calibrate on garbage (inf scales, broken engine)
-        expected = self._batch_dtypes.get(names[0]) if names else None
-        if expected is not None and batch.dtype != expected:
-            if not self._warned_dtype:
-                LOG.warning(
-                    f"TensorRT reads calibration batches for network input '{names[0]}'"
-                    f" as {expected}, casting {batch.dtype} batches to {expected}."
-                )
-                self._warned_dtype = True
-            batch = batch.astype(expected)
+        ptrs: list[int] = []
+        for name, given in zip(names, _match_inputs(batch, names)):
+            # tensorrt reads the buffer as raw bytes of the bound dtype, so a float32 batch
+            # for a float16 input would calibrate on garbage (inf scales, broken engine)
+            array = given
+            expected = self._batch_dtypes.get(name)
+            if expected is not None and given.dtype != expected:
+                if name not in self._warned_dtype:
+                    LOG.warning(
+                        f"TensorRT reads calibration batches for network input '{name}'"
+                        f" as {expected}, casting {given.dtype} batches to {expected}."
+                    )
+                    self._warned_dtype.add(name)
+                array = given.astype(expected)
 
-        # reuse one device allocation, growing only if a batch is larger
-        if self._ptr is None or batch.nbytes > self._ptr_size:
-            self._free()
-            self._ptr = cuda_malloc(batch.nbytes)
-            self._ptr_size = batch.nbytes
-        memcpy_host_to_device(self._ptr, batch)
-        return [self._ptr]
+            # reuse one device allocation per input, growing only if a batch is larger
+            ptr, size = self._buffers.get(name, (0, 0))
+            if array.nbytes > size:
+                if ptr:
+                    cuda_free(ptr)
+                ptr, size = cuda_malloc(array.nbytes), array.nbytes
+                self._buffers[name] = (ptr, size)
+            memcpy_host_to_device(ptr, array)
+            ptrs.append(ptr)
+        return ptrs
 
     def _free(self: Self) -> None:
-        if self._ptr is not None:
-            cuda_free(self._ptr)
-            self._ptr = None
-            self._ptr_size = 0
+        for ptr, _ in self._buffers.values():
+            cuda_free(ptr)
+        self._buffers = {}
 
     def close(self: Self) -> None:
-        """Free the device buffer and delete a temporary cache file."""
+        """Free the device buffers and delete a temporary cache file."""
         self._free()
         if self._temp_cache:
             with contextlib.suppress(OSError):
@@ -207,3 +248,42 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         with self._cache_path.open("wb") as f:
             LOG.debug(f"Writing calibration cache file: {self._cache_path}")
             f.write(cache)
+
+
+def _match_inputs(
+    batch: np.ndarray | Sequence[np.ndarray] | Mapping[str, np.ndarray],
+    names: list[str],
+) -> list[np.ndarray]:
+    """Order the arrays of a batch like ``names``, checking there is one per input."""
+    if isinstance(batch, np.ndarray):
+        if len(names) != 1:
+            err_msg = (
+                f"The calibration batcher returned one array, but the network has {len(names)}"
+                f" inputs {names}. Return a list of arrays in input order, or a dict of arrays"
+                " keyed by input name."
+            )
+            raise ValueError(err_msg)
+        return [batch]
+    if isinstance(batch, Mapping):
+        missing = [name for name in names if name not in batch]
+        unknown = [str(key) for key in batch if key not in names]
+        if missing or unknown:
+            err_msg = (
+                f"Calibration batch keys {list(batch)} do not match the network inputs {names}:"
+                f" missing {missing}, unknown {unknown}."
+            )
+            raise ValueError(err_msg)
+        return [batch[name] for name in names]
+    if isinstance(batch, (list, tuple)):
+        if len(batch) != len(names):
+            err_msg = (
+                f"The calibration batch holds {len(batch)} array(s), but the network has"
+                f" {len(names)} inputs {names}."
+            )
+            raise ValueError(err_msg)
+        return list(batch)
+    err_msg = (
+        "A calibration batch must be a numpy array, a list or tuple of arrays, or a dict of"
+        f" arrays keyed by input name, got {type(batch).__name__}."
+    )
+    raise TypeError(err_msg)

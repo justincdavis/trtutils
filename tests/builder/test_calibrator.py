@@ -17,6 +17,10 @@ if not FLAGS.INT8_CALIBRATION:
     pytest.skip("implicit INT8 calibration removed in TensorRT 11", allow_module_level=True)
 
 from trtutils.builder._calibrator import EngineCalibrator
+from trtutils.core._memory import memcpy_device_to_host
+
+_A = np.linspace(-2.0, 2.0, 48, dtype=np.float32).reshape(1, 3, 4, 4)
+_B = np.arange(-8, 8, dtype=np.int8).reshape(1, 16)
 
 
 @pytest.mark.parametrize(
@@ -113,24 +117,32 @@ def test_cache_edge_cases(tmp_path) -> None:
     cal.write_calibration_cache(b"some data")  # should not raise
 
 
+@pytest.mark.parametrize(
+    ("batch", "names"),
+    [
+        pytest.param(np.zeros((1, 3, 8, 8), dtype=np.float32), ["input"], id="one-input"),
+        pytest.param([_A, _A], ["a", "b"], id="two-inputs"),
+    ],
+)
 @patch("trtutils.builder._calibrator.cuda_free")
 @patch("trtutils.builder._calibrator.memcpy_host_to_device")
-@patch("trtutils.builder._calibrator.cuda_malloc", return_value=1234)
-def test_get_batch_reuses_allocation(malloc, memcpy, free) -> None:
-    """get_batch allocates device memory once across batches and frees it on close."""
+@patch("trtutils.builder._calibrator.cuda_malloc", side_effect=[1234, 5678])
+def test_get_batch_reuses_allocation(malloc, memcpy, free, batch, names) -> None:
+    """get_batch allocates device memory once per input across batches and frees it on close."""
     cal = EngineCalibrator()
     mock_batcher = MagicMock()
-    mock_batcher.get_next_batch.return_value = np.zeros((1, 3, 8, 8), dtype=np.float32)
+    mock_batcher.get_next_batch.return_value = batch
     cal.set_batcher(mock_batcher)
 
+    ptrs = [1234, 5678][: len(names)]
     for _ in range(3):
-        assert cal.get_batch(["input"]) == [1234]
-    assert malloc.call_count == 1
-    assert memcpy.call_count == 3
+        assert cal.get_batch(names) == ptrs
+    assert malloc.call_count == len(names)
+    assert memcpy.call_count == 3 * len(names)
     cal.close()
-    free.assert_called_once_with(1234)
+    assert sorted(call.args[0] for call in free.call_args_list) == ptrs
     cal.close()
-    free.assert_called_once()
+    assert free.call_count == len(names)
 
 
 def test_close_removes_temp_cache() -> None:
@@ -175,3 +187,71 @@ def test_get_batch_matches_input_dtype(
     malloc.assert_called_once_with(sent.nbytes)
     cal.close()
     free.assert_called_once_with(1234)
+
+
+@pytest.mark.parametrize(
+    ("batch", "names", "expected"),
+    [
+        pytest.param(_A, ["a"], [_A.astype(np.float16)], id="array"),
+        pytest.param(
+            [_A, _B], ["a", "b"], [_A.astype(np.float16), _B.astype(np.float32)], id="list"
+        ),
+        pytest.param(
+            (_A, _B), ["a", "b"], [_A.astype(np.float16), _B.astype(np.float32)], id="tuple"
+        ),
+        pytest.param(
+            {"b": _B, "a": _A}, ["a", "b"], [_A.astype(np.float16), _B.astype(np.float32)], id="dict"
+        ),
+        pytest.param(
+            {"a": _A, "b": _B},
+            ["b", "a"],
+            [_B.astype(np.float32), _A.astype(np.float16)],
+            id="dict-in-names-order",
+        ),
+    ],
+)
+def test_get_batch_copies_each_input(batch, names, expected) -> None:
+    """get_batch copies each input to its own reused buffer, in names order and its read dtype."""
+    cal = EngineCalibrator()
+    # a float16 input, and an int8 input that tensorrt binds as float32 while calibrating
+    cal.set_input_dtypes({"a": np.float16, "b": np.int8})
+    mock_batcher = MagicMock()
+    mock_batcher.get_next_batch.return_value = batch
+    cal.set_batcher(mock_batcher)
+
+    first = cal.get_batch(names)
+    assert first is not None
+    assert len(set(first)) == len(names)
+    for ptr, want in zip(first, expected):
+        got = np.empty_like(want)
+        memcpy_device_to_host(got, ptr)
+        np.testing.assert_array_equal(got, want)
+    assert cal.get_batch(names) == first
+    cal.close()
+
+
+@pytest.mark.parametrize(
+    ("batch", "exc", "match"),
+    [
+        pytest.param(_A, ValueError, "returned one array", id="array-for-two-inputs"),
+        pytest.param([_A], ValueError, r"holds 1 array\(s\)", id="short-list"),
+        pytest.param((_A, _B, _A), ValueError, r"holds 3 array\(s\)", id="long-tuple"),
+        pytest.param({"a": _A}, ValueError, r"missing \['b'\]", id="dict-missing-input"),
+        pytest.param(
+            {"a": _A, "b": _B, "c": _A}, ValueError, r"unknown \['c'\]", id="dict-unknown-input"
+        ),
+        pytest.param("a", TypeError, "must be a numpy array", id="not-a-batch"),
+    ],
+)
+def test_get_batch_mismatch_raises(batch, exc, match) -> None:
+    """A batch without one array per input raises and is kept as the calibrator's error."""
+    cal = EngineCalibrator()
+    mock_batcher = MagicMock()
+    mock_batcher.get_next_batch.return_value = batch
+    cal.set_batcher(mock_batcher)
+
+    assert cal.error is None
+    with pytest.raises(exc, match=match) as exc_info:
+        cal.get_batch(["a", "b"])
+    assert cal.error is exc_info.value
+    cal.close()

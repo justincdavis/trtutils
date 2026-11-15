@@ -81,6 +81,11 @@ Added
   I/O tensor's layout in its TensorRT format. Bindings hold I/O in that format, unconverted; a
   layout larger than the shape is allocated flat, and outputs at the tensor shape hold its
   leading bytes
+* INT8 calibration of networks with several inputs. ``AbstractBatcher.get_next_batch`` may
+  return a list or tuple of arrays in network input order, or a dict of arrays keyed by input
+  name; a single array still feeds a single-input network. ``EngineCalibrator`` copies each
+  input to its own device buffer, cast to the dtype TensorRT reads that input as. A batch
+  without one array per input raises ``ValueError``
 
 Changed
 ^^^^^^^
@@ -190,6 +195,9 @@ Fixed
   TensorRT binds an int8 input as float32 while calibrating, so int8 batches were read 4x past
   their end: an illegal memory access, a failed ``min_ <= max_`` assertion, or scales around 1e36
   and wrong engine outputs
+* ``build_engine`` raises errors raised while reading calibration batches, e.g. by a batcher.
+  TensorRT only printed them and treated them as the end of the data, so the build failed with
+  "no scaling factors detected" or calibrated on the batches read so far
 * A ``QueuedTRTEngine`` that is not stopped is now garbage collected. Its worker thread used to
   hold a reference to the engine
 * ``get_random_input`` no longer fails on float16 inputs
