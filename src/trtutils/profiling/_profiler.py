@@ -280,9 +280,7 @@ def profile_engine(  # noqa: C901
 
     engine._cuda_graph_enabled = graph_enabled  # noqa: SLF001
     # tensorrt rejects a None profiler, so put back the previous one or a no-op
-    engine.context.profiler = (
-        previous_profiler if previous_profiler is not None else _NoOpProfiler()
-    )
+    engine.context.profiler = previous_profiler if previous_profiler is not None else _NoOpProfiler()
 
     layer_stats = profiler.get_statistics()
 
