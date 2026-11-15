@@ -198,6 +198,9 @@ Fixed
 * ``build_engine`` raises errors raised while reading calibration batches, e.g. by a batcher.
   TensorRT only printed them and treated them as the end of the data, so the build failed with
   "no scaling factors detected" or calibrated on the batches read so far
+* INT8 calibration raises ``ValueError`` on a batch with fewer values than its network input (the
+  static shape, or the opt shape in ``shapes``). TensorRT read a whole input from the batch's
+  device buffer, so it calibrated on the memory past the end of the batch
 * A ``QueuedTRTEngine`` that is not stopped is now garbage collected. Its worker thread used to
   hold a reference to the engine
 * ``get_random_input`` no longer fails on float16 inputs
