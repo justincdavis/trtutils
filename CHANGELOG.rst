@@ -137,6 +137,8 @@ Performance
 
 Fixed
 ^^^^^
+* The package ships ``image/_kernels/postprocess.cuh``. Without it, every CUDA postprocessor but
+  OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see
   a half-written engine
 * ``build_engine(default_device="dla")`` without ``dla_core`` uses DLA core 0. TensorRT had

@@ -210,14 +210,16 @@ exclude_lines = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# globs are relative to src/trtutils. keep in sync with MANIFEST.in, which builds the sdist
 [tool.setuptools.package-data]
 trtutils = [
-    "src/*.cu",
-    "src/*.onnx",
-    "src/trtutils/download/patches/*.patch",
-    "src/trtutils/download/configs/*.json",
-    "src/trtutils/download/model_deps/*.txt",
-    "src/trtutils/download/tool_deps/*.txt",
-    "src/trtutils/models/ocr/*.txt",
-    "src/trtutils/py.typed",
+    "image/_kernels/*.cu",
+    "image/_kernels/*.cuh",
+    "image/_onnx/*.onnx",
+    "download/patches/*.patch",
+    "download/configs/*.json",
+    "download/model_deps/*.txt",
+    "download/tool_deps/*.txt",
+    "models/ocr/*.txt",
+    "py.typed",
 ]
