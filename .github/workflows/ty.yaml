@@ -19,10 +19,18 @@ jobs:
           pip install ".[ci]" ".[test]"
 
       # one interpreter, every supported target: ty checks version-gated code per version
+      # every version is checked; the step fails at the end if any of them failed
       - name: Type Check
         run: |
+          failed=()
           for version in 3.8 3.9 3.10 3.11 3.12 3.13 3.14 3.15; do
             echo "::group::Python ${version}"
-            ./ci/run_type_check.sh --python-version "${version}"
+            if ! ./ci/run_type_check.sh --python-version "${version}"; then
+              failed+=("${version}")
+            fi
             echo "::endgroup::"
           done
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "::error::ty failed for Python ${failed[*]}"
+            exit 1
+          fi
