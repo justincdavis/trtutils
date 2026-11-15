@@ -12,7 +12,7 @@ from trtutils._log import LOG
 from trtutils.compat._libs import trt
 
 
-def read_onnx(  # noqa: C901
+def read_onnx(
     onnx: Path | str,
     workspace: float = 4.0,
     *,
@@ -57,6 +57,9 @@ def read_onnx(  # noqa: C901
     RuntimeError
         If the ONNX model cannot be parsed, or if strongly_typed is True
         but the installed TensorRT does not support strongly-typed networks.
+        A parse failure lists every TensorRT ONNX parser error (node,
+        operator where TensorRT reports it, error code and description) and
+        any other errors TensorRT logged while parsing.
 
     """
     # load libnvinfer plugins
@@ -101,16 +104,49 @@ def read_onnx(  # noqa: C901
     # setup parser
     parser = trt.OnnxParser(network, LOG)
     model_bytes = onnx_path.read_bytes()
-    # the path lets the parser resolve external weight files (>2GB models)
-    if FLAGS.ONNX_PARSE_PATH:
-        parsed = parser.parse(model_bytes, str(onnx_path))
-    else:
-        parsed = parser.parse(model_bytes)
+    # some failures (e.g. an LRN bias below 1e-5) are only explained in the log
+    with LOG.capture_errors() as logged_errors:
+        # the path lets the parser resolve external weight files (>2GB models)
+        if FLAGS.ONNX_PARSE_PATH:
+            parsed = parser.parse(model_bytes, str(onnx_path))
+        else:
+            parsed = parser.parse(model_bytes)
     # tensorrt 8.6 reports success on bytes that are not a model, leaving an empty network
     if not parsed or network.num_inputs == 0:
-        for error in range(parser.num_errors):
-            LOG.error(parser.get_error(error))
-        err_msg = "Cannot parse ONNX file"
+        err_msg = _parse_error_message(onnx_path, parser, logged_errors)
         raise RuntimeError(err_msg)
 
     return network, builder, config, parser
+
+
+def _parse_error_message(
+    onnx_path: Path,
+    parser: trt.IOnnxParser,
+    logged_errors: list[str],
+) -> str:
+    descriptions: list[str] = []
+    for idx in range(parser.num_errors):
+        error = parser.get_error(idx)
+        where = f"node {error.node()}" if error.node() >= 0 else "model"
+        # newer tensorrt also names the node and its operator, 8.6 only gives the index
+        op = error.node_operator() if hasattr(error, "node_operator") else ""
+        name = error.node_name() if hasattr(error, "node_name") else ""
+        if op or name:
+            where += f" ({op} '{name}')"
+        code = str(error.code()).split(".")[-1]
+        desc = " ".join(error.desc().split())
+        descriptions.append(f"{where} in {error.func()}: {code}: {desc}")
+
+    lines = [f"Cannot parse ONNX file: {onnx_path}"]
+    if descriptions:
+        lines.append(f"TensorRT ONNX parser errors ({len(descriptions)}):")
+        lines.extend(f"  {desc}" for desc in descriptions)
+    else:
+        lines.append("TensorRT parsed it without errors into a network with no inputs.")
+    # skip log lines the parser errors already repeat
+    extra = [" ".join(msg.split()) for msg in logged_errors]
+    extra = [msg for msg in extra if msg and not any(msg in desc for desc in descriptions)]
+    if extra:
+        lines.append("TensorRT errors logged while parsing:")
+        lines.extend(f"  {msg}" for msg in extra)
+    return "\n".join(lines)

@@ -110,6 +110,10 @@ Changed
   calibrator and uses the dynamic ranges set on the network, e.g. by a hook. It used to attach a
   calibrator that never got a batch and to write a temporary cache file. It warns only when some
   tensors have no dynamic range, with their count
+* ``read_onnx`` (and so ``build_engine``, ``can_run_on_dla`` and ``inspect_onnx_layers``) raises
+  ONNX parse failures with the reason: every TensorRT parser error (node, operator where
+  TensorRT reports it, error code, description) and the errors TensorRT logged while parsing,
+  such as an LRN bias below 1e-5. The message used to be only "Cannot parse ONNX file"
 
 Performance
 ^^^^^^^^^^^

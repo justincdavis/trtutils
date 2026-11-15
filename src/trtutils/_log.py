@@ -4,15 +4,18 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
+import threading
 from typing import TYPE_CHECKING, TextIO
 
 from trtutils.compat._libs import trt
 
 if TYPE_CHECKING:
     from types import TracebackType
+    from typing import Generator
 
     from typing_extensions import Self
 
@@ -123,6 +126,8 @@ class TRTLogger(trt.ILogger):
         super().__init__()
         self._logger = logging.getLogger("trtutils")
         self._level = self._logger.getEffectiveLevel()
+        # per-thread error list, set while capture_errors is active
+        self._capture = threading.local()
 
     @property
     def logger(self: Self) -> logging.Logger:
@@ -203,6 +208,28 @@ class TRTLogger(trt.ILogger):
         """
         return self._LogLevelContext(self, "CRITICAL")
 
+    @contextlib.contextmanager
+    def capture_errors(self: Self) -> Generator[list[str], None, None]:
+        """
+        Collect the TensorRT error messages logged on this thread inside the block.
+
+        Messages are still logged as usual. Capturing ignores the log level, so
+        errors are collected even while the logger is suppressed.
+
+        Yields
+        ------
+        list[str]
+            The error messages, filled in as TensorRT logs them.
+
+        """
+        previous = getattr(self._capture, "errors", None)
+        errors: list[str] = []
+        self._capture.errors = errors
+        try:
+            yield errors
+        finally:
+            self._capture.errors = previous
+
     def log(self: Self, severity: trt.ILogger.Severity, msg: str) -> None:
         """
         Log a message with the specified severity.
@@ -218,6 +245,10 @@ class TRTLogger(trt.ILogger):
             The log message to record
 
         """
+        if severity in (trt.ILogger.Severity.ERROR, trt.ILogger.Severity.INTERNAL_ERROR):
+            errors = getattr(self._capture, "errors", None)
+            if errors is not None:
+                errors.append(msg)
         if severity == trt.ILogger.Severity.INFO:
             self._logger.info(msg)
         elif severity == trt.ILogger.Severity.WARNING:

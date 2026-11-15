@@ -9,7 +9,10 @@ from pathlib import Path
 
 import onnx
 import pytest
+from onnx import TensorProto, helper
 
+from trtutils._flags import FLAGS
+from trtutils._log import LOG
 from trtutils.builder._onnx import read_onnx
 from trtutils.compat._libs import trt
 
@@ -67,6 +70,54 @@ def test_invalid_onnx_content(invalid_onnx_file) -> None:
     """Invalid ONNX content raises RuntimeError."""
     with pytest.raises(RuntimeError, match="Cannot parse ONNX file"):
         read_onnx(invalid_onnx_file)
+
+
+@pytest.mark.parametrize(
+    ("node", "shape"),
+    [
+        pytest.param(
+            helper.make_node("LRN", ["r"], ["y"], name="lrn", size=3, bias=0.0),
+            [1, 3, 8, 8],
+            id="lrn-bias-0",
+        ),
+        pytest.param(
+            helper.make_node("Softmax", ["r"], ["y"], name="softmax", axis=0),
+            [5],
+            id="softmax-1d",
+        ),
+    ],
+)
+def test_parse_failure_reports_parser_errors(tmp_path, node, shape) -> None:
+    """A parse failure raises RuntimeError with every parser error and logged TensorRT error."""
+    x = helper.make_tensor_value_info("x", TensorProto.FLOAT, shape)
+    y = helper.make_tensor_value_info("y", TensorProto.FLOAT, shape)
+    relu = helper.make_node("Relu", ["x"], ["r"], name="relu")
+    graph = helper.make_graph([relu, node], "parse_failure", [x], [y])
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model.ir_version = 8
+    path = tmp_path / "bad.onnx"
+    onnx.save(model, str(path))
+
+    # what this tensorrt version reports for the model
+    flags = (
+        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+        if FLAGS.EXPLICIT_BATCH_FLAG
+        else 0
+    )
+    network = trt.Builder(LOG).create_network(flags)
+    parser = trt.OnnxParser(network, LOG)
+    with LOG.capture_errors() as logged:
+        assert parser.parse(path.read_bytes()) is False
+    expected = [parser.get_error(idx).desc() for idx in range(parser.num_errors)]
+    assert len(expected) > 0
+
+    with pytest.raises(RuntimeError, match="Cannot parse ONNX file") as exc_info:
+        read_onnx(path)
+    message = str(exc_info.value)
+    assert str(path.resolve()) in message
+    assert "node 1" in message
+    for text in expected + logged:
+        assert " ".join(text.split()) in message
 
 
 def test_external_data(onnx_path, tmp_path) -> None:
