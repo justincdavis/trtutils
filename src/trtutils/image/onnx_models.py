@@ -29,6 +29,10 @@ from trtutils.core import cache as caching_tools
 IMAGE_PREPROC_BASE: Path = Path(__file__).parent / "_onnx" / "image_preproc_base.onnx"
 IMAGE_PREPROC_IMAGENET: Path = Path(__file__).parent / "_onnx" / "image_preproc_imagenet.onnx"
 
+# direct io keeps tensorrt 8.6 from running the fp32 graph in fp16 behind i/o
+# reformats; a half output needs a cast reformat it forbids, and 10.7 deprecated it
+_DIRECT_IO = FLAGS.TRT_VERSION < (10, 7)
+
 
 def build_image_preproc(
     input_shape: tuple[int, int],
@@ -77,7 +81,7 @@ def build_image_preproc(
             temp_output,
             default_device=trt.DeviceType.GPU,
             workspace=1.0,
-            direct_io=True,
+            direct_io=_DIRECT_IO and trt_output_dtype == trt.DataType.FLOAT,
             input_tensor_formats=[
                 ("input", trt.DataType.UINT8, trt.TensorFormat.LINEAR),
                 ("scale", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
@@ -146,7 +150,7 @@ def build_image_preproc_imagenet(
             temp_output,
             default_device=trt.DeviceType.GPU,
             workspace=1.0,
-            direct_io=True,
+            direct_io=_DIRECT_IO and trt_output_dtype == trt.DataType.FLOAT,
             input_tensor_formats=[
                 ("input", trt.DataType.UINT8, trt.TensorFormat.LINEAR),
                 ("mean", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),

@@ -192,7 +192,9 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         the I/O tensors given in ``input_tensor_formats`` / ``output_tensor_formats``.
         The build fails if a requested format needs a reformat, for example
         LINEAR fp16 DLA I/O whose rows are not 64-byte aligned.
-        Specifying tensor formats does not enable this.
+        Specifying tensor formats does not enable this. TensorRT deprecated
+        the flag in 10.7 as unneeded; for DLA it says ``gpu_fallback`` controls
+        the I/O reformats instead.
         By default, False
     prefer_precision_constraints : bool
         Whether or not to prefer precision constraints.
@@ -245,6 +247,9 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         ONNX parser errors.
     RuntimeError
         If the TensorRT engines fails to build
+    RuntimeError
+        If ``direct_io`` is True and the installed TensorRT has no
+        ``BuilderFlag.DIRECT_IO``.
     ValueError
         If layer is manually assigned to DLA and DLA is not supported
         and gpu_fallback is False
@@ -270,6 +275,15 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
             "prefer_precision_constraints, reject_empty_algorithms and layer_precision "
             "options are unavailable. Precision comes from the ONNX graph, so export "
             "the ONNX at the wanted precision and drop these options."
+        )
+        raise RuntimeError(err_msg)
+
+    if direct_io and not FLAGS.DIRECT_IO:
+        err_msg = (
+            "direct_io=True needs trt.BuilderFlag.DIRECT_IO, which this TensorRT does not "
+            "have (deprecated in TensorRT 10.7). Drop direct_io: input_tensor_formats / "
+            "output_tensor_formats still fix the I/O dtype and format, and for DLA "
+            "gpu_fallback controls the I/O reformats."
         )
         raise RuntimeError(err_msg)
 

@@ -40,14 +40,16 @@ STD = (0.229, 0.224, 0.225)
         ),
     ],
 )
-def test_preproc_engine_matches_cpu(images, build, extra_inputs, norm, tol) -> None:
+@pytest.mark.parametrize(
+    "dtype",
+    [pytest.param(np.float32, id="fp32"), pytest.param(np.float16, id="fp16")],
+)
+def test_preproc_engine_matches_cpu(images, build, extra_inputs, norm, tol, dtype) -> None:
     """A built preprocessing engine reproduces CPU preprocess() on an already-resized image."""
     img = cv2.resize(images["horse"].array, (640, 640))
-    expected, _ratios, _padding = preprocess([img], (640, 640), np.dtype(np.float32), **norm)
+    expected, _ratios, _padding = preprocess([img], (640, 640), np.dtype(dtype), **norm)
 
-    engine = TRTEngine(
-        build((640, 640), np.dtype(np.float32), trt_version=trt.__version__), warmup=False
-    )
+    engine = TRTEngine(build((640, 640), np.dtype(dtype), trt_version=trt.__version__), warmup=False)
     inputs = [Buffer.wrap(data) for data in [img[np.newaxis], *extra_inputs]]
     result = engine.execute(inputs)[0]
     assert result.shape == expected.shape

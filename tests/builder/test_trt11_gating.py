@@ -97,6 +97,13 @@ def test_build_engine_raises_without_weak_typing(monkeypatch, tmp_path, kwargs) 
         build_engine("missing.onnx", tmp_path / "out.engine", **kwargs)
 
 
+def test_build_engine_raises_without_direct_io(monkeypatch, tmp_path) -> None:
+    """direct_io=True names the missing BuilderFlag.DIRECT_IO instead of an AttributeError."""
+    monkeypatch.setattr(FLAGS, "DIRECT_IO", False)
+    with pytest.raises(RuntimeError, match=r"BuilderFlag\.DIRECT_IO"):
+        build_engine("missing.onnx", tmp_path / "out.engine", direct_io=True)
+
+
 def test_flag_weak_typing_matches_trt() -> None:
     """WEAK_TYPING tracks the presence of BuilderFlag.FP16."""
     import tensorrt as trt

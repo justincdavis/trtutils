@@ -73,6 +73,9 @@ class Flags:
         Whether trt.BuilderFlag.FP16 exists, i.e. weakly-typed networks with
         builder precision flags and per-layer precision are available.
         Removed in TensorRT 11, where precision comes from the ONNX graph.
+    DIRECT_IO : bool
+        Whether trt.BuilderFlag.DIRECT_IO exists. Deprecated in TensorRT 10.7
+        as unneeded, so a later release may remove it.
     PLUGIN_CREATOR_LOOKUP : bool
         Whether trt.IPluginRegistry.get_plugin_creator exists. Removed in
         TensorRT 11, use get_creator there.
@@ -110,6 +113,7 @@ class Flags:
     EXPLICIT_BATCH_FLAG: bool = False
     INT8_CALIBRATION: bool = False
     WEAK_TYPING: bool = False
+    DIRECT_IO: bool = False
     PLUGIN_CREATOR_LOOKUP: bool = False
     TRT_HAS_UINT8: bool = False
     TRT_HAS_INT64: bool = False
@@ -210,6 +214,7 @@ FLAGS.ONNX_PARSE_PATH = "path" in _parse_doc
 FLAGS.EXPLICIT_BATCH_FLAG = hasattr(trt.NetworkDefinitionCreationFlag, "EXPLICIT_BATCH")
 FLAGS.INT8_CALIBRATION = hasattr(trt, "IInt8EntropyCalibrator2")
 FLAGS.WEAK_TYPING = hasattr(getattr(trt, "BuilderFlag", None), "FP16")
+FLAGS.DIRECT_IO = hasattr(getattr(trt, "BuilderFlag", None), "DIRECT_IO")
 FLAGS.PLUGIN_CREATOR_LOOKUP = hasattr(getattr(trt, "IPluginRegistry", None), "get_plugin_creator")
 
 # Set system flags

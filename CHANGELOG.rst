@@ -208,6 +208,9 @@ Fixed
   skipped warmup
 * ``register_jit`` functions run Numba-compiled (the ``jit`` extra previously had no effect), and
   ``with JIT:`` restores the previous JIT state on exit
+* ``TRTPreprocessor`` builds float16 engines, which ``DIRECT_IO`` made fail on TensorRT 8.6. The
+  preprocessors set it only for float32 before TensorRT 10.7, which deprecated it, and
+  ``build_engine(direct_io=True)`` raises ``RuntimeError`` on a TensorRT without the flag
 
 Removed
 ^^^^^^^
