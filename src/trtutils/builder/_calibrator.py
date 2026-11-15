@@ -54,7 +54,7 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
                 " Calibration data will not persist across runs."
             )
         self._batcher: AbstractBatcher | None = None
-        self._input_dtypes: dict[str, np.dtype] = {}
+        self._batch_dtypes: dict[str, np.dtype] = {}
         self._warned_dtype = False
 
     def set_batcher(self: Self, batcher: AbstractBatcher) -> None:
@@ -65,9 +65,13 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         """
         Set the dtype of each network input, by input name.
 
-        TensorRT reads a calibration batch as raw bytes of the input's dtype, so
-        ``get_batch`` casts batches of any other dtype to it. ``build_engine`` sets
-        this from the network after hooks and tensor formats are applied.
+        TensorRT reads a calibration batch as raw bytes of the dtype it binds the
+        input as, so ``get_batch`` casts batches of any other dtype to it. That is
+        the input's own dtype, except for int8: calibration runs the network
+        unquantized, so TensorRT binds an int8 input as float32, and batches for it
+        are cast to float32 (integer values are kept). On TensorRT 8.6, float16,
+        int32, uint8 and bool inputs are read in their own dtype. ``build_engine``
+        sets this from the network after hooks and tensor formats are applied.
 
         Parameters
         ----------
@@ -75,7 +79,12 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             The numpy dtype of each network input, keyed by input name.
 
         """
-        self._input_dtypes = {name: np.dtype(dtype) for name, dtype in dtypes.items()}
+        self._batch_dtypes = {}
+        for name, dtype in dtypes.items():
+            np_dtype = np.dtype(dtype)
+            # int8 inputs are bound as float32 while calibrating; int8 bytes there
+            # are read 4x past the batch (illegal memory access or garbage scales)
+            self._batch_dtypes[name] = np.dtype(np.float32) if np_dtype == np.int8 else np_dtype
 
     def get_batch_size(self: Self) -> int:
         """
@@ -97,7 +106,9 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         """
         Get the next batch of data.
 
-        Overrides from trt.IInt8EntropyCalibrator2.
+        Overrides from trt.IInt8EntropyCalibrator2. A batch is copied in the dtype
+        TensorRT reads the input as (see ``set_input_dtypes``) and cast to it first
+        if needed: float32 for an int8 input, the input's own dtype otherwise.
 
         Parameters
         ----------
@@ -119,14 +130,14 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         if batch is None:
             return None
 
-        # tensorrt reads the buffer as raw bytes of the input dtype, so a float32 batch
+        # tensorrt reads the buffer as raw bytes of the bound dtype, so a float32 batch
         # for a float16 input would calibrate on garbage (inf scales, broken engine)
-        expected = self._input_dtypes.get(names[0]) if names else None
+        expected = self._batch_dtypes.get(names[0]) if names else None
         if expected is not None and batch.dtype != expected:
             if not self._warned_dtype:
                 LOG.warning(
-                    f"Calibration batch dtype {batch.dtype} does not match the dtype of"
-                    f" network input '{names[0]}' ({expected}), casting batches to {expected}."
+                    f"TensorRT reads calibration batches for network input '{names[0]}'"
+                    f" as {expected}, casting {batch.dtype} batches to {expected}."
                 )
                 self._warned_dtype = True
             batch = batch.astype(expected)

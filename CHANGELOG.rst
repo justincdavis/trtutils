@@ -178,6 +178,10 @@ Fixed
   as raw bytes of that dtype, so float32 batches for a float16 input (set by a hook or
   ``input_tensor_formats``) calibrated on garbage: infinite scales, layers moved off the DLA, or a
   crash during the build
+* INT8 calibration copies the batches for an int8 network input as float32, casting int8 batches.
+  TensorRT binds an int8 input as float32 while calibrating, so int8 batches were read 4x past
+  their end: an illegal memory access, a failed ``min_ <= max_`` assertion, or scales around 1e36
+  and wrong engine outputs
 * A ``QueuedTRTEngine`` that is not stopped is now garbage collected. Its worker thread used to
   hold a reference to the engine
 * ``get_random_input`` no longer fails on float16 inputs

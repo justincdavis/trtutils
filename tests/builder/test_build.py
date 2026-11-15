@@ -158,7 +158,7 @@ def test_int8_calibration_casts_batches_to_input_dtype(
         return network
 
     batcher = SyntheticBatcher(
-        shape=(3, 160, 160),
+        shape=(160, 160, 3),
         dtype=np.dtype(np.float32),
         batch_size=1,
         num_batches=2,
@@ -173,12 +173,70 @@ def test_int8_calibration_casts_batches_to_input_dtype(
         hooks=[fp16_input],
         optimization_level=1,
     )
-    lines = calibration_cache_path.read_text().splitlines()[1:]
-    scales = dict(line.split(": ") for line in lines)
-    scale = struct.unpack(">f", bytes.fromhex(scales["input"]))[0]
+    scale = _calibration_scales(calibration_cache_path)["input"]
     # synthetic data lies in [0, 1], so the input scale is about 1/127. Read as
     # float16 bytes, the float32 data held inf/nan and gave an infinite scale.
     assert 0.0 < scale < 0.02
+
+
+@pytest.mark.skipif(
+    REAL_FLAGS.IS_BLACKWELL,
+    reason="Runtime INT8/FP8 calibration is a weakly-typed concept; see test_build_strongly_typed_from_qdq.",
+)
+@pytest.mark.parametrize(
+    "batch_dtype",
+    [
+        pytest.param(np.float32, id="float32-batches"),
+        pytest.param(np.int8, id="int8-batches"),
+    ],
+)
+@_needs_weak_typing
+def test_int8_calibration_of_int8_input(
+    onnx_path,
+    output_engine_path,
+    calibration_cache_path,
+    batch_dtype,
+) -> None:
+    """Batches for an int8 input are copied as float32, the dtype TensorRT binds it as."""
+
+    def int8_input(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
+        tensor = network.get_input(0)
+        tensor.dtype = trt.int8
+        tensor.set_dynamic_range(-127.0, 127.0)
+        return network
+
+    batcher = SyntheticBatcher(
+        shape=(160, 160, 3),
+        dtype=np.dtype(batch_dtype),
+        batch_size=1,
+        num_batches=2,
+        data_range=(-100.0, 100.0),
+        order="NCHW",
+    )
+    build_engine(
+        onnx_path,
+        output_engine_path,
+        int8=True,
+        data_batcher=batcher,
+        calibration_cache=calibration_cache_path,
+        hooks=[int8_input],
+        optimization_level=1,
+    )
+    scale = _calibration_scales(calibration_cache_path)["output"]
+    # the network computes x * 0.5 + 1, so data in [-100, 100] gives |output| <= 51
+    # and an output scale of about 51/127 = 0.40 (entropy calibration can land up to
+    # ~25% above the amax). Copied as int8, the batch was read as float32 bytes (4x
+    # past its end) and gave scales around 1e36.
+    assert 0.3 < scale < 0.8
+
+
+def _calibration_scales(cache: Path) -> dict[str, float]:
+    """Per-tensor scales of a TensorRT calibration cache (big-endian float32 hex)."""
+    lines = cache.read_text().splitlines()[1:]
+    return {
+        name: struct.unpack(">f", bytes.fromhex(value))[0]
+        for name, value in (line.split(": ") for line in lines)
+    }
 
 
 def test_build_cache(onnx_path, output_engine_path) -> None:

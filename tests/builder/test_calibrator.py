@@ -148,6 +148,10 @@ def test_close_removes_temp_cache() -> None:
         pytest.param(np.float32, {"input": np.float16}, np.float16, id="cast-to-input-dtype"),
         pytest.param(np.float16, {"input": np.float16}, np.float16, id="matching-dtype"),
         pytest.param(np.float32, {"other": np.float16}, np.float32, id="unknown-input"),
+        # tensorrt binds an int8 input as float32 while calibrating (checked on 8.6)
+        pytest.param(np.float32, {"input": np.int8}, np.float32, id="int8-input-float32-batch"),
+        pytest.param(np.int8, {"input": np.int8}, np.float32, id="int8-input-int8-batch"),
+        pytest.param(np.float32, {"input": np.int32}, np.int32, id="int32-input"),
     ],
 )
 @patch("trtutils.builder._calibrator.cuda_free")
