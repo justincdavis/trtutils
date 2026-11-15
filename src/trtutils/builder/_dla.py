@@ -182,10 +182,14 @@ def build_dla_engine(  # noqa: C901, PLR0912, PLR0915
     input_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
         A list of (name, dtype format) to allow deep specification of input layers.
         For example, input_tensor_formats=[("input", trt.DataType.UINT8, trt.TensorFormat.HWC)]
+        The dtype is set on weakly-typed networks only. Strongly typed networks
+        (``strongly_typed=True``, and every network on TensorRT 11) take it from
+        the ONNX graph, and a dtype that differs from the graph's raises ValueError.
         By default, None
     output_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
         A list of (name, dtype format) to allow deep specification of output layers.
         For example, output_tensor_formats=[("output", trt.DataType.HALF, trt.TensorFormat.LINEAR)]
+        The dtype follows the same rules as for ``input_tensor_formats``.
         By default, None
     hooks : list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]], optional
         An optional list of 'hook' functions to modify the TensorRT network before

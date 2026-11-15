@@ -72,9 +72,13 @@ and raise :py:class:`ValueError` if combined:
   apply; scales must already be in the ONNX.
 * ``layer_precision`` — per-layer overrides are ignored.
 
-``input_tensor_formats`` and ``output_tensor_formats`` may still be used,
-but the dtype portion is ignored — only the tensor format (``LINEAR``,
-``CHW4``, ``HWC``, …) is applied. A warning is logged in this case.
+``input_tensor_formats`` and ``output_tensor_formats`` may still be used to
+set the tensor format (``LINEAR``, ``CHW4``, ``HWC``, …), but a strongly typed
+network takes its I/O dtypes from the ONNX graph. Each dtype must match the
+graph's, or :py:class:`ValueError` is raised. The same holds for every network on
+TensorRT 11, which removed weakly-typed networks and made ``ITensor.dtype``
+read-only. To change an I/O dtype, export the ONNX with it or add a Cast in a
+hook.
 
 Generating a Q/DQ ONNX
 ----------------------

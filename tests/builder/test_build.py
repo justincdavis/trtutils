@@ -35,6 +35,9 @@ _needs_trt10_int8 = pytest.mark.skipif(
 _needs_weak_typing = pytest.mark.skipif(
     not REAL_FLAGS.WEAK_TYPING, reason="weakly-typed networks were removed in TensorRT 11"
 )
+_needs_strong_typing = pytest.mark.skipif(
+    not REAL_FLAGS.STRONGLY_TYPED_SUPPORTED, reason="strongly-typed networks need TensorRT 10"
+)
 _needs_trt10_fp8 = pytest.mark.skipif(
     REAL_FLAGS.TRT_VERSION < (10, 0), reason="weakly-typed fp8 needs TensorRT 10"
 )
@@ -612,6 +615,48 @@ def test_output_tensor_format(onnx_path, output_engine_path, valid: bool) -> Non
                 output_tensor_formats=[(name, trt.DataType.FLOAT, trt.TensorFormat.LINEAR)],
                 optimization_level=1,
             )
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "kind",
+    [pytest.param("input", id="input"), pytest.param("output", id="output")],
+)
+@pytest.mark.parametrize(
+    ("typing", "dtype", "expected"),
+    [
+        pytest.param(
+            "weak", trt.DataType.HALF, trt.DataType.HALF, id="weak-sets", marks=_needs_weak_typing
+        ),
+        pytest.param("no-weak", trt.DataType.FLOAT, trt.DataType.FLOAT, id="no-weak-same"),
+        pytest.param("no-weak", trt.DataType.HALF, None, id="no-weak-differs"),
+        pytest.param(
+            "strong", trt.DataType.HALF, None, id="strongly-typed-differs", marks=_needs_strong_typing
+        ),
+    ],
+)
+def test_tensor_format_dtype(
+    monkeypatch, onnx_path, output_engine_path, kind, typing, dtype, expected
+) -> None:
+    """Weak typing sets a tensor-format dtype; strong typing raises on one the graph lacks."""
+    # tensorrt 11 has no weak typing, so this takes its branch
+    if typing == "no-weak":
+        monkeypatch.setattr(REAL_FLAGS, "WEAK_TYPING", False)
+    name = (get_onnx_input if kind == "input" else get_onnx_output)(onnx_path)[0]
+    kwargs = {
+        f"{kind}_tensor_formats": [(name, dtype, trt.TensorFormat.LINEAR)],
+        "strongly_typed": typing == "strong",
+        "optimization_level": 1,
+    }
+    if expected is None:
+        with pytest.raises(ValueError, match=f"{kind}_tensor_formats requests DataType.HALF"):
+            build_engine(onnx_path, output_engine_path, **kwargs)
+        assert not output_engine_path.exists()
+        return
+    build_engine(onnx_path, output_engine_path, **kwargs)
+    _, _, inputs, outputs = inspect_engine(output_engine_path)
+    tensors = inputs if kind == "input" else outputs
+    assert [(n, d) for n, _, d, _ in tensors] == [(name, expected)]
 
 
 @pytest.mark.regression
