@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 import pytest
 
-from trtutils.builder._batcher import SyntheticBatcher
+from trtutils.builder._batcher import AbstractBatcher, SyntheticBatcher
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -27,6 +27,26 @@ def drain_batches(batcher) -> int:
     while batcher.get_next_batch() is not None:
         count += 1
     return count
+
+
+class ListBatcher(AbstractBatcher):
+    """Batcher serving prepared batches: arrays, lists of arrays, or dicts of arrays."""
+
+    def __init__(self, batches: list) -> None:
+        """Serve the batches in order."""
+        self._batches = list(batches)
+        self._num_batches = len(self._batches)
+
+    @property
+    def num_batches(self) -> int:
+        return self._num_batches
+
+    @property
+    def batch_size(self) -> int:
+        return 1
+
+    def get_next_batch(self):
+        return self._batches.pop(0) if self._batches else None
 
 
 def _make_image_dir(base: Path, name: str, count: int, seed: int) -> Path:

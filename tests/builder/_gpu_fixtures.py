@@ -90,6 +90,36 @@ def quantized_onnx_path(tmp_path_factory) -> Path:
 
 
 @pytest.fixture(scope="session")
+def two_input_onnx_path(tmp_path_factory) -> Path:
+    """Two-input ONNX: y = conv1x1(a + b) summing the 3 channels, a/b (1, 3, 16, 16)."""
+    out_path = tmp_path_factory.mktemp("two_input") / "two_input.onnx"
+    shape = [1, 3, 16, 16]
+    weight = numpy_helper.from_array(np.ones((1, 3, 1, 1), dtype=np.float32), name="weight")
+    graph = helper.make_graph(
+        nodes=[
+            helper.make_node("Add", ["a", "b"], ["sum"], name="add"),
+            helper.make_node("Conv", ["sum", "weight"], ["y"], name="conv"),
+        ],
+        name="two_input_graph",
+        inputs=[
+            helper.make_tensor_value_info("a", TensorProto.FLOAT, shape),
+            helper.make_tensor_value_info("b", TensorProto.FLOAT, shape),
+        ],
+        outputs=[helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 1, 16, 16])],
+        initializer=[weight],
+    )
+    model = helper.make_model(
+        graph,
+        opset_imports=[helper.make_opsetid("", 13)],
+        producer_name="trtutils-tests",
+    )
+    model.ir_version = 8
+    onnx.checker.check_model(model)
+    onnx.save(model, str(out_path))
+    return out_path
+
+
+@pytest.fixture(scope="session")
 def _can_build_engine(onnx_path) -> bool:
     """Check if TRT can build engines on this hardware (session-cached)."""
     try:

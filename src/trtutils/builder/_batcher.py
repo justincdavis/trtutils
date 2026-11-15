@@ -21,13 +21,21 @@ from trtutils._log import LOG
 from trtutils.image.preprocessors._cpu import letterbox
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping, Sequence
 
     from typing_extensions import Self
 
 
 class AbstractBatcher(ABC):
-    """Abstract base class for data batching classes."""
+    """
+    Abstract base class for data batching classes.
+
+    A batcher feeds INT8 calibration. ``get_next_batch`` returns one batch per
+    call: a numpy array for a single-input network, or for a network with
+    several inputs, a list or tuple of arrays in network input order or a dict
+    of arrays keyed by input name. Each array has the shape of its input.
+    Batches are cast to the dtype TensorRT reads each input as.
+    """
 
     @abstractmethod
     def __init__(self: Self) -> None:
@@ -41,11 +49,23 @@ class AbstractBatcher(ABC):
     @property
     @abstractmethod
     def batch_size(self: Self) -> int:
-        """Get the batch size."""
+        """Get the batch size, the leading dimension of the (first) input's array."""
 
     @abstractmethod
-    def get_next_batch(self: Self) -> np.ndarray | None:
-        """Get the batch of data."""
+    def get_next_batch(
+        self: Self,
+    ) -> np.ndarray | Sequence[np.ndarray] | Mapping[str, np.ndarray] | None:
+        """
+        Get the next batch of data.
+
+        Returns
+        -------
+        np.ndarray | Sequence[np.ndarray] | Mapping[str, np.ndarray] | None
+            One array for a single-input network, a list or tuple of arrays in
+            network input order, or a dict of arrays keyed by input name.
+            None when there are no more batches.
+
+        """
 
     def save_calibration_data(
         self: Self,
@@ -55,6 +75,8 @@ class AbstractBatcher(ABC):
     ) -> Path:
         """
         Drain all batches and save concatenated calibration data to a .npy file.
+
+        Only single-input batches (numpy arrays) can be saved.
 
         Parameters
         ----------
@@ -72,6 +94,8 @@ class AbstractBatcher(ABC):
         ------
         ValueError
             If no batches could be retrieved from the batcher.
+        TypeError
+            If the batcher returns multi-input batches (a list, tuple or dict).
 
         """
         batches: list[np.ndarray] = []
@@ -81,6 +105,12 @@ class AbstractBatcher(ABC):
             batch = self.get_next_batch()
             if batch is None:
                 break
+            if not isinstance(batch, np.ndarray):
+                err_msg = (
+                    "save_calibration_data saves single-input batches (numpy arrays), got a"
+                    f" {type(batch).__name__} batch."
+                )
+                raise TypeError(err_msg)
             batches.append(batch)
             batch_idx += 1
             if verbose:
