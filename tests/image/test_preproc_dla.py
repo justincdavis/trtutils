@@ -260,10 +260,10 @@ def test_dla_preprocessor_rejects_inputs(images, random_images) -> None:
 
 @pytest.mark.dla
 def test_detector_dla_matches_cuda(yolov10_engine, images) -> None:
-    """A Detector with preprocessor='dla' finds the same objects as with 'cuda'."""
+    """A Detector with preprocessor='dla0' finds the same objects as with 'cuda'."""
     frame = _frame(images, 1080, 1920)
     results = []
-    for preprocessor in ("cuda", "dla"):
+    for preprocessor in ("cuda", "dla0"):
         detector = Detector(
             yolov10_engine,
             preprocessor=preprocessor,
@@ -279,3 +279,9 @@ def test_detector_dla_matches_cuda(yolov10_engine, images) -> None:
         assert abs(score - cuda_score) < 0.05
         np.testing.assert_allclose(box, cuda_box, atol=3)
     assert isinstance(detector.get_preprocessor(), DLAPreprocessor)
+
+
+def test_dla_preprocessor_needs_core(yolov10_engine) -> None:
+    """preprocessor='dla' without a core is an invalid method listing the DLA cores."""
+    with pytest.raises(ValueError, match=r"Invalid preprocessing method 'dla'.*'dla0', 'dla1'"):
+        Detector(yolov10_engine, preprocessor="dla", warmup=False)

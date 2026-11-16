@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 _COLOR_CHANNELS = 3
 _IMAGE_RANK = 4
 
-_PREPROCESSOR_METHODS = ("cpu", "cuda", "trt", "hybrid", "dla", "dla0", "dla1")
+_PREPROCESSOR_METHODS = ("cpu", "cuda", "trt", "hybrid", "dla0", "dla1")
 _GPUPre = TypeVar("_GPUPre", bound=CUDAPreprocessor)
 
 
@@ -153,11 +153,11 @@ class ImageModel:
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt', 'hybrid', 'dla', 'dla0', 'dla1'],
-            default is 'cuda'. 'hybrid' resizes on the CPU and normalizes on the GPU,
-            uploading only the resized image, which wins for inputs much smaller than
-            the frame. 'dla' ('dla0') and 'dla1' preprocess on that DLA core, for
-            whole-factor letterbox and linear resizes, see :class:`DLAPreprocessor`.
+            The options are ['cpu', 'cuda', 'trt', 'hybrid', 'dla0', 'dla1'], default is
+            'cuda'. 'hybrid' resizes on the CPU and normalizes on the GPU, uploading only
+            the resized image, which wins for inputs much smaller than the frame. 'dla0'
+            and 'dla1' preprocess on that DLA core, for whole-factor letterbox and linear
+            resizes, see :class:`DLAPreprocessor`.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear', 'center_crop'], default is 'linear'.
@@ -547,11 +547,11 @@ class ImageModel:
         Parameters
         ----------
         method : str, optional
-            Options are 'cpu', 'cuda', 'trt', 'hybrid', 'dla', 'dla0' or 'dla1'.
+            Options are 'cpu', 'cuda', 'trt', 'hybrid', 'dla0' or 'dla1'.
             'trt' falls back to 'cuda' on platforms without UINT8 support, and
             'cuda' and 'hybrid' to 'cpu' for models whose input is not float32 or
-            float16. 'dla' is DLA core 0. By default None, which returns the
-            preprocessor stated in the constructor.
+            float16. By default None, which returns the preprocessor stated in the
+            constructor.
 
         Returns
         -------
@@ -611,7 +611,7 @@ class ImageModel:
                     "Use the cuda preprocessor, which only resizes."
                 )
                 raise ValueError(err_msg)
-            return "dla0" if method == "dla" else method
+            return method
         if self._sst_in_graph:
             if method == "cpu":
                 err_msg = (
