@@ -242,6 +242,7 @@ def _write_gridsample_onnx(path):
 
 
 @pytest.mark.cpu
+@pytest.mark.skipif(FLAGS.TRT_VERSION < (10, 0), reason="mark_debug arrived in TensorRT 10")
 def test_gridsample_hook_marks_value_input_as_debug(tmp_path) -> None:
     """The hook turns each GridSample value tensor into a debug tensor, leaving the grid alone."""
     for model_cls in (DFINE, DEIM, DEIMv2):
