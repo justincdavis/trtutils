@@ -19,7 +19,7 @@ from trtutils.core._device import Device
 from trtutils.core.cache import query_timing_cache, save_timing_cache_to_global
 
 from ._onnx import read_onnx
-from ._utils import check_implicit_calibration, get_check_dla
+from ._utils import check_implicit_calibration, get_check_dla, needs_dynamic_range
 
 # trt 11 removed the implicit calibrators
 if FLAGS.INT8_CALIBRATION:
@@ -604,9 +604,7 @@ def _calibration_shapes(
 
 def _missing_dynamic_ranges(network: trt.INetworkDefinition) -> tuple[int, int]:
     """
-    Count the tensors INT8 can quantize that have no dynamic range.
-
-    These are the float32, float16 and int8 network inputs and layer outputs.
+    Count the network inputs and layer outputs that need a dynamic range but have none.
 
     Returns
     -------
@@ -618,7 +616,7 @@ def _missing_dynamic_ranges(network: trt.INetworkDefinition) -> tuple[int, int]:
     for idx in range(network.num_layers):
         layer = network.get_layer(idx)
         tensors.extend(layer.get_output(out) for out in range(layer.num_outputs))
-    quantizable = [t for t in tensors if t.dtype in (trt.float32, trt.float16, trt.int8)]
+    quantizable = [t for t in tensors if needs_dynamic_range(t)]
     return sum(t.dynamic_range is None for t in quantizable), len(quantizable)
 
 

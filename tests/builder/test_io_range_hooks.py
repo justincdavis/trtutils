@@ -66,6 +66,28 @@ def identity_onnx_path(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
+def normalize_onnx_path(tmp_path_factory):
+    """1x1 identity convolution, then (x + 128) / 255, (1, 16, 16, 64)."""
+    channels = _IDENTITY_SHAPE[1]
+    eye = np.eye(channels, dtype=np.float32).reshape(channels, channels, 1, 1)
+    bias = np.full(channels, 128 / 255, dtype=np.float32)
+    return _save_onnx(
+        tmp_path_factory.mktemp("normalize") / "normalize.onnx",
+        [
+            helper.make_node("Conv", ["x", "eye"], ["h"]),
+            helper.make_node("Conv", ["h", "w", "b"], ["y"]),
+        ],
+        list(_IDENTITY_SHAPE),
+        list(_IDENTITY_SHAPE),
+        [
+            numpy_helper.from_array(eye, "eye"),
+            numpy_helper.from_array(eye / 255, "w"),
+            numpy_helper.from_array(bias, "b"),
+        ],
+    )
+
+
+@pytest.fixture(scope="module")
 def smooth_onnx_path(tmp_path_factory):
     """Depthwise 3x3 box blur minus 0.25, ReLU, then 2x2 average pooling, (1, 16, 32, 32)."""
     channels = _SMOOTH_SHAPE[1]
@@ -169,7 +191,11 @@ def test_int8_ranges_hook_sets_hand_computed_ranges() -> None:
     concat = network.add_concatenation([pool.get_output(0), affine.get_output(0)])
     exp = network.add_unary(concat.get_output(0), trt.UnaryOperation.EXP)
     softmax = network.add_softmax(exp.get_output(0))
-    network.mark_output(softmax.get_output(0))
+    out = network.add_activation(softmax.get_output(0), trt.ActivationType.RELU)
+    int8_out = network.add_identity(pool.get_output(0))
+    for layer in (out, int8_out):
+        network.mark_output(layer.get_output(0))
+    int8_out.get_output(0).dtype = trt.int8
 
     with pytest.raises(ValueError, match=r"no input_ranges entry for the network inputs \['x'\]"):
         int8_ranges_hook()(network)
@@ -187,12 +213,14 @@ def test_int8_ranges_hook_sets_hand_computed_ranges() -> None:
         affine.get_output(0): (-9.0, 1.0),
         concat.get_output(0): (-9.0, 5.0),
         softmax.get_output(0): (0.0, 1.0),
+        int8_out.get_output(0): (0.0, 5.0),
     }
     for tensor, (lo, hi) in intervals.items():
         bound = max(hi, -lo * 127 / 128)
         assert tensor.dynamic_range == pytest.approx((-bound, bound)), tensor.name
     assert conv.get_output(0).dynamic_range == (-100.0, 100.0)
     assert exp.get_output(0).dynamic_range is None
+    assert out.get_output(0).dynamic_range is None
 
 
 @_needs_implicit_int8
@@ -209,3 +237,16 @@ def test_int8_ranges_build_matches_fp32(smooth_onnx_path, tmp_path, device) -> N
     output = engine.execute([Buffer.wrap(x)])[0]
     # the output interval is [0, 0.75], one INT8 step is 0.75 / 127
     assert np.abs(output - _smooth_reference(x)).max() <= 2 * 0.75 / 127
+
+
+@_needs_implicit_int8
+@pytest.mark.parametrize("device", _DEVICES)
+def test_int8_ranges_hook_keeps_float_outputs_unquantized(
+    normalize_onnx_path, tmp_path, device
+) -> None:
+    """A float16 output gets no range, so it is not rounded to INT8 steps (1 / 127 here)."""
+    hooks = [int8_input_hook, fp16_io_hook, int8_ranges_hook()]
+    engine = _build(normalize_onnx_path, tmp_path, device, hooks, **_int8_build())
+    values = np.resize(np.arange(-128, 128), _IDENTITY_SHAPE).astype(np.int8)
+    output = engine.execute([Buffer.wrap(values)])[0]
+    assert np.abs(output - (values.astype(np.float64) + 128) / 255).max() <= 1e-3

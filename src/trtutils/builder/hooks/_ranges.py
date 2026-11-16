@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils.builder._utils import check_dynamic_range
+from trtutils.builder._utils import check_dynamic_range, needs_dynamic_range
 from trtutils.compat._libs import trt
 
 if TYPE_CHECKING:
@@ -43,7 +43,8 @@ def int8_ranges_hook(
     (sum, sub, prod, max, min, div), concatenation, shuffle, slice, padding, cast,
     identity, softmax and constants. Tensors after any other layer get no range and run
     in higher precision; ``build_engine`` warns with their count. Tensors that already
-    have a dynamic range keep it.
+    have a dynamic range keep it. Float network outputs get none, so INT8 does not round
+    them to its steps; make an output int8 to quantize it.
 
     Parameters
     ----------
@@ -84,7 +85,7 @@ def int8_ranges_hook(
     def hook(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
         for tensor, (lo, hi) in _propagate(network, ranges):
             bound = max(hi, lo * _INT8_MAX / _INT8_MIN)
-            if bound > 0 and tensor.dynamic_range is None:
+            if bound > 0 and tensor.dynamic_range is None and needs_dynamic_range(tensor):
                 tensor.set_dynamic_range(-bound, bound)
         return network
 
