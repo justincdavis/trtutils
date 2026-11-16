@@ -139,7 +139,8 @@ class ParallelDetector:
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt', 'hybrid'], default is 'cuda'.
+            The options are ['cpu', 'cuda', 'trt', 'hybrid', 'dla', 'dla0', 'dla1'],
+            default is 'cuda'.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'letterbox'.

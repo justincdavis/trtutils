@@ -10,6 +10,8 @@ Classes
     CPU-based preprocessor.
 :class:`CUDAPreprocessor`
     CUDA-based preprocessor.
+:class:`DLAPreprocessor`
+    DLA-based preprocessor, for whole-factor resizes.
 :class:`HybridPreprocessor`
     CPU resize, CUDA normalization.
 :class:`TRTPreprocessor`
@@ -18,6 +20,8 @@ Classes
     Abstract base class for image preprocessors.
 :class:`GPUImagePreprocessor`
     Abstract base class for GPU-based image preprocessors.
+:class:`DevicePreprocessor`
+    Abstract base class for preprocessors that leave the batch on the device.
 
 Functions
 ---------
@@ -36,7 +40,7 @@ Functions
 
 from __future__ import annotations
 
-from ._base import ImagePreprocessor
+from ._base import DevicePreprocessor, ImagePreprocessor
 from ._cpu import CPUPreprocessor, preprocess
 from ._cpu_ocr import (
     crop_text_region,
@@ -45,11 +49,14 @@ from ._cpu_ocr import (
     resize_text_detection,
 )
 from ._cuda import CUDAPreprocessor, GPUImagePreprocessor, HybridPreprocessor
+from ._dla import DLAPreprocessor
 from ._trt import TRTPreprocessor
 
 __all__ = [
     "CPUPreprocessor",
     "CUDAPreprocessor",
+    "DLAPreprocessor",
+    "DevicePreprocessor",
     "GPUImagePreprocessor",
     "HybridPreprocessor",
     "ImagePreprocessor",

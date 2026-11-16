@@ -6,8 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import math
-from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import nvtx
@@ -31,7 +30,7 @@ from trtutils.image.kernels import (
     SST_FAST_F16,
 )
 
-from ._base import DEFAULT_CROP_PCT, RESIZE_METHODS, ImagePreprocessor, crop_geometry
+from ._base import DEFAULT_CROP_PCT, RESIZE_METHODS, DevicePreprocessor, crop_geometry
 from ._cpu import resize_image
 
 if TYPE_CHECKING:
@@ -50,7 +49,7 @@ _SST_KERNELS = {
 }
 
 
-class GPUImagePreprocessor(ImagePreprocessor):
+class GPUImagePreprocessor(DevicePreprocessor):
     """GPU-based image preprocessor."""
 
     def __init__(
@@ -130,7 +129,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
             {
                 "gpu_init": f"preproc::gpu_init [{self._tag}]",
                 "gpu_warmup": f"preproc::gpu_warmup [{self._tag}]",
-                "gpu_preprocess": f"preproc::gpu_preprocess [{self._tag}]",
                 "direct_preproc": f"preproc::direct_preproc [{self._tag}]",
                 "resize_images_to_batch": f"preproc::resize_images_to_batch [{self._tag}]",
                 "create_resize_args": f"preproc::create_resize_args [{self._tag}]",
@@ -142,8 +140,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 "resize_heterogeneous": f"preproc::resize_heterogeneous_batch [{self._tag}]",
                 "reallocate_batch_input": f"preproc::reallocate_batch_input [{self._tag}]",
                 "pack_batch_buffer": f"preproc::pack_batch_buffer [{self._tag}]",
-                "stream_sync": f"preproc::stream_sync [{self._tag}]",
-                "copy_output": f"preproc::copy_output [{self._tag}]",
             }
         )
 
@@ -238,65 +234,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # gpu_warmup
-
-    # __call__ overloads
-    @overload
-    def __call__(
-        self: Self,
-        images: np.ndarray | Buffer,
-        resize: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    @overload
-    def __call__(
-        self: Self,
-        images: Sequence[np.ndarray | Buffer],
-        resize: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    def __call__(
-        self: Self,
-        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        resize: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        """
-        Preprocess images for the model.
-
-        Parameters
-        ----------
-        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
-            A single image (HWC format) or list of images to preprocess.
-        resize : str, optional
-            The method to resize the image with.
-            Options are [letterbox, linear, center_crop], will use method
-            provided in constructor by default.
-        no_copy : bool, optional
-            If True, the outputs will not be copied out
-            from the cuda allocated host memory. Instead,
-            the host memory will be returned directly.
-            This memory WILL BE OVERWRITTEN INPLACE
-            by future preprocessing calls.
-        verbose : bool, optional
-            Whether or not to output additional information
-            to stdout. If not provided, will default to overall
-            engines verbose setting.
-
-        Returns
-        -------
-        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
-            The preprocessed batch tensor, list of ratios, and list of padding per image.
-
-        """
-        return self.preprocess(images, resize=resize, no_copy=no_copy, verbose=verbose)
 
     def _allocate_imagenet_buffers(self: Self) -> None:
         if FLAGS.NVTX_ENABLED:
@@ -420,157 +357,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 unified_mem=self._unified_mem,
             )
         return self._batch_input_binding.host_allocation.reshape(-1)[:size].reshape(shape)
-
-    @abstractmethod
-    def direct_preproc(
-        self: Self,
-        images: Sequence[np.ndarray | Buffer],
-        resize: str | None = None,
-        *,
-        no_warn: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]:
-        """
-        Preprocess images for the model with H2D copies and GPU kernels.
-
-        This method performs the complete preprocessing pipeline:
-        1. Host-to-device copy of input images
-        2. Resize kernels (letterbox, linear, or center_crop)
-        3. Normalization (SST) kernel
-
-        Parameters
-        ----------
-        images : Sequence[np.ndarray | Buffer]
-            The images to preprocess (HWC format, uint8).
-        resize : str, optional
-            The resize method. Options are ['letterbox', 'linear', 'center_crop'].
-            If None, uses the configured default.
-        no_warn : bool, optional
-            If True, suppress warnings about usage.
-        verbose : bool, optional
-            Enable verbose logging.
-
-        Returns
-        -------
-        tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]
-            Device Buffer of the preprocessed batch, shaped (batch, 3, height, width)
-            for exactly the given images, list of ratios (scale_x, scale_y),
-            and list of padding (pad_x, pad_y) per image. The Buffer views
-            the preprocessor's output memory and is overwritten by the next call.
-
-        """
-
-    @property
-    @abstractmethod
-    def output_binding(self: Self) -> Binding:
-        """
-        Get the output binding for the preprocessor.
-
-        Subclasses must implement this to return their specific output binding.
-
-        Returns
-        -------
-        Binding
-            The output binding containing the preprocessed data.
-
-        """
-
-    # preprocess overloads
-    @overload
-    def preprocess(
-        self: Self,
-        images: np.ndarray | Buffer,
-        resize: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    @overload
-    def preprocess(
-        self: Self,
-        images: Sequence[np.ndarray | Buffer],
-        resize: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    def preprocess(
-        self: Self,
-        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        resize: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        """
-        Preprocess images for the model.
-
-        Parameters
-        ----------
-        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
-            A single image (HWC format) or list of images to preprocess.
-        resize : str, optional
-            The method to resize the image with.
-            Options are [letterbox, linear, center_crop], will use method
-            provided in constructor by default.
-        no_copy : bool, optional
-            If True, the outputs will not be copied out
-            from the cuda allocated host memory. Instead,
-            the host memory will be returned directly.
-            This memory WILL BE OVERWRITTEN INPLACE
-            by future preprocessing calls.
-        verbose : bool, optional
-            Whether or not to output additional information
-            to stdout. If not provided, will default to overall
-            engines verbose setting.
-
-        Returns
-        -------
-        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
-            The preprocessed batch tensor, list of ratios, and list of padding per image.
-
-        """
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["gpu_preprocess"])
-
-        # Handle single-image input
-        if isinstance(images, (np.ndarray, Buffer)):
-            batch_images: Sequence[np.ndarray | Buffer] = [images]
-        else:
-            batch_images = images
-
-        output, ratios_list, padding_list = self.direct_preproc(
-            batch_images,
-            resize=resize,
-            no_warn=True,
-            verbose=verbose,
-        )
-
-        # only the submitted images are copied back, even when the output
-        # memory is allocated for a larger batch
-        host_output = self.output_binding.fetch(output.shape, self._stream)
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["stream_sync"])
-        stream_synchronize(self._stream)
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # stream_sync
-
-        if no_copy:
-            result = (host_output.array, ratios_list, padding_list)
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # gpu_preprocess
-            return result
-
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["copy_output"])
-        result = (host_output.array.copy(), ratios_list, padding_list)
-        if FLAGS.NVTX_ENABLED:
-            nvtx.pop_range()  # copy_output
-            nvtx.pop_range()  # gpu_preprocess
-        return result
 
     def _create_resize_args(
         self: Self,
