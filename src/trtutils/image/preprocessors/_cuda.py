@@ -967,8 +967,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             The range of the image values the model expects.
             Examples: (0.0, 1.0), (0.0, 255.0)
         dtype : np.dtype
-            The datatype of the image, np.float32 or np.float16.
-            Ignored when normalize is False.
+            The datatype of the normalized image, np.float32 or np.float16.
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
@@ -1010,8 +1009,9 @@ class CUDAPreprocessor(GPUImagePreprocessor):
 
         """
         tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
-        if normalize and np.dtype(dtype) not in _SST_KERNELS:
-            err_msg = f"{tag}: dtype must be float32 or float16 to normalize, got {np.dtype(dtype)}"
+        dtype = np.dtype(dtype)
+        if normalize and dtype not in _SST_KERNELS:
+            err_msg = f"{tag}: dtype must be float32 or float16 to normalize, got {dtype}"
             raise ValueError(err_msg)
         self._normalize = normalize
         super().__init__(
@@ -1064,7 +1064,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         self._use_imagenet: bool = self._mean is not None and self._std is not None
         # normalize=False only resizes, so skip the NVRTC compile
         if self._normalize:
-            fast, imagenet = _SST_KERNELS[np.dtype(self._o_dtype)]
+            fast, imagenet = _SST_KERNELS[self._o_dtype]
             sst = imagenet if self._use_imagenet else fast
             self._sst_kernel = Kernel(sst[0], sst[1])
 
