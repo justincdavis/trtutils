@@ -252,8 +252,6 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
             Path to calibration cache.
         - gpu_fallback : bool
             Allow GPU fallback for DLA.
-        - direct_io : bool
-            Use direct IO.
         - prefer_precision_constraints : bool
             Prefer precision constraints.
         - reject_empty_algorithms : bool
@@ -330,7 +328,6 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
         shapes=shapes,
         optimization_level=args.optimization_level,
         gpu_fallback=args.gpu_fallback,
-        direct_io=args.direct_io,
         prefer_precision_constraints=args.prefer_precision_constraints,
         reject_empty_algorithms=args.reject_empty_algorithms,
         ignore_timing_mismatch=args.ignore_timing_mismatch,
@@ -549,8 +546,6 @@ def _build_dla(args: SimpleNamespace) -> None:
             Path to timing cache.
         - shape : list[str] or None
             Fixed input shapes specification.
-        - direct_io : bool
-            Use direct IO.
         - prefer_precision_constraints : bool
             Prefer precision constraints.
         - reject_empty_algorithms : bool
@@ -615,7 +610,6 @@ def _build_dla(args: SimpleNamespace) -> None:
         timing_cache=args.timing_cache,
         shapes=shapes,
         optimization_level=args.optimization_level,
-        direct_io=args.direct_io,
         prefer_precision_constraints=args.prefer_precision_constraints,
         reject_empty_algorithms=args.reject_empty_algorithms,
         ignore_timing_mismatch=args.ignore_timing_mismatch,
@@ -1409,11 +1403,6 @@ def _main() -> None:
             "Fix input binding shapes. Format NAME:dim1,dim2[,dim3...]. "
             "Repeat --shapes for multiple inputs."
         ),
-    )
-    build_common_parser.add_argument(
-        "--direct_io",
-        action="store_true",
-        help="Use direct IO for the engine.",
     )
     build_common_parser.add_argument(
         "--prefer_precision_constraints",

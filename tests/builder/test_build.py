@@ -725,24 +725,16 @@ def test_tensor_format_dtype(
 
 
 @pytest.mark.regression
-@pytest.mark.parametrize(
-    "direct_io",
-    [pytest.param(False, id="reformat-allowed"), pytest.param(True, id="direct-io")],
-)
-def test_tensor_format_needing_reformat(onnx_path, output_engine_path, direct_io: bool) -> None:
-    """Tensor formats leave TensorRT free to insert a reformat; only direct_io forbids one."""
+def test_tensor_format_needing_reformat(onnx_path, output_engine_path) -> None:
+    """A tensor format the first layer cannot consume builds through a reformat."""
     name = get_onnx_input(onnx_path)[0]
     # the elementwise layers of simple.onnx have no channel-last kernel
-    kwargs = {
-        "input_tensor_formats": [(name, trt.DataType.FLOAT, trt.TensorFormat.HWC)],
-        "direct_io": direct_io,
-        "optimization_level": 1,
-    }
-    if direct_io:
-        with pytest.raises(RuntimeError, match="forbids I/O reformats"):
-            build_engine(onnx_path, output_engine_path, **kwargs)
-        return
-    build_engine(onnx_path, output_engine_path, **kwargs)
+    build_engine(
+        onnx_path,
+        output_engine_path,
+        input_tensor_formats=[(name, trt.DataType.FLOAT, trt.TensorFormat.HWC)],
+        optimization_level=1,
+    )
     _, _, inputs, _ = inspect_engine(output_engine_path)
     assert [(n, fmt) for n, _, _, fmt in inputs] == [(name, trt.TensorFormat.HWC)]
 

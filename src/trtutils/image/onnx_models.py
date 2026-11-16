@@ -77,7 +77,6 @@ def build_image_preproc(
             temp_output,
             default_device=trt.DeviceType.GPU,
             workspace=1.0,
-            direct_io=True,
             input_tensor_formats=[
                 ("input", trt.DataType.UINT8, trt.TensorFormat.LINEAR),
                 ("scale", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
@@ -88,7 +87,7 @@ def build_image_preproc(
                 # any batch up to batch_size runs at its own size
                 ("input", ((1, *full[1:]), full, full)),
             ],
-            fp16=FLAGS.WEAK_TYPING,
+            fp16=FLAGS.WEAK_TYPING and output_dtype == np.float16,
             cache=True,
         )
 
@@ -146,7 +145,6 @@ def build_image_preproc_imagenet(
             temp_output,
             default_device=trt.DeviceType.GPU,
             workspace=1.0,
-            direct_io=True,
             input_tensor_formats=[
                 ("input", trt.DataType.UINT8, trt.TensorFormat.LINEAR),
                 ("mean", trt.DataType.FLOAT, trt.TensorFormat.LINEAR),
@@ -159,7 +157,7 @@ def build_image_preproc_imagenet(
                 ("mean", (1, 3, 1, 1)),
                 ("std", (1, 3, 1, 1)),
             ],
-            fp16=FLAGS.WEAK_TYPING,
+            fp16=FLAGS.WEAK_TYPING and output_dtype == np.float16,
             cache=True,
         )
 

@@ -129,7 +129,6 @@ def build_dla_engine(  # noqa: C901, PLR0912, PLR0915
     hooks: list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]] | None = None,
     optimization_level: int = 3,
     *,
-    direct_io: bool = False,
     prefer_precision_constraints: bool = False,
     reject_empty_algorithms: bool = False,
     ignore_timing_mismatch: bool = False,
@@ -198,11 +197,6 @@ def build_dla_engine(  # noqa: C901, PLR0912, PLR0915
     optimization_level : int, optional
         Optimization level to apply to the TensorRT builder config (0-5).
         By default, 3.
-    direct_io : bool
-        Forbid TensorRT from inserting reformat layers at the I/O tensors given in
-        ``input_tensor_formats`` / ``output_tensor_formats``. Specifying tensor
-        formats does not enable this.
-        By default, False
     prefer_precision_constraints : bool
         Whether or not to prefer precision constraints.
         By default, False
@@ -313,7 +307,6 @@ def build_dla_engine(  # noqa: C901, PLR0912, PLR0915
             input_tensor_formats=input_tensor_formats,
             output_tensor_formats=output_tensor_formats,
             hooks=hooks,
-            direct_io=direct_io,
             prefer_precision_constraints=prefer_precision_constraints,
             reject_empty_algorithms=reject_empty_algorithms,
             ignore_timing_mismatch=ignore_timing_mismatch,
@@ -338,7 +331,6 @@ def build_dla_engine(  # noqa: C901, PLR0912, PLR0915
             input_tensor_formats=input_tensor_formats,
             output_tensor_formats=output_tensor_formats,
             hooks=hooks,
-            direct_io=direct_io,
             prefer_precision_constraints=prefer_precision_constraints,
             reject_empty_algorithms=reject_empty_algorithms,
             ignore_timing_mismatch=ignore_timing_mismatch,
@@ -428,7 +420,6 @@ def build_dla_engine(  # noqa: C901, PLR0912, PLR0915
         hooks=hooks,
         optimization_level=optimization_level,
         gpu_fallback=True,  # enable GPU fallback to account for input/copy
-        direct_io=direct_io,
         prefer_precision_constraints=prefer_precision_constraints,
         reject_empty_algorithms=reject_empty_algorithms,
         ignore_timing_mismatch=ignore_timing_mismatch,

@@ -111,7 +111,6 @@ def test_missing_required_args_exit_2(argv) -> None:
                 "calibration_dir": None,
                 "input_shape": None,
                 "cache": False,
-                "direct_io": False,
             },
             id="build",
         ),

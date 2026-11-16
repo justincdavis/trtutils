@@ -127,7 +127,6 @@ Options
 * ``--timing_cache, -tc``: Path to store timing cache data
 * ``--calibration_cache, -cc``: Path to store calibration cache data
 * ``--cache``: Cache the engine in the trtutils engine cache
-* ``--direct_io``: Use direct IO for the engine
 * ``--prefer_precision_constraints``: Prefer precision constraints
 * ``--reject_empty_algorithms``: Reject empty algorithms
 * ``--ignore_timing_mismatch``: Allow different CUDA device timing caches to be used

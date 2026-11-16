@@ -56,8 +56,6 @@ def _axonn_build(args: SimpleNamespace) -> None:
             TensorRT builder optimization level (0-5). Default is 3.
         - shape : list[str] | None
             Input binding shapes as NAME:dim1,dim2,... Default is None.
-        - direct_io : bool
-            Use direct IO for the engine.
         - prefer_precision_constraints : bool
             Prefer precision constraints.
         - reject_empty_algorithms : bool
@@ -162,7 +160,6 @@ def _axonn_build(args: SimpleNamespace) -> None:
         calibration_cache=args.calibration_cache,
         shapes=shapes,
         optimization_level=args.optimization_level,
-        direct_io=args.direct_io,
         prefer_precision_constraints=args.prefer_precision_constraints,
         reject_empty_algorithms=args.reject_empty_algorithms,
         ignore_timing_mismatch=args.ignore_timing_mismatch,

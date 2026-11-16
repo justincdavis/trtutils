@@ -146,8 +146,7 @@ Fixed
 * ``read_onnx`` raises ``RuntimeError`` on a file TensorRT 8.6 "parses" into an empty network
 * ``build_engine`` no longer enables ``DIRECT_IO`` when ``input_tensor_formats`` /
   ``output_tensor_formats`` are given. It forbade I/O reformats, so DLA builds whose rows are not
-  64-byte aligned (e.g. fp16 LINEAR with W=48) failed with "no conformant implementation exists".
-  Pass ``direct_io=True`` to keep the old behavior
+  64-byte aligned (e.g. fp16 LINEAR with W=48) failed with "no conformant implementation exists"
 * ``memcpy_host_to_device*`` gathers non-contiguous arrays before copying. They copied raw strided
   bytes, which corrupted crops and other views
 * ``memcpy_device_to_host*`` raises ``ValueError`` on a non-contiguous destination instead of
@@ -226,6 +225,8 @@ Removed
 * ``TRTEngine.direct_exec``. ``execute`` reads device Buffers in place
 * ``cv2ext`` dependency. The few helpers trtutils used now live in ``trtutils.image``
   (``draw_bboxes``, ``draw_text``) and the CPU preprocessing/postprocessing modules
+* ``direct_io`` (``build_engine``, ``build_dla_engine``, AxoNN ``build_engine``) and the CLI
+  ``--direct_io`` flag. TRT preprocessors with float16 output now build
 
 0.6.1 (2025-06-17)
 ------------------
