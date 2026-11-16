@@ -86,6 +86,7 @@ Added
   name; a single array still feeds a single-input network. ``EngineCalibrator`` copies each
   input to its own device buffer, cast to the dtype TensorRT reads that input as. A batch
   without one array per input raises ``ValueError``
+* ``inspect.inspect_placement`` / ``PlacementReport``: where each engine layer runs, DLA or GPU
 
 Changed
 ^^^^^^^

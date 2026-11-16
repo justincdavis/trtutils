@@ -1,0 +1,217 @@
+{
+ "inspector": {
+  "Layers": [
+   {
+    "Name": "Reformatting CopyNode for Input Tensor 0 to {ForeignNode[/c1/Conv]}",
+    "LayerType": "Reformat",
+    "Inputs": [
+     {
+      "Name": "in_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP32"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "Reformatted Input Tensor 0 to {ForeignNode[/c1/Conv]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "ParameterType": "Reformat",
+    "Origin": "REFORMAT",
+    "TacticValue": "0x00000000000003e8",
+    "StreamId": 0,
+    "Metadata": ""
+   },
+   {
+    "Name": "{ForeignNode[/c1/Conv]}",
+    "LayerType": "DLA",
+    "Inputs": [
+     {
+      "Name": "Reformatted Input Tensor 0 to {ForeignNode[/c1/Conv]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "/c1/Conv_output_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "TacticValue": "0x0000000000000003",
+    "StreamId": 0,
+    "Metadata": ""
+   },
+   {
+    "Name": "PWN(/Sin)",
+    "LayerType": "PointWiseV2",
+    "Inputs": [
+     {
+      "Name": "/c1/Conv_output_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "/Sin_output_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "ParameterType": "PointWise",
+    "ParameterSubType": "PointWiseExpression",
+    "NbInputArgs": 1,
+    "InputArgs": [
+     "arg0"
+    ],
+    "NbOutputVars": 1,
+    "OutputVars": [
+     "var0"
+    ],
+    "NbParams": 0,
+    "Params": [],
+    "NbLiterals": 0,
+    "Literals": [],
+    "NbOperations": 1,
+    "Operations": [
+     "auto const var0 = pwgen::iSin(arg0);"
+    ],
+    "TacticValue": "0x0000000000000008",
+    "StreamId": 0,
+    "Metadata": "[ONNX Layer: /Sin]"
+   },
+   {
+    "Name": "{ForeignNode[/c2/Conv]}",
+    "LayerType": "DLA",
+    "Inputs": [
+     {
+      "Name": "/Sin_output_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "Reformatted Output Tensor 0 to {ForeignNode[/c2/Conv]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       64
+      ],
+      "Format/Datatype": "Sixteen wide channel vectorized row major FP16 format"
+     }
+    ],
+    "TacticValue": "0x0000000000000003",
+    "StreamId": 0,
+    "Metadata": ""
+   },
+   {
+    "Name": "Reformatting CopyNode for Output Tensor 0 to {ForeignNode[/c2/Conv]}",
+    "LayerType": "Reformat",
+    "Inputs": [
+     {
+      "Name": "Reformatted Output Tensor 0 to {ForeignNode[/c2/Conv]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       64
+      ],
+      "Format/Datatype": "Sixteen wide channel vectorized row major FP16 format"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "out_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP32"
+     }
+    ],
+    "ParameterType": "Reformat",
+    "Origin": "REFORMAT",
+    "TacticValue": "0x00000000000003ea",
+    "StreamId": 0,
+    "Metadata": ""
+   }
+  ],
+  "Bindings": [
+   "in_0",
+   "out_0"
+  ]
+ },
+ "network_layers": [
+  {
+   "index": 0,
+   "name": "/c1/Conv",
+   "layer_type": "CONVOLUTION",
+   "dla_compatible": true
+  },
+  {
+   "index": 1,
+   "name": "/Sin",
+   "layer_type": "UNARY",
+   "dla_compatible": false
+  },
+  {
+   "index": 2,
+   "name": "/c2/Conv",
+   "layer_type": "CONVOLUTION",
+   "dla_compatible": true
+  }
+ ]
+}

@@ -1,0 +1,283 @@
+{
+ "inspector": {
+  "Layers": [
+   {
+    "Name": "Reformatting CopyNode for Input Tensor 0 to {ForeignNode[/Slice.../Slice_1]}",
+    "LayerType": "Reformat",
+    "Inputs": [
+     {
+      "Name": "in_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP32"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "Reformatted Input Tensor 0 to {ForeignNode[/Slice.../Slice_1]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "ParameterType": "Reformat",
+    "Origin": "REFORMAT",
+    "TacticValue": "0x00000000000003e8",
+    "StreamId": 0,
+    "Metadata": ""
+   },
+   {
+    "Name": "{ForeignNode[/Slice.../Slice_1]}",
+    "LayerType": "DLA",
+    "Inputs": [
+     {
+      "Name": "Reformatted Input Tensor 0 to {ForeignNode[/Slice.../Slice_1]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "a",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       3
+      ],
+      "Format/Datatype": "Row major FP16 format where column stride % 64 == 0"
+     },
+     {
+      "Name": "b",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       61
+      ],
+      "Format/Datatype": "Row major FP16 format where column stride % 64 == 0"
+     }
+    ],
+    "TacticValue": "0x0000000000000003",
+    "StreamId": 0,
+    "Metadata": ""
+   },
+   {
+    "Name": "a copy",
+    "LayerType": "Reformat",
+    "Inputs": [
+     {
+      "Name": "a",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       3
+      ],
+      "Format/Datatype": "Row major FP16 format where column stride % 64 == 0"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "cat",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       3
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "ParameterType": "Reformat",
+    "Origin": "CONCAT",
+    "TacticValue": "0x0000000000000000",
+    "StreamId": 0,
+    "Metadata": "[ONNX Layer: /Concat]"
+   },
+   {
+    "Name": "b copy",
+    "LayerType": "Reformat",
+    "Inputs": [
+     {
+      "Name": "b",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       61
+      ],
+      "Format/Datatype": "Row major FP16 format where column stride % 64 == 0"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "cat",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       61
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "ParameterType": "Reformat",
+    "Origin": "CONCAT",
+    "TacticValue": "0x00000000000003e8",
+    "StreamId": 0,
+    "Metadata": "[ONNX Layer: /Concat]"
+   },
+   {
+    "Name": "{ForeignNode[two + (Unnamed Layer* 4) [Shuffle] + /Mul]}",
+    "LayerType": "DLA",
+    "Inputs": [
+     {
+      "Name": "cat",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "Reformatted Output Tensor 0 to {ForeignNode[two + (Unnamed Layer* 4) [Shuffle] + /Mul]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "TacticValue": "0x0000000000000003",
+    "StreamId": 0,
+    "Metadata": ""
+   },
+   {
+    "Name": "Reformatting CopyNode for Output Tensor 0 to {ForeignNode[two + (Unnamed Layer* 4) [Shuffle] + /Mul]}",
+    "LayerType": "Reformat",
+    "Inputs": [
+     {
+      "Name": "Reformatted Output Tensor 0 to {ForeignNode[two + (Unnamed Layer* 4) [Shuffle] + /Mul]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "out_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP32"
+     }
+    ],
+    "ParameterType": "Reformat",
+    "Origin": "REFORMAT",
+    "TacticValue": "0x00000000000003e8",
+    "StreamId": 0,
+    "Metadata": ""
+   }
+  ],
+  "Bindings": [
+   "in_0",
+   "out_0"
+  ]
+ },
+ "network_layers": [
+  {
+   "index": 0,
+   "name": "/Slice",
+   "layer_type": "SLICE",
+   "dla_compatible": true,
+   "outputs": [
+    "a"
+   ]
+  },
+  {
+   "index": 1,
+   "name": "/Slice_1",
+   "layer_type": "SLICE",
+   "dla_compatible": true,
+   "outputs": [
+    "b"
+   ]
+  },
+  {
+   "index": 2,
+   "name": "/Concat",
+   "layer_type": "CONCATENATION",
+   "dla_compatible": false,
+   "outputs": [
+    "cat"
+   ]
+  },
+  {
+   "index": 3,
+   "name": "two",
+   "layer_type": "CONSTANT",
+   "dla_compatible": false,
+   "outputs": [
+    "(Unnamed Layer* 3) [Constant]_output"
+   ]
+  },
+  {
+   "index": 4,
+   "name": "(Unnamed Layer* 4) [Shuffle]",
+   "layer_type": "SHUFFLE",
+   "dla_compatible": false,
+   "outputs": [
+    "(Unnamed Layer* 4) [Shuffle]_output"
+   ]
+  },
+  {
+   "index": 5,
+   "name": "/Mul",
+   "layer_type": "ELEMENTWISE",
+   "dla_compatible": true,
+   "outputs": [
+    "out_0"
+   ]
+  }
+ ]
+}

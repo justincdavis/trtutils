@@ -29,8 +29,8 @@ def inspect_onnx_layers(  # noqa: C901
     Inspect the layers that TensorRT would create from an ONNX model.
 
     Returns detailed per-layer information including tensor sizes, precision,
-    and DLA compatibility. On non-DLA systems, ``dla_compatible`` is always
-    ``False``.
+    output tensor names, and DLA compatibility. On non-DLA systems,
+    ``dla_compatible`` is always ``False``.
 
     Parameters
     ----------
@@ -81,10 +81,12 @@ def inspect_onnx_layers(  # noqa: C901
 
         # Calculate output tensor size
         output_size = 0
+        output_names: list[str] = []
         for out_idx in range(trt_layer.num_outputs):
             output = trt_layer.get_output(out_idx)
             if output is not None:
                 output_size += get_tensor_size(output)
+                output_names.append(output.name)
 
         # Calculate input tensor size
         input_size = 0
@@ -101,6 +103,7 @@ def inspect_onnx_layers(  # noqa: C901
             input_tensor_size=input_size,
             output_tensor_size=output_size,
             dla_compatible=idx in dla_layer_indices,
+            outputs=tuple(output_names),
         )
         layers.append(layer)
 
