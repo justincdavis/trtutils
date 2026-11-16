@@ -92,6 +92,8 @@ Added
 * ``build_engine`` takes a function that defines the network in code in place of the ONNX path
 * ``preprocessor="dla0"`` / ``"dla1"`` on the image models (``DLAPreprocessor``):
   whole-factor letterbox and linear resizes, channel swap and normalization on a DLA, no GPU layers
+* ``center_crop`` on the DLA preprocessor, antialiased like torchvision's ``Resize`` (the other
+  preprocessors' center crop is bilinear), for input widths that are multiples of 16 up to 3840
 
 Changed
 ^^^^^^^

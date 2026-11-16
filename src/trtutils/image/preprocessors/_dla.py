@@ -16,14 +16,14 @@ import nvtx
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.core._bindings import create_binding
-from trtutils.core._buffer import Buffer, MemoryLocation
+from trtutils.core._buffer import DEVICE_ALIGNMENT, Buffer, MemoryLocation
 from trtutils.core._engine import create_engine
 from trtutils.core._kernels import Kernel, cached_args
 from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
 from trtutils.image.kernels import BGR_TO_BGRX_INT8, HALF_TO_FLOAT
 
-from ._base import ImagePreprocessor
+from ._base import DEFAULT_CROP_PCT, ImagePreprocessor
 from ._dla_network import (
     INPUT_NAME,
     OUTPUT_NAMES,
@@ -49,7 +49,8 @@ _THREADS = 256
 _VECTOR = 4
 _HALF_BYTES = 2
 _LETTERBOX_FILL = 114.0
-_DLA_METHODS = ("letterbox", "linear")
+# staging slots of whole 64-row blocks of BGRx start on tensorrt's address alignment
+_SLOT_ROWS = DEVICE_ALIGNMENT // 4
 _XOR_LUT = np.arange(256, dtype=np.uint8) ^ np.uint8(0x80)
 
 
@@ -66,14 +67,18 @@ class DLAPreprocessor(ImagePreprocessor):
     """
     Preprocessor that resizes, swaps channels and normalizes on a DLA.
 
-    Each input size gets its own DLA engine, built on first use and cached. A
-    resize must be a whole factor: letterbox when the image spans the output
-    width (e.g. 1920x1080 or 1280x720 to 640x640), linear when both sides
-    divide. Some inputs wider than 4K UHD (3840 pixels) exceed the DLA's limits.
-    The pixels match the bilinear GPU preprocessors to within a level or so.
-    Images go to the DLA as int8 BGRx, converted on the CPU for numpy arrays and
-    by a small kernel for device Buffers; the GPU otherwise only casts the
-    float16 output for float32 models.
+    Each input size gets its own DLA engine, built on first use and cached.
+    Letterbox and linear resize by whole factors: letterbox when the image spans
+    the output width (e.g. 1920x1080 or 1280x720 to 640x640), linear when both
+    sides divide. Some inputs wider than 4K UHD (3840 pixels) exceed the DLA's
+    limits. Their pixels match the bilinear GPU preprocessors to within a level
+    or so. A center crop takes inputs up to 3840 wide whose width is a multiple
+    of 16, and resizes like torchvision's antialiased ``Resize`` (box then
+    triangle filters), not bilinearly like the CPU and CUDA preprocessors' center
+    crop, which differ from it by a few levels on average. Images go to the DLA
+    as int8 BGRx, converted on the CPU for numpy arrays and by a small kernel for
+    device Buffers; the GPU otherwise only casts the float16 output for float32
+    models.
     """
 
     def __init__(
@@ -91,6 +96,7 @@ class DLAPreprocessor(ImagePreprocessor):
         dla_core: int = 0,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        crop_pct: float = DEFAULT_CROP_PCT,
     ) -> None:
         """
         Create a DLAPreprocessor for image processing models.
@@ -109,7 +115,7 @@ class DLAPreprocessor(ImagePreprocessor):
         batch_size : int
             The most images per call. Default is 1.
         resize : str, optional
-            The default resize method, 'letterbox' or 'linear'.
+            The default resize method, 'letterbox', 'linear' or 'center_crop'.
             By default, letterbox resizing will be used.
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
@@ -133,6 +139,9 @@ class DLAPreprocessor(ImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        crop_pct : float
+            The fraction of the resized image kept by center_crop resizing.
+            By default 0.875 (resize 256, crop 224). Ignored by other methods.
 
         Raises
         ------
@@ -140,8 +149,8 @@ class DLAPreprocessor(ImagePreprocessor):
             If the system has no DLA, or TensorRT lacks per-tensor INT8 dynamic
             ranges (TensorRT 11) or ``execute_async_v3``.
         ValueError
-            If the DLA core does not exist, or the resize method, dtype or output
-            width is not supported.
+            If the DLA core does not exist, the resize method, dtype or output
+            width is not supported, or crop_pct is not in (0, 1].
 
         """
         tag = "DLAPreprocessor" if tag is None else f"{tag}.DLAPreprocessor"
@@ -159,9 +168,6 @@ class DLAPreprocessor(ImagePreprocessor):
                 f"{tag}: DLA core {dla_core} does not exist, this system has {FLAGS.NUM_DLA_CORES}"
             )
             raise ValueError(err_msg)
-        if resize not in _DLA_METHODS:
-            err_msg = f"{tag}: the DLA preprocessor resizes with {list(_DLA_METHODS)}, not {resize}"
-            raise ValueError(err_msg)
         if np.dtype(dtype) not in (np.float16, np.float32):
             err_msg = f"{tag}: the DLA preprocessor outputs float16 or float32, not {dtype}"
             raise ValueError(err_msg)
@@ -170,7 +176,9 @@ class DLAPreprocessor(ImagePreprocessor):
             raise ValueError(err_msg)
         self._batch_size = batch_size
         self._runners: dict[tuple[int, int, str], _Runner] = {}
-        super().__init__(output_shape, output_range, dtype, resize, mean, std, tag)
+        super().__init__(
+            output_shape, output_range, dtype, resize, mean, std, tag, crop_pct=crop_pct
+        )
 
         self._nvtx_tags.update(
             {
@@ -290,15 +298,17 @@ class DLAPreprocessor(ImagePreprocessor):
         if runner is None:
             if verbose:
                 LOG.debug(f"{self._tag}: loading the DLA engine for {width}x{height} {method}")
-            plan = plan_resize(height, width, self._o_shape, method)
+            plan = plan_resize(height, width, self._o_shape, method, self._crop_pct)
             path = build_dla_preproc(plan, *self._norm, self._dla_core)
             engine, context, _, _ = create_engine(
                 path, stream=self._stream, dla_core=self._dla_core, no_warn=True
             )
+            rows = len(plan.input_rows)
+            slot_rows = math.ceil(rows / _SLOT_ROWS) * _SLOT_ROWS
             staging = Buffer.empty(
-                (self._batch_size, height, width, 4), np.uint8, pinned=True, mapped=True
+                (self._batch_size, slot_rows, width, 4), np.uint8, pinned=True, mapped=True
             )
-            flipped = np.empty((height, width, _COLOR_CHANNELS), dtype=np.uint8)
+            flipped = np.empty((rows, width, _COLOR_CHANNELS), dtype=np.uint8)
             runner = _Runner(plan, engine, context, staging, flipped)
             self._runners[key] = runner
         return runner
@@ -309,13 +319,16 @@ class DLAPreprocessor(ImagePreprocessor):
         kernel.call(blocks, (_THREADS, 1, 1), self._stream, cached_args(kernel, *args, count))
 
     def _stage(self: Self, runner: _Runner, slot: int, image: np.ndarray | Buffer) -> int:
-        """Write one image as int8 BGRx into its staging slot, returning the slot's device address."""
-        bgrx = runner.staging.array[slot]
-        address = runner.staging.device_ptr + slot * bgrx.nbytes
+        """Write the rows the engine reads as int8 BGRx into a staging slot, giving its address."""
+        rows = runner.plan.input_rows
+        slot_bgrx = runner.staging.array[slot]
+        bgrx = slot_bgrx[: len(rows)]
+        address = runner.staging.device_ptr + slot * slot_bgrx.nbytes
         if isinstance(image, Buffer):
-            self._launch(self._convert, bgrx.shape[0] * bgrx.shape[1], image.device_ptr, address)
+            source = image.device_ptr + rows.start * bgrx.shape[1] * _COLOR_CHANNELS
+            self._launch(self._convert, bgrx.shape[0] * bgrx.shape[1], source, address)
         else:
-            cv2.LUT(image, _XOR_LUT, dst=runner.flipped)
+            cv2.LUT(image[rows.start : rows.stop], _XOR_LUT, dst=runner.flipped)
             cv2.cvtColor(runner.flipped, cv2.COLOR_BGR2BGRA, dst=bgrx)
         return address
 
@@ -360,7 +373,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images : Sequence[np.ndarray | Buffer]
             The images to preprocess (HWC format, uint8, BGR).
         resize : str, optional
-            The method to resize the images with, 'letterbox' or 'linear'.
+            The method to resize the images with, 'letterbox', 'linear' or 'center_crop'.
             By default None, which uses the method given in the constructor.
         no_warn : bool, optional
             If True, do not warn about usage.
