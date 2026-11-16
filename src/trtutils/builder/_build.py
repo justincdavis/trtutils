@@ -211,7 +211,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         If True, quantize the engine to INT8 precision. The scales come from
         calibration with ``data_batcher`` or ``calibration_cache``. Without either,
         no calibrator is attached and TensorRT uses the per-tensor dynamic ranges
-        set on the network, e.g. by a hook calling ``ITensor.set_dynamic_range``.
+        set on the network, e.g. by ``hooks.int8_ranges_hook``.
         Tensors without a range run in higher precision (a warning gives the
         count). On TensorRT 8.6 the build fails if no tensor has a range. Explicit
         ranges are the way to fix INT8 precision on the DLA with TensorRT 8.6,

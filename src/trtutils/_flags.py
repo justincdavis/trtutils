@@ -69,6 +69,9 @@ class Flags:
     INT8_CALIBRATION : bool
         Whether trt.IInt8EntropyCalibrator2 exists, i.e. implicit INT8
         calibration is available. Removed in TensorRT 11.
+    DYNAMIC_RANGE : bool
+        Whether trt.ITensor.set_dynamic_range exists, i.e. implicit INT8 with
+        per-tensor dynamic ranges is available. Removed in TensorRT 11.
     WEAK_TYPING : bool
         Whether trt.BuilderFlag.FP16 exists, i.e. weakly-typed networks with
         builder precision flags and per-layer precision are available.
@@ -109,6 +112,7 @@ class Flags:
     ONNX_PARSE_PATH: bool = False
     EXPLICIT_BATCH_FLAG: bool = False
     INT8_CALIBRATION: bool = False
+    DYNAMIC_RANGE: bool = False
     WEAK_TYPING: bool = False
     PLUGIN_CREATOR_LOOKUP: bool = False
     TRT_HAS_UINT8: bool = False
@@ -209,6 +213,7 @@ _parse_doc = getattr(getattr(trt, "OnnxParser", None), "parse", None).__doc__ or
 FLAGS.ONNX_PARSE_PATH = "path" in _parse_doc
 FLAGS.EXPLICIT_BATCH_FLAG = hasattr(trt.NetworkDefinitionCreationFlag, "EXPLICIT_BATCH")
 FLAGS.INT8_CALIBRATION = hasattr(trt, "IInt8EntropyCalibrator2")
+FLAGS.DYNAMIC_RANGE = hasattr(getattr(trt, "ITensor", None), "set_dynamic_range")
 FLAGS.WEAK_TYPING = hasattr(getattr(trt, "BuilderFlag", None), "FP16")
 FLAGS.PLUGIN_CREATOR_LOOKUP = hasattr(getattr(trt, "IPluginRegistry", None), "get_plugin_creator")
 
