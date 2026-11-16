@@ -234,17 +234,18 @@ def simple_onnx_path() -> Path:
 
 
 @pytest.fixture(scope="session")
-def conv_onnx(tmp_path_factory) -> Callable[[int, int, int], Path]:
+def conv_onnx(tmp_path_factory) -> Callable[..., Path]:
     """
     Conv-ReLU-conv ONNX mapping 'in_0' to 'out_0', both float32 (1, C, H, W).
 
-    Factory: conv_onnx(channels, height, width). Unlike simple.onnx it runs
-    fully on DLA, so the width sets whether fp16 rows are 64-byte aligned.
+    Factory: conv_onnx(channels, height, width, op="Relu"). Unlike simple.onnx it
+    runs fully on DLA, so the width sets whether fp16 rows are 64-byte aligned.
+    ``op`` replaces the ReLU; the nodes are named /c1/Conv, /<op> and /c2/Conv.
     """
     out_dir = tmp_path_factory.mktemp("conv_onnx")
 
-    def _make(channels: int, height: int, width: int) -> Path:
-        path = out_dir / f"conv_{channels}x{height}x{width}.onnx"
+    def _make(channels: int, height: int, width: int, op: str = "Relu") -> Path:
+        path = out_dir / f"conv_{op.lower()}_{channels}x{height}x{width}.onnx"
         if path.exists():
             return path
         rng = np.random.default_rng(0)
@@ -256,9 +257,9 @@ def conv_onnx(tmp_path_factory) -> Callable[[int, int, int], Path]:
             numpy_helper.from_array(np.zeros(channels, np.float32), "b2"),
         ]
         nodes = [
-            helper.make_node("Conv", ["in_0", "w1", "b1"], ["c1"], pads=[1, 1, 1, 1]),
-            helper.make_node("Relu", ["c1"], ["r1"]),
-            helper.make_node("Conv", ["r1", "w2", "b2"], ["out_0"], pads=[1, 1, 1, 1]),
+            helper.make_node("Conv", ["in_0", "w1", "b1"], ["c1"], "/c1/Conv", pads=[1, 1, 1, 1]),
+            helper.make_node(op, ["c1"], ["r1"], f"/{op}"),
+            helper.make_node("Conv", ["r1", "w2", "b2"], ["out_0"], "/c2/Conv", pads=[1, 1, 1, 1]),
         ]
         shape = [1, channels, height, width]
         graph = helper.make_graph(

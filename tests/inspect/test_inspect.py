@@ -173,47 +173,29 @@ def test_inspect_engine_batch_size_explicit_batch(monkeypatch, in_shape, expecte
     assert batch_size == expected
 
 
-def _placement_onnx(path: Path, net: str) -> Path:
-    """
-    Save a float32 ONNX net mapping 'in_0' to 'out_0', both (1, 16, 64, 64).
-
-    ``conv``: conv-relu-conv. ``sin``: conv-sin-conv, and Sin has no DLA implementation.
-    ``roll``: a roll by 3 along W (two slices and a concat on W), times 2.
-    """
-    if net == "roll":
-        initializers = [
-            numpy_helper.from_array(np.array(value, np.int64), name)
-            for name, value in (
-                ("start_0", [-3]),
-                ("end_0", [64]),
-                ("start_1", [0]),
-                ("end_1", [-3]),
-                ("axis", [3]),
-            )
-        ]
-        initializers.append(numpy_helper.from_array(np.array(2.0, np.float32), "two"))
-        nodes = [
-            helper.make_node("Slice", ["in_0", "start_0", "end_0", "axis"], ["a"], name="/Slice"),
-            helper.make_node("Slice", ["in_0", "start_1", "end_1", "axis"], ["b"], name="/Slice_1"),
-            helper.make_node("Concat", ["a", "b"], ["cat"], name="/Concat", axis=3),
-            helper.make_node("Mul", ["cat", "two"], ["out_0"], name="/Mul"),
-        ]
-    else:
-        weights = np.random.default_rng(0).standard_normal((16, 16, 3, 3)).astype(np.float32)
-        initializers = [
-            numpy_helper.from_array(weights * 0.1, "w"),
-            numpy_helper.from_array(np.zeros(16, np.float32), "b"),
-        ]
-        op = "Sin" if net == "sin" else "Relu"
-        nodes = [
-            helper.make_node("Conv", ["in_0", "w", "b"], ["c1"], name="/c1/Conv", pads=[1] * 4),
-            helper.make_node(op, ["c1"], ["m"], name=f"/{op}"),
-            helper.make_node("Conv", ["m", "w", "b"], ["out_0"], name="/c2/Conv", pads=[1] * 4),
-        ]
+def _roll_onnx(path: Path) -> Path:
+    """Save a float32 ONNX net rolling 'in_0' by 3 along W, times 2, into 'out_0' (1, 16, 64, 64)."""
+    initializers = [
+        numpy_helper.from_array(np.array(value, np.int64), name)
+        for name, value in (
+            ("start_0", [-3]),
+            ("end_0", [64]),
+            ("start_1", [0]),
+            ("end_1", [-3]),
+            ("axis", [3]),
+        )
+    ]
+    initializers.append(numpy_helper.from_array(np.array(2.0, np.float32), "two"))
+    nodes = [
+        helper.make_node("Slice", ["in_0", "start_0", "end_0", "axis"], ["a"], name="/Slice"),
+        helper.make_node("Slice", ["in_0", "start_1", "end_1", "axis"], ["b"], name="/Slice_1"),
+        helper.make_node("Concat", ["a", "b"], ["cat"], name="/Concat", axis=3),
+        helper.make_node("Mul", ["cat", "two"], ["out_0"], name="/Mul"),
+    ]
     shape = [1, 16, 64, 64]
     graph = helper.make_graph(
         nodes,
-        net,
+        "roll",
         [helper.make_tensor_value_info("in_0", TensorProto.FLOAT, shape)],
         [helper.make_tensor_value_info("out_0", TensorProto.FLOAT, shape)],
         initializer=initializers,
@@ -228,7 +210,7 @@ def _placement_onnx(path: Path, net: str) -> Path:
     ("net", "dla_core", "subgraphs", "transitions", "devices"),
     [
         pytest.param(
-            "conv",
+            "Relu",
             None,
             0,
             0,
@@ -236,7 +218,7 @@ def _placement_onnx(path: Path, net: str) -> Path:
             id="gpu-conv",
         ),
         pytest.param(
-            "conv",
+            "Relu",
             0,
             1,
             0,
@@ -245,7 +227,7 @@ def _placement_onnx(path: Path, net: str) -> Path:
             marks=pytest.mark.dla,
         ),
         pytest.param(
-            "sin",
+            "Sin",
             0,
             2,
             2,
@@ -264,9 +246,11 @@ def _placement_onnx(path: Path, net: str) -> Path:
         ),
     ],
 )
-def test_inspect_placement(tmp_path, net, dla_core, subgraphs, transitions, devices) -> None:
+def test_inspect_placement(
+    tmp_path, conv_onnx, net, dla_core, subgraphs, transitions, devices
+) -> None:
     """Each network layer is attributed to the device it runs on, in GPU and DLA engines."""
-    onnx_path = _placement_onnx(tmp_path / f"{net}.onnx", net)
+    onnx_path = _roll_onnx(tmp_path / "roll.onnx") if net == "roll" else conv_onnx(16, 64, 64, net)
     engine_path = tmp_path / f"{net}.engine"
     build_engine(
         onnx_path,
@@ -288,12 +272,11 @@ def test_inspect_placement(tmp_path, net, dla_core, subgraphs, transitions, devi
     assert PlacementReport.from_dict(json.loads(json.dumps(report.to_dict()))) == report
 
 
-def test_inspect_placement_requires_detailed(tmp_path) -> None:
+def test_inspect_placement_requires_detailed(tmp_path, conv_onnx) -> None:
     """An engine built without ProfilingVerbosity.DETAILED raises a ValueError."""
-    onnx_path = _placement_onnx(tmp_path / "conv.onnx", "conv")
     engine_path = tmp_path / "conv.engine"
     build_engine(
-        onnx_path,
+        conv_onnx(16, 64, 64),
         engine_path,
         profiling_verbosity=trt.ProfilingVerbosity.LAYER_NAMES_ONLY,
         optimization_level=1,

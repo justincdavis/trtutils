@@ -25,8 +25,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 _REFORMAT_TYPES = frozenset({"Reformat", "NoOp"})
-# layer types tensorrt usually folds or fuses away
-_TRIVIAL_TYPES = frozenset({"CONSTANT", "IDENTITY", "SHUFFLE"})
+_FOLDED_TYPES = frozenset({"CONSTANT", "IDENTITY", "SHUFFLE"})
 _FOREIGN_NODE = re.compile(r"^\{ForeignNode\[(.*)\]\}$", re.DOTALL)
 _MAX_NAME = 100
 
@@ -88,7 +87,7 @@ def _map_network_devices(
     gpu_copies: Sequence[EngineLayer],
 ) -> dict[str, str]:
     devices: dict[str, str] = {}
-    placed = [n for n in network_layers if n.layer_type not in _TRIVIAL_TYPES]
+    placed = [n for n in network_layers if n.layer_type not in _FOLDED_TYPES]
     gpu_names = [layer.name for layer in engine_layers if layer.kind == "gpu_compute"]
     copied = {tensor for copy in gpu_copies for tensor in copy.outputs}
     for n in placed:
@@ -206,31 +205,23 @@ class PlacementReport:
             The report.
 
         """
+        engine_layers: list[dict[str, Any]] = [
+            {**layer, "inputs": tuple(layer["inputs"]), "outputs": tuple(layer["outputs"])}
+            for layer in data["engine_layers"]
+        ]
+        network_layers: list[dict[str, Any]] = [
+            {
+                **layer,
+                "precision": None
+                if layer["precision"] is None
+                else getattr(trt.DataType, layer["precision"]),
+                "outputs": tuple(layer["outputs"]),
+            }
+            for layer in data["network_layers"]
+        ]
         return cls(
-            engine_layers=[
-                EngineLayer(
-                    name=layer["name"],
-                    layer_type=layer["layer_type"],
-                    inputs=tuple(layer["inputs"]),
-                    outputs=tuple(layer["outputs"]),
-                )
-                for layer in data["engine_layers"]
-            ],
-            network_layers=[
-                LayerInfo(
-                    index=layer["index"],
-                    name=layer["name"],
-                    layer_type=layer["layer_type"],
-                    precision=None
-                    if layer["precision"] is None
-                    else getattr(trt.DataType, layer["precision"]),
-                    input_tensor_size=layer["input_tensor_size"],
-                    output_tensor_size=layer["output_tensor_size"],
-                    dla_compatible=layer["dla_compatible"],
-                    outputs=tuple(layer["outputs"]),
-                )
-                for layer in data["network_layers"]
-            ],
+            engine_layers=[EngineLayer(**layer) for layer in engine_layers],
+            network_layers=[LayerInfo(**layer) for layer in network_layers],
             io_names=tuple(data["io_names"]),
             dla_core=data["dla_core"],
             inspected=data["inspected"],
@@ -296,18 +287,14 @@ class PlacementReport:
         In a DLA engine they sit between DLA subgraphs: a precision or format change, or
         a network layer TensorRT runs as plain copies on the GPU (e.g. a Concat on W).
         """
-        reformats = self.reformat_layers
-        io_side = {r.name for r in self.io_reformat_layers}
-        tensors = {t for r in reformats if r.name in io_side for t in r.inputs + r.outputs}
-        changed = True
-        while changed:
-            changed = False
-            for r in reformats:
-                if r.name not in io_side and tensors.intersection(r.inputs + r.outputs):
-                    io_side.add(r.name)
-                    tensors.update(r.inputs + r.outputs)
-                    changed = True
-        return [r for r in reformats if r.name not in io_side]
+        internal = self.reformat_layers
+        tensors = set(self.io_names)
+        while True:
+            io_side = [r for r in internal if tensors.intersection(r.inputs + r.outputs)]
+            if not io_side:
+                return internal
+            tensors.update(t for r in io_side for t in r.inputs + r.outputs)
+            internal = [r for r in internal if r not in io_side]
 
     @property
     def fully_on_dla(self: Self) -> bool:
@@ -365,7 +352,7 @@ class PlacementReport:
         network layer is placed on the GPU, they are the layers that failed the DLA check
         and were not placed on the DLA.
         """
-        layers = [n for n in self.network_layers if n.layer_type not in _TRIVIAL_TYPES]
+        layers = [n for n in self.network_layers if n.layer_type not in _FOLDED_TYPES]
         on_gpu = [n for n in layers if self.network_devices.get(n.name) == "gpu"]
         if on_gpu or not self.gpu_compute_layers:
             return on_gpu
@@ -447,23 +434,17 @@ def inspect_placement(
         If the engine was not built with ``ProfilingVerbosity.DETAILED``.
 
     """
-    stream = None
     if isinstance(engine, (Path, str)):
         engine, _context, _logger, stream = create_engine(engine, dla_core=dla_core)
-    detailed = engine.profiling_verbosity == trt.ProfilingVerbosity.DETAILED
-    info = ""
-    if detailed:
-        inspector = engine.create_engine_inspector()
-        info = inspector.get_engine_information(trt.LayerInformationFormat.JSON)
-    if stream is not None:
         destroy_stream(stream)
-    if not detailed:
+    if engine.profiling_verbosity != trt.ProfilingVerbosity.DETAILED:
         err_msg = (
             "Engine was not built with ProfilingVerbosity.DETAILED, rebuild it with "
             "profiling_verbosity=trt.ProfilingVerbosity.DETAILED"
         )
         raise ValueError(err_msg)
-    layers = list(network_layers) if network_layers is not None else []
+    info = engine.create_engine_inspector().get_engine_information(trt.LayerInformationFormat.JSON)
     if not info:
+        layers = list(network_layers) if network_layers is not None else []
         return PlacementReport([], layers, dla_core=dla_core, inspected=False)
-    return PlacementReport.from_inspector_json(json.loads(info), layers, dla_core)
+    return PlacementReport.from_inspector_json(json.loads(info), network_layers, dla_core)
