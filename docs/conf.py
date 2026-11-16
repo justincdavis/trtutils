@@ -7,8 +7,8 @@
 # list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+import importlib.metadata
 import os
-import re
 import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
@@ -18,13 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
 project = "trtutils"
 copyright = "2024, Justin Davis"
 author = "Justin Davis"
-version = "1.0.0"
-
-# make sure version is consistent, read as text since importing trtutils needs CUDA
-_init = os.path.join(os.path.dirname(__file__), "..", "src", "trtutils", "__init__.py")
-with open(_init) as f:
-    _pkg_version = re.search(r'__version__ = "(.*)"', f.read()).group(1)
-assert version == _pkg_version
+version = importlib.metadata.version("trtutils")
 
 # -- General configuration ---------------------------------------------------
 

@@ -89,6 +89,7 @@ Objects
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 
 # before handling anything check if tensorrt and cuda-python are available
 not_found_modules = []
@@ -121,7 +122,10 @@ from ._log import LOG, set_log_level
 from ._nvtx import NVTX, disable_nvtx, enable_nvtx
 
 __author__ = "Justin Davis"
-__version__ = "1.0.0"
+try:
+    __version__ = importlib.metadata.version("trtutils")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "0.0.0"
 
 import contextlib
 

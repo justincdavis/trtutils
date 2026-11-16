@@ -17,6 +17,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
     - name: Set up Python 3.9
       uses: actions/setup-python@v5
       with:
@@ -24,35 +26,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install build toml
-    - name: Update version in pyproject.toml
+        pip install build setuptools-scm
+    - name: Set a unique version
       run: |
-        python3 << END
-        import toml
-        import os
-        from datetime import datetime
-        
-        # Read the current pyproject.toml
-        with open('pyproject.toml', 'r') as f:
-            config = toml.load(f)
-        
-        # Get the current version
-        current_version = config['project']['version']
-        
-        # Create a unique version using GitHub run number and current date
-        run_number = os.environ['GITHUB_RUN_NUMBER']
-        current_date = datetime.now().strftime("%Y%m%d")
-        new_version = f"{current_version}.dev{current_date}{run_number}"
-        
-        # Update the version in the config
-        config['project']['version'] = new_version
-        
-        # Write the updated config back to pyproject.toml
-        with open('pyproject.toml', 'w') as f:
-            toml.dump(config, f)
-        
-        print(f"Updated version to {new_version}")
-        END
+        base=$(python -m setuptools_scm --strip-dev)
+        echo "SETUPTOOLS_SCM_PRETEND_VERSION=${base}.dev$(date +%Y%m%d)${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
     - name: Build trtutils
       run: |
         python -m build --sdist --wheel --outdir dist/
