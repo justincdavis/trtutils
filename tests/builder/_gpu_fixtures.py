@@ -15,7 +15,9 @@ from onnx import TensorProto, helper, numpy_helper
 
 from tests.conftest import DATA_DIR
 from trtutils._flags import FLAGS
+from trtutils.builder._batcher import SyntheticBatcher
 from trtutils.builder._build import build_engine
+from trtutils.builder.onnx._shapes import get_onnx_input
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -29,6 +31,19 @@ def onnx_path() -> Path:
     if not ONNX_PATH.exists():
         pytest.skip("Test ONNX model not found")
     return ONNX_PATH
+
+
+@pytest.fixture
+def synthetic_batcher(onnx_path) -> SyntheticBatcher:
+    """SyntheticBatcher whose batches match the NCHW input of onnx_path, for calibration."""
+    _, (batch, channels, height, width) = get_onnx_input(onnx_path)
+    return SyntheticBatcher(
+        shape=(height, width, channels),
+        dtype=np.dtype(np.float32),
+        batch_size=batch,
+        num_batches=2,
+        order="NCHW",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -107,6 +122,28 @@ def two_input_onnx_path(tmp_path_factory) -> Path:
         ],
         outputs=[helper.make_tensor_value_info("y", TensorProto.FLOAT, [1, 1, 16, 16])],
         initializer=[weight],
+    )
+    model = helper.make_model(
+        graph,
+        opset_imports=[helper.make_opsetid("", 13)],
+        producer_name="trtutils-tests",
+    )
+    model.ir_version = 8
+    onnx.checker.check_model(model)
+    onnx.save(model, str(out_path))
+    return out_path
+
+
+@pytest.fixture(scope="session")
+def dynamic_batch_onnx_path(tmp_path_factory) -> Path:
+    """Relu ONNX with a dynamic batch: x -> y, both float32 (N, 3, 16, 16)."""
+    out_path = tmp_path_factory.mktemp("dynamic_batch") / "dynamic_batch.onnx"
+    shape = ["N", 3, 16, 16]
+    graph = helper.make_graph(
+        nodes=[helper.make_node("Relu", ["x"], ["y"], name="relu")],
+        name="dynamic_batch_graph",
+        inputs=[helper.make_tensor_value_info("x", TensorProto.FLOAT, shape)],
+        outputs=[helper.make_tensor_value_info("y", TensorProto.FLOAT, shape)],
     )
     model = helper.make_model(
         graph,

@@ -137,6 +137,8 @@ Performance
 
 Fixed
 ^^^^^
+* The package ships ``image/_kernels/postprocess.cuh``. Without it, every CUDA postprocessor but
+  OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see
   a half-written engine
 * ``build_engine(default_device="dla")`` without ``dla_core`` uses DLA core 0. TensorRT had
@@ -198,6 +200,9 @@ Fixed
 * ``build_engine`` raises errors raised while reading calibration batches, e.g. by a batcher.
   TensorRT only printed them and treated them as the end of the data, so the build failed with
   "no scaling factors detected" or calibrated on the batches read so far
+* INT8 calibration raises ``ValueError`` on a batch with fewer values than its network input (the
+  static shape, or the opt shape in ``shapes``). TensorRT read a whole input from the batch's
+  device buffer, so it calibrated on the memory past the end of the batch
 * A ``QueuedTRTEngine`` that is not stopped is now garbage collected. Its worker thread used to
   hold a reference to the engine
 * ``get_random_input`` no longer fails on float16 inputs
@@ -209,6 +214,7 @@ Fixed
 * ``register_jit`` functions run Numba-compiled (the ``jit`` extra previously had no effect), and
   ``with JIT:`` restores the previous JIT state on exit
 * ``build_engine`` raises on a tensor-format dtype it cannot set (TensorRT 11) instead of dropping it
+* ``profile_engine`` no longer logs a TensorRT error or leaves a ``TRTEngine`` feeding its profiler
 
 Removed
 ^^^^^^^

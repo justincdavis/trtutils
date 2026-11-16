@@ -30,7 +30,7 @@ if FLAGS.BUILD_PROGRESS:
     from ._progress import ProgressBar
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     # A binding shape is either one static shape, or a (min, opt, max) triple
     # that builds a dynamic optimization profile for that input.
@@ -129,6 +129,8 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         The data batcher to use for calibration. Its batches are one array for
         a single-input network, or a list of arrays in network input order or a
         dict of arrays keyed by input name for a network with several inputs.
+        Each array holds a whole input: its static shape, or the opt shape given
+        in ``shapes`` for an input with dynamic dimensions.
     dla_core : int, optional
         The DLA core to build the engine for.
         By default, None: core 0 when ``default_device`` is DLA, otherwise the GPU.
@@ -253,8 +255,8 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         If layer is manually assigned to DLA and DLA is not supported
         and gpu_fallback is False
     ValueError
-        If a calibration batch does not have one array per network input.
-        Any other error raised while reading calibration batches is raised
+        If a calibration batch does not have one array per network input, or
+        an array has fewer values than its input. Any other error raised while reading calibration batches is raised
         after the build as well.
     ValueError
         If a tensor-format dtype differs from the network's on a strongly typed
@@ -381,10 +383,12 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     profile = builder.create_optimization_profile()
 
     # handle if manual shapes were passed for inputs
+    opt_shapes: dict[str, tuple[int, ...]] = {}
     if shapes:
         for input_name, shape in shapes:
             min_shape, opt_shape, max_shape = _profile_shapes(input_name, shape)
             profile.set_shape(input_name, min_shape, opt_shape, max_shape)
+            opt_shapes[input_name] = opt_shape
 
     config.add_optimization_profile(profile)
 
@@ -474,6 +478,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
             else:
                 calibrator = EngineCalibrator(calibration_cache=calibration_cache)
                 calibrator.set_input_dtypes(_input_dtypes(network))
+                calibrator.set_input_shapes(_calibration_shapes(network, opt_shapes))
                 if data_batcher is not None:
                     calibrator.set_batcher(data_batcher)
                 config.int8_calibrator = calibrator
@@ -593,6 +598,26 @@ def _input_dtypes(network: trt.INetworkDefinition) -> dict[str, np.dtype]:
         with contextlib.suppress(TypeError):
             dtypes[tensor.name] = np.dtype(trt.nptype(tensor.dtype))
     return dtypes
+
+
+def _calibration_shapes(
+    network: trt.INetworkDefinition,
+    opt_shapes: Mapping[str, tuple[int, ...]],
+) -> dict[str, tuple[int, ...]]:
+    """
+    Shape TensorRT calibrates each network input at, for the inputs where it is known.
+
+    That is the opt shape of the input's profile, else its static shape. ``build_engine``
+    sets no calibration profile, so TensorRT calibrates at its one optimization profile.
+    """
+    calibration: dict[str, tuple[int, ...]] = {}
+    for idx in range(network.num_inputs):
+        tensor = network.get_input(idx)
+        shape = opt_shapes.get(tensor.name, tuple(tensor.shape))
+        # a dynamic input without a profile fails the build anyway
+        if all(dim >= 0 for dim in shape):
+            calibration[tensor.name] = shape
+    return calibration
 
 
 def _missing_dynamic_ranges(network: trt.INetworkDefinition) -> tuple[int, int]:

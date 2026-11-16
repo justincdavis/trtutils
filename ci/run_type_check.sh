@@ -20,7 +20,16 @@ fi
 
 DIRS=("examples" "demos" "src")
 
+# Check every directory, then fail if any of them failed
+FAILED=()
 for dir in "${DIRS[@]}"; do
     echo "Type checking $dir..."
-    $TY_CMD check "$dir" "$@"
+    if ! $TY_CMD check "$dir" "$@"; then
+        FAILED+=("$dir")
+    fi
 done
+
+if [ ${#FAILED[@]} -gt 0 ]; then
+    echo "Type check failed in: ${FAILED[*]}"
+    exit 1
+fi

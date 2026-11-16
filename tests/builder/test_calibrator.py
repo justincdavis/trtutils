@@ -215,6 +215,8 @@ def test_get_batch_copies_each_input(batch, names, expected) -> None:
     cal = EngineCalibrator()
     # a float16 input, and an int8 input that tensorrt binds as float32 while calibrating
     cal.set_input_dtypes({"a": np.float16, "b": np.int8})
+    # a larger batch than the input is copied whole, tensorrt reads its start
+    cal.set_input_shapes({"a": _A.shape, "b": (1, 8)})
     mock_batcher = MagicMock()
     mock_batcher.get_next_batch.return_value = batch
     cal.set_batcher(mock_batcher)
@@ -241,11 +243,16 @@ def test_get_batch_copies_each_input(batch, names, expected) -> None:
             {"a": _A, "b": _B, "c": _A}, ValueError, r"unknown \['c'\]", id="dict-unknown-input"
         ),
         pytest.param("a", TypeError, "must be a numpy array", id="not-a-batch"),
+        # tensorrt would read the 48 values of a past the end of the 16 given
+        pytest.param(
+            [_A[:, :1], _B], ValueError, r"\(16 values\), but TensorRT reads 48", id="small-array"
+        ),
     ],
 )
 def test_get_batch_mismatch_raises(batch, exc, match) -> None:
-    """A batch without one array per input raises and is kept as the calibrator's error."""
+    """A batch that does not fit the inputs raises and is kept as the calibrator's error."""
     cal = EngineCalibrator()
+    cal.set_input_shapes({"a": _A.shape, "b": _B.shape})
     mock_batcher = MagicMock()
     mock_batcher.get_next_batch.return_value = batch
     cal.set_batcher(mock_batcher)

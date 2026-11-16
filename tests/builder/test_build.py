@@ -41,6 +41,8 @@ _needs_strong_typing = pytest.mark.skipif(
 _needs_trt10_fp8 = pytest.mark.skipif(
     REAL_FLAGS.TRT_VERSION < (10, 0), reason="weakly-typed fp8 needs TensorRT 10"
 )
+# (min, opt, max) shapes for dynamic_batch_onnx_path, calibrated at opt
+_DYNAMIC_BATCH_PROFILE = ((1, 3, 16, 16), (2, 3, 16, 16), (4, 3, 16, 16))
 
 
 @pytest.mark.parametrize(
@@ -352,20 +354,79 @@ def test_int8_calibration_of_two_inputs(
     reason="Runtime INT8/FP8 calibration is a weakly-typed concept; see test_build_strongly_typed_from_qdq.",
 )
 @_needs_weak_typing
-def test_int8_calibration_batch_mismatch_raises(
-    two_input_onnx_path,
+def test_int8_calibration_of_dynamic_input(
+    dynamic_batch_onnx_path,
     output_engine_path,
     calibration_cache_path,
 ) -> None:
-    """A batch with one array for a two-input network fails the build with its ValueError."""
-    batch = np.zeros((1, 3, 16, 16), dtype=np.float32)
-    with pytest.raises(ValueError, match=r"network has 2 inputs \['a', 'b'\]"):
+    """A dynamic input calibrates on whole batches of the opt shape in its profile."""
+    batch = np.empty((2, 3, 16, 16), dtype=np.float32)
+    batch[0] = np.linspace(0.0, 1.0, batch[0].size).reshape(batch[0].shape)
+    batch[1] = 100.0 * batch[0]
+    build_engine(
+        dynamic_batch_onnx_path,
+        output_engine_path,
+        int8=True,
+        data_batcher=ListBatcher([batch, batch]),
+        calibration_cache=calibration_cache_path,
+        shapes=[("x", _DYNAMIC_BATCH_PROFILE)],
+        optimization_level=1,
+    )
+    # the second sample spans [0, 100], so reading it gives a scale of about 100/127,
+    # not the 1/127 of the first sample alone
+    assert 0.6 < _calibration_scales(calibration_cache_path)["x"] < 1.0
+
+
+@pytest.mark.skipif(
+    REAL_FLAGS.IS_BLACKWELL,
+    reason="Runtime INT8/FP8 calibration is a weakly-typed concept; see test_build_strongly_typed_from_qdq.",
+)
+@pytest.mark.parametrize(
+    ("onnx", "batch", "shapes", "match"),
+    [
+        pytest.param(
+            "two_input_onnx_path",
+            [np.zeros((1, 3, 16, 16), dtype=np.float32)],
+            None,
+            r"network has 2 inputs \['a', 'b'\]",
+            id="one-array-for-two-inputs",
+        ),
+        # 1/400 of the (1, 3, 160, 160) input, which tensorrt would read past
+        pytest.param(
+            "onnx_path",
+            np.zeros((1, 3, 8, 8), dtype=np.float32),
+            None,
+            r"TensorRT reads 76800 values for its calibration shape \(1, 3, 160, 160\)",
+            id="array-smaller-than-input",
+        ),
+        pytest.param(
+            "dynamic_batch_onnx_path",
+            np.zeros((1, 3, 16, 16), dtype=np.float32),
+            [("x", _DYNAMIC_BATCH_PROFILE)],
+            r"TensorRT reads 1536 values for its calibration shape \(2, 3, 16, 16\)",
+            id="array-smaller-than-opt-shape",
+        ),
+    ],
+)
+@_needs_weak_typing
+def test_int8_calibration_batch_mismatch_raises(
+    request,
+    output_engine_path,
+    calibration_cache_path,
+    onnx: str,
+    batch,
+    shapes,
+    match: str,
+) -> None:
+    """A batch that does not fit the network inputs fails the build with its ValueError."""
+    with pytest.raises(ValueError, match=match):
         build_engine(
-            two_input_onnx_path,
+            request.getfixturevalue(onnx),
             output_engine_path,
             int8=True,
-            data_batcher=ListBatcher([[batch], [batch]]),
+            data_batcher=ListBatcher([batch, batch]),
             calibration_cache=calibration_cache_path,
+            shapes=shapes,
             optimization_level=1,
         )
     assert not output_engine_path.exists()

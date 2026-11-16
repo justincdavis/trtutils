@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import math
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -57,6 +58,7 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             )
         self._batcher: AbstractBatcher | None = None
         self._batch_dtypes: dict[str, np.dtype] = {}
+        self._input_shapes: dict[str, tuple[int, ...]] = {}
         self._warned_dtype: set[str] = set()
 
     @property
@@ -104,6 +106,24 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
             # are read 4x past the batch (illegal memory access or garbage scales)
             self._batch_dtypes[name] = np.dtype(np.float32) if np_dtype == np.int8 else np_dtype
 
+    def set_input_shapes(self: Self, shapes: Mapping[str, Sequence[int]]) -> None:
+        """
+        Set the shape TensorRT calibrates each network input at, by input name.
+
+        TensorRT reads a whole input of this shape from each calibration buffer,
+        so ``get_batch`` rejects a batch with fewer values, which TensorRT would
+        read past. ``build_engine`` sets this to each input's static shape, or to
+        the opt shape given in ``shapes`` for an input with dynamic dimensions
+        (TensorRT calibrates at the first optimization profile).
+
+        Parameters
+        ----------
+        shapes : Mapping[str, Sequence[int]]
+            The calibration shape of each network input, keyed by input name.
+
+        """
+        self._input_shapes = {name: tuple(int(d) for d in shape) for name, shape in shapes.items()}
+
     def get_batch_size(self: Self) -> int:
         """
         Get the batch size.
@@ -145,8 +165,9 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         Raises
         ------
         ValueError
-            If the batch does not have one array per network input, or a dict
-            batch is not keyed by the network input names.
+            If the batch does not have one array per network input, a dict batch
+            is not keyed by the network input names, or an array has fewer values
+            than TensorRT reads for its input (see ``set_input_shapes``).
         TypeError
             If the batch is not an array, a list or tuple, or a dict.
 
@@ -168,6 +189,16 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
 
         ptrs: list[int] = []
         for name, given in zip(names, _match_inputs(batch, names)):
+            # tensorrt reads a whole input from the buffer, past the end of a smaller batch
+            shape = self._input_shapes.get(name)
+            if shape is not None and given.size < math.prod(shape):
+                err_msg = (
+                    f"The calibration batch for network input '{name}' has shape {given.shape}"
+                    f" ({given.size} values), but TensorRT reads {math.prod(shape)} values for"
+                    f" its calibration shape {shape}."
+                )
+                raise ValueError(err_msg)
+
             # tensorrt reads the buffer as raw bytes of the bound dtype, so a float32 batch
             # for a float16 input would calibrate on garbage (inf scales, broken engine)
             array = given
