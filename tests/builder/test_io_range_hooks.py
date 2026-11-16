@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import onnx
@@ -142,6 +142,16 @@ def test_io_hooks_keep_every_int8_value(identity_onnx_path, tmp_path, io, dtypes
     np.testing.assert_array_equal(output, values.astype(np.float16))
 
 
+@pytest.mark.parametrize("hook", [fp16_io_hook, int8_input_hook])
+def test_io_hooks_raise_on_strongly_typed_networks(monkeypatch, hook) -> None:
+    """Strongly typed networks take their I/O dtypes from the graph, so the I/O hooks raise."""
+    for flag in ("WEAK_TYPING", "DYNAMIC_RANGE", "STRONGLY_TYPED_SUPPORTED"):
+        monkeypatch.setattr(FLAGS, flag, True)
+    monkeypatch.setattr("trtutils.builder.hooks._io.trt", MagicMock())
+    with pytest.raises(RuntimeError, match="strongly_typed=True networks"):
+        hook(MagicMock())
+
+
 @_needs_implicit_int8
 def test_int8_ranges_hook_sets_hand_computed_ranges() -> None:
     """Each tensor gets the tightest symmetric range covering its hand-computed interval."""
@@ -158,10 +168,13 @@ def test_int8_ranges_hook_sets_hand_computed_ranges() -> None:
     affine = network.add_scale(pool.get_output(0), trt.ScaleMode.UNIFORM, shift, scale, power)
     concat = network.add_concatenation([pool.get_output(0), affine.get_output(0)])
     exp = network.add_unary(concat.get_output(0), trt.UnaryOperation.EXP)
-    network.mark_output(exp.get_output(0))
+    softmax = network.add_softmax(exp.get_output(0))
+    network.mark_output(softmax.get_output(0))
 
     with pytest.raises(ValueError, match=r"no input_ranges entry for the network inputs \['x'\]"):
         int8_ranges_hook()(network)
+    with pytest.raises(ValueError, match=r"must be \(min, max\), got \(3.0, -1.0\)"):
+        int8_ranges_hook({"x": (3.0, -1.0)})(network)
 
     conv.get_output(0).set_dynamic_range(-100.0, 100.0)
     int8_ranges_hook({"x": (-1.0, 3.0)})(network)
@@ -173,6 +186,7 @@ def test_int8_ranges_hook_sets_hand_computed_ranges() -> None:
         pool.get_output(0): (0.0, 5.0),
         affine.get_output(0): (-9.0, 1.0),
         concat.get_output(0): (-9.0, 5.0),
+        softmax.get_output(0): (0.0, 1.0),
     }
     for tensor, (lo, hi) in intervals.items():
         bound = max(hi, -lo * 127 / 128)

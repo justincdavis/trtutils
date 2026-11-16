@@ -57,7 +57,7 @@ def int8_ranges_hook(
     Callable[[trt.INetworkDefinition], trt.INetworkDefinition]
         The hook, for ``build_engine(..., int8=True, hooks=[...])`` without a
         ``data_batcher`` or ``calibration_cache``. It raises ``ValueError`` if a float
-        or int8 network input has no range.
+        or int8 network input has no range, or an entry has min > max.
 
     Raises
     ------
@@ -79,7 +79,7 @@ def int8_ranges_hook(
 
     """
     check_dynamic_range()
-    ranges = dict(input_ranges or {})
+    ranges = dict(input_ranges) if input_ranges is not None else {}
 
     def hook(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
         for tensor, (lo, hi) in _propagate(network, ranges):
@@ -99,8 +99,11 @@ def _input_intervals(
     missing = []
     for tensor in inputs:
         if tensor.name in ranges:
-            lo, hi = ranges[tensor.name]
-            known[tensor.name] = (float(lo), float(hi))
+            lo, hi = map(float, ranges[tensor.name])
+            if not lo <= hi:
+                err_msg = f"input_ranges[{tensor.name!r}] must be (min, max), got ({lo}, {hi})"
+                raise ValueError(err_msg)
+            known[tensor.name] = (lo, hi)
         elif tensor.dtype == trt.int8 and tensor.dynamic_range is not None:
             scale = max(abs(v) for v in tensor.dynamic_range) / _INT8_MAX
             known[tensor.name] = (_INT8_MIN * scale, _INT8_MAX * scale)
@@ -116,23 +119,21 @@ def _propagate(
     network: trt.INetworkDefinition,
     ranges: Mapping[str, tuple[float, float]],
 ) -> list[tuple[trt.ITensor, _Interval]]:
-    lt = trt.LayerType
-    rules: dict[object, Callable[..., _Interval | None]] = {
-        lt.ACTIVATION: _activation,
-        lt.CAST: _same,
-        lt.CONCATENATION: _concatenation,
-        lt.CONVOLUTION: _convolution,
-        lt.DECONVOLUTION: _convolution,
-        lt.ELEMENTWISE: _elementwise,
-        lt.IDENTITY: _same,
-        lt.PADDING: lambda _layer, x, _ivs: _with_zero(x),
-        lt.POOLING: _pooling,
-        lt.RESIZE: _resize,
-        lt.SCALE: _scale,
-        lt.SHUFFLE: _same,
-        lt.SLICE: _slice,
-        lt.SOFTMAX: lambda _layer, _x, _ivs: (0.0, 1.0),
-        lt.UNARY: _unary,
+    rules: dict[str, Callable[..., _Interval | None]] = {
+        "ACTIVATION": _activation,
+        "CAST": _same,
+        "CONCATENATION": _concatenation,
+        "CONVOLUTION": _convolution,
+        "DECONVOLUTION": _convolution,
+        "ELEMENTWISE": _elementwise,
+        "IDENTITY": _same,
+        "PADDING": lambda _layer, x, _ivs: _with_zero(x),
+        "POOLING": _pooling,
+        "RESIZE": _resize,
+        "SCALE": _scale,
+        "SHUFFLE": _same,
+        "SLICE": _slice,
+        "UNARY": _unary,
     }
     inputs = [network.get_input(idx) for idx in range(network.num_inputs)]
     intervals = _input_intervals(inputs, ranges)
@@ -144,11 +145,14 @@ def _propagate(
             continue
         tensors = [layer.get_input(i) for i in range(layer.num_inputs)]
         ivs = [intervals.get(t.name) if t is not None else None for t in tensors]
-        rule = rules.get(layer.type)
+        kind = layer.type.name
+        rule = rules.get(kind)
         interval = None
-        if layer.type == lt.CONSTANT:
+        if kind == "CONSTANT":
             interval = _constant(layer)
-        elif rule is not None and ivs and ivs[0] is not None:
+        elif kind == "SOFTMAX":
+            interval = (0.0, 1.0)
+        elif rule is not None and ivs[0] is not None:
             interval = rule(layer, ivs[0], ivs)
         if interval is not None and all(math.isfinite(v) for v in interval):
             intervals[out.name] = interval
@@ -245,13 +249,9 @@ def _unary(layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _In
     lo, hi = x
     if op == trt.UnaryOperation.NEG:
         return -hi, -lo
-    if op != trt.UnaryOperation.ABS:
-        return None
-    if lo >= 0:
-        return x
-    if hi <= 0:
-        return -hi, -lo
-    return 0.0, max(-lo, hi)
+    if op == trt.UnaryOperation.ABS:
+        return max(lo, -hi, 0.0), max(hi, -lo)
+    return None
 
 
 def _pooling(layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _Interval | None:
@@ -274,7 +274,7 @@ def _slice(layer: trt.ILayer, x: _Interval, ivs: list[_Interval | None]) -> _Int
 
 
 def _elementwise(layer: trt.ILayer, a: _Interval, ivs: list[_Interval | None]) -> _Interval | None:
-    b = ivs[1] if len(ivs) > 1 else None
+    b = ivs[1]
     if b is None:
         return None
     op = _cast(layer, trt.IElementWiseLayer).op

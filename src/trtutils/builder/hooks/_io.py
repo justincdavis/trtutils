@@ -30,16 +30,11 @@ def fp16_io_hook(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
     Raises
     ------
     RuntimeError
-        If the installed TensorRT has no weakly-typed networks (TensorRT 11), where the
-        I/O dtypes come from the ONNX graph.
+        If the network is strongly typed (``strongly_typed=True``, and every network on
+        TensorRT 11), where the I/O dtypes come from the ONNX graph.
 
     """
-    if not FLAGS.WEAK_TYPING:
-        err_msg = (
-            "Retyping network I/O needs weakly-typed networks, which were removed in "
-            "TensorRT 11. Export the ONNX with float16 inputs and outputs instead."
-        )
-        raise RuntimeError(err_msg)
+    _check_weakly_typed(network)
     tensors = [network.get_input(idx) for idx in range(network.num_inputs)]
     tensors += [network.get_output(idx) for idx in range(network.num_outputs)]
     for tensor in tensors:
@@ -72,13 +67,28 @@ def int8_input_hook(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
     Raises
     ------
     RuntimeError
-        If the installed TensorRT has no per-tensor dynamic ranges (TensorRT 11).
+        If the installed TensorRT has no per-tensor dynamic ranges (TensorRT 11), or the
+        network is strongly typed (``strongly_typed=True``).
 
     """
     check_dynamic_range()
+    _check_weakly_typed(network)
     for idx in range(network.num_inputs):
         tensor = network.get_input(idx)
         if tensor.dtype in (trt.float32, trt.float16):
             tensor.dtype = trt.int8
             tensor.set_dynamic_range(-127.0, 127.0)
     return network
+
+
+def _check_weakly_typed(network: trt.INetworkDefinition) -> None:
+    if not FLAGS.WEAK_TYPING or (
+        FLAGS.STRONGLY_TYPED_SUPPORTED
+        and network.get_flag(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED)
+    ):
+        err_msg = (
+            "Retyping network I/O needs a weakly-typed network. Weak typing was removed in "
+            "TensorRT 11, and strongly_typed=True networks take their I/O dtypes from the "
+            "ONNX graph: export the ONNX with the I/O dtypes you need instead."
+        )
+        raise RuntimeError(err_msg)
