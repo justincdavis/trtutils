@@ -14,6 +14,7 @@ import pytest
 
 from trtutils import Buffer, MemoryLocation
 from trtutils.core import destroy_stream
+from trtutils.image.postprocessors import postprocess_yolov10
 from trtutils.image.preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
@@ -26,6 +27,10 @@ from trtutils.image.preprocessors._base import RESIZE_METHODS, crop_geometry
 from trtutils.image.preprocessors._cpu import letterbox, preprocess, resize_linear
 
 SIZE = (640, 640)
+NON_SQUARE = [
+    pytest.param((640, 384), id="640x384"),
+    pytest.param((384, 640), id="384x640"),
+]
 RANGE = (0.0, 1.0)
 DTYPE = np.dtype(np.float32)
 IMAGENET = {"mean": (0.485, 0.456, 0.406), "std": (0.229, 0.224, 0.225)}
@@ -111,20 +116,27 @@ def test_gpu_matches_cpu(images, gpu_cls, resize, norm, tol) -> None:
     ],
 )
 @pytest.mark.parametrize("resize", ["linear", "letterbox", "center_crop"])
-@pytest.mark.parametrize("out_size", [640, 1024])
+@pytest.mark.parametrize(
+    "size",
+    [
+        pytest.param((640, 640), id="640"),
+        pytest.param((1024, 1024), id="1024"),
+        *NON_SQUARE,
+    ],
+)
 @pytest.mark.parametrize(
     "shape",
     [
         pytest.param((1280, 1920), id="1920x1280"),
         pytest.param((3000, 4000), id="4000x3000"),
         pytest.param((1999, 3001), id="3001x1999"),
+        pytest.param((1920, 1080), id="1080x1920"),
     ],
 )
-def test_gpu_large_downscale_matches_cpu(gpu_cls, resize, out_size, shape) -> None:
-    """Large downscales with fractional letterbox sizes match cv2 pixels and padding."""
+def test_gpu_large_downscale_matches_cpu(gpu_cls, resize, size, shape) -> None:
+    """Large downscales to square and non-square outputs match cv2 pixels, ratios, and padding."""
     rng = np.random.default_rng(0)
     image = cv2.GaussianBlur(rng.integers(0, 255, (*shape, 3), dtype=np.uint8), (0, 0), 1.5)
-    size = (out_size, out_size)
     cpu = CPUPreprocessor(size, RANGE, DTYPE, resize=resize)
     gpu = gpu_cls(size, RANGE, DTYPE, resize=resize)
     expected, ratios, padding = cpu.preprocess([image])
@@ -613,8 +625,32 @@ def test_letterbox(image_hw, new_shape, ratio, padding, inner) -> None:
 
 @pytest.mark.cpu
 def test_resize_linear() -> None:
-    """resize_linear matches cv2.resize and returns (new_h / w, new_w / h), as cv2ext did."""
+    """resize_linear matches cv2.resize and returns (new_w / w, new_h / h)."""
     image = np.random.default_rng(0).integers(0, 255, (30, 60, 3), dtype=np.uint8)
     out, ratios = resize_linear(image, (120, 90))
     assert np.array_equal(out, cv2.resize(image, (120, 90), interpolation=cv2.INTER_LINEAR))
-    assert ratios == (1.5, 4.0)
+    assert ratios == (2.0, 3.0)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize("method", RESIZE_METHODS)
+@pytest.mark.parametrize("size", NON_SQUARE)
+@pytest.mark.parametrize(
+    "shape",
+    [
+        pytest.param((1080, 1920), id="1920x1080"),
+        pytest.param((1280, 720), id="720x1280"),
+    ],
+)
+def test_preprocess_postprocess_box_roundtrip(method, size, shape) -> None:
+    """A box found in the preprocessed image postprocesses back to its original-image box."""
+    height, width = shape
+    box = (np.array([0.4, 0.45, 0.6, 0.55]) * (width, height, width, height)).astype(int)
+    image = np.zeros((*shape, 3), dtype=np.uint8)
+    image[box[1] : box[3], box[0] : box[2]] = 255
+    tensor, ratios, padding = preprocess([image], size, DTYPE, method=method)
+    ys, xs = np.nonzero(tensor[0, 0] > 0.5)
+    output = np.array([[[xs.min(), ys.min(), xs.max() + 1, ys.max() + 1, 0.9, 0]]], np.float32)
+    bboxes = postprocess_yolov10([output], ratios, padding, input_size=size)[0][0]
+    # within one model-input pixel
+    np.testing.assert_allclose(bboxes[0], box, atol=1 / min(ratios[0]))

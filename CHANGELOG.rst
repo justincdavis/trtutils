@@ -137,6 +137,8 @@ Performance
 
 Fixed
 ^^^^^
+* CPU and hybrid ``linear`` resize returns (width, height) ratios. They were swapped, which
+  misplaced boxes, keypoints, and masks on non-square model inputs
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
 * The package ships ``image/_kernels/postprocess.cuh``. Without it, every CUDA postprocessor but
   OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
