@@ -208,6 +208,7 @@ Fixed
   skipped warmup
 * ``register_jit`` functions run Numba-compiled (the ``jit`` extra previously had no effect), and
   ``with JIT:`` restores the previous JIT state on exit
+* ``profile_engine`` no longer logs a TensorRT error or leaves a ``TRTEngine`` feeding its profiler
 
 Removed
 ^^^^^^^
