@@ -967,8 +967,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             The range of the image values the model expects.
             Examples: (0.0, 1.0), (0.0, 255.0)
         dtype : np.dtype
-            The datatype of the image, np.float32 or np.float16.
-            Ignored when normalize is False.
+            The datatype of the normalized image, np.float32 or np.float16.
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
