@@ -63,6 +63,8 @@ def yolov10_fp16_engine() -> Path:
 @pytest.fixture(scope="session")
 def uint8_nchw_engine(tmp_path_factory, build_test_engine) -> Path:
     """Build an engine whose (1, 3, 32, 32) uint8 input is cast to float32 in the graph."""
+    if not FLAGS.TRT_HAS_UINT8:
+        pytest.skip("TensorRT on this platform has no UINT8 network inputs")
     onnx_path = tmp_path_factory.mktemp("uint8_nchw") / "uint8_nchw.onnx"
     shape = [1, 3, 32, 32]
     graph = helper.make_graph(
