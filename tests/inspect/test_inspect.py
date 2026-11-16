@@ -272,14 +272,7 @@ def test_inspect_placement(
     assert PlacementReport.from_dict(json.loads(json.dumps(report.to_dict()))) == report
 
 
-def test_inspect_placement_requires_detailed(tmp_path, conv_onnx) -> None:
+def test_inspect_placement_requires_detailed(engine_path) -> None:
     """An engine built without ProfilingVerbosity.DETAILED raises a ValueError."""
-    engine_path = tmp_path / "conv.engine"
-    build_engine(
-        conv_onnx(16, 64, 64),
-        engine_path,
-        profiling_verbosity=trt.ProfilingVerbosity.LAYER_NAMES_ONLY,
-        optimization_level=1,
-    )
     with pytest.raises(ValueError, match="DETAILED"):
         inspect_placement(engine_path)

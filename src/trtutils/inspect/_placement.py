@@ -46,6 +46,9 @@ class EngineLayer:
         The names of the tensors the layer reads.
     outputs : tuple[str, ...]
         The names of the tensors the layer writes.
+    origin : str
+        The inspector ``Origin``, e.g. ``"REFORMAT"`` for an inserted reformat or
+        ``"CONCAT"`` for a copy that runs a network Concat, empty if not reported.
 
     """
 
@@ -53,6 +56,7 @@ class EngineLayer:
     layer_type: str
     inputs: tuple[str, ...] = ()
     outputs: tuple[str, ...] = ()
+    origin: str = ""
 
     @property
     def kind(self: Self) -> str:
@@ -79,32 +83,6 @@ def _foreign_node_range(name: str) -> tuple[str, str] | None:
     inner = match.group(1)
     first, last = inner.split("...", 1) if "..." in inner else (inner, inner)
     return first.split(" + ")[0].strip(), last.split(" + ")[-1].strip()
-
-
-def _map_network_devices(
-    engine_layers: Sequence[EngineLayer],
-    network_layers: Sequence[LayerInfo],
-    gpu_copies: Sequence[EngineLayer],
-) -> dict[str, str]:
-    devices: dict[str, str] = {}
-    placed = [n for n in network_layers if n.layer_type not in _FOLDED_TYPES]
-    gpu_names = [layer.name for layer in engine_layers if layer.kind == "gpu_compute"]
-    copied = {tensor for copy in gpu_copies for tensor in copy.outputs}
-    for n in placed:
-        pattern = re.compile(r"(?<![\w/])" + re.escape(n.name) + r"(?!\w)")
-        if any(pattern.search(name) for name in gpu_names) or copied.intersection(n.outputs):
-            devices[n.name] = "gpu"
-    index = {n.name: n.index for n in network_layers}
-    for layer in sorted(engine_layers, key=lambda layer: layer.kind != "dla"):
-        span = _foreign_node_range(layer.name)
-        if span is None or span[0] not in index or span[1] not in index:
-            continue
-        lo, hi = sorted((index[span[0]], index[span[1]]))
-        device = "dla" if layer.kind == "dla" else "gpu"
-        for n in placed:
-            if lo <= n.index <= hi and n.name not in devices:
-                devices[n.name] = device
-    return devices
 
 
 @dataclass(frozen=True)
@@ -179,6 +157,7 @@ class PlacementReport:
                 layer_type=layer["LayerType"],
                 inputs=tuple(tensor["Name"] for tensor in layer.get("Inputs", [])),
                 outputs=tuple(tensor["Name"] for tensor in layer.get("Outputs", [])),
+                origin=layer.get("Origin", ""),
             )
             for layer in layers
         ]
@@ -238,15 +217,11 @@ class PlacementReport:
 
         """
         return {
-            "engine_layers": [
-                {**vars(layer), "inputs": list(layer.inputs), "outputs": list(layer.outputs)}
-                for layer in self.engine_layers
-            ],
+            "engine_layers": [dict(vars(layer)) for layer in self.engine_layers],
             "network_layers": [
                 {
                     **vars(layer),
                     "precision": None if layer.precision is None else layer.precision.name,
-                    "outputs": list(layer.outputs),
                 }
                 for layer in self.network_layers
             ],
@@ -257,6 +232,10 @@ class PlacementReport:
 
     def _of_kind(self: Self, kind: str) -> list[EngineLayer]:
         return [layer for layer in self.engine_layers if layer.kind == kind]
+
+    @property
+    def _placed_layers(self: Self) -> list[LayerInfo]:
+        return [n for n in self.network_layers if n.layer_type not in _FOLDED_TYPES]
 
     @property
     def dla_subgraphs(self: Self) -> list[EngineLayer]:
@@ -275,30 +254,36 @@ class PlacementReport:
 
     @property
     def io_reformat_layers(self: Self) -> list[EngineLayer]:
-        """The GPU reformats that read an engine input or write an engine output."""
-        io_names = set(self.io_names)
-        return [r for r in self.reformat_layers if io_names.intersection(r.inputs + r.outputs)]
+        """The GPU reformats on a chain from an engine input or to an engine output."""
+        internal = set(self.internal_reformat_layers)
+        return [r for r in self.reformat_layers if r not in internal]
 
-    @property
+    @cached_property
     def internal_reformat_layers(self: Self) -> list[EngineLayer]:
         """
         The GPU reformats and copies that are not on a chain to an engine input or output.
 
         In a DLA engine they sit between DLA subgraphs: a precision or format change, or
         a network layer TensorRT runs as plain copies on the GPU (e.g. a Concat on W).
+        Copies that run a network layer are never I/O reformats, even next to an engine
+        input or output.
         """
-        internal = self.reformat_layers
-        tensors = set(self.io_names)
-        while True:
-            io_side = [r for r in internal if tensors.intersection(r.inputs + r.outputs)]
-            if not io_side:
-                return internal
-            tensors.update(t for r in io_side for t in r.inputs + r.outputs)
-            internal = [r for r in internal if r not in io_side]
+        chain = [r for r in self.reformat_layers if r.origin in ("", "REFORMAT")]
+        reads, writes = set(self.io_names), set(self.io_names)
+        io: set[EngineLayer] = set()
+        for r in chain:
+            if reads.intersection(r.inputs):
+                reads.update(r.outputs)
+                io.add(r)
+        for r in reversed(chain):
+            if r not in io and writes.intersection(r.outputs):
+                writes.update(r.inputs)
+                io.add(r)
+        return [r for r in self.reformat_layers if r not in io]
 
     @property
     def fully_on_dla(self: Self) -> bool:
-        """True when only I/O reformats run on the GPU: no compute, no copies between DLA subgraphs."""
+        """True when only I/O reformats run on the GPU: no compute or internal copies."""
         return (
             bool(self.dla_subgraphs)
             and not self.gpu_compute_layers
@@ -327,13 +312,34 @@ class PlacementReport:
         The device, ``"dla"`` or ``"gpu"``, of each network layer.
 
         A network layer runs on the GPU when a GPU compute layer names it or an internal
-        GPU copy writes its output. Otherwise it runs where the subgraph whose
-        ``{ForeignNode[first...last]}`` range holds it runs, DLA subgraphs first. Layers
-        TensorRT folded or fused away are missing.
+        GPU copy (not an inserted ``REFORMAT``) writes its output. Otherwise it runs where
+        the subgraph whose ``{ForeignNode[first...last]}`` range holds it runs, DLA
+        subgraphs first. Layers TensorRT folded or fused away are missing.
         """
-        return _map_network_devices(
-            self.engine_layers, self.network_layers, self.internal_reformat_layers
-        )
+        gpu_names = [layer.name for layer in self.gpu_compute_layers]
+        copied = {
+            tensor
+            for r in self.internal_reformat_layers
+            if r.origin != "REFORMAT"
+            for tensor in r.outputs
+        }
+        placed = self._placed_layers
+        devices: dict[str, str] = {}
+        for n in placed:
+            pattern = re.compile(r"(?<![\w/])" + re.escape(n.name) + r"(?!\w)")
+            if copied.intersection(n.outputs) or any(pattern.search(g) for g in gpu_names):
+                devices[n.name] = "gpu"
+        index = {n.name: n.index for n in self.network_layers}
+        for layer in sorted(self.engine_layers, key=lambda layer: layer.kind != "dla"):
+            span = _foreign_node_range(layer.name)
+            if span is None or span[0] not in index or span[1] not in index:
+                continue
+            lo, hi = sorted((index[span[0]], index[span[1]]))
+            device = "dla" if layer.kind == "dla" else "gpu"
+            for n in placed:
+                if lo <= n.index <= hi:
+                    devices.setdefault(n.name, device)
+        return devices
 
     @property
     def dla_coverage(self: Self) -> float | None:
@@ -352,7 +358,7 @@ class PlacementReport:
         network layer is placed on the GPU, they are the layers that failed the DLA check
         and were not placed on the DLA.
         """
-        layers = [n for n in self.network_layers if n.layer_type not in _FOLDED_TYPES]
+        layers = self._placed_layers
         on_gpu = [n for n in layers if self.network_devices.get(n.name) == "gpu"]
         if on_gpu or not self.gpu_compute_layers:
             return on_gpu

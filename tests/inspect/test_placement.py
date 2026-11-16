@@ -93,12 +93,12 @@ _CONV_RELU = {"/c1/Conv": "dla", "/Relu": "dla", "/c2/Conv": "dla", "/Relu_1": "
     ],
 )
 def test_report_from_inspector_json(name, summary, devices, zero_gpu) -> None:
-    """Inspector JSON gives the placement summary and layer devices, and survives a JSON round trip."""
+    """Inspector JSON gives the placement summary and layer devices, and a JSON round trip."""
     report = _fixture_report(name)
     on_gpu = [layer for layer, device in devices.items() if device == "gpu"]
     assert report.summary() == f"DLA core 0: {summary}"
     assert report.network_devices == devices
-    assert report.fully_on_dla is not on_gpu
+    assert report.fully_on_dla is (not on_gpu)
     assert report.zero_gpu is zero_gpu
     assert [n.name for n in report.blocking_layers] == on_gpu
     if on_gpu:
@@ -155,8 +155,52 @@ def test_reformat_chain_to_output_is_io() -> None:
         io_names=("in_0", "out_0"),
     )
     assert report.internal_reformat_layers == []
+    assert len(report.io_reformat_layers) == 2
     assert report.fully_on_dla is True
     assert report.transitions == 0
+
+
+def test_concat_copies_next_to_io_run_on_gpu() -> None:
+    """Concat copies reading an engine input are GPU work, not I/O reformats."""
+    report = PlacementReport(
+        engine_layers=[
+            EngineLayer("{ForeignNode[/Conv]}", "DLA", ("in_0",), ("c",)),
+            EngineLayer("in_0 copy", "Reformat", ("in_0",), ("cat",), "CONCAT"),
+            EngineLayer("c copy", "Reformat", ("c",), ("cat",), "CONCAT"),
+            EngineLayer("{ForeignNode[/Mul]}", "DLA", ("cat",), ("out_0",)),
+        ],
+        network_layers=[
+            _layer(0, "/Conv", "CONVOLUTION", outputs=("c",)),
+            _layer(1, "/Concat", "CONCATENATION", dla_compatible=False, outputs=("cat",)),
+            _layer(2, "/Mul", "ELEMENTWISE", outputs=("out_0",)),
+        ],
+        io_names=("in_0", "out_0"),
+    )
+    assert [r.name for r in report.internal_reformat_layers] == ["in_0 copy", "c copy"]
+    assert report.fully_on_dla is False
+    assert report.transitions == 2
+    assert report.network_devices == {"/Conv": "dla", "/Concat": "gpu", "/Mul": "dla"}
+
+
+def test_internal_reformat_does_not_move_its_producer_to_gpu() -> None:
+    """A REFORMAT writing a DLA layer's output tensor leaves that layer on the DLA."""
+    dla_out = "Reformatted Output Tensor 0 to {ForeignNode[/c1/Conv]}"
+    report = PlacementReport(
+        engine_layers=[
+            EngineLayer("{ForeignNode[/c1/Conv]}", "DLA", ("in_0",), (dla_out,)),
+            EngineLayer("Reformatting CopyNode", "Reformat", (dla_out,), ("c1",), "REFORMAT"),
+            EngineLayer("PWN(/Sin)", "PointWiseV2", ("c1",), ("s",)),
+            EngineLayer("{ForeignNode[/c2/Conv]}", "DLA", ("s",), ("out_0",)),
+        ],
+        network_layers=[
+            _layer(0, "/c1/Conv", "CONVOLUTION", outputs=("c1",)),
+            _layer(1, "/Sin", "UNARY", dla_compatible=False, outputs=("s",)),
+            _layer(2, "/c2/Conv", "CONVOLUTION", outputs=("out_0",)),
+        ],
+        io_names=("in_0", "out_0"),
+    )
+    assert report.network_devices == {"/c1/Conv": "dla", "/Sin": "gpu", "/c2/Conv": "dla"}
+    assert [n.name for n in report.blocking_layers] == ["/Sin"]
 
 
 def test_uninspected_report() -> None:
