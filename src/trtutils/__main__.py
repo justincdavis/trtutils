@@ -303,7 +303,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
     hooks = []
     if add_yolo_hook:
         hooks.append(
-            trtutils.builder.hooks.yolo_efficient_nms_hook(
+            trtutils.image.hooks.yolo_efficient_nms_hook(
                 num_classes=args.num_classes,
                 conf_threshold=args.conf_threshold,
                 iou_threshold=args.iou_threshold,

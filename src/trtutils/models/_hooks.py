@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.builder._onnx import read_onnx
-from trtutils.builder.hooks import yolo_efficient_nms_hook
 from trtutils.compat._libs import trt
+from trtutils.image.hooks import yolo_efficient_nms_hook
 
 if TYPE_CHECKING:
     from pathlib import Path

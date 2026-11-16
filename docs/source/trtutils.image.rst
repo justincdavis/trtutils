@@ -7,6 +7,7 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
+   trtutils.image.hooks
    trtutils.image.postprocessors
    trtutils.image.preprocessors
    trtutils.image.sahi

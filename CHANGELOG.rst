@@ -111,6 +111,7 @@ Changed
   fields are read-only properties. ``min_shape`` / ``max_shape``, ``check``, ``bind``, ``stage``
   and ``fetch`` are new
 * **Breaking:** ``Kernel`` no longer takes ``max_arg_cache``
+* **Breaking:** ``yolo_efficient_nms_hook`` moved from ``builder.hooks`` to ``image.hooks``
 * **Breaking:** ``QueuedTRTEngine`` and ``ParallelTRTEngines`` are no longer exported from the
   top-level ``trtutils``. Import them from ``trtutils.parallel``
 * **Breaking:** ``core.cache`` functions are renamed: ``clear_cache`` is ``clear``, ``query_cache``
