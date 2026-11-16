@@ -20,3 +20,10 @@ jobs:
           uv pip install --python ".venv-${version}" dist/*.whl
           echo "::endgroup::"
         done
+    # the wheel must ship the non-Python files the package reads (kernels, headers, configs, ...)
+    - name: Check the wheel has the package data
+      run: |
+        git ls-files src/trtutils | grep -v -e '\.py$' -e 'README\.md$' | sed 's|^src/||' | sort > tracked.txt
+        unzip -Z1 dist/*.whl | sort > wheel.txt
+        comm -23 tracked.txt wheel.txt > missing.txt
+        if [ -s missing.txt ]; then echo "files missing from the wheel:"; cat missing.txt; exit 1; fi
