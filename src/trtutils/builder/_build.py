@@ -156,12 +156,16 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         For example, input_tensor_formats=[("input", trt.DataType.UINT8, trt.TensorFormat.HWC)]
         TensorRT may insert reformat layers between the tensor and the first
         layer to honor the format; pass ``direct_io=True`` to forbid them.
+        The dtype is set on weakly-typed networks only. Strongly typed networks
+        (``strongly_typed=True``, and every network on TensorRT 11) take it from
+        the ONNX graph, and a dtype that differs from the graph's raises ValueError.
         By default, None
     output_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
         A list of (name, dtype format) to allow deep specification of output layers.
         For example, output_tensor_formats=[("output", trt.DataType.HALF, trt.TensorFormat.LINEAR)]
         TensorRT may insert reformat layers to honor the format; pass
         ``direct_io=True`` to forbid them.
+        The dtype follows the same rules as for ``input_tensor_formats``.
         By default, None
     hooks : list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]], optional
         An optional list of 'hook' functions to modify the TensorRT network before
@@ -225,8 +229,8 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         determined by the ONNX graph (Q/DQ nodes, explicit dtypes). Required
         on Blackwell (SM 10.0+) when mixing INT8 and FP8. Mutually exclusive
         with fp16/int8/fp8 builder flags and with calibration_cache,
-        data_batcher, and layer_precision. Tensor-format dtype overrides are
-        also ignored when enabled. By default, False.
+        data_batcher, and layer_precision. Tensor-format dtypes must match the
+        ONNX graph when enabled. By default, False.
         See ``docs/usage/strongly_typed.rst`` for guidance on generating a
         Q/DQ ONNX.
     cache : bool, optional
@@ -254,6 +258,9 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         If a calibration batch does not have one array per network input, or
         an array has fewer values than its input. Any other error raised while reading calibration batches is raised
         after the build as well.
+    ValueError
+        If a tensor-format dtype differs from the network's on a strongly typed
+        network (``strongly_typed=True``, or any network on TensorRT 11).
 
     """
     # strongly typed builds report these through their own checks below
@@ -345,11 +352,6 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
                 "remove fp16/int8/fp8 builder flags."
             )
             raise ValueError(err_msg)
-        if input_tensor_formats is not None or output_tensor_formats is not None:
-            LOG.warning(
-                "strongly_typed=True ignores tensor dtype overrides; "
-                "only the format portion of input/output_tensor_formats will apply.",
-            )
     elif FLAGS.IS_BLACKWELL and int8 and fp8:
         err_msg = (
             "INT8+FP8 mixed precision on Blackwell requires strongly_typed=True "
@@ -423,6 +425,8 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
                 if inp.name == tensor_name:
                     if FLAGS.WEAK_TYPING and not strongly_typed:
                         inp.dtype = tensor_dtype
+                    else:
+                        _check_io_dtype(inp, tensor_dtype, "input_tensor_formats")
                     inp.allowed_formats = 1 << int(tensor_format)
                     found = True
                     break
@@ -437,6 +441,8 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
                 if out.name == tensor_name:
                     if FLAGS.WEAK_TYPING and not strongly_typed:
                         out.dtype = tensor_dtype
+                    else:
+                        _check_io_dtype(out, tensor_dtype, "output_tensor_formats")
                     out.allowed_formats = 1 << int(tensor_format)
                     found = True
                     break
@@ -632,6 +638,29 @@ def _missing_dynamic_ranges(network: trt.INetworkDefinition) -> tuple[int, int]:
         tensors.extend(layer.get_output(out) for out in range(layer.num_outputs))
     quantizable = [t for t in tensors if t.dtype in (trt.float32, trt.float16, trt.int8)]
     return sum(t.dynamic_range is None for t in quantizable), len(quantizable)
+
+
+def _check_io_dtype(tensor: trt.ITensor, dtype: trt.DataType, arg: str) -> None:
+    """
+    Check a tensor-format dtype against a network I/O tensor that cannot be retyped.
+
+    Strongly typed networks (``strongly_typed=True``, and every network on TensorRT 11,
+    where ``ITensor.dtype`` is read-only) take their I/O dtypes from the graph.
+
+    Raises
+    ------
+    ValueError
+        If ``dtype`` is not the dtype of ``tensor``.
+
+    """
+    if tensor.dtype != dtype:
+        err_msg = (
+            f"{arg} requests {dtype} for '{tensor.name}', but the network has {tensor.dtype}. "
+            "Strongly typed networks (strongly_typed=True, and every network on TensorRT 11) "
+            "take their I/O dtypes from the graph: export the ONNX with this dtype, add a Cast "
+            f"in a hook, or request {tensor.dtype}."
+        )
+        raise ValueError(err_msg)
 
 
 def _dims(input_name: str, shape: object) -> tuple[int, ...]:
