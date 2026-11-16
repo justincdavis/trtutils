@@ -342,6 +342,47 @@ def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:
         preproc.preprocess([image] if position == 0 else [np.zeros((480, 640, 3), np.uint8), image])
 
 
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "gpu_cls",
+    [
+        pytest.param(CUDAPreprocessor, id="cuda"),
+        pytest.param(HybridPreprocessor, id="hybrid"),
+    ],
+)
+@pytest.mark.parametrize("resize", ["letterbox", "linear", "center_crop"])
+@pytest.mark.parametrize("norm", [{}, IMAGENET], ids=["raw", "imagenet"])
+@pytest.mark.parametrize(
+    "shapes",
+    [
+        pytest.param([(1080, 1920)], id="1080p"),
+        pytest.param([(333, 517)], id="small-odd"),
+        pytest.param([(720, 1280)] * 3, id="homogeneous"),
+        pytest.param([(1080, 1920), (2160, 3840), (1081, 1919)], id="heterogeneous"),
+    ],
+)
+def test_gpu_fp16_matches_fp32(gpu_cls, resize, norm, shapes) -> None:
+    """float16 output is the float32 output rounded to float16, for arrays and device Buffers."""
+    rng = np.random.default_rng(0)
+    imgs = [rng.integers(0, 256, (*s, 3), dtype=np.uint8) for s in shapes]
+    fp32 = gpu_cls(SIZE, RANGE, DTYPE, resize=resize, **norm)
+    fp16 = gpu_cls(SIZE, RANGE, np.dtype(np.float16), resize=resize, **norm)
+    for batch in (imgs, [Buffer.from_array(img, MemoryLocation.DEVICE) for img in imgs]):
+        expected, ratios, padding = fp32.preprocess(batch)
+        result, fp16_ratios, fp16_padding = fp16.preprocess(batch)
+        assert result.dtype == np.float16
+        np.testing.assert_array_equal(result, expected.astype(np.float16))
+        assert fp16_ratios == ratios
+        assert fp16_padding == padding
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.int8, np.float64])
+def test_cuda_rejects_unsupported_dtype(dtype) -> None:
+    """Normalizing to a dtype without a CUDA kernel raises instead of overrunning the output."""
+    with pytest.raises(ValueError, match="float32 or float16"):
+        CUDAPreprocessor(SIZE, RANGE, np.dtype(dtype))
+
+
 def _reference_preprocess(images, input_shape, dtype, input_range, method, mean, std):
     """Run the previous per-image float64 pipeline, stacked with concatenate."""
     tensors = []
