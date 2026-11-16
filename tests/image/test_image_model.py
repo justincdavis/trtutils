@@ -42,20 +42,21 @@ def test_preprocess(yolov10_engine, images, preprocessor, resize_method) -> None
 def test_fp16_input_gpu_preprocessor_matches_cpu(
     yolov10_fp16_engine, images, preprocessor, preproc_cls, atol
 ) -> None:
-    """A float16-input model keeps its GPU preprocessor, whose tensor and detections match the CPU's."""
+    """A float16-input model keeps its GPU preprocessor and matches the CPU tensor and detections."""
     model = Detector(yolov10_fp16_engine, preprocessor=preprocessor, warmup=False)
-    cpu = Detector(yolov10_fp16_engine, preprocessor="cpu", warmup=False)
     assert type(model.get_preprocessor()) is preproc_cls
     image = images["horse"].array
 
     tensor, ratios, padding = model.preprocess(image)
-    expected, cpu_ratios, cpu_padding = cpu.preprocess(image)
+    expected, cpu_ratios, cpu_padding = model.preprocess(image, method="cpu")
     assert tensor.dtype == expected.dtype == np.float16
     assert (ratios, padding) == (cpu_ratios, cpu_padding)
     np.testing.assert_allclose(tensor, expected, rtol=0, atol=atol)
 
     bboxes, scores, class_ids = model.run(image)
-    cpu_bboxes, cpu_scores, cpu_class_ids = cpu.run(image)
+    cpu_bboxes, cpu_scores, cpu_class_ids = model.run(
+        expected, cpu_ratios, cpu_padding, preprocessed=True
+    )
     np.testing.assert_allclose(bboxes, cpu_bboxes, atol=1.0)
     np.testing.assert_allclose(scores, cpu_scores, atol=0.01)
     np.testing.assert_array_equal(class_ids, cpu_class_ids)
@@ -65,9 +66,7 @@ def test_fp16_input_gpu_preprocessor_matches_cpu(
 def test_non_float_input_falls_back_to_cpu(uint8_nchw_engine, preprocessor) -> None:
     """A uint8 NCHW input, which the GPU preprocessors cannot write, warns and uses the CPU."""
     with mock.patch.object(LOG, "warning", wraps=LOG.warning) as warning:
-        model = ImageModel(
-            uint8_nchw_engine, input_range=(0.0, 255.0), preprocessor=preprocessor, warmup=False
-        )
+        model = ImageModel(uint8_nchw_engine, preprocessor=preprocessor, warmup=False)
     assert type(model.get_preprocessor()) is CPUPreprocessor
     assert any("fallback to CPU" in call.args[0] for call in warning.call_args_list)
 

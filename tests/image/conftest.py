@@ -48,13 +48,12 @@ def yolov10_fp16_engine() -> Path:
     engine_path = engine_cache_path(f"{YOLOV10_ONNX.stem}_fp16io")
     if not engine_path.exists():
         ENGINES_DIR.mkdir(parents=True, exist_ok=True)
-        half = (trt.DataType.HALF, trt.TensorFormat.LINEAR)
         build_engine(
             YOLOV10_ONNX,
             engine_path,
             optimization_level=1,
-            input_tensor_formats=[("images", *half)],
-            output_tensor_formats=[("output0", *half)],
+            input_tensor_formats=[("images", trt.DataType.HALF, trt.TensorFormat.LINEAR)],
+            output_tensor_formats=[("output0", trt.DataType.HALF, trt.TensorFormat.LINEAR)],
             fp16=True,
         )
     return engine_path
