@@ -137,6 +137,8 @@ Performance
 
 Fixed
 ^^^^^
+* CPU and hybrid ``linear`` resize returns (width, height) ratios. They were swapped, which
+  misplaced boxes, keypoints, and masks on non-square model inputs
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
 * Float16-input image models use the ``cuda`` / ``hybrid`` preprocessors instead of the CPU one
 * The package ships ``image/_kernels/postprocess.cuh``. Without it, every CUDA postprocessor but

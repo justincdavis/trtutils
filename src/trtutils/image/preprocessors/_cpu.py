@@ -64,8 +64,9 @@ def resize_linear(
 ) -> tuple[np.ndarray, tuple[float, float]]:
     """Resize to new_shape (width, height), returns (image, ratios)."""
     h, w = image.shape[:2]
+    new_w, new_h = new_shape
     resized = cv2.resize(image, new_shape, interpolation=cv2.INTER_LINEAR)
-    return resized, (new_shape[1] / w, new_shape[0] / h)
+    return resized, (new_w / w, new_h / h)
 
 
 def resize_image(
