@@ -421,7 +421,6 @@ def build_engine(
     calibration_cache: Path | str | None = None,
     shapes: list[tuple[str, tuple[int, ...]]] | None = None,
     optimization_level: int = 3,
-    direct_io: bool = False,
     prefer_precision_constraints: bool = False,
     reject_empty_algorithms: bool = False,
     ignore_timing_mismatch: bool = False,
@@ -486,8 +485,6 @@ def build_engine(
         Fixed input shapes as list of (name, dims) tuples.
     optimization_level : int, optional
         TensorRT optimization level (0-5). Default 3.
-    direct_io : bool, optional
-        Use direct I/O. Default False.
     prefer_precision_constraints : bool, optional
         Prefer precision constraints. Default False.
     reject_empty_algorithms : bool, optional
@@ -599,7 +596,6 @@ def build_engine(
         optimization_level=optimization_level,
         profiling_verbosity=trt.ProfilingVerbosity.DETAILED,
         gpu_fallback=True,
-        direct_io=direct_io,
         prefer_precision_constraints=prefer_precision_constraints,
         reject_empty_algorithms=reject_empty_algorithms,
         ignore_timing_mismatch=ignore_timing_mismatch,

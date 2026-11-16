@@ -65,7 +65,6 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     *,
     timing_cache: Path | str | bool | None = None,
     gpu_fallback: bool = False,
-    direct_io: bool = False,
     prefer_precision_constraints: bool = False,
     reject_empty_algorithms: bool = False,
     ignore_timing_mismatch: bool = False,
@@ -87,7 +86,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
 
     3. Create optimization profile and apply any manual shapes
 
-    4. Apply builder flags (precision constraints, empty algorithms, direct I/O)
+    4. Apply builder flags (precision constraints, empty algorithms)
 
     5. Configure tensor formats if specified
 
@@ -154,8 +153,8 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     input_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
         A list of (name, dtype format) to allow deep specification of input layers.
         For example, input_tensor_formats=[("input", trt.DataType.UINT8, trt.TensorFormat.HWC)]
-        TensorRT may insert reformat layers between the tensor and the first
-        layer to honor the format; pass ``direct_io=True`` to forbid them.
+        TensorRT inserts a reformat layer when the first layer cannot consume
+        the requested format.
         The dtype is set on weakly-typed networks only. Strongly typed networks
         (``strongly_typed=True``, and every network on TensorRT 11) take it from
         the ONNX graph, and a dtype that differs from the graph's raises ValueError.
@@ -163,8 +162,8 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     output_tensor_formats : list[tuple[str, trt.DataType, trt.TensorFormat]], optional
         A list of (name, dtype format) to allow deep specification of output layers.
         For example, output_tensor_formats=[("output", trt.DataType.HALF, trt.TensorFormat.LINEAR)]
-        TensorRT may insert reformat layers to honor the format; pass
-        ``direct_io=True`` to forbid them.
+        TensorRT inserts a reformat layer when the last layer cannot produce
+        the requested format.
         The dtype follows the same rules as for ``input_tensor_formats``.
         By default, None
     hooks : list[Callable[[trt.INetworkDefinition], trt.INetworkDefinition]], optional
@@ -192,13 +191,6 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     gpu_fallback : bool
         Whether or not to allow GPU fallback for unsupported layers
         when building the engine for DLA.
-        By default, False
-    direct_io : bool
-        Forbid TensorRT from inserting reformat layers between the network and
-        the I/O tensors given in ``input_tensor_formats`` / ``output_tensor_formats``.
-        The build fails if a requested format needs a reformat, for example
-        LINEAR fp16 DLA I/O whose rows are not 64-byte aligned.
-        Specifying tensor formats does not enable this.
         By default, False
     prefer_precision_constraints : bool
         Whether or not to prefer precision constraints.
@@ -412,11 +404,6 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         config.set_flag(trt.BuilderFlag.PREFER_PRECISION_CONSTRAINTS)
     if reject_empty_algorithms:
         config.set_flag(trt.BuilderFlag.REJECT_EMPTY_ALGORITHMS)
-    # allowed formats only fix the I/O layout; direct io additionally forbids
-    # the reformat layers some layouts need (e.g. unaligned DLA rows), so it
-    # stays opt-in
-    if direct_io:
-        config.set_flag(trt.BuilderFlag.DIRECT_IO)
     if input_tensor_formats is not None:
         for tensor_name, tensor_dtype, tensor_format in input_tensor_formats:
             found = False
@@ -577,11 +564,6 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
 
     if engine_bytes is None:
         err_msg = "Failed to build engine."
-        if direct_io:
-            err_msg += (
-                " direct_io=True forbids I/O reformats; if the log reports no conformant"
-                " implementation, retry without direct_io."
-            )
         raise RuntimeError(err_msg)
 
     caching_tools.write_atomic(output_path, memoryview(engine_bytes))

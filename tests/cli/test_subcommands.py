@@ -64,7 +64,6 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "calibration_cache": None,
         "device": "gpu",
         "gpu_fallback": False,
-        "direct_io": False,
         "prefer_precision_constraints": False,
         "reject_empty_algorithms": False,
         "ignore_timing_mismatch": False,
