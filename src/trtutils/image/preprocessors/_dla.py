@@ -233,8 +233,8 @@ class DLAPreprocessor(DevicePreprocessor):
         self._border = np.ascontiguousarray(
             np.broadcast_to(fill.reshape(-1, 1, 1), (_COLOR_CHANNELS, height, width))
         )
-        # the (top, rows) each batch entry was last written with
-        self._slot_rows: list[tuple[int, int] | None] = [None] * self._batch_size
+        # the image rows each batch entry was last written with
+        self._slot_rows: list[int | None] = [None] * self._batch_size
 
     def __del__(self: Self) -> None:
         # a borrowed stream may be destroyed already
@@ -261,7 +261,7 @@ class DLAPreprocessor(DevicePreprocessor):
         """Run each DLA engine loaded so far once."""
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["warmup"])
-        for height, width, method in list(self._runners):
+        for height, width, method in self._runners:
             image = Buffer.empty((height, width, _COLOR_CHANNELS), np.uint8, MemoryLocation.DEVICE)
             self.direct_preproc([image], method, no_warn=True)
         stream_synchronize(self._stream)
@@ -321,10 +321,9 @@ class DLAPreprocessor(DevicePreprocessor):
         plane = height * width * _HALF_BYTES
         slot_ptr = self._half.device_ptr + slot * _COLOR_CHANNELS * plane
         # the engine writes only the image rows, the letterbox border stays from the fill
-        rows = (plan.top, plan.rows)
-        if plan.rows != height and self._slot_rows[slot] != rows:
+        if plan.rows != height and self._slot_rows[slot] != plan.rows:
             memcpy_host_to_device_async(slot_ptr, self._border, self._stream)
-        self._slot_rows[slot] = rows
+        self._slot_rows[slot] = plan.rows
         context = runner.context
         context.set_tensor_address(INPUT_NAME, self._stage(runner, slot, image))
         rows_ptr = slot_ptr + plan.top * width * _HALF_BYTES

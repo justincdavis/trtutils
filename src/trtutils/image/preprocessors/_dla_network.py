@@ -386,7 +386,7 @@ def build_dla_preproc(
 
     """
     out_width = plan.width // plan.factors[1]
-    digest = hashlib.sha256(np.concatenate([scale, offset]).astype(np.float64).tobytes())
+    digest = hashlib.sha256(np.concatenate([scale, offset]).tobytes())
     name = (
         f"dla_preproc_{plan.width}x{plan.height}_{out_width}x{plan.rows}"
         f"_{digest.hexdigest()[:12]}_{trt.__version__}"

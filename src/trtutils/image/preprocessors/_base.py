@@ -261,74 +261,6 @@ class ImagePreprocessor(ABC):
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
 
-    @abstractmethod
-    def __call__(
-        self: Self,
-        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        resize: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    # preprocess overloads
-    @overload
-    def preprocess(
-        self: Self,
-        images: np.ndarray | Buffer,
-        resize: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    @overload
-    def preprocess(
-        self: Self,
-        images: Sequence[np.ndarray | Buffer],
-        resize: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    @abstractmethod
-    def preprocess(
-        self: Self,
-        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
-        resize: str | None = None,
-        *,
-        no_copy: bool | None = None,
-        verbose: bool | None = None,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-
-class DevicePreprocessor(ImagePreprocessor):
-    """Abstract base class for preprocessors that leave the batch on the device."""
-
-    _stream: cudart.cudaStream_t
-
-    # __call__ overloads
-    @overload
-    def __call__(
-        self: Self,
-        images: np.ndarray | Buffer,
-        resize: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
-    @overload
-    def __call__(
-        self: Self,
-        images: Sequence[np.ndarray | Buffer],
-        resize: str | None = ...,
-        *,
-        no_copy: bool | None = ...,
-        verbose: bool | None = ...,
-    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
-
     def __call__(
         self: Self,
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
@@ -366,6 +298,43 @@ class DevicePreprocessor(ImagePreprocessor):
 
         """
         return self.preprocess(images, resize=resize, no_copy=no_copy, verbose=verbose)
+
+    # preprocess overloads
+    @overload
+    def preprocess(
+        self: Self,
+        images: np.ndarray | Buffer,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
+    def preprocess(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        resize: str | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+
+class DevicePreprocessor(ImagePreprocessor):
+    """Abstract base class for preprocessors that leave the batch on the device."""
+
+    _stream: cudart.cudaStream_t
 
     @abstractmethod
     def direct_preproc(
