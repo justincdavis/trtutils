@@ -9,9 +9,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from trtutils.builder._utils import check_dynamic_range
 from trtutils.compat._libs import trt
-
-from ._common import check_dynamic_range
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -80,21 +79,12 @@ def int8_ranges_hook(
 
     """
     check_dynamic_range()
-    ranges = dict(input_ranges) if input_ranges is not None else {}
+    ranges = dict(input_ranges or {})
 
     def hook(network: trt.INetworkDefinition) -> trt.INetworkDefinition:
-        inputs = [network.get_input(idx) for idx in range(network.num_inputs)]
-        intervals = _propagate(network, _input_intervals(inputs, ranges))
-        tensors = list(inputs)
-        for idx in range(network.num_layers):
-            layer = network.get_layer(idx)
-            tensors.extend(layer.get_output(out) for out in range(layer.num_outputs))
-        for tensor in tensors:
-            interval = intervals.get(tensor.name)
-            if interval is None or tensor.dynamic_range is not None:
-                continue
-            bound = _symmetric_bound(interval)
-            if bound > 0:
+        for tensor, (lo, hi) in _propagate(network, ranges):
+            bound = max(hi, lo * _INT8_MAX / _INT8_MIN)
+            if bound > 0 and tensor.dynamic_range is None:
                 tensor.set_dynamic_range(-bound, bound)
         return network
 
@@ -122,36 +112,31 @@ def _input_intervals(
     return known
 
 
-def _symmetric_bound(interval: _Interval) -> float:
-    # int8 reaches -128 steps but only +127, so the scale is max(hi / 127, -lo / 128)
-    lo, hi = interval
-    return max(hi, lo * _INT8_MAX / _INT8_MIN, 0.0)
-
-
 def _propagate(
     network: trt.INetworkDefinition,
-    known: dict[str, _Interval],
-) -> dict[str, _Interval]:
+    ranges: Mapping[str, tuple[float, float]],
+) -> list[tuple[trt.ITensor, _Interval]]:
     lt = trt.LayerType
     rules: dict[object, Callable[..., _Interval | None]] = {
         lt.ACTIVATION: _activation,
         lt.CAST: _same,
         lt.CONCATENATION: _concatenation,
         lt.CONVOLUTION: _convolution,
-        lt.DECONVOLUTION: _deconvolution,
+        lt.DECONVOLUTION: _convolution,
         lt.ELEMENTWISE: _elementwise,
         lt.IDENTITY: _same,
-        lt.PADDING: _with_zero,
+        lt.PADDING: lambda _layer, x, _ivs: _with_zero(x),
         lt.POOLING: _pooling,
         lt.RESIZE: _resize,
         lt.SCALE: _scale,
         lt.SHUFFLE: _same,
         lt.SLICE: _slice,
-        lt.SOFTMAX: _softmax,
+        lt.SOFTMAX: lambda _layer, _x, _ivs: (0.0, 1.0),
         lt.UNARY: _unary,
     }
-    intervals = dict(known)
-    # parsed networks list their layers in topological order
+    inputs = [network.get_input(idx) for idx in range(network.num_inputs)]
+    intervals = _input_intervals(inputs, ranges)
+    bounded = [(tensor, intervals[tensor.name]) for tensor in inputs if tensor.name in intervals]
     for idx in range(network.num_layers):
         layer = network.get_layer(idx)
         out = layer.get_output(0)
@@ -160,14 +145,15 @@ def _propagate(
         tensors = [layer.get_input(i) for i in range(layer.num_inputs)]
         ivs = [intervals.get(t.name) if t is not None else None for t in tensors]
         rule = rules.get(layer.type)
-        result = None
+        interval = None
         if layer.type == lt.CONSTANT:
-            result = _constant(layer)
+            interval = _constant(layer)
         elif rule is not None and ivs and ivs[0] is not None:
-            result = rule(layer, ivs[0], ivs)
-        if result is not None and all(math.isfinite(v) for v in result):
-            intervals[out.name] = result
-    return intervals
+            interval = rule(layer, ivs[0], ivs)
+        if interval is not None and all(math.isfinite(v) for v in interval):
+            intervals[out.name] = interval
+            bounded.append((out, interval))
+    return bounded
 
 
 def _cast(layer: trt.ILayer, cls: type) -> trt.ILayer:
@@ -175,12 +161,17 @@ def _cast(layer: trt.ILayer, cls: type) -> trt.ILayer:
     return layer
 
 
-def _values(weights: object) -> np.ndarray:
-    return np.asarray(weights, dtype=np.float64).reshape(-1)
+def _values(weights: object, default: float) -> np.ndarray:
+    values = np.asarray(weights).reshape(-1)
+    return values if values.size else np.full(1, default)
 
 
 def _hull(*ivs: _Interval) -> _Interval:
     return min(iv[0] for iv in ivs), max(iv[1] for iv in ivs)
+
+
+def _with_zero(x: _Interval) -> _Interval:
+    return min(x[0], 0.0), max(x[1], 0.0)
 
 
 def _mul(a: _Interval, b: _Interval) -> _Interval:
@@ -188,21 +179,21 @@ def _mul(a: _Interval, b: _Interval) -> _Interval:
     return min(products), max(products)
 
 
+def _affine(rows: np.ndarray, bias: np.ndarray, x: _Interval) -> _Interval:
+    pos = np.maximum(rows, 0.0).sum(axis=1, dtype=np.float64)
+    neg = np.minimum(rows, 0.0).sum(axis=1, dtype=np.float64)
+    lo = bias + pos * x[0] + neg * x[1]
+    hi = bias + pos * x[1] + neg * x[0]
+    return float(lo.min()), float(hi.max())
+
+
 def _constant(layer: trt.ILayer) -> _Interval | None:
-    weights = _values(_cast(layer, trt.IConstantLayer).weights)
+    weights = np.asarray(_cast(layer, trt.IConstantLayer).weights)
     return (float(weights.min()), float(weights.max())) if weights.size else None
 
 
 def _same(_layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _Interval | None:
     return x
-
-
-def _with_zero(_layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _Interval | None:
-    return _hull(x, (0.0, 0.0))
-
-
-def _softmax(_layer: trt.ILayer, _x: _Interval, _ivs: list[_Interval | None]) -> _Interval | None:
-    return 0.0, 1.0
 
 
 def _concatenation(
@@ -212,74 +203,41 @@ def _concatenation(
     return _hull(*bounded) if len(bounded) == len(ivs) else None
 
 
-def _weighted_sum(weights: np.ndarray, bias: np.ndarray, x: _Interval) -> _Interval:
-    # zero padding adds zero terms
-    lo_x, hi_x = min(x[0], 0.0), max(x[1], 0.0)
-    if bias.size != weights.shape[0]:
-        bias = np.zeros(weights.shape[0])
-    lo = bias + np.minimum(weights * lo_x, weights * hi_x).sum(axis=1)
-    hi = bias + np.maximum(weights * lo_x, weights * hi_x).sum(axis=1)
-    return float(lo.min()), float(hi.max())
-
-
 def _convolution(layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _Interval | None:
-    conv = _cast(layer, trt.IConvolutionLayer)
-    kernel = _values(conv.kernel)
-    # a kernel given as a tensor input (e.g. Q/DQ weights) is not known here
+    deconv = layer.type == trt.LayerType.DECONVOLUTION
+    conv = _cast(layer, trt.IDeconvolutionLayer if deconv else trt.IConvolutionLayer)
+    kernel = np.asarray(conv.kernel)
     if conv.num_inputs > 1 or kernel.size == 0:
         return None
-    return _weighted_sum(kernel.reshape(conv.num_output_maps, -1), _values(conv.bias), x)
-
-
-def _deconvolution(
-    layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]
-) -> _Interval | None:
-    deconv = _cast(layer, trt.IDeconvolutionLayer)
-    kernel = _values(deconv.kernel)
-    if deconv.num_inputs > 1 or kernel.size == 0:
-        return None
-    # the kernel is (in, out / groups, ...): bound each output by every input channel
-    groups = deconv.num_groups
-    per_group = deconv.num_output_maps // groups
-    taps = int(np.prod(tuple(deconv.kernel_size_nd)))
-    kernel = kernel.reshape(-1, per_group, taps).transpose(1, 0, 2)
-    per_output = np.tile(kernel.reshape(per_group, -1), (groups, 1))
-    return _weighted_sum(per_output, _values(deconv.bias), x)
+    if deconv:
+        per_group = conv.num_output_maps // conv.num_groups
+        taps = int(np.prod(tuple(conv.kernel_size_nd)))
+        kernel = kernel.reshape(conv.num_groups, -1, per_group, taps).swapaxes(1, 2)
+    rows = kernel.reshape(conv.num_output_maps, -1)
+    return _affine(rows, _values(conv.bias, 0.0), _with_zero(x))
 
 
 def _scale(layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _Interval | None:
     scale_layer = _cast(layer, trt.IScaleLayer)
-    power = _values(scale_layer.power)
-    if power.size and not np.all(power == 1.0):
+    if not np.all(_values(scale_layer.power, 1.0) == 1.0):
         return None
-    scale = _values(scale_layer.scale)
-    shift = _values(scale_layer.shift)
-    scale = scale if scale.size else np.ones(1)
-    shift = shift if shift.size else np.zeros(1)
-    lo = np.minimum(scale * x[0], scale * x[1]) + shift
-    hi = np.maximum(scale * x[0], scale * x[1]) + shift
-    return float(lo.min()), float(hi.max())
+    scale = _values(scale_layer.scale, 1.0)
+    return _affine(scale.reshape(-1, 1), _values(scale_layer.shift, 0.0), x)
 
 
 def _activation(layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _Interval | None:
     act = _cast(layer, trt.IActivationLayer)
-    kind = trt.ActivationType
-    lo, hi = x
-    if act.type == kind.RELU:
-        return max(lo, 0.0), max(hi, 0.0)
-    if act.type == kind.CLIP:
-        return min(max(lo, act.alpha), act.beta), min(max(hi, act.alpha), act.beta)
-    if act.type == kind.SIGMOID:
-        return 0.5 * (1.0 + math.tanh(0.5 * lo)), 0.5 * (1.0 + math.tanh(0.5 * hi))
-    if act.type == kind.TANH:
-        return math.tanh(lo), math.tanh(hi)
-    if act.type == kind.LEAKY_RELU and act.alpha >= 0:
-        return _leaky_relu(lo, act.alpha), _leaky_relu(hi, act.alpha)
-    return None
-
-
-def _leaky_relu(value: float, alpha: float) -> float:
-    return value if value >= 0 else alpha * value
+    kind, alpha, beta = trt.ActivationType, act.alpha, act.beta
+    monotone: dict[object, Callable[[float], float]] = {
+        kind.RELU: lambda v: max(v, 0.0),
+        kind.CLIP: lambda v: min(max(v, alpha), beta),
+        kind.SIGMOID: lambda v: 0.5 * (1.0 + math.tanh(0.5 * v)),
+        kind.TANH: math.tanh,
+    }
+    if alpha >= 0:
+        monotone[kind.LEAKY_RELU] = lambda v: v if v >= 0 else alpha * v
+    func = monotone.get(act.type)
+    return (func(x[0]), func(x[1])) if func is not None else None
 
 
 def _unary(layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _Interval | None:
@@ -297,14 +255,12 @@ def _unary(layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _In
 
 
 def _pooling(layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _Interval | None:
-    # max pooling skips padding, average pooling may count it as zeros
     if _cast(layer, trt.IPoolingLayer).type == trt.PoolingType.MAX:
         return x
-    return _hull(x, (0.0, 0.0))
+    return _with_zero(x)
 
 
 def _resize(layer: trt.ILayer, x: _Interval, _ivs: list[_Interval | None]) -> _Interval | None:
-    # cubic interpolation overshoots the input range
     if _cast(layer, trt.IResizeLayer).resize_mode == trt.InterpolationMode.CUBIC:
         return None
     return x

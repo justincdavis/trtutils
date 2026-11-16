@@ -1,4 +1,4 @@
-# Copyright (c) 2025-2026 Justin Davis (davisjustin302@gmail.com)
+# Copyright (c) 2025 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
 # mypy: disable-error-code="import-untyped"
@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from trtutils._flags import FLAGS
 from trtutils.compat._libs import trt
 
 
@@ -45,22 +44,3 @@ def make_plugin_field(name: str, value: float | list[int] | list[float]) -> trt.
         np.array(value_arr, dtype=np_dtype),
         dtype,
     )
-
-
-def check_dynamic_range() -> None:
-    """
-    Raise if the installed TensorRT has no per-tensor INT8 dynamic ranges.
-
-    Raises
-    ------
-    RuntimeError
-        If ``ITensor.set_dynamic_range`` is missing (TensorRT 11).
-
-    """
-    if not FLAGS.DYNAMIC_RANGE:
-        err_msg = (
-            "Per-tensor INT8 dynamic ranges (ITensor.set_dynamic_range) were removed in "
-            "TensorRT 11. Use explicit quantization instead: quantize the ONNX with "
-            "trtutils.builder.quantize (modelopt) and build with strongly_typed=True."
-        )
-        raise RuntimeError(err_msg)

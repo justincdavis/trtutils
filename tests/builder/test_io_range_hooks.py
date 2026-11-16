@@ -95,6 +95,23 @@ def _int8_build() -> dict:
     }
 
 
+def _build(onnx_path, tmp_path, device, hooks, **precision: object) -> TRTEngine:
+    """Build ``onnx_path`` on ``device`` with ``hooks`` and load the engine."""
+    engine_path = tmp_path / f"{onnx_path.stem}.engine"
+    build_engine(
+        onnx_path,
+        engine_path,
+        default_device=device,
+        gpu_fallback=True,
+        hooks=hooks,
+        optimization_level=1,
+        **precision,
+    )
+    return TRTEngine(
+        engine_path, warmup=False, cuda_graph=False, dla_core=0 if device == "dla" else None
+    )
+
+
 def _smooth_reference(x: np.ndarray) -> np.ndarray:
     """Float64 reference of the smooth_onnx_path network."""
     _, _, height, width = x.shape
@@ -118,19 +135,7 @@ def test_io_hooks_keep_every_int8_value(identity_onnx_path, tmp_path, io, dtypes
         hooks, precision = [fp16_io_hook], {"fp16": True}
     else:
         hooks, precision = [int8_input_hook, fp16_io_hook, int8_ranges_hook()], _int8_build()
-    engine_path = tmp_path / "identity.engine"
-    build_engine(
-        identity_onnx_path,
-        engine_path,
-        default_device=device,
-        gpu_fallback=True,
-        hooks=hooks,
-        optimization_level=1,
-        **precision,
-    )
-    engine = TRTEngine(
-        engine_path, warmup=False, cuda_graph=False, dla_core=0 if device == "dla" else None
-    )
+    engine = _build(identity_onnx_path, tmp_path, device, hooks, **precision)
     assert (engine.input_dtypes[0], engine.output_dtypes[0]) == dtypes
     values = np.resize(np.arange(-128, 128), _IDENTITY_SHAPE).astype(dtypes[0])
     output = engine.execute([Buffer.wrap(values)])[0]
@@ -180,23 +185,12 @@ def test_int8_ranges_hook_sets_hand_computed_ranges() -> None:
 @pytest.mark.parametrize("device", _DEVICES)
 def test_int8_ranges_build_matches_fp32(smooth_onnx_path, tmp_path, device) -> None:
     """A data-free INT8 blur -> ReLU -> average pool on [0, 1] is within two INT8 steps of fp32."""
-    engine_path = tmp_path / "smooth.engine"
+    hooks = [fp16_io_hook, int8_ranges_hook({"x": (0.0, 1.0)})]
     with patch.object(LOG, "warning", wraps=LOG.warning) as warning:
-        build_engine(
-            smooth_onnx_path,
-            engine_path,
-            default_device=device,
-            gpu_fallback=True,
-            hooks=[fp16_io_hook, int8_ranges_hook({"x": (0.0, 1.0)})],
-            optimization_level=1,
-            **_int8_build(),
-        )
+        engine = _build(smooth_onnx_path, tmp_path, device, hooks, **_int8_build())
     messages = [str(call.args[0]) for call in warning.call_args_list if call.args]
     assert not [m for m in messages if m.startswith("INT8 without calibration data")]
 
-    engine = TRTEngine(
-        engine_path, warmup=False, cuda_graph=False, dla_core=0 if device == "dla" else None
-    )
     x = np.random.default_rng(0).random(_SMOOTH_SHAPE).astype(np.float16)
     output = engine.execute([Buffer.wrap(x)])[0]
     # the output interval is [0, 0.75], one INT8 step is 0.75 / 127

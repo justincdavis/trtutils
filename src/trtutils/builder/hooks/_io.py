@@ -5,9 +5,8 @@
 from __future__ import annotations
 
 from trtutils._flags import FLAGS
+from trtutils.builder._utils import check_dynamic_range
 from trtutils.compat._libs import trt
-
-from ._common import check_dynamic_range
 
 
 def fp16_io_hook(network: trt.INetworkDefinition) -> trt.INetworkDefinition:

@@ -13,6 +13,11 @@ if TYPE_CHECKING:
 
     from trtutils.compat._libs import trt
 
+_EXPLICIT_QUANTIZATION = (
+    "Use explicit quantization instead: quantize the ONNX with trtutils.builder.quantize "
+    "(modelopt) and build with strongly_typed=True."
+)
+
 
 def get_check_dla(config: trt.IBuilderConfig) -> Callable[[trt.ILayer], bool]:
     """
@@ -51,9 +56,23 @@ def check_implicit_calibration(*, requested: bool) -> None:
 
     """
     if requested and not FLAGS.INT8_CALIBRATION:
+        err_msg = f"Implicit INT8 calibration was removed in TensorRT 11. {_EXPLICIT_QUANTIZATION}"
+        raise RuntimeError(err_msg)
+
+
+def check_dynamic_range() -> None:
+    """
+    Raise if the installed TensorRT has no per-tensor INT8 dynamic ranges.
+
+    Raises
+    ------
+    RuntimeError
+        If ``ITensor.set_dynamic_range`` is missing (TensorRT 11).
+
+    """
+    if not FLAGS.DYNAMIC_RANGE:
         err_msg = (
-            "Implicit INT8 calibration was removed in TensorRT 11. Use explicit "
-            "quantization instead: quantize the ONNX with trtutils.builder.quantize "
-            "(modelopt) and build with strongly_typed=True."
+            "Per-tensor INT8 dynamic ranges (ITensor.set_dynamic_range) were removed in "
+            f"TensorRT 11. {_EXPLICIT_QUANTIZATION}"
         )
         raise RuntimeError(err_msg)
