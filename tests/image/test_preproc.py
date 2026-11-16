@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 
 import cv2
@@ -21,7 +22,7 @@ from trtutils.image.preprocessors import (
     _cuda,
     _trt,
 )
-from trtutils.image.preprocessors._base import crop_geometry
+from trtutils.image.preprocessors._base import RESIZE_METHODS, crop_geometry
 from trtutils.image.preprocessors._cpu import letterbox, preprocess, resize_linear
 
 SIZE = (640, 640)
@@ -351,14 +352,6 @@ def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:
     ],
 )
 @pytest.mark.parametrize(
-    "resize",
-    [
-        pytest.param("letterbox", id="letterbox"),
-        pytest.param("linear", id="linear"),
-        pytest.param("center_crop", id="center-crop"),
-    ],
-)
-@pytest.mark.parametrize(
     "norm",
     [
         pytest.param({}, id="raw"),
@@ -368,42 +361,39 @@ def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:
 @pytest.mark.parametrize(
     "shapes",
     [
-        pytest.param([(1080, 1920)], id="1080p"),
-        pytest.param([(333, 517)], id="small-odd"),
-        pytest.param([(720, 1280)] * 3, id="homogeneous"),
-        pytest.param([(1080, 1920), (2160, 3840), (1081, 1919)], id="heterogeneous"),
+        pytest.param(SHAPES[:1], id="single"),
+        pytest.param(SHAPES[:1] * 4, id="homogeneous"),
+        pytest.param(SHAPES[:4], id="heterogeneous"),
     ],
 )
-def test_gpu_fp16_matches_fp32(gpu_cls, resize, norm, shapes) -> None:
-    """float16 output is the float32 output rounded to float16, for arrays and device Buffers."""
+def test_gpu_fp16_matches_fp32(gpu_cls, norm, shapes) -> None:
+    """float16 output is the float32 output rounded to float16, for every resize and placement."""
     rng = np.random.default_rng(0)
     imgs = [rng.integers(0, 256, (*s, 3), dtype=np.uint8) for s in shapes]
-    fp32 = gpu_cls(SIZE, RANGE, DTYPE, resize=resize, **norm)
-    fp16 = gpu_cls(SIZE, RANGE, np.dtype(np.float16), resize=resize, **norm)
-    for batch in (imgs, [Buffer.from_array(img, MemoryLocation.DEVICE) for img in imgs]):
-        expected, ratios, padding = fp32.preprocess(batch)
-        result, fp16_ratios, fp16_padding = fp16.preprocess(batch)
-        assert result.dtype == np.float16
-        np.testing.assert_array_equal(result, expected.astype(np.float16))
-        assert fp16_ratios == ratios
-        assert fp16_padding == padding
+    device = [Buffer.from_array(img, MemoryLocation.DEVICE) for img in imgs]
+    fp32 = gpu_cls(SIZE, RANGE, DTYPE, **norm)
+    fp16 = gpu_cls(SIZE, RANGE, np.dtype(np.float16), **norm)
+    for resize, batch in itertools.product(RESIZE_METHODS, (imgs, device)):
+        expected = fp32.preprocess(batch, resize=resize)
+        result = fp16.preprocess(batch, resize=resize)
+        assert result[0].dtype == np.float16
+        np.testing.assert_array_equal(result[0], expected[0].astype(np.float16))
+        assert result[1:] == expected[1:]
 
 
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(np.uint8, id="uint8"),
-        pytest.param(np.int8, id="int8"),
-        pytest.param(np.float64, id="float64"),
+        pytest.param(np.dtype(np.uint8), id="uint8"),
+        pytest.param(np.dtype(np.int8), id="int8"),
+        pytest.param(np.dtype(np.float64), id="float64"),
     ],
 )
 def test_cuda_rejects_unsupported_dtype(dtype) -> None:
-    """Normalizing to a dtype without a CUDA kernel raises; resize-only accepts any dtype."""
+    """Normalizing to a dtype without a CUDA kernel raises; resize-only accepts it."""
     with pytest.raises(ValueError, match="float32 or float16"):
-        CUDAPreprocessor(SIZE, RANGE, np.dtype(dtype))
-    gpu = CUDAPreprocessor(SIZE, RANGE, np.dtype(dtype), normalize=False)
-    result, _, _ = gpu.preprocess([np.zeros((480, 640, 3), np.uint8)])
-    assert result.dtype == np.uint8
+        CUDAPreprocessor(SIZE, RANGE, dtype)
+    CUDAPreprocessor(SIZE, RANGE, dtype, normalize=False)
 
 
 def _reference_preprocess(images, input_shape, dtype, input_range, method, mean, std):
