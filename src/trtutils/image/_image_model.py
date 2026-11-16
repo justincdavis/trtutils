@@ -520,7 +520,7 @@ class ImageModel:
         method : str, optional
             Options are 'cpu', 'cuda', 'trt', or 'hybrid'. 'trt' falls back to
             'cuda' on platforms without UINT8 support, and 'cuda' and 'hybrid'
-            to 'cpu' for models whose input is not float32. By default None, which
+            to 'cpu' for models whose input is not float32 or float16. By default None, which
             returns the preprocessor stated in the constructor.
 
         Returns
@@ -579,7 +579,10 @@ class ImageModel:
             LOG.warning(
                 "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
             )
-        if method in ("cuda", "hybrid") and self._dtype != np.float32:
+        if method in ("cuda", "hybrid") and self._dtype not in (np.float32, np.float16):
+            LOG.warning(
+                f"Preprocessing method set to {method}, but the model input is {self._dtype}, fallback to CPU."
+            )
             method = "cpu"
         return method
 

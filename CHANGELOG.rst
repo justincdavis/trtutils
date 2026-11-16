@@ -138,6 +138,7 @@ Performance
 Fixed
 ^^^^^
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
+* Float16-input image models use the ``cuda`` / ``hybrid`` preprocessors instead of the CPU one
 * The package ships ``image/_kernels/postprocess.cuh``. Without it, every CUDA postprocessor but
   OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see

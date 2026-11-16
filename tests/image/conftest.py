@@ -8,7 +8,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+import onnx
 import pytest
+import tensorrt as trt
+from onnx import TensorProto, helper
 
 from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR, ENGINES_DIR
@@ -33,6 +36,45 @@ def yolov10_engine(build_test_engine) -> Path:
     if not YOLOV10_ONNX.exists():
         pytest.skip(f"missing {YOLOV10_ONNX}")
     return build_test_engine(YOLOV10_ONNX)
+
+
+@pytest.fixture(scope="session")
+def yolov10_fp16_engine() -> Path:
+    """Build a YOLOv10n engine with float16 input and output, skipping if the ONNX is missing."""
+    if not FLAGS.WEAK_TYPING:
+        pytest.skip("float16 I/O on a float32 ONNX needs a weakly-typed network")
+    if not YOLOV10_ONNX.exists():
+        pytest.skip(f"missing {YOLOV10_ONNX}")
+    engine_path = engine_cache_path(f"{YOLOV10_ONNX.stem}_fp16io")
+    if not engine_path.exists():
+        ENGINES_DIR.mkdir(parents=True, exist_ok=True)
+        half = (trt.DataType.HALF, trt.TensorFormat.LINEAR)
+        build_engine(
+            YOLOV10_ONNX,
+            engine_path,
+            optimization_level=1,
+            input_tensor_formats=[("images", *half)],
+            output_tensor_formats=[("output0", *half)],
+            fp16=True,
+        )
+    return engine_path
+
+
+@pytest.fixture(scope="session")
+def uint8_nchw_engine(tmp_path_factory, build_test_engine) -> Path:
+    """Build an engine whose (1, 3, 32, 32) uint8 input is cast to float32 in the graph."""
+    onnx_path = tmp_path_factory.mktemp("uint8_nchw") / "uint8_nchw.onnx"
+    shape = [1, 3, 32, 32]
+    graph = helper.make_graph(
+        [helper.make_node("Cast", ["input"], ["output"], to=TensorProto.FLOAT)],
+        "uint8_nchw",
+        [helper.make_tensor_value_info("input", TensorProto.UINT8, shape)],
+        [helper.make_tensor_value_info("output", TensorProto.FLOAT, shape)],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model.ir_version = 8
+    onnx.save(model, str(onnx_path))
+    return build_test_engine(onnx_path)
 
 
 @pytest.fixture(scope="session")
