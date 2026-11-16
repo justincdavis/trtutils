@@ -350,8 +350,21 @@ def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:
         pytest.param(HybridPreprocessor, id="hybrid"),
     ],
 )
-@pytest.mark.parametrize("resize", ["letterbox", "linear", "center_crop"])
-@pytest.mark.parametrize("norm", [{}, IMAGENET], ids=["raw", "imagenet"])
+@pytest.mark.parametrize(
+    "resize",
+    [
+        pytest.param("letterbox", id="letterbox"),
+        pytest.param("linear", id="linear"),
+        pytest.param("center_crop", id="center-crop"),
+    ],
+)
+@pytest.mark.parametrize(
+    "norm",
+    [
+        pytest.param({}, id="raw"),
+        pytest.param(IMAGENET, id="imagenet"),
+    ],
+)
 @pytest.mark.parametrize(
     "shapes",
     [
@@ -376,11 +389,21 @@ def test_gpu_fp16_matches_fp32(gpu_cls, resize, norm, shapes) -> None:
         assert fp16_padding == padding
 
 
-@pytest.mark.parametrize("dtype", [np.uint8, np.int8, np.float64])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pytest.param(np.uint8, id="uint8"),
+        pytest.param(np.int8, id="int8"),
+        pytest.param(np.float64, id="float64"),
+    ],
+)
 def test_cuda_rejects_unsupported_dtype(dtype) -> None:
-    """Normalizing to a dtype without a CUDA kernel raises instead of overrunning the output."""
+    """Normalizing to a dtype without a CUDA kernel raises; resize-only accepts any dtype."""
     with pytest.raises(ValueError, match="float32 or float16"):
         CUDAPreprocessor(SIZE, RANGE, np.dtype(dtype))
+    gpu = CUDAPreprocessor(SIZE, RANGE, np.dtype(dtype), normalize=False)
+    result, _, _ = gpu.preprocess([np.zeros((480, 640, 3), np.uint8)])
+    assert result.dtype == np.uint8
 
 
 def _reference_preprocess(images, input_shape, dtype, input_range, method, mean, std):
