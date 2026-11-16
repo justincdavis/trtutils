@@ -1,0 +1,69 @@
+{
+ "inspector": {
+  "Layers": [
+   {
+    "Name": "{ForeignNode[/c1/Conv.../Relu_1]}",
+    "LayerType": "DLA",
+    "Inputs": [
+     {
+      "Name": "in_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "out_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       64
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "TacticValue": "0x0000000000000003",
+    "StreamId": 0,
+    "Metadata": ""
+   }
+  ],
+  "Bindings": [
+   "in_0",
+   "out_0"
+  ]
+ },
+ "network_layers": [
+  {
+   "index": 0,
+   "name": "/c1/Conv",
+   "layer_type": "CONVOLUTION",
+   "dla_compatible": true
+  },
+  {
+   "index": 1,
+   "name": "/Relu",
+   "layer_type": "ACTIVATION",
+   "dla_compatible": true
+  },
+  {
+   "index": 2,
+   "name": "/c2/Conv",
+   "layer_type": "CONVOLUTION",
+   "dla_compatible": true
+  },
+  {
+   "index": 3,
+   "name": "/Relu_1",
+   "layer_type": "ACTIVATION",
+   "dla_compatible": true
+  }
+ ]
+}

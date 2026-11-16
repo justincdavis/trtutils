@@ -1,0 +1,139 @@
+{
+ "inspector": {
+  "Layers": [
+   {
+    "Name": "Reformatting CopyNode for Input Tensor 0 to {ForeignNode[/c1/Conv.../Relu_1]}",
+    "LayerType": "Reformat",
+    "Inputs": [
+     {
+      "Name": "in_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       48
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "Reformatted Input Tensor 0 to {ForeignNode[/c1/Conv.../Relu_1]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       48
+      ],
+      "Format/Datatype": "Row major FP16 format where column stride % 64 == 0"
+     }
+    ],
+    "ParameterType": "Reformat",
+    "Origin": "REFORMAT",
+    "TacticValue": "0x0000000000000000",
+    "StreamId": 0,
+    "Metadata": ""
+   },
+   {
+    "Name": "{ForeignNode[/c1/Conv.../Relu_1]}",
+    "LayerType": "DLA",
+    "Inputs": [
+     {
+      "Name": "Reformatted Input Tensor 0 to {ForeignNode[/c1/Conv.../Relu_1]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       16,
+       64,
+       48
+      ],
+      "Format/Datatype": "Row major FP16 format where column stride % 64 == 0"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "Reformatted Output Tensor 0 to {ForeignNode[/c1/Conv.../Relu_1]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       48
+      ],
+      "Format/Datatype": "Row major FP16 format where column stride % 64 == 0"
+     }
+    ],
+    "TacticValue": "0x0000000000000003",
+    "StreamId": 0,
+    "Metadata": ""
+   },
+   {
+    "Name": "Reformatting CopyNode for Output Tensor 0 to {ForeignNode[/c1/Conv.../Relu_1]}",
+    "LayerType": "Reformat",
+    "Inputs": [
+     {
+      "Name": "Reformatted Output Tensor 0 to {ForeignNode[/c1/Conv.../Relu_1]}",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       48
+      ],
+      "Format/Datatype": "Row major FP16 format where column stride % 64 == 0"
+     }
+    ],
+    "Outputs": [
+     {
+      "Name": "out_0",
+      "Location": "Device",
+      "Dimensions": [
+       1,
+       32,
+       64,
+       48
+      ],
+      "Format/Datatype": "Row major linear FP16 format"
+     }
+    ],
+    "ParameterType": "Reformat",
+    "Origin": "REFORMAT",
+    "TacticValue": "0x00000000000003e8",
+    "StreamId": 0,
+    "Metadata": ""
+   }
+  ],
+  "Bindings": [
+   "in_0",
+   "out_0"
+  ]
+ },
+ "network_layers": [
+  {
+   "index": 0,
+   "name": "/c1/Conv",
+   "layer_type": "CONVOLUTION",
+   "dla_compatible": true
+  },
+  {
+   "index": 1,
+   "name": "/Relu",
+   "layer_type": "ACTIVATION",
+   "dla_compatible": true
+  },
+  {
+   "index": 2,
+   "name": "/c2/Conv",
+   "layer_type": "CONVOLUTION",
+   "dla_compatible": true
+  },
+  {
+   "index": 3,
+   "name": "/Relu_1",
+   "layer_type": "ACTIVATION",
+   "dla_compatible": true
+  }
+ ]
+}
