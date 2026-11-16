@@ -22,7 +22,14 @@ from trtutils.core._memory import (
     memcpy_host_to_device_staged_async,
 )
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
-from trtutils.image.kernels import IMAGENET_SST, LETTERBOX_RESIZE, LINEAR_RESIZE, SST_FAST
+from trtutils.image.kernels import (
+    IMAGENET_SST,
+    IMAGENET_SST_F16,
+    LETTERBOX_RESIZE,
+    LINEAR_RESIZE,
+    SST_FAST,
+    SST_FAST_F16,
+)
 
 from ._base import DEFAULT_CROP_PCT, RESIZE_METHODS, ImagePreprocessor, crop_geometry
 from ._cpu import resize_image
@@ -37,6 +44,10 @@ if TYPE_CHECKING:
 
 _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
+_SST_KERNELS = {
+    np.dtype(np.float32): (SST_FAST, IMAGENET_SST),
+    np.dtype(np.float16): (SST_FAST_F16, IMAGENET_SST_F16),
+}
 
 
 class GPUImagePreprocessor(ImagePreprocessor):
@@ -956,8 +967,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             The range of the image values the model expects.
             Examples: (0.0, 1.0), (0.0, 255.0)
         dtype : np.dtype
-            The datatype of the image.
-            Examples: np.float32, np.float16, np.uint8
+            The datatype of the image, np.float32 or np.float16.
+            Ignored when normalize is False.
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
@@ -992,8 +1003,16 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             When False, return the letterboxed uint8 HWC image and skip scale,
             channel swap, and transpose. Default is True.
 
+        Raises
+        ------
+        ValueError
+            If normalize is True and dtype is not float32 or float16
+
         """
         tag = "CUDAPreprocessor" if tag is None else f"{tag}.CUDAPreprocessor"
+        if normalize and np.dtype(dtype) not in _SST_KERNELS:
+            err_msg = f"{tag}: dtype must be float32 or float16 to normalize, got {np.dtype(dtype)}"
+            raise ValueError(err_msg)
         self._normalize = normalize
         super().__init__(
             output_shape,
@@ -1045,7 +1064,8 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         self._use_imagenet: bool = self._mean is not None and self._std is not None
         # normalize=False only resizes, so skip the NVRTC compile
         if self._normalize:
-            sst = IMAGENET_SST if self._use_imagenet else SST_FAST
+            fast, imagenet = _SST_KERNELS[np.dtype(self._o_dtype)]
+            sst = imagenet if self._use_imagenet else fast
             self._sst_kernel = Kernel(sst[0], sst[1])
 
     def __del__(self: Self) -> None:
