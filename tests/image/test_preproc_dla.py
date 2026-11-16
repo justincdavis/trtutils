@@ -72,6 +72,8 @@ def _active_ms() -> list[int]:
 
 def _wait_dla_idle(timeout: float = 10.0) -> None:
     status = [DLA_SYSFS / device / "power" / "runtime_status" for device in DLA_DEVICES]
+    if not all(path.exists() for path in status):
+        pytest.skip("no Orin DLA power counters in sysfs")
     deadline = time.monotonic() + timeout
     while any(path.read_text().strip() != "suspended" for path in status):
         if time.monotonic() > deadline:

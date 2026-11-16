@@ -69,10 +69,11 @@ class DLAPreprocessor(DevicePreprocessor):
     Each input size gets its own DLA engine, built on first use and cached. A
     resize must be a whole factor: letterbox when the image spans the output
     width (e.g. 1920x1080 or 1280x720 to 640x640), linear when both sides
-    divide. The pixels match the bilinear GPU preprocessors to within a
-    level or so. Images go to the DLA as int8 BGRx, converted on the CPU for
-    numpy arrays and by a small kernel for device Buffers; the GPU otherwise
-    only casts the float16 output for float32 models.
+    divide. Some inputs wider than 4K UHD (3840 pixels) exceed the DLA's limits.
+    The pixels match the bilinear GPU preprocessors to within a level or so.
+    Images go to the DLA as int8 BGRx, converted on the CPU for numpy arrays and
+    by a small kernel for device Buffers; the GPU otherwise only casts the
+    float16 output for float32 models.
     """
 
     def __init__(
@@ -236,6 +237,10 @@ class DLAPreprocessor(DevicePreprocessor):
         self._slot_rows: list[tuple[int, int] | None] = [None] * self._batch_size
 
     def __del__(self: Self) -> None:
+        # a borrowed stream may be destroyed already
+        with contextlib.suppress(AttributeError, RuntimeError):
+            if self._own_stream and self._runners:
+                stream_synchronize(self._stream)
         with contextlib.suppress(AttributeError):
             del self._runners
         with contextlib.suppress(AttributeError, RuntimeError):
@@ -372,7 +377,8 @@ class DLAPreprocessor(DevicePreprocessor):
             If there are more images than the batch size, an image is not a uint8
             color image, or the DLA cannot resize its size (see the class docstring).
         RuntimeError
-            If TensorRT fails to enqueue the DLA engine.
+            If TensorRT cannot build the DLA engine for an image size (some inputs
+            wider than 4K UHD), or fails to enqueue it.
 
         """
         if verbose:

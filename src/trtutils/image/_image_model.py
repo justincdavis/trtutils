@@ -563,6 +563,9 @@ class ImageModel:
         ValueError
             If the method is not one of the options, or is a DLA method for an
             engine that takes a uint8 image.
+        RuntimeError
+            If the method is a DLA method and the system has no DLA, see
+            :class:`DLAPreprocessor`.
 
         """
         method = self._preprocessor_method if method is None else self._resolve_method(method)

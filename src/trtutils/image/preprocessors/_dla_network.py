@@ -381,7 +381,8 @@ def build_dla_preproc(
     Raises
     ------
     RuntimeError
-        If TensorRT cannot build the network for the DLA.
+        If TensorRT cannot build the network for the DLA, e.g. for some inputs wider
+        than 4K UHD (3840 pixels).
 
     """
     out_width = plan.width // plan.factors[1]
@@ -411,7 +412,10 @@ def build_dla_preproc(
         serialized = builder.build_serialized_network(network, config)
     del weights
     if serialized is None:
-        err_msg = f"TensorRT could not build the DLA preprocessing engine {name}: {errors}"
+        err_msg = (
+            f"TensorRT could not build the DLA preprocessing engine {name}: {errors}. "
+            "Use the 'cuda' or 'trt' preprocessor for this input size."
+        )
         raise RuntimeError(err_msg)
     path.parent.mkdir(parents=True, exist_ok=True)
     caching_tools.write_atomic(path, memoryview(serialized))
