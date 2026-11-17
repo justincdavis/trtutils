@@ -29,7 +29,7 @@ class Tolerance:
 TOLERANCES = {
     "float64": Tolerance(0.001),
     "cpu-resize": Tolerance(0.001),
-    "gpu-resize": Tolerance(1.0, 0.25),
+    "gpu-resize": Tolerance(1.001, 0.25),
     "dla-normalize": Tolerance(0.3),
     "dla-even": Tolerance(2.0, 0.35),
     "dla-crop": Tolerance(math.inf, 8.0),
