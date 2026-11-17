@@ -36,6 +36,10 @@ if TYPE_CHECKING:
     # that builds a dynamic optimization profile for that input.
     BindingShape = tuple[int, ...] | tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]
 
+    NetworkDefinition = Callable[
+        [trt.INetworkDefinition, trt.IBuilderConfig], Sequence[np.ndarray] | None
+    ]
+
     from ._batcher import AbstractBatcher
 
 _MIN_OPTIM_LEVEL = 0
@@ -44,7 +48,7 @@ _MAX_OPTIM_LEVEL = 5
 
 
 def build_engine(  # noqa: C901, PLR0912, PLR0915
-    onnx: Path | str | Callable[[trt.INetworkDefinition, trt.IBuilderConfig], object],
+    onnx: Path | str | NetworkDefinition,
     output: Path | str,
     default_device: trt.DeviceType | str = trt.DeviceType.GPU,
     workspace: float = 4.0,
@@ -104,11 +108,12 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
 
     Parameters
     ----------
-    onnx : Path, str, Callable[[trt.INetworkDefinition, trt.IBuilderConfig], object]
+    onnx : Path, str, Callable[[trt.INetworkDefinition, trt.IBuilderConfig], Sequence[np.ndarray] | None]
         The path to the onnx model, or a function that defines the network instead.
         The function is called with the empty network and the builder config, before
-        the hooks and the other settings. Its return value, such as the weight arrays
-        its layers reference, is kept until the engine is built.
+        the hooks and the other settings. TensorRT does not copy the weight arrays
+        given to layers, so the function returns the arrays its layers reference and
+        they are kept until the engine is built.
     output : Path, str
         The location to save the TensorRT engine.
     default_device : trt.DeviceType, str, optional
