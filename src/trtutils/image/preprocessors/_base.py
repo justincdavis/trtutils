@@ -200,7 +200,7 @@ class ImagePreprocessor(ABC):
             The new output range.
 
         """
-        self._o_range = output_range
+        self._o_range = (float(output_range[0]), float(output_range[1]))
         self._scale = (self._o_range[1] - self._o_range[0]) / 255.0
         self._offset = self._o_range[0]
 
