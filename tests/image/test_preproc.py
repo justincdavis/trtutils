@@ -92,6 +92,26 @@ def test_cpu_resize_resizes_device_buffers_on_gpu(images, gpu_cls, kwargs) -> No
     assert padding == [on_gpu[2][0], on_cpu[2][1]]
 
 
+@pytest.mark.regression
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), PREPROCS)
+@pytest.mark.parametrize(
+    "output_range",
+    [
+        pytest.param((-1, 1), id="neg1-1"),
+        pytest.param((1, 2), id="1-2"),
+        pytest.param((0, 255), id="0-255"),
+    ],
+)
+def test_int_output_range_matches_float(images, preproc_cls, kwargs, output_range) -> None:
+    """Integer output_range bounds give the same output as the equal float bounds."""
+    float_range = (float(output_range[0]), float(output_range[1]))
+    image = images["horse"].array
+    expected, _, _ = CPUPreprocessor(SIZE, float_range, DTYPE).preprocess([image])
+    for o_range in (output_range, float_range):
+        result, _, _ = preproc_cls(SIZE, o_range, DTYPE, **kwargs).preprocess([image])
+        assert np.abs(result - expected).max() < 0.02 * (float_range[1] - float_range[0])
+
+
 @pytest.mark.parametrize(
     "gpu_cls",
     [

@@ -159,6 +159,8 @@ Fixed
 ^^^^^
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
   swapped, which misplaced boxes, keypoints, and masks on non-square model inputs
+* ``CUDAPreprocessor`` with integer ``output_range`` bounds, such as ``(-1, 1)``, matches the
+  float bounds. The offset reached the kernel as an integer argument, which it read as a float
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
 * Float16-input image models use the ``cuda`` preprocessor (with or without ``cpu_resize``) instead of
   the CPU one
