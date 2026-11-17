@@ -166,6 +166,8 @@ Fixed
   OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see
   a half-written engine
+* ``trtexec.build_engine(fp16=True, int8=True)`` passes both ``--fp16`` and ``--int8``. It
+  dropped ``--fp16``, so layers without int8 support fell back to fp32
 * ``build_engine(default_device="dla")`` without ``dla_core`` uses DLA core 0. TensorRT had
   selected no core, so the build failed
 * ``read_onnx`` raises ``RuntimeError`` on a file TensorRT 8.6 "parses" into an empty network
