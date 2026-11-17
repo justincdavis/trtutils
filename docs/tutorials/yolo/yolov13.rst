@@ -45,7 +45,8 @@ Alternatively, if you want to export the engine using the Python API:
 
 .. code-block:: python
 
-    from trtutils.builder import build_engine, hooks
+    from trtutils.builder import build_engine
+    from trtutils.image import hooks
 
     build_engine(
         onnx="yolov13.onnx",

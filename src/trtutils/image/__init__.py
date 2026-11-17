@@ -6,6 +6,8 @@ Utilities for using TensorRT on images.
 
 Submodules
 ----------
+:mod:`hooks`
+    Hooks for building TensorRT engines of image models.
 :mod:`kernels`
     Kernels for image processing with TensorRT.
 :mod:`preprocessors`
@@ -65,6 +67,7 @@ Constants
 from __future__ import annotations
 
 from . import (
+    hooks,
     interfaces,
     kernels,
     onnx_models,
@@ -101,6 +104,7 @@ __all__ = [
     "TextRecognizer",
     "draw_bboxes",
     "draw_text",
+    "hooks",
     "interfaces",
     "kernels",
     "onnx_models",

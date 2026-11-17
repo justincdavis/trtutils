@@ -9,12 +9,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from trtutils._flags import FLAGS
+from trtutils.builder.hooks._common import make_plugin_field
 from trtutils.compat._libs import trt
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-from ._common import make_plugin_field
 
 _YOLO_LIKE_DIMS = 3
 

@@ -12,8 +12,6 @@ Functions
     Hook making every float network input int8 at scale 1.
 :func:`int8_ranges_hook`
     Hook setting INT8 dynamic ranges from the input ranges, without calibration data.
-:func:`yolo_efficient_nms_hook`
-    Hook for building YOLO models with EfficientNMS.
 
 """
 
@@ -21,6 +19,5 @@ from __future__ import annotations
 
 from ._io import fp16_io_hook, int8_input_hook
 from ._ranges import int8_ranges_hook
-from ._yolo import yolo_efficient_nms_hook
 
-__all__ = ["fp16_io_hook", "int8_input_hook", "int8_ranges_hook", "yolo_efficient_nms_hook"]
+__all__ = ["fp16_io_hook", "int8_input_hook", "int8_ranges_hook"]
