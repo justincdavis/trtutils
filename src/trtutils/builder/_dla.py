@@ -66,6 +66,8 @@ def can_run_on_dla(
     check_dla: Callable[[trt.ILayer], bool] = get_check_dla(config)
 
     # assign to DLA 0, since core doesnt matter for this check
+    prev_device = config.default_device_type
+    prev_core = config.DLA_core
     config.default_device_type = trt.DeviceType.DLA
     config.DLA_core = 0
 
@@ -75,30 +77,34 @@ def can_run_on_dla(
     curr_start: int = 0
     curr_layers: list[trt.ILayer] = []
 
-    for idx in range(network.num_layers):
-        layer = network.get_layer(idx)
+    try:
+        for idx in range(network.num_layers):
+            layer = network.get_layer(idx)
 
-        # check if the layer can run on DLA
-        dla_valid = check_dla(layer)
-        if not dla_valid:
-            full_dla = False
+            # check if the layer can run on DLA
+            dla_valid = check_dla(layer)
+            if not dla_valid:
+                full_dla = False
 
-        # handle chunk storage
-        if dla_valid != last_layer_dla and len(curr_layers) > 0:
-            chunks.append((curr_layers, curr_start, idx - 1, last_layer_dla))
-            curr_layers = [layer]
-            curr_start = idx
-        else:
-            curr_layers.append(layer)
+            # handle chunk storage
+            if dla_valid != last_layer_dla and len(curr_layers) > 0:
+                chunks.append((curr_layers, curr_start, idx - 1, last_layer_dla))
+                curr_layers = [layer]
+                curr_start = idx
+            else:
+                curr_layers.append(layer)
 
-        last_layer_dla = dla_valid
+            last_layer_dla = dla_valid
 
-        if verbose_layers:
-            precision = layer.precision if FLAGS.WEAK_TYPING else None
-            LOG.info(
-                f"Layer {idx}: {layer.name}, {layer.type}, {precision}, {layer.metadata}",
-            )
-            LOG.info(f"\tDLA: {dla_valid}")
+            if verbose_layers:
+                precision = layer.precision if FLAGS.WEAK_TYPING else None
+                LOG.info(
+                    f"Layer {idx}: {layer.name}, {layer.type}, {precision}, {layer.metadata}",
+                )
+                LOG.info(f"\tDLA: {dla_valid}")
+    finally:
+        config.default_device_type = prev_device
+        config.DLA_core = prev_core
 
     # handle final chunk
     chunks.append((curr_layers, curr_start, network.num_layers - 1, last_layer_dla))

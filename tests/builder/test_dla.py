@@ -32,7 +32,9 @@ def test_can_run_on_dla(onnx_path, use_network) -> None:
     """can_run_on_dla returns correct structure from both path and network inputs."""
     if use_network:
         network, _, config, _ = read_onnx(onnx_path)
+        before = (config.default_device_type, config.DLA_core)
         full_dla, chunks = can_run_on_dla(network, config=config)
+        assert (config.default_device_type, config.DLA_core) == before
     else:
         full_dla, chunks = can_run_on_dla(onnx_path)
 
