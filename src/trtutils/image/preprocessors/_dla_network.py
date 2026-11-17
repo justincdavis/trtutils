@@ -7,19 +7,21 @@
 from __future__ import annotations
 
 import hashlib
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.builder._build import build_engine
+from trtutils.builder.hooks import int8_input_hook
 from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
 # strides a DLA convolution takes: on the image (DLA_HWC4) input, and anywhere else
 _INPUT_STRIDE = 4
@@ -272,13 +274,14 @@ def define_network(
     offset: np.ndarray,
 ) -> list[np.ndarray]:
     """
-    Define the DLA network of a plan.
+    Define the network of a plan, with float32 I/O that the build retypes.
 
-    The input is the int8 BGRx image (``image ^ 0x80``) in DLA_HWC4. Strided
-    convolutions at int8 scale 1 resize it and swap BGR to RGB, one-hot
-    convolutions move each run of 16 output columns onto channels, and the last
-    one normalizes into one float16 CHW16 output per RGB plane, of shape
-    (1, 16, rows, width / 16), whose bytes are the plane's rows.
+    The input is the BGR image less 128, which :func:`build_dla_preproc` makes the
+    int8 BGRx image (``image ^ 0x80``) in DLA_HWC4. Strided convolutions at int8
+    scale 1 resize it and swap BGR to RGB, one-hot convolutions move each run of
+    16 output columns onto channels, and the last one normalizes into one output
+    per RGB plane, of shape (1, 16, rows, width / 16), whose float16 CHW16 bytes
+    are the plane's rows.
 
     Parameters
     ----------
@@ -298,9 +301,9 @@ def define_network(
 
     """
     writer = _NetworkWriter(network)
-    image = network.add_input(INPUT_NAME, trt.int8, (1, _COLOR_CHANNELS, plan.height, plan.width))
-    image.allowed_formats = 1 << int(trt.TensorFormat.DLA_HWC4)
-    tensor = _int8(image)
+    tensor = network.add_input(
+        INPUT_NAME, trt.float32, (1, _COLOR_CHANNELS, plan.height, plan.width)
+    )
 
     rows, cols = (resize_stages(factor) for factor in plan.factors)
     count = max(len(rows), len(cols))
@@ -344,8 +347,6 @@ def define_network(
         )
         output.name = name
         network.mark_output(output)
-        output.dtype = trt.float16
-        output.allowed_formats = 1 << int(trt.TensorFormat.CHW16)
     return writer.weights
 
 
@@ -358,9 +359,11 @@ def build_dla_preproc(
     """
     Build the DLA engine of a plan, or get it from the engine cache.
 
-    The build has no GPU fallback, so TensorRT fails rather than put a layer on the
-    GPU. Engines are cached by input size, output size, normalization and TensorRT
-    version. An engine built for one DLA core runs on any.
+    ``builder.hooks.int8_input_hook`` makes the input int8 at scale 1, and the
+    outputs are float16. The build has no GPU fallback, so TensorRT fails rather
+    than put a layer on the GPU. Engines are cached by input size, output size,
+    normalization and TensorRT version. An engine built for one DLA core runs on
+    any.
 
     Parameters
     ----------
@@ -395,28 +398,29 @@ def build_dla_preproc(
     if exists:
         return path
 
-    builder = trt.Builder(LOG)
-    flags = 0
-    if FLAGS.EXPLICIT_BATCH_FLAG:
-        flags = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
-    network = builder.create_network(flags)
-    weights = define_network(network, plan, scale, offset)
-    config = builder.create_builder_config()
-    config.set_flag(trt.BuilderFlag.FP16)
-    config.set_flag(trt.BuilderFlag.INT8)
-    config.default_device_type = trt.DeviceType.DLA
-    config.DLA_core = dla_core
-    config.profiling_verbosity = trt.ProfilingVerbosity.DETAILED
     # tensorrt warns about every float16 tensor of an int8 build
-    with LOG.suppress(), LOG.capture_errors() as errors:
-        serialized = builder.build_serialized_network(network, config)
-    del weights
-    if serialized is None:
-        err_msg = (
-            f"TensorRT could not build the DLA preprocessing engine {name}: {errors}. "
-            "Use the 'cuda' or 'trt' preprocessor for this input size."
-        )
-        raise RuntimeError(err_msg)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    caching_tools.write_atomic(path, memoryview(serialized))
+    with tempfile.TemporaryDirectory() as tmpdir, LOG.suppress(), LOG.capture_errors() as errors:
+        try:
+            build_engine(
+                lambda network, _config: define_network(network, plan, scale, offset),
+                Path(tmpdir) / f"{name}.engine",
+                default_device=trt.DeviceType.DLA,
+                workspace=1.0,
+                dla_core=dla_core,
+                input_tensor_formats=[(INPUT_NAME, trt.DataType.INT8, trt.TensorFormat.DLA_HWC4)],
+                output_tensor_formats=[
+                    (output, trt.DataType.HALF, trt.TensorFormat.CHW16) for output in OUTPUT_NAMES
+                ],
+                hooks=[int8_input_hook],
+                profiling_verbosity=trt.ProfilingVerbosity.DETAILED,
+                fp16=True,
+                int8=True,
+                cache=True,
+            )
+        except RuntimeError:
+            err_msg = (
+                f"TensorRT could not build the DLA preprocessing engine {name}: {errors}. "
+                "Use the 'cuda' or 'trt' preprocessor for this input size."
+            )
+            raise RuntimeError(err_msg) from None
     return path

@@ -18,7 +18,7 @@ from trtutils.core import cache as caching_tools
 from trtutils.core._device import Device
 from trtutils.core.cache import query_timing_cache, save_timing_cache_to_global
 
-from ._onnx import read_onnx
+from ._onnx import create_network, read_onnx
 from ._utils import check_implicit_calibration, get_check_dla, needs_dynamic_range
 
 # trt 11 removed the implicit calibrators
@@ -44,7 +44,7 @@ _MAX_OPTIM_LEVEL = 5
 
 
 def build_engine(  # noqa: C901, PLR0912, PLR0915
-    onnx: Path | str,
+    onnx: Path | str | Callable[[trt.INetworkDefinition, trt.IBuilderConfig], object],
     output: Path | str,
     default_device: trt.DeviceType | str = trt.DeviceType.GPU,
     workspace: float = 4.0,
@@ -76,11 +76,11 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     verbose: bool | None = None,
 ) -> None:
     """
-    Build a TensorRT engine from an ONNX model.
+    Build a TensorRT engine from an ONNX model, or from a network defined in code.
 
     The order in which operations occur inside build_engine:
 
-    1. Parse the ONNX model
+    1. Parse the ONNX model, or define the network
 
     2. Apply any network hooks
 
@@ -104,8 +104,11 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
 
     Parameters
     ----------
-    onnx : Path, str
-        The path to the onnx model.
+    onnx : Path, str, Callable[[trt.INetworkDefinition, trt.IBuilderConfig], object]
+        The path to the onnx model, or a function that defines the network instead.
+        The function is called with the empty network and the builder config, before
+        the hooks and the other settings. Its return value, such as the weight arrays
+        its layers reference, is kept until the engine is built.
     output : Path, str
         The location to save the TensorRT engine.
     default_device : trt.DeviceType, str, optional
@@ -352,12 +355,16 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         )
         raise ValueError(err_msg)
 
-    # read the onnx model
-    network, builder, config, _ = read_onnx(
-        onnx,
-        workspace,
-        strongly_typed=strongly_typed,
-    )
+    # read the onnx model, or let the caller define the network
+    if callable(onnx):
+        network, builder, config = create_network(workspace, strongly_typed=strongly_typed)
+        _definition = onnx(network, config)
+    else:
+        network, builder, config, _definition = read_onnx(
+            onnx,
+            workspace,
+            strongly_typed=strongly_typed,
+        )
 
     # handle all hooks to start
     if hooks is not None:

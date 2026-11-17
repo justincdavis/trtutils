@@ -89,6 +89,7 @@ Added
 * ``inspect.inspect_placement`` / ``PlacementReport``: where each engine layer runs, DLA or GPU
 * ``builder.hooks.fp16_io_hook`` / ``int8_input_hook``: float16 network I/O, int8 inputs at scale 1
 * ``builder.hooks.int8_ranges_hook``: INT8 without calibration data, ranges by interval arithmetic
+* ``build_engine`` takes a function that defines the network in code in place of the ONNX path
 * ``preprocessor="dla0"`` / ``"dla1"`` on the image models (``DLAPreprocessor``):
   whole-factor letterbox and linear resizes, channel swap and normalization on a DLA, no GPU layers
 
