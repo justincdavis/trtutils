@@ -16,7 +16,7 @@ from trtutils._benchmark import Metric
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
-from trtutils.profiling._profiler import LayerTiming, ProfilerResult
+from trtutils.profiling._profiler import LayerTiming, ProfilerResult, _NoOpProfiler
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -382,8 +382,12 @@ def profile_engine(  # noqa: C901, PLR0915
         )
 
     # attach JetsonLayerProfiler for per-layer power tracking
+    previous_profiler = engine.context.profiler
     profiler = JetsonLayerProfiler()
     engine.context.profiler = profiler
+    # graph replays do not call the profiler, so run uncaptured
+    graph_enabled = engine._cuda_graph_enabled  # noqa: SLF001
+    engine._cuda_graph_enabled = False  # noqa: SLF001
 
     # do warmup iterations
     # always do a single pass regardless of warmup_iterations
@@ -417,6 +421,9 @@ def profile_engine(  # noqa: C901, PLR0915
         profiler.finalize_iteration()
         timeslices.append((t0, t1))
     tegrastats.stop()
+    engine._cuda_graph_enabled = graph_enabled  # noqa: SLF001
+    # tensorrt rejects a None profiler, so put back the previous one or a no-op
+    engine.context.profiler = previous_profiler if previous_profiler is not None else _NoOpProfiler()
     tegradata = tegrastats.data
 
     layer_stats = profiler.get_statistics_with_tegra(tegradata, verbose=bool(verbose))

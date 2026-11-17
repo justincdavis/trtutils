@@ -150,7 +150,7 @@ def test_missing_required_args_exit_2(argv) -> None:
             ["trtutils", "profile", "--engine", _ENGINE, "--output", _JSON],
             "trtutils.__main__._profile",
             {
-                "iterations": 100,
+                "iterations": None,
                 "warmup_iterations": 10,
                 "save_raw": False,
                 "jetson": False,

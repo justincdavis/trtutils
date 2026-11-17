@@ -157,6 +157,10 @@ Performance
 
 Fixed
 ^^^^^
+* ``jetson.profile_engine`` runs without CUDA graphs, then restores the engine's graph flag and
+  profiler. Graph replays never call the profiler, so per-layer results could be empty
+* ``profile_engine(jetson=True)`` and ``trtutils profile --jetson`` use the Jetson default of 10000 iterations
+  unless ``iterations`` is given. The dispatcher always forwarded 100
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
   swapped, which misplaced boxes, keypoints, and masks on non-square model inputs
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``

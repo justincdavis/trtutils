@@ -3,7 +3,7 @@
 # MIT License
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from trtutils.jetson._profile import profile_engine as jetson_profile_engine
 from trtutils.profiling._profiler import ProfilerResult
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 def profile_engine(
     engine: Path | str | TRTEngine,
-    iterations: int = 100,
+    iterations: int | None = None,
     warmup_iterations: int = 10,
     dla_core: int | None = None,
     device: int | None = None,
@@ -44,7 +44,7 @@ def profile_engine(
     For best results, build the engine with profiling_verbosity set to DETAILED
     when calling build_engine. Otherwise, layer names may be numeric indices.
 
-    When jetson=True, the Jetson profiler function has a default of 10000 iterations
+    When jetson=True and iterations is not given, the Jetson profiler uses 10000 iterations
     (instead of 100) to ensure adequate tegrastats sampling coverage across all layers.
     You can override this by explicitly providing the iterations parameter.
 
@@ -54,8 +54,8 @@ def profile_engine(
         The engine to profile. Either a TRTEngine object or path to the engine file.
         If a path is given, then a TRTEngine will be created automatically.
     iterations : int, optional
-        The number of profiling iterations to run, by default 100 for standard profiling.
-        Note: The Jetson profiler uses 10000 by default if not explicitly specified.
+        The number of profiling iterations to run. By default None, which uses the
+        backend default: 100 for standard profiling, 10000 for Jetson profiling.
     warmup_iterations : int, optional
         The number of warmup iterations to run before profiling, by default 10.
     dla_core : int, optional
@@ -87,23 +87,24 @@ def profile_engine(
         energy consumption.
 
     """
+    iter_kwargs: dict[str, Any] = {} if iterations is None else {"iterations": iterations}
     if jetson:
         return jetson_profile_engine(
             engine=engine,
-            iterations=iterations,
             warmup_iterations=warmup_iterations,
             tegra_interval=tegra_interval,
             dla_core=dla_core,
             device=device,
             warmup=warmup,
             verbose=verbose,
+            **iter_kwargs,
         )
     return inspect_profile_engine(
         engine=engine,
-        iterations=iterations,
         warmup_iterations=warmup_iterations,
         dla_core=dla_core,
         device=device,
         warmup=warmup,
         verbose=verbose,
+        **iter_kwargs,
     )
