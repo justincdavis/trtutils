@@ -19,7 +19,7 @@ from trtutils._flags import FLAGS
 from trtutils.builder import build_engine
 from trtutils.core import create_stream, destroy_stream
 from trtutils.core._buffer import Buffer, MemoryLocation
-from trtutils.models import Hands23
+from trtutils.models import Hands23, ResNet
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 YOLOV10_ONNX = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
 YOLOV10_DYN_ONNX = DATA_DIR / "yolov10" / "yolov10n_640_dyn.onnx"
 HANDS23_ONNX = DATA_DIR / "hands23" / "hands23_x101_800.onnx"
+RESNET18_ONNX = DATA_DIR / "resnet" / "resnet18_224.onnx"
 
 
 @pytest.fixture(scope="session")
@@ -121,6 +122,18 @@ def hands23_engine() -> Path:
     if not engine_path.exists():
         ENGINES_DIR.mkdir(parents=True, exist_ok=True)
         Hands23.build(HANDS23_ONNX, engine_path, imgsz=800, batch_size=1, opt_level=1)
+    return engine_path
+
+
+@pytest.fixture(scope="session")
+def resnet18_engine() -> Path:
+    """Build and cache a ResNet-18 engine as tests/models does, skipping if the ONNX is missing."""
+    if not RESNET18_ONNX.exists():
+        pytest.skip(f"missing {RESNET18_ONNX}")
+    engine_path = engine_cache_path(f"{RESNET18_ONNX.stem}_ResNet")
+    if not engine_path.exists():
+        ENGINES_DIR.mkdir(parents=True, exist_ok=True)
+        ResNet.build(RESNET18_ONNX, engine_path, imgsz=224, batch_size=1, opt_level=1)
     return engine_path
 
 

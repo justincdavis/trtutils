@@ -20,6 +20,7 @@ from trtutils.compat._libs import trt
 from trtutils.core import create_engine
 from trtutils.image import Detector
 from trtutils.image.preprocessors import CUDAPreprocessor, DLAPreprocessor
+from trtutils.image.preprocessors._base import crop_geometry
 from trtutils.image.preprocessors._cpu import letterbox
 from trtutils.image.preprocessors._dla_network import (
     build_dla_preproc,
@@ -27,6 +28,7 @@ from trtutils.image.preprocessors._dla_network import (
     plan_resize,
     resize_stages,
 )
+from trtutils.models import ResNet
 
 RANGE = (0.0, 1.0)
 IMAGENET = {"mean": (0.485, 0.456, 0.406), "std": (0.229, 0.224, 0.225)}
@@ -39,10 +41,18 @@ CONFIGS = [
     pytest.param((720, 1280), (640, 360), "linear", id="720p-640x360-linear-k2"),
     pytest.param((1080, 1920), (640, 540), "linear", id="1080p-640x540-linear-k3x2"),
 ]
+CROPS = [
+    pytest.param((1080, 1920), (2, 2), id="1080p-224-crop-k2"),
+    pytest.param((720, 1280), (1, 1), id="720p-224-crop-k1"),
+    pytest.param((2160, 3840), (4, 4), id="4k-224-crop-k4"),
+    pytest.param((480, 640), (1, 1), id="480p-224-crop-k1"),
+    pytest.param((480, 720), (1, 1), id="720x480-224-crop-k1"),
+]
+CROP = (224, 224)
 
 
-def _frame(images, height: int, width: int) -> np.ndarray:
-    return cv2.resize(images["people"].array, (width, height), interpolation=cv2.INTER_AREA)
+def _frame(images, height: int, width: int, name: str = "people") -> np.ndarray:
+    return cv2.resize(images[name].array, (width, height), interpolation=cv2.INTER_AREA)
 
 
 def _stage_matrix(size: int, stride: int, taps: np.ndarray) -> np.ndarray:
@@ -61,6 +71,41 @@ def _bilinear(size: int, factor: int) -> np.ndarray:
         matrix[out, left] += 1.0 - (x - left)
         matrix[out, min(left + 1, size - 1)] += x - left
     return matrix
+
+
+def _crop_triangles(shape: tuple[int, int], factors: tuple[int, int]) -> list[np.ndarray]:
+    """Row and column filters of torchvision's antialiased crop, over box samples of ``factors``."""
+    (resized_width, resized_height, left, top), _, _ = crop_geometry(shape[1], shape[0], CROP)
+    triangles = []
+    for size, resized, start, count, factor in zip(
+        shape, (resized_height, resized_width), (top, left), CROP[::-1], factors
+    ):
+        scale = size / resized
+        support = max(scale / factor, 1.0)
+        centres = (np.arange(start, start + count) + 0.5) * scale / factor - 0.5
+        weights = np.maximum(1.0 - np.abs(np.arange(size // factor) - centres[:, None]) / support, 0)
+        triangles.append(weights / weights.sum(axis=1, keepdims=True))
+    return triangles
+
+
+def _crop_maps(shape: tuple[int, int], factors: tuple[int, int]) -> list[np.ndarray]:
+    """Row and column maps of the center crop: box filters by ``factors``, then triangle filters."""
+    maps = []
+    for triangle, size, factor in zip(_crop_triangles(shape, factors), shape, factors):
+        matrix = np.zeros((len(triangle), size))
+        matrix[:, : triangle.shape[1] * factor] = np.repeat(triangle, factor, axis=1) / factor
+        maps.append(matrix)
+    return maps
+
+
+def _box_filter(image: np.ndarray, factors: tuple[int, int]) -> np.ndarray:
+    rows, cols = (size // factor for size, factor in zip(image.shape, factors))
+    blocks = image[: rows * factors[0], : cols * factors[1]].astype(np.float64)
+    return blocks.reshape(rows, factors[0], cols, factors[1], -1).mean(axis=(1, 3))
+
+
+def _apply(image: np.ndarray, rows: np.ndarray, columns: np.ndarray) -> np.ndarray:
+    return np.einsum("oh,hwc,pw->opc", rows, image.astype(np.float64), columns, optimize=True)
 
 
 def _active_ms() -> list[int]:
@@ -115,13 +160,38 @@ def test_plan_resize_matches_gpu_geometry(shape, size, method, factors, top, row
         pytest.param((1920, 1080), (640, 640), "letterbox", "whole factor", id="portrait"),
         pytest.param((700, 1000), (640, 640), "letterbox", "whole factor", id="fractional"),
         pytest.param((1000, 1920), (640, 640), "linear", "whole factors", id="linear-rows"),
-        pytest.param((1080, 1920), (224, 224), "center_crop", "letterbox and linear", id="crop"),
+        pytest.param((1080, 1080), CROP, "center_crop", "multiple of 16", id="crop-width"),
+        pytest.param((2160, 4096), CROP, "center_crop", "up to 3840", id="crop-wide"),
+        pytest.param((1080, 1920), (640, 640), "nearest", "and center_crop", id="method"),
     ],
 )
 def test_plan_resize_rejects(shape, size, method, match) -> None:
     """Resizes the DLA cannot do raise ValueError naming the reason."""
     with pytest.raises(ValueError, match=match):
         plan_resize(*shape, size, method)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(("shape", "factors"), CROPS)
+def test_plan_center_crop(images, shape, factors) -> None:
+    """Center crop plans match crop_geometry, with filters close to the antialiased resize."""
+    plan = plan_resize(*shape, CROP, "center_crop")
+    _, ratios, padding = crop_geometry(shape[1], shape[0], CROP)
+    assert (plan.factors, plan.top, plan.rows) == (factors, 0, CROP[1])
+    assert plan.ratios == ratios
+    assert plan.padding == padding
+    crop = plan.crop
+    for first, weights, expected in zip(
+        (crop.first_row, crop.first_column),
+        (crop.rows, crop.columns),
+        _crop_triangles(shape, factors),
+    ):
+        padded = np.zeros_like(expected)
+        padded[:, first : first + weights.shape[1]] = weights
+        np.testing.assert_allclose(padded, expected, atol=1e-12)
+    frame = _frame(images, *shape)
+    antialiased = _apply(frame, *_crop_maps(shape, (1, 1)))
+    assert np.abs(_apply(frame, *_crop_maps(shape, factors)) - antialiased).mean() < 0.5
 
 
 @pytest.mark.cpu
@@ -178,10 +248,44 @@ def test_dla_matches_cuda(images, shape, size, method, norm, dtype) -> None:
 
 
 @pytest.mark.dla
-def test_dla_inputs_and_batches_match(images) -> None:
+@pytest.mark.parametrize(("shape", "factors"), CROPS)
+@pytest.mark.parametrize("dtype", [np.float16, np.float32], ids=["fp16", "fp32"])
+def test_dla_center_crop_matches_reference(images, shape, factors, dtype) -> None:
+    """Center crops are within a level of the filters, a few levels from CUDA's bilinear crop."""
+    frame = _frame(images, *shape)
+    dla = DLAPreprocessor(CROP, RANGE, dtype, resize="center_crop", **IMAGENET)
+    cuda = CUDAPreprocessor(CROP, RANGE, np.float32, resize="center_crop", **IMAGENET)
+    result, ratios, padding = dla.preprocess(frame)
+    expected, cuda_ratios, cuda_padding = cuda.preprocess(frame)
+    assert result.dtype == dtype
+    assert result.shape == expected.shape
+    assert ratios == cuda_ratios
+    assert padding == cuda_padding
+    # the DLA rounds the box filter to whole levels
+    boxed = np.round(_box_filter(frame, factors))
+    scale, offset = normalization(RANGE, IMAGENET["mean"], IMAGENET["std"])
+    reference = _apply(boxed, *_crop_triangles(shape, factors))[..., ::-1].transpose(2, 0, 1)
+    reference = reference * scale[:, None, None] + offset[:, None, None]
+    level = 1.0 / (255.0 * min(IMAGENET["std"]))
+    result = result[0].astype(np.float64)
+    diff = np.abs(result - reference)
+    assert diff.max() <= level
+    assert diff.mean() <= 0.1 * level
+    assert np.abs(result - expected[0]).mean() <= 8 * level
+
+
+@pytest.mark.dla
+@pytest.mark.parametrize(
+    ("size", "method"),
+    [
+        pytest.param((640, 640), "letterbox", id="letterbox"),
+        pytest.param(CROP, "center_crop", id="center-crop"),
+    ],
+)
+def test_dla_inputs_and_batches_match(images, size, method) -> None:
     """Host, mapped and device images give identical results, alone or in mixed-size batches."""
     frames = [_frame(images, 1080, 1920), _frame(images, 720, 1280)]
-    dla = DLAPreprocessor((640, 640), RANGE, np.float16, batch_size=2)
+    dla = DLAPreprocessor(size, RANGE, np.float16, batch_size=2, resize=method)
     singles = [dla.preprocess(frame)[0][0] for frame in frames]
     for placement in ({"location": MemoryLocation.DEVICE}, {"pinned": True, "mapped": True}):
         for frame, single in zip(frames, singles):
@@ -191,14 +295,19 @@ def test_dla_inputs_and_batches_match(images) -> None:
         batch, ratios, padding = dla.preprocess([frames[i] for i in order])
         for slot, i in enumerate(order):
             np.testing.assert_array_equal(batch[slot], singles[i])
-        assert ratios == [
-            plan_resize(*frames[i].shape[:2], (640, 640), "letterbox").ratios for i in order
-        ]
+        assert ratios == [plan_resize(*frames[i].shape[:2], size, method).ratios for i in order]
         assert len(padding) == len(order)
 
 
 @pytest.mark.dla
-@pytest.mark.parametrize(("shape", "size", "method"), CONFIGS)
+@pytest.mark.parametrize(
+    ("shape", "size", "method"),
+    [
+        *CONFIGS,
+        *(pytest.param(crop.values[0], CROP, "center_crop", id=crop.id) for crop in CROPS),
+        pytest.param((1536, 2048), CROP, "center_crop", id="1536p-224-crop-k3"),
+    ],
+)
 def test_dla_engine_runs_only_on_dla(cuda_stream, shape, size, method) -> None:
     """The built engine is one DLA subgraph reading DLA_HWC4 and writing CHW16, with no GPU layers."""
     plan = plan_resize(*shape, size, method)
@@ -239,7 +348,7 @@ def test_dla_core_runs_only_that_core(images, dla_core) -> None:
     [
         pytest.param({"dla_core": 2}, "DLA core 2", id="core"),
         pytest.param({"output_shape": (650, 650)}, "multiple of 16", id="width"),
-        pytest.param({"resize": "center_crop"}, "letterbox", id="crop"),
+        pytest.param({"resize": "center_crop", "crop_pct": 1.5}, "crop_pct", id="crop-pct"),
         pytest.param({"dtype": np.uint8}, "float16 or float32", id="dtype"),
     ],
 )
@@ -281,6 +390,20 @@ def test_detector_dla_matches_cuda(yolov10_engine, images) -> None:
         assert abs(score - cuda_score) < 0.05
         np.testing.assert_allclose(box, cuda_box, atol=3)
     assert isinstance(detector.get_preprocessor(), DLAPreprocessor)
+
+
+@pytest.mark.dla
+def test_classifier_dla_matches_cuda(resnet18_engine, images) -> None:
+    """A ResNet-18 with preprocessor='dla0' ranks the ground-truth class first, as with 'cuda'."""
+    models = [ResNet(resnet18_engine, preprocessor=name, warmup=False) for name in ("cuda", "dla0")]
+    assert isinstance(models[1].get_preprocessor(), DLAPreprocessor)
+    for shape in ((1080, 1920), (288, 448)):
+        frame = _frame(images, *shape, name="horse")
+        (cuda_cls, cuda_score), (dla_cls, dla_score) = (
+            model.end2end(frame, top_k=1)[0] for model in models
+        )
+        assert dla_cls == cuda_cls == images["horse"].gt_cls_id
+        assert abs(dla_score - cuda_score) < 0.1
 
 
 def test_dla_preprocessor_needs_core(yolov10_engine) -> None:

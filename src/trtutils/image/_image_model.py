@@ -157,7 +157,7 @@ class ImageModel:
             'cuda'. 'hybrid' resizes on the CPU and normalizes on the GPU, uploading only
             the resized image, which wins for inputs much smaller than the frame. 'dla0'
             and 'dla1' preprocess on that DLA core, for whole-factor letterbox and linear
-            resizes, see :class:`DLAPreprocessor`.
+            resizes and center crops of inputs up to 3840 wide, see :class:`DLAPreprocessor`.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear', 'center_crop'], default is 'linear'.
@@ -408,6 +408,7 @@ class ImageModel:
             dla_core=dla_core,
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
+            crop_pct=self._crop_pct,
         )
 
         if FLAGS.NVTX_ENABLED:

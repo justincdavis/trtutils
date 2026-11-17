@@ -20,6 +20,8 @@ from trtutils.builder.hooks import int8_input_hook
 from trtutils.compat._libs import trt
 from trtutils.core import cache as caching_tools
 
+from ._base import DEFAULT_CROP_PCT, crop_geometry
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -30,8 +32,29 @@ _MAX_STRIDE = 8
 PHASES = 16
 _COLOR_CHANNELS = 3
 _INT8_RANGE = 127.0
+# outputs per banded 1x1 convolution, and inputs per concatenation, of a center crop
+_BAND = 32
+_FAN_IN = 8
+# the DLA reads image rows in 64-byte steps, and rejects a 4x4 box filter on wider rows
+_ROW_PIXELS = 16
+_MAX_CROP_WIDTH = 3840
 INPUT_NAME = "input"
 OUTPUT_NAMES = ("out_r", "out_g", "out_b")
+
+
+@dataclass(frozen=True, eq=False)
+class CenterCrop:
+    """
+    The second stage of a center crop, over the box-filtered image.
+
+    ``rows`` and ``columns`` weigh the box samples from ``first_row`` and
+    ``first_column`` on, one row per output row or column.
+    """
+
+    first_row: int
+    first_column: int
+    rows: np.ndarray
+    columns: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -40,7 +63,8 @@ class ResizePlan:
     How one input size maps onto the output.
 
     The engine writes ``rows`` rows starting at row ``top``; the rows above and
-    below are the letterbox border.
+    below are the letterbox border. A center crop box filters by ``factors``
+    and then applies ``crop``.
     """
 
     height: int
@@ -50,6 +74,37 @@ class ResizePlan:
     rows: int
     ratios: tuple[float, float]
     padding: tuple[float, float]
+    crop: CenterCrop | None = None
+
+    @property
+    def input_rows(self) -> range:
+        """The image rows the engine reads."""
+        if self.crop is None:
+            return range(self.height)
+        factor = self.factors[0]
+        first = self.crop.first_row * factor
+        return range(first, first + self.crop.rows.shape[1] * factor)
+
+
+def _crop_axis(size: int, resized: int, start: int, count: int) -> tuple[int, int, np.ndarray]:
+    """
+    Split a center crop axis into a box filter and a triangle filter over its samples.
+
+    The box factor is half the downscale (at most 4, the DLA_HWC4 input stride);
+    the triangle, as wide as the rest of the downscale and centred on the
+    antialiased resize's sample positions, covers the rest.
+
+    Returns the box factor, the first box sample read, and the triangle weights.
+    """
+    scale = size / resized
+    factor = min(max(int(scale / 2), 1), _INPUT_STRIDE)
+    support = max(scale / factor, 1.0)
+    centres = (np.arange(start, start + count) + 0.5) * scale / factor - 0.5
+    distance = np.abs(np.arange(size // factor) - centres[:, None]) / support
+    weights = np.maximum(1.0 - distance, 0.0)
+    weights /= weights.sum(axis=1, keepdims=True)
+    used = np.flatnonzero(weights.any(axis=0))
+    return factor, int(used[0]), weights[:, used[0] : used[-1] + 1]
 
 
 def plan_resize(
@@ -57,9 +112,15 @@ def plan_resize(
     width: int,
     output_shape: tuple[int, int],
     method: str,
+    crop_pct: float = DEFAULT_CROP_PCT,
 ) -> ResizePlan:
     """
     Get the DLA resize of an input size, with the ratios and padding of the GPU preprocessors.
+
+    A center crop resizes like torchvision's antialiased ``Resize``: a box filter
+    by half the downscale, then a triangle filter at the resize's sample
+    positions. The CPU and CUDA preprocessors resize it bilinearly without
+    antialiasing instead.
 
     Parameters
     ----------
@@ -70,7 +131,9 @@ def plan_resize(
     output_shape : tuple[int, int]
         The output (width, height).
     method : str
-        The resize method, 'letterbox' or 'linear'.
+        The resize method, 'letterbox', 'linear' or 'center_crop'.
+    crop_pct : float
+        The fraction of the resized image a center crop keeps. Default is 0.875.
 
     Returns
     -------
@@ -80,9 +143,11 @@ def plan_resize(
     Raises
     ------
     ValueError
-        If the DLA cannot do the resize: a method other than letterbox or linear,
-        a factor that is not a whole number, letterbox padding on the left and
-        right, or a factor with no DLA stride split (a prime above 4, or above 32).
+        If the DLA cannot do the resize: an unknown method, a letterbox or linear
+        factor that is not a whole number, letterbox padding on the left and
+        right, a factor with no DLA stride split (a prime above 4, or above 32),
+        or a center crop of an image wider than 3840 or whose width is not a
+        multiple of 16.
 
     """
     out_width, out_height = output_shape
@@ -129,8 +194,33 @@ def plan_resize(
             (out_width / width, out_height / height),
             (0.0, 0.0),
         )
+    elif method == "center_crop":
+        if width % _ROW_PIXELS or width > _MAX_CROP_WIDTH:
+            err_msg = (
+                f"The DLA preprocessor center crops images up to {_MAX_CROP_WIDTH} pixels wide "
+                f"whose width is a multiple of {_ROW_PIXELS}: {width}x{height} is not one. "
+                "Use the 'cuda' or 'trt' preprocessor for this input size."
+            )
+            raise ValueError(err_msg)
+        (resized_width, resized_height, left, top), ratios, padding = crop_geometry(
+            width, height, output_shape, crop_pct
+        )
+        row_factor, first_row, rows = _crop_axis(height, resized_height, top, out_height)
+        col_factor, first_column, columns = _crop_axis(width, resized_width, left, out_width)
+        plan = ResizePlan(
+            height,
+            width,
+            (row_factor, col_factor),
+            0,
+            out_height,
+            ratios,
+            padding,
+            CenterCrop(first_row, first_column, rows, columns),
+        )
     else:
-        err_msg = f"The DLA preprocessor supports letterbox and linear resizing, not {method}"
+        err_msg = (
+            f"The DLA preprocessor supports letterbox, linear and center_crop resizing, not {method}"
+        )
         raise ValueError(err_msg)
     for factor in plan.factors:
         resize_stages(factor)
@@ -242,10 +332,58 @@ class _NetworkWriter:
         layer.post_padding = post_padding
         return layer.get_output(0)
 
+    def concat(self, tensors: list[trt.ITensor]) -> trt.ITensor:
+        """Concatenate on channels as a tree, since TensorRT runs wide concatenations on the GPU."""
+        while len(tensors) > 1:
+            groups = [tensors[start : start + _FAN_IN] for start in range(0, len(tensors), _FAN_IN)]
+            tensors = [
+                group[0] if len(group) == 1 else self.network.add_concatenation(group).get_output(0)
+                for group in groups
+            ]
+        return tensors[0]
+
+    def transpose(self, tensor: trt.ITensor, order: tuple[int, ...]) -> trt.ITensor:
+        layer = self.network.add_shuffle(tensor)
+        layer.first_transpose = order
+        return layer.get_output(0)
+
+    def banded(self, tensor: trt.ITensor, matrix: np.ndarray) -> trt.ITensor:
+        """Weigh the channels of ``tensor`` by ``matrix``, as 1x1 convolutions over output bands."""
+        shape = tuple(tensor.shape)
+        groups: list[trt.ITensor] = []
+        bands: list[trt.ITensor] = []
+        for first in range(0, len(matrix), _BAND):
+            band = matrix[first : first + _BAND]
+            used = np.flatnonzero(band.any(axis=0))
+            start, stop = int(used[0]), int(used[-1]) + 1
+            inputs = self.network.add_slice(
+                tensor, (0, start, 0, 0), (1, stop - start, *shape[2:]), (1, 1, 1, 1)
+            ).get_output(0)
+            if tensor.dynamic_range is not None:
+                _int8(inputs)
+            bands.append(self.conv(inputs, band[:, start:stop, None, None], (1, 1)))
+            # tensorrt 8.6 splits the DLA graph when many tensors wait for a concatenation
+            if len(bands) == _FAN_IN or first + _BAND >= len(matrix):
+                groups.append(self.concat(bands))
+                bands = []
+        return self.concat(groups)
+
 
 def _int8(tensor: trt.ITensor) -> trt.ITensor:
     tensor.set_dynamic_range(-_INT8_RANGE, _INT8_RANGE)
     return tensor
+
+
+def _center_crop(writer: _NetworkWriter, tensor: trt.ITensor, crop: CenterCrop) -> trt.ITensor:
+    """Apply the triangle filters to the box-filtered int8 image, giving float16 RGB planes."""
+    _, channels, rows, _ = tuple(tensor.shape)
+    window = (1, channels, rows, crop.columns.shape[1])
+    start = (0, 0, 0, crop.first_column)
+    tensor = _int8(writer.network.add_slice(tensor, start, window, (1, 1, 1, 1)).get_output(0))
+    # columns on channels, then rows on channels
+    tensor = writer.banded(_int8(writer.transpose(tensor, (0, 3, 1, 2))), crop.columns)
+    tensor = writer.banded(writer.transpose(tensor, (0, 3, 2, 1)), crop.rows)
+    return writer.transpose(tensor, (0, 2, 1, 3))
 
 
 def _phase_count(stages: int, last_stride: int) -> int:
@@ -281,7 +419,9 @@ def define_network(
     scale 1 resize it and swap BGR to RGB, one-hot convolutions move each run of
     16 output columns onto channels, and the last one normalizes into one output
     per RGB plane, of shape (1, 16, rows, width / 16), whose float16 CHW16 bytes
-    are the plane's rows.
+    are the plane's rows. A center crop box filters with the strided convolutions,
+    then applies its triangle filters as 1x1 convolutions over the transposed
+    image, columns then rows, in float16.
 
     Parameters
     ----------
@@ -301,16 +441,19 @@ def define_network(
 
     """
     writer = _NetworkWriter(network)
-    tensor = network.add_input(
-        INPUT_NAME, trt.float32, (1, _COLOR_CHANNELS, plan.height, plan.width)
-    )
+    crop = plan.crop
+    shape = (1, _COLOR_CHANNELS, len(plan.input_rows), plan.width)
+    tensor = network.add_input(INPUT_NAME, trt.float32, shape)
 
-    rows, cols = (resize_stages(factor) for factor in plan.factors)
+    if crop is None:
+        rows, cols = (resize_stages(factor) for factor in plan.factors)
+    else:
+        rows, cols = ([(factor, np.full(factor, 1.0 / factor))] for factor in plan.factors)
     count = max(len(rows), len(cols))
     identity = (1, np.ones(1, dtype=np.float32))
     rows += [identity] * (count - len(rows))
     cols += [identity] * (count - len(cols))
-    phases = _phase_count(count, cols[-1][0])
+    phases = 1 if crop is not None else _phase_count(count, cols[-1][0])
     channels = _COLOR_CHANNELS
     for index, ((row_stride, row_taps), (col_stride, col_taps)) in enumerate(zip(rows, cols)):
         group = phases if index == count - 1 else 1
@@ -333,8 +476,12 @@ def define_network(
         )
         channels = len(weights)
 
+    if crop is not None:
+        tensor = _center_crop(writer, tensor, crop)
     while phases * _MAX_STRIDE < PHASES:
-        tensor = _int8(writer.conv(tensor, _phase_weights(phases, _MAX_STRIDE), (1, _MAX_STRIDE)))
+        tensor = writer.conv(tensor, _phase_weights(phases, _MAX_STRIDE), (1, _MAX_STRIDE))
+        if crop is None:
+            tensor = _int8(tensor)
         phases *= _MAX_STRIDE
     step = PHASES // phases
     weights = _phase_weights(phases, step)
@@ -360,10 +507,10 @@ def build_dla_preproc(
     Build the DLA engine of a plan, or get it from the engine cache.
 
     ``builder.hooks.int8_input_hook`` makes the input int8 at scale 1, and the
-    outputs are float16. The build has no GPU fallback, so TensorRT fails rather
-    than put a layer on the GPU. Engines are cached by input size, output size,
-    normalization and TensorRT version. An engine built for one DLA core runs on
-    any.
+    outputs are float16. The build has no GPU fallback and no I/O reformats, so
+    TensorRT fails rather than put a layer on the GPU. Engines are cached by input
+    size, output size, normalization, center crop filters and TensorRT version. An
+    engine built for one DLA core runs on any.
 
     Parameters
     ----------
@@ -389,20 +536,32 @@ def build_dla_preproc(
 
     """
     out_width = plan.width // plan.factors[1]
-    digest = hashlib.sha256(np.concatenate([scale, offset]).tobytes())
+    values = [scale, offset]
+    kind = ""
+    if plan.crop is not None:
+        crop = plan.crop
+        out_width = len(crop.columns)
+        values += [crop.rows.ravel(), crop.columns.ravel()]
+        kind = f"_crop{crop.first_column}x{crop.first_row}_k{plan.factors[1]}x{plan.factors[0]}"
+    digest = hashlib.sha256(np.concatenate(values).tobytes())
     name = (
-        f"dla_preproc_{plan.width}x{plan.height}_{out_width}x{plan.rows}"
+        f"dla_preproc_{plan.width}x{plan.height}_{out_width}x{plan.rows}{kind}"
         f"_{digest.hexdigest()[:12]}_{trt.__version__}"
     )
     exists, path = caching_tools.query(name)
     if exists:
         return path
 
+    def define(network: trt.INetworkDefinition, config: trt.IBuilderConfig) -> list[np.ndarray]:
+        # else tensorrt 8.6 sometimes picks a GPU reformat of a float16 output and fails
+        config.set_flag(trt.BuilderFlag.DIRECT_IO)
+        return define_network(network, plan, scale, offset)
+
     # tensorrt warns about every float16 tensor of an int8 build
     with tempfile.TemporaryDirectory() as tmpdir, LOG.suppress(), LOG.capture_errors() as errors:
         try:
             build_engine(
-                lambda network, _config: define_network(network, plan, scale, offset),
+                define,
                 Path(tmpdir) / f"{name}.engine",
                 default_device=trt.DeviceType.DLA,
                 workspace=1.0,
