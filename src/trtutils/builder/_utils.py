@@ -7,11 +7,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from trtutils._flags import FLAGS
+from trtutils.compat._libs import trt
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from trtutils.compat._libs import trt
+_EXPLICIT_QUANTIZATION = (
+    "Use explicit quantization instead: quantize the ONNX with trtutils.builder.quantize "
+    "(modelopt) and build with strongly_typed=True."
+)
 
 
 def get_check_dla(config: trt.IBuilderConfig) -> Callable[[trt.ILayer], bool]:
@@ -51,9 +55,46 @@ def check_implicit_calibration(*, requested: bool) -> None:
 
     """
     if requested and not FLAGS.INT8_CALIBRATION:
+        err_msg = f"Implicit INT8 calibration was removed in TensorRT 11. {_EXPLICIT_QUANTIZATION}"
+        raise RuntimeError(err_msg)
+
+
+def check_dynamic_range() -> None:
+    """
+    Raise if the installed TensorRT has no per-tensor INT8 dynamic ranges.
+
+    Raises
+    ------
+    RuntimeError
+        If ``ITensor.set_dynamic_range`` is missing (TensorRT 11).
+
+    """
+    if not FLAGS.DYNAMIC_RANGE:
         err_msg = (
-            "Implicit INT8 calibration was removed in TensorRT 11. Use explicit "
-            "quantization instead: quantize the ONNX with trtutils.builder.quantize "
-            "(modelopt) and build with strongly_typed=True."
+            "Per-tensor INT8 dynamic ranges (ITensor.set_dynamic_range) were removed in "
+            f"TensorRT 11. {_EXPLICIT_QUANTIZATION}"
         )
         raise RuntimeError(err_msg)
+
+
+def needs_dynamic_range(tensor: trt.ITensor) -> bool:
+    """
+    Check whether implicit INT8 needs a dynamic range for a tensor.
+
+    Float32, float16 and int8 tensors do, except float network outputs, which a range
+    would round to INT8 steps.
+
+    Parameters
+    ----------
+    tensor : trt.ITensor
+        The tensor to check.
+
+    Returns
+    -------
+    bool
+        Whether the tensor needs a dynamic range.
+
+    """
+    if tensor.dtype == trt.int8:
+        return True
+    return tensor.dtype in (trt.float32, trt.float16) and not tensor.is_network_output

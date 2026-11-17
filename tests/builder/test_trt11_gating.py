@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from trtutils._flags import FLAGS
 from trtutils.builder import build_dla_engine, build_engine
+from trtutils.builder.hooks import fp16_io_hook, int8_input_hook, int8_ranges_hook
 from trtutils.models import YOLOv8
 from trtutils.models._hooks import depthwise_fp32_build_hook, hands23_fp32_build_hook
 
@@ -123,3 +124,18 @@ def test_model_build_default_fp16_off_without_weak_typing(monkeypatch, tmp_path)
     with patch("trtutils.models._model.build_engine") as mock_build:
         YOLOv8.build(tmp_path / "fake.onnx", tmp_path / "out.engine")
     assert mock_build.call_args.kwargs["fp16"] is False
+
+
+@pytest.mark.parametrize(
+    ("flag", "make_hook"),
+    [
+        pytest.param("WEAK_TYPING", lambda: fp16_io_hook(MagicMock()), id="fp16-io"),
+        pytest.param("DYNAMIC_RANGE", lambda: int8_input_hook(MagicMock()), id="int8-input"),
+        pytest.param("DYNAMIC_RANGE", int8_ranges_hook, id="int8-ranges"),
+    ],
+)
+def test_io_and_range_hooks_raise_without_implicit_int8(monkeypatch, flag, make_hook) -> None:
+    """The I/O dtype and INT8 range hooks name the TensorRT 11 removal."""
+    monkeypatch.setattr(FLAGS, flag, False)
+    with pytest.raises(RuntimeError, match=_MATCH):
+        make_hook()

@@ -182,7 +182,7 @@ def test_build_int8_dynamic_ranges_without_calibration(
         tensors = inputs + outputs if ranged == "all" else inputs
         for tensor in tensors:
             tensor.set_dynamic_range(-2.0, 2.0)
-        counts["total"] = len(inputs) + len(outputs)
+        counts["total"] = len(inputs) + sum(not t.is_network_output for t in outputs)
         counts["missing"] = counts["total"] - len(tensors)
         return network
 

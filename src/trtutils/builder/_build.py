@@ -19,7 +19,7 @@ from trtutils.core._device import Device
 from trtutils.core.cache import query_timing_cache, save_timing_cache_to_global
 
 from ._onnx import read_onnx
-from ._utils import check_implicit_calibration, get_check_dla
+from ._utils import check_implicit_calibration, get_check_dla, needs_dynamic_range
 
 # trt 11 removed the implicit calibrators
 if FLAGS.INT8_CALIBRATION:
@@ -211,7 +211,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         If True, quantize the engine to INT8 precision. The scales come from
         calibration with ``data_batcher`` or ``calibration_cache``. Without either,
         no calibrator is attached and TensorRT uses the per-tensor dynamic ranges
-        set on the network, e.g. by a hook calling ``ITensor.set_dynamic_range``.
+        set on the network, e.g. by ``hooks.int8_ranges_hook``.
         Tensors without a range run in higher precision (a warning gives the
         count). On TensorRT 8.6 the build fails if no tensor has a range. Explicit
         ranges are the way to fix INT8 precision on the DLA with TensorRT 8.6,
@@ -604,9 +604,7 @@ def _calibration_shapes(
 
 def _missing_dynamic_ranges(network: trt.INetworkDefinition) -> tuple[int, int]:
     """
-    Count the tensors INT8 can quantize that have no dynamic range.
-
-    These are the float32, float16 and int8 network inputs and layer outputs.
+    Count the network inputs and layer outputs that need a dynamic range but have none.
 
     Returns
     -------
@@ -618,7 +616,7 @@ def _missing_dynamic_ranges(network: trt.INetworkDefinition) -> tuple[int, int]:
     for idx in range(network.num_layers):
         layer = network.get_layer(idx)
         tensors.extend(layer.get_output(out) for out in range(layer.num_outputs))
-    quantizable = [t for t in tensors if t.dtype in (trt.float32, trt.float16, trt.int8)]
+    quantizable = [t for t in tensors if needs_dynamic_range(t)]
     return sum(t.dynamic_range is None for t in quantizable), len(quantizable)
 
 

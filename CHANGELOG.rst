@@ -87,6 +87,8 @@ Added
   input to its own device buffer, cast to the dtype TensorRT reads that input as. A batch
   without one array per input raises ``ValueError``
 * ``inspect.inspect_placement`` / ``PlacementReport``: where each engine layer runs, DLA or GPU
+* ``builder.hooks.fp16_io_hook`` / ``int8_input_hook``: float16 network I/O, int8 inputs at scale 1
+* ``builder.hooks.int8_ranges_hook``: INT8 without calibration data, ranges by interval arithmetic
 
 Changed
 ^^^^^^^
