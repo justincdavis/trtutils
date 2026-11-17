@@ -33,7 +33,6 @@ IMAGENET = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 NORMS = {
     "range": ((0.0, 1.0), None, None),
     "imagenet": ((0.0, 1.0), *IMAGENET),
-    "symmetric": ((-1.0, 1.0), None, None),
 }
 KINDS = ("numpy", "host", "mapped", "device")
 BUFFER_KINDS = ("host", "pinned", "mapped", "device")
@@ -71,7 +70,6 @@ ID_ORDER = (
     "batch",
     "bad",
     "position",
-    "update",
     "cpu_resize",
 )
 
@@ -123,7 +121,6 @@ class Case:
     geometry: Geometry | None = None
     bad: str | None = None
     position: str | None = None
-    update: str | None = None
 
     @property
     def output_shape(self) -> tuple[int, int]:
