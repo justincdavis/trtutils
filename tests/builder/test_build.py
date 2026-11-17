@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from tests.builder.conftest import ListBatcher
+from trtutils import Buffer, TRTEngine
 from trtutils._flags import FLAGS as REAL_FLAGS
 from trtutils._log import LOG
 from trtutils.builder import _build
@@ -632,6 +633,28 @@ def test_multiple_hooks(onnx_path, output_engine_path) -> None:
         optimization_level=1,
     )
     assert call_order == ["a", "b"]
+
+
+def test_build_from_network_definition(output_engine_path) -> None:
+    """A function that defines the network in code builds an engine computing that network."""
+    weights = np.zeros((3, 3, 1, 1), dtype=np.float32)
+    weights[[0, 1, 2], [2, 1, 0]] = 2.0
+    bias = np.ones(3, dtype=np.float32)
+
+    def define(network, config):
+        assert isinstance(config, trt.IBuilderConfig)
+        tensor = network.add_input("input", trt.float32, (1, 3, 8, 8))
+        layer = network.add_convolution_nd(
+            tensor, 3, (1, 1), trt.Weights(weights), trt.Weights(bias)
+        )
+        network.mark_output(layer.get_output(0))
+        return weights, bias
+
+    build_engine(define, output_engine_path, optimization_level=1)
+    engine = TRTEngine(output_engine_path, warmup=False)
+    data = np.random.default_rng(0).random((1, 3, 8, 8), dtype=np.float32)
+    result = engine.execute([Buffer.wrap(data)])[0]
+    np.testing.assert_allclose(result, 2.0 * data[:, ::-1] + 1.0, rtol=1e-5)
 
 
 @pytest.mark.parametrize("valid", [True, False], ids=["valid", "invalid"])

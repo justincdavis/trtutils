@@ -10,6 +10,8 @@ Classes
     CPU-based preprocessor.
 :class:`CUDAPreprocessor`
     CUDA-based preprocessor.
+:class:`DLAPreprocessor`
+    DLA-based preprocessor, for whole-factor resizes.
 :class:`HybridPreprocessor`
     CPU resize, CUDA normalization.
 :class:`TRTPreprocessor`
@@ -45,11 +47,13 @@ from ._cpu_ocr import (
     resize_text_detection,
 )
 from ._cuda import CUDAPreprocessor, GPUImagePreprocessor, HybridPreprocessor
+from ._dla import DLAPreprocessor
 from ._trt import TRTPreprocessor
 
 __all__ = [
     "CPUPreprocessor",
     "CUDAPreprocessor",
+    "DLAPreprocessor",
     "GPUImagePreprocessor",
     "HybridPreprocessor",
     "ImagePreprocessor",

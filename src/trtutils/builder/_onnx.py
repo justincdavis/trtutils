@@ -12,6 +12,61 @@ from trtutils._log import LOG
 from trtutils.compat._libs import trt
 
 
+def create_network(
+    workspace: float = 4.0,
+    *,
+    strongly_typed: bool = False,
+) -> tuple[trt.INetworkDefinition, trt.IBuilder, trt.IBuilderConfig]:
+    """
+    Create an empty explicit-batch TensorRT network with its builder and config.
+
+    Parameters
+    ----------
+    workspace : float
+        The size of the workspace in gigabytes.
+        Default is 4.0 GiB.
+    strongly_typed : bool, optional
+        If True, create the network with the STRONGLY_TYPED flag.
+        By default, False.
+
+    Returns
+    -------
+    tuple[trt.INetworkDefinition, trt.IBuilder, trt.IBuilderConfig]
+        The network, builder, and config.
+
+    Raises
+    ------
+    RuntimeError
+        If strongly_typed is True but the installed TensorRT does not support
+        strongly-typed networks.
+
+    """
+    builder = trt.Builder(LOG)
+    config = builder.create_builder_config()
+
+    # setup the workspace size
+    workspace_bytes = int(workspace * (1 << 30))
+    if hasattr(config, "max_workspace_size"):
+        config.max_workspace_size = workspace_bytes
+    else:
+        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_bytes)
+
+    # make network
+    # trt 11 dropped the flag, networks are always explicit batch there
+    network_flags = 0
+    if FLAGS.EXPLICIT_BATCH_FLAG:
+        network_flags |= 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    if strongly_typed:
+        if not FLAGS.STRONGLY_TYPED_SUPPORTED:
+            err_msg = (
+                "Installed TensorRT does not support strongly-typed networks "
+                "(NetworkDefinitionCreationFlag.STRONGLY_TYPED not found)."
+            )
+            raise RuntimeError(err_msg)
+        network_flags |= 1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED)
+    return builder.create_network(network_flags), builder, config
+
+
 def read_onnx(
     onnx: Path | str,
     workspace: float = 4.0,
@@ -76,30 +131,7 @@ def read_onnx(
         err_msg = "File does not have .onnx extension"
         raise ValueError(err_msg)
 
-    builder = trt.Builder(LOG)
-    config = builder.create_builder_config()
-
-    # setup the workspace size
-    workspace_bytes = int(workspace * (1 << 30))
-    if hasattr(config, "max_workspace_size"):
-        config.max_workspace_size = workspace_bytes
-    else:
-        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_bytes)
-
-    # make network
-    # trt 11 dropped the flag, networks are always explicit batch there
-    network_flags = 0
-    if FLAGS.EXPLICIT_BATCH_FLAG:
-        network_flags |= 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
-    if strongly_typed:
-        if not FLAGS.STRONGLY_TYPED_SUPPORTED:
-            err_msg = (
-                "Installed TensorRT does not support strongly-typed networks "
-                "(NetworkDefinitionCreationFlag.STRONGLY_TYPED not found)."
-            )
-            raise RuntimeError(err_msg)
-        network_flags |= 1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED)
-    network = builder.create_network(network_flags)
+    network, builder, config = create_network(workspace, strongly_typed=strongly_typed)
 
     # setup parser
     parser = trt.OnnxParser(network, LOG)

@@ -20,6 +20,10 @@ Attributes
     ImageNet normalization with scale/swap/transpose (float32 output)
 :attribute:`IMAGENET_SST_F16` : tuple[Path, str]
     ImageNet normalization with scale/swap/transpose (float16 output)
+:attribute:`BGR_TO_BGRX_INT8` : tuple[Path, str]
+    Converts a uint8 BGR image to the int8 BGRx (``image ^ 0x80``) a DLA reads.
+:attribute:`HALF_TO_FLOAT` : tuple[Path, str]
+    Casts float16 values to float32.
 :attribute:`DET_CLS_POST` : Path
     Postprocess kernels for detection unletterbox and classification softmax.
 :attribute:`HOI_POST` : Path
@@ -84,6 +88,16 @@ IMAGENET_SST: tuple[Path, str] = (
 IMAGENET_SST_F16: tuple[Path, str] = (
     _SST_IMAGENET_FILE,
     "scaleSwapTransposeImagenet_f16",
+)
+
+BGR_TO_BGRX_INT8: tuple[Path, str] = (
+    _KERNEL_DIR / "dla_pre.cu",
+    "bgrToBgrxInt8",
+)
+
+HALF_TO_FLOAT: tuple[Path, str] = (
+    _KERNEL_DIR / "dla_pre.cu",
+    "halfToFloat",
 )
 
 DET_CLS_POST: Path = _KERNEL_DIR / "det_cls_post.cu"
