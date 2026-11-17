@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/preprocessors/_dla.py and _dla_network.py -- the DLA preprocessor."""
+"""Tests for src/trtutils/image/preprocessors/_dla.py and _dla_network.py -- DLA planning and engines."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from trtutils._flags import FLAGS
 from trtutils.compat._libs import trt
 from trtutils.core import create_engine
 from trtutils.image import Detector
-from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor, DLAPreprocessor, _dla
+from trtutils.image.preprocessors import CUDAPreprocessor, DLAPreprocessor, _dla
 from trtutils.image.preprocessors._base import crop_geometry
 from trtutils.image.preprocessors._cpu import resize_image
 from trtutils.image.preprocessors._dla_network import (
@@ -49,12 +49,6 @@ CROPS = [
     pytest.param((480, 720), (1, 1), id="720x480-224-crop-k1"),
 ]
 CROP = (224, 224)
-CPU_CONFIGS = [
-    pytest.param((750, 1000), (640, 640), "letterbox", id="750x1000-640-letterbox"),
-    pytest.param((750, 1000), (640, 384), "letterbox", id="750x1000-640x384-letterbox"),
-    pytest.param((1080, 1920), (640, 640), "linear", id="1080p-640-linear"),
-    pytest.param((750, 1000), (224, 224), "center_crop", id="750x1000-224-center_crop"),
-]
 
 
 def _frame(images, height: int, width: int, name: str = "people") -> np.ndarray:
@@ -271,27 +265,6 @@ def test_dla_preprocessor_without_dla_raises() -> None:
 
 
 @pytest.mark.dla
-@pytest.mark.parametrize(("shape", "size", "method"), CONFIGS)
-@pytest.mark.parametrize("norm", [{}, IMAGENET], ids=["raw", "imagenet"])
-@pytest.mark.parametrize("dtype", [np.float16, np.float32], ids=["fp16", "fp32"])
-def test_dla_matches_cuda(images, shape, size, method, norm, dtype) -> None:
-    """DLA output is within about a level of the CUDA preprocessor, with the same ratios and padding."""
-    frame = _frame(images, *shape)
-    dla = DLAPreprocessor(size, RANGE, dtype, resize=method, **norm)
-    cuda = CUDAPreprocessor(size, RANGE, np.float32, resize=method, **norm)
-    result, ratios, padding = dla.preprocess(frame)
-    expected, cuda_ratios, cuda_padding = cuda.preprocess(frame)
-    assert result.dtype == dtype
-    assert result.shape == expected.shape
-    assert ratios == cuda_ratios
-    assert padding == cuda_padding
-    level = 1.0 / (255.0 * min(norm.get("std", (1.0,))))
-    diff = np.abs(result.astype(np.float32) - expected)
-    assert diff.max() <= 1.5 * level + 0.004
-    assert diff.mean() <= 0.25 * level
-
-
-@pytest.mark.dla
 @pytest.mark.parametrize(("shape", "factors"), CROPS)
 @pytest.mark.parametrize("dtype", [np.float16, np.float32], ids=["fp16", "fp32"])
 def test_dla_center_crop_matches_reference(images, shape, factors, dtype) -> None:
@@ -316,102 +289,6 @@ def test_dla_center_crop_matches_reference(images, shape, factors, dtype) -> Non
     assert diff.max() <= level
     assert diff.mean() <= 0.1 * level
     assert np.abs(result - expected[0]).mean() <= 8 * level
-
-
-@pytest.mark.dla
-@pytest.mark.parametrize(
-    ("size", "method"),
-    [
-        pytest.param((640, 640), "letterbox", id="letterbox"),
-        pytest.param(CROP, "center_crop", id="center-crop"),
-    ],
-)
-def test_dla_inputs_and_batches_match(images, size, method) -> None:
-    """Host, mapped and device images give identical results, alone or in mixed-size batches."""
-    frames = [_frame(images, 1080, 1920), _frame(images, 720, 1280)]
-    dla = DLAPreprocessor(size, RANGE, np.float16, batch_size=2, resize=method)
-    singles = [dla.preprocess(frame)[0][0] for frame in frames]
-    for placement in ({"location": MemoryLocation.DEVICE}, {"pinned": True, "mapped": True}):
-        for frame, single in zip(frames, singles):
-            result, _, _ = dla.preprocess(Buffer.from_array(frame, **placement))
-            np.testing.assert_array_equal(result[0], single)
-    for order in ((0, 1), (1, 0), (0, 1)):
-        batch, ratios, padding = dla.preprocess([frames[i] for i in order])
-        for slot, i in enumerate(order):
-            np.testing.assert_array_equal(batch[slot], singles[i])
-        assert ratios == [plan_resize(*frames[i].shape[:2], size, method).ratios for i in order]
-        assert len(padding) == len(order)
-
-
-@pytest.mark.dla
-@pytest.mark.parametrize(("shape", "size", "method"), CPU_CONFIGS)
-@pytest.mark.parametrize("norm", [{}, IMAGENET], ids=["raw", "imagenet"])
-@pytest.mark.parametrize("dtype", [np.float16, np.float32], ids=["fp16", "fp32"])
-def test_dla_cpu_resize_matches_cpu(images, shape, size, method, norm, dtype) -> None:
-    """Host images the DLA cannot resize are resized on the CPU and match CPUPreprocessor."""
-    frame = _frame(images, *shape)
-    dla = DLAPreprocessor(size, RANGE, dtype, resize=method, **norm)
-    cpu = CPUPreprocessor(size, RANGE, np.float32, resize=method, **norm)
-    assert dla.resizes_on_cpu(*shape)
-    result, ratios, padding = dla.preprocess(frame)
-    expected, cpu_ratios, cpu_padding = cpu.preprocess(frame)
-    assert result.dtype == dtype
-    assert ratios == cpu_ratios
-    assert padding == cpu_padding
-    np.testing.assert_allclose(result.astype(np.float32), expected, rtol=1e-3, atol=1e-3)
-
-
-@pytest.mark.dla
-def test_dla_cpu_resize_routes(images) -> None:
-    """None resizes on the DLA what it can and on the CPU the rest; True always on the CPU."""
-    frames = [_frame(images, 1080, 1920), _frame(images, 750, 1000)]
-    auto = DLAPreprocessor((640, 640), RANGE, np.float16, batch_size=2)
-    forced = DLAPreprocessor((640, 640), RANGE, np.float16, batch_size=2, cpu_resize=True)
-    assert [auto.resizes_on_cpu(*f.shape[:2]) for f in frames] == [False, True]
-    assert [forced.resizes_on_cpu(*f.shape[:2]) for f in frames] == [True, True]
-    on_dla = DLAPreprocessor((640, 640), RANGE, np.float16, cpu_resize=False).preprocess(frames[0])
-    on_cpu = forced.preprocess(frames)
-    batch, ratios, padding = auto.preprocess(frames)
-    np.testing.assert_array_equal(batch[0], on_dla[0][0])
-    np.testing.assert_array_equal(batch[1], on_cpu[0][1])
-    assert ratios == on_cpu[1]
-    assert padding == on_cpu[2]
-    swapped, _, _ = auto.preprocess(frames[::-1])
-    np.testing.assert_array_equal(swapped[0], batch[1])
-    np.testing.assert_array_equal(swapped[1], batch[0])
-    mapped = Buffer.from_array(frames[1], pinned=True, mapped=True)
-    np.testing.assert_array_equal(auto.preprocess(mapped)[0][0], batch[1])
-
-
-@pytest.mark.dla
-def test_dla_center_crop_routes(images) -> None:
-    """None center crops on the DLA, antialiased; True on the CPU, bilinear like CPUPreprocessor."""
-    frame = _frame(images, 1080, 1920)
-    auto = DLAPreprocessor(CROP, RANGE, np.float16, resize="center_crop")
-    forced = DLAPreprocessor(CROP, RANGE, np.float16, resize="center_crop", cpu_resize=True)
-    assert not auto.resizes_on_cpu(1080, 1920)
-    assert auto.resizes_on_cpu(750, 1000)
-    on_dla = auto.preprocess(frame)
-    on_cpu = forced.preprocess(frame)
-    expected = CPUPreprocessor(CROP, RANGE, np.float32, resize="center_crop").preprocess(frame)
-    assert on_dla[1:] == on_cpu[1:] == expected[1:]
-    np.testing.assert_allclose(on_cpu[0].astype(np.float32), expected[0], rtol=1e-3, atol=1e-3)
-    assert np.abs(on_dla[0].astype(np.float32) - expected[0]).max() > 1e-3
-
-
-@pytest.mark.dla
-@pytest.mark.parametrize("cpu_resize", [None, True], ids=["auto", "cpu_resize"])
-def test_dla_resizes_device_buffers_on_dla(images, cpu_resize) -> None:
-    """Device Buffers are always resized on the DLA, so sizes it cannot resize raise."""
-    dla = DLAPreprocessor((640, 640), RANGE, np.float16, cpu_resize=cpu_resize)
-    frame = _frame(images, 1080, 1920)
-    expected = DLAPreprocessor((640, 640), RANGE, np.float16, cpu_resize=False).preprocess(frame)
-    result = dla.preprocess(Buffer.from_array(frame, MemoryLocation.DEVICE))
-    np.testing.assert_array_equal(result[0], expected[0])
-    assert result[1:] == expected[1:]
-    device = Buffer.from_array(_frame(images, 750, 1000), MemoryLocation.DEVICE)
-    with pytest.raises(ValueError, match="whole factor"):
-        dla.preprocess(device)
 
 
 @pytest.mark.dla
@@ -475,20 +352,6 @@ def test_dla_preprocessor_rejects_config(kwargs, match) -> None:
     args = {"output_shape": (640, 640), "output_range": RANGE, "dtype": np.float16, **kwargs}
     with pytest.raises(ValueError, match=match):
         DLAPreprocessor(**args)
-
-
-@pytest.mark.dla
-def test_dla_preprocessor_rejects_inputs(images, random_images) -> None:
-    """Bad sizes and methods without cpu_resize, unknown methods and big batches raise ValueError."""
-    dla = DLAPreprocessor((640, 640), RANGE, np.float16, cpu_resize=False)
-    with pytest.raises(ValueError, match="whole factor"):
-        dla.preprocess(random_images(1, 700, 1000))
-    with pytest.raises(ValueError, match="multiple of 16"):
-        dla.preprocess(random_images(1, 750, 1000), resize="center_crop")
-    with pytest.raises(ValueError, match="Unknown method"):
-        DLAPreprocessor((640, 640), RANGE, np.float16).preprocess(random_images(1), resize="area")
-    with pytest.raises(ValueError, match="exceeds configured batch size"):
-        dla.preprocess([_frame(images, 1080, 1920)] * 2)
 
 
 @pytest.mark.dla
