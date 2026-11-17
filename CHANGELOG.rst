@@ -166,6 +166,10 @@ Fixed
   OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see
   a half-written engine
+* ``build_dla_engine`` builds models that run fully on the DLA. It did not allow GPU fallback,
+  so TensorRT rejected the I/O reformats and the build failed
+* ``build_dla_engine`` passes ``optimization_level`` on when the model runs fully on the DLA
+  or has no DLA layers. Those builds used the default level 3
 * ``build_engine(default_device="dla")`` without ``dla_core`` uses DLA core 0. TensorRT had
   selected no core, so the build failed
 * ``read_onnx`` raises ``RuntimeError`` on a file TensorRT 8.6 "parses" into an empty network
