@@ -23,9 +23,8 @@ Added
   ``TextRecognizer``, ``OCR`` and the ``models.PPOCR*`` wrappers; ``"cpu"`` for ``Detector``,
   ``Classifier`` and ``HandInteractionDetector``. ``DepthEstimator`` is CPU only. ``Detector``
   CUDA postprocessing covers YOLO-v10 and EfficientNMS engines only
-* ``preprocessor`` on the image models: ``"cuda"`` (default), ``"cpu"``, ``"trt"`` and
-  ``"hybrid"`` (CPU resize, GPU normalize). ``trtutils detect`` / ``classify`` take the same
-  option
+* ``preprocessor`` on the image models: ``"cuda"`` (default), ``"cpu"`` and ``"trt"``.
+  ``trtutils detect`` / ``classify`` take the same option
 * ``resize_method="center_crop"`` with ``crop_pct`` (default 0.875, the torchvision/timm
   ImageNet eval transform). ``CPUPreprocessor(resize=fn)`` takes a whole-batch preprocess
   function for models whose input shape changes per batch
@@ -94,6 +93,15 @@ Added
   whole-factor letterbox and linear resizes, channel swap and normalization on a DLA, no GPU layers
 * ``center_crop`` on the DLA preprocessor, antialiased like torchvision's ``Resize`` (the other
   preprocessors' center crop is bilinear), for input widths that are multiples of 16 up to 3840
+* ``cpu_resize`` on the image models, ``ParallelDetector`` / ``EngineInfo`` and the CUDA, TRT
+  and DLA preprocessors (CLI ``--cpu_resize`` / ``--no_cpu_resize``): ``True`` resizes host
+  images on the CPU and leaves the channel swap, normalization and transpose to the chosen
+  preprocessor, which uploads only the resized image. ``False`` never does. ``None`` (default)
+  resizes on the CPU only what the preprocessor cannot, so ``cuda`` and ``trt`` keep resizing on
+  the GPU and ``"dla0"`` / ``"dla1"`` take any input size: the DLA resizes the sizes it can,
+  center crops included, and the CPU the rest. ``DLAPreprocessor.resizes_on_cpu`` tells which
+  path a size takes. The CPU's center crop is bilinear and the DLA's antialiased, so ``True``
+  changes a DLA center crop's pixels slightly
 
 Changed
 ^^^^^^^
@@ -115,6 +123,9 @@ Changed
   top-level ``trtutils``. Import them from ``trtutils.parallel``
 * **Breaking:** ``core.cache`` functions are renamed: ``clear_cache`` is ``clear``, ``query_cache``
   is ``query`` and ``store_in_cache`` is ``store``
+* **Breaking:** ``preprocessor="hybrid"`` and ``HybridPreprocessor`` are removed. Use
+  ``preprocessor="cuda", cpu_resize=True`` (``CUDAPreprocessor(cpu_resize=True)``, CLI
+  ``--preprocessor cuda --cpu_resize``)
 * ``build_engine(shapes=...)`` accepts ``(min, opt, max)`` triples per input to build a dynamic
   optimization profile. A plain shape still sets a fixed shape, as in 0.6.1
 * ``create_stream(non_blocking=True)`` creates a stream that does not synchronize with the
@@ -136,8 +147,8 @@ Performance
   and 7-8 ms on an RTX 5080
 * ``TRTPreprocessor`` runs at the submitted batch size: one 1080p image takes 0.63 ms on an
   RTX 5080
-* ``hybrid`` preprocessing: yolo11n end2end 0.86 ms on 1080p (RTX 5080), vs 0.98 ms with
-  ``"cuda"``
+* ``preprocessor="cuda", cpu_resize=True``: yolo11n end2end 0.86 ms on 1080p (RTX 5080), vs
+  0.98 ms without ``cpu_resize``
 * PPOCR with the default CUDA postprocessors: 14-line 1080p page about 7.0 ms on an RTX 5080
 * Less host work per ``Buffer`` and per ``TRTEngine.raw_exec`` call. On a Jetson AGX Orin, the
   trtutils time of ``raw_exec([Buffer.wrap(tensor)])`` drops from 21.3 to 14.9 us, ``raw_exec``
@@ -145,10 +156,11 @@ Performance
 
 Fixed
 ^^^^^
-* CPU and hybrid ``linear`` resize returns (width, height) ratios. They were swapped, which
-  misplaced boxes, keypoints, and masks on non-square model inputs
+* CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
+  swapped, which misplaced boxes, keypoints, and masks on non-square model inputs
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
-* Float16-input image models use the ``cuda`` / ``hybrid`` preprocessors instead of the CPU one
+* Float16-input image models use the ``cuda`` preprocessor (with or without ``cpu_resize``) instead of
+  the CPU one
 * The package ships ``image/_kernels/postprocess.cuh``. Without it, every CUDA postprocessor but
   OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see

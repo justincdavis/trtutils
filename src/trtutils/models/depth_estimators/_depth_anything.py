@@ -40,6 +40,7 @@ class DepthAnythingV1(DepthEstimator, Model):
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
+        cpu_resize: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -60,6 +61,7 @@ class DepthAnythingV1(DepthEstimator, Model):
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
+            cpu_resize=cpu_resize,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -91,6 +93,7 @@ class DepthAnythingV2(DepthEstimator, Model):
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
+        cpu_resize: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -111,6 +114,7 @@ class DepthAnythingV2(DepthEstimator, Model):
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
+            cpu_resize=cpu_resize,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -142,6 +146,7 @@ class DepthAnythingV3(DepthEstimator, Model):
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
+        cpu_resize: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -162,6 +167,7 @@ class DepthAnythingV3(DepthEstimator, Model):
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
+            cpu_resize=cpu_resize,
             no_warn=no_warn,
             verbose=verbose,
         )

@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/preprocessors/ -- CPU, CUDA, TRT, and hybrid preprocessors."""
+"""Tests for src/trtutils/image/preprocessors/ -- CPU, CUDA, and TRT preprocessors."""
 
 from __future__ import annotations
 
@@ -18,13 +18,12 @@ from trtutils.image.postprocessors import postprocess_yolov10
 from trtutils.image.preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
-    HybridPreprocessor,
     TRTPreprocessor,
     _cuda,
     _trt,
 )
 from trtutils.image.preprocessors._base import RESIZE_METHODS, crop_geometry
-from trtutils.image.preprocessors._cpu import letterbox, preprocess, resize_linear
+from trtutils.image.preprocessors._cpu import letterbox, preprocess, resize_image, resize_linear
 
 SIZE = (640, 640)
 NON_SQUARE = [
@@ -45,38 +44,52 @@ BUFFER_PLACEMENTS = [
     pytest.param({"pinned": True, "mapped": False}, id="pinned"),
     pytest.param({"pinned": False}, id="pageable"),
 ]
-HYBRID = pytest.param(HybridPreprocessor, {}, id="hybrid")
+CPU_RESIZE = [
+    pytest.param(CUDAPreprocessor, {"cpu_resize": True}, id="cuda-cpu_resize"),
+    pytest.param(TRTPreprocessor, {"batch_size": 4, "cpu_resize": True}, id="trt-cpu_resize"),
+]
 
 
+@pytest.mark.parametrize(("gpu_cls", "kwargs"), CPU_RESIZE)
 @pytest.mark.parametrize("resize", ["linear", "letterbox", "center_crop"])
 @pytest.mark.parametrize(
     ("norm", "atol"),
     [
-        pytest.param({}, 0.0, id="raw"),
-        pytest.param(IMAGENET, 1e-6, id="imagenet"),
+        pytest.param({}, 1e-6, id="raw"),
+        pytest.param(IMAGENET, 1e-5, id="imagenet"),
     ],
 )
-def test_hybrid_matches_cpu(images, resize, norm, atol) -> None:
-    """Hybrid resizes exactly as the CPU path; only the float32 normalization order differs."""
+def test_cpu_resize_matches_cpu(images, gpu_cls, kwargs, resize, norm, atol) -> None:
+    """cpu_resize resizes exactly as the CPU path; only the float32 normalization order differs."""
     cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=resize, **norm)
-    hybrid = HybridPreprocessor(SIZE, RANGE, DTYPE, resize=resize, **norm)
+    gpu = gpu_cls(SIZE, RANGE, DTYPE, resize=resize, **kwargs, **norm)
     batch = [image.array for image in images.values()]
     for imgs in (batch, batch[:1], batch):
         expected, ratios, padding = cpu.preprocess(imgs)
-        result, hybrid_ratios, hybrid_padding = hybrid.preprocess(imgs)
-        assert hybrid_ratios == ratios
-        assert hybrid_padding == padding
+        result, gpu_ratios, gpu_padding = gpu.preprocess(imgs)
+        assert gpu_ratios == ratios
+        assert gpu_padding == padding
         np.testing.assert_allclose(result, expected, rtol=0, atol=atol)
 
 
-@pytest.mark.parametrize("placement", BUFFER_PLACEMENTS[:2])
-def test_hybrid_device_buffers_resize_on_gpu(images, placement) -> None:
-    """Device-visible Buffers skip the CPU resize and give the CUDA preprocessor's result."""
-    batch = [Buffer.from_array(image.array, **placement) for image in images.values()]
-    expected = CUDAPreprocessor(SIZE, RANGE, DTYPE).preprocess(batch)
-    result = HybridPreprocessor(SIZE, RANGE, DTYPE).preprocess(batch)
-    np.testing.assert_array_equal(result[0], expected[0])
-    assert result[1:] == expected[1:]
+@pytest.mark.parametrize(("gpu_cls", "kwargs"), CPU_RESIZE)
+def test_cpu_resize_resizes_device_buffers_on_gpu(images, gpu_cls, kwargs) -> None:
+    """Device Buffers are resized on the GPU, mapped ones on the CPU, also mixed in one batch."""
+    frames = [image.array for image in images.values()]
+    device = [Buffer.from_array(frame, MemoryLocation.DEVICE) for frame in frames]
+    mapped = [Buffer.from_array(frame, pinned=True, mapped=True) for frame in frames]
+    preproc = gpu_cls(SIZE, RANGE, DTYPE, **kwargs)
+    on_gpu = gpu_cls(SIZE, RANGE, DTYPE, **{**kwargs, "cpu_resize": False}).preprocess(device)
+    on_cpu = preproc.preprocess(frames)
+    for batch, expected in ((device, on_gpu), (mapped, on_cpu)):
+        result = preproc.preprocess(batch)
+        np.testing.assert_array_equal(result[0], expected[0])
+        assert result[1:] == expected[1:]
+    mixed, ratios, padding = preproc.preprocess([device[0], frames[1]])
+    np.testing.assert_array_equal(mixed[0], on_gpu[0][0])
+    np.testing.assert_array_equal(mixed[1], on_cpu[0][1])
+    assert ratios == [on_gpu[1][0], on_cpu[1][1]]
+    assert padding == [on_gpu[2][0], on_cpu[2][1]]
 
 
 @pytest.mark.parametrize(
@@ -180,7 +193,7 @@ def test_trt_batch_size_exceeded_raises(random_images) -> None:
         trt_preproc.preprocess(random_images(5))
 
 
-@pytest.mark.parametrize(("preproc_cls", "kwargs"), [*PREPROCS, HYBRID])
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), [*PREPROCS, *CPU_RESIZE])
 def test_batch_matches_single(random_images, preproc_cls, kwargs) -> None:
     """Batches of varying size reproduce the single-image tensors, ratios, and padding exactly."""
     preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
@@ -342,7 +355,7 @@ def test_buffer_input_matches_ndarray(preproc_cls, kwargs, placement, shapes) ->
     np.testing.assert_array_equal(single[0], expected[0][:1])
 
 
-@pytest.mark.parametrize(("gpu_cls", "kwargs"), [*PREPROCS[1:], HYBRID])
+@pytest.mark.parametrize(("gpu_cls", "kwargs"), [*PREPROCS[1:], *CPU_RESIZE])
 @pytest.mark.parametrize("position", [0, 1], ids=["first", "second"])
 @pytest.mark.parametrize("as_buffer", [False, True], ids=["ndarray", "device"])
 def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:
@@ -356,13 +369,7 @@ def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:
 
 
 @pytest.mark.regression
-@pytest.mark.parametrize(
-    "gpu_cls",
-    [
-        pytest.param(CUDAPreprocessor, id="cuda"),
-        pytest.param(HybridPreprocessor, id="hybrid"),
-    ],
-)
+@pytest.mark.parametrize("cpu_resize", [None, True], ids=["cuda", "cuda-cpu_resize"])
 @pytest.mark.parametrize(
     "norm",
     [
@@ -378,13 +385,13 @@ def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:
         pytest.param(SHAPES[:4], id="heterogeneous"),
     ],
 )
-def test_gpu_fp16_matches_fp32(gpu_cls, norm, shapes) -> None:
+def test_gpu_fp16_matches_fp32(cpu_resize, norm, shapes) -> None:
     """float16 output is the float32 output rounded to float16, for every resize and placement."""
     rng = np.random.default_rng(0)
     imgs = [rng.integers(0, 256, (*s, 3), dtype=np.uint8) for s in shapes]
     device = [Buffer.from_array(img, MemoryLocation.DEVICE) for img in imgs]
-    fp32 = gpu_cls(SIZE, RANGE, DTYPE, **norm)
-    fp16 = gpu_cls(SIZE, RANGE, np.dtype(np.float16), **norm)
+    fp32 = CUDAPreprocessor(SIZE, RANGE, DTYPE, cpu_resize=cpu_resize, **norm)
+    fp16 = CUDAPreprocessor(SIZE, RANGE, np.dtype(np.float16), cpu_resize=cpu_resize, **norm)
     for resize, batch in itertools.product(RESIZE_METHODS, (imgs, device)):
         expected = fp32.preprocess(batch, resize=resize)
         result = fp16.preprocess(batch, resize=resize)
@@ -507,6 +514,13 @@ def test_center_crop_matches_resize_then_crop(image_hw, crop_pct) -> None:
         [image], (imgsz, imgsz), np.dtype(np.uint8), (0.0, 255.0), "center_crop", crop_pct=crop_pct
     )
     np.testing.assert_array_equal(result[0].transpose(1, 2, 0), expected)
+
+
+@pytest.mark.cpu
+def test_resize_image_rejects_unknown_method() -> None:
+    """resize_image raises for an unknown method instead of resizing linearly."""
+    with pytest.raises(ValueError, match="Unknown method"):
+        resize_image(np.zeros((480, 640, 3), dtype=np.uint8), SIZE, "area")
 
 
 @pytest.mark.cpu

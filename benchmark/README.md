@@ -223,7 +223,8 @@ resnet18, depth_anything_v2_small, hands23_x101, ppocrv4). `--all` runs every do
 detection ocr ...` limits the tasks, `--model NAME ...` picks exact names (unknown names raise),
 and `--list` prints the selection without running. A model that fails to download or build is
 logged and skipped, and so is a preprocessor the model resolves to something else (e.g. trt
-falling back to cuda). `--preprocessors` defaults to `cpu cuda trt hybrid`, and every
+falling back to cuda). `--preprocessors` defaults to `cpu cuda trt cuda+cpu_resize` (a
+`+cpu_resize` suffix runs that preprocessor with `cpu_resize=True`, e.g. `dla0+cpu_resize`), and every
 preprocessor runs with each of `--postprocessors` (default `cpu cuda`); `cuda` runs where the
 task has a CUDA postprocessor (every task but depth) and the engine's outputs fit it (detection
 needs YOLO-v10 or EfficientNMS outputs); its results are keyed

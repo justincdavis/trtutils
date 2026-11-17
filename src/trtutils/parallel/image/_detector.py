@@ -87,6 +87,7 @@ class EngineInfo:
     cuda_graph: bool | None = None
     extra_nms: bool | None = None
     agnostic_nms: bool | None = None
+    cpu_resize: bool | None = None
 
 
 class ParallelDetector:
@@ -117,6 +118,7 @@ class ParallelDetector:
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
+        cpu_resize: bool | None = None,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         sequential_load: bool | None = None,
@@ -139,7 +141,7 @@ class ParallelDetector:
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt', 'hybrid', 'dla0', 'dla1'], default is 'cuda'.
+            The options are ['cpu', 'cuda', 'trt', 'dla0', 'dla1'], default is 'cuda'.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear'], default is 'letterbox'.
@@ -173,6 +175,10 @@ class ParallelDetector:
             configuration (batch size, resolution, input buffers) once it
             repeats and replays it afterwards.
             Only effective with async_v3 backend. Default is True.
+        cpu_resize : bool, optional
+            Whether to resize images on the CPU and leave the rest of the
+            preprocessing to the preprocessor. Default is None, which resizes on
+            the CPU only what the preprocessor cannot resize, see :class:`ImageModel`.
         extra_nms : bool, optional
             Whether or not an additional CPU-side NMS operation
             should be conducted on final detections.
@@ -228,6 +234,7 @@ class ParallelDetector:
         self._pagelocked_mem = pagelocked_mem
         self._unified_mem = unified_mem
         self._cuda_graph = cuda_graph
+        self._cpu_resize = cpu_resize
         self._extra_nms = extra_nms
         self._agnostic_nms = agnostic_nms
         self._sequential_load = sequential_load
@@ -1068,6 +1075,7 @@ class ParallelDetector:
         )
         unified_mem = info.unified_mem if info.unified_mem is not None else self._unified_mem
         cuda_graph = info.cuda_graph if info.cuda_graph is not None else self._cuda_graph
+        cpu_resize = info.cpu_resize if info.cpu_resize is not None else self._cpu_resize
         extra_nms = info.extra_nms if info.extra_nms is not None else self._extra_nms
         agnostic_nms = info.agnostic_nms if info.agnostic_nms is not None else self._agnostic_nms
 
@@ -1092,6 +1100,7 @@ class ParallelDetector:
                 pagelocked_mem=pagelocked_mem,
                 unified_mem=unified_mem,
                 cuda_graph=cuda_graph,
+                cpu_resize=cpu_resize,
                 extra_nms=extra_nms,
                 agnostic_nms=agnostic_nms,
                 no_warn=self._no_warn,

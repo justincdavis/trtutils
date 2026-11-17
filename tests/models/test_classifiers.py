@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.conftest import DATA_DIR
+from tests.conftest import DATA_DIR, PREPROCESSORS
 from trtutils.image._schema import ClassifierOutputSchema
 from trtutils.models import DeiT, DeiT3, EfficientNet, MobileNetV3, ResNet
 
@@ -30,11 +30,13 @@ CLASSIFIERS = [
 
 
 @pytest.mark.parametrize(("model_cls", "onnx_path"), CLASSIFIERS)
-@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt", "hybrid"])
-def test_classifier_end2end(build_model_engine, images, model_cls, onnx_path, preprocessor) -> None:
+@pytest.mark.parametrize(("preprocessor", "cpu_resize"), PREPROCESSORS)
+def test_classifier_end2end(
+    build_model_engine, images, model_cls, onnx_path, preprocessor, cpu_resize
+) -> None:
     """run(), get_classifications(), and end2end() agree and rank the ground-truth class in the top 5."""
     engine = build_model_engine(model_cls, onnx_path)
-    model = model_cls(engine, preprocessor=preprocessor, warmup=False)
+    model = model_cls(engine, preprocessor=preprocessor, cpu_resize=cpu_resize, warmup=False)
     assert model.output_schema is ClassifierOutputSchema.TORCHVISION
     image = images["horse"]
 

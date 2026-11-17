@@ -68,6 +68,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         crop_pct: float = DEFAULT_CROP_PCT,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        cpu_resize: bool | None = None,
     ) -> None:
         """
         Create a GPUImagePreprocessor for image processing models.
@@ -113,6 +114,10 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        cpu_resize : bool, optional
+            Whether to resize host images on the CPU, as :class:`CPUPreprocessor`
+            does, uploading only the resized image. Device Buffers are always
+            resized on the GPU. By default None, which resizes on the GPU.
 
         """
         super().__init__(
@@ -144,6 +149,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 "pack_batch_buffer": f"preproc::pack_batch_buffer [{self._tag}]",
                 "stream_sync": f"preproc::stream_sync [{self._tag}]",
                 "copy_output": f"preproc::copy_output [{self._tag}]",
+                "cpu_resize": f"preproc::cpu_resize [{self._tag}]",
             }
         )
 
@@ -153,6 +159,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         # handle memory flags
         self._pagelocked_mem = pagelocked_mem if pagelocked_mem is not None else True
         self._unified_mem = unified_mem
+        self._cpu_resize = bool(cpu_resize)
 
         # handle stream
         self._stream: cudart.cudaStream_t
@@ -391,12 +398,6 @@ class GPUImagePreprocessor(ImagePreprocessor):
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # validate_input
             raise ValueError(err_msg)
-
-        if (
-            not isinstance(image, Buffer)
-            and image.nbytes > self._input_binding.host_allocation.nbytes
-        ):
-            self._reallocate_input(image, verbose=verbose)
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # validate_input
@@ -688,10 +689,12 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         return resize_kernel, resize_args, ratios, padding
 
-    def _stage_image(self: Self, image: np.ndarray | Buffer) -> int:
+    def _stage_image(self: Self, image: np.ndarray | Buffer, *, verbose: bool | None) -> int:
         """Get a device pointer to one image, staging host images in the input binding."""
         if isinstance(image, Buffer):
             return image.device_ptr
+        if image.nbytes > self._input_binding.host_allocation.nbytes:
+            self._reallocate_input(image, verbose=verbose)
         binding = self._input_binding
         if self._pagelocked_mem and self._unified_mem:
             # the kernel for the previous image may still read this mapped buffer
@@ -723,7 +726,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             height,
             width,
             resize_method,
-            self._stage_image(image),
+            self._stage_image(image, verbose=verbose),
             batch_buffer_ptr,
             verbose=verbose,
         )
@@ -828,7 +831,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 height,
                 width,
                 resize_method,
-                self._stage_image(image),
+                self._stage_image(image, verbose=verbose),
                 batch_buffer_ptr + (i * single_image_bytes),
                 verbose=verbose,
             )
@@ -846,7 +849,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         return ratios_list, padding_list
 
-    def _resize_images_to_batch(  # noqa: C901
+    def _resize_images_to_batch(
         self: Self,
         images: Sequence[np.ndarray | Buffer],
         batch_buffer_ptr: int,
@@ -874,6 +877,19 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Lists of ratios and padding per image.
 
         """
+        if self._cpu_resize:
+            return self._cpu_resize_to_batch(images, batch_buffer_ptr, resize, verbose=verbose)
+        return self._gpu_resize_to_batch(images, batch_buffer_ptr, resize, verbose=verbose)
+
+    def _gpu_resize_to_batch(  # noqa: C901
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        batch_buffer_ptr: int,
+        resize: str | None,
+        *,
+        verbose: bool | None,
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        """Resize images on the GPU into the batch buffer."""
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["resize_images_to_batch"])
 
@@ -934,6 +950,51 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         return ratios_list, padding_list
 
+    def _cpu_resize_to_batch(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        batch_buffer_ptr: int,
+        resize: str | None,
+        *,
+        verbose: bool | None,
+    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+        """Resize host images on the CPU and upload them, and device Buffers on the GPU."""
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["cpu_resize"])
+        try:
+            o_width, o_height = self._o_shape
+            image_bytes = o_height * o_width * _COLOR_CHANNELS
+            staging = None
+            if self._pagelocked_mem:
+                staging = self._reallocate_batch_input(len(images), o_height, o_width)
+                # the previous upload may still read the pinned staging
+                stream_synchronize(self._stream)
+            ratios_list: list[tuple[float, float]] = []
+            padding_list: list[tuple[float, float]] = []
+            for i, image in enumerate(images):
+                method = self._validate_input(image, resize, verbose=verbose)
+                slot = batch_buffer_ptr + i * image_bytes
+                if isinstance(image, Buffer) and image.is_device:
+                    ratios, padding = self._resize_single_image_to_batch(
+                        image, slot, method, verbose=verbose
+                    )
+                else:
+                    host = image.array if isinstance(image, Buffer) else image
+                    resized, ratios, padding = resize_image(
+                        host, self._o_shape, method, self._crop_pct
+                    )
+                    if staging is not None:
+                        np.copyto(staging[i], resized)
+                        resized = staging[i]
+                    memcpy_host_to_device_async(slot, resized, self._stream)
+                ratios_list.append(ratios)
+                padding_list.append(padding)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # cpu_resize
+
+        return ratios_list, padding_list
+
 
 class CUDAPreprocessor(GPUImagePreprocessor):
     """CUDA-based preprocessor for image processing models."""
@@ -954,6 +1015,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         normalize: bool = True,
+        cpu_resize: bool | None = None,
     ) -> None:
         """
         Create a CUDAPreprocessor for image processing models.
@@ -1001,6 +1063,10 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         normalize : bool, optional
             When False, return the letterboxed uint8 HWC image and skip scale,
             channel swap, and transpose. Default is True.
+        cpu_resize : bool, optional
+            Whether to resize host images on the CPU, as :class:`CPUPreprocessor`
+            does, uploading only the resized image. Device Buffers are always
+            resized on the GPU. By default None, which resizes on the GPU.
 
         Raises
         ------
@@ -1027,6 +1093,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             crop_pct=crop_pct,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            cpu_resize=cpu_resize,
         )
 
         self._nvtx_tags.update(
@@ -1270,46 +1337,3 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             nvtx.pop_range()  # cuda_direct_preproc
 
         return self._output_binding.device[:batch_size], ratios_list, padding_list
-
-
-class HybridPreprocessor(CUDAPreprocessor):
-    """
-    Resize on the CPU as :class:`CPUPreprocessor` does, then normalize on the GPU.
-
-    Only the resized image is uploaded instead of the full frame, which wins
-    when the model input is much smaller than the frame (classifiers). The
-    pixels are exactly the CPU path's. Device Buffers are resized on the GPU
-    as in :class:`CUDAPreprocessor`.
-    """
-
-    def _resize_images_to_batch(
-        self: Self,
-        images: Sequence[np.ndarray | Buffer],
-        batch_buffer_ptr: int,
-        resize: str | None = None,
-        *,
-        verbose: bool | None = None,
-    ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
-        # host Buffers the kernels cannot read are resized on the CPU too
-        arrays = [
-            img.array if isinstance(img, Buffer) and not img.device_visible else img
-            for img in images
-        ]
-        host = [img for img in arrays if isinstance(img, np.ndarray)]
-        if not host or len(host) != len(arrays):
-            return super()._resize_images_to_batch(images, batch_buffer_ptr, resize, verbose=verbose)
-        methods = [self._validate_input(img, resize, verbose=verbose) for img in host]
-        o_width, o_height = self._o_shape
-        staging = self._reallocate_batch_input(len(host), o_height, o_width)
-        # the previous upload may still read the pinned staging
-        if self._pagelocked_mem:
-            stream_synchronize(self._stream)
-        ratios_list: list[tuple[float, float]] = []
-        padding_list: list[tuple[float, float]] = []
-        for i, (image, method) in enumerate(zip(host, methods)):
-            resized, ratios, padding = resize_image(image, self._o_shape, method, self._crop_pct)
-            np.copyto(staging[i], resized)
-            ratios_list.append(ratios)
-            padding_list.append(padding)
-        memcpy_host_to_device_async(batch_buffer_ptr, staging, self._stream)
-        return ratios_list, padding_list

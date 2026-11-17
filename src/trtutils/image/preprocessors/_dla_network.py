@@ -40,6 +40,7 @@ _ROW_PIXELS = 16
 _MAX_CROP_WIDTH = 3840
 INPUT_NAME = "input"
 OUTPUT_NAMES = ("out_r", "out_g", "out_b")
+_ADVICE = "Resize it on the CPU (cpu_resize), or use the 'cuda' or 'trt' preprocessor."
 
 
 @dataclass(frozen=True, eq=False)
@@ -117,11 +118,6 @@ def plan_resize(
     """
     Get the DLA resize of an input size, with the ratios and padding of the GPU preprocessors.
 
-    A center crop resizes like torchvision's antialiased ``Resize``: a box filter
-    by half the downscale, then a triangle filter at the resize's sample
-    positions. The CPU and CUDA preprocessors resize it bilinearly without
-    antialiasing instead.
-
     Parameters
     ----------
     height : int
@@ -164,8 +160,7 @@ def plan_resize(
         ):
             err_msg = (
                 f"The DLA preprocessor letterboxes by a whole factor across the full width: "
-                f"{width}x{height} -> {out_width}x{out_height} is not one. "
-                "Use the 'cuda' or 'trt' preprocessor for this input size."
+                f"{width}x{height} -> {out_width}x{out_height} is not one. {_ADVICE}"
             )
             raise ValueError(err_msg)
         plan = ResizePlan(
@@ -181,8 +176,7 @@ def plan_resize(
         if width % out_width or height % out_height:
             err_msg = (
                 f"The DLA preprocessor resizes by whole factors: {width}x{height} -> "
-                f"{out_width}x{out_height} is not. Use the 'cuda' or 'trt' preprocessor "
-                "for this input size."
+                f"{out_width}x{out_height} is not. {_ADVICE}"
             )
             raise ValueError(err_msg)
         plan = ResizePlan(
@@ -198,8 +192,7 @@ def plan_resize(
         if width % _ROW_PIXELS or width > _MAX_CROP_WIDTH:
             err_msg = (
                 f"The DLA preprocessor center crops images up to {_MAX_CROP_WIDTH} pixels wide "
-                f"whose width is a multiple of {_ROW_PIXELS}: {width}x{height} is not one. "
-                "Use the 'cuda' or 'trt' preprocessor for this input size."
+                f"whose width is a multiple of {_ROW_PIXELS}: {width}x{height} is not one. {_ADVICE}"
             )
             raise ValueError(err_msg)
         (resized_width, resized_height, left, top), ratios, padding = crop_geometry(
@@ -578,8 +571,7 @@ def build_dla_preproc(
             )
         except RuntimeError:
             err_msg = (
-                f"TensorRT could not build the DLA preprocessing engine {name}: {errors}. "
-                "Use the 'cuda' or 'trt' preprocessor for this input size."
+                f"TensorRT could not build the DLA preprocessing engine {name}: {errors}. {_ADVICE}"
             )
             raise RuntimeError(err_msg) from None
     return path

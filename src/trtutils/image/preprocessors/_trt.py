@@ -51,6 +51,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         crop_pct: float = DEFAULT_CROP_PCT,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
+        cpu_resize: bool | None = None,
     ) -> None:
         """
         Create a TRTPreprocessor for image processing models.
@@ -99,6 +100,10 @@ class TRTPreprocessor(GPUImagePreprocessor):
             Whether or not the system has unified memory.
             If True, use cudaHostAllocMapped to take advantage of unified memory.
             By default None, which means the default host allocation will be used.
+        cpu_resize : bool, optional
+            Whether to resize host images on the CPU, as :class:`CPUPreprocessor`
+            does, uploading only the resized image to the engine. Device Buffers are
+            always resized on the GPU. By default None, which resizes on the GPU.
 
         Raises
         ------
@@ -120,6 +125,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
             crop_pct=crop_pct,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
+            cpu_resize=cpu_resize,
         )
 
         self._nvtx_tags.update(

@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 import pytest
 
-from tests.conftest import DATA_DIR
+from tests.conftest import DATA_DIR, PREPROCESSORS
 from trtutils import Buffer, MemoryLocation
 from trtutils.image import Classifier, OBBDetector, PoseEstimator, Segmenter
 from trtutils.image._schema import (
@@ -20,12 +20,6 @@ from trtutils.image._schema import (
     SegmenterOutputSchema,
 )
 
-PREPROCS = [
-    pytest.param("cpu", id="cpu"),
-    pytest.param("cuda", id="cuda"),
-    pytest.param("trt", id="trt"),
-    pytest.param("hybrid", id="hybrid"),
-]
 TASKS = [
     pytest.param(Segmenter, "seg", "people", id="seg"),
     pytest.param(PoseEstimator, "pose", "people", id="pose"),
@@ -90,7 +84,7 @@ def _check_obb(results: list, image: np.ndarray) -> None:
         pytest.param(OBBDetector, "obb", "aerial", "get_obbs", _check_obb, id="obb"),
     ],
 )
-@pytest.mark.parametrize("preprocessor", PREPROCS)
+@pytest.mark.parametrize(("preprocessor", "cpu_resize"), PREPROCESSORS)
 def test_task_model_end2end(
     task_engine,
     images,
@@ -100,10 +94,13 @@ def test_task_model_end2end(
     get_name: str,
     check: Callable[[list, np.ndarray], None],
     preprocessor: str,
+    cpu_resize: bool | None,
 ) -> None:
     """end2end() matches run() + get_*() and finds the expected objects."""
     image = _load(images, image_name)
-    model = model_cls(task_engine(task), preprocessor=preprocessor, warmup=False)
+    model = model_cls(
+        task_engine(task), preprocessor=preprocessor, cpu_resize=cpu_resize, warmup=False
+    )
 
     via_run = getattr(model, get_name)(model.run(image))
     via_e2e = model.end2end(image)

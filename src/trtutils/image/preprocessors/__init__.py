@@ -11,9 +11,7 @@ Classes
 :class:`CUDAPreprocessor`
     CUDA-based preprocessor.
 :class:`DLAPreprocessor`
-    DLA-based preprocessor, for whole-factor resizes.
-:class:`HybridPreprocessor`
-    CPU resize, CUDA normalization.
+    DLA-based preprocessor.
 :class:`TRTPreprocessor`
     TensorRT-based preprocessor.
 :class:`ImagePreprocessor`
@@ -46,7 +44,7 @@ from ._cpu_ocr import (
     preprocess_text_recognition,
     resize_text_detection,
 )
-from ._cuda import CUDAPreprocessor, GPUImagePreprocessor, HybridPreprocessor
+from ._cuda import CUDAPreprocessor, GPUImagePreprocessor
 from ._dla import DLAPreprocessor
 from ._trt import TRTPreprocessor
 
@@ -55,7 +53,6 @@ __all__ = [
     "CUDAPreprocessor",
     "DLAPreprocessor",
     "GPUImagePreprocessor",
-    "HybridPreprocessor",
     "ImagePreprocessor",
     "TRTPreprocessor",
     "crop_text_region",

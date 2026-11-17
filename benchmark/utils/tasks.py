@@ -175,13 +175,23 @@ def _engine(cls: Any, name: str) -> Path:  # noqa: ANN401
 
 
 def load_model(spec: TaskModel, preprocessor: str, postprocessor: str = "cpu") -> Any:  # noqa: ANN401
-    """Build (if needed) and load the model of ``spec`` with the given pre/postprocessor."""
+    """Build (if needed) and load the model of ``spec``, ``+cpu_resize`` setting ``cpu_resize=True``."""
     if spec.parts:
         det = _engine(spec.parts["det"], f"{spec.name}_det")
         rec = _engine(spec.parts["rec"], f"{spec.name}_rec")
         return spec.cls(det, rec, postprocessor=postprocessor, warmup=True)
     engine = _engine(spec.cls, spec.name)
-    return spec.cls(engine, preprocessor=preprocessor, postprocessor=postprocessor, warmup=True)
+    name, _, suffix = preprocessor.partition("+")
+    if suffix not in ("", "cpu_resize"):
+        err_msg = f"Unknown preprocessor suffix '+{suffix}', the only one is '+cpu_resize'"
+        raise ValueError(err_msg)
+    return spec.cls(
+        engine,
+        preprocessor=name,
+        cpu_resize=True if suffix else None,
+        postprocessor=postprocessor,
+        warmup=True,
+    )
 
 
 def _has_cuda_post(spec: TaskModel) -> bool:
@@ -284,7 +294,8 @@ def _resolved(model: Any) -> str:  # noqa: ANN401
     # OCR with postprocessor="cuda" preprocesses on the GPU; the constructor method stays "cpu"
     if getattr(det, "cuda_preprocess", False):
         return "cuda"
-    return det._preprocessor_method  # noqa: SLF001
+    method = det._preprocessor_method  # noqa: SLF001
+    return f"{method}+cpu_resize" if det._cpu_resize else method  # noqa: SLF001
 
 
 def _key(name: str, pre: str, post: str) -> str:

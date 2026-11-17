@@ -19,6 +19,7 @@ import trtutils
 from trtutils._log import LOG
 from trtutils.core import cache as caching_tools
 from trtutils.image import draw_bboxes, draw_text
+from trtutils.image._image_model import PREPROCESSOR_METHODS
 from trtutils.image.preprocessors._base import DEFAULT_CROP_PCT, RESIZE_METHODS
 from trtutils.research import discover_submodules
 from trtutils.research import register_cli as research_register_cli
@@ -640,7 +641,9 @@ def _detect(args: SimpleNamespace) -> None:
         - input_range : list[float]
             Input value range.
         - preprocessor : str
-            Preprocessor type ('cpu', 'cuda', 'trt', 'hybrid', 'dla0', or 'dla1').
+            Preprocessor type ('cpu', 'cuda', 'trt', 'dla0', or 'dla1').
+        - cpu_resize : bool or None
+            Resize on the CPU, None to resize there only what the preprocessor cannot.
         - resize_method : str
             Image resize method ('letterbox' or 'linear').
         - conf_thres : float
@@ -688,6 +691,7 @@ def _detect(args: SimpleNamespace) -> None:
         input_range=_to_float_pair(args.input_range),
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
+        cpu_resize=args.cpu_resize,
         conf_thres=args.conf_thres,
         nms_iou_thres=args.nms_iou_thres,
         dla_core=args.dla_core,
@@ -855,7 +859,9 @@ def _classify(args: SimpleNamespace) -> None:
         - input_range : list[float]
             Input value range.
         - preprocessor : str
-            Preprocessor type ('cpu', 'cuda', 'trt', 'hybrid', 'dla0', or 'dla1').
+            Preprocessor type ('cpu', 'cuda', 'trt', 'dla0', or 'dla1').
+        - cpu_resize : bool or None
+            Resize on the CPU, None to resize there only what the preprocessor cannot.
         - resize_method : str
             Image resize method ('letterbox', 'linear', or 'center_crop').
         - crop_pct : float
@@ -895,6 +901,7 @@ def _classify(args: SimpleNamespace) -> None:
         input_range=_to_float_pair(args.input_range),
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
+        cpu_resize=args.cpu_resize,
         dla_core=args.dla_core,
         warmup=args.warmup,
         pagelocked_mem=args.pagelocked_mem,
@@ -1516,6 +1523,27 @@ def _main() -> None:
         help="Suppress warnings from TensorRT.",
     )
 
+    # cpu resize arguments parser
+    cpu_resize_parser = argparse.ArgumentParser(add_help=False)
+    cpu_resize_group = cpu_resize_parser.add_mutually_exclusive_group()
+    cpu_resize_group.add_argument(
+        "--cpu_resize",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Resize on the CPU and run the rest of the preprocessing on the preprocessor.",
+    )
+    cpu_resize_group.add_argument(
+        "--no_cpu_resize",
+        dest="cpu_resize",
+        action="store_const",
+        const=False,
+        help=(
+            "Resize on the preprocessor, failing for sizes it cannot resize. By default the "
+            "CPU resizes only those."
+        ),
+    )
+
     # build device/precision args (to be inherited by build and build_yolo)
     build_device_parser = argparse.ArgumentParser(add_help=False)
     build_device_parser.add_argument(
@@ -1799,7 +1827,14 @@ def _main() -> None:
     detect_parser = subparsers.add_parser(
         "detect",
         help="Run YOLO object detection on an image or video.",
-        parents=[general_parser, dla_parser, warmup_parser, warmup_iterations_parser, memory_parser],
+        parents=[
+            general_parser,
+            dla_parser,
+            warmup_parser,
+            warmup_iterations_parser,
+            memory_parser,
+            cpu_resize_parser,
+        ],
     )
     detect_parser.add_argument(
         "--engine",
@@ -1837,7 +1872,7 @@ def _main() -> None:
     detect_parser.add_argument(
         "--preprocessor",
         "-p",
-        choices=["cpu", "cuda", "trt", "hybrid", "dla0", "dla1"],
+        choices=list(PREPROCESSOR_METHODS),
         default="cuda",
         help="Preprocessor to use. Default is cuda.",
     )
@@ -1869,7 +1904,14 @@ def _main() -> None:
     classify_parser = subparsers.add_parser(
         "classify",
         help="Run image classification on an image.",
-        parents=[general_parser, dla_parser, warmup_parser, warmup_iterations_parser, memory_parser],
+        parents=[
+            general_parser,
+            dla_parser,
+            warmup_parser,
+            warmup_iterations_parser,
+            memory_parser,
+            cpu_resize_parser,
+        ],
     )
     classify_parser.add_argument(
         "--engine",
@@ -1894,7 +1936,7 @@ def _main() -> None:
     classify_parser.add_argument(
         "--preprocessor",
         "-p",
-        choices=["cpu", "cuda", "trt", "hybrid", "dla0", "dla1"],
+        choices=list(PREPROCESSOR_METHODS),
         default="cuda",
         help="Preprocessor to use. Default is cuda.",
     )

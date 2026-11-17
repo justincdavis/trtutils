@@ -121,6 +121,7 @@ def test_missing_required_args_exit_2(argv) -> None:
                 "conf_thres": pytest.approx(0.1),
                 "nms_iou_thres": pytest.approx(0.5),
                 "preprocessor": "cuda",
+                "cpu_resize": None,
                 "resize_method": "letterbox",
                 "extra_nms": False,
                 "agnostic_nms": False,
@@ -135,6 +136,7 @@ def test_missing_required_args_exit_2(argv) -> None:
             "trtutils.__main__._classify",
             {
                 "preprocessor": "cuda",
+                "cpu_resize": None,
                 "resize_method": "letterbox",
                 "crop_pct": 0.875,
                 "input_range": [0.0, 1.0],
@@ -163,6 +165,18 @@ def test_missing_required_args_exit_2(argv) -> None:
             {"warmup": True, "warmup_iterations": 10},
             id="detect-warmup-flag",
         ),
+        pytest.param(
+            ["trtutils", "detect", "--engine", _ENGINE, "--input", _IMG, "--cpu_resize"],
+            "trtutils.__main__._detect",
+            {"cpu_resize": True},
+            id="detect-cpu-resize-flag",
+        ),
+        pytest.param(
+            ["trtutils", "classify", "--engine", _ENGINE, "--input", _IMG, "--no_cpu_resize"],
+            "trtutils.__main__._classify",
+            {"cpu_resize": False},
+            id="classify-no-cpu-resize-flag",
+        ),
     ],
 )
 def test_subcommand_defaults(argv, mock_target, expected) -> None:
@@ -172,6 +186,22 @@ def test_subcommand_defaults(argv, mock_target, expected) -> None:
     args = mock.call_args[0][0]
     for key, value in expected.items():
         assert getattr(args, key) == value, f"{key}: got {getattr(args, key)!r}, expected {value!r}"
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        pytest.param(["--cpu_resize", "--no_cpu_resize"], id="both-cpu-resize-flags"),
+        pytest.param(["--preprocessor", "hybrid"], id="hybrid"),
+    ],
+)
+def test_preprocessor_usage_errors(flags) -> None:
+    """Both cpu_resize flags at once, and the removed hybrid preprocessor, are usage errors."""
+    argv = ["trtutils", "detect", "--engine", _ENGINE, "--input", _IMG, *flags]
+    with patch("sys.argv", argv), patch("sys.stderr", new_callable=StringIO):
+        with pytest.raises(SystemExit) as exc_info:
+            _main()
+    assert exc_info.value.code == 2
 
 
 def test_benchmark_namespace_keeps_warmup_iterations_only() -> None:
