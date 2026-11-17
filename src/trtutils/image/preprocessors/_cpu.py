@@ -322,6 +322,63 @@ class CPUPreprocessor(ImagePreprocessor):
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # cpu_warmup
 
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
+    def __call__(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        resize: str | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Preprocess images for the model.
+
+        Parameters
+        ----------
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
+            A single image (HWC format) or list of images to preprocess.
+        resize : str
+            The method to resize the image with.
+            By default letterbox, options are [letterbox, linear, center_crop]
+            Not supported when the preprocessor was built with a function.
+        no_copy : bool, optional
+            If True, write into a reused buffer and return a view of it,
+            valid until the next call. By default False.
+            Not supported when the preprocessor was built with a function.
+        verbose : bool, optional
+            Whether or not to output additional information
+            to stdout. If not provided, will default to overall
+            engines verbose setting.
+
+        Returns
+        -------
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios, and list of padding per image.
+
+        """
+        return self.preprocess(images, resize=resize, no_copy=no_copy, verbose=verbose)
+
     # preprocess overloads
     @overload
     def preprocess(

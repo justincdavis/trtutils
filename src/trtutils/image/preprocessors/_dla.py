@@ -7,7 +7,7 @@ from __future__ import annotations
 import contextlib
 import math
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, overload
 
 import cv2
 import numpy as np
@@ -23,7 +23,7 @@ from trtutils.core._memory import memcpy_host_to_device_async
 from trtutils.core._stream import create_stream, destroy_stream, stream_synchronize
 from trtutils.image.kernels import BGR_TO_BGRX_INT8, HALF_TO_FLOAT
 
-from ._base import DevicePreprocessor
+from ._base import ImagePreprocessor
 from ._dla_network import (
     INPUT_NAME,
     OUTPUT_NAMES,
@@ -62,7 +62,7 @@ class _Runner(NamedTuple):
     flipped: np.ndarray
 
 
-class DLAPreprocessor(DevicePreprocessor):
+class DLAPreprocessor(ImagePreprocessor):
     """
     Preprocessor that resizes, swaps channels and normalizes on a DLA.
 
@@ -172,10 +172,15 @@ class DLAPreprocessor(DevicePreprocessor):
         self._runners: dict[tuple[int, int, str], _Runner] = {}
         super().__init__(output_shape, output_range, dtype, resize, mean, std, tag)
 
-        self._nvtx_tags["dla_direct_preproc"] = f"preproc::dla_direct_preproc [{self._tag}]"
+        self._nvtx_tags.update(
+            {
+                "dla_preprocess": f"preproc::dla_preprocess [{self._tag}]",
+                "dla_direct_preproc": f"preproc::dla_direct_preproc [{self._tag}]",
+            }
+        )
         self._dla_core = dla_core
         self._own_stream = stream is None
-        self._stream = create_stream() if stream is None else stream
+        self._stream: cudart.cudaStream_t = create_stream() if stream is None else stream
 
         width, height = self._o_shape
         shape = (batch_size, _COLOR_CHANNELS, height, width)
@@ -417,3 +422,120 @@ class DLAPreprocessor(DevicePreprocessor):
             [runner.plan.ratios for runner in runners],
             [runner.plan.padding for runner in runners],
         )
+
+    # __call__ overloads
+    @overload
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
+    def __call__(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        resize: str | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Preprocess images for the model.
+
+        Parameters
+        ----------
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
+            A single image (HWC format) or list of images to preprocess.
+        resize : str, optional
+            The method to resize the images with, 'letterbox' or 'linear'.
+            By default None, which uses the method given in the constructor.
+        no_copy : bool, optional
+            If True, return the host output memory without a copy. It WILL BE
+            OVERWRITTEN INPLACE by future preprocessing calls.
+        verbose : bool, optional
+            Whether or not to output additional information.
+
+        Returns
+        -------
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios, and list of padding per image.
+
+        """
+        return self.preprocess(images, resize=resize, no_copy=no_copy, verbose=verbose)
+
+    # preprocess overloads
+    @overload
+    def preprocess(
+        self: Self,
+        images: np.ndarray | Buffer,
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
+    def preprocess(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        resize: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    def preprocess(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        resize: str | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        """
+        Preprocess images for the model.
+
+        Parameters
+        ----------
+        images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
+            A single image (HWC format) or list of images to preprocess.
+        resize : str, optional
+            The method to resize the images with, 'letterbox' or 'linear'.
+            By default None, which uses the method given in the constructor.
+        no_copy : bool, optional
+            If True, return the host output memory without a copy. It WILL BE
+            OVERWRITTEN INPLACE by future preprocessing calls.
+        verbose : bool, optional
+            Whether or not to output additional information.
+
+        Returns
+        -------
+        tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]
+            The preprocessed batch tensor, list of ratios, and list of padding per image.
+
+        """
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["dla_preprocess"])
+        batch = [images] if isinstance(images, (np.ndarray, Buffer)) else images
+        output, ratios, padding = self.direct_preproc(
+            batch, resize=resize, no_warn=True, verbose=verbose
+        )
+        host = self._output.fetch(output.shape, self._stream)
+        stream_synchronize(self._stream)
+        result = host.array if no_copy else host.array.copy()
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # dla_preprocess
+        return result, ratios, padding

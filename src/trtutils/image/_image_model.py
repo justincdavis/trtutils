@@ -33,8 +33,8 @@ from ._schema import resolve_schema
 from .preprocessors import (
     CPUPreprocessor,
     CUDAPreprocessor,
-    DevicePreprocessor,
     DLAPreprocessor,
+    GPUImagePreprocessor,
     HybridPreprocessor,
     TRTPreprocessor,
 )
@@ -905,7 +905,7 @@ class ImageModel:
             return self.engine_inputs(host_input(images[0]), None, ratios, padding), ratios, padding
         preprocessor = self.get_preprocessor(method)
         t0 = time.perf_counter()
-        if isinstance(preprocessor, DevicePreprocessor):
+        if isinstance(preprocessor, (GPUImagePreprocessor, DLAPreprocessor)):
             image, ratios, padding = preprocessor.direct_preproc(
                 images, resize=self._resize_method, no_warn=True, verbose=verbose
             )
