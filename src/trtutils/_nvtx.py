@@ -39,14 +39,12 @@ class NVTX:
 
         """
         self._name = name
-        self._pre_enabled = False
+        self._pre_enabled: list[bool] = []
 
     def __enter__(self: Self) -> None:
         """Enter the NVTX context manager."""
-        if FLAGS.NVTX_ENABLED:
-            self._pre_enabled = True
-        else:
-            enable_nvtx()
+        self._pre_enabled.append(FLAGS.NVTX_ENABLED)
+        enable_nvtx()
 
         nvtx.push_range(self._name)
 
@@ -57,7 +55,7 @@ class NVTX:
         traceback: TracebackType | None,
     ) -> None:
         """Exit the NVTX context manager."""
-        if not self._pre_enabled:
+        if not self._pre_enabled.pop():
             disable_nvtx()
 
         nvtx.pop_range()

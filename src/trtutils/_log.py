@@ -125,7 +125,6 @@ class TRTLogger(trt.ILogger):
         """
         super().__init__()
         self._logger = logging.getLogger("trtutils")
-        self._level = self._logger.getEffectiveLevel()
         # per-thread error list, set while capture_errors is active
         self._capture = threading.local()
 
@@ -153,20 +152,26 @@ class TRTLogger(trt.ILogger):
             The current log level of the logger.
 
         """
-        return self._level
+        return self._logger.getEffectiveLevel()
 
     class _LogLevelContext:
         def __init__(self: Self, logger: TRTLogger, level: str | None) -> None:
             self._logger = logger
             self._level = level
-            self._old_level = logger.logger.getEffectiveLevel()
+            self._old_level = logging.NOTSET
+            self._old_handler_levels: list[tuple[logging.Handler, int]] = []
 
         def __enter__(self: Self) -> TRTLogger:
+            logger = self._logger.logger
+            self._old_level = logger.level
+            self._old_handler_levels = [(h, h.level) for h in logger.handlers]
             if self._level:
                 lvl = self._level.upper()
                 log_level = _LEVEL_MAP.get(lvl)
                 if log_level is not None:
-                    self._logger.logger.setLevel(log_level)
+                    logger.setLevel(log_level)
+                    for handler, _ in self._old_handler_levels:
+                        handler.setLevel(log_level)
             return self._logger
 
         def __exit__(
@@ -176,6 +181,8 @@ class TRTLogger(trt.ILogger):
             exc_tb: TracebackType | None,
         ) -> None:
             self._logger.logger.setLevel(self._old_level)
+            for handler, handler_level in self._old_handler_levels:
+                handler.setLevel(handler_level)
 
     def with_level(self: Self, level: str | None) -> _LogLevelContext:
         """
