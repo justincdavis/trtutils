@@ -157,6 +157,8 @@ Performance
 
 Fixed
 ^^^^^
+* The CLI now errors on unrecognized arguments instead of silently ignoring them (only
+  ``trtexec`` forwards unknown arguments). Fixed the ``--shape`` help text typo
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
   swapped, which misplaced boxes, keypoints, and masks on non-square model inputs
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
