@@ -125,3 +125,14 @@ def test_build_engine_workspace_flag(monkeypatch, tmp_path: Path, version, expec
     argv = _captured_command(monkeypatch, weights, tmp_path / "o.engine", workspace=512)
     assert expected in argv
     assert sum(a.startswith(("--workspace", "--memPoolSize=workspace")) for a in argv) == 1
+
+
+@pytest.mark.cpu
+@pytest.mark.regression
+def test_build_engine_fp16_int8_keeps_both(monkeypatch, tmp_path: Path) -> None:
+    """fp16 with int8 passes both flags, so non-int8 layers can fall back to fp16."""
+    weights = tmp_path / "model.onnx"
+    weights.write_text("fake onnx")
+    argv = _captured_command(monkeypatch, weights, tmp_path / "o.engine", fp16=True, int8=True)
+    assert "--fp16" in argv
+    assert "--int8" in argv
