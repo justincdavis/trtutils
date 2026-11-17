@@ -130,10 +130,13 @@ def test_benchmark_engine_warmup_default(monkeypatch, warmup, expected_extra) ->
     module = "trtutils.jetson._benchmark"
     monkeypatch.setattr(f"{module}.TegraStats", lambda *_a, **_k: nullcontext())
     monkeypatch.setattr(f"{module}.parse_tegrastats", MagicMock())
-    monkeypatch.setattr(f"{module}.filter_data", MagicMock(return_value=([], [])))
+    sample = [{"VDD_TOTAL": 1.0}]
+    monkeypatch.setattr(
+        f"{module}.filter_data", MagicMock(return_value=(sample, [((0.0, 1.0), sample)]))
+    )
     monkeypatch.setattr(
         f"{module}.get_powerdraw",
-        MagicMock(return_value={"VDD_TOTAL": SimpleNamespace(raw=[], mean=0.0)}),
+        MagicMock(return_value={"VDD_TOTAL": SimpleNamespace(raw=[1.0], mean=1.0)}),
     )
     engine = MagicMock()
     benchmark_engine(engine, iterations=1, warmup_iterations=3, warmup=warmup)
