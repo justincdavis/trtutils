@@ -31,18 +31,17 @@ class _FakeDetector:
         return [np.full(1, len(images))], None, None
 
 
-def _parallel_detector(models: int) -> ParallelDetector:
-    """Assemble a ParallelDetector whose workers run _FakeDetector models."""
+def _parallel_detector(infos: list[EngineInfo], **defaults: object) -> ParallelDetector:
+    """Assemble a ParallelDetector whose workers run the models of ``infos``."""
+    models = len(infos)
     det = ParallelDetector.__new__(ParallelDetector)
-    det._engine_info = [
-        EngineInfo(engine_path="fake", detector_class=_FakeDetector) for _ in range(models)
-    ]
+    det._engine_info = infos
     for name in (
         "input_range", "preprocessor", "resize_method", "conf_thres", "nms_iou_thres",
         "mean", "std", "backend", "warmup", "pagelocked_mem", "unified_mem", "cuda_graph",
-        "extra_nms", "agnostic_nms",
+        "cpu_resize", "extra_nms", "agnostic_nms",
     ):  # fmt: skip
-        setattr(det, f"_{name}", None)
+        setattr(det, f"_{name}", defaults.get(name))
     det._tag = "test"
     det._nvtx_tags = {"retrieve": "", "retrieve_model": ""}
     det._warmup_iterations = 0
@@ -68,11 +67,30 @@ def _submit(det: ParallelDetector, modelid: int, method: str | None) -> None:
 @pytest.fixture
 def detector():
     """Two fake models with running workers, stopped after the test."""
-    det = _parallel_detector(models=2)
+    det = _parallel_detector(
+        [EngineInfo(engine_path="fake", detector_class=_FakeDetector) for _ in range(2)]
+    )
     yield det
-    det._stopflag.set()
-    for thread in det._threads:
-        thread.join(timeout=1.0)
+    det.stop()
+
+
+def test_cpu_resize_default_and_engine_override() -> None:
+    """Models get the ParallelDetector's cpu_resize unless their EngineInfo sets one."""
+    created: dict[str, object] = {}
+
+    class _Recorder(_FakeDetector):
+        def __init__(self, **kwargs: object) -> None:
+            created[str(kwargs["engine_path"])] = kwargs["cpu_resize"]
+
+    infos = [
+        EngineInfo(engine_path="default", detector_class=_Recorder),
+        EngineInfo(engine_path="override", detector_class=_Recorder, cpu_resize=False),
+    ]
+    det = _parallel_detector(infos, cpu_resize=True)
+    for flag in det._flags:
+        assert flag.wait(timeout=1.0)
+    det.stop()
+    assert created == {"default": True, "override": False}
 
 
 def test_worker_error_is_raised_by_retrieve_and_the_worker_survives(detector) -> None:

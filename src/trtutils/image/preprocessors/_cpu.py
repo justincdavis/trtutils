@@ -94,6 +94,11 @@ def resize_image(
     tuple[np.ndarray, tuple[float, float], tuple[float, float]]
         The resized image, its ratios and its padding.
 
+    Raises
+    ------
+    ValueError
+        If the method is not one of the options.
+
     """
     if method == "letterbox":
         return letterbox(image, new_shape=input_shape)
@@ -105,8 +110,11 @@ def resize_image(
         resized = cv2.resize(image, (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
         out_width, out_height = input_shape
         return resized[top : top + out_height, left : left + out_width], ratios, padding
-    tensor, ratios = resize_linear(image, new_shape=input_shape)
-    return tensor, ratios, (0.0, 0.0)
+    if method == "linear":
+        tensor, ratios = resize_linear(image, new_shape=input_shape)
+        return tensor, ratios, (0.0, 0.0)
+    err_msg = f"Unknown method for image resizing. Options are {list(RESIZE_METHODS)}"
+    raise ValueError(err_msg)
 
 
 def preprocess(

@@ -24,6 +24,7 @@ from trtutils.core._stream import create_stream, destroy_stream, stream_synchron
 from trtutils.image.kernels import BGR_TO_BGRX_INT8, HALF_TO_FLOAT
 
 from ._base import DEFAULT_CROP_PCT, ImagePreprocessor
+from ._cpu import resize_image
 from ._dla_network import (
     INPUT_NAME,
     OUTPUT_NAMES,
@@ -63,6 +64,13 @@ class _Runner(NamedTuple):
     flipped: np.ndarray
 
 
+class _Job(NamedTuple):
+    runner: _Runner
+    image: np.ndarray | Buffer
+    ratios: tuple[float, float]
+    padding: tuple[float, float]
+
+
 class DLAPreprocessor(ImagePreprocessor):
     """
     Preprocessor that resizes, swaps channels and normalizes on a DLA.
@@ -75,10 +83,12 @@ class DLAPreprocessor(ImagePreprocessor):
     or so. A center crop takes inputs up to 3840 wide whose width is a multiple
     of 16, and resizes like torchvision's antialiased ``Resize`` (box then
     triangle filters), not bilinearly like the CPU and CUDA preprocessors' center
-    crop, which differ from it by a few levels on average. Images go to the DLA
-    as int8 BGRx, converted on the CPU for numpy arrays and by a small kernel for
-    device Buffers; the GPU otherwise only casts the float16 output for float32
-    models.
+    crop, which differ from it by a few levels on average. Host images of the
+    sizes the DLA cannot resize can be resized on the CPU instead
+    (``cpu_resize``), with the DLA doing the rest at the output size. Images go
+    to the DLA as int8 BGRx, converted on the CPU for numpy arrays and by a small
+    kernel for device Buffers; the GPU otherwise only casts the float16 output
+    for float32 models.
     """
 
     def __init__(
@@ -97,6 +107,7 @@ class DLAPreprocessor(ImagePreprocessor):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         crop_pct: float = DEFAULT_CROP_PCT,
+        cpu_resize: bool | None = None,
     ) -> None:
         """
         Create a DLAPreprocessor for image processing models.
@@ -142,6 +153,11 @@ class DLAPreprocessor(ImagePreprocessor):
         crop_pct : float
             The fraction of the resized image kept by center_crop resizing.
             By default 0.875 (resize 256, crop 224). Ignored by other methods.
+        cpu_resize : bool, optional
+            Whether to resize host images on the CPU, as :class:`CPUPreprocessor`
+            does, and only normalize on the DLA. True always does (its center crop is
+            bilinear, not the DLA's antialiased one), False never does. By default
+            None, which does for the sizes the DLA cannot resize, see :meth:`resizes_on_cpu`.
 
         Raises
         ------
@@ -176,6 +192,8 @@ class DLAPreprocessor(ImagePreprocessor):
             raise ValueError(err_msg)
         self._batch_size = batch_size
         self._runners: dict[tuple[int, int, str], _Runner] = {}
+        self._cpu_resize = cpu_resize
+        self._on_cpu: dict[tuple[int, int, str], bool] = {}
         super().__init__(
             output_shape, output_range, dtype, resize, mean, std, tag, crop_pct=crop_pct
         )
@@ -271,9 +289,12 @@ class DLAPreprocessor(ImagePreprocessor):
         return Kernel(*BGR_TO_BGRX_INT8)
 
     def warmup(self: Self) -> None:
-        """Run each DLA engine loaded so far once."""
+        """Run each DLA engine loaded so far once, with cpu_resize the output size's first."""
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["warmup"])
+        if self._cpu_resize:
+            width, height = self._o_shape
+            self._runner(height, width, "linear", verbose=None)
         for height, width, method in self._runners:
             image = Buffer.empty((height, width, _COLOR_CHANNELS), np.uint8, MemoryLocation.DEVICE)
             self.direct_preproc([image], method, no_warn=True)
@@ -282,17 +303,9 @@ class DLAPreprocessor(ImagePreprocessor):
             nvtx.pop_range()  # warmup
 
     def _runner(
-        self: Self, image: np.ndarray | Buffer, method: str, *, verbose: bool | None
+        self: Self, height: int, width: int, method: str, *, verbose: bool | None
     ) -> _Runner:
-        """Get the DLA engine for an image's size, building it on first use."""
-        if (
-            image.ndim != _IMAGE_DIMENSIONS
-            or image.shape[2] != _COLOR_CHANNELS
-            or image.dtype != np.uint8
-        ):
-            err_msg = f"{self._tag}: Image must be uint8 (height, width, channels=3)"
-            raise ValueError(err_msg)
-        height, width = image.shape[:2]
+        """Get the DLA engine for an input size, building it on first use."""
         key = (height, width, method)
         runner = self._runners.get(key)
         if runner is None:
@@ -312,6 +325,69 @@ class DLAPreprocessor(ImagePreprocessor):
             runner = _Runner(plan, engine, context, staging, flipped)
             self._runners[key] = runner
         return runner
+
+    def resizes_on_cpu(self: Self, height: int, width: int, resize: str | None = None) -> bool:
+        """
+        Whether host images of a size are resized on the CPU before the DLA.
+
+        With ``cpu_resize=None`` the first call for a size and method decides: the
+        CPU resizes when the DLA plan or engine build fails. Device Buffers are
+        always resized on the DLA.
+
+        Parameters
+        ----------
+        height : int
+            The image height.
+        width : int
+            The image width.
+        resize : str, optional
+            The resize method. By default None, the method given in the constructor.
+
+        Returns
+        -------
+        bool
+            Whether the CPU resizes such images to the output shape.
+
+        """
+        if self._cpu_resize is not None:
+            return self._cpu_resize
+        method = resize if resize is not None else self._resize
+        key = (height, width, method)
+        if key not in self._on_cpu:
+            try:
+                plan = plan_resize(height, width, self._o_shape, method, self._crop_pct)
+                build_dla_preproc(plan, *self._norm, self._dla_core)
+            except (ValueError, RuntimeError) as err:
+                LOG.info(f"{self._tag}: resizing {width}x{height} images on the CPU: {err}")
+                self._on_cpu[key] = True
+            else:
+                self._on_cpu[key] = False
+        return self._on_cpu[key]
+
+    def _prepare(
+        self: Self, image: np.ndarray | Buffer, method: str, *, verbose: bool | None
+    ) -> _Job:
+        """Get the engine, the image it reads, and the ratios and padding of one image."""
+        if (
+            image.ndim != _IMAGE_DIMENSIONS
+            or image.shape[2] != _COLOR_CHANNELS
+            or image.dtype != np.uint8
+        ):
+            err_msg = f"{self._tag}: Image must be uint8 (height, width, channels=3)"
+            raise ValueError(err_msg)
+        height, width = image.shape[:2]
+        on_device = isinstance(image, Buffer) and image.is_device
+        if not on_device and self.resizes_on_cpu(height, width, method):
+            host = image.array if isinstance(image, Buffer) else image
+            resized, ratios, padding = resize_image(host, self._o_shape, method, self._crop_pct)
+            out_width, out_height = self._o_shape
+            runner = self._runner(out_height, out_width, "linear", verbose=verbose)
+            return _Job(runner, resized, ratios, padding)
+        runner = self._runner(height, width, method, verbose=verbose)
+        # the DLA reads device and mapped buffers through their device address
+        if isinstance(image, Buffer) and not image.device_visible:
+            image = image.array
+        return _Job(runner, image, runner.plan.ratios, runner.plan.padding)
 
     def _launch(self: Self, kernel: Kernel, count: int, *args: int) -> None:
         """Launch a conversion kernel over ``count`` pixels or values."""
@@ -391,11 +467,12 @@ class DLAPreprocessor(ImagePreprocessor):
         Raises
         ------
         ValueError
-            If there are more images than the batch size, an image is not a uint8
-            color image, or the DLA cannot resize its size (see the class docstring).
+            If there are more images than the batch size, the resize method is
+            unknown, an image is not a uint8 color image, or the DLA cannot resize
+            an image the CPU does not (see the class docstring).
         RuntimeError
-            If TensorRT cannot build the DLA engine for an image size (some inputs
-            wider than 4K UHD), or fails to enqueue it.
+            If TensorRT cannot build the DLA engine for an image the CPU does not
+            resize (some inputs wider than 4K UHD), or fails to enqueue it.
 
         """
         if verbose:
@@ -408,32 +485,27 @@ class DLAPreprocessor(ImagePreprocessor):
             err_msg = f"{self._tag}: Batch size {len(images)} exceeds configured batch size {self._batch_size}"
             raise ValueError(err_msg)
         method = resize if resize is not None else self._resize
-        # the DLA reads device and mapped buffers through their device address
-        batch = [
-            img.array if isinstance(img, Buffer) and not img.device_visible else img
-            for img in images
-        ]
-        runners = [self._runner(image, method, verbose=verbose) for image in batch]
+        jobs = [self._prepare(image, method, verbose=verbose) for image in images]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["dla_direct_preproc"])
-        if any(isinstance(img, np.ndarray) for img in batch):
+        if any(isinstance(job.image, np.ndarray) for job in jobs):
             # the DLA may still read the staging the CPU is about to overwrite
             stream_synchronize(self._stream)
-        for slot, (runner, image) in enumerate(zip(runners, batch)):
-            if not self._enqueue(runner, slot, image):
+        for slot, job in enumerate(jobs):
+            if not self._enqueue(job.runner, slot, job.image):
                 err_msg = f"{self._tag}: TensorRT failed to enqueue the DLA engine"
                 if FLAGS.NVTX_ENABLED:
                     nvtx.pop_range()  # dla_direct_preproc
                 raise RuntimeError(err_msg)
-        self._cast_output(len(batch))
+        self._cast_output(len(jobs))
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # dla_direct_preproc
 
         return (
-            self._output.device[: len(batch)],
-            [runner.plan.ratios for runner in runners],
-            [runner.plan.padding for runner in runners],
+            self._output.device[: len(jobs)],
+            [job.ratios for job in jobs],
+            [job.padding for job in jobs],
         )
 
     # __call__ overloads
@@ -473,7 +545,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
-            The method to resize the images with, 'letterbox' or 'linear'.
+            The method to resize the images with, 'letterbox', 'linear' or 'center_crop'.
             By default None, which uses the method given in the constructor.
         no_copy : bool, optional
             If True, return the host output memory without a copy. It WILL BE
@@ -526,7 +598,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
-            The method to resize the images with, 'letterbox' or 'linear'.
+            The method to resize the images with, 'letterbox', 'linear' or 'center_crop'.
             By default None, which uses the method given in the constructor.
         no_copy : bool, optional
             If True, return the host output memory without a copy. It WILL BE

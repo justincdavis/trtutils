@@ -60,6 +60,7 @@ class Classifier(ImageModel, ClassifierInterface):
         unified_mem: bool | None = None,
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
+        cpu_resize: bool | None = None,
         softmax: bool = True,
         crop_pct: float = DEFAULT_CROP_PCT,
         no_warn: bool | None = None,
@@ -80,7 +81,7 @@ class Classifier(ImageModel, ClassifierInterface):
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt', 'hybrid', 'dla0', 'dla1'], default is 'cuda'.
+            The options are ['cpu', 'cuda', 'trt', 'dla0', 'dla1'], default is 'cuda'.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear', 'center_crop'], default is 'linear'.
@@ -124,6 +125,10 @@ class Classifier(ImageModel, ClassifierInterface):
         postprocessor : str, optional
             Where to postprocess, 'cpu' or 'cuda'. Default is None, which
             keeps 'cpu' unless the task's CUDA postprocessor is the default.
+        cpu_resize : bool, optional
+            Whether to resize images on the CPU and leave the rest of the
+            preprocessing to the preprocessor. Default is None, which resizes on
+            the CPU only what the preprocessor cannot resize, see :class:`ImageModel`.
         softmax : bool, optional
             Whether or not to apply softmax to the raw network outputs during
             postprocessing. Default is True. Some networks already apply
@@ -163,6 +168,7 @@ class Classifier(ImageModel, ClassifierInterface):
             unified_mem=unified_mem,
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
+            cpu_resize=cpu_resize,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,

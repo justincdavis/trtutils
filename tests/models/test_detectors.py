@@ -11,7 +11,7 @@ import onnx
 import onnxruntime as ort
 import pytest
 
-from tests.conftest import DATA_DIR
+from tests.conftest import DATA_DIR, PREPROCESSORS
 from trtutils._flags import FLAGS
 from trtutils.builder._onnx import read_onnx
 from trtutils.compat._libs import trt
@@ -100,11 +100,13 @@ def _assert_same_detections(left, right) -> None:
 
 
 @pytest.mark.parametrize(("model_cls", "onnx_path"), DETECTORS)
-@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt", "hybrid"])
-def test_detector_end2end(build_model_engine, images, model_cls, onnx_path, preprocessor) -> None:
+@pytest.mark.parametrize(("preprocessor", "cpu_resize"), PREPROCESSORS)
+def test_detector_end2end(
+    build_model_engine, images, model_cls, onnx_path, preprocessor, cpu_resize
+) -> None:
     """run(), get_detections(), and end2end() agree and find the ground-truth classes in bounds."""
     engine = build_model_engine(model_cls, onnx_path, opt_level=OPT_LEVELS.get(model_cls, 1))
-    model = model_cls(engine, preprocessor=preprocessor, warmup=False)
+    model = model_cls(engine, preprocessor=preprocessor, cpu_resize=cpu_resize, warmup=False)
     image = images["horse"]
     height, width = image.array.shape[:2]
 

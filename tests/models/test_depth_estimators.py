@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from tests.conftest import DATA_DIR
+from tests.conftest import DATA_DIR, PREPROCESSORS
 from trtutils._flags import FLAGS
 from trtutils.image._schema import DepthEstimatorOutputSchema
 from trtutils.models import DepthAnythingV1, DepthAnythingV2, DepthAnythingV3
@@ -42,13 +42,13 @@ DEPTH_ESTIMATORS = [
 
 
 @pytest.mark.parametrize(("model_cls", "onnx_path"), DEPTH_ESTIMATORS)
-@pytest.mark.parametrize("preprocessor", ["cpu", "cuda", "trt", "hybrid"])
+@pytest.mark.parametrize(("preprocessor", "cpu_resize"), PREPROCESSORS)
 def test_depth_estimator_end2end(
-    build_model_engine, images, model_cls, onnx_path, preprocessor
+    build_model_engine, images, model_cls, onnx_path, preprocessor, cpu_resize
 ) -> None:
     """run(), get_depth_maps(), and end2end() agree and yield a finite depth map normalized to [0, 1]."""
     engine = build_model_engine(model_cls, onnx_path)
-    model = model_cls(engine, preprocessor=preprocessor, warmup=False)
+    model = model_cls(engine, preprocessor=preprocessor, cpu_resize=cpu_resize, warmup=False)
     assert model.output_schema is DepthEstimatorOutputSchema.DEPTH_ANYTHING
     image = images["horse"]
 

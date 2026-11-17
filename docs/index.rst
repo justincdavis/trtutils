@@ -10,7 +10,7 @@ Features
 - ``Buffer`` inputs on the host or the device; ``Buffer.wrap`` views NumPy, CuPy, and PyTorch arrays without copying
 - Image models in ``trtutils.image``: ``Detector``, ``Classifier``, ``Segmenter``, ``PoseEstimator``, ``OBBDetector``, ``DepthEstimator``, ``HandInteractionDetector``, and ``OCR`` (text detection plus recognition)
 - SAHI (sliced inference) for any detector, with ``SAHI``
-- Preprocessing on the CPU, CUDA, TensorRT or a DLA (``preprocessor="cpu" | "cuda" | "trt" | "hybrid" | "dla0" | "dla1"``), and CPU or CUDA postprocessing (``postprocessor="cpu" | "cuda"``)
+- Preprocessing on the CPU, CUDA, TensorRT or a DLA (``preprocessor="cpu" | "cuda" | "trt" | "dla0" | "dla1"``), optionally resizing on the CPU first (``cpu_resize=True``), and CPU or CUDA postprocessing (``postprocessor="cpu" | "cuda"``)
 - Pre-configured ``trtutils.models`` wrappers with ``download()`` and ``build()``
 - ``Model.build`` reads the image size from the ONNX; ``embed_sst=True`` moves BGR-to-RGB, normalization, and layout into the engine, which then takes uint8 images
 - Model download and ONNX export with ``trtutils download`` or ``Model.download()``

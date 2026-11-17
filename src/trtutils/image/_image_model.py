@@ -35,7 +35,6 @@ from .preprocessors import (
     CUDAPreprocessor,
     DLAPreprocessor,
     GPUImagePreprocessor,
-    HybridPreprocessor,
     TRTPreprocessor,
 )
 from .preprocessors._base import DEFAULT_CROP_PCT
@@ -51,8 +50,7 @@ if TYPE_CHECKING:
 _COLOR_CHANNELS = 3
 _IMAGE_RANK = 4
 
-_PREPROCESSOR_METHODS = ("cpu", "cuda", "trt", "hybrid", "dla0", "dla1")
-_GPUPre = TypeVar("_GPUPre", bound=CUDAPreprocessor)
+PREPROCESSOR_METHODS = ("cpu", "cuda", "trt", "dla0", "dla1")
 
 
 def _image_binding(
@@ -133,6 +131,7 @@ class ImageModel:
         cuda_graph: bool | None = None,
         shape_contexts: int | None = None,
         postprocessor: str | None = None,
+        cpu_resize: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
         output_schema: Enum | str | None = None,
@@ -153,11 +152,8 @@ class ImageModel:
             the model. By default [0.0, 1.0].
         preprocessor : str
             The type of preprocessor to use.
-            The options are ['cpu', 'cuda', 'trt', 'hybrid', 'dla0', 'dla1'], default is
-            'cuda'. 'hybrid' resizes on the CPU and normalizes on the GPU, uploading only
-            the resized image, which wins for inputs much smaller than the frame. 'dla0'
-            and 'dla1' preprocess on that DLA core, for whole-factor letterbox and linear
-            resizes and center crops of inputs up to 3840 wide, see :class:`DLAPreprocessor`.
+            The options are ['cpu', 'cuda', 'trt', 'dla0', 'dla1'], default is 'cuda'.
+            'dla0' and 'dla1' preprocess on that DLA core, see :class:`DLAPreprocessor`.
         resize_method : str
             The type of resize algorithm to use.
             The options are ['letterbox', 'linear', 'center_crop'], default is 'linear'.
@@ -200,6 +196,14 @@ class ImageModel:
             on the GPU and copies back only the final results. Default is None,
             which picks 'cuda' when the task has a CUDA postprocessor and that is
             the default for the task, else 'cpu'.
+        cpu_resize : bool, optional
+            Whether to resize images on the CPU, as the 'cpu' preprocessor does, and
+            leave the channel swap, normalization and transpose to the preprocessor,
+            which then uploads only the resized image. True always does, False never
+            does. By default None, which does only for images the preprocessor cannot
+            resize, which only happens on a DLA, see
+            :meth:`DLAPreprocessor.resizes_on_cpu`. Ignored by the 'cpu' preprocessor.
+            Device Buffers are always resized by the preprocessor.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -266,6 +270,7 @@ class ImageModel:
             self._unified_mem = self._engine.unified_mem
             self._resize_method: str = resize_method
             self._crop_pct: float = crop_pct
+            self._cpu_resize: bool | None = cpu_resize
             # Float NCHW is (batch, 3, H, W). uint8 NHWC is a letterboxed image whose
             # scale, channel swap, and transpose already live in the network.
             for index, input_spec in enumerate(self._engine.input_spec):  # noqa: B007
@@ -304,7 +309,6 @@ class ImageModel:
             self._cuda_post: CUDAPostprocessor | None = self._setup_cuda_post()
             self._preproc_cpu: CPUPreprocessor = self._setup_cpu_preproc()
             self._preproc_cuda: CUDAPreprocessor | None = None
-            self._preproc_hybrid: HybridPreprocessor | None = None
             self._preproc_trt: TRTPreprocessor | None = None
             self._preproc_dla: dict[int, DLAPreprocessor] = {}
             default_preprocessor = self.get_preprocessor()
@@ -342,11 +346,11 @@ class ImageModel:
 
         return result
 
-    def _setup_cuda_preproc(self: Self, cls: type[_GPUPre]) -> _GPUPre:
+    def _setup_cuda_preproc(self: Self) -> CUDAPreprocessor:
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["_setup_cuda_preproc"])
 
-        result = cls(
+        result = CUDAPreprocessor(
             self._input_size,
             self._input_range,
             self._dtype,
@@ -360,6 +364,7 @@ class ImageModel:
             tag=self._tag,
             crop_pct=self._crop_pct,
             normalize=not self._sst_in_graph,
+            cpu_resize=self._cpu_resize,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -384,6 +389,7 @@ class ImageModel:
             unified_mem=self._unified_mem,
             tag=self._tag,
             crop_pct=self._crop_pct,
+            cpu_resize=self._cpu_resize,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -409,6 +415,7 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             crop_pct=self._crop_pct,
+            cpu_resize=self._cpu_resize,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -548,11 +555,11 @@ class ImageModel:
         Parameters
         ----------
         method : str, optional
-            Options are 'cpu', 'cuda', 'trt', 'hybrid', 'dla0' or 'dla1'.
-            'trt' falls back to 'cuda' on platforms without UINT8 support, and
-            'cuda' and 'hybrid' to 'cpu' for models whose input is not float32 or
-            float16. By default None, which returns the preprocessor stated in the
-            constructor.
+            Options are 'cpu', 'cuda', 'trt', 'dla0' or 'dla1'. 'trt' falls back
+            to 'cuda' on platforms without UINT8 support, and 'cuda' to 'cpu' for
+            models whose input is not float32 or float16. The preprocessor resizes on
+            the CPU as ``cpu_resize`` says. By default None, which returns the
+            preprocessor stated in the constructor.
 
         Returns
         -------
@@ -579,13 +586,8 @@ class ImageModel:
         if method == "cuda":
             if self._preproc_cuda is None:
                 with Device(self._device):
-                    self._preproc_cuda = self._setup_cuda_preproc(CUDAPreprocessor)
+                    self._preproc_cuda = self._setup_cuda_preproc()
             return self._preproc_cuda
-        if method == "hybrid":
-            if self._preproc_hybrid is None:
-                with Device(self._device):
-                    self._preproc_hybrid = self._setup_cuda_preproc(HybridPreprocessor)
-            return self._preproc_hybrid
         if method == "trt":
             if self._preproc_trt is None:
                 with Device(self._device):
@@ -604,8 +606,10 @@ class ImageModel:
             engine that takes a uint8 image.
 
         """
-        if method not in _PREPROCESSOR_METHODS:
-            err_msg = f"Invalid preprocessing method {method!r}, options are: {list(_PREPROCESSOR_METHODS)}"
+        if method not in PREPROCESSOR_METHODS:
+            err_msg = (
+                f"Invalid preprocessing method {method!r}, options are: {list(PREPROCESSOR_METHODS)}"
+            )
             raise ValueError(err_msg)
         if method.startswith("dla"):
             if self._sst_in_graph:
@@ -624,15 +628,15 @@ class ImageModel:
                 )
                 raise ValueError(err_msg)
             # the TRT preprocessor's engine only normalizes; both resize with the same kernels
-            return "hybrid" if method == "hybrid" else "cuda"
+            return "cuda"
         if method == "trt" and not FLAGS.TRT_HAS_UINT8:
             method = "cuda"
             LOG.warning(
                 "Preprocessing method set to TensorRT, but platform doesn't support UINT8, fallback to CUDA."
             )
-        if method in ("cuda", "hybrid") and self._dtype not in (np.float32, np.float16):
+        if method == "cuda" and self._dtype not in (np.float32, np.float16):
             LOG.warning(
-                f"Preprocessing method set to {method}, but the model input is {self._dtype}, fallback to CPU."
+                f"Preprocessing method set to cuda, but the model input is {self._dtype}, fallback to CPU."
             )
             method = "cpu"
         return method
@@ -648,9 +652,7 @@ class ImageModel:
         if self._preproc_cpu is not None:
             self._preproc_cpu = self._setup_cpu_preproc()
         if self._preproc_cuda is not None:
-            self._preproc_cuda = self._setup_cuda_preproc(CUDAPreprocessor)
-        if self._preproc_hybrid is not None:
-            self._preproc_hybrid = self._setup_cuda_preproc(HybridPreprocessor)
+            self._preproc_cuda = self._setup_cuda_preproc()
         if self._preproc_trt is not None:
             self._preproc_trt = self._setup_trt_preproc()
         for dla_core in self._preproc_dla:

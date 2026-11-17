@@ -14,6 +14,8 @@ if _CPU_ONLY:
 
 from pathlib import Path
 
+import pytest
+
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 ENGINES_DIR = DATA_DIR / "engines"
@@ -25,6 +27,13 @@ SIMPLE_DYNAMIC_PROFILES = {
     "spatial": ((1, 3, 32, 48), (1, 3, 96, 96), (1, 3, 160, 192)),
     "all-dims": ((1, 1, 32, 32), (2, 3, 64, 64), (3, 4, 96, 128)),
 }
+
+PREPROCESSORS = [
+    pytest.param("cpu", None, id="cpu"),
+    pytest.param("cuda", None, id="cuda"),
+    pytest.param("trt", None, id="trt"),
+    pytest.param("cuda", True, id="cuda-cpu_resize"),
+]
 
 if not _CPU_ONLY:
     from tests._gpu_fixtures import *  # noqa: F403

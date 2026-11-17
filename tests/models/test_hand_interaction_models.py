@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from tests._gpu_fixtures import engine_cache_path
-from tests.conftest import DATA_DIR
+from tests.conftest import DATA_DIR, PREPROCESSORS
 from trtutils._flags import FLAGS
 from trtutils.builder._onnx import read_onnx
 from trtutils.compat._libs import trt
@@ -104,15 +104,7 @@ def _assert_interactions_close(left, right) -> None:
         pytest.param(Hands23, HANDS23_ONNX, int, id="hands23", marks=_trt86_hands23),
     ],
 )
-@pytest.mark.parametrize(
-    "preprocessor",
-    [
-        pytest.param("cpu", id="cpu"),
-        pytest.param("cuda", id="cuda"),
-        pytest.param("trt", id="trt"),
-        pytest.param("hybrid", id="hybrid"),
-    ],
-)
+@pytest.mark.parametrize(("preprocessor", "cpu_resize"), PREPROCESSORS)
 def test_hand_interaction_end2end(
     build_model_engine,
     images,
@@ -120,10 +112,11 @@ def test_hand_interaction_end2end(
     onnx_path,
     attr_type,
     preprocessor,
+    cpu_resize,
 ) -> None:
     """run(), get_interactions(), and end2end() agree and produce valid interactions."""
     engine = build_model_engine(model_cls, onnx_path)
-    model = model_cls(engine, preprocessor=preprocessor, warmup=False)
+    model = model_cls(engine, preprocessor=preprocessor, cpu_resize=cpu_resize, warmup=False)
 
     img = images["people"].array
     height, width = img.shape[:2]
