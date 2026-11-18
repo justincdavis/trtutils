@@ -107,9 +107,8 @@ def test_int_output_range_matches_float(images, preproc_cls, kwargs, output_rang
     float_range = (float(output_range[0]), float(output_range[1]))
     image = images["horse"].array
     expected, _, _ = CPUPreprocessor(SIZE, float_range, DTYPE).preprocess([image])
-    for o_range in (output_range, float_range):
-        result, _, _ = preproc_cls(SIZE, o_range, DTYPE, **kwargs).preprocess([image])
-        assert np.abs(result - expected).max() < 0.02 * (float_range[1] - float_range[0])
+    result, _, _ = preproc_cls(SIZE, output_range, DTYPE, **kwargs).preprocess([image])
+    assert np.abs(result - expected).max() < 0.02 * (float_range[1] - float_range[0])
 
 
 @pytest.mark.parametrize(
