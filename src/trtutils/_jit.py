@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+from collections import deque
 from typing import TYPE_CHECKING, Generic
 
 from typing_extensions import TypeVar
@@ -123,7 +124,7 @@ def disable_jit() -> None:
 
 class _JIT:
     def __init__(self: Self) -> None:
-        self._was_on: list[bool] = []
+        self._was_on: deque[bool] = deque()
 
     def __enter__(self: Self) -> Self:
         self._was_on.append(FLAGS.JIT)

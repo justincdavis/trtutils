@@ -3,6 +3,7 @@
 # MIT License
 from __future__ import annotations
 
+from collections import deque
 from typing import TYPE_CHECKING
 
 import nvtx
@@ -39,7 +40,7 @@ class NVTX:
 
         """
         self._name = name
-        self._pre_enabled: list[bool] = []
+        self._pre_enabled: deque[bool] = deque()
 
     def __enter__(self: Self) -> None:
         """Enter the NVTX context manager."""
