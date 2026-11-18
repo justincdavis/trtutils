@@ -129,10 +129,22 @@ def test_build_engine_workspace_flag(monkeypatch, tmp_path: Path, version, expec
 
 @pytest.mark.cpu
 @pytest.mark.regression
-def test_build_engine_fp16_int8_keeps_both(monkeypatch, tmp_path: Path) -> None:
-    """fp16 with int8 passes both flags, so non-int8 layers can fall back to fp16."""
+@pytest.mark.parametrize(
+    "flags",
+    [
+        pytest.param(("fp16", "int8"), id="fp16-int8"),
+        pytest.param(("fp16", "fp8"), id="fp16-fp8"),
+        pytest.param(("int8", "fp8"), id="int8-fp8"),
+    ],
+)
+def test_build_engine_precision_combos_keep_both(
+    monkeypatch, tmp_path: Path, flags: tuple[str, str]
+) -> None:
+    """Combined precisions pass both flags, so layers can fall back to the lower precision."""
     weights = tmp_path / "model.onnx"
     weights.write_text("fake onnx")
-    argv = _captured_command(monkeypatch, weights, tmp_path / "o.engine", fp16=True, int8=True)
-    assert "--fp16" in argv
-    assert "--int8" in argv
+    argv = _captured_command(
+        monkeypatch, weights, tmp_path / "o.engine", **dict.fromkeys(flags, True)
+    )
+    for flag in flags:
+        assert f"--{flag}" in argv
