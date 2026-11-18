@@ -158,8 +158,8 @@ class TRTLogger(trt.ILogger):
         def __init__(self: Self, logger: TRTLogger, level: str | None) -> None:
             self._logger = logger
             self._level = level
-            self._old_level = logging.NOTSET
-            self._old_handler_levels: list[tuple[logging.Handler, int]] = []
+            self._old_level: int
+            self._old_handler_levels: list[tuple[logging.Handler, int]]
 
         def __enter__(self: Self) -> TRTLogger:
             logger = self._logger.logger
@@ -170,7 +170,7 @@ class TRTLogger(trt.ILogger):
                 log_level = _LEVEL_MAP.get(lvl)
                 if log_level is not None:
                     logger.setLevel(log_level)
-                    for handler, _ in self._old_handler_levels:
+                    for handler in logger.handlers:
                         handler.setLevel(log_level)
             return self._logger
 
