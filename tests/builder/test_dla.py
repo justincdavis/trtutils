@@ -17,6 +17,7 @@ from trtutils.builder._utils import get_check_dla
 from trtutils.compat._libs import trt
 from trtutils.core._engine import create_engine
 from trtutils.core._stream import destroy_stream
+from trtutils.inspect import inspect_onnx_layers
 
 pytestmark = pytest.mark.jetson
 
@@ -47,6 +48,14 @@ def test_can_run_on_dla(onnx_path, use_network) -> None:
         assert isinstance(start, int)
         assert isinstance(end, int)
         assert isinstance(on_dla, bool)
+
+
+def test_inspect_onnx_layers_restores_config(onnx_path) -> None:
+    """inspect_onnx_layers leaves the caller's config device and DLA core untouched."""
+    network, _, config, _ = read_onnx(onnx_path)
+    before = (config.default_device_type, config.DLA_core)
+    inspect_onnx_layers(network, config)
+    assert (config.default_device_type, config.DLA_core) == before
 
 
 def test_network_input_requires_config(onnx_path) -> None:

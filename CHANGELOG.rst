@@ -167,7 +167,8 @@ Fixed
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see
   a half-written engine
 * ``can_run_on_dla`` and ``inspect_onnx_layers`` restore the passed ``config``'s default
-  device and DLA core. They left it targeting DLA core 0, so a later GPU build used the DLA
+  device and DLA core. They left it targeting DLA core 0, so a later build reusing the same
+  config targeted the DLA
 * ``build_engine(default_device="dla")`` without ``dla_core`` uses DLA core 0. TensorRT had
   selected no core, so the build failed
 * ``read_onnx`` raises ``RuntimeError`` on a file TensorRT 8.6 "parses" into an empty network
