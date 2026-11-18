@@ -157,6 +157,8 @@ Performance
 
 Fixed
 ^^^^^
+* ``run(..., preprocessed=True)`` on a batch tensor of N>1 images returns all N results instead of
+  only the first
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
   swapped, which misplaced boxes, keypoints, and masks on non-square model inputs
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
