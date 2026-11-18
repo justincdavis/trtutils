@@ -20,9 +20,7 @@ from tests.image.preprocessors._matrix import (
     FLOATS,
     FRAMES,
     GEOMETRIES,
-    IMAGENET,
     KINDS,
-    NORMS,
     RESIZES,
     Case,
     matrix,
@@ -40,20 +38,6 @@ UNSUPPORTED_DTYPE = r"float32 or float16|float16 or float32"
 NO_BATCH_SIZE = {
     "cpu": "CPUPreprocessor has no batch size: it preprocesses any number of images",
     "cuda": "CUDAPreprocessor has no batch size: its buffers grow to any batch",
-}
-UPDATE_BUGS = {
-    ("cuda", "mean_std"): (
-        "CUDAPreprocessor picks its SST kernel and uploads mean/std in __init__, "
-        "so update_mean_std leaves the output normalized as before"
-    ),
-    ("trt", "mean_std"): (
-        "TRTPreprocessor bakes the normalization into its engine and device inputs in __init__, "
-        "so update_mean_std leaves the output normalized as before"
-    ),
-    ("trt", "output_range"): (
-        "TRTPreprocessor uploads scale and offset to the device once in __init__, "
-        "so update_output_range leaves the output range as before"
-    ),
 }
 CPU_ACCEPTS_BAD_IMAGES = (
     "CPUPreprocessor does not validate images and hands them to cv2, which resizes float32 "
@@ -238,26 +222,6 @@ class TestPreprocessor:
         assert buffer.shape == (len(images), 3, height, width)
         assert buffer.dtype == DTYPES[case.dtype]
         _assert_same((buffer.numpy(), ratios, padding), preprocessor.preprocess(images))
-
-    @pytest.mark.parametrize(
-        "case",
-        matrix(
-            update=("mean_std", "output_range"),
-            xfail=lambda case: UPDATE_BUGS.get((case.backend, case.update)),
-        ),
-    )
-    def test_update_takes_effect(self, case, frames, preprocessors, build_preprocessor) -> None:
-        """update_mean_std and update_output_range change the outputs after a first call."""
-        preprocessor = build_preprocessor(case)
-        image = frames(*FRAMES["people-1920x1080"])
-        preprocessor.preprocess(image)
-        if case.update == "mean_std":
-            updated = replace(case, norm="imagenet")
-            preprocessor.update_mean_std(*IMAGENET)
-        else:
-            updated = replace(case, norm="symmetric")
-            preprocessor.update_output_range(NORMS["symmetric"][0])
-        _check(updated, preprocessor, image, [image], preprocessors)
 
     @pytest.mark.parametrize("case", matrix(cpu_resize=CPU_RESIZE))
     def test_warmup_keeps_outputs(self, case, frames, build_preprocessor) -> None:

@@ -252,6 +252,9 @@ Removed
   (``draw_bboxes``, ``draw_text``) and the CPU preprocessing/postprocessing modules
 * ``direct_io`` (``build_engine``, ``build_dla_engine``, AxoNN ``build_engine``) and the CLI
   ``--direct_io`` flag. TRT preprocessors with float16 output now build
+* ``update_mean_std`` and ``update_output_range`` on the image preprocessors. The CUDA and TRT
+  preprocessors ignored them. Create a new preprocessor instead; ``ImageModel.update_mean_std``
+  and ``ImageModel.update_input_range`` already do
 
 0.6.1 (2025-06-17)
 ------------------
