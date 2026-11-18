@@ -74,18 +74,14 @@ def test_subcommand_help_exits_zero(subcommand) -> None:
         pytest.param(["trtutils", "classify"], id="classify-no-engine-input"),
         pytest.param(["trtutils", "inspect"], id="inspect-no-engine"),
         pytest.param(["trtutils", "profile"], id="profile-no-engine-output"),
+        pytest.param(
+            ["trtutils", "build", "--onnx", _ONNX, "--output", _OUT_ENGINE, "--shapes", "a:1"],
+            id="build-unrecognized-arg",
+        ),
     ],
 )
-def test_missing_required_args_exit_2(argv) -> None:
-    """Missing required positional/flag args cause exit code 2."""
-    with patch("sys.argv", argv), pytest.raises(SystemExit) as exc_info:
-        _main()
-    assert exc_info.value.code == 2
-
-
-def test_unknown_args_exit_2() -> None:
-    """Unknown flags error on regular subcommands."""
-    argv = ["trtutils", "build", "--onnx", _ONNX, "--output", _OUT_ENGINE, "--shapes", "a:1"]
+def test_invalid_args_exit_2(argv) -> None:
+    """Missing required args or unrecognized flags cause exit code 2."""
     with patch("sys.argv", argv), pytest.raises(SystemExit) as exc_info:
         _main()
     assert exc_info.value.code == 2

@@ -2134,7 +2134,8 @@ def _main() -> None:
     args, unknown = parser.parse_known_args()
 
     # only trtexec forwards unknown args
-    if unknown and args.command != "trtexec":
+    is_trtexec = args.command == "trtexec"
+    if unknown and not is_trtexec:
         parser.error(f"unrecognized arguments: {' '.join(unknown)}")
 
     # set log level
@@ -2146,7 +2147,7 @@ def _main() -> None:
 
     # call function with args
     if hasattr(args, "func"):
-        if args.command == "trtexec":
+        if is_trtexec:
             args.func(unknown)
         else:
             args.func(args)
