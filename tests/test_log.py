@@ -32,48 +32,53 @@ def test_capture_errors() -> None:
     assert errors == ["error", "internal"]
 
 
-def _handler_levels() -> list[int]:
-    return [handler.level for handler in LOG.logger.handlers]
-
-
 @pytest.fixture
 def _restore_log_state():
-    logger = LOG.logger
-    level = logger.level
-    handlers = [(handler, handler.level) for handler in logger.handlers]
+    level = LOG.logger.level
     yield
-    logger.setLevel(level)
-    for handler, handler_level in handlers:
-        handler.setLevel(handler_level)
+    LOG.logger.setLevel(level)
 
 
 @pytest.mark.cpu
 @pytest.mark.usefixtures("_restore_log_state")
-def test_with_level_restores_levels_and_emits() -> None:
-    """with_level lowers the logger and handlers, restores both, and level tracks set_log_level."""
+def test_with_level_restores_level_and_emits() -> None:
+    """with_level changes only the logger level, restores it, and leaves handlers alone."""
     set_log_level("WARNING")
     assert LOG.level == logging.WARNING
-    before = _handler_levels()
+    before = [(handler, handler.level) for handler in LOG.logger.handlers]
     records: list[logging.LogRecord] = []
 
     class _Capture(logging.Handler):
         def emit(self, record: logging.LogRecord) -> None:
             records.append(record)
 
-    capture = _Capture(level=logging.NOTSET)
+    capture = _Capture(level=logging.ERROR)
     LOG.logger.addHandler(capture)
     try:
         with LOG.with_level("DEBUG"):
             assert LOG.level == logging.DEBUG
-            assert all(level == logging.DEBUG for level in _handler_levels())
-            LOG.debug("inside")
-        LOG.debug("outside")
+            LOG.error("inside")
+        LOG.error("outside")
     finally:
         LOG.logger.removeHandler(capture)
 
-    assert [record.getMessage() for record in records] == ["inside"]
+    assert [record.getMessage() for record in records] == ["inside", "outside"]
     assert LOG.level == logging.WARNING
-    assert _handler_levels() == before
+    assert [(handler, handler.level) for handler in LOG.logger.handlers] == before
 
     set_log_level("ERROR")
     assert LOG.level == logging.ERROR
+
+
+@pytest.mark.cpu
+@pytest.mark.usefixtures("_restore_log_state")
+def test_reused_context_nests() -> None:
+    """One context instance entered nested restores each prior level in turn."""
+    set_log_level("WARNING")
+    quiet = LOG.suppress()
+    with quiet:
+        assert LOG.level == logging.CRITICAL
+        with quiet:
+            assert LOG.level == logging.CRITICAL
+        assert LOG.level == logging.CRITICAL
+    assert LOG.level == logging.WARNING

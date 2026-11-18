@@ -40,3 +40,19 @@ def test_nvtx_reused_instance_restores_state() -> None:
             assert FLAGS.NVTX_ENABLED is True
         assert FLAGS.NVTX_ENABLED is True
     assert FLAGS.NVTX_ENABLED is False
+
+
+def test_nvtx_push_failure_leaves_state_unchanged(monkeypatch) -> None:
+    """If push_range raises, the flag and the saved stack are untouched."""
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        err_msg = "push failed"
+        raise RuntimeError(err_msg)
+
+    monkeypatch.setattr(nvtx, "push_range", _boom)
+    disable_nvtx()
+    scope = NVTX("scope")
+    with pytest.raises(RuntimeError), scope:
+        pass
+    assert FLAGS.NVTX_ENABLED is False
+    assert scope._pre_enabled == []

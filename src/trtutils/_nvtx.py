@@ -43,10 +43,9 @@ class NVTX:
 
     def __enter__(self: Self) -> None:
         """Enter the NVTX context manager."""
+        nvtx.push_range(self._name)
         self._pre_enabled.append(FLAGS.NVTX_ENABLED)
         enable_nvtx()
-
-        nvtx.push_range(self._name)
 
     def __exit__(
         self: Self,
