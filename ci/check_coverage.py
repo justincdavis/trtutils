@@ -17,6 +17,23 @@ Usage::
     python ci/check_coverage.py --update           # Ratchet thresholds up
     python ci/check_coverage.py --verbose          # Show per-module breakdown
     python ci/check_coverage.py --report FILE      # Use specific report file
+    python ci/check_coverage.py --platform jetson  # Force a threshold platform
+    python ci/check_coverage.py --tolerance 0.5    # Override tolerance (points)
+
+Thresholds are platform specific because the Jetson-only tests are skipped
+on x86 and vice versa:
+
+- ``.coverage-threshold.json``        -- x86 / default platform
+- ``.coverage-threshold.jetson.json`` -- Jetson (Orin etc.)
+
+The platform is auto-detected from ``/etc/nv_tegra_release`` (the same check
+as ``trtutils.FLAGS.IS_JETSON``) and can be overridden with ``--platform``
+or the ``TRTUTILS_COVERAGE_PLATFORM`` environment variable. ``--update``
+writes to the selected file.
+
+A module fails only when its coverage drops more than the tolerance (default
+1.0 percentage point, or ``TRTUTILS_COVERAGE_TOLERANCE``) below its threshold,
+which absorbs run-to-run noise from flaky or environment-dependent tests.
 
 Exit codes:
     0 -- All modules at or above threshold
@@ -26,11 +43,17 @@ Exit codes:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
-THRESHOLD_FILE = Path(__file__).resolve().parent.parent / ".coverage-threshold.json"
-DEFAULT_REPORT = Path(__file__).resolve().parent.parent / ".coverage.json"
+ROOT = Path(__file__).resolve().parent.parent
+THRESHOLD_FILES = {
+    "default": ROOT / ".coverage-threshold.json",
+    "jetson": ROOT / ".coverage-threshold.jetson.json",
+}
+DEFAULT_REPORT = ROOT / ".coverage.json"
+DEFAULT_TOLERANCE = 1.0
 
 SRC_PREFIX = "src/"
 
@@ -49,7 +72,7 @@ def _module_key(filepath: str) -> str | None:
     """
     Derive the module key from a coverage report filepath.
 
-    Maps source paths to module keys used in ``.coverage-threshold.json``.
+    Maps source paths to module keys used in the threshold files.
 
     Examples
     --------
@@ -104,6 +127,23 @@ def calculate_module_coverage(files: dict) -> dict[str, float]:
     }
 
 
+def _detect_platform() -> str:
+    """Return ``"jetson"`` on Jetson devices, otherwise ``"default"``."""
+    # Mirrors trtutils._flags (FLAGS.IS_JETSON) without importing the package,
+    # which would require CUDA/TensorRT in lightweight environments.
+    return "jetson" if Path("/etc/nv_tegra_release").exists() else "default"
+
+
+def _get_option(flag: str) -> str | None:
+    """Return the value following ``flag`` in argv, or ``None`` if absent."""
+    if flag not in sys.argv:
+        return None
+    idx = sys.argv.index(flag)
+    if idx + 1 >= len(sys.argv):
+        raise ValueError(f"{flag} requires an argument")
+    return sys.argv[idx + 1]
+
+
 def _print_help() -> None:
     """Print usage information."""
     print(__doc__)
@@ -118,21 +158,30 @@ def main() -> int:
     update_mode = "--update" in sys.argv
     verbose = "--verbose" in sys.argv
 
-    # Find report file
-    report_path = DEFAULT_REPORT
-    if "--report" in sys.argv:
-        idx = sys.argv.index("--report")
-        if idx + 1 < len(sys.argv):
-            report_path = Path(sys.argv[idx + 1])
-        else:
-            print("ERROR: --report requires a file path argument")
-            return 2
+    try:
+        report_opt = _get_option("--report")
+        platform = (
+            _get_option("--platform")
+            or os.environ.get("TRTUTILS_COVERAGE_PLATFORM")
+            or _detect_platform()
+        ).lower()
+        tol_raw = _get_option("--tolerance") or os.environ.get("TRTUTILS_COVERAGE_TOLERANCE")
+        tolerance = float(tol_raw) if tol_raw is not None else DEFAULT_TOLERANCE
+    except ValueError as e:
+        print(f"ERROR: {e}")
+        return 2
+    report_path = Path(report_opt) if report_opt else DEFAULT_REPORT
+    if platform not in THRESHOLD_FILES:
+        print(f"ERROR: unknown platform {platform!r}; expected one of {sorted(THRESHOLD_FILES)}")
+        return 2
+    threshold_file = THRESHOLD_FILES[platform]
 
     # Load threshold file
-    if not THRESHOLD_FILE.exists():
-        print(f"ERROR: Threshold file not found: {THRESHOLD_FILE}")
+    if not threshold_file.exists():
+        print(f"ERROR: Threshold file not found: {threshold_file}")
         return 2
-    with THRESHOLD_FILE.open() as f:
+    print(f"Using {platform} thresholds: {threshold_file.name} (tolerance {tolerance:.1f})")
+    with threshold_file.open() as f:
         thresholds: dict[str, float] = json.load(f)
 
     # Load and parse coverage report
@@ -146,7 +195,7 @@ def main() -> int:
             threshold = thresholds.get(mod)
             marker = ""
             if threshold is not None:
-                if pct < threshold:
+                if pct < threshold - tolerance:
                     marker = " [BELOW THRESHOLD]"
                 elif pct > threshold:
                     marker = " [ABOVE THRESHOLD]"
@@ -171,9 +220,14 @@ def main() -> int:
     for module, threshold in sorted(thresholds.items()):
         current_raw = coverage.get(module, 0.0)
         current = round(current_raw, 1)
-        if current < threshold:
-            print(f"FAIL: {module} coverage {current:.1f}% < threshold {threshold:.1f}%")
+        if current < threshold - tolerance:
+            print(
+                f"FAIL: {module} coverage {current:.1f}% < threshold {threshold:.1f}% "
+                f"(tolerance {tolerance:.1f})"
+            )
             failed = True
+        elif current < threshold:
+            print(f"OK:   {module} at {current:.1f}% (within tolerance of {threshold:.1f}%)")
         elif current > threshold:
             print(f"UP:   {module} {threshold:.1f}% -> {current:.1f}%")
             if update_mode:
@@ -186,7 +240,7 @@ def main() -> int:
     if update_mode:
         # Sort keys for stable output
         sorted_thresholds = dict(sorted(thresholds.items()))
-        with THRESHOLD_FILE.open("w") as f:
+        with threshold_file.open("w") as f:
             json.dump(sorted_thresholds, f, indent=4)
             f.write("\n")
         print("\nThresholds updated.")
