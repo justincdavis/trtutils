@@ -16,7 +16,7 @@ from trtutils._benchmark import Metric
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
-from trtutils.profiling._profiler import LayerTiming, ProfilerResult, _NoOpProfiler
+from trtutils.profiling._profiler import LayerTiming, ProfilerResult, attached_profiler
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -291,7 +291,7 @@ class JetsonLayerProfiler(trt.IProfiler):
         self._current_layer_start_time = 0.0
 
 
-def profile_engine(  # noqa: C901, PLR0915
+def profile_engine(  # noqa: C901, PLR0912, PLR0915
     engine: Path | str | TRTEngine,
     iterations: int = 10000,
     warmup_iterations: int = 10,
@@ -341,9 +341,9 @@ def profile_engine(  # noqa: C901, PLR0915
         Whether to do warmup iterations, by default None.
         If None, warmup will be set to True.
     cuda_graph : bool, optional
-        Whether to enable CUDA graph capture for optimized execution.
-        By default None, which enables CUDA graphs.
-        Set to False for engines with DLA layers, as DLA does not support CUDA graphs.
+        Ignored during profiling: CUDA graph replays do not report per-layer
+        timings, so graphs are always disabled while profiling and the engine's
+        original setting is restored afterwards. Kept for API compatibility.
     verbose : bool, optional
         Whether to output additional information to stdout.
         Default None/False.
@@ -382,48 +382,41 @@ def profile_engine(  # noqa: C901, PLR0915
         )
 
     # attach JetsonLayerProfiler for per-layer power tracking
-    previous_profiler = engine.context.profiler
     profiler = JetsonLayerProfiler()
-    engine.context.profiler = profiler
-    # graph replays do not call the profiler, so run uncaptured
-    graph_enabled = engine._cuda_graph_enabled  # noqa: SLF001
-    engine._cuda_graph_enabled = False  # noqa: SLF001
-
-    # do warmup iterations
-    # always do a single pass regardless of warmup_iterations
-    profiler.start_iteration()
-    engine.mock_execute(verbose=False)
-    profiler.finalize_iteration()
-    if warmup:
-        for _ in range(warmup_iterations):
-            profiler.start_iteration()
-            engine.mock_execute(verbose=False)
-            profiler.finalize_iteration()
-    # report_layer_time is called by the context, so reset after warmup
-    profiler.reset()
-
-    if verbose:
-        LOG.info(f"Running {iterations} profiling iterations with per-layer power monitoring")
-
-    # pre-generate the false data
-    false_data = engine.get_random_input(verbose=verbose)
-
-    # store the start/stop times of each inference
-    timeslices: list[tuple[float, float]] = []
-
     tegrastats = TegraStats(interval=tegra_interval)
-    tegrastats.start()
-    for _ in range(iterations):
+    # timeslices holds the start/stop times of each inference
+    timeslices: list[tuple[float, float]] = []
+    with attached_profiler(engine, profiler):
+        # do warmup iterations
+        # always do a single pass regardless of warmup_iterations
         profiler.start_iteration()
-        t0 = time.time()
-        engine.mock_execute(false_data, verbose=False)
-        t1 = time.time()
+        engine.mock_execute(verbose=False)
         profiler.finalize_iteration()
-        timeslices.append((t0, t1))
-    tegrastats.stop()
-    engine._cuda_graph_enabled = graph_enabled  # noqa: SLF001
-    # tensorrt rejects a None profiler, so put back the previous one or a no-op
-    engine.context.profiler = previous_profiler if previous_profiler is not None else _NoOpProfiler()
+        if warmup:
+            for _ in range(warmup_iterations):
+                profiler.start_iteration()
+                engine.mock_execute(verbose=False)
+                profiler.finalize_iteration()
+        # report_layer_time is called by the context, so reset after warmup
+        profiler.reset()
+
+        if verbose:
+            LOG.info(f"Running {iterations} profiling iterations with per-layer power monitoring")
+
+        # pre-generate the false data
+        false_data = engine.get_random_input(verbose=verbose)
+
+        tegrastats.start()
+        try:
+            for _ in range(iterations):
+                profiler.start_iteration()
+                t0 = time.time()
+                engine.mock_execute(false_data, verbose=False)
+                t1 = time.time()
+                profiler.finalize_iteration()
+                timeslices.append((t0, t1))
+        finally:
+            tegrastats.stop()
     tegradata = tegrastats.data
 
     layer_stats = profiler.get_statistics_with_tegra(tegradata, verbose=bool(verbose))

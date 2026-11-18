@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean, median
@@ -15,7 +16,7 @@ from trtutils._log import LOG
 from trtutils.compat._libs import trt
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Generator, Sequence
 
     from typing_extensions import Self
 
@@ -169,6 +170,43 @@ class _NoOpProfiler(trt.IProfiler):
         pass
 
 
+@contextmanager
+def attached_profiler(engine: TRTEngine, profiler: trt.IProfiler) -> Generator[None]:
+    """
+    Attach a profiler to an engine and run it uncaptured, restoring the engine on exit.
+
+    CUDA graph replays do not call the profiler, so graphs are disabled for the duration.
+    The previous profiler and graph flag are restored even if profiling raises.
+
+    TensorRT rejects ``context.profiler = None`` (it logs an API usage error and keeps the
+    attached profiler), so an engine that had no profiler is left with a no-op profiler.
+
+    Parameters
+    ----------
+    engine : TRTEngine
+        The engine to profile.
+    profiler : trt.IProfiler
+        The profiler to attach.
+
+    Yields
+    ------
+    None
+        Control while the profiler is attached.
+
+    """
+    previous_profiler = engine.context.profiler
+    graph_enabled = engine._cuda_graph_enabled  # noqa: SLF001
+    engine.context.profiler = profiler
+    engine._cuda_graph_enabled = False  # noqa: SLF001
+    try:
+        yield
+    finally:
+        engine._cuda_graph_enabled = graph_enabled  # noqa: SLF001
+        engine.context.profiler = (
+            previous_profiler if previous_profiler is not None else _NoOpProfiler()
+        )
+
+
 def profile_engine(  # noqa: C901
     engine: Path | str | TRTEngine,
     iterations: int = 100,
@@ -250,37 +288,27 @@ def profile_engine(  # noqa: C901
             "Rebuild the engine with profiling_verbosity=trt.ProfilingVerbosity.DETAILED for best results.",
         )
 
-    # attach profiler
-    previous_profiler = engine.context.profiler
     profiler = LayerProfiler()
-    engine.context.profiler = profiler
-    # graph replays do not call the profiler, so run uncaptured
-    graph_enabled = engine._cuda_graph_enabled  # noqa: SLF001
-    engine._cuda_graph_enabled = False  # noqa: SLF001
-
-    # do warmup iterations
-    # always do a single pass regardless of warmup_iterations
-    engine.mock_execute(verbose=False)
-    if warmup:
-        for _ in range(warmup_iterations):
-            engine.mock_execute(verbose=False)
-    # report_layer_time is called by the context, so reset after warmup
-    profiler.reset()
-
-    if verbose:
-        LOG.info(f"Running {iterations} profiling iterations")
-
-    for idx in range(iterations):
+    with attached_profiler(engine, profiler):
+        # do warmup iterations
+        # always do a single pass regardless of warmup_iterations
         engine.mock_execute(verbose=False)
-        # only need to call finalize_iteration, since report_to_profiler is handled by context
-        profiler.finalize_iteration()
+        if warmup:
+            for _ in range(warmup_iterations):
+                engine.mock_execute(verbose=False)
+        # report_layer_time is called by the context, so reset after warmup
+        profiler.reset()
 
-        if verbose and (idx + 1) % 10 == 0:
-            LOG.info(f"Completed {idx + 1}/{iterations} iterations")
+        if verbose:
+            LOG.info(f"Running {iterations} profiling iterations")
 
-    engine._cuda_graph_enabled = graph_enabled  # noqa: SLF001
-    # tensorrt rejects a None profiler, so put back the previous one or a no-op
-    engine.context.profiler = previous_profiler if previous_profiler is not None else _NoOpProfiler()
+        for idx in range(iterations):
+            engine.mock_execute(verbose=False)
+            # only need finalize_iteration, since report_to_profiler is handled by context
+            profiler.finalize_iteration()
+
+            if verbose and (idx + 1) % 10 == 0:
+                LOG.info(f"Completed {idx + 1}/{iterations} iterations")
 
     layer_stats = profiler.get_statistics()
 
