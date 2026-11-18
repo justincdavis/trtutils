@@ -26,7 +26,7 @@ for arg in "$@"; do
         --update)
             UPDATE_FLAG="--update"
             ;;
-        -k|-k*|--deselect*|-m|-m*|--lf|--last-failed|--ff|--failed-first|--co|--collect-only|*.py|*.py::*|tests/*)
+        -k*|-m*|--deselect*|--lf|--last-failed|--ff|--failed-first|--co|--collect-only|*.py*|tests/*)
             # Anything that narrows the run leaves untested modules near 0%
             FILTERED=true
             PYTEST_ARGS+=("$arg")
@@ -49,7 +49,6 @@ python3 -m pytest \
 
 echo ""
 if $FILTERED; then
-    echo ""
     echo "=== Step 2: Skipping coverage thresholds (filtered pytest run) ==="
     exit 0
 fi
