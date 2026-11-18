@@ -99,7 +99,7 @@ def test_cpu_resize_resizes_device_buffers_on_gpu(images, gpu_cls, kwargs) -> No
     [
         pytest.param((-1, 1), id="neg1-1"),
         pytest.param((1, 2), id="1-2"),
-        pytest.param((0, 255), id="0-255"),
+        pytest.param((2, 3), id="2-3"),
     ],
 )
 def test_int_output_range_matches_float(images, preproc_cls, kwargs, output_range) -> None:
@@ -109,6 +109,18 @@ def test_int_output_range_matches_float(images, preproc_cls, kwargs, output_rang
     expected, _, _ = CPUPreprocessor(SIZE, float_range, DTYPE).preprocess([image])
     result, _, _ = preproc_cls(SIZE, output_range, DTYPE, **kwargs).preprocess([image])
     assert np.abs(result - expected).max() < 0.02 * (float_range[1] - float_range[0])
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(("preproc_cls", "kwargs"), PREPROCS[:2])  # TRT bakes range at init
+def test_update_output_range_int(images, preproc_cls, kwargs) -> None:
+    """update_output_range with integer bounds matches the equal float bounds."""
+    image = images["horse"].array
+    expected, _, _ = CPUPreprocessor(SIZE, (-1.0, 1.0), DTYPE).preprocess([image])
+    preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
+    preproc.update_output_range((-1, 1))
+    result, _, _ = preproc.preprocess([image])
+    assert np.abs(result - expected).max() < 0.04
 
 
 @pytest.mark.parametrize(

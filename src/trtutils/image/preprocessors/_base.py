@@ -141,7 +141,6 @@ class ImagePreprocessor(ABC):
         """
         # output info
         self._o_shape: tuple[int, int] = output_shape
-        self._o_range: tuple[float, float] = output_range
         self._o_dtype: np.dtype = dtype
 
         # preprocessing info
@@ -200,7 +199,7 @@ class ImagePreprocessor(ABC):
             The new output range.
 
         """
-        self._o_range = (float(output_range[0]), float(output_range[1]))
+        self._o_range: tuple[float, float] = (float(output_range[0]), float(output_range[1]))
         self._scale = (self._o_range[1] - self._o_range[0]) / 255.0
         self._offset = self._o_range[0]
 
