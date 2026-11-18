@@ -157,6 +157,9 @@ Performance
 
 Fixed
 ^^^^^
+* ``jetson.benchmark_engine`` / ``benchmark_engines`` raise a ``RuntimeError`` naming
+  ``tegra_interval`` and ``iterations`` when no tegrastats sample lands inside an inference
+  (previously an opaque ``ValueError``), and warn when only some inferences have a sample
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
   swapped, which misplaced boxes, keypoints, and masks on non-square model inputs
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
