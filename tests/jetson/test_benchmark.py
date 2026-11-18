@@ -120,24 +120,18 @@ def test_benchmark_engines(
 MODULE = "trtutils.jetson._benchmark"
 
 
-def _mock_tegra(monkeypatch, per_inference, filtered=None) -> None:
-    """Mock the tegrastats pipeline; each inference carries the 1.0 W sample set by default."""
+def _mock_tegra(monkeypatch, has_sample: list[bool]) -> None:
+    """Mock the tegrastats pipeline: one 1 s inference window per entry, 1.0 W when sampled."""
     sample = [{"VDD_TOTAL": 1.0}]
-    if filtered is None:
-        filtered = sample
+    per_inference = [((float(i), i + 1.0), sample if h else []) for i, h in enumerate(has_sample)]
+    filtered = sample if any(has_sample) else []
     monkeypatch.setattr(f"{MODULE}.TegraStats", lambda *_a, **_k: nullcontext())
     monkeypatch.setattr(f"{MODULE}.parse_tegrastats", MagicMock())
-    monkeypatch.setattr(
-        f"{MODULE}.filter_data", MagicMock(return_value=(filtered, per_inference(sample)))
-    )
+    monkeypatch.setattr(f"{MODULE}.filter_data", MagicMock(return_value=(filtered, per_inference)))
     monkeypatch.setattr(
         f"{MODULE}.get_powerdraw",
         MagicMock(return_value={"VDD_TOTAL": SimpleNamespace(raw=[1.0], mean=1.0)}),
     )
-
-
-def _mock_engines(monkeypatch) -> None:
-    """Make benchmark_engines(parallel=True) run against a mocked ParallelTRTEngines."""
     monkeypatch.setattr(f"{MODULE}.ParallelTRTEngines", MagicMock())
 
 
@@ -151,7 +145,7 @@ def _mock_engines(monkeypatch) -> None:
 )
 def test_benchmark_engine_warmup_default(monkeypatch, warmup, expected_extra) -> None:
     """None warms up like True for an existing engine; False skips the warmup calls."""
-    _mock_tegra(monkeypatch, lambda s: [((0.0, 1.0), s)])
+    _mock_tegra(monkeypatch, [True])
     engine = MagicMock()
     result = benchmark_engine(engine, iterations=1, warmup_iterations=3, warmup=warmup)
     assert engine.mock_execute.call_count == 1 + expected_extra
@@ -162,14 +156,14 @@ def test_benchmark_engine_warmup_default(monkeypatch, warmup, expected_extra) ->
 
 def test_benchmark_engine_no_samples_raises(monkeypatch) -> None:
     """No tegrastats sample inside any inference window raises an actionable error."""
-    _mock_tegra(monkeypatch, lambda _s: [((0.0, 1.0), [])], filtered=[])
+    _mock_tegra(monkeypatch, [False])
     with pytest.raises(RuntimeError, match="tegra_interval"):
         benchmark_engine(MagicMock(), iterations=1, warmup=False, tegra_interval=500)
 
 
 def test_benchmark_engine_partial_samples_warns(monkeypatch) -> None:
     """Inferences without a sample are dropped from energy, with a warning."""
-    _mock_tegra(monkeypatch, lambda s: [((0.0, 1.0), s), ((1.0, 2.0), [])])
+    _mock_tegra(monkeypatch, [True, False])
     warn = MagicMock()
     monkeypatch.setattr(f"{MODULE}.LOG.warning", warn)
     result = benchmark_engine(MagicMock(), iterations=2, warmup=False)
@@ -180,16 +174,14 @@ def test_benchmark_engine_partial_samples_warns(monkeypatch) -> None:
 
 def test_benchmark_engines_parallel_no_samples_raises(monkeypatch) -> None:
     """The parallel benchmark_engines path raises the same actionable error."""
-    _mock_tegra(monkeypatch, lambda _s: [((0.0, 1.0), [])], filtered=[])
-    _mock_engines(monkeypatch)
+    _mock_tegra(monkeypatch, [False])
     with pytest.raises(RuntimeError, match="tegra_interval"):
         benchmark_engines([MagicMock()], iterations=1, parallel=True, warmup=False)
 
 
 def test_benchmark_engines_parallel_partial_samples_warns(monkeypatch) -> None:
     """The parallel benchmark_engines path warns on partially missing samples."""
-    _mock_tegra(monkeypatch, lambda s: [((0.0, 1.0), s), ((1.0, 2.0), [])])
-    _mock_engines(monkeypatch)
+    _mock_tegra(monkeypatch, [True, False])
     warn = MagicMock()
     monkeypatch.setattr(f"{MODULE}.LOG.warning", warn)
     (result,) = benchmark_engines([MagicMock()], iterations=2, parallel=True, warmup=False)
