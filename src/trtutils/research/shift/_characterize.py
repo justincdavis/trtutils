@@ -49,6 +49,12 @@ def _used_memory_mb() -> float:
     return (total - free) / (1024 * 1024)
 
 
+def _engine_memory_mb(engine: TRTEngine) -> float:
+    # activation memory plus i/o bindings: a floor that excludes weights
+    bindings = [*engine.input_bindings, *engine.output_bindings]
+    return (engine.memsize + sum(b.nbytes for b in bindings)) / (1024 * 1024)
+
+
 def _measure(
     engine: TRTEngine,
     iterations: int,
@@ -150,7 +156,9 @@ def characterize(
         t0 = time.perf_counter()
         detector = factory()
         load_time = time.perf_counter() - t0
-        load_memory = max(_used_memory_mb() - used, 0.0)
+        # the system-wide delta is noisy (unified memory on jetson), so never go below
+        # what the engine itself allocates
+        load_memory = max(_used_memory_mb() - used, _engine_memory_mb(detector.engine))
 
         confidences: list[list[float]] = []
         ious: list[list[float]] = []

@@ -177,6 +177,24 @@ def test_scheduler_similarity(similarity) -> None:
 
 
 @pytest.mark.cpu
+@pytest.mark.parametrize(
+    "shape",
+    [
+        pytest.param((64, 64), id="gray-2d"),
+        pytest.param((64, 64, 1), id="gray-1-channel"),
+        pytest.param((64, 64, 3), id="bgr"),
+        pytest.param((64, 64, 4), id="bgra"),
+    ],
+)
+def test_scheduler_image_layouts(shape) -> None:
+    """Grayscale, single-channel, BGR and BGRA frames all hold the gate on a repeated frame."""
+    image = np.random.default_rng(3).integers(0, 256, shape, dtype=np.uint8)
+    scheduler = ShiftScheduler(TRAITS)
+    scheduler("big", image, _dets(0.9))
+    assert scheduler("big", image, _dets(0.9)) == "big"
+
+
+@pytest.mark.cpu
 def test_scheduler_zero_energy() -> None:
     """Pairs without energy measurements (non-Jetson) score on accuracy and latency only."""
     traits = _traits([0.9, 0.1], [0.9, 0.1], [0.2, 0.5], [0.3, 0.3], energy=(0.0, 0.0))

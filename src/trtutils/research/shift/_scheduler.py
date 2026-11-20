@@ -63,7 +63,9 @@ def ncc(image1: np.ndarray, image2: np.ndarray) -> float:
 
 
 def _gray(image: np.ndarray, size: tuple[int, int]) -> np.ndarray:
-    if image.ndim == 3:  # noqa: PLR2004
+    if image.ndim == 3 and image.shape[2] == 1:  # noqa: PLR2004
+        image = image[..., 0]
+    elif image.ndim == 3:  # noqa: PLR2004
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
 
