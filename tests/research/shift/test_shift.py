@@ -13,6 +13,7 @@ import weakref
 import numpy as np
 import pytest
 
+from trtutils import TRTEngine
 from trtutils.research.shift import ModelTraits, Shift, ShiftConfig
 
 # energy-only scoring: every pair is predicted from every node, so the cheapest (small) wins
@@ -145,6 +146,25 @@ def test_shift_lazy_load_and_eviction() -> None:
     _run_until(shift, lambda: "big" in shift.loaded, start=20)
     assert shift.loaded == ["big", "small"]
     assert factories.calls == {"big": 2, "mid": 1, "small": 1}
+
+
+@pytest.mark.cpu
+def test_shift_background_build_holds_capture_lock() -> None:
+    """A background build holds the CUDA graph capture lock, so no capture can overlap it."""
+    factories = Factories(gated=["small"])
+    shift = Shift(factories.models(), TRAITS, CONFIG, memory_budget=150.0)
+    shift.end2end(_frame(0))
+    deadline = time.monotonic() + 10.0
+    while factories.calls["small"] == 0:
+        assert time.monotonic() < deadline, "background build did not start"
+        time.sleep(0.001)
+    # the build is running (blocked in the factory): a capture here would have to wait
+    assert TRTEngine._capture_lock.acquire(blocking=False) is False
+    factories.gates["small"].set()
+    _run_until(shift, lambda: shift.current == "small", start=1)
+    assert TRTEngine._capture_lock.acquire(blocking=False) is True
+    TRTEngine._capture_lock.release()
+    shift.close()
 
 
 @pytest.mark.cpu

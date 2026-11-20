@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
+from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 
 from ._scheduler import ShiftScheduler
@@ -191,6 +192,12 @@ class Shift:
         if self._verbose:
             LOG.info(f"SHIFT: loaded {name}")
 
+    def _build(self: Self, name: str) -> DetectorInterface:
+        # building an engine uses the legacy default stream, which breaks any CUDA graph
+        # capture running in the serving thread, so hold the capture lock for the build
+        with TRTEngine._capture_lock:  # noqa: SLF001
+            return self._factories[name]()
+
     def _load(self: Self, name: str) -> None:
         if self._executor is None or self._budget is None or self._pending is not None:
             return
@@ -205,4 +212,4 @@ class Shift:
             used -= self._memory[victim]
             if self._verbose:
                 LOG.info(f"SHIFT: evicted {victim}")
-        self._pending = (name, self._executor.submit(self._factories[name]))
+        self._pending = (name, self._executor.submit(self._build, name))

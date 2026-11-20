@@ -211,7 +211,10 @@ Other implementation choices where the paper is silent:
   detector, so a background load still stalls the serving pair for a few frames.
   On an Orin AGX, building a YOLOv10n detector blocks for ~490 ms synchronously;
   in the background the current pair keeps serving (~60 frames), with the
-  longest single-frame stall ~210 ms.
+  longest single-frame stall ~210 ms. A background build holds trtutils' CUDA graph capture
+  lock, because building an engine uses the legacy default stream, which would break
+  a capture running in the serving thread; a frame that needs a capture waits for
+  the build to finish.
 
 ## Citation
 
