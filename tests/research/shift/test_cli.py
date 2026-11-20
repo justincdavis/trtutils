@@ -122,8 +122,11 @@ def test_parse_models_dla_disables_cuda_graph() -> None:
 
 
 def test_read_labels(tmp_path) -> None:
-    """YOLO-format labels convert to pixel xyxy boxes; a missing file means no boxes."""
+    """YOLO-format labels convert to pixel xyxy boxes; a missing file means none, other formats raise."""
     label = tmp_path / "frame.txt"
     label.write_text("0 0.5 0.5 0.5 0.25\n\n3 0.1 0.2 0.2 0.2\n")
     assert _read_labels(label, 200, 100) == [(50, 38, 150, 62), (0, 10, 40, 30)]
     assert _read_labels(tmp_path / "missing.txt", 200, 100) == []
+    label.write_text("0 0.5 0.5 0.5 0.25\n0 0.1 0.1 0.2 0.1 0.3 0.3\n")
+    with pytest.raises(ValueError, match=r"frame.txt:2: expected 'class cx cy w h'"):
+        _read_labels(label, 200, 100)

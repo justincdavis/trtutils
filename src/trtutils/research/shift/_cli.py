@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
 _MODEL_SPEC_LENGTHS = (2, 3)
+_LABEL_FIELDS = 5
 _CONFIG_CHOICES = {
     "similarity": ["min", "product"],
     "confidence_metric": ["mean", "median", "min", "max"],
@@ -99,15 +100,23 @@ def _read_labels(path: Path, width: int, height: int) -> list[Bbox]:
     list[Bbox]
         The boxes as (x1, y1, x2, y2) pixels.
 
+    Raises
+    ------
+    ValueError
+        If a line does not have exactly five fields.
+
     """
     if not path.exists():
         return []
     boxes: list[Bbox] = []
-    for line in path.read_text().splitlines():
+    for number, line in enumerate(path.read_text().splitlines(), start=1):
         values = line.split()
         if len(values) == 0:
             continue
-        cx, cy, w, h = (float(v) for v in values[1:5])
+        if len(values) != _LABEL_FIELDS:
+            err_msg = f"{path}:{number}: expected 'class cx cy w h', got {line!r}"
+            raise ValueError(err_msg)
+        cx, cy, w, h = (float(v) for v in values[1:])
         boxes.append(
             (
                 round((cx - w / 2) * width),
@@ -256,6 +265,10 @@ def _run(args: SimpleNamespace) -> None:
         If the input cannot be read.
 
     """
+    source = Path(args.input)
+    if not source.exists():
+        err_msg = f"Cannot find input: {source}"
+        raise FileNotFoundError(err_msg)
     shift = Shift(
         _parse_models(args.model),
         load_characterization(args.characterization),
@@ -263,10 +276,6 @@ def _run(args: SimpleNamespace) -> None:
         memory_budget=args.memory_budget,
         verbose=args.verbose,
     )
-    source = Path(args.input)
-    if not source.exists():
-        err_msg = f"Cannot find input: {source}"
-        raise FileNotFoundError(err_msg)
 
     usage: Counter[str] = Counter()
     swaps = 0
@@ -274,12 +283,14 @@ def _run(args: SimpleNamespace) -> None:
 
     def _step(frame: np.ndarray) -> None:
         nonlocal swaps, elapsed
-        previous = shift.current
+        previous = shift.last
         t0 = time.perf_counter()
         shift.end2end(frame)
         elapsed += time.perf_counter() - t0
-        usage[previous] += 1
-        swaps += int(shift.current != previous)
+        ran = shift.last
+        if ran is not None:
+            usage[ran] += 1
+            swaps += int(previous is not None and ran != previous)
 
     if source.suffix.lower() in _IMAGE_SUFFIXES:
         image = cv2.imread(str(source))
@@ -295,6 +306,7 @@ def _run(args: SimpleNamespace) -> None:
                 break
             _step(frame)
         cap.release()
+    shift.close()
 
     frames = sum(usage.values())
     if frames == 0:

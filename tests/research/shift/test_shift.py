@@ -102,11 +102,15 @@ def test_shift_without_budget() -> None:
     shift = Shift(factories.models(), TRAITS, CONFIG)
     assert factories.calls == {"big": 1, "mid": 1, "small": 1}
     assert shift.current == "big"
+    assert shift.last is None
     detections = shift.end2end(_frame(0))
     assert detections[0][1] == SPECS["big"][0]
-    assert shift.current == "small"
+    assert (shift.last, shift.current) == ("big", "small")
     assert shift.end2end(_frame(1))[0][1] == SPECS["small"][0]
+    assert shift.last == "small"
     assert factories.calls == {"big": 1, "mid": 1, "small": 1}
+    shift.close()
+    assert shift.loaded == []
 
 
 @pytest.mark.cpu
@@ -141,6 +145,24 @@ def test_shift_lazy_load_and_eviction() -> None:
     _run_until(shift, lambda: "big" in shift.loaded, start=20)
     assert shift.loaded == ["big", "small"]
     assert factories.calls == {"big": 2, "mid": 1, "small": 1}
+
+
+@pytest.mark.cpu
+def test_shift_stale_load_gives_way_to_target() -> None:
+    """A finished load the scheduler no longer wants is admitted, then evicted for the current target."""
+    factories = Factories(gated=["mid"])
+    shift = Shift(factories.models(), TRAITS, CONFIG, memory_budget=150.0)
+    shift._load("mid")
+    # the target is small, but only one load runs at a time
+    for index in range(3):
+        shift.end2end(_frame(index))
+    assert factories.calls["small"] == 0
+    factories.gates["mid"].set()
+    _run_until(shift, lambda: shift.current == "small", start=3)
+    # big (current while mid loaded) and small fill the budget; mid made room
+    assert shift.loaded == ["big", "small"]
+    assert factories.calls == {"big": 1, "mid": 1, "small": 1}
+    shift.close()
 
 
 @pytest.mark.cpu

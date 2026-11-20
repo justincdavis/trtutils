@@ -71,7 +71,7 @@ def test_characterize_roundtrip(engine, frames, tmp_path, monkeypatch) -> None:
         assert min(trait.frame_accuracies("min")) > 0.9
         assert trait.latency_ms > 0.0
         assert trait.load_time_s > 0.0
-        assert trait.load_memory_mb >= 0.0
+        assert trait.load_memory_mb > 0.0
         assert (trait.energy_mj > 0.0) is FLAGS.IS_JETSON
 
     path = tmp_path / "traits.json"
