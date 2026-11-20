@@ -9,6 +9,9 @@ Submodules
 :mod:`axonn`
     Implementation of the AxoNN paper for energy-aware multi-accelerator
     neural network inference optimization.
+:mod:`shift`
+    Implementation of the SHIFT paper for context-aware scheduling of
+    multiple object detectors across accelerators.
 
 """
 
@@ -22,18 +25,22 @@ if TYPE_CHECKING:
     import argparse
 
     from . import axonn as axonn
+    from . import shift as shift
 
 _SUBMODULES = [
     "axonn",
+    "shift",
 ]
 _LAZY_SUBMODULES = {
     "axonn",
+    "shift",
 }
 
 __all__ = [
     "axonn",
     "discover_submodules",
     "register_cli",
+    "shift",
 ]
 
 

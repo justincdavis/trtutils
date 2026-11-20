@@ -626,6 +626,48 @@ its own subcommands.
     # list the available research modules
     python3 -m trtutils research
 
+SHIFT
+^^^^^
+
+:mod:`trtutils.research.shift` characterizes (model, accelerator) pairs and runs the
+SHIFT scheduler over a video. ``--model NAME ENGINE [DLA_CORE]`` is repeated once per
+pair; give ``DLA_CORE`` for engines with DLA layers.
+
+.. code-block:: console
+
+    # characterize on labeled images (YOLO-format .txt labels, one per image stem)
+    python3 -m trtutils research shift characterize \
+        --model yolov10n_gpu yolov10n.engine \
+        --model yolov10n_dla yolov10n_dla.engine 0 \
+        --images val/images --labels val/labels --output traits.json
+
+    # run SHIFT over a video
+    python3 -m trtutils research shift run \
+        --model yolov10n_gpu yolov10n.engine \
+        --model yolov10n_dla yolov10n_dla.engine 0 \
+        --characterization traits.json --input video.mp4
+
+``characterize`` options:
+
+* ``--model``: A pair as ``NAME ENGINE [DLA_CORE]``, repeated (required)
+* ``--images``: Directory of images (required)
+* ``--labels``: Directory of YOLO-format labels; a missing file means no objects (required)
+* ``--output``: JSON file for the characterization (required)
+* ``--iterations``: Benchmark iterations per pair (default: 1000)
+* ``--warmup_iterations``: Benchmark warmup iterations per pair (default: 50)
+
+``run`` options:
+
+* ``--model``: A pair as ``NAME ENGINE [DLA_CORE]``, repeated (required)
+* ``--characterization``: JSON file from ``characterize`` (required)
+* ``--input``: Video or image file (required)
+* ``--preset``: ``paper`` (default) or ``shiftdetector`` hyperparameters
+* ``--memory_budget``: Memory budget in MB; pairs then load on demand (default: load all)
+* ``--accuracy_threshold``, ``--momentum``, ``--distance_threshold``, ``--accuracy_weight``,
+  ``--energy_weight``, ``--latency_weight``, ``--similarity``, ``--confidence_metric``,
+  ``--accuracy_metric``, ``--num_bins``, ``--outlier_percentile``, ``--min_connects``:
+  override one ``ShiftConfig`` field of the preset
+
 TRTExec
 ~~~~~~~
 
