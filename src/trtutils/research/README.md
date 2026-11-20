@@ -47,6 +47,9 @@ Four changes:
 
 ### 3. Add optional dependency extra in `pyproject.toml`
 
+Only when the submodule needs packages beyond trtutils' own dependencies
+(`shift` needs none, so it has no extra).
+
 ```toml
 [project.optional-dependencies]
 <name> = ["some-dep>=x.y.z"]
