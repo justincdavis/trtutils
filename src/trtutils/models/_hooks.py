@@ -263,3 +263,53 @@ def vit_attention_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict[st
     if not layer_precision:
         return {}
     return {"layer_precision": layer_precision, "prefer_precision_constraints": True}
+
+
+def rfdetr_layernorm_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
+    """
+    Build hook that forces FP32 for the LayerNorms of the RF-DETR transformer.
+
+    On TensorRT 8.6 (Jetson AGX Orin) a full FP16 RF-DETR build loses its detections:
+    rfdetr_m finds nothing and rfdetr_n only low-confidence noise. Pinning the LayerNorms
+    after the backbone (the two-stage encoder output norm and the decoder norms) to FP32
+    matches the FP32 engine. The DINOv2 backbone LayerNorms are not the cause and stay FP16,
+    as does everything else, so the cost is a handful of small layers. A strongly typed
+    build returns no overrides, because ``build_engine`` rejects layer precision in that mode.
+
+    Parameters
+    ----------
+    onnx : Path | str
+        Path to the ONNX model.
+    **kwargs : Any
+        Extra arguments from ``Model.build``. ``strongly_typed`` is read here.
+
+    Returns
+    -------
+    dict[str, Any]
+        Build engine overrides containing the layer_precision list, or an empty dict.
+
+    """
+    # unnamed so Model.build does not consume strongly_typed before build_engine sees it
+    if kwargs.get("strongly_typed") or not FLAGS.WEAK_TYPING:
+        return {}
+    network, _, _, _ = read_onnx(onnx)
+    # the onnx parser leaves the LayerNorms unnamed, so find them by position
+    start = next(
+        (
+            idx
+            for idx in range(network.num_layers)
+            if network.get_layer(idx).name.startswith("/transformer")
+        ),
+        None,
+    )
+    if start is None:
+        LOG.warning("RF-DETR FP32 hook: transformer layers not found, building all in FP16")
+        return {}
+    layer_precision = [
+        (idx, trt.DataType.FLOAT)
+        for idx in range(start, network.num_layers)
+        if network.get_layer(idx).type == trt.LayerType.NORMALIZATION
+    ]
+    if not layer_precision:
+        return {}
+    return {"layer_precision": layer_precision, "prefer_precision_constraints": True}

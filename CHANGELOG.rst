@@ -157,6 +157,9 @@ Performance
 
 Fixed
 ^^^^^
+* ``RFDETR.build()`` FP16 engines detect again on TensorRT 8.6 (Jetson). The transformer
+  LayerNorms now build in FP32; before, rfdetr_s and rfdetr_m found nothing and rfdetr_n only
+  low-confidence noise. The rest of the model stays FP16, about 2x faster than an FP32 build
 * ``run(..., preprocessed=True)`` on a batch tensor of N>1 images returns all N results instead of
   only the first
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
