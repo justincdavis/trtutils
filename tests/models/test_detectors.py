@@ -40,6 +40,7 @@ from trtutils.models._hooks import (
     depthwise_fp32_build_hook,
     gridsample_debug_build_hook,
     nms_build_hook,
+    rfdetr_layernorm_fp32_build_hook,
     rtdetr_build_hook,
     vit_attention_fp32_build_hook,
 )
@@ -298,3 +299,54 @@ def test_vit_attention_hook_pins_only_qk_matmul_and_softmax(tmp_path) -> None:
     assert {dtype for _idx, dtype in overrides["layer_precision"]} == {trt.DataType.FLOAT}
     assert overrides["prefer_precision_constraints"] is True
     assert vit_attention_fp32_build_hook(onnx=path, strongly_typed=True) == {}
+
+
+def _write_layernorm_onnx(path):
+    # a backbone LayerNorm, the first transformer layer, then a decoder LayerNorm
+    shape = [1, 4, 8]
+    info = onnx.helper.make_tensor_value_info
+    weights = [
+        onnx.helper.make_tensor(name, onnx.TensorProto.FLOAT, [8], [value] * 8)
+        for name, value in (("scale", 1.0), ("bias", 0.0))
+    ]
+    nodes = [
+        onnx.helper.make_node(
+            "LayerNormalization", ["x", "scale", "bias"], ["b"], name="/backbone/norm/LayerNorm"
+        ),
+        onnx.helper.make_node("Relu", ["b"], ["t"], name="/transformer/Relu"),
+        onnx.helper.make_node(
+            "LayerNormalization",
+            ["t", "scale", "bias"],
+            ["out"],
+            name="/transformer/decoder/norm/LayerNorm",
+        ),
+    ]
+    graph = onnx.helper.make_graph(
+        nodes,
+        "layernorm",
+        [info("x", onnx.TensorProto.FLOAT, shape)],
+        [info("out", onnx.TensorProto.FLOAT, shape)],
+        initializer=weights,
+    )
+    model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 17)])
+    onnx.save(model, path)
+
+
+@pytest.mark.skipif(not FLAGS.WEAK_TYPING, reason="per-layer precision was removed in TensorRT 11")
+def test_rfdetr_hook_pins_only_transformer_layernorms(tmp_path) -> None:
+    """Only the LayerNorms after the first transformer layer are pinned, not the backbone's."""
+    assert rfdetr_layernorm_fp32_build_hook in RFDETR._build_hooks
+    path = tmp_path / "layernorm.onnx"
+    _write_layernorm_onnx(path)
+    overrides = rfdetr_layernorm_fp32_build_hook(onnx=path)
+    network, _, _, _ = read_onnx(path)
+    layers = [network.get_layer(idx) for idx in range(network.num_layers)]
+    norms = [idx for idx, layer in enumerate(layers) if layer.type == trt.LayerType.NORMALIZATION]
+    start = next(idx for idx, layer in enumerate(layers) if layer.name == "/transformer/Relu")
+    assert len(norms) == 2
+    assert overrides["layer_precision"] == [(norms[1], trt.DataType.FLOAT)]
+    assert norms[0] < start < norms[1]
+    assert overrides["prefer_precision_constraints"] is True
+    assert rfdetr_layernorm_fp32_build_hook(onnx=path, strongly_typed=True) == {}
+    # graphs without the RF-DETR transformer build entirely in FP16
+    assert rfdetr_layernorm_fp32_build_hook(onnx=DATA_DIR / "simple.onnx") == {}
