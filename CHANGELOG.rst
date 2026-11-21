@@ -171,6 +171,9 @@ Fixed
   OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see
   a half-written engine
+* ``can_run_on_dla`` and ``inspect_onnx_layers`` restore the passed ``config``'s default
+  device and DLA core. They left it targeting DLA core 0, so a later build reusing the same
+  config targeted the DLA
 * ``trtexec.build_engine`` passes every requested precision flag for ``fp16``/``int8``,
   ``fp16``/``fp8`` and ``int8``/``fp8`` combinations. It dropped one of them, so layers without
   support for the remaining precision fell back to fp32

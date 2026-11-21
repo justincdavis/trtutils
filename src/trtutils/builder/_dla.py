@@ -65,24 +65,25 @@ def can_run_on_dla(
 
     check_dla: Callable[[trt.ILayer], bool] = get_check_dla(config)
 
+    prev_device = config.default_device_type
+    prev_core = config.DLA_core
     # assign to DLA 0, since core doesnt matter for this check
     config.default_device_type = trt.DeviceType.DLA
     config.DLA_core = 0
+    try:
+        layers = [network.get_layer(idx) for idx in range(network.num_layers)]
+        dla_flags = [check_dla(layer) for layer in layers]
+    finally:
+        config.default_device_type = prev_device
+        config.DLA_core = prev_core
 
-    full_dla = True
+    full_dla = all(dla_flags)
     last_layer_dla = False
     chunks: list[tuple[list[trt.ILayer], int, int, bool]] = []
     curr_start: int = 0
     curr_layers: list[trt.ILayer] = []
 
-    for idx in range(network.num_layers):
-        layer = network.get_layer(idx)
-
-        # check if the layer can run on DLA
-        dla_valid = check_dla(layer)
-        if not dla_valid:
-            full_dla = False
-
+    for idx, (layer, dla_valid) in enumerate(zip(layers, dla_flags)):
         # handle chunk storage
         if dla_valid != last_layer_dla and len(curr_layers) > 0:
             chunks.append((curr_layers, curr_start, idx - 1, last_layer_dla))
