@@ -15,7 +15,11 @@ from trtutils._flags import FLAGS
 from trtutils.builder import build_dla_engine, build_engine
 from trtutils.builder.hooks import fp16_io_hook, int8_input_hook, int8_ranges_hook
 from trtutils.models import YOLOv8
-from trtutils.models._hooks import depthwise_fp32_build_hook, hands23_fp32_build_hook
+from trtutils.models._hooks import (
+    depthwise_fp32_build_hook,
+    hands23_fp32_build_hook,
+    rfdetr_layernorm_fp32_build_hook,
+)
 
 pytestmark = pytest.mark.cpu
 
@@ -110,6 +114,7 @@ def test_flag_weak_typing_matches_trt() -> None:
     [
         pytest.param(depthwise_fp32_build_hook, id="depthwise"),
         pytest.param(hands23_fp32_build_hook, id="hands23"),
+        pytest.param(rfdetr_layernorm_fp32_build_hook, id="rfdetr"),
     ],
 )
 def test_precision_hooks_noop_without_weak_typing(monkeypatch, hook) -> None:

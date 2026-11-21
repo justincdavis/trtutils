@@ -8,8 +8,10 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
+from trtutils.builder._batcher import SyntheticBatcher
 from trtutils.builder._build import build_engine
 from trtutils.builder._dla import build_dla_engine, can_run_on_dla
 from trtutils.builder._onnx import read_onnx
@@ -104,6 +106,21 @@ def test_build_dla_engine(
     )
     assert output_engine_path.exists()
     assert output_engine_path.stat().st_size > 0
+
+
+@pytest.mark.dla
+@pytest.mark.regression
+def test_build_dla_engine_full_dla_keeps_optimization_level(conv_onnx, output_engine_path) -> None:
+    """A model that runs fully on the DLA builds, at the requested optimization level."""
+    batcher = SyntheticBatcher(
+        shape=(16, 16, 8), dtype=np.dtype(np.float32), batch_size=1, num_batches=2, order="NCHW"
+    )
+    with patch("trtutils.builder._dla.build_engine", wraps=build_engine) as spy:
+        build_dla_engine(
+            conv_onnx(8, 16, 16), output_engine_path, data_batcher=batcher, optimization_level=1
+        )
+    assert spy.call_args.kwargs["default_device"] == trt.DeviceType.DLA
+    assert spy.call_args.kwargs["optimization_level"] == 1
 
 
 @pytest.mark.dla
