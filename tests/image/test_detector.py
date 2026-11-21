@@ -192,3 +192,18 @@ def test_detector_detr_preprocessed_matches_end2end(build_test_engine, images) -
         assert cls_id == e_cls_id
         assert score == pytest.approx(e_score, abs=1e-2)
         assert box == pytest.approx(e_box, abs=2.0)
+
+
+def test_detector_preprocessed_batch_not_unwrapped(yolov10_dynamic_engine, images) -> None:
+    """run() on a preprocessed batch-2 tensor returns both images, not only the first."""
+    model = Detector(yolov10_dynamic_engine, preprocessor="cpu", warmup=False)
+    pool = [images["horse"].array, images["people"].array]
+    tensor, ratios, padding = model.preprocess(pool)
+    assert tensor.shape[0] == 2
+
+    result = model.run(tensor, ratios, padding, preprocessed=True)
+    assert len(result) == 2
+    for i, image in enumerate(pool):
+        alone = model.run(image)
+        for got, expected in zip(result[i], alone):
+            np.testing.assert_allclose(got, expected, atol=1e-2)

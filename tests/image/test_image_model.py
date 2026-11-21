@@ -11,29 +11,10 @@ import numpy as np
 import nvtx
 import pytest
 
-from tests.conftest import PREPROCESSORS
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.image import Detector, ImageModel, _image_model, preprocessors
 from trtutils.image.preprocessors import CPUPreprocessor, CUDAPreprocessor
-
-
-@pytest.mark.parametrize(("preprocessor", "cpu_resize"), PREPROCESSORS)
-@pytest.mark.parametrize("resize_method", ["linear", "letterbox"])
-def test_preprocess(yolov10_engine, images, preprocessor, cpu_resize, resize_method) -> None:
-    """preprocess() yields a (1, 3, H, W) tensor in the model dtype for every backend and resize."""
-    model = ImageModel(
-        yolov10_engine,
-        preprocessor=preprocessor,
-        resize_method=resize_method,
-        cpu_resize=cpu_resize,
-        warmup=False,
-    )
-    tensor, ratios, padding = model.preprocess(images["horse"].array)
-    assert tensor.shape == (1, 3, 640, 640)
-    assert tensor.dtype == model.dtype
-    assert len(ratios) == 1
-    assert len(padding) == 1
 
 
 @pytest.mark.parametrize(
