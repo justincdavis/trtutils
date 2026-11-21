@@ -4,14 +4,15 @@
 # mypy: disable-error-code="import-untyped"
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
+from trtutils.models._hooks import rfdetr_layernorm_fp32_build_hook
 from trtutils.models._model import Model
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
     from pathlib import Path
 
     from typing_extensions import Self
@@ -31,6 +32,10 @@ class RFDETR(Detector, Model):
     _imgsz_divisor = 32
     _model_imgszs: ClassVar[dict[str, int] | None] = {"rfdetr_n": 384, "rfdetr_s": 512}
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("input", "image")]
+    # tensorrt 8.6 fp16 engines lose the detections, see the hook docstring
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [
+        rfdetr_layernorm_fp32_build_hook,
+    ]
 
     def __init__(
         self: Self,
