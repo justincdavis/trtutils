@@ -55,6 +55,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         Expressed in MiB.
     fp16 : bool, optional
         Whether to use FP16 precision for the engine, by default None.
+        May be combined with int8 and/or fp8; each enabled precision gets its own flag.
     int8 : bool, optional
         Whether to use INT8 precision for the engine, by default None.
     fp8 : bool, optional
@@ -118,21 +119,6 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     if best and (fp16 or int8 or fp8):
         LOG.warning("Best precision enabled with other precisions also being enabled.")
         LOG.warning("Best precision level ENABLES ALL precisions")
-    if fp16 and int8:
-        LOG.warning(
-            "FP16 and INT8 precision cannot be used together. Using lower precision level.",
-        )
-        fp16 = False
-    if fp16 and fp8:
-        LOG.warning(
-            "FP16 and FP8 precision cannot be used together. Using lower precision level.",
-        )
-        fp16 = False
-    if int8 and fp8:
-        LOG.warning(
-            "INT8 and FP8 precision cannot be used together. Using lower precision level.",
-        )
-        int8 = False
 
     # resolve the model and output paths
     weights_path_str = str(weights.resolve())

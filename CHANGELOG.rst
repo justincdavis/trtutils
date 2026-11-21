@@ -171,6 +171,9 @@ Fixed
   OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see
   a half-written engine
+* ``trtexec.build_engine`` passes every requested precision flag for ``fp16``/``int8``,
+  ``fp16``/``fp8`` and ``int8``/``fp8`` combinations. It dropped one of them, so layers without
+  support for the remaining precision fell back to fp32
 * ``build_dla_engine`` builds models that run fully on the DLA. It did not allow GPU fallback,
   so TensorRT rejected the I/O reformats and the build failed
 * ``build_dla_engine`` passes ``optimization_level`` on when the model runs fully on the DLA
