@@ -109,6 +109,14 @@ Added
   its own. ``ShiftConfig`` holds the paper's hyperparameters, with
   ``ShiftConfig.shiftdetector()`` for the reference implementation's. CLI:
   ``trtutils research shift characterize`` / ``run``
+* ``trtutils.research.drift``: the DRIFT paper (intra-frame parallel object detection on
+  multi-accelerator SoCs, ICCAD 2026). ``characterize`` measures each model's end-to-end latency,
+  alone and concurrently with every DLA model, plus per-image confidences and F1; ``Drift`` crops
+  the high-priority region for a GPU model and packs the rest of the frame for a second model
+  that runs concurrently on a DLA, with ``DriftScheduler`` picking both per frame.
+  ``FramePacker``, ``LinearEstimator`` and ``DriftScheduler`` work on their own. ``DriftConfig``
+  holds the paper's hyperparameters, with ``DriftConfig.upstream()`` for the reference
+  implementation's. CLI: ``trtutils research drift characterize`` / ``run``
 
 Changed
 ^^^^^^^
