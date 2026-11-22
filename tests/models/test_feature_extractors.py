@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import numpy as np
+import onnxruntime as ort
 import pytest
 
 from tests.conftest import DATA_DIR, PREPROCESSORS
@@ -81,6 +82,24 @@ def test_feature_extractor_similarity(
     np.testing.assert_array_equal(first, model.end2end(horse))
     assert _cosine(first, second) > 0.9999
     assert _cosine(first, other) < 0.9
+
+
+@pytest.mark.correctness
+@pytest.mark.parametrize(("model_cls", "onnx_path", "width", "depth"), FEATURE_EXTRACTORS)
+def test_feature_extractor_matches_onnxruntime(
+    build_model_engine, images, model_cls, onnx_path, width, depth
+) -> None:
+    """The default build (FP16 where the platform has it) embeds like onnxruntime on the same input."""
+    del width, depth
+    engine = build_model_engine(model_cls, onnx_path)
+    model = model_cls(engine, preprocessor="cpu", warmup=False)
+    image = images["horse"].array
+
+    tensor, _ratios, _padding = model.preprocess(image, method="cpu")
+    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    reference = session.run(["embedding"], {"input": tensor})[0][0]
+
+    assert _cosine(model.end2end(image), reference) > 0.999
 
 
 @pytest.mark.parametrize(("model_cls", "onnx_path", "width", "depth"), FEATURE_EXTRACTORS)
