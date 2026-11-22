@@ -190,3 +190,11 @@ def test_model_postprocess_dispatch_and_get_class_maps(schema, kind) -> None:
     assert len(batch) == 1
     np.testing.assert_array_equal(batch[0], gt)
     np.testing.assert_array_equal(get_class_maps(post)[0], gt)
+
+
+def test_pad_resize_rejected() -> None:
+    """A 'pad' resize gives no padding to undo, so the class map cannot be mapped back."""
+    model = SemanticSegmenter.__new__(SemanticSegmenter)
+    model._tag = "stub"
+    with pytest.raises(ValueError, match="resize_method='pad'"):
+        model._check_resize("pad")

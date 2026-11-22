@@ -46,6 +46,7 @@ class SemanticSegmenter(ImageModel, SemanticSegmenterInterface):
     """
 
     _OUTPUT_SCHEMA = SemanticSegmenterOutputSchema
+    _supports_pad = False
 
     def __init__(
         self: Self,
