@@ -195,13 +195,13 @@ def attached_profiler(engine: TRTEngine, profiler: trt.IProfiler) -> Generator[N
 
     """
     previous_profiler = engine.context.profiler
-    graph_enabled = engine._cuda_graph_enabled  # noqa: SLF001
+    graph_enabled = engine.cuda_graph_enabled
     engine.context.profiler = profiler
-    engine._cuda_graph_enabled = False  # noqa: SLF001
+    engine.cuda_graph_enabled = False
     try:
         yield
     finally:
-        engine._cuda_graph_enabled = graph_enabled  # noqa: SLF001
+        engine.cuda_graph_enabled = graph_enabled
         engine.context.profiler = (
             previous_profiler if previous_profiler is not None else _NoOpProfiler()
         )

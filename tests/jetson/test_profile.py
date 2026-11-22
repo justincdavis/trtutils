@@ -21,12 +21,12 @@ def test_jetson_profile_runs_without_graph_and_restores_engine(engine_path) -> N
     """A graph-enabled engine is profiled uncaptured, then handed back with its graph flag."""
     iterations = 500
     engine = TRTEngine(engine_path, cuda_graph=True, warmup=False)
-    graph_enabled = engine._cuda_graph_enabled
+    graph_enabled = engine.cuda_graph_enabled
     seen: list[bool] = []
     real_mock_execute = engine.mock_execute
 
     def spy(*args: object, **kwargs: object) -> object:
-        seen.append(engine._cuda_graph_enabled)
+        seen.append(engine.cuda_graph_enabled)
         return real_mock_execute(*args, **kwargs)
 
     with patch.object(engine, "mock_execute", side_effect=spy):
@@ -36,5 +36,5 @@ def test_jetson_profile_runs_without_graph_and_restores_engine(engine_path) -> N
     assert not any(seen)
     assert result.layers
     assert all(len(layer.raw) == iterations for layer in result.layers)
-    assert engine._cuda_graph_enabled == graph_enabled
+    assert engine.cuda_graph_enabled == graph_enabled
     assert not isinstance(engine.context.profiler, JetsonLayerProfiler)

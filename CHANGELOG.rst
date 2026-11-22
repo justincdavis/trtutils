@@ -56,6 +56,8 @@ Added
 * ``TRTEngine`` CUDA graphs (``cuda_graph``): one graph per input configuration (shapes and
   device addresses), captured on the second run at unchanged shapes. The 8 most recent are kept
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
+* ``TRTEngine.cuda_graph_enabled``: read or toggle CUDA graph capture/replay after construction.
+  Captured graphs are kept while disabled
 * ``TRTEngine.execute`` / ``raw_exec`` / ``__call__`` / ``mock_execute`` take a mapping of input
   name to ``Buffer`` as well as a sequence in ``input_names`` order. Outputs come back in
   ``output_names`` order, which is not necessarily the ONNX order: TensorRT 8.6 can order

@@ -74,21 +74,21 @@ def test_profile_engine_hands_back_engine(engine_path, own_profiler) -> None:
 def test_attached_profiler_restores_engine_on_error(engine_path) -> None:
     """An exception inside the block still restores the graph flag and previous profiler."""
     engine = TRTEngine(engine_path, cuda_graph=True, warmup=False)
-    graph_enabled = engine._cuda_graph_enabled
+    graph_enabled = engine.cuda_graph_enabled
     previous = _CountingProfiler()
     engine.context.profiler = previous
     attached = _CountingProfiler()
 
     def interrupted() -> None:
         with attached_profiler(engine, attached):
-            assert engine._cuda_graph_enabled is False
+            assert engine.cuda_graph_enabled is False
             assert engine.context.profiler is attached
             raise KeyboardInterrupt
 
     with pytest.raises(KeyboardInterrupt):
         interrupted()
 
-    assert engine._cuda_graph_enabled == graph_enabled
+    assert engine.cuda_graph_enabled == graph_enabled
     assert engine.context.profiler is previous
 
 

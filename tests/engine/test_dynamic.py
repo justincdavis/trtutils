@@ -126,7 +126,7 @@ def test_graph_per_batch_size(dynamic_engine_path, static_engine) -> None:
     """Each batch size gets its own CUDA graph, and replays match the static engine."""
     eng = TRTEngine(dynamic_engine_path, warmup=False, cuda_graph=True)
     try:
-        if not eng._cuda_graph_enabled:
+        if not eng.cuda_graph_enabled:
             pytest.skip("CUDA graph not enabled")
         graphs = {}
         # alternate batch sizes so every call after a switch also exercises
