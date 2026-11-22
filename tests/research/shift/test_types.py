@@ -78,16 +78,34 @@ def test_reduce_values_unknown_metric() -> None:
 @pytest.mark.cpu
 def test_shift_config_presets() -> None:
     """The default config holds the paper's values and shiftdetector() the reference repo's."""
-    paper = ShiftConfig()
-    assert (paper.accuracy_threshold, paper.momentum, paper.distance_threshold) == (0.25, 30, 0.5)
-    assert (paper.accuracy_weight, paper.energy_weight, paper.latency_weight) == (1.0, 0.5, 0.5)
-    assert (paper.similarity, paper.outlier_percentile, paper.min_connects) == ("min", 100.0, 0)
-    assert (paper.confidence_metric, paper.accuracy_metric) == ("mean", "mean")
-    repo = ShiftConfig.shiftdetector()
-    assert (repo.accuracy_threshold, repo.momentum, repo.distance_threshold) == (0.5, 10, 1.0)
-    assert (repo.accuracy_weight, repo.energy_weight, repo.latency_weight) == (0.85, 0.10, 0.10)
-    assert (repo.similarity, repo.outlier_percentile, repo.min_connects) == ("product", 80.0, 1)
-    assert (repo.confidence_metric, repo.accuracy_metric) == ("max", "max")
+    assert dataclasses.asdict(ShiftConfig()) == {
+        "accuracy_threshold": 0.25,
+        "momentum": 30,
+        "distance_threshold": 0.5,
+        "accuracy_weight": 1.0,
+        "energy_weight": 0.5,
+        "latency_weight": 0.5,
+        "similarity": "min",
+        "confidence_metric": "mean",
+        "accuracy_metric": "mean",
+        "num_bins": 10,
+        "outlier_percentile": 100.0,
+        "min_connects": 0,
+    }
+    assert dataclasses.asdict(ShiftConfig.shiftdetector()) == {
+        "accuracy_threshold": 0.5,
+        "momentum": 10,
+        "distance_threshold": 1.0,
+        "accuracy_weight": 0.85,
+        "energy_weight": 0.10,
+        "latency_weight": 0.10,
+        "similarity": "product",
+        "confidence_metric": "max",
+        "accuracy_metric": "max",
+        "num_bins": 10,
+        "outlier_percentile": 80.0,
+        "min_connects": 1,
+    }
 
 
 @pytest.mark.cpu

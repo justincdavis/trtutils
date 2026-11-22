@@ -63,11 +63,11 @@ def ncc(image1: np.ndarray, image2: np.ndarray) -> float:
 
 
 def _gray(image: np.ndarray, size: tuple[int, int]) -> np.ndarray:
-    if image.ndim == 3 and image.shape[2] == 1:  # noqa: PLR2004
-        image = image[..., 0]
-    elif image.ndim == 3:  # noqa: PLR2004
+    # resize first so the color conversion runs on the small image
+    image = cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
+    if image.ndim == 3:  # noqa: PLR2004
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    return cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
+    return image
 
 
 def _box_crop(image: np.ndarray, detections: Sequence[Detection]) -> np.ndarray | None:
@@ -82,6 +82,12 @@ def _box_crop(image: np.ndarray, detections: Sequence[Detection]) -> np.ndarray 
     if x2 <= x1 or y2 <= y1:
         return None
     return _gray(image[y1:y2, x1:x2], _BOX_SIZE)
+
+
+def _inverted(values: dict[str, float]) -> dict[str, float]:
+    # normalized to [0, 1] and inverted, so bigger is better; all 0.0 when nothing was measured
+    top = max(values.values())
+    return {name: 1.0 - v / top if top > 0.0 else 0.0 for name, v in values.items()}
 
 
 class ShiftScheduler:
@@ -125,17 +131,8 @@ class ShiftScheduler:
             outlier_percentile=cfg.outlier_percentile,
             min_connects=cfg.min_connects,
         )
-        # energy and latency normalized to [0, 1] and inverted, so bigger is better
-        max_energy = max(t.energy_mj for t in traits.values())
-        max_latency = max(t.latency_ms for t in traits.values())
-        self._energy = {
-            name: 1.0 - t.energy_mj / max_energy if max_energy > 0.0 else 0.0
-            for name, t in traits.items()
-        }
-        self._latency = {
-            name: 1.0 - t.latency_ms / max_latency if max_latency > 0.0 else 0.0
-            for name, t in traits.items()
-        }
+        self._energy = _inverted({name: t.energy_mj for name, t in traits.items()})
+        self._latency = _inverted({name: t.latency_ms for name, t in traits.items()})
         self._buffers: dict[str, deque[float]] = {
             name: deque(maxlen=cfg.momentum) for name in traits
         }

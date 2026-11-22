@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -19,20 +20,7 @@ pytestmark = pytest.mark.cpu
 _ENGINE = "/fake/model.engine"
 _JSON = "/fake/traits.json"
 _VIDEO = "/fake/video.mp4"
-_CONFIG_FIELDS = [
-    "accuracy_threshold",
-    "momentum",
-    "distance_threshold",
-    "accuracy_weight",
-    "energy_weight",
-    "latency_weight",
-    "similarity",
-    "confidence_metric",
-    "accuracy_metric",
-    "num_bins",
-    "outlier_percentile",
-    "min_connects",
-]
+_CONFIG_FIELDS = [f.name for f in dataclasses.fields(ShiftConfig)]
 
 
 @pytest.mark.parametrize(
@@ -73,7 +61,7 @@ def test_shift_run_arguments_reach_handler() -> None:
     assert args.memory_budget is None
     config = _make_config(args)
     expected = ShiftConfig.shiftdetector()
-    assert config == ShiftConfig(**{**vars(expected), "momentum": 5, "similarity": "min"})
+    assert config == dataclasses.replace(expected, momentum=5, similarity="min")
 
 
 def test_shift_characterize_arguments_reach_handler() -> None:

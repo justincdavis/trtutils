@@ -17,9 +17,15 @@ import cv2
 from trtutils._log import LOG
 from trtutils.image import Detector
 
-from ._characterize import characterize
+from ._characterize import _read_image, characterize
 from ._shift import Shift
-from ._types import ShiftConfig, load_characterization, save_characterization
+from ._types import (
+    _REDUCERS,
+    _SIMILARITIES,
+    ShiftConfig,
+    load_characterization,
+    save_characterization,
+)
 
 if TYPE_CHECKING:
     import argparse
@@ -34,9 +40,9 @@ _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp"}
 _MODEL_SPEC_LENGTHS = (2, 3)
 _LABEL_FIELDS = 5
 _CONFIG_CHOICES = {
-    "similarity": ["min", "product"],
-    "confidence_metric": ["mean", "median", "min", "max"],
-    "accuracy_metric": ["mean", "median", "min", "max"],
+    "similarity": list(_SIMILARITIES),
+    "confidence_metric": list(_REDUCERS),
+    "accuracy_metric": list(_REDUCERS),
 }
 
 
@@ -65,15 +71,15 @@ def _parse_models(specs: list[list[str]]) -> dict[str, Callable[[], DetectorInte
         if len(spec) not in _MODEL_SPEC_LENGTHS:
             err_msg = f"--model takes NAME ENGINE [DLA_CORE], got {spec}"
             raise ValueError(err_msg)
-        name, engine = spec[0], Path(spec[1])
+        name, engine, *rest = spec
         if name in models:
             err_msg = f"--model name {name!r} is used more than once"
             raise ValueError(err_msg)
-        dla_core = int(spec[2]) if len(spec) == max(_MODEL_SPEC_LENGTHS) else None
+        dla_core = int(rest[0]) if rest else None
         # dla engines cannot use cuda graphs
         models[name] = partial(
             Detector,
-            engine,
+            Path(engine),
             dla_core=dla_core,
             cuda_graph=False if dla_core is not None else None,
             warmup=True,
@@ -175,10 +181,7 @@ def _characterize(args: SimpleNamespace) -> None:
     images: list[np.ndarray] = []
     ground_truth: list[list[Bbox]] = []
     for path in image_paths:
-        image = cv2.imread(str(path))
-        if image is None:
-            err_msg = f"Cannot read image: {path}"
-            raise FileNotFoundError(err_msg)
+        image = _read_image(path)
         images.append(image)
         height, width = image.shape[:2]
         ground_truth.append(_read_labels(Path(args.labels) / f"{path.stem}.txt", width, height))
@@ -293,11 +296,7 @@ def _run(args: SimpleNamespace) -> None:
             swaps += int(previous is not None and ran != previous)
 
     if source.suffix.lower() in _IMAGE_SUFFIXES:
-        image = cv2.imread(str(source))
-        if image is None:
-            err_msg = f"Cannot read image: {source}"
-            raise FileNotFoundError(err_msg)
-        _step(image)
+        _step(_read_image(source))
     else:
         cap = cv2.VideoCapture(str(source))
         while True:
@@ -423,18 +422,11 @@ def register_cli(
         ),
     )
     for field in dataclasses.fields(ShiftConfig):
-        if field.name in _CONFIG_CHOICES:
-            run_parser.add_argument(
-                f"--{field.name}",
-                choices=_CONFIG_CHOICES[field.name],
-                default=None,
-                help=f"Override {field.name} of the preset.",
-            )
-        else:
-            run_parser.add_argument(
-                f"--{field.name}",
-                type=int if field.type == "int" else float,
-                default=None,
-                help=f"Override {field.name} of the preset.",
-            )
+        run_parser.add_argument(
+            f"--{field.name}",
+            choices=_CONFIG_CHOICES.get(field.name),
+            type=None if field.name in _CONFIG_CHOICES else int if field.type == "int" else float,
+            default=None,
+            help=f"Override {field.name} of the preset.",
+        )
     run_parser.set_defaults(func=_run)

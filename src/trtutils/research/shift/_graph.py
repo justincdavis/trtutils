@@ -118,7 +118,7 @@ class ConfidenceGraph:
 
         # co-occurrence counts between nodes of different models
         edge_counts: dict[Node, Counter[Node]] = defaultdict(Counter)
-        for i in range(counts.pop()):
+        for i in range(len(bins[self._models[0]])):
             sample_nodes = [(m, bins[m][i]) for m in self._models]
             for u in sample_nodes:
                 for v in sample_nodes:

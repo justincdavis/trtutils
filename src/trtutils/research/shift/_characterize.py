@@ -43,6 +43,14 @@ def _iou(box1: Bbox, box2: Bbox) -> float:
     return float(inter / union) if union > 0 else 0.0
 
 
+def _read_image(path: Path | str) -> np.ndarray:
+    image = cv2.imread(str(path))
+    if image is None:
+        err_msg = f"Cannot read image: {path}"
+        raise FileNotFoundError(err_msg)
+    return image
+
+
 def _used_memory_mb() -> float:
     # unified memory on jetson, so this also sees host allocations
     free, total = cuda_call(cudart.cudaMemGetInfo())
@@ -136,15 +144,7 @@ def characterize(
     if len(images) != len(ground_truth):
         err_msg = f"got {len(images)} images but {len(ground_truth)} ground-truth entries"
         raise ValueError(err_msg)
-    frames: list[np.ndarray] = []
-    for image in images:
-        if isinstance(image, (Path, str)):
-            frame = cv2.imread(str(image))
-            if frame is None:
-                err_msg = f"Cannot read image: {image}"
-                raise FileNotFoundError(err_msg)
-            image = frame  # noqa: PLW2901
-        frames.append(image)
+    frames = [_read_image(image) if isinstance(image, (Path, str)) else image for image in images]
 
     # one throwaway build so one-time cuda/tensorrt setup is not billed to the first pair
     next(iter(models.values()))()

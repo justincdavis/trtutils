@@ -129,7 +129,7 @@ def test_shift_lazy_load_and_eviction() -> None:
     assert factories.calls["small"] == 1
 
     factories.gates["small"].set()
-    _run_until(shift, lambda: shift.current == "small", start=3)
+    seed = _run_until(shift, lambda: shift.current == "small", start=3)
     assert shift.loaded == ["big", "small"]
 
     # mid needs 50 MB more than the 150 MB budget allows: big (least recent) is evicted
@@ -137,13 +137,13 @@ def test_shift_lazy_load_and_eviction() -> None:
     assert shift.loaded == ["small"]
     gc.collect()
     assert factories.built["big"]() is None
-    _run_until(shift, lambda: "mid" in shift.loaded, start=10)
+    seed = _run_until(shift, lambda: "mid" in shift.loaded, start=seed)
     assert shift.current == "small"
     assert shift.loaded == ["mid", "small"]
 
     # bringing big back evicts mid and rebuilds big
     shift._load("big")
-    _run_until(shift, lambda: "big" in shift.loaded, start=20)
+    _run_until(shift, lambda: "big" in shift.loaded, start=seed)
     assert shift.loaded == ["big", "small"]
     assert factories.calls == {"big": 2, "mid": 1, "small": 1}
 

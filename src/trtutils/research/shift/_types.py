@@ -26,6 +26,12 @@ _REDUCERS: dict[str, Callable[[Sequence[float]], float]] = {
 _SIMILARITIES = ("min", "product")
 
 
+def _check_metric(metric: str) -> None:
+    if metric not in _REDUCERS:
+        err_msg = f"Unknown metric {metric!r}, expected one of {sorted(_REDUCERS)}"
+        raise ValueError(err_msg)
+
+
 def reduce_values(values: Sequence[float], metric: str) -> float:
     """
     Reduce per-object values (confidences or IoUs) to one per-frame value.
@@ -48,9 +54,7 @@ def reduce_values(values: Sequence[float], metric: str) -> float:
         If ``metric`` is not a known reducer.
 
     """
-    if metric not in _REDUCERS:
-        err_msg = f"Unknown metric {metric!r}, expected one of {sorted(_REDUCERS)}"
-        raise ValueError(err_msg)
+    _check_metric(metric)
     if len(values) == 0:
         return 0.0
     return float(_REDUCERS[metric](values))
@@ -191,10 +195,8 @@ class ShiftConfig:
         if self.similarity not in _SIMILARITIES:
             err_msg = f"Unknown similarity {self.similarity!r}, expected one of {_SIMILARITIES}"
             raise ValueError(err_msg)
-        for metric in (self.confidence_metric, self.accuracy_metric):
-            if metric not in _REDUCERS:
-                err_msg = f"Unknown metric {metric!r}, expected one of {sorted(_REDUCERS)}"
-                raise ValueError(err_msg)
+        _check_metric(self.confidence_metric)
+        _check_metric(self.accuracy_metric)
         if self.momentum < 1:
             err_msg = f"momentum must be at least 1, got {self.momentum}"
             raise ValueError(err_msg)

@@ -16,23 +16,21 @@ FULL_BOX = (0, 0, 64, 64)
 
 def _traits(big_conf, big_iou, small_conf, small_iou, energy=(100.0, 10.0)):
     # one detection per image; big is accurate and expensive, small is cheap
+    rows = {
+        # name: (latency, energy, load time, memory, confidences, ious)
+        "big": (10.0, energy[0], 1.0, 100.0, big_conf, big_iou),
+        "small": (2.0, energy[1], 0.5, 10.0, small_conf, small_iou),
+    }
     return {
-        "big": ModelTraits(
-            latency_ms=10.0,
-            energy_mj=energy[0],
-            load_time_s=1.0,
-            load_memory_mb=100.0,
-            confidences=[[c] for c in big_conf],
-            ious=[[i] for i in big_iou],
-        ),
-        "small": ModelTraits(
-            latency_ms=2.0,
-            energy_mj=energy[1],
-            load_time_s=0.5,
-            load_memory_mb=10.0,
-            confidences=[[c] for c in small_conf],
-            ious=[[i] for i in small_iou],
-        ),
+        name: ModelTraits(
+            latency_ms=latency,
+            energy_mj=energy_mj,
+            load_time_s=load_time,
+            load_memory_mb=memory,
+            confidences=[[c] for c in confs],
+            ious=[[i] for i in ious],
+        )
+        for name, (latency, energy_mj, load_time, memory, confs, ious) in rows.items()
     }
 
 
