@@ -673,23 +673,24 @@ class FeatureExtractor(ImageModel, FeatureExtractorInterface):
         if verbose:
             LOG.debug(f"{self._tag}: end2end_boxes")
 
+        # a bad box raises here, before the nvtx range opens
+        crops = crop_boxes(image.numpy() if isinstance(image, Buffer) else image, boxes)
+
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["feat_end2end_boxes"])
-        try:
-            crops = crop_boxes(image.numpy() if isinstance(image, Buffer) else image, boxes)
-            rows: list[Embedding] = []
-            for start in range(0, len(crops), self._batch_size):
-                chunk = crops[start : start + self._batch_size]
-                count = len(chunk)
-                if not self.is_dynamic_batch:
-                    chunk += [chunk[-1]] * (self._batch_size - count)
-                # each embedding is a new array, so later engine calls do not overwrite it
-                rows.extend(self.end2end(chunk, normalize=normalize, verbose=verbose)[:count])
-            if rows:
-                return np.stack(rows)
-            # the embedding width, from the engine's first (embedding) output
-            width = int(np.prod(self._order_outputs(self._engine.output_spec)[0][0][1:]))
-            return np.zeros((0, width), dtype=np.float32)
-        finally:
-            if FLAGS.NVTX_ENABLED:
-                nvtx.pop_range()  # end2end_boxes
+        rows: list[Embedding] = []
+        for start in range(0, len(crops), self._batch_size):
+            chunk = crops[start : start + self._batch_size]
+            count = len(chunk)
+            if not self.is_dynamic_batch:
+                chunk += [chunk[-1]] * (self._batch_size - count)
+            # each embedding is a new array, so later engine calls do not overwrite it
+            rows.extend(self.end2end(chunk, normalize=normalize, verbose=verbose)[:count])
+        if FLAGS.NVTX_ENABLED:
+            nvtx.pop_range()  # end2end_boxes
+
+        if rows:
+            return np.stack(rows)
+        # the embedding width, from the engine's first (embedding) output
+        width = int(np.prod(self._order_outputs(self._engine.output_spec)[0][0][1:]))
+        return np.zeros((0, width), dtype=np.float32)
