@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import itertools
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -22,6 +23,7 @@ from z3 import (
     RealVal,
     Solver,
     Sum,
+    Z3Exception,
     is_true,
 )
 from z3 import sat as z3_sat
@@ -112,6 +114,7 @@ class HaxConnScheduler:
         self._timing = make_timing(self._traits, contention, self._config)
         self._overlap = contention if self._config.contention == "overlap" else None
         self._context: Context | None = None
+        self._stop = threading.Event()
 
     @property
     def config(self: Self) -> HaxConnConfig:
@@ -170,7 +173,8 @@ class HaxConnScheduler:
         return {"gpu_only": gpu_only, "naive": min(self._naive(None), key=self._key)}
 
     def interrupt(self: Self) -> None:
-        """Stop a running Z3 check from another thread; the search then ends as out of time."""
+        """Stop a running search from another thread; it then ends as out of time."""
+        self._stop.set()
         if self._context is not None:
             self._context.interrupt()
 
@@ -223,6 +227,7 @@ class HaxConnScheduler:
 
         """
         budget = time_budget if time_budget is not None else self._config.time_budget
+        self._stop.clear()
         best = min(self._naive(self._config.max_transitions), key=self._key)
         yield best
         # the budget starts when the search does, not while the caller uses the first one
@@ -234,7 +239,7 @@ class HaxConnScheduler:
         limit = self._config.max_transitions if self._config.max_transitions is not None else 0
         options = [self._options(trait, limit) for trait in self._traits]
         for combo in itertools.product(*options):
-            if deadline is not None and time.monotonic() > deadline:
+            if self._stop.is_set() or (deadline is not None and time.monotonic() > deadline):
                 return
             schedule = self._schedule([list(a) for a in combo])
             if self._key(schedule) < self._key(best):
@@ -243,6 +248,14 @@ class HaxConnScheduler:
         yield best._replace(optimal=True)
 
     def _z3(self: Self, best: Schedule, deadline: float | None) -> Iterator[Schedule]:
+        try:
+            yield from self._z3_search(best, deadline)
+        except Z3Exception:
+            # interrupt() between two checks cancels the next Z3 call instead
+            if not self._stop.is_set():
+                raise
+
+    def _z3_search(self: Self, best: Schedule, deadline: float | None) -> Iterator[Schedule]:
         # an own context, so interrupt() stops only this search
         ctx = Context()
         self._context = ctx
@@ -252,7 +265,7 @@ class HaxConnScheduler:
             self._rate_bounds(solver, ends, ctx) if self._config.objective == "throughput" else []
         )
         self._exclude(solver, on_gpu, best)
-        while True:
+        while not self._stop.is_set():
             remaining = None if deadline is None else deadline - time.monotonic()
             if remaining is not None and remaining <= 0.0:
                 return

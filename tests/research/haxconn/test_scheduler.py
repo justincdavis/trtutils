@@ -9,9 +9,10 @@ import threading
 import time
 
 import pytest
+from z3 import Z3Exception
 
 from tests.research.haxconn.conftest import XAVIER, make_traits
-from trtutils.research.haxconn import HaxConnConfig, HaxConnScheduler, simulate
+from trtutils.research.haxconn import HaxConnConfig, HaxConnScheduler, _scheduler, simulate
 
 pytestmark = pytest.mark.cpu
 
@@ -103,13 +104,50 @@ def test_interrupt_stops_a_running_search(paper_traits) -> None:
     config = HaxConnConfig(max_transitions=None, time_budget=None)
     scheduler = HaxConnScheduler(paper_traits, XAVIER, config)
     found = []
-    thread = threading.Thread(target=lambda: found.extend(scheduler.solve_iter()))
+    errors = []
+
+    def search() -> None:
+        try:
+            found.extend(scheduler.solve_iter())
+        except Z3Exception as err:
+            errors.append(err)
+
+    thread = threading.Thread(target=search)
     thread.start()
     time.sleep(1.0)
     scheduler.interrupt()
     thread.join(timeout=10.0)
     assert not thread.is_alive()
+    assert errors == []
     assert found[-1].optimal is False
+
+
+@pytest.mark.parametrize("solver", ["z3", "exhaustive"])
+def test_interrupt_before_the_search_stops_it(paper_traits, solver) -> None:
+    """interrupt() while the caller holds the first schedule stops the search before it runs."""
+    config = HaxConnConfig(max_transitions=1, time_budget=None, solver=solver)
+    scheduler = HaxConnScheduler(paper_traits, XAVIER, config)
+    iterator = scheduler.solve_iter()
+    next(iterator)
+    scheduler.interrupt()
+    assert all(schedule.optimal is False for schedule in iterator)
+
+
+def test_interrupt_between_z3_calls_ends_cleanly(paper_traits, monkeypatch) -> None:
+    """An interrupt that cancels a Z3 call outside check() ends the search, not with an error."""
+    config = HaxConnConfig(max_transitions=1, time_budget=None)
+    scheduler = HaxConnScheduler(paper_traits, XAVIER, config)
+
+    def cancelled_push(self) -> None:
+        # what Z3 does when interrupt() lands between two checks
+        scheduler.interrupt()
+        err_msg = b"push canceled"
+        raise Z3Exception(err_msg)
+
+    monkeypatch.setattr(_scheduler.Solver, "push", cancelled_push)
+    schedules = list(scheduler.solve_iter())
+    assert len(schedules) == 1
+    assert schedules[0].optimal is False
 
 
 def test_first_schedule_is_the_best_naive_within_the_limit() -> None:

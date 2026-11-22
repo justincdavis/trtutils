@@ -115,7 +115,7 @@ def test_memory_and_calibration(conv_model, tmp_path) -> None:
     assert all(0.0 <= s <= 100.0 for s in samples)
     if not FLAGS.HAS_DLA:
         return
-    calibration = calibrate(sizes=(32, 128), kernels=(1,), depth=2, seconds=0.6)
+    calibration = calibrate(sizes=(32, 128), kernels=(1,), depth=2, seconds=1.0)
     for acc in ("gpu", "dla"):
         c = calibration[acc]
         assert len(c.demand) == len(c.external) == 2
