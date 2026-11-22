@@ -707,6 +707,8 @@ repeated once per model; give ``DLA_CORE`` for DLA engines (CUDA graphs are then
 * ``--latency_input``: Video or image for the latency loops (default: the first labeled images)
 * ``--latency_frames``: Frames the latency loops cycle through, from ``--latency_input`` or the
   labeled images (default: 30)
+* ``--prefetch``: Labeled images decoded ahead in the background (default: 4)
+* ``--prefetch_workers``: Background threads decoding labeled images (default: 2)
 * ``--iterations``: Timed calls per model and per GPU+DLA pair (default: 200)
 * ``--warmup_iterations``: Untimed calls before each timing loop (default: 20)
 * ``--iou_threshold``: IoU for a detection to match a label (default: 0.5)

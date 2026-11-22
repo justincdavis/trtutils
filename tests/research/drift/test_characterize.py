@@ -6,6 +6,9 @@
 from __future__ import annotations
 
 import dataclasses
+import threading
+import time
+import weakref
 from collections import Counter
 from functools import partial
 from pathlib import Path
@@ -27,6 +30,7 @@ from trtutils.research.drift import (
     load_characterization,
     save_characterization,
 )
+from trtutils.research.drift._characterize import _prefetch
 
 YOLOV10N_640 = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
 YOLOV10N_320 = DATA_DIR / "yolov10" / "yolov10n_320.onnx"
@@ -59,6 +63,7 @@ def fake(monkeypatch):
     """Fake GPU and DLA models sharing one call log, with timing replaced by one call per step."""
 
     def _measure(step, iterations, _warmup_iterations):
+        log.append(("measure", len(_loader_threads())))
         for index in range(iterations):
             step(index)
         return [1.0] * iterations, []
@@ -72,8 +77,44 @@ def fake(monkeypatch):
     return models, log
 
 
+@pytest.fixture
+def imread_log(monkeypatch):
+    """Log cv2.imread calls as ("read", file stem), run hooks first, track decoded arrays."""
+    log = []
+    hooks = []
+    decoded = []
+    imread = cv2.imread
+
+    def _imread(path):
+        value = int(Path(path).stem)
+        log.append(("read", value))
+        for hook in hooks:
+            hook(value)
+        frame = imread(path)
+        if frame is not None:
+            decoded.append(weakref.ref(frame))
+        return frame
+
+    def _alive():
+        return sum(ref() is not None for ref in decoded)
+
+    monkeypatch.setattr(cv2, "imread", _imread)
+    return log, hooks, _alive
+
+
 def _image(value):
     return np.full((8, 8, 3), value, dtype=np.uint8)
+
+
+def _write_images(directory, values):
+    paths = [directory / f"{value}.png" for value in values]
+    for path, value in zip(paths, values):
+        cv2.imwrite(str(path), _image(value))
+    return paths
+
+
+def _loader_threads():
+    return [t for t in threading.enumerate() if t.name.startswith("drift-prefetch")]
 
 
 @pytest.fixture(scope="module")
@@ -284,12 +325,9 @@ def test_characterize_traits_from_any_iterable(fake, container) -> None:
     ],
 )
 def test_characterize_streams_paths(fake, tmp_path, monkeypatch, kwargs, latency_values) -> None:
-    """Each image is read once, run on every model before the next read; latency reuses frames."""
+    """Each image is read once, at most prefetch ahead; the loader stops before any timing."""
     models, log = fake
-    paths = []
-    for value in VALUES:
-        paths.append(tmp_path / f"{value}.png")
-        cv2.imwrite(str(paths[-1]), _image(value))
+    paths = _write_images(tmp_path, VALUES)
     imread = cv2.imread
 
     def _logged_imread(path):
@@ -297,21 +335,31 @@ def test_characterize_streams_paths(fake, tmp_path, monkeypatch, kwargs, latency
         return imread(path)
 
     monkeypatch.setattr(cv2, "imread", _logged_imread)
+    prefetch = 2
     traits = characterize(
-        models, (p for p in paths), (FAKE_TRUTH for _ in paths), iterations=ITERATIONS, **kwargs
+        models,
+        (p for p in paths),
+        (FAKE_TRUTH for _ in paths),
+        iterations=ITERATIONS,
+        prefetch=prefetch,
+        **kwargs,
     )
     assert traits["gpu"].confidences == [[v / 10, 0.25] for v in VALUES]
+    assert sorted(e for e in log if e[0] == "read") == [("read", v) for v in VALUES]
 
     # warmup on the first image, then image outer, model inner
-    expected = [("read", 1)] + [("run", "gpu", 1)] * 3 + [("run", "dla", 1)] * 3
-    for value in VALUES:
-        if value != VALUES[0]:
-            expected.append(("read", value))
-        expected += [("run", "gpu", value), ("run", "dla", value)]
-    assert log[: len(expected)] == expected
+    runs = [i for i, event in enumerate(log) if event[0] == "run"]
+    warmup = [("run", "gpu", 1)] * 3 + [("run", "dla", 1)] * 3
+    accuracy = [("run", name, v) for v in VALUES for name in ("gpu", "dla")]
+    assert [log[i] for i in runs[: len(warmup) + len(accuracy)]] == warmup + accuracy
+    # while a model runs on image v, the loader has read at most prefetch images past it
+    for index in runs[len(warmup) : len(warmup) + len(accuracy)]:
+        assert sum(event[0] == "read" for event in log[:index]) <= log[index][2] + prefetch
 
-    # solo loops per model, then the concurrent pair loop, with no further reads
-    timing = log[len(expected) :]
+    # every timing loop starts with the loader's threads joined and no reads after
+    measures = [i for i, event in enumerate(log) if event[0] == "measure"]
+    assert [log[i] for i in measures] == [("measure", 0)] * 3
+    timing = [event for event in log[measures[0] :] if event[0] != "measure"]
     solo = [("run", name, v) for name in ("gpu", "dla") for v in latency_values]
     assert timing[: len(solo)] == solo
     pair = Counter(("run", name, v) for name in ("gpu", "dla") for v in latency_values)
@@ -339,10 +387,89 @@ def test_characterize_streams_paths(fake, tmp_path, monkeypatch, kwargs, latency
         pytest.param(
             [_image(1)], [FAKE_TRUTH], {"latency_frames": 0}, "at least 1", id="latency-frames"
         ),
+        pytest.param([_image(1)], [FAKE_TRUTH], {"prefetch": 0}, "at least 1", id="prefetch"),
+        pytest.param([_image(1)], [FAKE_TRUTH], {"prefetch_workers": 0}, "at least 1", id="workers"),
     ],
 )
 def test_characterize_invalid_inputs(fake, images, ground_truth, kwargs, match) -> None:
-    """Mismatched lengths, even of iterators, empty inputs and bad latency settings raise."""
+    """Mismatched lengths, even of iterators, empty inputs and bad settings raise."""
     models, _ = fake
     with pytest.raises(ValueError, match=match):
         characterize(models, images, ground_truth, iterations=ITERATIONS, **kwargs)
+    assert _loader_threads() == []
+
+
+@pytest.mark.cpu
+def test_prefetch_runs_ahead_bounded_and_in_order(tmp_path, imread_log) -> None:
+    """Two workers decode concurrently, ahead of the consumer, at most depth ahead, in order."""
+    reads, hooks, alive = imread_log
+    values = list(range(10, 18))
+    paths = _write_images(tmp_path, values)
+    barrier = threading.Barrier(2, timeout=5)
+
+    def _hook(value):
+        if value in values[:2]:
+            barrier.wait()  # passes only if both workers decode at once
+        # later images decode faster, so finishing order differs from input order
+        time.sleep(0.002 * (values[-1] - value))
+
+    hooks.append(_hook)
+    depth = 3
+    frames = _prefetch(paths, depth, 2)
+    first = next(frames)
+    # while the consumer holds the first image the workers read depth more, then stop
+    deadline = time.monotonic() + 5
+    while len(reads) < depth + 1 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.1)
+    assert sorted(reads) == [("read", v) for v in values[: depth + 1]]
+    assert alive() == depth + 1
+
+    out = [int(first[0, 0, 0])]
+    del first
+    for frame in frames:
+        # the frame in hand plus at most depth waiting
+        assert alive() <= depth + 1
+        out.append(int(frame[0, 0, 0]))
+        del frame
+    assert out == values
+    assert sorted(reads) == [("read", v) for v in values]
+    assert _loader_threads() == []
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    "stop",
+    [
+        pytest.param("close", id="early-close"),
+        pytest.param("error", id="unreadable-path"),
+    ],
+)
+def test_prefetch_stops_cleanly(tmp_path, imread_log, stop) -> None:
+    """Closing early or an unreadable path cancels pending decodes and joins the workers."""
+    reads, _, _ = imread_log
+    paths = _write_images(tmp_path, list(range(10, 30)))
+    if stop == "error":
+        paths[1] = tmp_path / "99.png"  # missing
+    frames = _prefetch(paths, 3, 2)
+    assert int(next(frames)[0, 0, 0]) == 10
+    if stop == "close":
+        frames.close()
+    else:
+        with pytest.raises(FileNotFoundError, match=r"99\.png"):
+            next(frames)
+    assert _loader_threads() == []
+    assert len(reads) <= 1 + 3  # the first and depth more, never the rest
+    assert next(frames, None) is None
+
+
+@pytest.mark.cpu
+def test_prefetch_passes_arrays_through() -> None:
+    """Arrays come back as the same objects, in order, without starting a worker."""
+    arrays = [_image(v) for v in VALUES]
+    seen = []
+    for frame in _prefetch(iter(arrays), 2, 2):
+        assert _loader_threads() == []
+        seen.append(frame)
+    assert all(a is b for a, b in zip(seen, arrays))
+    assert len(seen) == len(arrays)

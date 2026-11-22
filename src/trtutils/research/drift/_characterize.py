@@ -8,10 +8,12 @@ from __future__ import annotations
 import gc
 import tempfile
 import time
+from collections import deque
 from collections.abc import Sized
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import closing
 from functools import partial
-from itertools import chain
+from itertools import chain, islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -25,7 +27,7 @@ from trtutils._log import LOG
 from ._types import ModelTraits
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping, Sequence
+    from collections.abc import Generator, Iterable, Mapping, Sequence
 
     import numpy as np
 
@@ -35,6 +37,7 @@ if TYPE_CHECKING:
 _TEGRA_INTERVAL_MS = 5
 _WARMUP_CALLS = 3
 _CONFIDENCE_DECIMALS = 4
+_PREFETCH_THREAD = "drift-prefetch"
 
 
 def _iou(box1: Bbox, box2: Bbox) -> float:
@@ -83,23 +86,60 @@ def _load_image(image: np.ndarray | Path | str) -> np.ndarray:
     return frame
 
 
+def _prefetch(
+    images: Iterable[np.ndarray | Path | str],
+    depth: int,
+    workers: int,
+) -> Generator[np.ndarray, None, None]:
+    # a small data loader: worker threads decode paths ahead, in order (cv2.imread
+    # releases the gil), and arrays pass through. at most depth images wait decoded
+    # or decoding; closing the generator cancels the rest and joins the workers
+    if depth < 1 or workers < 1:
+        err_msg = f"prefetch depth and workers must be at least 1, got {depth} and {workers}"
+        raise ValueError(err_msg)
+    source = iter(images)
+    pending: deque[Future[np.ndarray]] = deque()
+    with ThreadPoolExecutor(workers, thread_name_prefix=_PREFETCH_THREAD) as executor:
+
+        def _fill() -> None:
+            for image in islice(source, depth - len(pending)):
+                if isinstance(image, (Path, str)):
+                    pending.append(executor.submit(_load_image, image))
+                else:
+                    future: Future[np.ndarray] = Future()
+                    future.set_result(image)
+                    pending.append(future)
+
+        try:
+            _fill()
+            while pending:
+                frame = pending.popleft().result()
+                _fill()
+                yield frame
+        finally:
+            for future in pending:
+                future.cancel()
+
+
 def _labeled_images(
     images: Iterable[np.ndarray | Path | str],
     ground_truth: Iterable[Sequence[tuple[Bbox, int]]],
-) -> Iterator[tuple[np.ndarray, Sequence[tuple[Bbox, int]]]]:
-    # decodes one image at a time; generators have no length, so their mismatch is
-    # only found when one side runs out
+    depth: int,
+    workers: int,
+) -> Generator[tuple[np.ndarray, Sequence[tuple[Bbox, int]]], None, None]:
+    # generators have no length, so their mismatch is only found when one runs out
     sized = isinstance(images, Sized) and isinstance(ground_truth, Sized)
     if sized and len(images) != len(ground_truth):
         err_msg = f"got {len(images)} images but {len(ground_truth)} ground-truth entries"
         raise ValueError(err_msg)
     truth = iter(ground_truth)
-    for image in images:
-        boxes = next(truth, None)
-        if boxes is None:
-            err_msg = "ground_truth has fewer entries than images"
-            raise ValueError(err_msg)
-        yield _load_image(image), boxes
+    with closing(_prefetch(images, depth, workers)) as frames:
+        for frame in frames:
+            boxes = next(truth, None)
+            if boxes is None:
+                err_msg = "ground_truth has fewer entries than images"
+                raise ValueError(err_msg)
+            yield frame, boxes
     if next(truth, None) is not None:
         err_msg = "ground_truth has more entries than images"
         raise ValueError(err_msg)
@@ -171,16 +211,20 @@ def characterize(
     iou_threshold: float = 0.5,
     *,
     latency_frames: int = 30,
+    prefetch: int = 4,
+    prefetch_workers: int = 2,
     verbose: bool | None = None,
 ) -> dict[str, ModelTraits]:
     """
     Characterize detection models for DRIFT.
 
     Every model is built once and stays resident, as at runtime. The labeled images
-    are streamed: each is decoded once and run through every model before the next
-    one is read, so one labeled image is in memory at a time. Per labeled image it
-    records every detection's confidence, the number of true positives (greedy,
-    class-aware, at ``iou_threshold``) and the number of ground-truth boxes. Latency
+    are streamed: each is decoded once and run through every model before the next,
+    while background threads decode the next few paths, so only about ``prefetch``
+    labeled images are in memory at a time. Decoding stops before any latency or
+    energy is measured. Per labeled image it records every detection's confidence,
+    the number of true positives (greedy, class-aware, at ``iou_threshold``) and the
+    number of ground-truth boxes. Latency
     is end to end (``end2end``: preprocess, inference, postprocess), per model and
     for every GPU model running concurrently with every DLA model, exactly as the
     runtime runs them, cycling through a small set of frames held in memory. Energy
@@ -194,7 +238,7 @@ def characterize(
         Use the same factories at runtime.
     images : Iterable[np.ndarray | Path | str]
         The labeled images, as BGR arrays or paths, e.g. a list or a generator.
-        Paths are decoded one at a time, when their turn comes.
+        Paths are decoded in order by the background loader; arrays pass through.
     ground_truth : Iterable[Sequence[tuple[Bbox, int]]]
         Per image, the ground-truth (box, class id) pairs, boxes as (x1, y1, x2, y2)
         pixels and class ids in the models' output id space. Same length as
@@ -212,6 +256,11 @@ def characterize(
     latency_frames : int, optional
         How many labeled images the latency loops cycle through when
         ``latency_images`` is None. Default is 30.
+    prefetch : int, optional
+        How many labeled images the loader reads ahead of the models, decoded or
+        decoding. Default is 4.
+    prefetch_workers : int, optional
+        Threads decoding labeled images in the background. Default is 2.
     verbose : bool, optional
         Whether to log progress. Default is None (False).
 
@@ -224,16 +273,16 @@ def characterize(
     ------
     ValueError
         If no models or images are given, images and ground truth differ in length,
-        ``latency_images`` is empty, or ``latency_frames`` is below one. When either
-        of images and ground truth has no length, a mismatch is raised once the
-        shorter one runs out.
+        ``latency_images`` is empty, or ``latency_frames``, ``prefetch`` or
+        ``prefetch_workers`` is below one. When either of images and ground truth
+        has no length, a mismatch is raised once the shorter one runs out.
     FileNotFoundError
         If an image path cannot be read.
 
     """
     return _characterize_labeled(
         models,
-        _labeled_images(images, ground_truth),
+        _labeled_images(images, ground_truth, prefetch, prefetch_workers),
         latency_images,
         iterations,
         warmup_iterations,
@@ -245,7 +294,7 @@ def characterize(
 
 def _characterize_labeled(
     models: Mapping[str, Callable[[], DetectorInterface]],
-    labeled: Iterator[tuple[np.ndarray, Sequence[tuple[Bbox, int]]]],
+    labeled: Generator[tuple[np.ndarray, Sequence[tuple[Bbox, int]]], None, None],
     latency_images: Iterable[np.ndarray | Path | str] | None,
     iterations: int,
     warmup_iterations: int,
@@ -254,17 +303,13 @@ def _characterize_labeled(
     latency_frames: int,
     verbose: bool | None,
 ) -> dict[str, ModelTraits]:
-    # characterize over decoded (image, ground truth) pairs, pulled one at a time;
-    # the cli builds its own pairs, since labels are scaled by their image's size
+    # characterize over decoded (image, ground truth) pairs, pulled one at a time from
+    # a loader; the cli builds its own pairs, since labels scale with their image
     if len(models) == 0:
         err_msg = "characterize needs at least one model"
         raise ValueError(err_msg)
     if latency_frames < 1:
         err_msg = f"latency_frames must be at least 1, got {latency_frames}"
-        raise ValueError(err_msg)
-    first = next(labeled, None)
-    if first is None:
-        err_msg = "characterize needs at least one labeled image"
         raise ValueError(err_msg)
     timing_frames: list[np.ndarray] = []
     if latency_images is not None:
@@ -272,10 +317,15 @@ def _characterize_labeled(
         if len(timing_frames) == 0:
             err_msg = "latency_images is empty"
             raise ValueError(err_msg)
+    # starts the loader; it is closed below however characterization ends
+    first = next(labeled, None)
+    if first is None:
+        err_msg = "characterize needs at least one labeled image"
+        raise ValueError(err_msg)
 
-    detectors = {name: factory() for name, factory in models.items()}
-    dla = {name: d.engine.dla_core is not None for name, d in detectors.items()}
-    executor = ThreadPoolExecutor(max_workers=1) if any(dla.values()) else None
+    detectors: dict[str, DetectorInterface] = {}
+    dla: dict[str, bool] = {}
+    executor: ThreadPoolExecutor | None = None
 
     def _run(name: str, image: np.ndarray) -> list[Detection]:
         if executor is not None and dla[name]:
@@ -287,12 +337,17 @@ def _characterize_labeled(
 
     traits: dict[str, ModelTraits] = {}
     try:
+        for name, factory in models.items():
+            detectors[name] = factory()
+            dla[name] = detectors[name].engine.dla_core is not None
+        executor = ThreadPoolExecutor(max_workers=1) if any(dla.values()) else None
         for name in detectors:
             for _ in range(_WARMUP_CALLS):
                 _run(name, first[0])
 
         # image outer, model inner: each labeled image is decoded once and dropped
-        # after every model ran on it, except the few kept for the latency loops
+        # after every model ran on it, except the few kept for the latency loops.
+        # the loader finishes with the loop, so no decoding overlaps the timing
         confidences: dict[str, list[list[float]]] = {name: [] for name in detectors}
         true_positives: dict[str, list[int]] = {name: [] for name in detectors}
         ground_truths: list[int] = []
@@ -335,6 +390,7 @@ def _characterize_labeled(
                         f"{traits[gpu].pair_latency(accel):.2f} ms"
                     )
     finally:
+        labeled.close()
         if executor is not None:
             executor.shutdown(wait=True)
         detectors.clear()

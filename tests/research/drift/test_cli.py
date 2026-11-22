@@ -141,8 +141,8 @@ def test_read_labels(tmp_path) -> None:
         _read_labels(label, 200, 100)
 
 
-def test_iter_labeled_reads_one_image_at_a_time(tmp_path, monkeypatch) -> None:
-    """Each image is read only when its turn comes, with its labels scaled to its own size."""
+def test_iter_labeled_streams_in_order(tmp_path, monkeypatch) -> None:
+    """Images are read lazily, each once, and paired in order with labels scaled to their size."""
     (tmp_path / "labels").mkdir()
     (tmp_path / "labels" / "a.txt").write_text("2 0.5 0.5 0.5 0.5\n")
     paths = [tmp_path / "a.png", tmp_path / "b.png"]
@@ -156,10 +156,11 @@ def test_iter_labeled_reads_one_image_at_a_time(tmp_path, monkeypatch) -> None:
         return imread(path)
 
     monkeypatch.setattr(cv2, "imread", _counted_imread)
-    pairs = _iter_labeled(paths, tmp_path / "labels")
+    pairs = _iter_labeled(paths, tmp_path / "labels", 1, 1)
     assert reads == []
     image, labels = next(pairs)
-    assert (image.shape, labels, len(reads)) == ((100, 200, 3), [((50, 25, 150, 75), 2)], 1)
+    assert (image.shape, labels) == ((100, 200, 3), [((50, 25, 150, 75), 2)])
     image, labels = next(pairs)
-    assert (image.shape, labels, len(reads)) == ((40, 60, 3), [], 2)
+    assert (image.shape, labels) == ((40, 60, 3), [])
     assert next(pairs, None) is None
+    assert reads == [str(p) for p in paths]

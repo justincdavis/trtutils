@@ -8,6 +8,7 @@ from __future__ import annotations
 import dataclasses
 import time
 from collections import Counter
+from contextlib import closing
 from functools import partial
 from itertools import islice
 from pathlib import Path
@@ -18,7 +19,7 @@ import cv2
 from trtutils._log import LOG
 from trtutils.image import Detector
 
-from ._characterize import _characterize_labeled, _load_image
+from ._characterize import _characterize_labeled, _prefetch
 from ._drift import Drift
 from ._types import (
     ANNEAL_COUNTERS,
@@ -32,7 +33,7 @@ from ._types import (
 
 if TYPE_CHECKING:
     import argparse
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Generator, Iterator, Sequence
     from types import SimpleNamespace
 
     import numpy as np
@@ -194,18 +195,24 @@ def _iter_frames(source: Path) -> Iterator[np.ndarray]:
 
 
 def _iter_labeled(
-    image_paths: Iterable[Path],
+    image_paths: Sequence[Path],
     labels: Path,
-) -> Iterator[tuple[np.ndarray, list[tuple[Bbox, int]]]]:
+    prefetch: int,
+    prefetch_workers: int,
+) -> Generator[tuple[np.ndarray, list[tuple[Bbox, int]]], None, None]:
     """
-    Yield each image with its labels, reading one image and label file at a time.
+    Yield each image with its labels, in order, decoding a few images ahead.
 
     Parameters
     ----------
-    image_paths : Iterable[Path]
+    image_paths : Sequence[Path]
         The image files.
     labels : Path
         The directory of YOLO-format ``.txt`` labels, one per image stem.
+    prefetch : int
+        How many images background threads decode ahead.
+    prefetch_workers : int
+        How many background threads decode images.
 
     Yields
     ------
@@ -213,9 +220,10 @@ def _iter_labeled(
         The BGR image and its (box, class id) pairs in pixels.
 
     """
-    for path in image_paths:
-        image = _load_image(path)
-        yield image, _read_labels(labels / f"{path.stem}.txt", image.shape[1], image.shape[0])
+    with closing(_prefetch(image_paths, prefetch, prefetch_workers)) as images:
+        for path, image in zip(image_paths, images):
+            label = labels / f"{path.stem}.txt"
+            yield image, _read_labels(label, image.shape[1], image.shape[0])
 
 
 def _characterize(args: SimpleNamespace) -> None:
@@ -249,6 +257,10 @@ def _characterize(args: SimpleNamespace) -> None:
         - latency_frames : int
             Frames the latency loops cycle through, read from ``latency_input`` or
             the first labeled images.
+        - prefetch : int
+            Labeled images decoded ahead in the background.
+        - prefetch_workers : int
+            Background threads decoding labeled images.
         - output : str
             JSON file to write the characterization to.
         - iterations : int
@@ -280,7 +292,7 @@ def _characterize(args: SimpleNamespace) -> None:
 
     traits = _characterize_labeled(
         models,
-        _iter_labeled(image_paths, Path(args.labels)),
+        _iter_labeled(image_paths, Path(args.labels), args.prefetch, args.prefetch_workers),
         latency_images,
         args.iterations,
         args.warmup_iterations,
@@ -554,6 +566,21 @@ def register_cli(
             "Frames the latency loops cycle through (held in memory), read from "
             "--latency_input or the first labeled images. Default is 30."
         ),
+    )
+    characterize_parser.add_argument(
+        "--prefetch",
+        type=int,
+        default=4,
+        help=(
+            "Labeled images decoded ahead in the background while the models run; "
+            "about this many are in memory at once. Default is 4."
+        ),
+    )
+    characterize_parser.add_argument(
+        "--prefetch_workers",
+        type=int,
+        default=2,
+        help="Background threads decoding labeled images. Default is 2.",
     )
     characterize_parser.add_argument(
         "--iterations",
