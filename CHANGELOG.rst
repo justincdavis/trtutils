@@ -104,7 +104,8 @@ Added
   changes a DLA center crop's pixels slightly
 * ``trtutils.research.shift``: the SHIFT paper (context-aware multi-model object detection,
   DATE 2024). ``characterize`` measures (model, accelerator) pairs one at a time, streaming
-  labeled images given as paths (decoded per pair, never all held); ``Shift`` runs the pair
+  labeled images given as paths through a bounded background decoder (``prefetch``,
+  ``decode_workers``) instead of holding them all; ``Shift`` runs the pair
   ``ShiftScheduler`` picks per frame and loads pairs in the background under a memory budget;
   ``ConfidenceGraph`` predicts every model's accuracy from one model's confidence and works on
   its own. ``ShiftConfig`` holds the paper's hyperparameters, with

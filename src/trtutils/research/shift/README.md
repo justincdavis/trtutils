@@ -76,7 +76,7 @@ models = {
 }
 
 # images: BGR arrays or paths (any iterable); ground_truth: per image, a list of
-# (x1, y1, x2, y2) boxes. Paths are decoded one at a time as each pair runs.
+# (x1, y1, x2, y2) boxes. Paths are decoded in the background as each pair runs.
 traits = characterize(models, images, ground_truth)
 save_characterization(traits, "traits.json")
 
@@ -92,11 +92,14 @@ Pairs are built by the factories you pass, so anything a `Detector` accepts
 `dla_core` and `cuda_graph=False`.
 
 `characterize` builds, runs, benchmarks and frees one pair at a time, and every
-pair runs over every labeled image. Pass paths for large datasets: each image is
-then decoded when a pair reaches it and dropped after, so memory holds one image
-instead of the whole set, for one decode per image per pair (about 3 ms for a
-640x480 JPEG and 16 ms for a 1080p one on an Orin CPU). Arrays are used as given
-and stay in memory. The CLI passes paths.
+pair runs over every labeled image. Pass paths for large datasets: during each
+pair's image pass, `decode_workers` threads (default 2) decode the next
+`prefetch` images (default 4) while the pair runs on the current one, and each
+frame is dropped after use. Memory holds at most `prefetch + 2` frames instead of
+the whole set; each image is decoded once per pair (about 3 ms for a 640x480 JPEG
+and 16 ms for a 1080p one on an Orin CPU), overlapped with inference. The threads
+are joined before the pair is benchmarked, so decoding never skews latency or
+energy. Arrays are used as given and stay in memory. The CLI passes paths.
 
 ### Using the confidence graph on its own
 

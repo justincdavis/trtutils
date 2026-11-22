@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import gc
+import threading
 import time
 import weakref
 from functools import partial
@@ -28,7 +29,7 @@ from trtutils.research.shift import (
 )
 
 YOLOV10_ONNX = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
-NUM_IMAGES = 5
+NUM_IMAGES = 8
 SCALES = {"big": 1.0, "small": 0.5}
 
 
@@ -53,20 +54,35 @@ class DecodeTracker:
     def __init__(self, imread) -> None:
         """Start with no decodes."""
         self.imread = imread
+        self.lock = threading.Lock()
         self.calls = 0
         self.live = 0
         self.peak = 0
 
-    def __call__(self, path) -> np.ndarray:
+    def __call__(self, path) -> np.ndarray | None:
         image = self.imread(path)
-        self.calls += 1
-        self.live += 1
-        self.peak = max(self.peak, self.live)
-        weakref.finalize(image, self._release)
+        with self.lock:
+            self.calls += 1
+            if image is not None:
+                self.live += 1
+                self.peak = max(self.peak, self.live)
+                weakref.finalize(image, self._release)
         return image
 
     def _release(self) -> None:
-        self.live -= 1
+        with self.lock:
+            self.live -= 1
+
+
+def _prefetch_threads():
+    return [t for t in threading.enumerate() if t.name.startswith("shift-prefetch")]
+
+
+def _wait_for(condition) -> None:
+    deadline = time.monotonic() + 5.0
+    while not condition():
+        assert time.monotonic() < deadline, "condition not met in time"
+        time.sleep(0.001)
 
 
 @pytest.fixture
@@ -102,6 +118,66 @@ def _fake_models(on_build=None):
 
 
 @pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("depth", "workers"),
+    [
+        pytest.param(1, 1, id="depth1-workers1"),
+        pytest.param(3, 2, id="depth3-workers2"),
+    ],
+)
+def test_prefetch_runs_ahead_in_order(labeled_images, depth, workers, monkeypatch) -> None:
+    """Paths decode ahead in the background up to depth, in order; arrays pass through."""
+    paths, arrays, _ground_truth = labeled_images
+    tracker = DecodeTracker(cv2.imread)
+    monkeypatch.setattr(cv2, "imread", tracker)
+    frames = _characterize._prefetch([arrays[0], *paths[1:]], depth, workers)
+    assert tracker.calls == 0
+    assert next(frames) is arrays[0]
+
+    # while the first frame is in use the workers fill the queue, then wait
+    _wait_for(lambda: tracker.calls == depth)
+    time.sleep(0.05)
+    assert tracker.calls == depth
+    count = 1
+    for frame in frames:
+        np.testing.assert_array_equal(frame, arrays[count])
+        count += 1
+    assert count == NUM_IMAGES
+    assert tracker.calls == NUM_IMAGES - 1
+    # the queue, the frame in use and the one it replaces
+    assert tracker.peak <= depth + 2
+    assert _prefetch_threads() == []
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    "stop",
+    [
+        pytest.param("error", id="error"),
+        pytest.param("close", id="close"),
+    ],
+)
+def test_prefetch_stops_cleanly(labeled_images, tmp_path, stop, monkeypatch) -> None:
+    """An unreadable path raises when reached and closing early stops decoding; no thread leaks."""
+    paths, arrays, _ground_truth = labeled_images
+    tracker = DecodeTracker(cv2.imread)
+    monkeypatch.setattr(cv2, "imread", tracker)
+    images = [paths[0], tmp_path / "missing.png", *paths[1:]] if stop == "error" else paths
+    frames = _characterize._prefetch(images, 2, 2)
+    np.testing.assert_array_equal(next(frames), arrays[0])
+    if stop == "error":
+        with pytest.raises(FileNotFoundError, match="Cannot read image"):
+            next(frames)
+    else:
+        frames.close()
+    assert _prefetch_threads() == []
+    # the first image and the two queued behind it, nothing after
+    calls = tracker.calls
+    time.sleep(0.05)
+    assert tracker.calls == calls <= 3
+
+
+@pytest.mark.cpu
 @pytest.mark.usefixtures("_fake_measurements")
 @pytest.mark.parametrize(
     "source",
@@ -112,7 +188,7 @@ def _fake_models(on_build=None):
     ],
 )
 def test_characterize_streams_paths(labeled_images, source, monkeypatch) -> None:
-    """Paths decode one at a time per pair, nothing up front, and match array results."""
+    """Paths decode per pass in a bounded prefetch that stops before measuring; results match arrays."""
     paths, arrays, ground_truth = labeled_images
     expected = characterize(_fake_models(), arrays, ground_truth)
     for name, trait in expected.items():
@@ -128,14 +204,27 @@ def test_characterize_streams_paths(labeled_images, source, monkeypatch) -> None
     labels = (boxes for boxes in ground_truth) if source == "generators" else ground_truth
     tracker = DecodeTracker(cv2.imread)
     monkeypatch.setattr(cv2, "imread", tracker)
+    measured: list[tuple[int, list[threading.Thread]]] = []
+
+    def _measure(*_args: object, **_kwargs: object) -> tuple[float, float]:
+        measured.append((tracker.calls, _prefetch_threads()))
+        return 2.0, 3.0
+
+    monkeypatch.setattr(_characterize, "_measure", _measure)
     builds: list[int] = []
-    traits = characterize(_fake_models(lambda: builds.append(tracker.calls)), images, labels)
+    traits = characterize(
+        _fake_models(lambda: builds.append(tracker.calls)),
+        images,
+        labels,
+        prefetch=2,
+        decode_workers=2,
+    )
 
     # warmup build, then one build per pair, each after the previous pair's full pass
     assert builds == [0, 0, NUM_IMAGES]
-    assert tracker.calls == NUM_IMAGES * len(SCALES)
-    # the frame being decoded plus the one it replaces
-    assert tracker.peak <= 2
+    # decoding is done and its threads joined before each benchmark
+    assert measured == [(NUM_IMAGES, []), (2 * NUM_IMAGES, [])]
+    assert tracker.peak <= 2 + 2
     assert list(traits) == list(expected)
     for name, trait in traits.items():
         assert trait.confidences == expected[name].confidences
@@ -146,26 +235,30 @@ def test_characterize_streams_paths(labeled_images, source, monkeypatch) -> None
 @pytest.mark.cpu
 @pytest.mark.usefixtures("_fake_measurements")
 @pytest.mark.parametrize(
-    ("models", "num_images", "num_labels", "generators", "error", "match"),
+    ("models", "num_images", "num_labels", "generators", "options", "error", "match"),
     [
-        pytest.param({}, 2, 2, False, ValueError, "at least one model", id="no-models"),
-        pytest.param(None, 0, 0, False, ValueError, "at least one image", id="no-images"),
-        pytest.param(None, 2, 1, False, ValueError, "2 images but 1", id="mismatch"),
-        pytest.param(None, 1, 2, True, ValueError, "1 images but 2", id="mismatch-generators"),
-        pytest.param(None, -1, 1, False, FileNotFoundError, "Cannot read", id="missing-file"),
+        pytest.param({}, 2, 2, False, {}, ValueError, "at least one model", id="no-models"),
+        pytest.param(None, 0, 0, False, {}, ValueError, "at least one image", id="no-images"),
+        pytest.param(None, 2, 1, False, {}, ValueError, "2 images but 1", id="mismatch"),
+        pytest.param(None, 1, 2, True, {}, ValueError, "1 images but 2", id="mismatch-generators"),
+        pytest.param(None, 2, 2, False, {"prefetch": 0}, ValueError, ">= 1", id="no-prefetch"),
+        pytest.param(None, 2, 2, False, {"decode_workers": 0}, ValueError, ">= 1", id="no-workers"),
+        pytest.param(None, -1, 1, False, {}, FileNotFoundError, "Cannot read", id="missing-file"),
     ],
 )
 def test_characterize_invalid(
-    labeled_images, tmp_path, models, num_images, num_labels, generators, error, match
+    labeled_images, tmp_path, models, num_images, num_labels, generators, options, error, match
 ) -> None:
-    """No models or images, mismatched lengths, and unreadable paths raise."""
+    """Bad models, images, lengths or prefetch options raise, and no decode thread leaks."""
     paths, _arrays, ground_truth = labeled_images
     images = paths[:num_images] if num_images >= 0 else [tmp_path / "missing.png"]
     labels = ground_truth[:num_labels]
     if generators:
         images, labels = iter(images), iter(labels)
+    models = models if models is not None else _fake_models()
     with pytest.raises(error, match=match):
-        characterize(models if models is not None else _fake_models(), images, labels)
+        characterize(models, images, labels, **options)
+    assert _prefetch_threads() == []
 
 
 @pytest.fixture(scope="module")

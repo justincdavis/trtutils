@@ -7,6 +7,10 @@ from __future__ import annotations
 
 import gc
 import time
+from collections import deque
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import closing
+from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -22,7 +26,7 @@ from trtutils.jetson._benchmark import benchmark_engine as jetson_benchmark_engi
 from ._types import ModelTraits
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Generator, Iterable, Mapping, Sequence
 
     import numpy as np
 
@@ -49,6 +53,62 @@ def _read_image(path: Path | str) -> np.ndarray:
         err_msg = f"Cannot read image: {path}"
         raise FileNotFoundError(err_msg)
     return image
+
+
+def _prefetch(
+    images: Iterable[np.ndarray | Path | str],
+    depth: int,
+    workers: int,
+) -> Generator[np.ndarray, None, None]:
+    """
+    Yield images in order as BGR arrays, decoding paths ahead in background threads.
+
+    Up to ``depth`` upcoming images are queued (decoding or decoded) while the
+    caller works on the current one, so at most ``depth + 2`` decoded frames are
+    alive: the queue, the frame in use and the one it replaces. Arrays pass
+    through untouched. Decoding starts on the first ``next`` and the threads are
+    joined when the generator ends or is closed, so close it (e.g. with
+    ``contextlib.closing``) when stopping early.
+
+    Parameters
+    ----------
+    images : Iterable[np.ndarray | Path | str]
+        The images, as BGR arrays or paths.
+    depth : int
+        How many upcoming images to queue, at least 1.
+    workers : int
+        How many threads decode, at least 1.
+
+    Yields
+    ------
+    np.ndarray
+        Each image, in input order.
+
+    Raises
+    ------
+    FileNotFoundError
+        If an image path cannot be read; raised when that image is reached.
+
+    """
+    # cv2.imread releases the gil, so the threads overlap the caller's work
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="shift-prefetch") as pool:
+
+        def _submit(image: np.ndarray | Path | str) -> Future[np.ndarray] | np.ndarray:
+            return pool.submit(_read_image, image) if isinstance(image, (Path, str)) else image
+
+        items = iter(images)
+        pending = deque(_submit(image) for image in islice(items, depth))
+        try:
+            while pending:
+                item = pending.popleft()
+                frame = item.result() if isinstance(item, Future) else item
+                pending.extend(_submit(image) for image in islice(items, 1))
+                yield frame
+        finally:
+            # python 3.8 has no shutdown(cancel_futures=True)
+            for item in pending:
+                if isinstance(item, Future):
+                    item.cancel()
 
 
 def _used_memory_mb() -> float:
@@ -97,6 +157,8 @@ def characterize(
     iterations: int = 1000,
     warmup_iterations: int = 50,
     *,
+    prefetch: int = 4,
+    decode_workers: int = 2,
     verbose: bool | None = None,
 ) -> dict[str, ModelTraits]:
     """
@@ -104,12 +166,16 @@ def characterize(
 
     Each pair is built, run over the labeled images, benchmarked, and freed
     before the next one, so only one pair is in memory at a time. Every pair needs
-    every image, so images given as paths are streamed: each is decoded when a pair
-    reaches it and dropped after, so only one is held at a time, at the cost of one
-    decode per image per pair. Per image it records every detection's confidence
-    and, for every ground-truth box, the best IoU of any detection (class
-    agnostic). Latency comes from the engine alone (no pre/postprocessing); energy
-    is measured with tegrastats on Jetson and is 0.0 elsewhere.
+    every image, so images given as paths are streamed: during each pair's image
+    pass, background threads decode the next ``prefetch`` images while the pair
+    runs on the current one, and each frame is dropped after use. Memory holds a
+    few frames instead of the whole set, at the cost of one decode per image per
+    pair, which overlaps inference. The threads are stopped before the pair is
+    benchmarked, so decoding never runs inside a measurement. Per image it records
+    every detection's confidence and, for every ground-truth box, the best IoU of
+    any detection (class agnostic). Latency comes from the engine alone (no
+    pre/postprocessing); energy is measured with tegrastats on Jetson and is 0.0
+    elsewhere.
 
     Parameters
     ----------
@@ -127,6 +193,11 @@ def characterize(
         Benchmark iterations per pair. Default is 1000.
     warmup_iterations : int, optional
         Benchmark warmup iterations per pair. Default is 50.
+    prefetch : int, optional
+        How many upcoming images to decode ahead of the pair, at least 1. At most
+        ``prefetch + 2`` decoded frames are alive. Default is 4.
+    decode_workers : int, optional
+        How many threads decode images given as paths, at least 1. Default is 2.
     verbose : bool, optional
         Whether to log progress. Default is None (False).
 
@@ -138,14 +209,17 @@ def characterize(
     Raises
     ------
     ValueError
-        If no models or no images are given, or images and ground truth differ
-        in length.
+        If no models or no images are given, images and ground truth differ in
+        length, or ``prefetch`` or ``decode_workers`` is below 1.
     FileNotFoundError
         If an image path cannot be read; raised while the first pair runs.
 
     """
     if len(models) == 0:
         err_msg = "characterize needs at least one model"
+        raise ValueError(err_msg)
+    if prefetch < 1 or decode_workers < 1:
+        err_msg = f"prefetch and decode_workers must be >= 1, got {prefetch}, {decode_workers}"
         raise ValueError(err_msg)
     # every pair walks the images again, so keep the items (paths, not decoded frames)
     images = list(images)
@@ -173,11 +247,14 @@ def characterize(
 
         confidences: list[list[float]] = []
         ious: list[list[float]] = []
-        for image, boxes in zip(images, ground_truth):
-            frame = _read_image(image) if isinstance(image, (Path, str)) else image
-            detections = detector.end2end(frame)
-            confidences.append([float(d[1]) for d in detections])
-            ious.append([max((_iou(box, d[0]) for d in detections), default=0.0) for box in boxes])
+        # closing joins the decode threads before measuring, even if the pass raises
+        with closing(_prefetch(images, prefetch, decode_workers)) as frames:
+            for frame, boxes in zip(frames, ground_truth):
+                detections = detector.end2end(frame)
+                confidences.append([float(d[1]) for d in detections])
+                ious.append(
+                    [max((_iou(box, d[0]) for d in detections), default=0.0) for box in boxes]
+                )
 
         latency, energy = _measure(detector.engine, iterations, warmup_iterations, verbose=verbose)
         traits[name] = ModelTraits(
