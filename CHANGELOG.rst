@@ -102,6 +102,15 @@ Added
   center crops included, and the CPU the rest. ``DLAPreprocessor.resizes_on_cpu`` tells which
   path a size takes. The CPU's center crop is bilinear and the DLA's antialiased, so ``True``
   changes a DLA center crop's pixels slightly
+* ``trtutils.research.shift``: the SHIFT paper (context-aware multi-model object detection,
+  DATE 2024). ``characterize`` measures (model, accelerator) pairs one at a time, streaming
+  labeled images given as paths through a bounded background decoder (``prefetch``,
+  ``decode_workers``) instead of holding them all; ``Shift`` runs the pair
+  ``ShiftScheduler`` picks per frame and loads pairs in the background under a memory budget;
+  ``ConfidenceGraph`` predicts every model's accuracy from one model's confidence and works on
+  its own. ``ShiftConfig`` holds the paper's hyperparameters, with
+  ``ShiftConfig.shiftdetector()`` for the reference implementation's. CLI:
+  ``trtutils research shift characterize`` / ``run``
 
 Changed
 ^^^^^^^

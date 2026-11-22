@@ -64,7 +64,9 @@ class TRTEngine(TRTEngineInterface):
     """
 
     _backends: ClassVar[set[str]] = {"auto", "async_v3", "async_v2"}
-    _capture_lock: ClassVar[threading.Lock] = threading.Lock()
+    # reentrant so code that holds it (e.g. a background engine build that must not overlap
+    # a capture) can build an engine that captures during warmup
+    _capture_lock: ClassVar[threading.RLock] = threading.RLock()
 
     # the per-context state, see _CONTEXT_STATE
     _input_shapes: list[tuple[int, ...]]
