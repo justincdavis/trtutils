@@ -25,12 +25,13 @@ jobs:
       - name: Run CPU tests
         run: ./ci/run_cpu_tests.sh
 
-  # Coverage ratchet: total coverage of the CPU suite may never go down.
-  # The floor is the higher of the committed .coverage-baseline.cpu.json and
-  # the base branch's copy, so a PR cannot pass by lowering the baseline.
+  # Per-module coverage of the CPU suite may never go down: checked against
+  # the "cpu" section of .coverage-threshold.json. Each module's floor is the
+  # higher of the PR's thresholds and the base branch's, so a PR cannot pass
+  # by lowering them.
   coverage:
     runs-on: ubuntu-latest
-    name: Coverage ratchet
+    name: Coverage check
     env:
       VIRTUAL_ENV: .venv-3.12
     steps:
@@ -44,16 +45,13 @@ jobs:
         run: uv pip install -e ".[pytest]"
       - name: Run CPU tests with coverage
         run: ./ci/run_cpu_tests.sh --cov=src/trtutils --cov-branch --cov-report=term --cov-report=json:.coverage-cpu.json
-      - name: Fetch the base branch's baseline
+      - name: Fetch the base branch's thresholds
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
           git fetch --no-tags --depth=1 origin "$BASE_REF"
-          if git show FETCH_HEAD:.coverage-baseline.cpu.json > "$RUNNER_TEMP/base-baseline.json"; then
-            echo "BASE_BASELINE_ARGS=--base-baseline $RUNNER_TEMP/base-baseline.json" >> "$GITHUB_ENV"
-          else
-            echo "$BASE_REF has no .coverage-baseline.cpu.json yet; checking the committed baseline only"
-          fi
+          git show FETCH_HEAD:.coverage-threshold.json > "$RUNNER_TEMP/base-thresholds.json"
+          echo "BASE_ARGS=--base-thresholds $RUNNER_TEMP/base-thresholds.json" >> "$GITHUB_ENV"
       - name: Check coverage did not decrease
-        run: python ci/check_coverage_total.py $BASE_BASELINE_ARGS
+        run: python ci/check_coverage.py --platform cpu --report .coverage-cpu.json --tolerance 0 --verbose $BASE_ARGS

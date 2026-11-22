@@ -16,7 +16,7 @@ make fix             # ruff format + ruff lint with autofix (ci/run_ruff.sh)
 make typecheck       # ty static type checker (ci/run_ci.sh --typecheck)
 make test            # ci/run_tests.sh: python3 -m pytest -rP -v tests/
 make test-cpu        # pytest -m cpu
-make test-cpu-cov    # CPU suite + total-coverage ratchet (CI gate; --update via ci/check_coverage_total.py)
+make test-cpu-cov    # CPU suite + per-module coverage check (cpu section of .coverage-threshold.json; CI gate)
 make test-cov        # branch coverage report
 make memcheck        # ci/run_memcheck.sh: pytest under compute-sanitizer (MEMCHECK_ARGS=...)
 

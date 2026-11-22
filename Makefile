@@ -12,7 +12,7 @@ help:
 	@echo "  typecheck           to run the ty static type checker"
 	@echo "  test                to run the tests"
 	@echo "  test-cpu            to run CPU-only tests"
-	@echo "  test-cpu-cov        to run CPU-only tests with the CI coverage ratchet"
+	@echo "  test-cpu-cov        to run CPU-only tests with the CI coverage check"
 	@echo "  test-cov            to run tests with coverage"
 	@echo "  memcheck            to run tests under compute-sanitizer (MEMCHECK_ARGS=<pytest args>)"
 	@echo "  release             to perform all actions required for a release"
@@ -47,7 +47,7 @@ test-cpu:
 
 test-cpu-cov:
 	./ci/run_cpu_tests.sh --cov=src/trtutils --cov-branch --cov-report=json:.coverage-cpu.json
-	python3 ci/check_coverage_total.py
+	python3 ci/check_coverage.py --platform cpu --report .coverage-cpu.json --tolerance 0
 
 test-cov:
 	python3 -m pytest --cov=src/trtutils --cov-branch --cov-report=term-missing --cov-report=json:.coverage.json tests/

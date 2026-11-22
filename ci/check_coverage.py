@@ -19,17 +19,23 @@ Usage::
     python ci/check_coverage.py --report FILE      # Use specific report file
     python ci/check_coverage.py --platform jetson  # Force a threshold platform
     python ci/check_coverage.py --tolerance 0.5    # Override tolerance (points)
+    python ci/check_coverage.py --base-thresholds FILE  # Base branch's thresholds (PRs)
 
-Thresholds are platform specific because the Jetson-only tests are skipped
-on x86 and vice versa:
+``.coverage-threshold.json`` holds one section of thresholds per platform,
+because each runs a different subset of the tests:
 
-- ``.coverage-threshold.json``        -- x86 / default platform
-- ``.coverage-threshold.jetson.json`` -- Jetson (Orin etc.)
+- ``cpu``    -- the CPU-only suite (``ci/run_cpu_tests.sh``), checked in GitHub Actions
+- ``gpu``    -- the full suite on an x86 machine with a GPU
+- ``jetson`` -- the full suite on a Jetson (Orin etc.)
 
-The platform is auto-detected from ``/etc/nv_tegra_release`` (the same check
-as ``trtutils.FLAGS.IS_JETSON``) and can be overridden with ``--platform``
-or the ``TRTUTILS_COVERAGE_PLATFORM`` environment variable. ``--update``
-writes to the selected file.
+The platform is auto-detected as ``jetson`` or ``gpu`` from
+``/etc/nv_tegra_release`` (the same check as ``trtutils.FLAGS.IS_JETSON``) and
+can be overridden with ``--platform`` or the ``TRTUTILS_COVERAGE_PLATFORM``
+environment variable. ``--update`` writes only the selected section.
+
+With ``--base-thresholds`` (the base branch's copy of the file), each module's
+floor is the higher of the two copies, and lowering a committed threshold fails,
+so a pull request cannot pass by editing the thresholds down.
 
 A module fails only when its coverage drops more than the tolerance (default
 1.0 percentage point, or ``TRTUTILS_COVERAGE_TOLERANCE``) below its threshold,
@@ -48,10 +54,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-THRESHOLD_FILES = {
-    "default": ROOT / ".coverage-threshold.json",
-    "jetson": ROOT / ".coverage-threshold.jetson.json",
-}
+THRESHOLD_FILE = ROOT / ".coverage-threshold.json"
+PLATFORMS = ("cpu", "gpu", "jetson")
 DEFAULT_REPORT = ROOT / ".coverage.json"
 DEFAULT_TOLERANCE = 1.0
 
@@ -128,10 +132,10 @@ def calculate_module_coverage(files: dict) -> dict[str, float]:
 
 
 def _detect_platform() -> str:
-    """Return ``"jetson"`` on Jetson devices, otherwise ``"default"``."""
+    """Return ``"jetson"`` on Jetson devices, otherwise ``"gpu"``."""
     # Mirrors trtutils._flags (FLAGS.IS_JETSON) without importing the package,
     # which would require CUDA/TensorRT in lightweight environments.
-    return "jetson" if Path("/etc/nv_tegra_release").exists() else "default"
+    return "jetson" if Path("/etc/nv_tegra_release").exists() else "gpu"
 
 
 def _get_option(flag: str) -> str | None:
@@ -160,6 +164,7 @@ def main() -> int:
 
     try:
         report_opt = _get_option("--report")
+        base_opt = _get_option("--base-thresholds")
         platform = (
             _get_option("--platform")
             or os.environ.get("TRTUTILS_COVERAGE_PLATFORM")
@@ -171,18 +176,34 @@ def main() -> int:
         print(f"ERROR: {e}")
         return 2
     report_path = Path(report_opt) if report_opt else DEFAULT_REPORT
-    if platform not in THRESHOLD_FILES:
-        print(f"ERROR: unknown platform {platform!r}; expected one of {sorted(THRESHOLD_FILES)}")
+    if platform not in PLATFORMS:
+        print(f"ERROR: unknown platform {platform!r}; expected one of {list(PLATFORMS)}")
         return 2
-    threshold_file = THRESHOLD_FILES[platform]
 
     # Load threshold file
-    if not threshold_file.exists():
-        print(f"ERROR: Threshold file not found: {threshold_file}")
+    if not THRESHOLD_FILE.exists():
+        print(f"ERROR: Threshold file not found: {THRESHOLD_FILE}")
         return 2
-    print(f"Using {platform} thresholds: {threshold_file.name} (tolerance {tolerance:.1f})")
-    with threshold_file.open() as f:
-        thresholds: dict[str, float] = json.load(f)
+    print(f"Using {platform} thresholds from {THRESHOLD_FILE.name} (tolerance {tolerance:.1f})")
+    with THRESHOLD_FILE.open() as f:
+        all_thresholds: dict[str, dict[str, float]] = json.load(f)
+    thresholds = all_thresholds.setdefault(platform, {})
+
+    # The base branch's thresholds raise the floor; committed ones may not drop below them
+    failed = False
+    floors = dict(thresholds)
+    if base_opt:
+        with Path(base_opt).open() as f:
+            base = json.load(f).get(platform, {})
+        for module, base_value in sorted(base.items()):
+            committed = thresholds.get(module)
+            if committed is not None and committed < base_value:
+                print(
+                    f"FAIL: {module} threshold lowered from {base_value:.1f}% to "
+                    f"{committed:.1f}%; thresholds may only go up"
+                )
+                failed = True
+            floors[module] = max(base_value, committed or 0.0)
 
     # Load and parse coverage report
     cov_data = load_coverage_report(report_path)
@@ -192,7 +213,7 @@ def main() -> int:
         print("\n--- Per-Module Branch Coverage ---")
         for mod, pct_raw in sorted(coverage.items()):
             pct = round(pct_raw, 1)
-            threshold = thresholds.get(mod)
+            threshold = floors.get(mod)
             marker = ""
             if threshold is not None:
                 if pct < threshold - tolerance:
@@ -203,7 +224,7 @@ def main() -> int:
         print()
 
     # Warn about modules in coverage report but not in threshold file
-    new_modules = sorted(mod for mod in coverage if mod not in thresholds)
+    new_modules = sorted(mod for mod in coverage if mod not in floors)
     for mod in new_modules:
         print(f"WARN: {mod} found in coverage but not in threshold file")
         if update_mode:
@@ -216,8 +237,7 @@ def main() -> int:
     # Round current values to 1 decimal place before comparing -- thresholds
     # are stored at this precision, so raw floats must match to avoid false
     # failures from floating-point rounding (e.g., 66.667% vs stored 66.7).
-    failed = False
-    for module, threshold in sorted(thresholds.items()):
+    for module, threshold in sorted(floors.items()):
         current_raw = coverage.get(module, 0.0)
         current = round(current_raw, 1)
         if current < threshold - tolerance:
@@ -239,9 +259,9 @@ def main() -> int:
     # Write threshold file only in update mode
     if update_mode:
         # Sort keys for stable output
-        sorted_thresholds = dict(sorted(thresholds.items()))
-        with threshold_file.open("w") as f:
-            json.dump(sorted_thresholds, f, indent=4)
+        all_thresholds[platform] = dict(sorted(thresholds.items()))
+        with THRESHOLD_FILE.open("w") as f:
+            json.dump(all_thresholds, f, indent=4)
             f.write("\n")
         print("\nThresholds updated.")
 
