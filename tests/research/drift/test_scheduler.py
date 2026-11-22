@@ -36,7 +36,9 @@ def _trait(size, latency, f1, *, dla=False, pairs=None):
         confidences=[[0.2] * 4, [0.8] * 4],
         true_positives=[round(value * 4) for value in f1],
         ground_truths=[4, 4],
-        pair_latency_ms={name: [value] for name, value in (pairs or {}).items()},
+        pair_latency_ms={
+            name: [value] for name, value in (pairs if pairs is not None else {}).items()
+        },
     )
 
 
@@ -182,6 +184,14 @@ def test_prediction_window_and_reset() -> None:
     assert scheduler(_previous(conf=0.8), SMALL_REGION, SIZE).hp == "m640"
     scheduler.reset()
     assert scheduler(_previous(conf=0.8), SMALL_REGION, SIZE).hp == "n320"
+
+
+def test_prediction_windows_stay_aligned() -> None:
+    """A frame without a valid HP model still adds an LP prediction, so both windows age alike."""
+    scheduler = DriftScheduler(TRAITS, config=dataclasses.replace(CONFIG, prediction_window=3))
+    for _ in range(2):
+        assert scheduler(_previous(), (0, 0, *SIZE), SIZE) == scheduler.baseline
+    assert len(scheduler._lp_predictions) == len(scheduler._hp_predictions) == 2
 
 
 def test_default_baseline_and_errors() -> None:

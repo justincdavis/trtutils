@@ -190,6 +190,13 @@ class DriftScheduler:
         hp_pred = self._smooth(
             self._hp_predictions, self._estimator.predict(previous.schedule.hp, hp_conf)
         )
+        # the low-priority prediction too, every frame, so both windows stay aligned
+        if previous.schedule.lp is None:
+            source, lp_detections = previous.schedule.hp, previous.detections
+        else:
+            source, lp_detections = previous.schedule.lp, previous.lp_detections
+        lp_conf = reduce_values([d[1] for d in lp_detections], cfg.confidence_metric)
+        lp_pred = self._smooth(self._lp_predictions, self._estimator.predict(source, lp_conf))
         box_size = reduce_values(
             [((b[2] - b[0]) + (b[3] - b[1])) / 2.0 for b, _, _ in previous.detections],
             cfg.box_size_metric,
@@ -210,12 +217,6 @@ class DriftScheduler:
 
         # low-priority model: fastest schedule that meets the accuracy goal and beats
         # the baseline
-        if previous.schedule.lp is None:
-            source, lp_detections = previous.schedule.hp, previous.detections
-        else:
-            source, lp_detections = previous.schedule.lp, previous.lp_detections
-        lp_conf = reduce_values([d[1] for d in lp_detections], cfg.confidence_metric)
-        lp_pred = self._smooth(self._lp_predictions, self._estimator.predict(source, lp_conf))
         goal = cfg.lp_accuracy_goal / self._estimator.scale
         best: Schedule | None = None
         for lp, trait in self._traits.items():

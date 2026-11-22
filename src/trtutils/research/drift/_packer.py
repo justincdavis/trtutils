@@ -399,8 +399,18 @@ class FramePacker:
         probabilities = self.probabilities()
         sampled = self._rng.random(probabilities.shape) < probabilities
         if exclude is not None:
-            sampled[self.cells_of(exclude)] = False
+            sampled[self._overlapping(exclude)] = False
         return sampled
+
+    def _overlapping(self: Self, box: Bbox) -> tuple[slice, slice]:
+        # cells overlap by cell - step pixels, so a cell can reach into the box from
+        # the row or column before the one its step maps to
+        x1, y1, x2, y2 = box
+        r0 = max(0, math.floor((y1 - self._cell) / self._row_step) + 1)
+        c0 = max(0, math.floor((x1 - self._cell) / self._col_step) + 1)
+        r1 = max(r0 + 1, min(self._rows, math.ceil(y2 / self._row_step)))
+        c1 = max(c0 + 1, min(self._cols, math.ceil(x2 / self._col_step)))
+        return slice(min(r0, self._rows - 1), r1), slice(min(c0, self._cols - 1), c1)
 
     def pack(
         self: Self,

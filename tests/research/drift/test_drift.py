@@ -33,7 +33,9 @@ def _trait(size, latency, f1, *, dla=False, pairs=None):
         confidences=[[0.2] * 4, [0.8] * 4],
         true_positives=[round(f1 * 4)] * 2,
         ground_truths=[4, 4],
-        pair_latency_ms={name: [value] for name, value in (pairs or {}).items()},
+        pair_latency_ms={
+            name: [value] for name, value in (pairs if pairs is not None else {}).items()
+        },
     )
 
 
@@ -201,13 +203,14 @@ def test_serial_lp_runs_after_hp_on_caller() -> None:
 
 
 def test_lp_skipped_when_no_cell_sampled() -> None:
-    """When the sampler picks no cell, only the HP model runs."""
+    """When the sampler picks no cell, only the HP model runs, and the frame says so."""
     config = dataclasses.replace(CONFIG, annealing_rate=1000.0, annealing_floor=0.0)
     harness = Harness(config=config)
     frame = _frame((PERSON, 0))
     harness.run(frame)
     _, calls, last = harness.run(frame)
-    assert last.schedule.lp == "dla"
+    # the next prediction must come from the model that ran, not from a skipped one
+    assert (last.schedule.hp, last.schedule.lp) == ("m640", None)
     assert [name for name, _, _ in calls] == ["m640"]
     assert last.lp_detections == []
     assert [d[0] for d in last.detections] == [PERSON]
@@ -230,7 +233,7 @@ def test_merge_removes_duplicates() -> None:
 
 
 def test_hp_error_drains_lp() -> None:
-    """If the HP model fails, the LP call still finishes before the error propagates."""
+    """If the HP model fails, the LP call finishes first and the HP error is the one raised."""
     harness = Harness()
     frame = _frame((PERSON, 0), (CAR, 1))
     harness.run(frame)
@@ -239,6 +242,8 @@ def test_hp_error_drains_lp() -> None:
     def _lp():
         time.sleep(0.2)
         lp_done.set()
+        err_msg = "lp failed"
+        raise RuntimeError(err_msg)
 
     def _hp():
         err_msg = "hp failed"
@@ -267,11 +272,32 @@ def test_reset_and_frame_size_change() -> None:
 
 
 def test_close_releases_models() -> None:
-    """Close stops the worker and drops every detector."""
+    """Close stops the worker and drops every detector; a closed runtime refuses frames."""
     harness = Harness()
     harness.drift.close()
     assert harness.drift._detectors == {}
     assert harness.drift._executor is None
+    with pytest.raises(RuntimeError, match="closed"):
+        harness.drift.end2end(_frame())
+
+
+def test_failed_construction_releases_the_worker() -> None:
+    """A model failing its warmup stops the DLA worker before the error propagates."""
+    workers = []
+
+    def _dla():
+        workers.append(threading.current_thread())
+        err_msg = "bad dla"
+        raise RuntimeError(err_msg)
+
+    log, hooks = [], {"dla": _dla}
+    models = {
+        name: (lambda name=name: FakeDetector(name, TRAITS[name], log, hooks)) for name in TRAITS
+    }
+    with pytest.raises(RuntimeError, match="bad dla"):
+        Drift(models, TRAITS, {0}, config=CONFIG)
+    assert len(workers) == 1
+    assert not workers[0].is_alive()
 
 
 @pytest.mark.parametrize(

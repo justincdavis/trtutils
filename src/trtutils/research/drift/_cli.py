@@ -74,7 +74,7 @@ def _parse_models(
 
     """
     ranges: dict[str, tuple[float, float]] = {}
-    for spec in input_ranges or []:
+    for spec in input_ranges if input_ranges is not None else []:
         name, low, high = spec
         ranges[name] = (float(low), float(high))
     models: dict[str, Callable[[], DetectorInterface]] = {}
@@ -382,24 +382,28 @@ def _run(args: SimpleNamespace) -> None:
         if last is None:
             return
         schedule = last.schedule
-        if schedule.lp is None:
+        if schedule.lp is None and schedule.hp == drift.baseline:
             baseline_frames += 1
             usage[f"{schedule.hp} (baseline)"] += 1
+        elif schedule.lp is None:
+            usage[f"{schedule.hp} (no low-priority cell)"] += 1
         else:
             parallel_frames += int(schedule.parallel)
             usage[f"{schedule.hp} + {schedule.lp}"] += 1
 
-    if source.suffix.lower() in _IMAGE_SUFFIXES:
-        _step(_read_frames(source)[0])
-    else:
-        cap = cv2.VideoCapture(str(source))
-        while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
-            _step(frame)
-        cap.release()
-    drift.close()
+    try:
+        if source.suffix.lower() in _IMAGE_SUFFIXES:
+            _step(_read_frames(source)[0])
+        else:
+            cap = cv2.VideoCapture(str(source))
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                _step(frame)
+            cap.release()
+    finally:
+        drift.close()
 
     frames = sum(usage.values())
     if frames == 0:

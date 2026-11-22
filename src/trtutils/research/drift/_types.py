@@ -34,8 +34,9 @@ class Schedule(NamedTuple):
     hp : str
         The model on the high-priority crop, or on the full frame when ``lp`` is None.
     lp : str | None
-        The model on the packed low-priority image. None means the baseline runs
-        the full frame alone.
+        The model on the packed low-priority image. None means no low-priority model
+        ran: the baseline runs the full frame alone, or (``hp`` not the baseline) no
+        low-priority cell was sampled.
     parallel : bool
         Whether ``lp`` runs on a DLA concurrently with ``hp`` (else serially on the GPU).
     latency_ms : float
@@ -97,7 +98,9 @@ class ModelTraits:
     ground_truths : list[int]
         Per image, the number of ground-truth boxes.
     energy_mj : list[float]
-        Raw energy samples per call in millijoules. Empty when not measured (non-Jetson).
+        Raw energy samples per call in millijoules, for the calls that overlap a
+        tegrastats sample (so not aligned with ``latency_ms``, and skewed toward slower
+        calls). Empty when not measured (non-Jetson).
     pair_latency_ms : dict[str, list[float]]
         On GPU models: raw latency samples of this model running concurrently with
         each DLA model, keyed by the DLA model's name.

@@ -207,6 +207,19 @@ def test_pack_unpack_roundtrip(mode) -> None:
             assert not np.any(np.all(offsets == (cx1, cy1), axis=-1))
 
 
+def test_sample_excludes_every_cell_the_region_overlaps() -> None:
+    """Cells reaching into the region from the row or column before it are not sampled."""
+    packer = FramePacker((1920, 1080), seed=0)  # fresh counters: every cell has probability 1
+    region = (700, 360, 1100, 700)  # row 1 spans y 177-369 and reaches into it
+    sampled = packer.sample(exclude=region)
+    rows, cols = sampled.shape
+    for row in range(rows):
+        for col in range(cols):
+            x1, y1, x2, y2 = packer.cell_bounds(row, col)
+            overlaps = x1 < region[2] and region[0] < x2 and y1 < region[3] and region[1] < y2
+            assert sampled[row, col] is np.bool_(not overlaps)
+
+
 def test_unpack_rejects_empty_slots_and_clips() -> None:
     """A box centred on an empty packed slot is invalid; others are clipped to the frame."""
     packer = FramePacker((640, 480))

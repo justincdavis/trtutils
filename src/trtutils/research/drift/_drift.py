@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from typing import TYPE_CHECKING, Callable
 
 import numpy as np
@@ -118,30 +118,39 @@ class Drift:
         self._last: FrameResult | None = None
 
         self._detectors: dict[str, DetectorInterface] = {}
-        for name, factory in models.items():
-            detector = factory()
-            dla = detector.engine.dla_core is not None
-            if (
-                tuple(detector.input_shape) != tuple(traits[name].input_size)
-                or dla != traits[name].dla
-            ):
-                err_msg = (
-                    f"model {name!r} has input {tuple(detector.input_shape)} and dla={dla}, but "
-                    f"its traits have input {tuple(traits[name].input_size)} and "
-                    f"dla={traits[name].dla}"
-                )
-                raise ValueError(err_msg)
-            self._detectors[name] = detector
         self._dla = {name: trait.dla for name, trait in traits.items()}
-        self._executor = ThreadPoolExecutor(max_workers=1) if any(self._dla.values()) else None
+        self._executor: ThreadPoolExecutor | None = None
+        ready = False
+        try:
+            for name, factory in models.items():
+                detector = factory()
+                self._detectors[name] = detector
+                dla = detector.engine.dla_core is not None
+                if (
+                    tuple(detector.input_shape) != tuple(traits[name].input_size)
+                    or dla != traits[name].dla
+                ):
+                    err_msg = (
+                        f"model {name!r} has input {tuple(detector.input_shape)} and dla={dla}, "
+                        f"but its traits have input {tuple(traits[name].input_size)} and "
+                        f"dla={traits[name].dla}"
+                    )
+                    raise ValueError(err_msg)
+            if any(self._dla.values()):
+                self._executor = ThreadPoolExecutor(max_workers=1)
 
-        # run each model a few times so every CUDA graph is captured before any
-        # concurrent execution
-        for name, detector in self._detectors.items():
-            width, height = detector.input_shape
-            dummy = np.zeros((height, width, 3), dtype=np.uint8)
-            for _ in range(_WARMUP_CALLS):
-                self._run(name, dummy)
+            # run each model a few times so every CUDA graph is captured before any
+            # concurrent execution
+            for name, detector in self._detectors.items():
+                width, height = detector.input_shape
+                dummy = np.zeros((height, width, 3), dtype=np.uint8)
+                for _ in range(_WARMUP_CALLS):
+                    self._run(name, dummy)
+            ready = True
+        finally:
+            # a failed construction releases the worker and every model built so far
+            if not ready:
+                self.close()
 
     @property
     def config(self: Self) -> DriftConfig:
@@ -181,6 +190,9 @@ class Drift:
             The detections in frame coordinates.
 
         """
+        if not self._detectors:
+            err_msg = "DRIFT runtime is closed"
+            raise RuntimeError(err_msg)
         height, width = image.shape[:2]
         size = (width, height)
         if self._packer is None or self._packer.image_size != size:
@@ -253,10 +265,17 @@ class Drift:
         try:
             hp_raw = self._detectors[schedule.hp].end2end(crop)
         finally:
-            # never leave the worker running into the next frame, even if hp failed
-            lp_raw = future.result() if future is not None else []
+            # never leave the worker running into the next frame, even if hp failed; an hp
+            # error stays the one raised
+            if future is not None:
+                wait([future])
+        lp_raw = future.result() if future is not None else []
         if packed is not None and not schedule.parallel:
             lp_raw = self._detectors[lp_name].end2end(packed[0])
+        if packed is None:
+            # no low-priority cell was sampled: only the hp model ran, and the next
+            # frame's prediction must come from it
+            schedule = schedule._replace(lp=None, parallel=False)
 
         hp = [
             ((b[0] + x1, b[1] + y1, b[2] + x1, b[3] + y1), float(conf), int(cls))
