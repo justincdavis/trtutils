@@ -668,6 +668,64 @@ pair; give ``DLA_CORE`` for engines with DLA layers.
   ``--accuracy_metric``, ``--num_bins``, ``--outlier_percentile``, ``--min_connects``:
   override one ``ShiftConfig`` field of the preset
 
+DRIFT
+^^^^^
+
+:mod:`trtutils.research.drift` characterizes detection models and runs DRIFT over a
+video: each frame's high-priority region (the padded box around the previous frame's
+``--priority`` classes) runs on a GPU model while the packed rest of the frame runs on a
+second model, concurrently when it is on a DLA. ``--model NAME ENGINE [DLA_CORE]`` is
+repeated once per model; give ``DLA_CORE`` for DLA engines (CUDA graphs are then off).
+
+.. code-block:: console
+
+    # characterize on labeled images (YOLO-format .txt labels with class ids)
+    python3 -m trtutils research drift characterize \
+        --model yolov10m_1280 yolov10m_1280.engine \
+        --model yolov10n_640 yolov10n_640.engine \
+        --model yoloxs_480_dla yoloxs_480_dla.engine 0 \
+        --input_range yoloxs_480_dla 0 255 \
+        --images val/images --labels val/labels \
+        --latency_input video.mp4 --output traits.json
+
+    # run DRIFT over a video with people (COCO class 0) as the high-priority class
+    python3 -m trtutils research drift run \
+        --model yolov10m_1280 yolov10m_1280.engine \
+        --model yolov10n_640 yolov10n_640.engine \
+        --model yoloxs_480_dla yoloxs_480_dla.engine 0 \
+        --input_range yoloxs_480_dla 0 255 \
+        --characterization traits.json --input video.mp4 --priority 0
+
+``characterize`` options:
+
+* ``--model``: A model as ``NAME ENGINE [DLA_CORE]``, repeated (required)
+* ``--input_range``: A model's input range as ``NAME LOW HIGH``, repeated (default: 0 1)
+* ``--images``: Directory of images (required)
+* ``--labels``: Directory of YOLO-format labels with class ids; a missing file means no
+  objects (required)
+* ``--output``: JSON file for the characterization (required)
+* ``--latency_input``: Video or image for the latency loops (default: the first labeled images)
+* ``--latency_frames``: Frames the latency loops cycle through, from ``--latency_input`` or the
+  labeled images (default: 30)
+* ``--prefetch``: Labeled images decoded ahead in the background (default: 4)
+* ``--prefetch_workers``: Background threads decoding labeled images (default: 2)
+* ``--iterations``: Timed calls per model and per GPU+DLA pair (default: 200)
+* ``--warmup_iterations``: Untimed calls before each timing loop (default: 20)
+* ``--iou_threshold``: IoU for a detection to match a label (default: 0.5)
+
+``run`` options:
+
+* ``--model``, ``--input_range``: as for ``characterize``
+* ``--characterization``: JSON file from ``characterize`` (required)
+* ``--input``: Video or image file (required)
+* ``--priority``: High-priority class ids (required)
+* ``--baseline``: Baseline GPU model (default: the GPU model with the highest mean F1)
+* ``--seed``: Seed of the frame packer's sampler
+* ``--preset``: ``paper`` (default) or ``upstream`` hyperparameters
+* one flag per ``DriftConfig`` field (``--hp_padding``, ``--grid_divisor``,
+  ``--lp_accuracy_goal``, ``--dense_groups``, ...; booleans as ``--hp_square`` /
+  ``--no_hp_square``) overrides that field of the preset
+
 TRTExec
 ~~~~~~~
 

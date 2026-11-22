@@ -8,6 +8,7 @@ Subpackages
    :maxdepth: 4
 
    trtutils.research.axonn
+   trtutils.research.drift
    trtutils.research.shift
 
 Module contents
