@@ -8,12 +8,11 @@ from __future__ import annotations
 import gc
 import tempfile
 import time
-from collections import deque
 from collections.abc import Sized
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from functools import partial
-from itertools import chain, islice
+from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -23,6 +22,7 @@ from jetsontools import TegraStats, filter_data, get_powerdraw, parse_tegrastats
 from trtutils._engine import TRTEngine
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.research.shift._characterize import _prefetch
 
 from ._types import ModelTraits
 
@@ -37,7 +37,6 @@ if TYPE_CHECKING:
 _TEGRA_INTERVAL_MS = 5
 _WARMUP_CALLS = 3
 _CONFIDENCE_DECIMALS = 4
-_PREFETCH_THREAD = "drift-prefetch"
 
 
 def _iou(box1: Bbox, box2: Bbox) -> float:
@@ -86,39 +85,10 @@ def _load_image(image: np.ndarray | Path | str) -> np.ndarray:
     return frame
 
 
-def _prefetch(
-    images: Iterable[np.ndarray | Path | str],
-    depth: int,
-    workers: int,
-) -> Generator[np.ndarray, None, None]:
-    # a small data loader: worker threads decode paths ahead, in order (cv2.imread
-    # releases the gil), and arrays pass through. at most depth images wait decoded
-    # or decoding; closing the generator cancels the rest and joins the workers
+def _check_prefetch(depth: int, workers: int) -> None:
     if depth < 1 or workers < 1:
         err_msg = f"prefetch depth and workers must be at least 1, got {depth} and {workers}"
         raise ValueError(err_msg)
-    source = iter(images)
-    pending: deque[Future[np.ndarray]] = deque()
-    with ThreadPoolExecutor(workers, thread_name_prefix=_PREFETCH_THREAD) as executor:
-
-        def _fill() -> None:
-            for image in islice(source, depth - len(pending)):
-                if isinstance(image, (Path, str)):
-                    pending.append(executor.submit(_load_image, image))
-                else:
-                    future: Future[np.ndarray] = Future()
-                    future.set_result(image)
-                    pending.append(future)
-
-        try:
-            _fill()
-            while pending:
-                frame = pending.popleft().result()
-                _fill()
-                yield frame
-        finally:
-            for future in pending:
-                future.cancel()
 
 
 def _labeled_images(
@@ -127,6 +97,7 @@ def _labeled_images(
     depth: int,
     workers: int,
 ) -> Generator[tuple[np.ndarray, Sequence[tuple[Bbox, int]]], None, None]:
+    _check_prefetch(depth, workers)
     # generators have no length, so their mismatch is only found when one runs out
     sized = isinstance(images, Sized) and isinstance(ground_truth, Sized)
     if sized and len(images) != len(ground_truth):

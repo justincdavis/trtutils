@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import dataclasses
 import threading
-import time
 import weakref
 from collections import Counter
 from functools import partial
@@ -30,7 +29,6 @@ from trtutils.research.drift import (
     load_characterization,
     save_characterization,
 )
-from trtutils.research.drift._characterize import _prefetch
 
 YOLOV10N_640 = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
 YOLOV10N_320 = DATA_DIR / "yolov10" / "yolov10n_320.onnx"
@@ -114,7 +112,7 @@ def _write_images(directory, values):
 
 
 def _loader_threads():
-    return [t for t in threading.enumerate() if t.name.startswith("drift-prefetch")]
+    return [t for t in threading.enumerate() if t.name.startswith("shift-prefetch")]
 
 
 @pytest.fixture(scope="module")
@@ -397,79 +395,3 @@ def test_characterize_invalid_inputs(fake, images, ground_truth, kwargs, match) 
     with pytest.raises(ValueError, match=match):
         characterize(models, images, ground_truth, iterations=ITERATIONS, **kwargs)
     assert _loader_threads() == []
-
-
-@pytest.mark.cpu
-def test_prefetch_runs_ahead_bounded_and_in_order(tmp_path, imread_log) -> None:
-    """Two workers decode concurrently, ahead of the consumer, at most depth ahead, in order."""
-    reads, hooks, alive = imread_log
-    values = list(range(10, 18))
-    paths = _write_images(tmp_path, values)
-    barrier = threading.Barrier(2, timeout=5)
-
-    def _hook(value):
-        if value in values[:2]:
-            barrier.wait()  # passes only if both workers decode at once
-        # later images decode faster, so finishing order differs from input order
-        time.sleep(0.002 * (values[-1] - value))
-
-    hooks.append(_hook)
-    depth = 3
-    frames = _prefetch(paths, depth, 2)
-    first = next(frames)
-    # while the consumer holds the first image the workers read depth more, then stop
-    deadline = time.monotonic() + 5
-    while len(reads) < depth + 1 and time.monotonic() < deadline:
-        time.sleep(0.01)
-    time.sleep(0.1)
-    assert sorted(reads) == [("read", v) for v in values[: depth + 1]]
-    assert alive() == depth + 1
-
-    out = [int(first[0, 0, 0])]
-    del first
-    for frame in frames:
-        # the frame in hand plus at most depth waiting
-        assert alive() <= depth + 1
-        out.append(int(frame[0, 0, 0]))
-        del frame
-    assert out == values
-    assert sorted(reads) == [("read", v) for v in values]
-    assert _loader_threads() == []
-
-
-@pytest.mark.cpu
-@pytest.mark.parametrize(
-    "stop",
-    [
-        pytest.param("close", id="early-close"),
-        pytest.param("error", id="unreadable-path"),
-    ],
-)
-def test_prefetch_stops_cleanly(tmp_path, imread_log, stop) -> None:
-    """Closing early or an unreadable path cancels pending decodes and joins the workers."""
-    reads, _, _ = imread_log
-    paths = _write_images(tmp_path, list(range(10, 30)))
-    if stop == "error":
-        paths[1] = tmp_path / "99.png"  # missing
-    frames = _prefetch(paths, 3, 2)
-    assert int(next(frames)[0, 0, 0]) == 10
-    if stop == "close":
-        frames.close()
-    else:
-        with pytest.raises(FileNotFoundError, match=r"99\.png"):
-            next(frames)
-    assert _loader_threads() == []
-    assert len(reads) <= 1 + 3  # the first and depth more, never the rest
-    assert next(frames, None) is None
-
-
-@pytest.mark.cpu
-def test_prefetch_passes_arrays_through() -> None:
-    """Arrays come back as the same objects, in order, without starting a worker."""
-    arrays = [_image(v) for v in VALUES]
-    seen = []
-    for frame in _prefetch(iter(arrays), 2, 2):
-        assert _loader_threads() == []
-        seen.append(frame)
-    assert all(a is b for a, b in zip(seen, arrays))
-    assert len(seen) == len(arrays)

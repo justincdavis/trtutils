@@ -18,8 +18,9 @@ import cv2
 
 from trtutils._log import LOG
 from trtutils.image import Detector
+from trtutils.research.shift._characterize import _prefetch
 
-from ._characterize import _characterize_labeled, _prefetch
+from ._characterize import _characterize_labeled, _check_prefetch
 from ._drift import Drift
 from ._types import (
     ANNEAL_COUNTERS,
@@ -220,6 +221,7 @@ def _iter_labeled(
         The BGR image and its (box, class id) pairs in pixels.
 
     """
+    _check_prefetch(prefetch, prefetch_workers)
     with closing(_prefetch(image_paths, prefetch, prefetch_workers)) as images:
         for path, image in zip(image_paths, images):
             label = labels / f"{path.stem}.txt"
