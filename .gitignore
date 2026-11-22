@@ -58,6 +58,7 @@ htmlcov/
 .nox/
 .coverage
 .coverage.*
+.coverage-cpu.json
 .cache
 nosetests.xml
 coverage.xml

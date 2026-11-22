@@ -24,3 +24,36 @@ jobs:
         run: uv pip install -e ".[pytest]"
       - name: Run CPU tests
         run: ./ci/run_cpu_tests.sh
+
+  # Coverage ratchet: total coverage of the CPU suite may never go down.
+  # The floor is the higher of the committed .coverage-baseline.cpu.json and
+  # the base branch's copy, so a PR cannot pass by lowering the baseline.
+  coverage:
+    runs-on: ubuntu-latest
+    name: Coverage ratchet
+    env:
+      VIRTUAL_ENV: .venv-3.12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Set up Python 3.12
+        run: |
+          uv venv $VIRTUAL_ENV --python 3.12
+          echo "$PWD/$VIRTUAL_ENV/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: uv pip install -e ".[pytest]"
+      - name: Run CPU tests with coverage
+        run: ./ci/run_cpu_tests.sh --cov=src/trtutils --cov-branch --cov-report=term --cov-report=json:.coverage-cpu.json
+      - name: Fetch the base branch's baseline
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          if git show FETCH_HEAD:.coverage-baseline.cpu.json > "$RUNNER_TEMP/base-baseline.json"; then
+            echo "BASE_BASELINE_ARGS=--base-baseline $RUNNER_TEMP/base-baseline.json" >> "$GITHUB_ENV"
+          else
+            echo "$BASE_REF has no .coverage-baseline.cpu.json yet; checking the committed baseline only"
+          fi
+      - name: Check coverage did not decrease
+        run: python ci/check_coverage_total.py $BASE_BASELINE_ARGS

@@ -1,4 +1,4 @@
-.PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test test-cpu test-cov memcheck release \
+.PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test test-cpu test-cpu-cov test-cov memcheck release \
        test-cu11 test-cu12 test-cu13 ci-cu11 ci-cu12 ci-cu13 dockers
 
 help:
@@ -12,6 +12,7 @@ help:
 	@echo "  typecheck           to run the ty static type checker"
 	@echo "  test                to run the tests"
 	@echo "  test-cpu            to run CPU-only tests"
+	@echo "  test-cpu-cov        to run CPU-only tests with the CI coverage ratchet"
 	@echo "  test-cov            to run tests with coverage"
 	@echo "  memcheck            to run tests under compute-sanitizer (MEMCHECK_ARGS=<pytest args>)"
 	@echo "  release             to perform all actions required for a release"
@@ -43,6 +44,10 @@ test:
 
 test-cpu:
 	python3 -m pytest -rP -v tests/ -m cpu
+
+test-cpu-cov:
+	./ci/run_cpu_tests.sh --cov=src/trtutils --cov-branch --cov-report=json:.coverage-cpu.json
+	python3 ci/check_coverage_total.py
 
 test-cov:
 	python3 -m pytest --cov=src/trtutils --cov-branch --cov-report=term-missing --cov-report=json:.coverage.json tests/
