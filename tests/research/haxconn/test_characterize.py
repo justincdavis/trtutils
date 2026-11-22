@@ -18,9 +18,11 @@ from trtutils.research.haxconn import (
     HaxConn,
     HaxConnConfig,
     HaxConnScheduler,
+    assignment_options,
     calibrate,
     characterize,
     measure_memory,
+    prebuild_engines,
     slice_hook,
 )
 
@@ -99,6 +101,32 @@ def test_runtime_static_and_dynamic(conv_model, conv_traits, tmp_path) -> None:
         dynamic.mock_execute()
     assert dynamic.schedule == best
     dynamic.close()
+
+
+@pytest.mark.dla
+def test_dynamic_sets_on_prebuilt_engines(conv_model, conv_traits, tmp_path) -> None:
+    """Prebuilt engines cover every schedule; the runtime moves between sets of DNNs."""
+    models = {"a": conv_model, "b": conv_model}
+    traits = {"a": conv_traits, "b": conv_traits}
+    built = prebuild_engines(models, traits, tmp_path)
+    options = len(assignment_options(conv_traits, 1))
+    assert {name: len(paths) for name, paths in built.items()} == {"a": options, "b": options}
+    config = HaxConnConfig(contention="none", solver="exhaustive", update_ms=None)
+    best = HaxConnScheduler(traits, config=config).solve()
+    runtime = HaxConn(
+        models, traits, config=config, engine_dir=tmp_path, dynamic=True, build="prebuilt"
+    )
+    deadline = time.monotonic() + 60.0
+    while not runtime.schedule.optimal and time.monotonic() < deadline:
+        runtime.mock_execute()
+    assert runtime.schedule == best
+    runtime.set_active(["a"])
+    assert {name: out[0].shape for name, out in runtime.mock_execute().items()} == {
+        "a": (1, 64, 56, 56)
+    }
+    assert runtime.set_active(["b", "a"]) == best
+    assert runtime.searching is False
+    runtime.close()
 
 
 @pytest.mark.jetson

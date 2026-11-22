@@ -15,7 +15,7 @@ from trtutils.builder._utils import needs_dynamic_range
 from trtutils.compat._libs import trt
 
 from ._groups import constant_layers
-from ._simulate import encode_assignment
+from ._simulate import assignment_options, encode_assignment
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -214,6 +214,59 @@ def build_engines(
         assignment does not fit its DNN's layer groups.
 
     """
+    paths = engine_paths(models, traits, schedule, output_dir, data_batchers)
+    batchers = dict(data_batchers) if data_batchers is not None else {}
+    for name, path in paths.items():
+        if not path.exists():
+            _build_one(
+                models[name],
+                traits[name],
+                schedule.assignments[name],
+                path,
+                dla_core,
+                workspace,
+                timing_cache,
+                batchers.get(name),
+                verbose=verbose,
+            )
+    return paths
+
+
+def engine_paths(
+    models: Mapping[str, Path | str],
+    traits: Mapping[str, ModelTraits],
+    schedule: Schedule,
+    output_dir: Path | str,
+    data_batchers: Mapping[str, AbstractBatcher] | None = None,
+) -> dict[str, Path]:
+    """
+    Name the engine :func:`build_engines` keeps for each DNN of a schedule.
+
+    Parameters
+    ----------
+    models : Mapping[str, Path | str]
+        The ONNX file of each DNN.
+    traits : Mapping[str, ModelTraits]
+        The traits of each DNN, which hold its layer groups.
+    schedule : Schedule
+        The schedule.
+    output_dir : Path | str
+        The directory for the engines.
+    data_batchers : Mapping[str, AbstractBatcher], optional
+        The INT8 calibration data of each DNN, by name. Default is None.
+
+    Returns
+    -------
+    dict[str, Path]
+        The engine file of each DNN, which may not exist yet.
+
+    Raises
+    ------
+    ValueError
+        If ``models``, ``traits`` and the schedule do not name the same DNNs, or an
+        assignment does not fit its DNN's layer groups.
+
+    """
     if not set(models) == set(traits) == set(schedule.assignments):
         err_msg = (
             f"models {sorted(models)}, traits {sorted(traits)} and schedule "
@@ -221,51 +274,155 @@ def build_engines(
         )
         raise ValueError(err_msg)
     directory = Path(output_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    batchers = dict(data_batchers) if data_batchers is not None else {}
-    engines: dict[str, Path] = {}
-    for name, onnx in models.items():
-        accs = schedule.assignments[name]
-        encode_assignment(traits[name], accs)
-        int8 = traits[name].precision == "int8"
-        batcher = batchers.get(name) if int8 else None
-        suffix = ("int8" if batcher is not None else "int8nominal") if int8 else "fp16"
-        # the same letters mean another engine for another model or other group bounds
-        source = Path(onnx).resolve()
-        key = (
-            str(source),
-            source.stat().st_mtime_ns,
-            [(g.first, g.last) for g in traits[name].groups],
+    calibrated = set(data_batchers) if data_batchers is not None else set()
+    return {
+        name: _engine_path(
+            name, onnx, traits[name], schedule.assignments[name], directory, name in calibrated
         )
-        digest = hashlib.sha256(repr(key).encode()).hexdigest()[:10]
-        path = directory / f"{name}_{assignment_code(accs)}_{suffix}_{digest}.engine"
-        engines[name] = path
-        if path.exists():
-            continue
-        if int8 and batcher is None:
-            LOG.warning(f"HaX-CoNN: {name} has no data batcher, its INT8 outputs are not usable")
-        devices: list[tuple[int, trt.DeviceType | None]] = []
-        for group, acc in zip(traits[name].groups, accs):
-            device = trt.DeviceType.DLA if acc == "dla" else trt.DeviceType.GPU
-            devices.extend((i, device) for i in range(group.first, group.last + 1))
-        has_dla = "dla" in accs
-        if verbose:
-            LOG.info(f"HaX-CoNN: building {path.name}")
-        # constant layers of DLA groups fall back to the GPU, which only warns
-        with LOG.with_level("ERROR"):
-            build_engine(
-                onnx,
-                path,
-                default_device=trt.DeviceType.DLA if has_dla else trt.DeviceType.GPU,
-                workspace=workspace,
-                dla_core=dla_core if has_dla else None,
-                data_batcher=batcher,
-                layer_device=devices,
-                hooks=[nominal_ranges_hook] if int8 and batcher is None else None,
-                timing_cache=timing_cache,
-                gpu_fallback=True,
-                fp16=True,
-                int8=int8,
-                verbose=verbose,
-            )
-    return engines
+        for name, onnx in models.items()
+    }
+
+
+def prebuild_engines(
+    models: Mapping[str, Path | str],
+    traits: Mapping[str, ModelTraits],
+    output_dir: Path | str,
+    max_transitions: int = 1,
+    dla_core: int = 0,
+    workspace: float = 4.0,
+    timing_cache: Path | str | None = None,
+    data_batchers: Mapping[str, AbstractBatcher] | None = None,
+    *,
+    verbose: bool | None = None,
+) -> dict[str, list[Path]]:
+    """
+    Build the engine of every assignment a solver can pick, for D-HaX-CoNN.
+
+    An engine depends only on its own DNN's assignment, so the engines of every
+    assignment within the transition limit (:func:`assignment_options`) cover every
+    schedule of every set of these DNNs. With them in ``output_dir``, a
+    ``HaxConn(dynamic=True)`` runtime switches schedules by loading engines instead of
+    building them. Engines already in ``output_dir`` are kept.
+
+    Parameters
+    ----------
+    models : Mapping[str, Path | str]
+        The ONNX file of each DNN.
+    traits : Mapping[str, ModelTraits]
+        The traits of each DNN, which hold its layer groups.
+    output_dir : Path | str
+        The directory for the engines, the runtime's ``engine_dir``.
+    max_transitions : int, optional
+        The transition limit of the config the runtime will use. Default is 1.
+    dla_core : int, optional
+        The DLA core the DLA layers run on. Default is 0.
+    workspace : float, optional
+        The TensorRT workspace in GiB. Default is 4.0.
+    timing_cache : Path | str, optional
+        A timing cache file shared by the builds. Default is None.
+    data_batchers : Mapping[str, AbstractBatcher], optional
+        The INT8 calibration data of each DNN, by name. Default is None.
+    verbose : bool, optional
+        Whether to log the builds. Default is None (False).
+
+    Returns
+    -------
+    dict[str, list[Path]]
+        The engines of each DNN, one per assignment.
+
+    Raises
+    ------
+    ValueError
+        If ``models`` and ``traits`` name different DNNs or ``max_transitions`` is negative.
+
+    """
+    if set(models) != set(traits):
+        err_msg = f"models {sorted(models)} and traits {sorted(traits)} must name the same DNNs"
+        raise ValueError(err_msg)
+    if max_transitions < 0:
+        err_msg = f"max_transitions must be at least 0, got {max_transitions}"
+        raise ValueError(err_msg)
+    directory = Path(output_dir)
+    batchers = dict(data_batchers) if data_batchers is not None else {}
+    built: dict[str, list[Path]] = {}
+    for name, onnx in models.items():
+        built[name] = []
+        for accs in assignment_options(traits[name], max_transitions):
+            path = _engine_path(name, onnx, traits[name], accs, directory, name in batchers)
+            if not path.exists():
+                _build_one(
+                    onnx,
+                    traits[name],
+                    accs,
+                    path,
+                    dla_core,
+                    workspace,
+                    timing_cache,
+                    batchers.get(name),
+                    verbose=verbose,
+                )
+            built[name].append(path)
+    return built
+
+
+def _engine_path(
+    name: str,
+    onnx: Path | str,
+    traits: ModelTraits,
+    accelerators: Sequence[str],
+    directory: Path,
+    calibrated: bool,  # noqa: FBT001
+) -> Path:
+    encode_assignment(traits, accelerators)
+    suffix = "fp16"
+    if traits.precision == "int8":
+        suffix = "int8" if calibrated else "int8nominal"
+    # the same letters mean another engine for another model or other group bounds
+    source = Path(onnx).resolve()
+    key = (str(source), source.stat().st_mtime_ns, [(g.first, g.last) for g in traits.groups])
+    digest = hashlib.sha256(repr(key).encode()).hexdigest()[:10]
+    return directory / f"{name}_{assignment_code(accelerators)}_{suffix}_{digest}.engine"
+
+
+def _build_one(
+    onnx: Path | str,
+    traits: ModelTraits,
+    accelerators: Sequence[str],
+    path: Path,
+    dla_core: int,
+    workspace: float,
+    timing_cache: Path | str | None,
+    batcher: AbstractBatcher | None,
+    *,
+    verbose: bool | None,
+) -> None:
+    int8 = traits.precision == "int8"
+    # calibration data only matters to INT8 engines
+    batcher = batcher if int8 else None
+    if int8 and batcher is None:
+        LOG.warning(f"HaX-CoNN: {path.name} has no data batcher, its INT8 outputs are not usable")
+    devices: list[tuple[int, trt.DeviceType | None]] = []
+    for group, acc in zip(traits.groups, accelerators):
+        device = trt.DeviceType.DLA if acc == "dla" else trt.DeviceType.GPU
+        devices.extend((i, device) for i in range(group.first, group.last + 1))
+    has_dla = "dla" in accelerators
+    if verbose:
+        LOG.info(f"HaX-CoNN: building {path.name}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # constant layers of DLA groups fall back to the GPU, which only warns
+    with LOG.with_level("ERROR"):
+        build_engine(
+            onnx,
+            path,
+            default_device=trt.DeviceType.DLA if has_dla else trt.DeviceType.GPU,
+            workspace=workspace,
+            dla_core=dla_core if has_dla else None,
+            data_batcher=batcher,
+            layer_device=devices,
+            hooks=[nominal_ranges_hook] if int8 and batcher is None else None,
+            timing_cache=timing_cache,
+            gpu_fallback=True,
+            fp16=True,
+            int8=int8,
+            verbose=verbose,
+        )

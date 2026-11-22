@@ -756,6 +756,16 @@ from tegrastats, which needs root or passwordless sudo; lock the clocks
         --model vgg16 vgg16.onnx vgg16.json \
         --calibration calibration.json --schedule schedule.json --baselines
 
+    # D-HaX-CoNN: build every engine a schedule can use, then change the running set
+    python3 -m trtutils research haxconn prebuild \
+        --model resnet34 resnet34.onnx resnet34.json \
+        --model vgg16 vgg16.onnx vgg16.json --engine_dir engines
+    python3 -m trtutils research haxconn dynamic \
+        --model resnet34 resnet34.onnx resnet34.json \
+        --model vgg16 vgg16.onnx vgg16.json --calibration calibration.json \
+        --engine_dir engines --build prebuilt \
+        --workload resnet34,vgg16 --workload resnet34 --period 10 --output timeline.json
+
 ``characterize`` options (plus ``--dla_core``):
 
 * ``--onnx``: The ONNX model, with static shapes (required)
@@ -784,8 +794,8 @@ from tegrastats, which needs root or passwordless sudo; lock the clocks
 * ``--preset``: ``paper`` (default) or ``upstream`` hyperparameters
 * one flag per ``HaxConnConfig`` field (``--objective``, ``--contention``,
   ``--max_transitions``, ``--solver``, ``--time_budget``, ``--latency_metric``,
-  ``--memory_metric``) overrides that field of the preset; ``none`` lifts the
-  transition limit or the time budget
+  ``--memory_metric``, ``--update_ms``) overrides that field of the preset; ``none`` lifts
+  the transition limit or the time budget, or switches on every improvement
 
 ``run`` options (plus ``--dla_core``):
 
@@ -796,6 +806,30 @@ from tegrastats, which needs root or passwordless sudo; lock the clocks
 * ``--iterations`` / ``--warmup_iterations``: Timed and untimed rounds (default: 200 / 20)
 * ``--baselines``: Also run the GPU-only and naive GPU/DLA schedules
 * ``--dynamic``: D-HaX-CoNN, start on a naive schedule and switch as better ones are found
+
+``prebuild`` options (plus ``--dla_core``):
+
+* ``--model``: A DNN as ``NAME ONNX TRAITS``, repeated (required)
+* ``--engine_dir``: Directory for the engines, the runtime's (required)
+* ``--max_transitions``: Transition limit of the config the runtime uses (default: 1)
+* ``--workspace`` / ``--timing_cache``: As for ``characterize``
+
+``dynamic`` options (plus ``--dla_core``), D-HaX-CoNN on a changing set of DNNs:
+
+* ``--model``: A DNN as ``NAME ONNX TRAITS``, repeated (required)
+* ``--workload``: DNNs that run together, comma-separated, repeated; they run in order
+  (required)
+* ``--period`` / ``--cycles``: Seconds per workload and passes over the sequence
+  (default: 10 / 1)
+* ``--calibration``, ``--preset`` and the config flags: as for ``solve``
+* ``--engine_dir``: Directory that keeps the engines (default: temporary)
+* ``--prebuild``: Build every engine a schedule can use before running
+* ``--build``: ``background`` (default) builds a better schedule's engines while running;
+  ``prebuilt`` only switches to schedules whose engines exist
+* ``--solver_core``: CPU core the solver thread is pinned to
+* ``--output``: JSON file with every round and a summary per workload: first and final
+  schedule and latency, time to the final schedule, and the final schedule's latency while
+  the solver runs and after
 
 TRTExec
 ~~~~~~~

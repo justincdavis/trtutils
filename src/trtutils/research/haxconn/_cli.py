@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import statistics
 import tempfile
+import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from trtutils._log import LOG
 
-from ._build import assignment_code
+from ._build import assignment_code, prebuild_engines
 from ._characterize import calibrate, characterize
 from ._haxconn import HaxConn
 from ._pccs import PCCSModel
@@ -81,6 +84,10 @@ def _make_config(args: SimpleNamespace) -> HaxConnConfig:
         for f in dataclasses.fields(HaxConnConfig)
         if hasattr(args, f.name)
     }
+    if "update_ms" in overrides:
+        values = overrides["update_ms"]
+        none = len(values) == 1 and values[0].lower() == "none"
+        overrides["update_ms"] = None if none else tuple(float(v) for v in values)
     return dataclasses.replace(config, **overrides)
 
 
@@ -245,6 +252,182 @@ def _run(args: SimpleNamespace) -> None:
     LOG.info("=" * 60)
 
 
+def _pool(args: SimpleNamespace) -> tuple[dict[str, str], dict[str, ModelTraits]]:
+    models = {name: onnx for name, onnx, _ in args.model}
+    traits = {name: load_traits(path) for name, _, path in args.model}
+    return models, traits
+
+
+def _prebuild(args: SimpleNamespace) -> None:
+    """
+    Build the engine of every assignment a solver can pick, for D-HaX-CoNN.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments: the general ones, ``model`` (``NAME ONNX TRAITS``
+        triples), ``engine_dir``, ``dla_core``, ``max_transitions``, ``workspace`` and
+        ``timing_cache``.
+
+    """
+    models, traits = _pool(args)
+    built = prebuild_engines(
+        models,
+        traits,
+        args.engine_dir,
+        max_transitions=args.max_transitions,
+        dla_core=_dla_core(args),
+        workspace=args.workspace,
+        timing_cache=args.timing_cache,
+        verbose=args.verbose,
+    )
+    LOG.info("HaX-CoNN Prebuild Complete")
+    for name, paths in built.items():
+        LOG.info(f"  {name:<20} {len(paths)} engines")
+    LOG.info(f"Saved to: {args.engine_dir}")
+
+
+def _segment(rounds: list[dict], start: float) -> dict:
+    # what one stretch of a single DNN set did: where it started, where it ended, how fast
+    first, final = rounds[0]["codes"], rounds[-1]["codes"]
+    reached = next(r["t"] for r in rounds if r["codes"] == final)
+    on_final = [r for r in rounds if r["codes"] == final]
+    searching = [r["max_ms"] for r in on_final if r["searching"]]
+    settled = [r["max_ms"] for r in on_final if not r["searching"]]
+    return {
+        "workload": rounds[0]["workload"],
+        "rounds": len(rounds),
+        "first": first,
+        "first_ms": statistics.median(r["max_ms"] for r in rounds if r["codes"] == first),
+        "final": final,
+        "final_ms": statistics.median(r["max_ms"] for r in on_final),
+        "switch_s": reached - start,
+        "optimal": rounds[-1]["optimal"],
+        "searching_ms": statistics.median(searching) if searching else None,
+        "settled_ms": statistics.median(settled) if settled else None,
+    }
+
+
+def _record(runtime: HaxConn, t: float, cycle: int, workload: str, *, searching: bool) -> dict:
+    schedule = runtime.schedule
+    latency = runtime.last if runtime.last is not None else {}
+    return {
+        "t": t,
+        "cycle": cycle,
+        "workload": workload,
+        "codes": {name: assignment_code(accs) for name, accs in schedule.assignments.items()},
+        "predicted": schedule.objective,
+        "optimal": schedule.optimal,
+        "searching": searching,
+        "latency_ms": dict(latency),
+        "max_ms": max(latency.values()),
+    }
+
+
+def _log_segment(seg: dict) -> None:
+    LOG.info(
+        f"cycle {seg['cycle']} {seg['workload']}: {seg['rounds']} rounds, optimal={seg['optimal']}"
+    )
+    LOG.info(f"  first {seg['first']}  {seg['first_ms']:8.3f} ms")
+    LOG.info(f"  final {seg['final']}  {seg['final_ms']:8.3f} ms after {seg['switch_s']:.3f} s")
+    if seg["searching_ms"] is not None and seg["settled_ms"] is not None:
+        overhead = 100.0 * (seg["searching_ms"] / seg["settled_ms"] - 1.0)
+        LOG.info(
+            f"  final schedule while searching {seg['searching_ms']:.3f} ms, "
+            f"after {seg['settled_ms']:.3f} ms ({overhead:+.1f}%)"
+        )
+
+
+def _dynamic(args: SimpleNamespace) -> None:
+    """
+    Run D-HaX-CoNN on a changing set of DNNs and report how each set converges.
+
+    Each workload (a set of DNNs) runs for ``period`` seconds, in order, ``cycles``
+    times. Every round is recorded: the time, the schedule, whether the solver was
+    still searching, and the measured latencies.
+
+    Parameters
+    ----------
+    args : SimpleNamespace
+        Command-line arguments: the general ones, ``model`` (``NAME ONNX TRAITS``
+        triples), ``workload``, ``period``, ``cycles``, ``calibration``, ``engine_dir``,
+        ``dla_core``, ``prebuild``, ``build``, ``solver_core``, ``output``, ``preset``
+        and one attribute per config field.
+
+    Raises
+    ------
+    ValueError
+        If a workload names a DNN without a model, or ``prebuild`` is given without a
+        transition limit.
+
+    """
+    models, traits = _pool(args)
+    workloads = [[name.strip() for name in w.split(",") if name.strip()] for w in args.workload]
+    for names in workloads:
+        unknown = sorted(set(names) - set(models))
+        if len(names) == 0 or unknown:
+            err_msg = f"workload {names} must name DNNs from --model, unknown: {unknown}"
+            raise ValueError(err_msg)
+    config = _make_config(args)
+    if args.prebuild and config.max_transitions is None:
+        err_msg = "--prebuild needs a transition limit"
+        raise ValueError(err_msg)
+    rounds: list[dict] = []
+    segments: list[dict] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        engine_dir = args.engine_dir if args.engine_dir is not None else tmp
+        if args.prebuild and config.max_transitions is not None:
+            prebuild_engines(
+                models,
+                traits,
+                engine_dir,
+                max_transitions=config.max_transitions,
+                dla_core=_dla_core(args),
+                verbose=args.verbose,
+            )
+        runtime = HaxConn(
+            models,
+            traits,
+            _contention(args.calibration),
+            config,
+            engine_dir=engine_dir,
+            dla_core=_dla_core(args),
+            active=workloads[0],
+            dynamic=True,
+            build=args.build,
+            solver_core=args.solver_core,
+            verbose=args.verbose,
+        )
+        t0 = time.monotonic()
+        try:
+            for cycle in range(args.cycles):
+                for i, names in enumerate(workloads):
+                    if cycle > 0 or i > 0:
+                        runtime.set_active(names)
+                    start = time.monotonic() - t0
+                    segment: list[dict] = []
+                    while time.monotonic() - t0 - start < args.period:
+                        searching = runtime.searching
+                        runtime.mock_execute()
+                        t = time.monotonic() - t0
+                        workload = ",".join(names)
+                        segment.append(_record(runtime, t, cycle, workload, searching=searching))
+                    rounds.extend(segment)
+                    segments.append({"cycle": cycle, **_segment(segment, start)})
+        finally:
+            runtime.close()
+
+    LOG.info("D-HaX-CoNN Run")
+    LOG.info("=" * 60)
+    for seg in segments:
+        _log_segment(seg)
+    LOG.info("=" * 60)
+    if args.output is not None:
+        with Path(args.output).open("w") as f:
+            json.dump({"segments": segments, "rounds": rounds}, f, indent=2)
+        LOG.info(f"Saved to: {args.output}")
+
+
 def _add_config_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--preset",
@@ -261,6 +444,13 @@ def _add_config_flags(parser: argparse.ArgumentParser) -> None:
         if name in _CONFIG_CHOICES:
             parser.add_argument(
                 f"--{name}", choices=_CONFIG_CHOICES[name], default=argparse.SUPPRESS, help=help_text
+            )
+        elif name == "update_ms":
+            parser.add_argument(
+                f"--{name}",
+                nargs="+",
+                default=argparse.SUPPRESS,
+                help=f"{help_text} Milliseconds; 'none': switch on every improvement.",
             )
         elif name == "max_transitions":
             parser.add_argument(
@@ -417,3 +607,84 @@ def register_cli(
     )
     _add_config_flags(run_parser)
     run_parser.set_defaults(func=_run)
+
+    model_help = "A DNN, its ONNX model and its traits JSON. Repeat for every DNN."
+    prebuild_parser = haxconn_subparsers.add_parser(
+        "prebuild",
+        help="Build the engine of every assignment a solver can pick (for D-HaX-CoNN).",
+        parents=general_dla,
+    )
+    prebuild_parser.add_argument(
+        "--model",
+        action="append",
+        nargs=3,
+        required=True,
+        metavar=("NAME", "ONNX", "TRAITS"),
+        help=model_help,
+    )
+    prebuild_parser.add_argument(
+        "--engine_dir", required=True, help="Directory for the engines (the runtime's)."
+    )
+    prebuild_parser.add_argument(
+        "--max_transitions", type=int, default=1, help="Transition limit. Default 1."
+    )
+    prebuild_parser.add_argument(
+        "--workspace", type=float, default=4.0, help="TensorRT workspace in GiB. Default 4.0."
+    )
+    prebuild_parser.add_argument(
+        "--timing_cache", default=None, help="Timing cache shared by the builds."
+    )
+    prebuild_parser.set_defaults(func=_prebuild)
+
+    dynamic_parser = haxconn_subparsers.add_parser(
+        "dynamic",
+        help="D-HaX-CoNN on a changing set of DNNs: report how each set converges.",
+        parents=general_dla,
+    )
+    dynamic_parser.add_argument(
+        "--model",
+        action="append",
+        nargs=3,
+        required=True,
+        metavar=("NAME", "ONNX", "TRAITS"),
+        help=model_help,
+    )
+    dynamic_parser.add_argument(
+        "--workload",
+        action="append",
+        required=True,
+        metavar="NAMES",
+        help="Comma-separated DNNs that run together. Repeat; they run in order.",
+    )
+    dynamic_parser.add_argument(
+        "--period", type=float, default=10.0, help="Seconds per workload. Default 10 (paper)."
+    )
+    dynamic_parser.add_argument(
+        "--cycles", type=int, default=1, help="Times to run the workload sequence. Default 1."
+    )
+    dynamic_parser.add_argument("--calibration", default=None, help=contention_help)
+    dynamic_parser.add_argument(
+        "--engine_dir", default=None, help="Directory that keeps the engines. Default temporary."
+    )
+    dynamic_parser.add_argument(
+        "--prebuild",
+        action="store_true",
+        help="Build every engine the solver can pick before running.",
+    )
+    dynamic_parser.add_argument(
+        "--build",
+        choices=["background", "prebuilt"],
+        default="background",
+        help=(
+            "background: build a better schedule's engines while running; prebuilt: only "
+            "switch to schedules whose engines exist. Default background."
+        ),
+    )
+    dynamic_parser.add_argument(
+        "--solver_core", type=int, default=None, help="CPU core to pin the solver to."
+    )
+    dynamic_parser.add_argument(
+        "--output", default=None, help="JSON file to write every round and the summary to."
+    )
+    _add_config_flags(dynamic_parser)
+    dynamic_parser.set_defaults(func=_dynamic)

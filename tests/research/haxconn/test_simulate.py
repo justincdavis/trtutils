@@ -8,11 +8,26 @@ from __future__ import annotations
 import pytest
 
 from tests.research.haxconn.conftest import XAVIER, make_traits
-from trtutils.research.haxconn import HaxConnConfig, simulate
+from trtutils.research.haxconn import HaxConnConfig, assignment_options, simulate
 
 pytestmark = pytest.mark.cpu
 
 _NONE = HaxConnConfig(contention="none")
+
+
+@pytest.mark.parametrize(
+    ("dla", "limit", "expected"),
+    [
+        pytest.param([0.1, 0.1, 0.1], 0, ["GGG", "DDD"], id="no-transition"),
+        pytest.param([0.1, 0.1, 0.1], 1, ["GGG", "DDD", "GDD", "DGG", "GGD", "DDG"], id="one"),
+        pytest.param([None, 0.1, 0.1], 1, ["GGG", "GDD", "GGD"], id="gpu-only-head"),
+    ],
+)
+def test_assignment_options(dla, limit, expected) -> None:
+    """Every assignment within the limit that the groups allow, GPU-only first."""
+    options = assignment_options(make_traits([1.0, 1.0, 1.0], dla), limit)
+    codes = ["".join("D" if acc == "dla" else "G" for acc in accs) for accs in options]
+    assert codes == expected
 
 
 def test_transitions_and_queueing() -> None:

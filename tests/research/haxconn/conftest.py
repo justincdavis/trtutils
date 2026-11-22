@@ -5,9 +5,15 @@
 
 from __future__ import annotations
 
+import threading
+import time
+from pathlib import Path
+
+import numpy as np
 import pytest
 
-from trtutils.research.haxconn import GroupTraits, ModelTraits, PCCSModel
+from trtutils.research.haxconn import GroupTraits, ModelTraits, PCCSModel, _build, _haxconn
+from trtutils.research.haxconn._build import engine_paths
 
 # the PCCS paper's Xavier AGX fits (Table 7)
 XAVIER = {
@@ -71,3 +77,50 @@ def paper_traits() -> dict[str, ModelTraits]:
         dla_memory=[38, 49, 43, 37, 27, 39, 32, 30],
     )
     return {"googlenet": googlenet, "alexnet": alexnet}
+
+
+class _FakeEngine:
+    """Stands in for TRTEngine: sleeps briefly per run."""
+
+    _capture_lock = threading.Lock()
+
+    def __init__(self, path, **_kwargs: object) -> None:
+        self.path = Path(path)
+
+    def execute(self, _data) -> list[np.ndarray]:
+        time.sleep(0.001)
+        return [np.zeros(1, dtype=np.float32)]
+
+    def get_random_input(self) -> list[np.ndarray]:
+        return [np.zeros(1, dtype=np.float32)]
+
+
+@pytest.fixture
+def fakes(monkeypatch):
+    """Fake engines and builds for the runtime; returns the loaded and built engine names."""
+    loads: list[str] = []
+    builds: list[str] = []
+
+    class _Loaded(_FakeEngine):
+        def __init__(self, path, **kwargs: object) -> None:
+            super().__init__(path, **kwargs)
+            loads.append(self.path.name)
+
+    def build(models, traits, schedule, output_dir, **kwargs: object):
+        paths = engine_paths(models, traits, schedule, output_dir, kwargs.get("data_batchers"))
+        for path in paths.values():
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+                builds.append(path.name)
+        return paths
+
+    def build_one(_onnx, _traits, _accs, path, *_args: object, **_kwargs: object):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+        builds.append(path.name)
+
+    monkeypatch.setattr(_haxconn, "TRTEngine", _Loaded)
+    monkeypatch.setattr(_haxconn, "build_engines", build)
+    monkeypatch.setattr(_build, "_build_one", build_one)
+    return loads, builds

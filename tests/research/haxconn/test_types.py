@@ -32,6 +32,8 @@ pytestmark = pytest.mark.cpu
         pytest.param({"memory_metric": "p99"}, "Unknown metric", id="memory-metric"),
         pytest.param({"max_transitions": -1}, "max_transitions is out of range", id="transitions"),
         pytest.param({"time_budget": 0.0}, "time_budget is out of range", id="budget"),
+        pytest.param({"update_ms": (100.0, 50.0)}, "update_ms is out of range", id="updates"),
+        pytest.param({"update_ms": (-1.0,)}, "update_ms is out of range", id="negative-update"),
         pytest.param(
             {"solver": "exhaustive", "max_transitions": None},
             "needs max_transitions",
@@ -51,6 +53,8 @@ def test_config_presets() -> None:
     assert (paper.contention, paper.memory_metric, paper.max_transitions) == ("overlap", "median", 1)
     assert (upstream.contention, upstream.memory_metric) == ("static", "max")
     assert HaxConnConfig(max_transitions=None, time_budget=None).max_transitions is None
+    assert paper.update_ms == (25.0, 100.0, 250.0, 500.0, 1500.0)
+    assert HaxConnConfig(update_ms=[0, 10]).update_ms == (0.0, 10.0)
 
 
 def test_traits_round_trip(tmp_path, paper_traits) -> None:

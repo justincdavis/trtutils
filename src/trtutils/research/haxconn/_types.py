@@ -213,6 +213,11 @@ class HaxConnConfig:
         Reduction of raw time samples: "mean", "median", "min" or "max". Default is "mean".
     memory_metric : str
         Reduction of raw memory throughput samples, same choices. Default is "median".
+    update_ms : tuple[float, ...] | None
+        D-HaX-CoNN only: the times after a search starts, in milliseconds, at which the
+        runtime switches to the best schedule found so far; after the last one it
+        switches on every improvement. None switches on every improvement right away.
+        Default is the paper's (25, 100, 250, 500, 1500).
 
     """
 
@@ -223,6 +228,7 @@ class HaxConnConfig:
     time_budget: float | None = 30.0
     latency_metric: str = "mean"
     memory_metric: str = "median"
+    update_ms: tuple[float, ...] | None = (25.0, 100.0, 250.0, 500.0, 1500.0)
 
     def __post_init__(self: Self) -> None:
         choices = {
@@ -236,9 +242,14 @@ class HaxConnConfig:
                 raise ValueError(err_msg)
         reduce_values([0.0], self.latency_metric)
         reduce_values([0.0], self.memory_metric)
+        if self.update_ms is not None:
+            self.update_ms = tuple(float(t) for t in self.update_ms)
+        updates = self.update_ms if self.update_ms is not None else ()
         bounds = {
             "max_transitions": self.max_transitions is None or self.max_transitions >= 0,
             "time_budget": self.time_budget is None or self.time_budget > 0.0,
+            # ascending, from 0
+            "update_ms": all(a < b for a, b in zip((-1e-9, *updates), updates)),
         }
         for name, ok in bounds.items():
             if not ok:
