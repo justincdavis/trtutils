@@ -157,6 +157,8 @@ Performance
 
 Fixed
 ^^^^^
+* The CLI now errors on unrecognized arguments instead of silently ignoring them (only
+  ``trtexec`` forwards unknown arguments). Fixed the ``--shape`` help text typo
 * ``RFDETR.build()`` FP16 engines detect again on TensorRT 8.6 (Jetson). The transformer
   LayerNorms now build in FP32; before, rfdetr_s and rfdetr_m found nothing and rfdetr_n only
   low-confidence noise. The rest of the model stays FP16, about 2x faster than an FP32 build

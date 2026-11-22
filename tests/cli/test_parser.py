@@ -74,13 +74,25 @@ def test_subcommand_help_exits_zero(subcommand) -> None:
         pytest.param(["trtutils", "classify"], id="classify-no-engine-input"),
         pytest.param(["trtutils", "inspect"], id="inspect-no-engine"),
         pytest.param(["trtutils", "profile"], id="profile-no-engine-output"),
+        pytest.param(
+            ["trtutils", "build", "--onnx", _ONNX, "--output", _OUT_ENGINE, "--shapes", "a:1"],
+            id="build-unrecognized-arg",
+        ),
     ],
 )
-def test_missing_required_args_exit_2(argv) -> None:
-    """Missing required positional/flag args cause exit code 2."""
+def test_invalid_args_exit_2(argv) -> None:
+    """Missing required args or unrecognized flags cause exit code 2."""
     with patch("sys.argv", argv), pytest.raises(SystemExit) as exc_info:
         _main()
     assert exc_info.value.code == 2
+
+
+def test_trtexec_passthrough_args() -> None:
+    """Trtexec forwards unknown args instead of erroring."""
+    argv = ["trtutils", "trtexec", "--onnx=/fake/m.onnx", "--fp16"]
+    with patch("sys.argv", argv), patch("trtutils.__main__.cli_trtexec") as mock_fn:
+        _main()
+    assert mock_fn.call_args.args[0] == ["--onnx=/fake/m.onnx", "--fp16"]
 
 
 @pytest.mark.parametrize(
