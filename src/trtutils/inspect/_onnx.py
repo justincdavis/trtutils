@@ -90,10 +90,12 @@ def inspect_onnx_layers(  # noqa: C901
 
         # Calculate input tensor size
         input_size = 0
+        input_names: list[str] = []
         for in_idx in range(trt_layer.num_inputs):
             inp = trt_layer.get_input(in_idx)
             if inp is not None:
                 input_size += get_tensor_size(inp)
+                input_names.append(inp.name)
 
         layer = LayerInfo(
             index=idx,
@@ -104,6 +106,7 @@ def inspect_onnx_layers(  # noqa: C901
             output_tensor_size=output_size,
             dla_compatible=idx in dla_layer_indices,
             outputs=tuple(output_names),
+            inputs=tuple(input_names),
         )
         layers.append(layer)
 

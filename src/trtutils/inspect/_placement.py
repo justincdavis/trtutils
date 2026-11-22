@@ -195,6 +195,7 @@ class PlacementReport:
                 if layer["precision"] is None
                 else getattr(trt.DataType, layer["precision"]),
                 "outputs": tuple(layer["outputs"]),
+                "inputs": tuple(layer.get("inputs", ())),
             }
             for layer in data["network_layers"]
         ]

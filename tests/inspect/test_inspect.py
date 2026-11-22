@@ -15,7 +15,7 @@ import tensorrt as trt
 from onnx import TensorProto, helper, numpy_helper
 
 from trtutils import FLAGS
-from trtutils.builder import build_engine
+from trtutils.builder import build_engine, read_onnx
 from trtutils.inspect import (
     LayerInfo,
     PlacementReport,
@@ -110,6 +110,12 @@ def test_inspect_onnx_layers(onnx_fixture, request) -> None:
         assert isinstance(layer.input_tensor_size, int)
         assert isinstance(layer.output_tensor_size, int)
         assert isinstance(layer.dla_compatible, bool)
+    # every tensor a layer reads is a network input or another layer's output
+    network, *_ = read_onnx(onnx_path)
+    network_inputs = {network.get_input(i).name for i in range(network.num_inputs)}
+    produced = {name for layer in layers for name in layer.outputs}
+    consumed = {name for layer in layers for name in layer.inputs}
+    assert consumed - produced == network_inputs
 
 
 def test_inspect_engine_nonexistent_raises() -> None:

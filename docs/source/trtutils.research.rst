@@ -9,6 +9,7 @@ Subpackages
 
    trtutils.research.axonn
    trtutils.research.drift
+   trtutils.research.haxconn
    trtutils.research.shift
 
 Module contents

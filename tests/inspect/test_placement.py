@@ -24,8 +24,9 @@ def _layer(
     *,
     dla_compatible: bool = True,
     outputs: tuple[str, ...] = (),
+    inputs: tuple[str, ...] = (),
 ) -> LayerInfo:
-    return LayerInfo(index, name, layer_type, None, 0, 0, dla_compatible, outputs)
+    return LayerInfo(index, name, layer_type, None, 0, 0, dla_compatible, outputs, inputs)
 
 
 def _fixture_report(name: str) -> PlacementReport:
@@ -38,6 +39,7 @@ def _fixture_report(name: str) -> PlacementReport:
             n["layer_type"],
             dla_compatible=n["dla_compatible"],
             outputs=tuple(n.get("outputs", ())),
+            inputs=(f"{n['name']}:in",),
         )
         for n in fixture["network_layers"]
     ]
