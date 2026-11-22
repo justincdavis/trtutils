@@ -6,26 +6,27 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, overload
 
+import numpy as np
 import nvtx
 from typing_extensions import Literal
 
 from trtutils._flags import FLAGS
 from trtutils._log import LOG
+from trtutils.core._buffer import Buffer
 
 from ._image_model import ImageModel
 from ._schema import FeatureExtractorOutputSchema
 from .interfaces import FeatureExtractorInterface
 from .postprocessors import get_embeddings, get_feature_maps, postprocess_features
+from .preprocessors import crop_boxes
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    import numpy as np
     from typing_extensions import Self
 
-    from trtutils.core._buffer import Buffer
-    from trtutils.image.types import Embedding, FeatureMap
+    from trtutils.image.types import Bbox, Embedding, FeatureMap
 
     from ._image_model import _PostFn
 
@@ -177,6 +178,7 @@ class FeatureExtractor(ImageModel, FeatureExtractorInterface):
                 "feat_postprocess": f"feature_extractor::postprocess [{self._tag}]",
                 "feat_get_embeddings": f"feature_extractor::get_embeddings [{self._tag}]",
                 "feat_get_feature_maps": f"feature_extractor::get_feature_maps [{self._tag}]",
+                "feat_end2end_boxes": f"feature_extractor::end2end_boxes [{self._tag}]",
             }
         )
 
@@ -624,3 +626,70 @@ class FeatureExtractor(ImageModel, FeatureExtractorInterface):
             post=self._post_fn(normalize=normalize, verbose=verbose),
             get=lambda pp: get_embeddings(pp, verbose=verbose),
         )
+
+    def end2end_boxes(
+        self: Self,
+        image: np.ndarray | Buffer,
+        boxes: np.ndarray | Sequence[Bbox],
+        *,
+        normalize: bool | None = None,
+        verbose: bool | None = None,
+    ) -> np.ndarray:
+        """
+        Embed the crop of each box in an image, e.g. the detections of a frame.
+
+        The boxes are cropped with :func:`~trtutils.image.preprocessors.crop_boxes`
+        (clipped to the image, float coordinates widened to whole pixels), then
+        run through :meth:`end2end` in chunks of the engine batch size, so any
+        number of boxes works. On a static-batch engine the last chunk is padded
+        by repeating its final crop, and the padded rows are dropped.
+
+        Parameters
+        ----------
+        image : np.ndarray | Buffer
+            The image (HWC format) the boxes are in. A device Buffer is copied
+            to the host for cropping.
+        boxes : np.ndarray | Sequence[Bbox]
+            The boxes as (x1, y1, x2, y2) in pixels of ``image``, an (N, 4) array
+            or a sequence of Bbox.
+        normalize : bool, optional
+            Whether to L2 normalize the embeddings.
+            By default None, which uses the constructor's ``normalize``.
+        verbose : bool, optional
+            Whether or not to log additional information.
+
+        Returns
+        -------
+        np.ndarray
+            The (N, D) float32 embeddings, one row per box in box order.
+            No boxes gives a (0, D) array without running the engine.
+
+        Raises
+        ------
+        ValueError
+            If ``boxes`` is not (N, 4), or a box has no area inside the image.
+
+        """
+        if verbose:
+            LOG.debug(f"{self._tag}: end2end_boxes")
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["feat_end2end_boxes"])
+        try:
+            crops = crop_boxes(image.numpy() if isinstance(image, Buffer) else image, boxes)
+            rows: list[Embedding] = []
+            for start in range(0, len(crops), self._batch_size):
+                chunk = crops[start : start + self._batch_size]
+                count = len(chunk)
+                if not self.is_dynamic_batch:
+                    chunk += [chunk[-1]] * (self._batch_size - count)
+                # each embedding is a new array, so later engine calls do not overwrite it
+                rows.extend(self.end2end(chunk, normalize=normalize, verbose=verbose)[:count])
+            if rows:
+                return np.stack(rows)
+            # the embedding width, from the engine's first (embedding) output
+            width = int(np.prod(self._order_outputs(self._engine.output_spec)[0][0][1:]))
+            return np.zeros((0, width), dtype=np.float32)
+        finally:
+            if FLAGS.NVTX_ENABLED:
+                nvtx.pop_range()  # end2end_boxes
