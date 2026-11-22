@@ -5,13 +5,19 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from contextlib import ExitStack
 from unittest.mock import patch
 
+import numpy as np
+import onnx
 import pytest
+from onnx import helper, numpy_helper
 
 from tests.download.conftest import ROUTING_CASES, patch_exporter
 from trtutils.download import download, download_model, load_model_configs
+from trtutils.download._make_static import _MAKE_STATIC_SCRIPT
 from trtutils.download._models import export_deimv2, export_yolox
 from trtutils.download._simplify import simplify
 from trtutils.download._tools import check_uv_available, handle_imgsz
@@ -61,6 +67,21 @@ def test_simplify_arg_routing(tmp_path, simplify_arg, expected_tools) -> None:
         download_model("yolov10n", tmp_path, simplify=simplify_arg)
         mock_simplify.assert_called_once()
         assert mock_simplify.call_args.kwargs["tools"] == expected_tools
+
+
+@pytest.mark.parametrize("external", [False, True], ids=["inline", "external-data"])
+def test_simplify_skipped_for_external_data(tmp_path, fake_venv, external) -> None:
+    """A model whose weights the exporter put in a .data sidecar (over 2GB) is not simplified."""
+    fake_python, fake_bin, fake_output = fake_venv
+    if external:
+        fake_output.with_name("model.onnx.data").touch()
+    with patch(
+        "trtutils.download._download.make_venv", return_value=(fake_python, fake_bin)
+    ), patch_exporter("timm_features", fake_output), patch(
+        "trtutils.download._download._simplify.simplify"
+    ) as mock_simplify:
+        download_model("dinov3_vith16plus", tmp_path, simplify=True, no_warn=True)
+    assert mock_simplify.called is not external
 
 
 @pytest.mark.usefixtures("patched_yolov10_export")
@@ -222,3 +243,35 @@ def test_license_notice(tmp_path, fake_venv, model, exporter, expected, no_warn)
         (call,) = mock_warning.call_args_list
         assert model in call.args[0]
         assert expected in call.args[0]
+
+
+def test_make_static_keeps_external_data(tmp_path) -> None:
+    """make_static rewrites only the graph of a model whose weights live in a .data sidecar."""
+    weight = numpy_helper.from_array(np.arange(4096, dtype=np.float32), name="weight")
+    graph = helper.make_graph(
+        [helper.make_node("Add", ["input", "weight"], ["output"])],
+        "external",
+        [helper.make_tensor_value_info("input", onnx.TensorProto.FLOAT, ["batch", 4096])],
+        [helper.make_tensor_value_info("output", onnx.TensorProto.FLOAT, ["batch", 4096])],
+        [weight],
+    )
+    model_path = tmp_path / "model.onnx"
+    onnx.save(
+        helper.make_model(graph),
+        model_path,
+        save_as_external_data=True,
+        location="model.onnx.data",
+        size_threshold=0,
+    )
+    sidecar = (tmp_path / "model.onnx.data").read_bytes()
+
+    subprocess.run(  # noqa: S603
+        [sys.executable, "-c", _MAKE_STATIC_SCRIPT, str(model_path)], check=True
+    )
+
+    assert (tmp_path / "model.onnx.data").read_bytes() == sidecar
+    static = onnx.load(str(model_path))
+    assert [d.dim_value for d in static.graph.input[0].type.tensor_type.shape.dim] == [1, 4096]
+    np.testing.assert_array_equal(
+        numpy_helper.to_array(static.graph.initializer[0]), np.arange(4096, dtype=np.float32)
+    )

@@ -71,7 +71,8 @@ _MAKE_STATIC_SCRIPT = textwrap.dedent("""\
     import onnx
 
     model_path = sys.argv[1]
-    model = onnx.load(model_path)
+    # weights over 2GB stay in their external file, only the graph is rewritten
+    model = onnx.load(model_path, load_external_data=False)
     changed = False
     for inp in model.graph.input:
         for dim in inp.type.tensor_type.shape.dim:

@@ -101,6 +101,10 @@ Feature Extraction
      computed with an antialiased resize such as upstream's transform (cosine similarity
      0.96 to 0.98 on average and as low as 0.90 on the test images). Embed queries and
      galleries with the same pipeline
+   - The export scales the residual stream by 1/16 (and each LayerNorm epsilon by 1/256), which
+     leaves the outputs unchanged but keeps ViT-L and ViT-H+ inside the FP16 range
+   - ``dinov3_vith16plus`` is over 2GB: its weights are written to ``dinov3_vith16plus.onnx.data``
+     beside the ONNX (keep the two together) and it is not simplified
 
 Classification
 --------------
@@ -246,7 +250,8 @@ Depth Estimation Models
 Feature Extraction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- **DINOv3**: ``dinov3_vits16``, ``dinov3_vits16plus``, ``dinov3_vitb16`` (via timm; default size
+- **DINOv3**: ``dinov3_vits16``, ``dinov3_vits16plus``, ``dinov3_vitb16``, ``dinov3_vitl16``,
+  ``dinov3_vith16plus`` (via timm; default size
   256, any multiple of 16; batch-dynamic by default)
 
 Hand-Object Interaction Models
@@ -327,7 +332,7 @@ for the weights: check the source before using them.
      - ``small``: Apache-2.0; ``base``, ``large``: CC-BY-NC-4.0
    * - Depth-Anything-V3 (``mono_large``, ``metric_large``)
      - Apache-2.0
-   * - DINOv3 (timm mirrors of the LVD-1689M ViT-S, S+, B)
+   * - DINOv3 (timm mirrors of the LVD-1689M ViT-S, S+, B, L, H+)
      - DINOv3 License: Meta's custom license, commercial use allowed; read its terms
        (the upstream Meta repositories are gated, the timm mirrors are not)
    * - HOI-DETR

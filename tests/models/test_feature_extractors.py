@@ -22,6 +22,8 @@ FEATURE_EXTRACTORS = [
     pytest.param(DINOv3, _DINOV3 / "dinov3_vits16_256.onnx", 384, 12, id="dinov3-vits16"),
     pytest.param(DINOv3, _DINOV3 / "dinov3_vits16plus_256.onnx", 384, 12, id="dinov3-vits16plus"),
     pytest.param(DINOv3, _DINOV3 / "dinov3_vitb16_256.onnx", 768, 12, id="dinov3-vitb16"),
+    pytest.param(DINOv3, _DINOV3 / "dinov3_vitl16_256.onnx", 1024, 24, id="dinov3-vitl16"),
+    pytest.param(DINOv3, _DINOV3 / "dinov3_vith16plus_256.onnx", 1280, 32, id="dinov3-vith16plus"),
 ]
 
 

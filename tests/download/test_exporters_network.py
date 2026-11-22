@@ -129,6 +129,13 @@ EXPORT_CASES = [
         {"input": [2, 3, 224, 224]},
         id="timm-features-b2",
     ),
+    # over 2GB: weights in a .data sidecar, simplify skipped
+    pytest.param(
+        "dinov3_vith16plus",
+        {"simplify": True},
+        {"input": [_BATCH, 3, 256, 256]},
+        id="timm-features-external-data",
+    ),
     pytest.param("hands23_x101", {}, {"input": [1, 3, 800, 800]}, id="hands23"),
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),

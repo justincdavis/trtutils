@@ -24,9 +24,10 @@ class DINOv3(FeatureExtractor, Model):
     and the patch tokens as a (C, imgsz / 16, imgsz / 16) feature map; the
     register tokens are dropped. Any input size divisible by the patch size (16)
     can be downloaded, 256 is the timm default. The attention logits overflow
-    FP16, so FP16 builds keep the attention matmul and softmax in FP32.
-    ViT-L and ViT-H+ are not offered yet: their residual stream exceeds the
-    FP16 range.
+    FP16, so FP16 builds keep the attention matmul and softmax in FP32. The
+    residual stream of ViT-L and ViT-H+ also exceeds the FP16 range, so the
+    download scales it by 1/16 (the outputs are unchanged, every LayerNorm is
+    scale invariant); build from ONNX made by ``download``.
     """
 
     _model_type = "dinov3"

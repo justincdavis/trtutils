@@ -185,6 +185,7 @@ class Model:
             Whether and how to simplify the ONNX model after export. True (default) runs
             the default tools (polygraphy, onnxslim), a sequence of tool names runs those
             in order (valid: "polygraphy", "onnxslim", "onnxsim"), False or None skips it.
+            Models over 2GB (weights in an external ``.data`` file) are not simplified.
         no_cache : bool | None
             Disable caching of downloaded weights and repos.
         verbose : bool | None
