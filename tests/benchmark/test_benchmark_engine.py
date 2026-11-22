@@ -65,6 +65,15 @@ def test_benchmark_engine_iterations(engine_path, iterations) -> None:
     assert len(result.latency.raw) == iterations
 
 
+@pytest.mark.parametrize("iterations", [pytest.param(0, id="zero"), pytest.param(-1, id="negative")])
+def test_benchmark_engine_rejects_no_iterations(iterations) -> None:
+    """Fewer than one iteration raises before the engine is touched."""
+    engine = MagicMock()
+    with pytest.raises(ValueError, match="iterations must be at least 1"):
+        benchmark_engine(engine, iterations=iterations)
+    engine.mock_execute.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("warmup", "expected_extra"),
     [

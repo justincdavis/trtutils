@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from jetsontools import TegraStats, filter_data, get_powerdraw, parse_tegrastats
 
-from trtutils._benchmark import Metric
+from trtutils._benchmark import Metric, _check_iterations
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 from trtutils.parallel._parallel_engines import ParallelTRTEngines
@@ -64,8 +64,7 @@ def _collect_power_data(
 
     """
     tegradata = parse_tegrastats(temp_file)
-    if temp_file.exists():
-        temp_file.unlink()
+    temp_file.unlink(missing_ok=True)
 
     # filter the data by actual times during execution
     filtered_data, per_inference = filter_data(tegradata, start_stop_times)
@@ -143,11 +142,14 @@ def benchmark_engine(
 
     Raises
     ------
+    ValueError
+        If iterations is less than 1.
     RuntimeError
         If no tegrastats sample falls inside any inference, e.g. a fast engine with a large
         tegra_interval. Lower tegra_interval or increase iterations.
 
     """
+    _check_iterations(iterations)
     warmup = warmup if warmup is not None else True
     loaded_engine: bool = False
     if isinstance(engine, (Path, str)):
@@ -257,11 +259,14 @@ def benchmark_engines(
 
     Raises
     ------
+    ValueError
+        If iterations is less than 1.
     RuntimeError
         If no tegrastats sample falls inside any inference, e.g. a fast engine with a large
         tegra_interval. Lower tegra_interval or increase iterations.
 
     """
+    _check_iterations(iterations)
     warmup = warmup if warmup is not None else True
     temp_engines: list[Path | TRTEngine] = []
     dla_assignments: list[int | None] = []

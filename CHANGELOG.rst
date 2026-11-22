@@ -160,6 +160,9 @@ Fixed
 * ``jetson.benchmark_engine`` / ``benchmark_engines`` raise a ``RuntimeError`` naming
   ``tegra_interval`` and ``iterations`` when no tegrastats sample lands inside an inference
   (previously an opaque ``ValueError``), and warn when only some inferences have a sample
+* ``benchmark_engine`` / ``benchmark_engines`` and their ``jetson`` versions raise
+  ``ValueError`` for ``iterations < 1`` before building engines. ``iterations=0`` used to fail
+  after the run with "Raw data cannot be empty"
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
   swapped, which misplaced boxes, keypoints, and masks on non-square model inputs
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
