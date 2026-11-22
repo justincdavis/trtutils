@@ -30,8 +30,11 @@ accelerator with both costs in the model and a solver that proves its schedule o
    mutual exclusion per accelerator (Eq. 9), and contention over the intervals in which
    groups overlap (Eqs. 7-8). Objectives: maximum summed throughput (Eq. 10) or minimum
    maximum latency (Eq. 11). Solved with Z3.
-5. **D-HaX-CoNN** (Section 3.5): start from the best naive schedule, keep solving while the
-   DNNs run, and switch to each better schedule found.
+5. **D-HaX-CoNN** (Sections 3.5 and 5.3): the set of DNNs that run together changes as
+   the system moves between phases. Each new set starts on the best naive schedule while Z3
+   runs on one CPU core, and the runtime switches to the best schedule found so far 25 ms,
+   100 ms, 250 ms, 500 ms and 1.5 s after the solver starts, until no better one exists. A
+   schedule found for a set is reused while the set runs.
 
 ### Results (from paper)
 
@@ -59,6 +62,24 @@ variance without locked clocks is of that order, so lock them (`sudo jetson_cloc
 comparisons. Predictions of the slowest DNN are within 10% when it runs on the GPU; DLA
 predictions run high.
 
+D-HaX-CoNN on the paper's Section 5.3 scenario (three sets of DNNs for 10 s each, twice;
+all 30 engines prebuilt in 6.5 min; Z3 pinned to one core; slowest DNN's median round, ms):
+
+| Set | Proven optimal after | While solving | After | Overhead |
+| --- | --- | --- | --- | --- |
+| ResNet34 + VGG16 | 0.34 s | 1.70 | 1.69 | +0.6% |
+| ResNet18 + ResNet34 + VGG16 | not within 10 s | 1.88-1.97 | 1.84-1.88 | +3% |
+| ResNet18 + ResNet34 | 0.30 s | 0.81-0.85 | 0.82 | under 4% |
+
+Every set's optimum is again its naive schedule, so no switch was needed; the second time a
+set ran it started on its proven schedule without a search. Changing the set paused the
+DNNs for 10-15 ms (45-51 ms the first time a set needs an engine that is not loaded yet).
+For the three-DNN set Z3 needs 45 s to prove optimality, while `solver="exhaustive"`
+scores all 990 schedules within one transition per DNN in 0.44 s beside the running DNNs
+(at +15% round time while it runs): for small transition-limited problems, the exhaustive
+solver is the faster D-HaX-CoNN search. The paper reports 1.3-5.8 s to the optimum and
+under 2% overhead.
+
 ## How it works (this implementation)
 
 ```
@@ -81,6 +102,17 @@ answers unsat, which proves the best schedule optimal, or the time budget ends. 
 contention inside Z3 itself (Eq. 7) times out even for two small DNNs (Z3 4.14 answers
 `unknown` after 15-20 s per check for 10 + 8 groups), which is also why the reference solver
 dropped it.
+
+**D-HaX-CoNN.** `HaxConn(dynamic=True)` holds a pool of characterized DNNs;
+`set_active(names)` picks the ones that run together and may be called between any two
+rounds. A new set starts at once on the best schedule found for it before, or else on the
+best naive schedule, while two background threads run: one iterates `solve_iter()` (Z3 on
+one core with `solver_core`), the other loads the best schedule's engines at each
+`update_ms` time and hands them over between two rounds. Changing the set interrupts the
+old search. An engine depends only on its own DNN's assignment, so `prebuild_engines`
+builds every assignment within the transition limit once (9-11 per DNN for the CNNs below)
+and `build="prebuilt"` makes every switch a load; loaded engines stay in memory
+(`max_engines`), so a set that comes back switches without loading anything.
 
 `simulate` releases all DNNs together. A run of groups of one DNN on one accelerator holds
 the accelerator (a DLA subgraph cannot be preempted); DNNs waiting for a busy accelerator
@@ -121,8 +153,27 @@ outputs = runtime.mock_execute()  # or runtime.execute({name: inputs, ...})
 print(runtime.last)  # per-DNN latency of the round, ms
 runtime.close()
 
-# D-HaX-CoNN: start on a naive schedule, switch as the solver improves it
-runtime = HaxConn(models, traits, contention, engine_dir="engines", dynamic=True)
+# D-HaX-CoNN: build every engine a schedule can use, then change the running set at will
+pool = {**models, "resnet18": "resnet18.onnx"}
+pool_traits = {
+    **traits,
+    "resnet18": characterize("resnet18.onnx", max_groups=12, int8=True, memory=True),
+}
+prebuild_engines(pool, pool_traits, "engines")
+runtime = HaxConn(
+    pool,
+    pool_traits,
+    contention,
+    engine_dir="engines",
+    active=["resnet34", "vgg16"],
+    dynamic=True,
+    build="prebuilt",
+    solver_core=11,
+)
+runtime.mock_execute()  # starts naive, switches as Z3 finds better schedules
+runtime.set_active(["resnet18", "resnet34"])  # a new phase: a new search
+print(runtime.schedule, runtime.searching, runtime.schedules)
+runtime.close()
 ```
 
 ### Using the pieces on their own
@@ -148,6 +199,15 @@ python3 -m trtutils research haxconn solve --model resnet34 resnet34.json \
 python3 -m trtutils research haxconn run --model resnet34 resnet34.onnx resnet34.json \
     --model vgg16 vgg16.onnx vgg16.json --calibration calibration.json \
     --schedule schedule.json --baselines
+# D-HaX-CoNN: every engine a schedule can use, then three sets for 10 s each (paper Section 5.3)
+python3 -m trtutils research haxconn prebuild --model resnet18 resnet18.onnx resnet18.json \
+    --model resnet34 resnet34.onnx resnet34.json --model vgg16 vgg16.onnx vgg16.json \
+    --engine_dir engines
+python3 -m trtutils research haxconn dynamic --model resnet18 resnet18.onnx resnet18.json \
+    --model resnet34 resnet34.onnx resnet34.json --model vgg16 vgg16.onnx vgg16.json \
+    --calibration calibration.json --engine_dir engines --build prebuilt --solver_core 11 \
+    --workload resnet34,vgg16 --workload resnet18,resnet34,vgg16 --workload resnet18,resnet34 \
+    --period 10 --cycles 2 --output timeline.json
 ```
 
 ## Hyperparameters
@@ -161,11 +221,17 @@ python3 -m trtutils research haxconn run --model resnet34 resnet34.onnx resnet34
 | `time_budget` | `30.0` s | `30.0` s | Search budget; `None` searches until proven optimal |
 | `latency_metric` | `"mean"` | `"mean"` | Reduction of raw time samples |
 | `memory_metric` | `"median"` | `"max"` [3] | Reduction of raw EMC samples |
+| `update_ms` | `(25, 100, 250, 500, 1500)` | same [4] | D-HaX-CoNN switch times after a search starts; every improvement after the last; `None` switches on every improvement |
 
 [1] The reference solver applies a group's slowdown whether or not anything runs beside it.
 [2] The paper states no bound, but every schedule it reports has at most one transition per
 DNN and the reference solver enforces one.
 [3] The reference EMC script keeps each run's peak utilisation.
+[4] The reference implementation has no dynamic mode.
+
+Runtime options of `HaxConn` that the paper does not fix: `build` ("background" builds a
+better schedule's engines while the DNNs run, "prebuilt" switches only to engines already
+built), `solver_core`, `max_engines`.
 
 ## Paper erratum
 
@@ -177,6 +243,11 @@ DNN and the reference solver enforces one.
   time-weighted average slowdown, it is what `simulate` integrates.
 - **PCCS Eq. 5** writes its first condition as `TBWDC <= y`; by analogy with Eq. 3 it is
   `TBWDC <= x + y`.
+- **Section 5.3** lists the schedule updates as 25 ms to 1.5 s after Z3 starts, but reports
+  convergence after up to 5.8 s, so updates must continue after 1.5 s; here every
+  improvement after the last `update_ms` time is switched in. It also attributes the
+  slowest convergence to "the latter pair" with three DNNs, while the three-DNN experiment
+  is the second of the three in its order (Table 6 experiments 2, 5, 1).
 
 ## Differences from the reference implementation
 
@@ -196,6 +267,19 @@ implementation does not copy:
 - It has no throughput objective, time budget or dynamic mode.
 
 Choices where the papers are silent:
+
+- **How D-HaX-CoNN switches schedules**: the paper does not say whether engines are prebuilt
+  or how a new schedule takes effect. Here every DNN runs as one monolithic engine per
+  assignment (as in static mode), switched between two rounds; engines come from
+  `prebuild_engines` or are built in the background. A new set restarts the search from
+  the best schedule known for it, and a set with a proven-optimal schedule runs it without a
+  search.
+- **Solver beside the DNNs**: scoring schedules is pure Python, and a search thread that
+  scores back to back holds the interpreter lock, so the DNN worker threads wait up to 5 ms
+  per handover: rounds of the three-DNN set took 34-67 ms instead of 1.9 ms while the
+  exhaustive solver ran. The runtime's searches sleep 0.1 ms after each scored schedule
+  (`HaxConnScheduler(pause=...)`); `sleep(0)` is worse, since the solver takes the lock
+  straight back. Z3's own checks run in C without the lock.
 
 - **Transition points** need exactly one data tensor crossing the cut and no fused engine
   layer spanning it; constant-derived tensors (shapes, reshape targets) do not count.

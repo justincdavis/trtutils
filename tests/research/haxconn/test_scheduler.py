@@ -150,6 +150,33 @@ def test_interrupt_between_z3_calls_ends_cleanly(paper_traits, monkeypatch) -> N
     assert schedules[0].optimal is False
 
 
+def test_pause_sleeps_after_each_scored_schedule(paper_traits, monkeypatch) -> None:
+    """With a pause, scoring sleeps after every schedule; without one it never sleeps."""
+    slept = []
+    monkeypatch.setattr(_scheduler.time, "sleep", slept.append)
+    config = HaxConnConfig(solver="exhaustive")
+    HaxConnScheduler(paper_traits, XAVIER, config, pause=1e-4).solve()
+    assert len(slept) > 1
+    assert set(slept) == {1e-4}
+    slept.clear()
+    HaxConnScheduler(paper_traits, XAVIER, config).solve()
+    assert slept == []
+    with pytest.raises(ValueError, match="pause"):
+        HaxConnScheduler(paper_traits, XAVIER, config, pause=-1.0)
+
+
+def test_solve_iter_starts_from_a_better_schedule(paper_traits) -> None:
+    """A schedule found before replaces the naive start only when it is better."""
+    config = HaxConnConfig(solver="exhaustive")
+    scheduler = HaxConnScheduler(paper_traits, XAVIER, config)
+    naive = next(scheduler.solve_iter())
+    best = scheduler.solve()
+    assert next(scheduler.solve_iter(start=best)).assignments == best.assignments
+    gpu_only = scheduler.baselines()["gpu_only"]
+    assert next(scheduler.solve_iter(start=gpu_only)).assignments == naive.assignments
+    assert scheduler.solve().assignments == best.assignments
+
+
 def test_first_schedule_is_the_best_naive_within_the_limit() -> None:
     """A DNN whose DLA option breaks the transition limit stays on the GPU; the others may not."""
     alternating = make_traits([2.0, 2.0, 2.0, 2.0], [None, 0.1, None, 0.1])

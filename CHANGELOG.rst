@@ -128,11 +128,14 @@ Added
   contention for ``PCCSModel``. ``HaxConnScheduler`` lets Z3 propose mappings that
   ``simulate`` scores with overlap-aware contention until none can be better (or tries every
   mapping with ``solver="exhaustive"``); ``HaxConn`` runs the DNNs concurrently on one mixed
-  GPU/DLA engine each, and with ``dynamic=True`` starts on a naive schedule and switches to
-  better ones as they are found (D-HaX-CoNN). ``HaxConnConfig`` holds the paper's choices,
-  with ``HaxConnConfig.upstream()`` for the reference implementation's. Install with the
-  ``haxconn`` extra. CLI: ``trtutils research haxconn characterize`` / ``calibrate`` /
-  ``solve`` / ``run``
+  GPU/DLA engine each. With ``dynamic=True`` (D-HaX-CoNN) the set of running DNNs changes
+  with ``HaxConn.set_active``: each set starts on a naive schedule (or the best one found for
+  it before) and switches to better ones at the paper's update times while Z3 keeps solving,
+  on engines that ``prebuild_engines`` builds for every assignment a schedule can use.
+  ``HaxConnConfig`` holds the paper's choices, with ``HaxConnConfig.upstream()`` for the
+  reference implementation's. Install with the ``haxconn`` extra. CLI:
+  ``trtutils research haxconn characterize`` / ``calibrate`` / ``solve`` / ``run`` /
+  ``prebuild`` / ``dynamic``
 * ``LayerInfo.inputs``: the input tensor names of each layer from ``inspect_onnx_layers``
 
 Changed

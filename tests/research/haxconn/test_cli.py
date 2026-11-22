@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from unittest.mock import patch
 
 import pytest
@@ -82,3 +83,63 @@ def test_haxconn_solve_writes_a_schedule(tmp_path, paper_traits) -> None:
     schedule = load_schedule(tmp_path / "schedule.json")
     assert schedule.optimal is True
     assert set(schedule.assignments) == set(paper_traits)
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        pytest.param(["none"], None, id="none"),
+        pytest.param(["10", "50"], (10.0, 50.0), id="times"),
+    ],
+)
+def test_update_ms_flag(values, expected) -> None:
+    """--update_ms takes milliseconds or 'none' (switch on every improvement)."""
+    argv = ["trtutils", "research", "haxconn", "solve", "--model", "a", _JSON, "--update_ms"]
+    with patch("sys.argv", [*argv, *values]), patch("trtutils.research.haxconn._cli._solve") as mock:
+        _main()
+    assert _make_config(mock.call_args[0][0]).update_ms == expected
+
+
+@pytest.mark.parametrize("command", ["prebuild", "dynamic"])
+def test_dynamic_commands_help(command) -> None:
+    """The D-HaX-CoNN commands parse and print help."""
+    with patch("sys.argv", ["trtutils", "research", "haxconn", command, "--help"]):
+        with pytest.raises(SystemExit) as exc_info:
+            _main()
+    assert exc_info.value.code == 0
+
+
+def test_dynamic_runs_each_workload_and_writes_a_timeline(tmp_path, paper_traits, fakes) -> None:
+    """Dynamic runs every workload for its period and summarizes each in the JSON output."""
+    argv = ["trtutils", "research", "haxconn", "dynamic", "--contention", "none"]
+    for name, traits in paper_traits.items():
+        save_traits(traits, tmp_path / f"{name}.json")
+        (tmp_path / f"{name}.onnx").write_bytes(b"")
+        argv += ["--model", name, str(tmp_path / f"{name}.onnx"), str(tmp_path / f"{name}.json")]
+    argv += [
+        "--workload", "googlenet,alexnet",
+        "--workload", "alexnet",
+        "--period", "0.3",
+        "--cycles", "2",
+        "--solver", "exhaustive",
+        "--update_ms", "none",
+        "--prebuild",
+        "--build", "prebuilt",
+        "--engine_dir", str(tmp_path / "engines"),
+        "--output", str(tmp_path / "timeline.json"),
+    ]  # fmt: skip
+    with patch("sys.argv", argv):
+        _main()
+    result = json.loads((tmp_path / "timeline.json").read_text())
+    segments = result["segments"]
+    assert [(s["cycle"], s["workload"]) for s in segments] == [
+        (0, "googlenet,alexnet"),
+        (0, "alexnet"),
+        (1, "googlenet,alexnet"),
+        (1, "alexnet"),
+    ]
+    assert all(s["rounds"] > 0 for s in segments)
+    # the second time a set runs it starts on the schedule found the first time
+    assert segments[2]["first"] == segments[0]["final"]
+    assert segments[2]["switch_s"] == pytest.approx(0.0, abs=0.05)
+    assert len(result["rounds"]) == sum(s["rounds"] for s in segments)

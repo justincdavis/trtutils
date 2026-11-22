@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import itertools
 from collections import deque
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -281,3 +282,59 @@ def encode_assignment(traits: ModelTraits, accelerators: Sequence[str]) -> list[
             raise ValueError(err_msg)
         indices.append(ACCELERATORS.index(acc))
     return indices
+
+
+def assignment_options(traits: ModelTraits, max_transitions: int) -> list[tuple[str, ...]]:
+    """
+    List every assignment of one DNN within a transition limit.
+
+    These are all the assignments a solver can pick for the DNN, so building an engine
+    for each (:func:`prebuild_engines`) makes every schedule switch a load, not a build.
+
+    Parameters
+    ----------
+    traits : ModelTraits
+        The traits of the DNN.
+    max_transitions : int
+        The most GPU/DLA transitions an assignment may have.
+
+    Returns
+    -------
+    list[tuple[str, ...]]
+        The accelerator ("gpu" or "dla") of each group, per assignment, GPU-only first.
+
+    """
+    return [tuple(ACCELERATORS[a] for a in accs) for accs in option_indices(traits, max_transitions)]
+
+
+def option_indices(traits: ModelTraits, max_transitions: int) -> list[tuple[int, ...]]:
+    """
+    List every assignment of one DNN within a transition limit, as accelerator indices.
+
+    Parameters
+    ----------
+    traits : ModelTraits
+        The traits of the DNN.
+    max_transitions : int
+        The most GPU/DLA transitions an assignment may have.
+
+    Returns
+    -------
+    list[tuple[int, ...]]
+        The accelerator index (0 = GPU, 1 = DLA) of each group, per assignment.
+
+    """
+    count = len(traits.groups)
+    options: list[tuple[int, ...]] = []
+    for cuts in range(min(max_transitions, count - 1) + 1):
+        for points in itertools.combinations(range(1, count), cuts):
+            for first in (0, 1):
+                accs: list[int] = []
+                acc = first
+                for i in range(count):
+                    if i in points:
+                        acc = 1 - acc
+                    accs.append(acc)
+                if all(a == 0 or g.dla for a, g in zip(accs, traits.groups)):
+                    options.append(tuple(accs))
+    return options

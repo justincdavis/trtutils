@@ -29,7 +29,7 @@ from z3 import (
 from z3 import sat as z3_sat
 from z3 import unsat as z3_unsat
 
-from ._simulate import encode_assignment, make_timing, run_timeline
+from ._simulate import encode_assignment, make_timing, option_indices, run_timeline
 from ._types import ACCELERATORS, HaxConnConfig, Schedule
 
 if TYPE_CHECKING:
@@ -68,6 +68,8 @@ class HaxConnScheduler:
         traits: Mapping[str, ModelTraits],
         contention: Mapping[str, PCCSModel] | None = None,
         config: HaxConnConfig | None = None,
+        *,
+        pause: float = 0.0,
     ) -> None:
         """
         Create the scheduler.
@@ -82,14 +84,23 @@ class HaxConnScheduler:
             Default is None, only valid with contention "none".
         config : HaxConnConfig, optional
             The hyperparameters. Default is the paper's values.
+        pause : float, optional
+            Seconds to sleep after scoring each schedule. Scoring is pure Python, so a
+            search in a thread beside running DNNs holds the interpreter lock and stalls
+            their worker threads (rounds 20x slower on Orin) unless it pauses; 1e-4 is
+            enough. Default is 0.0.
 
         Raises
         ------
         ValueError
-            If no DNN is given, or contention is required but the models or the memory
-            throughput of a group are missing.
+            If no DNN is given, contention is required but the models or the memory
+            throughput of a group are missing, or ``pause`` is negative.
 
         """
+        if pause < 0.0:
+            err_msg = f"pause must be at least 0, got {pause}"
+            raise ValueError(err_msg)
+        self._pause = pause
         if len(traits) == 0:
             err_msg = "HaX-CoNN needs at least one DNN"
             raise ValueError(err_msg)
@@ -207,7 +218,11 @@ class HaxConnScheduler:
         schedules = list(self.solve_iter(time_budget))
         return schedules[-1]
 
-    def solve_iter(self: Self, time_budget: float | None = None) -> Iterator[Schedule]:
+    def solve_iter(
+        self: Self,
+        time_budget: float | None = None,
+        start: Schedule | None = None,
+    ) -> Iterator[Schedule]:
         """
         Search for schedules, yielding each improvement (D-HaX-CoNN).
 
@@ -218,6 +233,10 @@ class HaxConnScheduler:
         ----------
         time_budget : float, optional
             Seconds to search, overriding the config. Default is None (the config's).
+        start : Schedule, optional
+            A schedule found before, e.g. by a search that was stopped. The search
+            starts from it instead of the best naive schedule when it is better.
+            Default is None.
 
         Yields
         ------
@@ -229,6 +248,10 @@ class HaxConnScheduler:
         budget = time_budget if time_budget is not None else self._config.time_budget
         self._stop.clear()
         best = min(self._naive(self._config.max_transitions), key=self._key)
+        if start is not None:
+            resumed = self.evaluate(start.assignments)
+            if self._key(resumed) < self._key(best):
+                best = resumed
         yield best
         # the budget starts when the search does, not while the caller uses the first one
         deadline = None if budget is None else time.monotonic() + budget
@@ -237,7 +260,7 @@ class HaxConnScheduler:
 
     def _exhaustive(self: Self, best: Schedule, deadline: float | None) -> Iterator[Schedule]:
         limit = self._config.max_transitions if self._config.max_transitions is not None else 0
-        options = [self._options(trait, limit) for trait in self._traits]
+        options = [option_indices(trait, limit) for trait in self._traits]
         for combo in itertools.product(*options):
             if self._stop.is_set() or (deadline is not None and time.monotonic() > deadline):
                 return
@@ -396,23 +419,6 @@ class HaxConnScheduler:
         solver.add(Or(literals))
 
     @staticmethod
-    def _options(trait: ModelTraits, limit: int) -> list[tuple[int, ...]]:
-        count = len(trait.groups)
-        options: list[tuple[int, ...]] = []
-        for cuts in range(min(limit, count - 1) + 1):
-            for points in itertools.combinations(range(1, count), cuts):
-                for first in (0, 1):
-                    accs: list[int] = []
-                    acc = first
-                    for i in range(count):
-                        if i in points:
-                            acc = 1 - acc
-                        accs.append(acc)
-                    if all(a == 0 or g.dla for a, g in zip(accs, trait.groups)):
-                        options.append(tuple(accs))
-        return options
-
-    @staticmethod
     def _transitions(accelerators: Sequence[int]) -> int:
         return sum(a != b for a, b in zip(accelerators, accelerators[1:]))
 
@@ -422,6 +428,10 @@ class HaxConnScheduler:
 
     def _schedule(self: Self, indices: Sequence[Sequence[int]]) -> Schedule:
         latency = run_timeline(self._timing, indices, self._overlap)
+        if self._pause > 0.0:
+            # a real sleep hands the interpreter lock over; sleep(0) lets this thread take
+            # it straight back and starves the others
+            time.sleep(self._pause)
         if self._config.objective == "latency":
             objective = max(latency)
         else:

@@ -19,8 +19,10 @@ down, from which :class:`PCCSModel` predicts any slowdown.
 **Online**: :class:`HaxConnScheduler` finds the schedule: Z3 proposes accelerator
 mappings and :func:`simulate` scores them, until no better mapping exists.
 :class:`HaxConn` builds one mixed GPU/DLA engine per DNN (:func:`build_engines`) and runs
-the DNNs concurrently; with ``dynamic=True`` it starts on a naive schedule and switches
-to better ones as the solver finds them (D-HaX-CoNN).
+the DNNs concurrently. With ``dynamic=True`` (D-HaX-CoNN) the set of running DNNs may
+change at any time (:meth:`HaxConn.set_active`): each new set starts on a naive schedule
+and switches to better ones as the solver finds them, on engines built ahead of time by
+:func:`prebuild_engines`.
 
 :func:`group_layers`, :class:`PCCSModel`, :func:`simulate` and
 :class:`HaxConnScheduler` work on their own, from plain layer lists and traits.
@@ -46,13 +48,13 @@ Examples
 
 from __future__ import annotations
 
-from ._build import build_engines, nominal_ranges_hook, slice_hook
+from ._build import build_engines, nominal_ranges_hook, prebuild_engines, slice_hook
 from ._characterize import calibrate, characterize, measure_memory
 from ._groups import LayerGroup, fused_spans, group_layers, transition_points
 from ._haxconn import HaxConn
 from ._pccs import PCCSModel, fit_pccs
 from ._scheduler import HaxConnScheduler
-from ._simulate import simulate
+from ._simulate import assignment_options, simulate
 from ._types import (
     Calibration,
     GroupTraits,
@@ -77,6 +79,7 @@ __all__ = [
     "ModelTraits",
     "PCCSModel",
     "Schedule",
+    "assignment_options",
     "build_engines",
     "calibrate",
     "characterize",
@@ -88,6 +91,7 @@ __all__ = [
     "load_traits",
     "measure_memory",
     "nominal_ranges_hook",
+    "prebuild_engines",
     "save_calibration",
     "save_schedule",
     "save_traits",
