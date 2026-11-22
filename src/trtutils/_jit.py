@@ -123,10 +123,10 @@ def disable_jit() -> None:
 
 class _JIT:
     def __init__(self: Self) -> None:
-        self._was_on = False
+        self._was_on: list[bool] = []
 
     def __enter__(self: Self) -> Self:
-        self._was_on = FLAGS.JIT
+        self._was_on.append(FLAGS.JIT)
         enable_jit()
         return self
 
@@ -136,7 +136,7 @@ class _JIT:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if not self._was_on:
+        if not self._was_on.pop():
             disable_jit()
 
 
