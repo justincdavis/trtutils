@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
 
-RESIZE_METHODS = ("letterbox", "linear", "center_crop")
+RESIZE_METHODS = ("letterbox", "linear", "center_crop", "pad")
 DEFAULT_CROP_PCT = 0.875
 
 
@@ -116,7 +116,9 @@ class ImagePreprocessor(ABC):
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
-            Options are: ['letterbox', 'linear', 'center_crop']
+            Options are: ['letterbox', 'linear', 'center_crop', 'pad']. 'pad' resizes like
+            'letterbox' but places the image at the top-left and fills the bottom and
+            right with the same gray (114), with padding (0, 0).
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.

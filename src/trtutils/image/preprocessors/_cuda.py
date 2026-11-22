@@ -87,7 +87,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
-            Options are: ['letterbox', 'linear', 'center_crop']
+            Options are: ['letterbox', 'linear', 'center_crop', 'pad']
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -188,7 +188,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             1,
         )
 
-        # linear uses its own kernel, letterbox and center_crop share one
+        # linear uses its own kernel, letterbox, pad and center_crop share one
         self._linear_kernel = Kernel(LINEAR_RESIZE[0], LINEAR_RESIZE[1])
         self._letterbox_kernel = Kernel(LETTERBOX_RESIZE[0], LETTERBOX_RESIZE[1])
 
@@ -284,7 +284,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
             The method to resize the image with.
-            Options are [letterbox, linear, center_crop], will use method
+            Options are [letterbox, linear, center_crop, pad], will use method
             provided in constructor by default.
         no_copy : bool, optional
             If True, the outputs will not be copied out
@@ -436,7 +436,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         This method performs the complete preprocessing pipeline:
         1. Host-to-device copy of input images
-        2. Resize kernels (letterbox, linear, or center_crop)
+        2. Resize kernels (letterbox, linear, center_crop or pad)
         3. Normalization (SST) kernel
 
         Parameters
@@ -444,7 +444,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         images : Sequence[np.ndarray | Buffer]
             The images to preprocess (HWC format, uint8).
         resize : str, optional
-            The resize method. Options are ['letterbox', 'linear', 'center_crop'].
+            The resize method. Options are ['letterbox', 'linear', 'center_crop', 'pad'].
             If None, uses the configured default.
         no_warn : bool, optional
             If True, suppress warnings about usage.
@@ -514,7 +514,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
             The method to resize the image with.
-            Options are [letterbox, linear, center_crop], will use method
+            Options are [letterbox, linear, center_crop, pad], will use method
             provided in constructor by default.
         no_copy : bool, optional
             If True, the outputs will not be copied out
@@ -595,7 +595,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         width : int
             Input image width.
         method : str
-            Resize method ('letterbox', 'linear', or 'center_crop').
+            Resize method ('letterbox', 'linear', 'center_crop' or 'pad').
         input_ptr : int
             Device pointer to source image data.
         output_ptr : int
@@ -628,15 +628,17 @@ class GPUImagePreprocessor(ImagePreprocessor):
             scale_x = o_width / width
             scale_y = o_height / height
 
-            if method == "letterbox":
+            if method in ("letterbox", "pad"):
                 if verbose:
-                    LOG.debug(f"{self._tag}: Making letterbox args")
+                    LOG.debug(f"{self._tag}: Making {method} args")
 
                 scale = min(scale_x, scale_y)
                 new_width = round(width * scale)
                 new_height = round(height * scale)
-                pad_w = (o_width - new_width) / 2
-                pad_h = (o_height - new_height) / 2
+                # pad puts the image at the top-left, letterbox centres it
+                centred = method == "letterbox"
+                pad_w = (o_width - new_width) / 2 if centred else 0.0
+                pad_h = (o_height - new_height) / 2 if centred else 0.0
                 padding_x = round(pad_w - 0.1)
                 padding_y = round(pad_h - 0.1)
                 ratios = (scale, scale)
@@ -1033,7 +1035,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
-            Options are: ['letterbox', 'linear', 'center_crop']
+            Options are: ['letterbox', 'linear', 'center_crop', 'pad']
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -1275,7 +1277,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             The images to preprocess.
         resize : str
             The method to resize the image with.
-            By default letterbox, options are [letterbox, linear, center_crop]
+            By default letterbox, options are [letterbox, linear, center_crop, pad]
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional

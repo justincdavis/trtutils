@@ -84,7 +84,7 @@ class Classifier(ImageModel, ClassifierInterface):
             The options are ['cpu', 'cuda', 'trt', 'dla0', 'dla1'], default is 'cuda'.
         resize_method : str
             The type of resize algorithm to use.
-            The options are ['letterbox', 'linear', 'center_crop'], default is 'linear'.
+            The options are ['letterbox', 'linear', 'center_crop', 'pad'], default is 'linear'.
         mean : tuple[float, float, float] | None, optional
             The mean values to use for the imagenet normalization.
             By default, None, which means no normalization will be applied.

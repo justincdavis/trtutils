@@ -34,6 +34,7 @@ class OBBDetector(ImageModel, OBBDetectorInterface):
     """Implementation of oriented bounding box detectors (YOLO-style OBB heads)."""
 
     _OUTPUT_SCHEMA = OBBDetectorOutputSchema
+    _supports_pad = False
     _CUDA_POSTPROCESSOR = CUDAObbPostprocessor
     _cuda_post_default = True
 

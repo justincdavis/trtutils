@@ -159,6 +159,7 @@ def test_plan_resize_matches_gpu_geometry(shape, size, method, factors, top, row
         pytest.param((1080, 1080), CROP, "center_crop", "multiple of 16", id="crop-width"),
         pytest.param((2160, 4096), CROP, "center_crop", "up to 3840", id="crop-wide"),
         pytest.param((1080, 1920), (640, 640), "nearest", "and center_crop", id="method"),
+        pytest.param((1080, 1920), (640, 640), "pad", r"not pad\. Resize it on the CPU", id="pad"),
     ],
 )
 def test_plan_resize_rejects(shape, size, method, match) -> None:
@@ -221,6 +222,7 @@ def test_resize_stages_reject_factor(factor) -> None:
         pytest.param((750, 1000), (640, 640), "letterbox", None, True, 0, id="plan-fails"),
         pytest.param((1080, 1920), CROP, "center_crop", None, False, 1, id="dla-crop"),
         pytest.param((750, 1000), CROP, "center_crop", None, True, 0, id="crop-plan-fails"),
+        pytest.param((1080, 1920), (640, 640), "pad", None, True, 0, id="pad-plan-fails"),
         pytest.param(
             (1080, 1920), (640, 640), "letterbox", RuntimeError("build"), True, 1, id="build-fails"
         ),

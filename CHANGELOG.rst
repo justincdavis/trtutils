@@ -28,6 +28,12 @@ Added
 * ``resize_method="center_crop"`` with ``crop_pct`` (default 0.875, the torchvision/timm
   ImageNet eval transform). ``CPUPreprocessor(resize=fn)`` takes a whole-batch preprocess
   function for models whose input shape changes per batch
+* ``resize_method="pad"``: aspect-preserving resize to the top-left corner, filling the bottom
+  and right with letterbox's gray (114), as SAM-style image encoders expect. Ratios are
+  ``(r, r)`` and padding ``(0, 0)``. CPU, CUDA, TensorRT and ``cpu_resize`` resize it; the DLA
+  preprocessor resizes it on the CPU. ``Classifier`` and ``DepthEstimator`` accept it;
+  ``Detector``, ``Segmenter``, ``PoseEstimator``, ``OBBDetector`` and
+  ``HandInteractionDetector`` raise ``ValueError``, since they cannot map results back from it
 * Image models accept ``Buffer`` inputs (device, mapped or host), alone or mixed with arrays.
   ``Buffer.wrap`` views CuPy and PyTorch tensors without copying
 * ``Detector(class_map=...)`` and ``image.COCO91_TO_COCO80`` for mapping model class ids to

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from _pytest.mark.structures import ParameterSet
 
 BACKENDS = ("cpu", "cuda", "trt", "dla0", "dla1")
-RESIZES = ("letterbox", "linear", "center_crop")
+RESIZES = ("letterbox", "linear", "center_crop", "pad")
 FLOATS = ("fp32", "fp16")
 DTYPES = {
     "fp32": np.dtype(np.float32),
@@ -38,7 +38,12 @@ KINDS = ("numpy", "host", "mapped", "device")
 BUFFER_KINDS = ("host", "pinned", "mapped", "device")
 CPU_KINDS = ("numpy", "host")
 CPU_RESIZE = (None, True, False)
-SIZES = {"letterbox": (640, 640), "linear": (640, 360), "center_crop": (224, 224)}
+SIZES = {
+    "letterbox": (640, 640),
+    "linear": (640, 360),
+    "center_crop": (224, 224),
+    "pad": (640, 640),
+}
 BATCH_SIZE = 3
 
 FRAMES = {
@@ -103,6 +108,11 @@ GEOMETRIES = (
     Geometry("3001x1999-1024-center_crop", "horse.jpg", 1999, 3001, (1024, 1024), "center_crop"),
     Geometry("1080x1920-640x384-center_crop", "horse.jpg", 1920, 1080, (640, 384), "center_crop"),
     Geometry("1080x1920-384x640-linear", "horse.jpg", 1920, 1080, (384, 640), "linear"),
+    Geometry("1000x750-640x384-pad", "people.jpeg", 750, 1000, (640, 384), "pad"),
+    Geometry("1920x1080-1024-pad", "horse.jpg", 1080, 1920, (1024, 1024), "pad"),
+    Geometry("1080x1920-1024-pad", "horse.jpg", 1920, 1080, (1024, 1024), "pad"),
+    Geometry("447x288-1024-pad", "horse.jpg", 288, 447, (1024, 1024), "pad"),
+    Geometry("640x360-640-pad", "people.jpeg", 360, 640, (640, 640), "pad"),
 )
 
 
@@ -169,6 +179,8 @@ def impossible(case: Case) -> str | None:
         return "the DLA cannot resize 1000x750 or 447x288 and cpu_resize=False forbids the CPU"
     if case.dla and case.batch == "unaligned" and case.kind == "device":
         return "device Buffers are always resized on the DLA, which cannot resize 1000x750"
+    if case.dla and case.resize == "pad" and (case.cpu_resize is False or case.kind == "device"):
+        return "the DLA cannot pad resize, only the CPU does it for host images"
     return None
 
 

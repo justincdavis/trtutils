@@ -73,7 +73,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
-            Options are: ['letterbox', 'linear', 'center_crop']
+            Options are: ['letterbox', 'linear', 'center_crop', 'pad']
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -234,7 +234,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
             The images to preprocess.
         resize : str
             The method to resize the image with.
-            By default letterbox, options are [letterbox, linear, center_crop]
+            By default letterbox, options are [letterbox, linear, center_crop, pad]
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional
