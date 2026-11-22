@@ -317,7 +317,12 @@ def rfdetr_layernorm_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict
     return {"layer_precision": layer_precision, "prefer_precision_constraints": True}
 
 
-def argmax_build_hook(*, imgsz: int, argmax: bool = True, **_: Any) -> dict[str, Any]:  # noqa: ANN401
+def argmax_build_hook(
+    *,
+    imgsz: int | tuple[int, int],
+    argmax: bool = True,
+    **_: Any,  # noqa: ANN401
+) -> dict[str, Any]:
     """
     Build hook that runs the argmax of a semantic segmentation network in the engine.
 
@@ -328,8 +333,9 @@ def argmax_build_hook(*, imgsz: int, argmax: bool = True, **_: Any) -> dict[str,
 
     Parameters
     ----------
-    imgsz : int
-        Input image size, the height and width of the class map.
+    imgsz : int | tuple[int, int]
+        Input image size, the size of the class map: an int for square, or
+        ``(height, width)``.
     argmax : bool
         Whether to add the argmax. False keeps the logits output, which
         :class:`~trtutils.image.SemanticSegmenter` reduces on the CPU. Default is True.
@@ -342,4 +348,5 @@ def argmax_build_hook(*, imgsz: int, argmax: bool = True, **_: Any) -> dict[str,
     """
     if not argmax:
         return {}
-    return {"hooks": [semantic_argmax_hook(imgsz, imgsz)]}
+    height, width = (imgsz, imgsz) if isinstance(imgsz, int) else imgsz
+    return {"hooks": [semantic_argmax_hook(height, width)]}
