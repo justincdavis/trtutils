@@ -100,7 +100,7 @@ default build.
   `LayerNormalization`) over pinning layers; precision hooks live in `models/_hooks.py`.
 - A hook that matches layers by name returns no overrides when nothing matches. Test the
   number of layers it pins on the exported ONNX.
-- `linear`, `letterbox` and `pad` resizing do not antialias; expect a gap against upstream
+- The `linear` and `letterbox` resizes do not antialias; expect a gap against upstream
   pipelines that do when images are downscaled a lot, and report it separately from the
   TensorRT-vs-onnxruntime numbers.
 
