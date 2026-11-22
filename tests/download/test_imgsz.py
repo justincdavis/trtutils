@@ -75,3 +75,16 @@ def test_download_model_rejects_non_square_before_any_work(tmp_path) -> None:
         with pytest.raises(ValueError, match="exports only square images"):
             download_model("yoloxn", tmp_path, imgsz=(480, 640))
     mock_venv.assert_not_called()
+
+
+def test_download_model_osnet_takes_height_width(tmp_path, fake_venv) -> None:
+    """OSNet's exporter is registered hw: it gets (height, width) and exports a dynamic batch."""
+    fake_python, fake_bin, fake_output = fake_venv
+    assert EXPORTERS["osnet"].hw is True
+    with patch(
+        "trtutils.download._download.make_venv", return_value=(fake_python, fake_bin)
+    ), patch_exporter("osnet", fake_output) as mock_export:
+        download_model("osnet_x0_25_msmt17", tmp_path, imgsz=(320, 160), no_warn=True)
+    got = mock_export.call_args
+    assert got.args[6] == (320, 160)
+    assert (got.kwargs["batch"], got.kwargs["dynamic"]) == (1, True)

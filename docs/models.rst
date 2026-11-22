@@ -105,6 +105,23 @@ one ``(N, D)`` row per box (e.g. detections for tracking or re-ID), whatever the
      0.96 to 0.98 on average and as low as 0.90 on the test images). Embed queries and
      galleries with the same pipeline
 
+Person Re-Identification
+------------------------
+
+Re-ID models are ``FeatureExtractor`` models: ``end2end_boxes(frame, boxes)`` embeds the person
+detections of a frame, and a tracker matches them across frames by cosine similarity.
+
+1. **OSNet** (``OSNet``) - Omni-Scale Network person re-ID from torchreid, 512-d embeddings
+   from a ``(height, width) = (256, 128)`` crop, L2 normalized by default
+
+   - Widths ``x0_25``, ``x0_5``, ``x0_75``, ``x1_0``, trained on MSMT17 (``osnet_<width>_msmt17``)
+     or Market-1501 (``osnet_<width>_market1501``)
+   - GitHub: `KaiyangZhou/deep-person-reid <https://github.com/KaiyangZhou/deep-person-reid>`_
+   - Engines are built with a dynamic batch (1 to ``batch_size``); build with a batch that
+     fits your detections per frame, e.g. ``OSNet.build(onnx, engine, batch_size=32)``
+   - Fully convolutional: other ``(height, width)`` sizes can be downloaded
+     (``--imgsz 320 160``)
+
 Classification
 --------------
 
@@ -252,6 +269,14 @@ Feature Extraction Models
 - **DINOv3**: ``dinov3_vits16``, ``dinov3_vits16plus``, ``dinov3_vitb16`` (via timm; default size
   256, any multiple of 16; batch-dynamic by default)
 
+Person Re-Identification Models
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **OSNet**: ``osnet_x0_25_msmt17``, ``osnet_x0_5_msmt17``, ``osnet_x0_75_msmt17``,
+  ``osnet_x1_0_msmt17``, ``osnet_x0_25_market1501``, ``osnet_x0_5_market1501``,
+  ``osnet_x0_75_market1501``, ``osnet_x1_0_market1501`` (torchreid model zoo; default size
+  256x128 as ``(height, width)``; batch-dynamic by default)
+
 Hand-Object Interaction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -333,6 +358,9 @@ for the weights: check the source before using them.
    * - DINOv3 (timm mirrors of the LVD-1689M ViT-S, S+, B)
      - DINOv3 License: Meta's custom license, commercial use allowed; read its terms
        (the upstream Meta repositories are gated, the timm mirrors are not)
+   * - OSNet (torchreid model zoo)
+     - MIT (torchreid's license; the weights have no separate statement). They were trained
+       on the MSMT17 and Market-1501 research datasets, whose own terms apply
    * - HOI-DETR
      - MIT
    * - Hands23

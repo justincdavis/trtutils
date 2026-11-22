@@ -18,6 +18,7 @@ from trtutils.models import (
     DEIMv2,
     DeiT,
     DeiT3,
+    OSNet,
     PPOCRDetector,
     PPOCRRecognizer,
     RTDETRv1,
@@ -46,7 +47,8 @@ def test_class_attributes_and_shapes(model_cls) -> None:
     height, width = _hw(model_cls._default_imgsz)
     assert height > 0
     assert width > 0
-    assert model_cls._dynamic_batch is False
+    # re-ID embeds a varying number of detections per frame
+    assert model_cls._dynamic_batch is (model_cls is OSNet)
     assert len(model_cls._input_tensors) > 0
 
     shapes = model_cls._make_shapes(4, model_cls._default_imgsz)
@@ -146,6 +148,8 @@ def test_validate_imgsz_rejects(model_cls, imgsz, match) -> None:
         pytest.param(YOLOv10, "yolov10n", (640, 640), 640, id="square-tuple"),
         pytest.param(YOLOv10, "yolov10n", (480, 640), (480, 640), id="height-width"),
         pytest.param(DeiT, "deit_tiny", (224, 112), (224, 112), id="deit-hw-patch"),
+        pytest.param(OSNet, "osnet_x0_25_msmt17", None, (256, 128), id="osnet-default-hw"),
+        pytest.param(OSNet, "osnet_x1_0_market1501", (320, 160), (320, 160), id="osnet-custom-hw"),
     ],
 )
 def test_download_resolves_imgsz(tmp_path, model_cls, model, imgsz, expected) -> None:
@@ -418,6 +422,16 @@ def test_build_infers_imgsz_real_onnx(tmp_path, model_cls, rel, expected) -> Non
     shapes = _built_shapes(model_cls, path, tmp_path)
     image_name = next(n for n, kind in model_cls._input_tensors if kind == "image")
     assert shapes[image_name] == (1, 3, expected, expected)
+
+
+def test_osnet_build_real_onnx_dynamic_height_width(tmp_path) -> None:
+    """OSNet builds its (256, 128) export with a 1..batch_size profile by default."""
+    path = DATA_DIR / "osnet" / "osnet_x0_25_msmt17_256x128.onnx"
+    if not path.exists():
+        pytest.skip(f"{path} missing")
+    shape = (32, 3, 256, 128)
+    expected = ((1, *shape[1:]), shape, shape)
+    assert _built_shapes(OSNet, path, tmp_path, batch_size=32) == {"input": expected}
 
 
 @pytest.mark.parametrize(

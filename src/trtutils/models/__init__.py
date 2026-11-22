@@ -104,6 +104,8 @@ Classes
     Alias for the DepthEstimator class with args preset for Depth-Anything-V3.
 :class:`DINOv3`
     Alias for the FeatureExtractor class with args preset for DINOv3.
+:class:`OSNet`
+    Alias for the FeatureExtractor class with args preset for OSNet person re-ID.
 :class:`PPOCRDetector`
     Alias for the TextDetector class with args preset for PaddleOCR (PP-OCR) detection.
 :class:`PPOCRRecognizer`
@@ -195,6 +197,7 @@ from .hand_interaction import HOIDETR, Hands23
 from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
 from .pose_estimators import YOLOv8Pose, YOLOv11Pose, YOLOv26Pose
+from .reid import OSNet
 from .segmenters import YOLOv8Seg, YOLOv11Seg, YOLOv26Seg
 
 __all__ = [
@@ -226,6 +229,7 @@ __all__ = [
     "MaxViT",
     "MobileNetV2",
     "MobileNetV3",
+    "OSNet",
     "PPOCRDetector",
     "PPOCRRecognizer",
     "RTDETRv1",

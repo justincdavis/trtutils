@@ -14,6 +14,7 @@ from ._depth_anything import (
 from ._dfine import export_dfine
 from ._hands23 import export_hands23
 from ._hoi_detr import export_hoi_detr
+from ._osnet import export_osnet
 from ._ppocr import export_ppocr
 from ._rfdetr import export_rfdetr
 from ._rtdetr import export_rtdetrv1, export_rtdetrv2, export_rtdetrv3
@@ -69,6 +70,7 @@ EXPORTERS: dict[str, Exporter] = {
     "dfine": Exporter(export_dfine),
     "hands23": Exporter(export_hands23),
     "hoi_detr": Exporter(export_hoi_detr),
+    "osnet": Exporter(export_osnet, batch=True, dynamic_default=True, hw=True),
     "ppocr": Exporter(export_ppocr),
     "rfdetr": Exporter(export_rfdetr),
     "rtdetrv1": Exporter(export_rtdetrv1),
@@ -97,6 +99,7 @@ __all__ = [
     "export_dfine",
     "export_hands23",
     "export_hoi_detr",
+    "export_osnet",
     "export_ppocr",
     "export_rfdetr",
     "export_rtdetrv1",

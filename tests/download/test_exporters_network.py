@@ -129,6 +129,15 @@ EXPORT_CASES = [
         {"input": [2, 3, 224, 224]},
         id="timm-features-b2",
     ),
+    pytest.param(
+        "osnet_x0_25_msmt17", {}, {"input": [_BATCH, 3, 256, 128]}, id="osnet-default-dynamic"
+    ),
+    pytest.param(
+        "osnet_x0_25_market1501",
+        {"imgsz": (320, 160), "batch": 2},
+        {"input": [2, 3, 320, 160]},
+        id="osnet-hw-b2",
+    ),
     pytest.param("hands23_x101", {}, {"input": [1, 3, 800, 800]}, id="hands23"),
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),

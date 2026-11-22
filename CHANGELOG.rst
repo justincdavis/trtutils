@@ -100,6 +100,11 @@ Added
   a frame as an ``(N, D)`` array, e.g. detections for tracking or re-ID. Any number of boxes,
   run in chunks of the engine batch (padded on static-batch engines). Crops come from
   ``preprocessors.crop_boxes``, which clips the boxes to the image and returns views
+* ``models.OSNet`` person re-ID (a ``FeatureExtractor``: 512-d embeddings, L2 normalized by
+  default) and the ``osnet_{x0_25,x0_5,x0_75,x1_0}_{msmt17,market1501}`` downloads
+  (torchreid model zoo, MIT; default size ``(256, 128)`` as ``(height, width)``, other sizes
+  accepted; batch-dynamic by default, and ``OSNet.build`` builds a dynamic batch). Example
+  ``examples/image/reid.py`` embeds detected people with ``end2end_boxes``
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)
