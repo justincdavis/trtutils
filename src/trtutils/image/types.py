@@ -28,6 +28,8 @@ Aliases
     One recognized text line as (text, confidence).
 :data:`TextLine`
     One detected and recognized text line as (box, text, score).
+:data:`PromptMask`
+    One promptable segmentation mask as (mask, predicted IoU).
 
 Examples
 --------
@@ -83,6 +85,10 @@ Text: TypeAlias = Tuple[str, float]
 #: text line as (box, text, score), box as in :data:`TextBox`
 TextLine: TypeAlias = Tuple[np.ndarray, str, float]
 
+#: promptable segmentation mask as (mask, predicted IoU), mask is (H, W) uint8 (0 or 1) at the
+#: original image resolution
+PromptMask: TypeAlias = Tuple[np.ndarray, float]
+
 __all__ = [
     "Bbox",
     "Classification",
@@ -90,6 +96,7 @@ __all__ = [
     "HandInteraction",
     "OBBDetection",
     "Pose",
+    "PromptMask",
     "RBox",
     "Segmentation",
     "Text",

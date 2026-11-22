@@ -14,7 +14,7 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 
 - `TRTEngine` runs any TensorRT engine, with async_v2 and async_v3 backends, CUDA graphs, and pagelocked or unified memory
 - `Buffer` inputs on the host or the device; `Buffer.wrap` views NumPy, CuPy, and PyTorch arrays without copying
-- Image models in `trtutils.image`: `Detector`, `Classifier`, `Segmenter`, `PoseEstimator`, `OBBDetector`, `DepthEstimator`, `HandInteractionDetector`, and `OCR` (text detection plus recognition)
+- Image models in `trtutils.image`: `Detector`, `Classifier`, `Segmenter`, `PoseEstimator`, `OBBDetector`, `DepthEstimator`, `HandInteractionDetector`, `OCR` (text detection plus recognition), and `PromptableSegmenter` (SAM-style masks from point and box prompts)
 - SAHI (sliced inference) for any detector, with `SAHI`
 - Preprocessing on the CPU, CUDA, TensorRT or a DLA (`preprocessor="cpu" | "cuda" | "trt" | "dla0" | "dla1"`), optionally resizing on the CPU first (`cpu_resize=True`), and CPU or CUDA postprocessing (`postprocessor="cpu" | "cuda"`)
 - Pre-configured `trtutils.models` wrappers with `download()` and `build()`
@@ -167,6 +167,7 @@ describes each family.
 - **Depth estimation**: Depth-Anything V1, V2, and V3
 - **Hand-object interaction**: HOI-DETR and Hands23
 - **OCR**: PP-OCR text detection and recognition
+- **Promptable segmentation**: MobileSAM
 
 ## Documentation
 
@@ -176,7 +177,7 @@ For detailed documentation, including advanced usage, examples, and API referenc
 
 Check out our [examples directory](examples/) for more detailed usage examples, including:
 - Basic engine usage (`engine.py`) and the Jetson helpers (`jetson.py`)
-- End-to-end image models (`image/`: detection, classification, segmentation, pose, OBB, depth, OCR, hand-object interaction, SAHI)
+- End-to-end image models (`image/`: detection, classification, segmentation, promptable segmentation, pose, OBB, depth, OCR, hand-object interaction, SAHI)
 - Engine building (`build.py`, `builder/dla.py`)
 - Benchmarking and profiling utilities (`benchmark.py`, `profile_engine.py`)
 

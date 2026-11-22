@@ -33,6 +33,7 @@ _SCORED = Tuple[_BBOX, float]
         pytest.param("TextBox", Tuple[np.ndarray, float], id="text-box"),
         pytest.param("Text", Tuple[str, float], id="text"),
         pytest.param("TextLine", Tuple[np.ndarray, str, float], id="text-line"),
+        pytest.param("PromptMask", Tuple[np.ndarray, float], id="prompt-mask"),
     ],
 )
 def test_alias(name, expected) -> None:

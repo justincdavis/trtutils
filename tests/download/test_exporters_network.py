@@ -123,6 +123,19 @@ EXPORT_CASES = [
     pytest.param("hands23_x101", {}, {"input": [1, 3, 800, 800]}, id="hands23"),
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),
+    pytest.param("mobile_sam_encoder", {}, {"images": [1, 3, 1024, 1024]}, id="mobile-sam-encoder"),
+    pytest.param(
+        "mobile_sam_decoder",
+        {},
+        {
+            "image_embeddings": [1, 256, 64, 64],
+            "point_coords": [None, None, 2],
+            "point_labels": [None, None],
+            "mask_input": [1, 1, 256, 256],
+            "has_mask_input": [1],
+        },
+        id="mobile-sam-decoder",
+    ),
 ]
 
 

@@ -192,6 +192,7 @@ from .hand_interaction import HOIDETR, Hands23
 from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
 from .pose_estimators import YOLOv8Pose, YOLOv11Pose, YOLOv26Pose
+from .promptable_segmenters import MobileSAM, MobileSAMDecoder, MobileSAMEncoder
 from .segmenters import YOLOv8Seg, YOLOv11Seg, YOLOv26Seg
 
 __all__ = [
@@ -222,6 +223,9 @@ __all__ = [
     "MaxViT",
     "MobileNetV2",
     "MobileNetV3",
+    "MobileSAM",
+    "MobileSAMDecoder",
+    "MobileSAMEncoder",
     "PPOCRDetector",
     "PPOCRRecognizer",
     "RTDETRv1",

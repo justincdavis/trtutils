@@ -192,6 +192,17 @@ Text Detection and Recognition (OCR)
 
    - GitHub: `PaddlePaddle/PaddleOCR <https://github.com/PaddlePaddle/PaddleOCR>`_
 
+Promptable Segmentation
+-----------------------
+
+1. **MobileSAM** - SAM-style segmentation from point and box prompts as two engines: a
+   TinyViT image encoder run once per image and a prompt + mask decoder run per prompt
+   (``models.MobileSAMEncoder``, ``models.MobileSAMDecoder``, ``models.MobileSAM``). The
+   decoder engine takes a dynamic number of prompts and points (up to 4 boxes and 8 points
+   per call by default; more boxes run in chunks).
+
+   - GitHub: `ChaoningZhang/MobileSAM <https://github.com/ChaoningZhang/MobileSAM>`_
+
 Model Download Support
 ----------------------
 
@@ -240,6 +251,11 @@ OCR Models
 ~~~~~~~~~~
 
 - **PP-OCR**: ``ppocrv4_det``, ``ppocrv4_rec`` (PP-OCRv4 Chinese/English, ready-made ONNX)
+
+Promptable Segmentation Models
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **MobileSAM**: ``mobile_sam_encoder``, ``mobile_sam_decoder`` (download both)
 
 Instance Segmentation Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -313,6 +329,8 @@ for the weights: check the source before using them.
    * - Hands23
      - unknown (the code is MIT; the weights state no license)
    * - PP-OCR
+     - Apache-2.0
+   * - MobileSAM
      - Apache-2.0
 
 Example Usage

@@ -1,0 +1,7 @@
+{
+    "_defaults": {"exporter": "mobile_sam", "license": "Apache-2.0"},
+    "mobile_sam_decoder": {
+        "part": "decoder",
+        "name": "mobile_sam_decoder"
+    }
+}

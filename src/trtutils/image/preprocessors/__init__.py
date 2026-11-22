@@ -31,6 +31,8 @@ Functions
     Resize an image to a valid DB text detection input size.
 :func:`crop_text_region`
     Crop and rectify a detected text region.
+:func:`encode_prompts`
+    Encode image-pixel point and box prompts for a SAM-style mask decoder.
 
 """
 
@@ -44,6 +46,7 @@ from ._cpu_ocr import (
     preprocess_text_recognition,
     resize_text_detection,
 )
+from ._cpu_promptable import encode_prompts
 from ._cuda import CUDAPreprocessor, GPUImagePreprocessor
 from ._dla import DLAPreprocessor
 from ._trt import TRTPreprocessor
@@ -56,6 +59,7 @@ __all__ = [
     "ImagePreprocessor",
     "TRTPreprocessor",
     "crop_text_region",
+    "encode_prompts",
     "preprocess",
     "preprocess_text_detection",
     "preprocess_text_recognition",

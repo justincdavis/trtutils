@@ -54,6 +54,12 @@ Functions
     Postprocess the output of a CTC text recognition model.
 :func:`sort_text_boxes`
     Sort text boxes in reading order.
+:func:`postprocess_image_embeddings`
+    Split the output of an image encoder into per-image embeddings.
+:func:`get_image_embeddings`
+    Get the image embeddings from postprocessed image encoder outputs.
+:func:`postprocess_prompt_masks`
+    Postprocess the output of a SAM-style mask decoder into masks.
 
 """
 
@@ -82,6 +88,11 @@ from ._cpu_ocr import (
     sort_text_boxes,
 )
 from ._cpu_pose import get_poses, postprocess_yolo_pose
+from ._cpu_promptable import (
+    get_image_embeddings,
+    postprocess_image_embeddings,
+    postprocess_prompt_masks,
+)
 from ._cpu_segmentation import get_segmentations, postprocess_yolo_seg
 
 __all__ = [
@@ -92,6 +103,7 @@ __all__ = [
     "get_classifications",
     "get_depth_maps",
     "get_detections",
+    "get_image_embeddings",
     "get_interactions",
     "get_obb_detections",
     "get_poses",
@@ -104,6 +116,8 @@ __all__ = [
     "postprocess_detr_lbs",
     "postprocess_efficient_nms",
     "postprocess_hand_interactions",
+    "postprocess_image_embeddings",
+    "postprocess_prompt_masks",
     "postprocess_rfdetr",
     "postprocess_rtdetrv3",
     "postprocess_text_detection",

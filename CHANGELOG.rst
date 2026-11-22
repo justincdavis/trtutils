@@ -34,6 +34,21 @@ Added
   preprocessor resizes it on the CPU. ``Classifier`` and ``DepthEstimator`` accept it;
   ``Detector``, ``Segmenter``, ``PoseEstimator``, ``OBBDetector`` and
   ``HandInteractionDetector`` raise ``ValueError``, since they cannot map results back from it
+* Promptable segmentation: ``image.ImageEncoder`` (an ``ImageModel`` whose ``encode`` leaves
+  the embeddings on the GPU; ``resize_method="pad"`` by default), ``image.MaskDecoder`` (a
+  SAM-style prompt + mask decoder engine, inputs bound by name, CUDA graphs and 4 shape
+  contexts by default) and ``image.PromptableSegmenter`` (``set_image`` once, then
+  ``predict(points, labels, boxes, multimask=, mask_thres=)`` per prompt, or ``end2end``),
+  returning ``image.types.PromptMask`` ``(mask, predicted IoU)`` per box. Prompts are in image
+  pixels; ``boxes (K, 4)`` give K masks, batched in chunks of the decoder profile. Schemas
+  ``ImageEncoderOutputSchema``, ``MaskDecoderInputSchema``, ``MaskDecoderOutputSchema``;
+  ``preprocessors.encode_prompts`` and ``postprocessors.postprocess_prompt_masks``
+* ``models.MobileSAMEncoder`` / ``MobileSAMDecoder`` / ``MobileSAM`` and the downloadable
+  ``mobile_sam_encoder`` / ``mobile_sam_decoder`` (Apache-2.0). The export writes every
+  ``LayerNorm2d`` as ``LayerNormalization``, which keeps the default FP16 encoder accurate;
+  ``MobileSAMDecoder.build`` builds FP32 with a dynamic profile of up to ``batch_size``
+  (default 4) prompt sets of ``max_points`` (default 8) points
+* ``Model._input_tensors`` kinds may be a tuple of trailing dims, ``(batch, *dims)``
 * Image models accept ``Buffer`` inputs (device, mapped or host), alone or mixed with arrays.
   ``Buffer.wrap`` views CuPy and PyTorch tensors without copying
 * ``Detector(class_map=...)`` and ``image.COCO91_TO_COCO80`` for mapping model class ids to
