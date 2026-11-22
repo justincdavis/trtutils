@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 from trtutils._flags import FLAGS
 from trtutils.builder._build import build_engine
@@ -88,7 +88,7 @@ class PPOCRDetector(TextDetector, Model):
         )
 
     @classmethod
-    def build(
+    def build(  # ty: ignore[incompatible-method-override]  # int imgsz only
         cls,
         onnx: Path | str,
         output: Path | str,
@@ -149,7 +149,7 @@ class PPOCRDetector(TextDetector, Model):
         if embed_sst:
             err_msg = "embed_sst is not supported for PP-OCR models."
             raise ValueError(err_msg)
-        imgsz = imgsz if imgsz is not None else cls._default_imgsz
+        imgsz = imgsz if imgsz is not None else cast("int", cls._default_imgsz)
         build_engine(
             onnx=onnx,
             output=output,
@@ -231,7 +231,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         )
 
     @classmethod
-    def build(
+    def build(  # ty: ignore[incompatible-method-override]  # int imgsz only
         cls,
         onnx: Path | str,
         output: Path | str,
@@ -290,7 +290,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         if embed_sst:
             err_msg = "embed_sst is not supported for PP-OCR models."
             raise ValueError(err_msg)
-        height = imgsz if imgsz is not None else cls._default_imgsz
+        height = imgsz if imgsz is not None else cast("int", cls._default_imgsz)
         build_engine(
             onnx=onnx,
             output=output,

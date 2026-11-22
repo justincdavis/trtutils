@@ -208,6 +208,28 @@ def test_deim_boxes_non_square_match_onnxruntime(build_model_engine, model_cls, 
     assert max(_iou(bbox, reference[0]) for bbox, _score, _cls in detections) > 0.85
 
 
+def test_non_square_build_matches_square(build_model_engine, tmp_path, images) -> None:
+    """A (height, width) build of a dynamic-shape export runs non-square and finds the square boxes."""
+    onnx_path = DATA_DIR / "yolov10" / "yolov10n_640_dyn.onnx"
+    if not onnx_path.exists():
+        pytest.skip(f"missing {onnx_path}")
+    square = YOLOv10(
+        build_model_engine(YOLOv10, DATA_DIR / "yolov10" / "yolov10n_640.onnx"), warmup=False
+    )
+    engine_path = tmp_path / "hw.engine"
+    YOLOv10.build(onnx_path, engine_path, imgsz=(480, 640), opt_level=1)
+    model = YOLOv10(engine_path, warmup=False)
+    assert model.engine.input_spec[0][0] == [1, 3, 480, 640]
+    assert model.input_shape == (640, 480)
+
+    image = images["horse"]
+    detections = model.end2end(image.array)
+    assert set(image.gt_det_classes) <= {cls_id for _bbox, _score, cls_id in detections}
+    for ref_bbox, _score, ref_cls in square.end2end(image.array):
+        ious = [_iou(bbox, ref_bbox) for bbox, _s, cls_id in detections if cls_id == ref_cls]
+        assert max(ious, default=0.0) > 0.9
+
+
 def _write_head_onnx(path, output_name):
     graph = onnx.helper.make_graph(
         [onnx.helper.make_node("Identity", ["images"], [output_name])],

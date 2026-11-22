@@ -47,12 +47,16 @@ class Exporter(NamedTuple):
         or a dynamic request is rejected.
     dynamic_default : bool
         Whether the export is dynamic when neither ``batch`` nor ``dynamic`` is given.
+    hw : bool
+        Whether ``fn`` accepts a non-square ``imgsz`` as a ``(height, width)`` tuple. When
+        False, ``fn`` only ever gets an int and a non-square size is rejected.
 
     """
 
     fn: Callable[..., Path]
     batch: bool = False
     dynamic_default: bool = False
+    hw: bool = False
 
 
 # config entries name their exporter with the "exporter" key

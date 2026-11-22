@@ -240,6 +240,21 @@ def test_download_batch_and_dynamic_forwarded(batch, dynamic) -> None:
     assert mock_dl.call_args.kwargs["dynamic"] is dynamic
 
 
+@pytest.mark.parametrize(
+    ("imgsz", "expected"),
+    [
+        pytest.param(None, None, id="unset"),
+        pytest.param([640], 640, id="square"),
+        pytest.param([256, 128], (256, 128), id="height-width"),
+    ],
+)
+def test_download_imgsz_forwarded(imgsz, expected) -> None:
+    """The CLI's --imgsz reaches download() as an int (square) or a (height, width) tuple."""
+    with patch("trtutils.__main__.trtutils.download.download") as mock_dl:
+        _download(_args("download", imgsz=imgsz))
+    assert mock_dl.call_args.args[3] == expected
+
+
 def test_download_list_models_skips_download() -> None:
     """--list_models prints configs without invoking the downloader."""
     with patch("trtutils.__main__.trtutils.download.load_model_configs") as mock_configs, patch(

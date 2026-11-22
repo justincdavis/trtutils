@@ -36,6 +36,14 @@ Added
 * ``Model.build(..., embed_sst=True)`` and ``builder.onnx.embed_sst``: move BGR-to-RGB, normalize
   and HWC-to-CHW into the ONNX graph, so the engine takes uint8 ``(batch, imgsz, imgsz, 3)``.
   ``input_range`` / ``mean`` / ``std`` are fixed at build time
+* Non-square image sizes and dynamic batch in ``trtutils.models``: ``Model.build`` /
+  ``Model.download`` take ``imgsz`` as an int (square) or ``(height, width)``, and
+  ``_default_imgsz`` may be either. ``Model.build(..., dynamic_batch=True)`` (or the class
+  attribute ``_dynamic_batch``) builds engines that run any batch from 1 to ``batch_size``.
+  ``trtutils download --imgsz`` takes ``HEIGHT WIDTH``, and download configs may give
+  ``"imgsz": [height, width]``; only exporters registered with ``hw=True`` accept a
+  non-square size. ``builder.onnx.get_static_hw`` reads the static ``(height, width)`` of an
+  ONNX image input
 * ``trtutils.models``: pre-configured wrappers with ``download()`` / ``build()``. Families:
   detectors (YOLOX, YOLOv3-v13, YOLOv26, RT-DETR / RT-DETRv3, D-FINE, DEIM, RF-DETR),
   classifiers (ResNet, AlexNet, VGG, DenseNet, Inception, GoogLeNet, EfficientNet, MobileNet,

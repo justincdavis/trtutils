@@ -75,7 +75,7 @@ provides `download()` / `build()` from class attributes (`_model_type`, `_defaul
 ### Download / Export (`src/trtutils/download/`)
 `configs/*.json` list downloadable models; `_models/` holds the export functions dispatched in
 `_download.py`; `model_deps/*.txt` pin each exporter's venv requirements. CLI:
-`trtutils download --model <name> --output <path.onnx> [--imgsz N] [--dynamic]`.
+`trtutils download --model <name> --output <path.onnx> [--imgsz N | H W] [--dynamic]`.
 
 ### Engine Building (`src/trtutils/builder/`)
 - `build_engine()` (`_build.py`): build TensorRT engines from ONNX
