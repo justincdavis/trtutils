@@ -25,9 +25,9 @@ _CLASSES = 5
 
 @pytest.fixture(scope="module")
 def logits_onnx(tmp_path_factory):
-    """Factory for a (1, 5, 32, 32) -> logits ONNX, pooled by ``stride`` (1 keeps the size)."""
+    """Factory for a (1, 5, 32, width) -> logits ONNX, pooled by ``stride`` (1 keeps the size)."""
 
-    def _make(stride: int) -> str:
+    def _make(stride: int, width: int = _SIZE) -> str:
         node = (
             helper.make_node(
                 "AveragePool", ["input"], ["logits"], kernel_shape=[stride] * 2, strides=[stride] * 2
@@ -35,15 +35,15 @@ def logits_onnx(tmp_path_factory):
             if stride > 1
             else helper.make_node("Relu", ["input"], ["logits"])
         )
-        side = _SIZE // stride
+        out_shape = [1, _CLASSES, _SIZE // stride, width // stride]
         graph = helper.make_graph(
             [node],
             "logits",
-            [helper.make_tensor_value_info("input", TensorProto.FLOAT, [1, _CLASSES, _SIZE, _SIZE])],
-            [helper.make_tensor_value_info("logits", TensorProto.FLOAT, [1, _CLASSES, side, side])],
+            [helper.make_tensor_value_info("input", TensorProto.FLOAT, [1, _CLASSES, _SIZE, width])],
+            [helper.make_tensor_value_info("logits", TensorProto.FLOAT, out_shape)],
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
-        path = tmp_path_factory.mktemp("semantic_hook") / f"logits_s{stride}.onnx"
+        path = tmp_path_factory.mktemp("semantic_hook") / f"logits_s{stride}_w{width}.onnx"
         onnx.save(model, str(path))
         return str(path)
 
@@ -101,3 +101,11 @@ def test_argmax_build_hook_overrides(argmax, hooked) -> None:
     overrides = argmax_build_hook(imgsz=_SIZE, argmax=argmax, onnx="unused.onnx")
     assert ("hooks" in overrides) is hooked
     assert len(overrides.get("hooks", [])) == int(hooked)
+
+
+def test_argmax_build_hook_non_square(logits_onnx) -> None:
+    """A (height, width) imgsz gives a class map of that size."""
+    network, _builder, _config, _parser = read_onnx(logits_onnx(4, width=48))
+    (hook,) = argmax_build_hook(imgsz=(_SIZE, 48), onnx="unused.onnx")["hooks"]
+    network = hook(network)
+    assert tuple(network.get_output(0).shape) == (1, 1, _SIZE, 48)
