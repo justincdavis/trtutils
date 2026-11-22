@@ -13,30 +13,7 @@ from typing import Any, Sequence
 from trtutils._log import LOG
 
 from . import _make_static, _simplify
-from ._models import (
-    export_deim,
-    export_deimv2,
-    export_depth_anything_v1,
-    export_depth_anything_v2,
-    export_depth_anything_v3,
-    export_dfine,
-    export_hands23,
-    export_hoi_detr,
-    export_ppocr,
-    export_rfdetr,
-    export_rtdetrv1,
-    export_rtdetrv2,
-    export_rtdetrv3,
-    export_timm_classifier,
-    export_torchvision_classifier,
-    export_ultralytics,
-    export_yolov7,
-    export_yolov9,
-    export_yolov10,
-    export_yolov12,
-    export_yolov13,
-    export_yolox,
-)
+from ._models import EXPORTERS
 from ._tools import (
     check_uv_version,
     export_requirements,
@@ -44,9 +21,24 @@ from ._tools import (
     make_venv,
 )
 
+# copyleft or non-commercial licenses get a louder notice
+_RESTRICTIVE_LICENSES = ("GPL", "-NC", "non-commercial")
+
 
 @lru_cache(maxsize=1)
 def load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
+    """
+    Load every model family's configuration.
+
+    A config file may hold a ``"_defaults"`` object; its keys are merged into
+    each entry of that file (entry keys win) and it is not returned as a model.
+
+    Returns
+    -------
+    dict[str, dict[str, dict[str, str]]]
+        Family name -> model name -> config fields.
+
+    """
     configs_dir = Path(__file__).parent / "configs"
     model_configs: dict[str, dict[str, dict[str, str]]] = {}
 
@@ -54,11 +46,29 @@ def load_model_configs() -> dict[str, dict[str, dict[str, str]]]:
         model_type = config_path.stem
         try:
             with config_path.open() as f:
-                model_configs[model_type] = json.load(f)
+                family = json.load(f)
         except (FileNotFoundError, KeyError) as e:
             LOG.warning(f"Failed to load configuration file {config_path.name}: {e}")
+            continue
+        defaults = family.pop("_defaults", {})
+        model_configs[model_type] = {name: {**defaults, **entry} for name, entry in family.items()}
 
     return model_configs
+
+
+def _license_notice(model: str, license_name: str) -> str:
+    if license_name == "unknown":
+        return (
+            f"The license of the {model} weights is not stated upstream, "
+            "check the source repository before using them"
+        )
+    notice = f"{model} weights are {license_name} licensed"
+    if any(tag in license_name for tag in _RESTRICTIVE_LICENSES):
+        return (
+            f"{notice}: a RESTRICTIVE license (copyleft or non-commercial), "
+            "review its terms before using or distributing the model"
+        )
+    return f"{notice}, be aware of license restrictions"
 
 
 @lru_cache(maxsize=1)
@@ -79,7 +89,7 @@ def get_supported_models() -> list[str]:
     return names
 
 
-def download_model(  # noqa: C901, PLR0912, PLR0915
+def download_model(  # noqa: C901, PLR0912
     model: str,
     directory: Path,
     opset: int = 17,
@@ -133,7 +143,7 @@ def download_model(  # noqa: C901, PLR0912, PLR0915
     no_uv_cache : bool, optional
         Whether to disable caching of uv packages.
     no_warn : bool, optional
-        Whether to disable warnings for the model.
+        Whether to disable warnings for the model, including its license notice.
     verbose : bool, optional
         Whether to print verbose output.
 
@@ -167,77 +177,20 @@ def download_model(  # noqa: C901, PLR0912, PLR0915
         err_msg = f"Model {model} is not supported"
         raise ValueError(err_msg)
 
-    # Determine which export function to use
-    export_func = None
-    if config.get("url") == "torchvision_classifier":
-        export_func = export_torchvision_classifier
-    elif config.get("url") == "timm":
-        export_func = export_timm_classifier
-    elif config.get("url") == "ultralytics":
-        export_func = export_ultralytics
-    elif "deim" in model and "deimv2" not in model:
-        export_func = export_deim
-    elif "deimv2" in model:
-        export_func = export_deimv2
-    elif "yolox" in model:
-        export_func = export_yolox
-    elif "yolov7" in model:
-        export_func = export_yolov7
-    elif "yolov9" in model:
-        export_func = export_yolov9
-    elif "yolov10" in model:
-        export_func = export_yolov10
-    elif "yolov12" in model:
-        export_func = export_yolov12
-    elif "yolov13" in model:
-        export_func = export_yolov13
-    elif "rtdetrv1" in model:
-        export_func = export_rtdetrv1
-    elif "rtdetrv2" in model:
-        export_func = export_rtdetrv2
-    elif "rtdetrv3" in model:
-        export_func = export_rtdetrv3
-    elif "dfine" in model:
-        export_func = export_dfine
-    elif "rfdetr" in model:
-        export_func = export_rfdetr
-    elif "depth_anything_v1" in model:
-        export_func = export_depth_anything_v1
-    elif "depth_anything_v2" in model:
-        export_func = export_depth_anything_v2
-    elif "hoi_detr" in model:
-        export_func = export_hoi_detr
-    elif "hands23" in model:
-        export_func = export_hands23
-    elif "depth_anything_v3" in model:
-        export_func = export_depth_anything_v3
-    elif "ppocr" in model:
-        export_func = export_ppocr
+    exporter = EXPORTERS[config["exporter"]]
 
-    # Single call site
-    if export_func is None:
-        err_msg = f"Model {model} is not supported"
-        raise ValueError(err_msg)
-
-    # torchvision classifiers have always exported batch-dynamic
     if dynamic is None:
-        dynamic = export_func is export_torchvision_classifier and batch is None
-    # only these exporters' upstream tooling can set a batch size or a dynamic batch
-    supported = export_func in (
-        export_torchvision_classifier,
-        export_timm_classifier,
-        export_ultralytics,
-        export_yolov10,
-        export_yolov12,
-        export_yolov13,
-    )
-    batch, dynamic = handle_batch(batch, model, dynamic=dynamic, supported=supported)
-    batch_kwargs: dict[str, Any] = {"batch": batch, "dynamic": dynamic} if supported else {}
+        dynamic = exporter.dynamic_default and batch is None
+    batch, dynamic = handle_batch(batch, model, dynamic=dynamic, supported=exporter.batch)
+    batch_kwargs: dict[str, Any] = {"batch": batch, "dynamic": dynamic} if exporter.batch else {}
+
+    if not no_warn:
+        LOG.warning(_license_notice(model, config["license"]))
 
     python_path, bin_path = make_venv(directory, no_cache=no_uv_cache, verbose=verbose)
     requirements_export_path = Path(requirements_export) if requirements_export is not None else None
 
-    model_path = export_func(
+    model_path = exporter.fn(
         directory,
         config,
         python_path,
@@ -337,7 +290,7 @@ def download(
     no_uv_cache : bool, optional
         Whether to disable caching of uv packages.
     no_warn : bool, optional
-        Whether to disable warnings for the model.
+        Whether to disable warnings for the model, including its license notice.
     verbose : bool, optional
         Whether to print verbose output.
 

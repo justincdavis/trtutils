@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "rfdetr", "license": "Apache-2.0"},
   "rfdetr_n": {
     "class": "RFDETRNano",
     "weights": "rf-detr-nano.pth"

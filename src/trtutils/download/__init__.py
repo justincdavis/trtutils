@@ -16,7 +16,9 @@ Functions
 Notes
 -----
 All models downloaded through this module may have license restrictions.
-Users must ensure they comply with the model's license terms.
+Users must ensure they comply with the model's license terms. Each model's
+config names its weights' license (``"unknown"`` when upstream states none),
+and :func:`download_model` logs it unless ``no_warn`` is set.
 
 """
 

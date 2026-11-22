@@ -1,4 +1,5 @@
 {
+    "_defaults": {"exporter": "yolox", "license": "Apache-2.0"},
     "yoloxn": {
         "url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.pth",
         "name": "yolox_nano",

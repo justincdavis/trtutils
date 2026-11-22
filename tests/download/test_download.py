@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.download.conftest import ROUTING_CASES
+from tests.download.conftest import ROUTING_CASES, patch_exporter
 from trtutils.download import download, download_model, load_model_configs
 from trtutils.download._models import export_deimv2, export_yolox
 from trtutils.download._simplify import simplify
@@ -34,17 +34,14 @@ def test_unsupported_model_raises(tmp_path, func, model) -> None:
         func(tmp_path, model)
 
 
-@pytest.mark.parametrize(("model", "export_func_name"), ROUTING_CASES)
-def test_export_routing(tmp_path, fake_venv, model, export_func_name) -> None:
-    """download_model routes each model to its corresponding export function."""
+@pytest.mark.parametrize(("model", "exporter"), ROUTING_CASES)
+def test_export_routing(tmp_path, fake_venv, model, exporter) -> None:
+    """download_model routes each model to the EXPORTERS entry its config names."""
     fake_python, fake_bin, fake_output = fake_venv
     with patch(
         "trtutils.download._download.make_venv",
         return_value=(fake_python, fake_bin),
-    ), patch(
-        f"trtutils.download._download.{export_func_name}",
-        return_value=fake_output,
-    ) as mock_export:
+    ), patch_exporter(exporter, fake_output) as mock_export:
         download_model(model, tmp_path)
         mock_export.assert_called_once()
 
@@ -189,3 +186,39 @@ def test_export_deimv2_skips_onnxsim(tmp_path) -> None:
     config = load_model_configs()["deimv2"]["deimv2_l"]
     cmd = _exported_cmd(export_deimv2, "_deim", config, tmp_path, "deimv2_l")
     assert "--simplify" not in cmd
+
+
+@pytest.mark.parametrize(
+    ("model", "exporter", "expected"),
+    [
+        pytest.param("yoloxn", "yolox", "Apache-2.0 licensed, be aware", id="permissive"),
+        pytest.param("yolov8n", "ultralytics", "AGPL-3.0 licensed: a RESTRICTIVE", id="agpl"),
+        pytest.param("yolov7t", "yolov7", "GPL-3.0 licensed: a RESTRICTIVE", id="gpl"),
+        pytest.param(
+            "depth_anything_v2_base",
+            "depth_anything_v2",
+            "CC-BY-NC-4.0 licensed: a RESTRICTIVE",
+            id="non-commercial",
+        ),
+        pytest.param(
+            "deimv2_atto", "deimv2", "(non-commercial) licensed: a RESTRICTIVE", id="custom"
+        ),
+        pytest.param("hands23_x101", "hands23", "not stated upstream", id="unknown"),
+    ],
+)
+@pytest.mark.parametrize("no_warn", [False, True], ids=["warn", "no-warn"])
+def test_license_notice(tmp_path, fake_venv, model, exporter, expected, no_warn) -> None:
+    """download_model logs one license notice from the config, louder for restrictive ones."""
+    fake_python, fake_bin, fake_output = fake_venv
+    with patch(
+        "trtutils.download._download.make_venv", return_value=(fake_python, fake_bin)
+    ), patch_exporter(exporter, fake_output), patch(
+        "trtutils.download._download.LOG.warning"
+    ) as mock_warning:
+        download_model(model, tmp_path, no_warn=no_warn)
+    if no_warn:
+        mock_warning.assert_not_called()
+    else:
+        (call,) = mock_warning.call_args_list
+        assert model in call.args[0]
+        assert expected in call.args[0]

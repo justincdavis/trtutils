@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "rtdetrv2", "license": "Apache-2.0"},
   "rtdetrv2_r18": {
     "url": "https://github.com/lyuwenyu/storage/releases/download/v0.2/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth",
     "config": "rtdetrv2_r18vd_120e_coco.yml",

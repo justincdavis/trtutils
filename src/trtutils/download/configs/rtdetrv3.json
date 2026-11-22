@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "rtdetrv3", "license": "Apache-2.0"},
   "rtdetrv3_r18": {
     "id": "1zIDOjn1qDccC3TBsDlGQHOjVrehd26bk",
     "config": "rtdetrv3_r18vd_6x_coco.yml",

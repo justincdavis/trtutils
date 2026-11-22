@@ -7,7 +7,6 @@ import shutil
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from trtutils._log import LOG
 from trtutils.download._tools import run_download
 
 
@@ -22,11 +21,9 @@ def export_ppocr(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,  # noqa: ARG001
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("PP-OCR is a Apache-2.0 licensed model, be aware of license restrictions")
     # PP-OCR models are distributed as ready-made ONNX with dynamic input shapes,
     # so there is nothing to export: download the file as-is
     run_download(directory, config, python_path, no_cache=no_cache, verbose=verbose)

@@ -139,6 +139,15 @@ Changed
   ONNX parse failures with the reason: every TensorRT parser error (node, operator where
   TensorRT reports it, error code, description) and the errors TensorRT logged while parsing,
   such as an LRN bias below 1e-5. The message used to be only "Cannot parse ONNX file"
+* ``download_model`` logs one license notice per download, read from the model's new
+  ``license`` config field, louder for copyleft and non-commercial licenses (``no_warn`` hides
+  it). Corrected licenses: Depth-Anything-V2 ``base`` / ``large`` are CC-BY-NC-4.0 (were
+  announced as Apache-2.0) and DEIMv2 weights are non-commercial (DEIMv2 License, were
+  announced as Apache-2.0). Torchvision classifiers, DeiT / DeiT III and Hands23 now get a
+  notice too; ``regnet_y_128gf`` and ``vit_h_14`` (SWAG weights) are CC-BY-NC-4.0
+* Download configs name their exporter with an ``exporter`` key (looked up in the exporter
+  registry) instead of being routed by model-name substrings, and a ``"_defaults"`` object
+  fills keys shared by a config file's entries
 
 Performance
 ^^^^^^^^^^^

@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "dfine", "license": "Apache-2.0"},
   "dfine_n": {
     "url": "https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_n_coco.pth",
     "config": "dfine_hgnetv2_n_coco.yml",
