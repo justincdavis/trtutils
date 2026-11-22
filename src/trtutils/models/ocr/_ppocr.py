@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils._flags import FLAGS
 from trtutils.builder._build import build_engine
@@ -88,11 +88,11 @@ class PPOCRDetector(TextDetector, Model):
         )
 
     @classmethod
-    def build(  # ty: ignore[incompatible-method-override]  # int imgsz only
+    def build(
         cls,
         onnx: Path | str,
         output: Path | str,
-        imgsz: int | None = None,
+        imgsz: int | tuple[int, int] | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -144,12 +144,17 @@ class PPOCRDetector(TextDetector, Model):
         ------
         ValueError
             If ``embed_sst`` is True.
+        TypeError
+            If ``imgsz`` is a (height, width) tuple.
 
         """
         if embed_sst:
             err_msg = "embed_sst is not supported for PP-OCR models."
             raise ValueError(err_msg)
-        imgsz = imgsz if imgsz is not None else cast("int", cls._default_imgsz)
+        size = imgsz if imgsz is not None else cls._default_imgsz
+        if not isinstance(size, int):
+            err_msg = f"PP-OCR detectors take a single imgsz, got {size}"
+            raise TypeError(err_msg)
         build_engine(
             onnx=onnx,
             output=output,
@@ -158,7 +163,7 @@ class PPOCRDetector(TextDetector, Model):
                     cls._input_tensors[0][0],
                     (
                         (1, 3, min_imgsz, min_imgsz),
-                        (1, 3, imgsz, imgsz),
+                        (1, 3, size, size),
                         (batch_size, 3, max_imgsz, max_imgsz),
                     ),
                 ),
@@ -231,11 +236,11 @@ class PPOCRRecognizer(TextRecognizer, Model):
         )
 
     @classmethod
-    def build(  # ty: ignore[incompatible-method-override]  # int imgsz only
+    def build(
         cls,
         onnx: Path | str,
         output: Path | str,
-        imgsz: int | None = None,
+        imgsz: int | tuple[int, int] | None = None,
         batch_size: int = 6,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -285,12 +290,17 @@ class PPOCRRecognizer(TextRecognizer, Model):
         ------
         ValueError
             If ``embed_sst`` is True.
+        TypeError
+            If ``imgsz`` is a (height, width) tuple.
 
         """
         if embed_sst:
             err_msg = "embed_sst is not supported for PP-OCR models."
             raise ValueError(err_msg)
-        height = imgsz if imgsz is not None else cast("int", cls._default_imgsz)
+        height = imgsz if imgsz is not None else cls._default_imgsz
+        if not isinstance(height, int):
+            err_msg = f"PP-OCR recognizers take a single imgsz (the input height), got {height}"
+            raise TypeError(err_msg)
         build_engine(
             onnx=onnx,
             output=output,

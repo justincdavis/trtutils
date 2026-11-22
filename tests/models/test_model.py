@@ -244,6 +244,15 @@ def test_ppocr_build_rejects_embed_sst(model_cls: type[Model]) -> None:
     build.assert_not_called()
 
 
+@pytest.mark.parametrize("model_cls", [PPOCRDetector, PPOCRRecognizer])
+def test_ppocr_build_rejects_height_width(model_cls: type[Model]) -> None:
+    """PP-OCR profiles are built from one size, so a (height, width) imgsz raises before building."""
+    with patch("trtutils.models.ocr._ppocr.build_engine") as build:
+        with pytest.raises(TypeError, match="single imgsz"):
+            model_cls.build("model.onnx", "model.engine", imgsz=(64, 32))
+    build.assert_not_called()
+
+
 @pytest.mark.parametrize("model_cls", MODEL_CLASSES)
 def test_input_tensor_names_match_onnx(model_cls) -> None:
     """_input_tensors names are the graph inputs of the exported ONNX."""
