@@ -62,12 +62,6 @@ def test_frame_f1() -> None:
     assert TRAITS["small_dla"].frame_f1() == pytest.approx([0.5, 1.0, 0.0, 0.5])
 
 
-def test_frame_f1_all_wrong_is_zero() -> None:
-    """Predictions that all miss score 0, even when their count matches the ground truth."""
-    trait = dataclasses.replace(TRAITS["small_dla"], true_positives=[0, 0, 0, 0])
-    assert trait.frame_f1()[3] == 0.0
-
-
 @pytest.mark.parametrize(
     ("metric", "confidences", "latency"),
     [

@@ -120,9 +120,17 @@ class DriftScheduler:
             raise ValueError(err_msg)
         self._baseline = baseline
         self._gpu = gpu
-        self._latency = {
-            name: trait.latency(self._config.latency_metric) for name, trait in self._traits.items()
+        metric = self._config.latency_metric
+        self._latency = {name: trait.latency(metric) for name, trait in self._traits.items()}
+        self._pair_latency = {
+            (hp, lp): self._traits[hp].pair_latency(lp, metric)
+            for hp in gpu
+            for lp, trait in self._traits.items()
+            if trait.dla
         }
+        self._baseline_schedule = Schedule(
+            baseline, None, parallel=False, latency_ms=self._latency[baseline]
+        )
         self._estimator = LinearEstimator(
             {
                 name: t.frame_confidences(self._config.confidence_metric)
@@ -148,9 +156,7 @@ class DriftScheduler:
     @property
     def baseline(self: Self) -> Schedule:
         """The baseline schedule: the baseline model on the full frame."""
-        return Schedule(
-            self._baseline, None, parallel=False, latency_ms=self._latency[self._baseline]
-        )
+        return self._baseline_schedule
 
     def __call__(
         self: Self,
@@ -225,7 +231,7 @@ class DriftScheduler:
             serial = self._latency[hp] + self._latency[lp]
             total = serial
             if trait.dla:
-                pair = self._traits[hp].pair_latency(lp, cfg.latency_metric)
+                pair = self._pair_latency[hp, lp]
                 total = pair if pair is not None else max(self._latency[hp], self._latency[lp])
             tested = serial if cfg.lp_latency_test == "sum" else total
             if tested >= baseline.latency_ms:

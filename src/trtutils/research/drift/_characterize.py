@@ -117,7 +117,9 @@ def _measure(
 
 
 def _run_locked(detector: DetectorInterface, image: np.ndarray) -> list[Detection]:
-    # same rule as the runtime: the worker never overlaps a CUDA graph capture
+    # every dla call runs on the worker (here and in the runtime) under this lock: work
+    # on the legacy default stream breaks a CUDA graph capture on the caller thread;
+    # only captures contend for it, and the warmup calls do every capture up front
     with TRTEngine._capture_lock:  # noqa: SLF001
         return detector.end2end(image)
 

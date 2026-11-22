@@ -278,17 +278,38 @@ def test_anneal_counter(anneal_counter, expected) -> None:
     np.testing.assert_allclose(packer.probabilities(), expected)
 
 
-def test_pack_rejects_wrong_size_and_bad_config() -> None:
-    """A frame of another size, or invalid packer settings, raise ValueError."""
+def test_pack_rejects_wrong_size() -> None:
+    """A frame of another size than the packer's raises ValueError."""
     packer = FramePacker((640, 480))
     with pytest.raises(ValueError, match="does not match"):
         packer.pack(np.zeros((100, 100, 3), dtype=np.uint8))
-    for kwargs in (
-        {"image_size": (0, 480)},
-        {"image_size": (8, 8), "grid_divisor": 10},
-        {"image_size": (640, 480), "counter_decrement": "some"},
-        {"image_size": (640, 480), "anneal_counter": "seconds"},
-        {"image_size": (640, 480), "dense_groups": "triangles"},
-    ):
-        with pytest.raises(ValueError):  # noqa: PT011
-            FramePacker(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        pytest.param({"image_size": (0, 480)}, "invalid image_size", id="zero-width"),
+        pytest.param(
+            {"image_size": (8, 8), "grid_divisor": 10}, "smaller than one pixel", id="tiny-cells"
+        ),
+        pytest.param(
+            {"image_size": (640, 480), "counter_decrement": "some"},
+            "counter_decrement",
+            id="bad-decrement",
+        ),
+        pytest.param(
+            {"image_size": (640, 480), "anneal_counter": "seconds"},
+            "anneal_counter",
+            id="bad-anneal-counter",
+        ),
+        pytest.param(
+            {"image_size": (640, 480), "dense_groups": "triangles"},
+            "dense_groups",
+            id="bad-dense-groups",
+        ),
+    ],
+)
+def test_packer_rejects_bad_config(kwargs, match) -> None:
+    """Invalid packer settings raise ValueError."""
+    with pytest.raises(ValueError, match=match):
+        FramePacker(**kwargs)

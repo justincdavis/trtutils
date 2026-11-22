@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 import cv2
 import numpy as np
 
+from ._types import ANNEAL_COUNTERS, COUNTER_DECREMENTS, DENSE_GROUPS
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -18,9 +20,6 @@ if TYPE_CHECKING:
 
     from trtutils.image.types import Bbox
 
-_DENSE_GROUPS = ("rectangles", "blocks")
-_COUNTER_DECREMENTS = ("all", "empty")
-_ANNEAL_COUNTERS = ("frames", "packs")
 # the reference implementation's block search: 2x2 squares, then horizontal, then vertical pairs
 _BLOCK_OFFSETS: tuple[tuple[tuple[int, int], ...], ...] = (
     ((0, -1), (-1, 0), (-1, -1)),
@@ -104,8 +103,8 @@ def dense_groups(mask: np.ndarray, mode: str = "rectangles") -> list[tuple[int, 
         If ``mode`` is unknown or ``mask`` is not 2D.
 
     """
-    if mode not in _DENSE_GROUPS:
-        err_msg = f"Unknown dense_groups mode {mode!r}, expected one of {_DENSE_GROUPS}"
+    if mode not in DENSE_GROUPS:
+        err_msg = f"Unknown dense_groups mode {mode!r}, expected one of {DENSE_GROUPS}"
         raise ValueError(err_msg)
     mask = np.asarray(mask, dtype=bool)
     if mask.ndim != 2:  # noqa: PLR2004
@@ -250,13 +249,13 @@ class FramePacker:
         if cell < 1:
             err_msg = f"grid_divisor {grid_divisor} leaves cells smaller than one pixel"
             raise ValueError(err_msg)
-        if counter_decrement not in _COUNTER_DECREMENTS:
+        if counter_decrement not in COUNTER_DECREMENTS:
             err_msg = f"Unknown counter_decrement {counter_decrement!r}"
             raise ValueError(err_msg)
-        if anneal_counter not in _ANNEAL_COUNTERS:
+        if anneal_counter not in ANNEAL_COUNTERS:
             err_msg = f"Unknown anneal_counter {anneal_counter!r}"
             raise ValueError(err_msg)
-        if dense_groups not in _DENSE_GROUPS:
+        if dense_groups not in DENSE_GROUPS:
             err_msg = f"Unknown dense_groups mode {dense_groups!r}"
             raise ValueError(err_msg)
         self._size = (width, height)
@@ -462,9 +461,8 @@ class FramePacker:
             packed[prow * g : prow * g + y1 - y0, pcol * g : pcol * g + x1 - x0] = image[
                 y0:y1, x0:x1
             ]
-            for i in range(h):
-                for j in range(w):
-                    offsets[prow + i, pcol + j] = (x0 + j * g, y0 + i * g)
+            offsets[prow : prow + h, pcol : pcol + w, 0] = x0 + np.arange(w) * g
+            offsets[prow : prow + h, pcol : pcol + w, 1] = (y0 + np.arange(h) * g)[:, None]
         return packed, offsets
 
     def unpack(

@@ -9,6 +9,7 @@ import dataclasses
 import time
 from collections import Counter
 from functools import partial
+from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -17,12 +18,21 @@ import cv2
 from trtutils._log import LOG
 from trtutils.image import Detector
 
-from ._characterize import characterize
+from ._characterize import _load_images, characterize
 from ._drift import Drift
-from ._types import DriftConfig, load_characterization, save_characterization
+from ._types import (
+    ANNEAL_COUNTERS,
+    COUNTER_DECREMENTS,
+    DENSE_GROUPS,
+    LATENCY_TESTS,
+    DriftConfig,
+    load_characterization,
+    save_characterization,
+)
 
 if TYPE_CHECKING:
     import argparse
+    from collections.abc import Iterator
     from types import SimpleNamespace
 
     import numpy as np
@@ -35,14 +45,14 @@ _MODEL_SPEC_LENGTHS = (2, 3)
 _LABEL_FIELDS = 5
 _METRICS = ["mean", "median", "min", "max"]
 _CONFIG_CHOICES = {
-    "counter_decrement": ["all", "empty"],
-    "dense_groups": ["rectangles", "blocks"],
-    "anneal_counter": ["frames", "packs"],
+    "counter_decrement": list(COUNTER_DECREMENTS),
+    "dense_groups": list(DENSE_GROUPS),
+    "anneal_counter": list(ANNEAL_COUNTERS),
     "confidence_metric": _METRICS,
     "box_size_metric": _METRICS,
     "accuracy_scale_metric": _METRICS,
     "latency_metric": _METRICS,
-    "lp_latency_test": ["sum", "schedule"],
+    "lp_latency_test": list(LATENCY_TESTS),
 }
 
 
@@ -152,45 +162,35 @@ def _read_labels(path: Path, width: int, height: int) -> list[tuple[Bbox, int]]:
     return labels
 
 
-def _read_frames(source: Path, limit: int | None = None) -> list[np.ndarray]:
+def _iter_frames(source: Path) -> Iterator[np.ndarray]:
     """
-    Read an image, or up to ``limit`` frames of a video.
+    Yield an image, or the frames of a video; nothing when unreadable.
 
     Parameters
     ----------
     source : Path
         An image or video file.
-    limit : int, optional
-        The maximum number of video frames. Default is None (all).
 
-    Returns
-    -------
-    list[np.ndarray]
+    Yields
+    ------
+    np.ndarray
         The frames, BGR.
 
-    Raises
-    ------
-    FileNotFoundError
-        If nothing can be read.
-
     """
-    frames: list[np.ndarray] = []
     if source.suffix.lower() in _IMAGE_SUFFIXES:
         image = cv2.imread(str(source))
         if image is not None:
-            frames.append(image)
-    else:
-        cap = cv2.VideoCapture(str(source))
-        while limit is None or len(frames) < limit:
+            yield image
+        return
+    cap = cv2.VideoCapture(str(source))
+    try:
+        while True:
             ok, frame = cap.read()
             if not ok:
-                break
-            frames.append(frame)
+                return
+            yield frame
+    finally:
         cap.release()
-    if len(frames) == 0:
-        err_msg = f"Cannot read any frame from {source}"
-        raise FileNotFoundError(err_msg)
-    return frames
 
 
 def _characterize(args: SimpleNamespace) -> None:
@@ -245,19 +245,17 @@ def _characterize(args: SimpleNamespace) -> None:
     if len(image_paths) == 0:
         err_msg = f"No images found in {args.images}"
         raise FileNotFoundError(err_msg)
-    images: list[np.ndarray] = []
-    ground_truth: list[list[tuple[Bbox, int]]] = []
-    for path in image_paths:
-        image = cv2.imread(str(path))
-        if image is None:
-            err_msg = f"Cannot read image: {path}"
-            raise FileNotFoundError(err_msg)
-        images.append(image)
-        height, width = image.shape[:2]
-        ground_truth.append(_read_labels(Path(args.labels) / f"{path.stem}.txt", width, height))
+    images = _load_images(image_paths)
+    ground_truth = [
+        _read_labels(Path(args.labels) / f"{path.stem}.txt", image.shape[1], image.shape[0])
+        for path, image in zip(image_paths, images)
+    ]
     latency_images = None
     if args.latency_input is not None:
-        latency_images = _read_frames(Path(args.latency_input), args.latency_frames)
+        latency_images = list(islice(_iter_frames(Path(args.latency_input)), args.latency_frames))
+        if len(latency_images) == 0:
+            err_msg = f"Cannot read any frame from {args.latency_input}"
+            raise FileNotFoundError(err_msg)
 
     traits = characterize(
         models,
@@ -392,16 +390,8 @@ def _run(args: SimpleNamespace) -> None:
             usage[f"{schedule.hp} + {schedule.lp}"] += 1
 
     try:
-        if source.suffix.lower() in _IMAGE_SUFFIXES:
-            _step(_read_frames(source)[0])
-        else:
-            cap = cv2.VideoCapture(str(source))
-            while True:
-                ok, frame = cap.read()
-                if not ok:
-                    break
-                _step(frame)
-            cap.release()
+        for frame in _iter_frames(source):
+            _step(frame)
     finally:
         drift.close()
 

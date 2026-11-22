@@ -19,10 +19,10 @@ if TYPE_CHECKING:
 
     from trtutils.image.types import Detection
 
-_COUNTER_DECREMENTS = ("all", "empty")
-_DENSE_GROUPS = ("rectangles", "blocks")
-_ANNEAL_COUNTERS = ("frames", "packs")
-_LATENCY_TESTS = ("sum", "schedule")
+COUNTER_DECREMENTS = ("all", "empty")
+DENSE_GROUPS = ("rectangles", "blocks")
+ANNEAL_COUNTERS = ("frames", "packs")
+LATENCY_TESTS = ("sum", "schedule")
 
 
 class Schedule(NamedTuple):
@@ -291,10 +291,10 @@ class DriftConfig:
     def __post_init__(self: Self) -> None:
         self.hp_trusted_models = tuple(self.hp_trusted_models)
         choices = {
-            "counter_decrement": (self.counter_decrement, _COUNTER_DECREMENTS),
-            "dense_groups": (self.dense_groups, _DENSE_GROUPS),
-            "anneal_counter": (self.anneal_counter, _ANNEAL_COUNTERS),
-            "lp_latency_test": (self.lp_latency_test, _LATENCY_TESTS),
+            "counter_decrement": (self.counter_decrement, COUNTER_DECREMENTS),
+            "dense_groups": (self.dense_groups, DENSE_GROUPS),
+            "anneal_counter": (self.anneal_counter, ANNEAL_COUNTERS),
+            "lp_latency_test": (self.lp_latency_test, LATENCY_TESTS),
         }
         for name, (value, allowed) in choices.items():
             if value not in allowed:

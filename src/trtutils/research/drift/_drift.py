@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
-from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 from trtutils.image.postprocessors._common import nms
 
+from ._characterize import _WARMUP_CALLS, _run_locked
 from ._packer import FramePacker
 from ._scheduler import DriftScheduler, hp_region
 from ._types import DriftConfig, FrameResult
@@ -28,8 +28,6 @@ if TYPE_CHECKING:
     from trtutils.image.types import Bbox, Detection
 
     from ._types import ModelTraits, Schedule
-
-_WARMUP_CALLS = 3
 
 
 def _square(region: Bbox, image_size: tuple[int, int]) -> Bbox:
@@ -256,33 +254,34 @@ class Drift:
     ) -> FrameResult:
         height, width = image.shape[:2]
         x1, y1, x2, y2 = _square(region, (width, height)) if self._config.hp_square else region
-        crop = np.ascontiguousarray(image[y1:y2, x1:x2])
         packed = packer.pack(image, exclude=region)
 
         future: Future[list[Detection]] | None = None
         if packed is not None and schedule.parallel:
             future = self._submit(lp_name, packed[0])
         try:
-            hp_raw = self._detectors[schedule.hp].end2end(crop)
+            # crop after the submit so the copy does not delay the dla
+            hp_raw = self._detectors[schedule.hp].end2end(np.ascontiguousarray(image[y1:y2, x1:x2]))
         finally:
             # never leave the worker running into the next frame, even if hp failed; an hp
             # error stays the one raised
             if future is not None:
                 wait([future])
-        lp_raw = future.result() if future is not None else []
-        if packed is not None and not schedule.parallel:
-            lp_raw = self._detectors[lp_name].end2end(packed[0])
-        if packed is None:
-            # no low-priority cell was sampled: only the hp model ran, and the next
-            # frame's prediction must come from it
-            schedule = schedule._replace(lp=None, parallel=False)
-
         hp = [
             ((b[0] + x1, b[1] + y1, b[2] + x1, b[3] + y1), float(conf), int(cls))
             for b, conf, cls in hp_raw
         ]
+        if packed is None:
+            # no low-priority cell was sampled: only the hp model ran, and the next
+            # frame's prediction must come from it
+            return FrameResult(hp, hp, [], schedule._replace(lp=None, parallel=False))
+
+        if future is not None:
+            lp_raw = future.result()
+        else:
+            lp_raw = self._detectors[lp_name].end2end(packed[0])
         lp: list[Detection] = []
-        if packed is not None and len(lp_raw) > 0:
+        if len(lp_raw) > 0:
             boxes, valid = packer.unpack([d[0] for d in lp_raw], packed[1])
             lp = [
                 ((int(box[0]), int(box[1]), int(box[2]), int(box[3])), float(conf), int(cls))
@@ -301,11 +300,4 @@ class Drift:
         if self._executor is None:
             err_msg = f"model {name!r} runs on a DLA but the worker is gone (was close() called?)"
             raise RuntimeError(err_msg)
-        return self._executor.submit(self._run_locked, name, image)
-
-    def _run_locked(self: Self, name: str, image: np.ndarray) -> list[Detection]:
-        # work on the legacy default stream breaks a CUDA graph capture running on the
-        # caller thread, so the worker holds the capture lock; only captures contend for
-        # it, and the warmup in __init__ already did every capture
-        with TRTEngine._capture_lock:  # noqa: SLF001
-            return self._detectors[name].end2end(image)
+        return self._executor.submit(_run_locked, self._detectors[name], image)
