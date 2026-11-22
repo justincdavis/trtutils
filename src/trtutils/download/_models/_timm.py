@@ -93,9 +93,11 @@ def export_timm_features(
     no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    # vision transformers take any multiple of the patch size, the timm dinov3
-    # models resample their position embeddings (rope) to the input size
-    imgsz = handle_imgsz(imgsz, int(config["imgsz"]), model, adjust_div=int(config["patch"]))
+    # convnext downsamples by 32 in total and takes any multiple of it, vision transformers
+    # take any multiple of the patch size (the timm dinov3 vits resample their rope)
+    convnext = config.get("arch") == "convnext"
+    divisor = 32 if convnext else int(config["patch"])
+    imgsz = handle_imgsz(imgsz, int(config["imgsz"]), model, adjust_div=divisor)
     dynamic_axes = (
         '{"input": {0: "batch_size"}, "embedding": {0: "batch_size"}, '
         '"feature_map": {0: "batch_size"}}'
@@ -141,38 +143,56 @@ class ViTFeatures(torch.nn.Module):
         return embedding, feature_map
 
 
-# exports never need gradients (the in-place rescale below also requires it)
+class ConvNeXtFeatures(torch.nn.Module):
+    # last stage map (stride 32) and its average pool after the head norm
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x):
+        feature_map = self.model.forward_features(x)
+        embedding = self.model.forward_head(feature_map, pre_logits=True)
+        return embedding, feature_map
+
+
+def rescale_residual_stream(model, wrapper):
+    # a register-token channel drives the residual stream of vit-l / vit-h+ past the fp16
+    # maximum (~1.6e5 > 65504). every layernorm is scale invariant, so scaling everything
+    # that writes into the stream by s and each eps by s * s leaves the outputs unchanged
+    scale = 1.0 / 16
+    check_input = torch.randn(1, 3, imgsz, imgsz)
+    expected = wrapper(check_input)
+    model.patch_embed.proj.weight.mul_(scale)
+    model.patch_embed.proj.bias.mul_(scale)
+    for name in ("cls_token", "reg_token", "pos_embed"):
+        token = getattr(model, name, None)
+        if token is not None:
+            token.mul_(scale)
+    for block in model.blocks:
+        for gamma, linear in ((block.gamma_1, block.attn.proj), (block.gamma_2, block.mlp.fc2)):
+            if gamma is not None:
+                gamma.mul_(scale)
+            else:
+                linear.weight.mul_(scale)
+                linear.bias.mul_(scale)
+    for module in model.modules():
+        if isinstance(module, torch.nn.LayerNorm):
+            module.eps = module.eps * scale * scale
+    # fails loudly if a timm change leaves part of the stream unscaled
+    for before, after in zip(expected, wrapper(check_input)):
+        torch.testing.assert_close(after, before, rtol=1e-4, atol=1e-4)
+
+
+# exports never need gradients (the in-place rescale also requires it)
 torch.set_grad_enabled(False)
 # the input size is not passed, timm builds dinov3 with a dynamic image size
 model = timm.create_model("{config["name"]}", pretrained=True)
 model.eval()
-wrapper = ViTFeatures(model).eval()
-
-# a register-token channel drives the residual stream of vit-l / vit-h+ past the fp16
-# maximum (~1.6e5 > 65504). every layernorm is scale invariant, so scaling everything that
-# writes into the stream by s and each eps by s * s leaves the outputs unchanged
-scale = 1.0 / 16
-check_input = torch.randn(1, 3, imgsz, imgsz)
-expected = wrapper(check_input)
-model.patch_embed.proj.weight.mul_(scale)
-model.patch_embed.proj.bias.mul_(scale)
-for name in ("cls_token", "reg_token", "pos_embed"):
-    token = getattr(model, name, None)
-    if token is not None:
-        token.mul_(scale)
-for block in model.blocks:
-    for gamma, linear in ((block.gamma_1, block.attn.proj), (block.gamma_2, block.mlp.fc2)):
-        if gamma is not None:
-            gamma.mul_(scale)
-        else:
-            linear.weight.mul_(scale)
-            linear.bias.mul_(scale)
-for module in model.modules():
-    if isinstance(module, torch.nn.LayerNorm):
-        module.eps = module.eps * scale * scale
-# fails loudly if a timm change leaves part of the stream unscaled
-for before, after in zip(expected, wrapper(check_input)):
-    torch.testing.assert_close(after, before, rtol=1e-4, atol=1e-4)
+if {convnext}:
+    wrapper = ConvNeXtFeatures(model).eval()
+else:
+    wrapper = ViTFeatures(model).eval()
+    rescale_residual_stream(model, wrapper)
 
 dummy_input = torch.randn({batch}, 3, imgsz, imgsz)
 # models over 2 GB spill their weights into one file per tensor: keep those apart

@@ -38,6 +38,7 @@ _EXPECTED_FAMILIES = [
     "depth_anything_v2",
     "depth_anything_v3",
     "dinov3",
+    "dinov3_convnext",
     "hoi_detr",
     "hands23",
     "ppocr_det",
@@ -97,6 +98,10 @@ _EXPECTED_MODELS = [
     "dinov3_vitb16",
     "dinov3_vitl16",
     "dinov3_vith16plus",
+    "dinov3_convnext_tiny",
+    "dinov3_convnext_small",
+    "dinov3_convnext_base",
+    "dinov3_convnext_large",
     "hoi_detr_vitl",
     "hands23_x101",
     "ppocrv4_det",
@@ -173,6 +178,17 @@ def test_timm_configs(model_configs, family) -> None:
         assert config["name"].split(".")[0].endswith(f"_{trained}")
         assert config["patch"] == ("14" if "huge" in model else "16")
         assert ("in22k" in config["name"]) == ("_in22k" in model)
+
+
+def test_dinov3_convnext_configs(model_configs) -> None:
+    """DINOv3 ConvNeXt configs name a timm LVD-1689M ConvNeXt at 224 and switch the exporter arch."""
+    for model, config in model_configs["dinov3_convnext"].items():
+        assert config["exporter"] == "timm_features"
+        assert config["license"] == "DINOv3 License"
+        size = model.split("_")[-1]
+        assert config["name"] == f"convnext_{size}.dinov3_lvd1689m", model
+        assert (config["imgsz"], config["arch"]) == ("224", "convnext")
+        assert "patch" not in config
 
 
 def test_dinov3_configs(model_configs) -> None:

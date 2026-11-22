@@ -104,6 +104,8 @@ Classes
     Alias for the DepthEstimator class with args preset for Depth-Anything-V3.
 :class:`DINOv3`
     Alias for the FeatureExtractor class with args preset for DINOv3.
+:class:`DINOv3ConvNeXt`
+    Alias for the FeatureExtractor class with args preset for the DINOv3 ConvNeXt backbones.
 :class:`PPOCRDetector`
     Alias for the TextDetector class with args preset for PaddleOCR (PP-OCR) detection.
 :class:`PPOCRRecognizer`
@@ -190,7 +192,7 @@ from .detectors import (
     YOLOv13,
     YOLOv26,
 )
-from .feature_extractors import DINOv3
+from .feature_extractors import DINOv3, DINOv3ConvNeXt
 from .hand_interaction import HOIDETR, Hands23
 from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
@@ -211,6 +213,7 @@ __all__ = [
     "ConvNeXt",
     "DEIMv2",
     "DINOv3",
+    "DINOv3ConvNeXt",
     "DeiT",
     "DeiT3",
     "DenseNet",
