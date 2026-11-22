@@ -88,6 +88,9 @@ models = {
 }
 
 # images: BGR arrays or paths; ground_truth: per image, a list of ((x1, y1, x2, y2), class_id)
+# both may be generators: images are decoded one at a time and run through every model,
+# so a large validation set never sits in memory. The latency loops cycle through a few
+# frames held in memory: latency_images, or the first latency_frames (30) labeled images
 traits = characterize(models, images, ground_truth, latency_images=video_frames)
 save_characterization(traits, "traits.json")
 

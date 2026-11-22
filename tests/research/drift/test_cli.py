@@ -9,11 +9,13 @@ import dataclasses
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import cv2
+import numpy as np
 import pytest
 
 from trtutils.__main__ import _main
 from trtutils.research.drift import DriftConfig
-from trtutils.research.drift._cli import _make_config, _parse_models, _read_labels
+from trtutils.research.drift._cli import _iter_labeled, _make_config, _parse_models, _read_labels
 
 pytestmark = pytest.mark.cpu
 
@@ -137,3 +139,27 @@ def test_read_labels(tmp_path) -> None:
     label.write_text("0 0.5 0.5 0.5 0.25\n0 0.1 0.1 0.2 0.1 0.3 0.3\n")
     with pytest.raises(ValueError, match=r"frame.txt:2: expected 'class cx cy w h'"):
         _read_labels(label, 200, 100)
+
+
+def test_iter_labeled_reads_one_image_at_a_time(tmp_path, monkeypatch) -> None:
+    """Each image is read only when its turn comes, with its labels scaled to its own size."""
+    (tmp_path / "labels").mkdir()
+    (tmp_path / "labels" / "a.txt").write_text("2 0.5 0.5 0.5 0.5\n")
+    paths = [tmp_path / "a.png", tmp_path / "b.png"]
+    cv2.imwrite(str(paths[0]), np.zeros((100, 200, 3), dtype=np.uint8))
+    cv2.imwrite(str(paths[1]), np.zeros((40, 60, 3), dtype=np.uint8))
+    reads = []
+    imread = cv2.imread
+
+    def _counted_imread(path):
+        reads.append(path)
+        return imread(path)
+
+    monkeypatch.setattr(cv2, "imread", _counted_imread)
+    pairs = _iter_labeled(paths, tmp_path / "labels")
+    assert reads == []
+    image, labels = next(pairs)
+    assert (image.shape, labels, len(reads)) == ((100, 200, 3), [((50, 25, 150, 75), 2)], 1)
+    image, labels = next(pairs)
+    assert (image.shape, labels, len(reads)) == ((40, 60, 3), [], 2)
+    assert next(pairs, None) is None

@@ -8,8 +8,10 @@ from __future__ import annotations
 import gc
 import tempfile
 import time
+from collections.abc import Sized
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -23,7 +25,7 @@ from trtutils._log import LOG
 from ._types import ModelTraits
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
 
     import numpy as np
 
@@ -71,17 +73,36 @@ def _true_positives(
     return matches
 
 
-def _load_images(images: Sequence[np.ndarray | Path | str]) -> list[np.ndarray]:
-    frames: list[np.ndarray] = []
+def _load_image(image: np.ndarray | Path | str) -> np.ndarray:
+    if not isinstance(image, (Path, str)):
+        return image
+    frame = cv2.imread(str(image))
+    if frame is None:
+        err_msg = f"Cannot read image: {image}"
+        raise FileNotFoundError(err_msg)
+    return frame
+
+
+def _labeled_images(
+    images: Iterable[np.ndarray | Path | str],
+    ground_truth: Iterable[Sequence[tuple[Bbox, int]]],
+) -> Iterator[tuple[np.ndarray, Sequence[tuple[Bbox, int]]]]:
+    # decodes one image at a time; generators have no length, so their mismatch is
+    # only found when one side runs out
+    sized = isinstance(images, Sized) and isinstance(ground_truth, Sized)
+    if sized and len(images) != len(ground_truth):
+        err_msg = f"got {len(images)} images but {len(ground_truth)} ground-truth entries"
+        raise ValueError(err_msg)
+    truth = iter(ground_truth)
     for image in images:
-        if isinstance(image, (Path, str)):
-            frame = cv2.imread(str(image))
-            if frame is None:
-                err_msg = f"Cannot read image: {image}"
-                raise FileNotFoundError(err_msg)
-            image = frame  # noqa: PLW2901
-        frames.append(image)
-    return frames
+        boxes = next(truth, None)
+        if boxes is None:
+            err_msg = "ground_truth has fewer entries than images"
+            raise ValueError(err_msg)
+        yield _load_image(image), boxes
+    if next(truth, None) is not None:
+        err_msg = "ground_truth has more entries than images"
+        raise ValueError(err_msg)
 
 
 def _measure(
@@ -142,24 +163,28 @@ def _pair_step(
 
 def characterize(
     models: Mapping[str, Callable[[], DetectorInterface]],
-    images: Sequence[np.ndarray | Path | str],
-    ground_truth: Sequence[Sequence[tuple[Bbox, int]]],
-    latency_images: Sequence[np.ndarray | Path | str] | None = None,
+    images: Iterable[np.ndarray | Path | str],
+    ground_truth: Iterable[Sequence[tuple[Bbox, int]]],
+    latency_images: Iterable[np.ndarray | Path | str] | None = None,
     iterations: int = 200,
     warmup_iterations: int = 20,
     iou_threshold: float = 0.5,
     *,
+    latency_frames: int = 30,
     verbose: bool | None = None,
 ) -> dict[str, ModelTraits]:
     """
     Characterize detection models for DRIFT.
 
-    Every model is built once and stays resident, as at runtime. Per labeled image
-    it records every detection's confidence, the number of true positives (greedy,
+    Every model is built once and stays resident, as at runtime. The labeled images
+    are streamed: each is decoded once and run through every model before the next
+    one is read, so one labeled image is in memory at a time. Per labeled image it
+    records every detection's confidence, the number of true positives (greedy,
     class-aware, at ``iou_threshold``) and the number of ground-truth boxes. Latency
     is end to end (``end2end``: preprocess, inference, postprocess), per model and
     for every GPU model running concurrently with every DLA model, exactly as the
-    runtime runs them. Energy is measured with tegrastats on Jetson.
+    runtime runs them, cycling through a small set of frames held in memory. Energy
+    is measured with tegrastats on Jetson.
 
     Parameters
     ----------
@@ -167,20 +192,26 @@ def characterize(
         A factory per model name that builds the detector, e.g.
         ``{"yolox_s_dla": lambda: Detector("s.engine", dla_core=0, cuda_graph=False)}``.
         Use the same factories at runtime.
-    images : Sequence[np.ndarray | Path | str]
-        The labeled images, as BGR arrays or paths.
-    ground_truth : Sequence[Sequence[tuple[Bbox, int]]]
+    images : Iterable[np.ndarray | Path | str]
+        The labeled images, as BGR arrays or paths, e.g. a list or a generator.
+        Paths are decoded one at a time, when their turn comes.
+    ground_truth : Iterable[Sequence[tuple[Bbox, int]]]
         Per image, the ground-truth (box, class id) pairs, boxes as (x1, y1, x2, y2)
-        pixels and class ids in the models' output id space.
-    latency_images : Sequence[np.ndarray | Path | str], optional
+        pixels and class ids in the models' output id space. Same length as
+        ``images``.
+    latency_images : Iterable[np.ndarray | Path | str], optional
         The images the latency loops cycle through, e.g. frames of the target video.
-        Default is None: ``images``.
+        All of them are decoded up front and held in memory, so keep the set small.
+        Default is None: the first ``latency_frames`` labeled images.
     iterations : int, optional
         Timed calls per model and per pair. Default is 200.
     warmup_iterations : int, optional
         Untimed calls before each timing loop. Default is 20.
     iou_threshold : float, optional
         IoU for a detection to match a ground-truth box. Default is 0.5.
+    latency_frames : int, optional
+        How many labeled images the latency loops cycle through when
+        ``latency_images`` is None. Default is 30.
     verbose : bool, optional
         Whether to log progress. Default is None (False).
 
@@ -192,22 +223,55 @@ def characterize(
     Raises
     ------
     ValueError
-        If no models or images are given, or images and ground truth differ in length.
+        If no models or images are given, images and ground truth differ in length,
+        ``latency_images`` is empty, or ``latency_frames`` is below one. When either
+        of images and ground truth has no length, a mismatch is raised once the
+        shorter one runs out.
     FileNotFoundError
         If an image path cannot be read.
 
     """
+    return _characterize_labeled(
+        models,
+        _labeled_images(images, ground_truth),
+        latency_images,
+        iterations,
+        warmup_iterations,
+        iou_threshold,
+        latency_frames=latency_frames,
+        verbose=verbose,
+    )
+
+
+def _characterize_labeled(
+    models: Mapping[str, Callable[[], DetectorInterface]],
+    labeled: Iterator[tuple[np.ndarray, Sequence[tuple[Bbox, int]]]],
+    latency_images: Iterable[np.ndarray | Path | str] | None,
+    iterations: int,
+    warmup_iterations: int,
+    iou_threshold: float,
+    *,
+    latency_frames: int,
+    verbose: bool | None,
+) -> dict[str, ModelTraits]:
+    # characterize over decoded (image, ground truth) pairs, pulled one at a time;
+    # the cli builds its own pairs, since labels are scaled by their image's size
     if len(models) == 0:
         err_msg = "characterize needs at least one model"
         raise ValueError(err_msg)
-    if len(images) == 0 or len(images) != len(ground_truth):
-        err_msg = f"got {len(images)} images but {len(ground_truth)} ground-truth entries"
+    if latency_frames < 1:
+        err_msg = f"latency_frames must be at least 1, got {latency_frames}"
         raise ValueError(err_msg)
-    frames = _load_images(images)
-    timing_frames = _load_images(latency_images) if latency_images is not None else frames
-    if len(timing_frames) == 0:
-        err_msg = "latency_images is empty"
+    first = next(labeled, None)
+    if first is None:
+        err_msg = "characterize needs at least one labeled image"
         raise ValueError(err_msg)
+    timing_frames: list[np.ndarray] = []
+    if latency_images is not None:
+        timing_frames = [_load_image(image) for image in latency_images]
+        if len(timing_frames) == 0:
+            err_msg = "latency_images is empty"
+            raise ValueError(err_msg)
 
     detectors = {name: factory() for name, factory in models.items()}
     dla = {name: d.engine.dla_core is not None for name, d in detectors.items()}
@@ -225,24 +289,34 @@ def characterize(
     try:
         for name in detectors:
             for _ in range(_WARMUP_CALLS):
-                _run(name, frames[0])
+                _run(name, first[0])
+
+        # image outer, model inner: each labeled image is decoded once and dropped
+        # after every model ran on it, except the few kept for the latency loops
+        confidences: dict[str, list[list[float]]] = {name: [] for name in detectors}
+        true_positives: dict[str, list[int]] = {name: [] for name in detectors}
+        ground_truths: list[int] = []
+        for frame, boxes in chain([first], labeled):
+            for name in detectors:
+                detections = _run(name, frame)
+                confidences[name].append(
+                    [round(float(d[1]), _CONFIDENCE_DECIMALS) for d in detections]
+                )
+                true_positives[name].append(_true_positives(detections, boxes, iou_threshold))
+            ground_truths.append(len(boxes))
+            if latency_images is None and len(timing_frames) < latency_frames:
+                timing_frames.append(frame)
 
         for name, detector in detectors.items():
-            confidences: list[list[float]] = []
-            true_positives: list[int] = []
-            for frame, boxes in zip(frames, ground_truth):
-                detections = _run(name, frame)
-                confidences.append([round(float(d[1]), _CONFIDENCE_DECIMALS) for d in detections])
-                true_positives.append(_true_positives(detections, boxes, iou_threshold))
             latency, energy = _measure(partial(_solo, name), iterations, warmup_iterations)
             width, height = detector.input_shape
             traits[name] = ModelTraits(
                 input_size=(int(width), int(height)),
                 dla=dla[name],
                 latency_ms=latency,
-                confidences=confidences,
-                true_positives=true_positives,
-                ground_truths=[len(boxes) for boxes in ground_truth],
+                confidences=confidences[name],
+                true_positives=true_positives[name],
+                ground_truths=list(ground_truths),
                 energy_mj=energy,
             )
             if verbose:

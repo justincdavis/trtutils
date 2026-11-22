@@ -18,7 +18,7 @@ import cv2
 from trtutils._log import LOG
 from trtutils.image import Detector
 
-from ._characterize import _load_images, characterize
+from ._characterize import _characterize_labeled, _load_image
 from ._drift import Drift
 from ._types import (
     ANNEAL_COUNTERS,
@@ -32,7 +32,7 @@ from ._types import (
 
 if TYPE_CHECKING:
     import argparse
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
     from types import SimpleNamespace
 
     import numpy as np
@@ -193,6 +193,31 @@ def _iter_frames(source: Path) -> Iterator[np.ndarray]:
         cap.release()
 
 
+def _iter_labeled(
+    image_paths: Iterable[Path],
+    labels: Path,
+) -> Iterator[tuple[np.ndarray, list[tuple[Bbox, int]]]]:
+    """
+    Yield each image with its labels, reading one image and label file at a time.
+
+    Parameters
+    ----------
+    image_paths : Iterable[Path]
+        The image files.
+    labels : Path
+        The directory of YOLO-format ``.txt`` labels, one per image stem.
+
+    Yields
+    ------
+    tuple[np.ndarray, list[tuple[Bbox, int]]]
+        The BGR image and its (box, class id) pairs in pixels.
+
+    """
+    for path in image_paths:
+        image = _load_image(path)
+        yield image, _read_labels(labels / f"{path.stem}.txt", image.shape[1], image.shape[0])
+
+
 def _characterize(args: SimpleNamespace) -> None:
     """
     Characterize detection models on a labeled image directory.
@@ -220,9 +245,10 @@ def _characterize(args: SimpleNamespace) -> None:
         - labels : str
             Directory of YOLO-format ``.txt`` labels, one per image stem.
         - latency_input : str | None
-            Video or image the latency loops use. None uses the labeled images.
+            Video or image the latency loops use. None uses the first labeled images.
         - latency_frames : int
-            Frames read from ``latency_input``.
+            Frames the latency loops cycle through, read from ``latency_input`` or
+            the first labeled images.
         - output : str
             JSON file to write the characterization to.
         - iterations : int
@@ -245,11 +271,6 @@ def _characterize(args: SimpleNamespace) -> None:
     if len(image_paths) == 0:
         err_msg = f"No images found in {args.images}"
         raise FileNotFoundError(err_msg)
-    images = _load_images(image_paths)
-    ground_truth = [
-        _read_labels(Path(args.labels) / f"{path.stem}.txt", image.shape[1], image.shape[0])
-        for path, image in zip(image_paths, images)
-    ]
     latency_images = None
     if args.latency_input is not None:
         latency_images = list(islice(_iter_frames(Path(args.latency_input)), args.latency_frames))
@@ -257,14 +278,14 @@ def _characterize(args: SimpleNamespace) -> None:
             err_msg = f"Cannot read any frame from {args.latency_input}"
             raise FileNotFoundError(err_msg)
 
-    traits = characterize(
+    traits = _characterize_labeled(
         models,
-        images,
-        ground_truth,
-        latency_images=latency_images,
-        iterations=args.iterations,
-        warmup_iterations=args.warmup_iterations,
-        iou_threshold=args.iou_threshold,
+        _iter_labeled(image_paths, Path(args.labels)),
+        latency_images,
+        args.iterations,
+        args.warmup_iterations,
+        args.iou_threshold,
+        latency_frames=args.latency_frames,
         verbose=args.verbose,
     )
     save_characterization(traits, args.output)
@@ -520,13 +541,19 @@ def register_cli(
     characterize_parser.add_argument(
         "--latency_input",
         default=None,
-        help="Video or image the latency loops use. Default uses the labeled images.",
+        help=(
+            "Video or image the latency loops use. Default uses the first "
+            "--latency_frames labeled images."
+        ),
     )
     characterize_parser.add_argument(
         "--latency_frames",
         type=int,
         default=30,
-        help="Frames read from --latency_input. Default is 30.",
+        help=(
+            "Frames the latency loops cycle through (held in memory), read from "
+            "--latency_input or the first labeled images. Default is 30."
+        ),
     )
     characterize_parser.add_argument(
         "--iterations",

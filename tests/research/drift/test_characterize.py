@@ -1,13 +1,17 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/research/drift/_characterize.py and _drift.py -- on real engines."""
+"""Tests for src/trtutils/research/drift/_characterize.py and _drift.py -- real and fake engines."""
 
 from __future__ import annotations
 
 import dataclasses
+from collections import Counter
 from functools import partial
+from pathlib import Path
+from types import SimpleNamespace
 
+import cv2
 import numpy as np
 import pytest
 
@@ -18,6 +22,7 @@ from trtutils.models import YOLOX
 from trtutils.research.drift import (
     Drift,
     DriftConfig,
+    ModelTraits,
     characterize,
     load_characterization,
     save_characterization,
@@ -27,6 +32,48 @@ YOLOV10N_640 = DATA_DIR / "yolov10" / "yolov10n_640.onnx"
 YOLOV10N_320 = DATA_DIR / "yolov10" / "yolov10n_320.onnx"
 YOLOXS_320 = DATA_DIR / "yolox" / "yoloxs_320.onnx"
 PRIORITY = {0, 17}  # COCO person and horse
+VALUES = [1, 2, 3, 4]  # fake labeled images are filled with one value each
+FAKE_TRUTH = [((0, 0, 10, 10), 1)]
+ITERATIONS = 6
+
+
+class FakeDetector:
+    """Detects two boxes whose confidence and class come from the image's fill value."""
+
+    def __init__(self, name, log, *, dla=False, scale=1.0) -> None:
+        """Stand in for one model; every call is logged as ("run", name, value)."""
+        self.name = name
+        self.log = log
+        self.scale = scale
+        self.input_shape = (64, 64)
+        self.engine = SimpleNamespace(dla_core=0 if dla else None)
+
+    def end2end(self, image):
+        value = int(image[0, 0, 0])
+        self.log.append(("run", self.name, value))
+        return [((0, 0, 10, 10), self.scale * value / 10, value % 2), ((20, 20, 30, 30), 0.25, 0)]
+
+
+@pytest.fixture
+def fake(monkeypatch):
+    """Fake GPU and DLA models sharing one call log, with timing replaced by one call per step."""
+
+    def _measure(step, iterations, _warmup_iterations):
+        for index in range(iterations):
+            step(index)
+        return [1.0] * iterations, []
+
+    monkeypatch.setattr("trtutils.research.drift._characterize._measure", _measure)
+    log = []
+    models = {
+        "gpu": partial(FakeDetector, "gpu", log),
+        "dla": partial(FakeDetector, "dla", log, dla=True, scale=0.5),
+    }
+    return models, log
+
+
+def _image(value):
+    return np.full((8, 8, 3), value, dtype=np.uint8)
 
 
 @pytest.fixture(scope="module")
@@ -180,3 +227,122 @@ def test_dla_pairs_and_concurrent_run(engines, dla_engine, canvas) -> None:
     for name in ("n640", "n320"):
         assert drift._detectors[name].engine._cuda_graph_enabled
     drift.close()
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    "container",
+    [
+        pytest.param(list, id="list"),
+        pytest.param(iter, id="generator"),
+    ],
+)
+def test_characterize_traits_from_any_iterable(fake, container) -> None:
+    """Lists and one-shot iterators of images and ground truth give the same, exact traits."""
+    models, _ = fake
+    traits = characterize(
+        models,
+        container([_image(v) for v in VALUES]),
+        container([FAKE_TRUTH for _ in VALUES]),
+        iterations=ITERATIONS,
+    )
+    latency = [1.0] * ITERATIONS
+    expected = {
+        "gpu": ModelTraits(
+            input_size=(64, 64),
+            dla=False,
+            latency_ms=latency,
+            confidences=[[v / 10, 0.25] for v in VALUES],
+            true_positives=[v % 2 for v in VALUES],
+            ground_truths=[1] * len(VALUES),
+            pair_latency_ms={"dla": latency},
+            pair_energy_mj={"dla": []},
+        ),
+        "dla": ModelTraits(
+            input_size=(64, 64),
+            dla=True,
+            latency_ms=latency,
+            confidences=[[v / 20, 0.25] for v in VALUES],
+            true_positives=[v % 2 for v in VALUES],
+            ground_truths=[1] * len(VALUES),
+        ),
+    }
+    assert traits == expected
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("kwargs", "latency_values"),
+    [
+        pytest.param({}, [1, 2, 3, 4, 1, 2], id="default-all-labeled"),
+        pytest.param({"latency_frames": 2}, [1, 2, 1, 2, 1, 2], id="default-first-two"),
+        pytest.param(
+            {"latency_images": [_image(50), _image(60)], "latency_frames": 1},
+            [50, 60, 50, 60, 50, 60],
+            id="explicit-latency-images",
+        ),
+    ],
+)
+def test_characterize_streams_paths(fake, tmp_path, monkeypatch, kwargs, latency_values) -> None:
+    """Each image is read once, run on every model before the next read; latency reuses frames."""
+    models, log = fake
+    paths = []
+    for value in VALUES:
+        paths.append(tmp_path / f"{value}.png")
+        cv2.imwrite(str(paths[-1]), _image(value))
+    imread = cv2.imread
+
+    def _logged_imread(path):
+        log.append(("read", int(Path(path).stem)))
+        return imread(path)
+
+    monkeypatch.setattr(cv2, "imread", _logged_imread)
+    traits = characterize(
+        models, (p for p in paths), (FAKE_TRUTH for _ in paths), iterations=ITERATIONS, **kwargs
+    )
+    assert traits["gpu"].confidences == [[v / 10, 0.25] for v in VALUES]
+
+    # warmup on the first image, then image outer, model inner
+    expected = [("read", 1)] + [("run", "gpu", 1)] * 3 + [("run", "dla", 1)] * 3
+    for value in VALUES:
+        if value != VALUES[0]:
+            expected.append(("read", value))
+        expected += [("run", "gpu", value), ("run", "dla", value)]
+    assert log[: len(expected)] == expected
+
+    # solo loops per model, then the concurrent pair loop, with no further reads
+    timing = log[len(expected) :]
+    solo = [("run", name, v) for name in ("gpu", "dla") for v in latency_values]
+    assert timing[: len(solo)] == solo
+    pair = Counter(("run", name, v) for name in ("gpu", "dla") for v in latency_values)
+    assert Counter(timing[len(solo) :]) == pair
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("images", "ground_truth", "kwargs", "match"),
+    [
+        pytest.param(
+            [_image(1)] * 3, [FAKE_TRUTH] * 2, {}, "got 3 images but 2", id="list-mismatch"
+        ),
+        pytest.param(
+            iter([_image(1)] * 3), iter([FAKE_TRUTH] * 2), {}, "fewer", id="more-images-iter"
+        ),
+        pytest.param(
+            iter([_image(1)] * 2), iter([FAKE_TRUTH] * 3), {}, "more", id="more-truth-iter"
+        ),
+        pytest.param([], [], {}, "at least one labeled image", id="empty-list"),
+        pytest.param(iter([]), iter([]), {}, "at least one labeled image", id="empty-iter"),
+        pytest.param(
+            [_image(1)], [FAKE_TRUTH], {"latency_images": iter([])}, "empty", id="no-latency"
+        ),
+        pytest.param(
+            [_image(1)], [FAKE_TRUTH], {"latency_frames": 0}, "at least 1", id="latency-frames"
+        ),
+    ],
+)
+def test_characterize_invalid_inputs(fake, images, ground_truth, kwargs, match) -> None:
+    """Mismatched lengths, even of iterators, empty inputs and bad latency settings raise."""
+    models, _ = fake
+    with pytest.raises(ValueError, match=match):
+        characterize(models, images, ground_truth, iterations=ITERATIONS, **kwargs)

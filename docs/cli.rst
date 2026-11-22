@@ -704,8 +704,9 @@ repeated once per model; give ``DLA_CORE`` for DLA engines (CUDA graphs are then
 * ``--labels``: Directory of YOLO-format labels with class ids; a missing file means no
   objects (required)
 * ``--output``: JSON file for the characterization (required)
-* ``--latency_input``: Video or image for the latency loops (default: the labeled images)
-* ``--latency_frames``: Frames read from ``--latency_input`` (default: 30)
+* ``--latency_input``: Video or image for the latency loops (default: the first labeled images)
+* ``--latency_frames``: Frames the latency loops cycle through, from ``--latency_input`` or the
+  labeled images (default: 30)
 * ``--iterations``: Timed calls per model and per GPU+DLA pair (default: 200)
 * ``--warmup_iterations``: Untimed calls before each timing loop (default: 20)
 * ``--iou_threshold``: IoU for a detection to match a label (default: 0.5)

@@ -113,7 +113,8 @@ Added
   ``trtutils research shift characterize`` / ``run``
 * ``trtutils.research.drift``: the DRIFT paper (intra-frame parallel object detection on
   multi-accelerator SoCs, ICCAD 2026). ``characterize`` measures each model's end-to-end latency,
-  alone and concurrently with every DLA model, plus per-image confidences and F1; ``Drift`` crops
+  alone and concurrently with every DLA model, plus per-image confidences and F1, streaming the
+  labeled images (any iterable, decoded one at a time); ``Drift`` crops
   the high-priority region for a GPU model and packs the rest of the frame for a second model
   that runs concurrently on a DLA, with ``DriftScheduler`` picking both per frame.
   ``FramePacker``, ``LinearEstimator`` and ``DriftScheduler`` work on their own. ``DriftConfig``
