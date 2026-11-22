@@ -35,6 +35,7 @@ _SCORED = Tuple[_BBOX, float]
         pytest.param("TextBox", Tuple[np.ndarray, float], id="text-box"),
         pytest.param("Text", Tuple[str, float], id="text"),
         pytest.param("TextLine", Tuple[np.ndarray, str, float], id="text-line"),
+        pytest.param("SemanticMask", np.ndarray, id="semantic-mask"),
     ],
 )
 def test_alias(name, expected) -> None:

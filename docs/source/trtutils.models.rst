@@ -12,6 +12,7 @@ Subpackages
    trtutils.models.detectors
    trtutils.models.hand_interaction
    trtutils.models.ocr
+   trtutils.models.semantic_segmenters
 
 Module contents
 ---------------
