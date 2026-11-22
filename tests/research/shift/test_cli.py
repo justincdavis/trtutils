@@ -9,11 +9,18 @@ import dataclasses
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import cv2
+import numpy as np
 import pytest
 
 from trtutils.__main__ import _main
-from trtutils.research.shift import ShiftConfig
-from trtutils.research.shift._cli import _make_config, _parse_models, _read_labels
+from trtutils.research.shift import ModelTraits, ShiftConfig, load_characterization
+from trtutils.research.shift._cli import (
+    _characterize,
+    _make_config,
+    _parse_models,
+    _read_labels,
+)
 
 pytestmark = pytest.mark.cpu
 
@@ -118,3 +125,40 @@ def test_read_labels(tmp_path) -> None:
     label.write_text("0 0.5 0.5 0.5 0.25\n0 0.1 0.1 0.2 0.1 0.3 0.3\n")
     with pytest.raises(ValueError, match=r"frame.txt:2: expected 'class cx cy w h'"):
         _read_labels(label, 200, 100)
+
+
+def test_characterize_passes_image_paths(tmp_path) -> None:
+    """The characterize command hands characterize image paths and pixel labels, then saves."""
+    images, labels = tmp_path / "images", tmp_path / "labels"
+    images.mkdir()
+    labels.mkdir()
+    for name in ("b", "a"):
+        cv2.imwrite(str(images / f"{name}.png"), np.zeros((100, 200, 3), dtype=np.uint8))
+    (images / "notes.txt").write_text("not an image")
+    (labels / "a.txt").write_text("0 0.5 0.5 0.5 0.25\n")
+    traits = {
+        "big": ModelTraits(
+            latency_ms=1.0,
+            energy_mj=0.0,
+            load_time_s=0.1,
+            load_memory_mb=10.0,
+            confidences=[[0.9], []],
+            ious=[[0.8], []],
+        )
+    }
+    args = SimpleNamespace(
+        model=[["big", _ENGINE]],
+        images=str(images),
+        labels=str(labels),
+        output=str(tmp_path / "traits.json"),
+        iterations=10,
+        warmup_iterations=2,
+        verbose=False,
+    )
+    with patch("trtutils.research.shift._cli.characterize", return_value=traits) as mock:
+        _characterize(args)
+    _models, image_paths, ground_truth = mock.call_args[0]
+    assert image_paths == [images / "a.png", images / "b.png"]
+    assert ground_truth == [[(50, 38, 150, 62)], []]
+    assert mock.call_args[1] == {"iterations": 10, "warmup_iterations": 2, "verbose": False}
+    assert load_characterization(args.output) == traits

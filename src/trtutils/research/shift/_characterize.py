@@ -22,7 +22,7 @@ from trtutils.jetson._benchmark import benchmark_engine as jetson_benchmark_engi
 from ._types import ModelTraits
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     import numpy as np
 
@@ -92,8 +92,8 @@ def _measure(
 
 def characterize(
     models: Mapping[str, Callable[[], DetectorInterface]],
-    images: Sequence[np.ndarray | Path | str],
-    ground_truth: Sequence[Sequence[Bbox]],
+    images: Iterable[np.ndarray | Path | str],
+    ground_truth: Iterable[Sequence[Bbox]],
     iterations: int = 1000,
     warmup_iterations: int = 50,
     *,
@@ -103,21 +103,26 @@ def characterize(
     Characterize (model, accelerator) pairs for SHIFT.
 
     Each pair is built, run over the labeled images, benchmarked, and freed
-    before the next one, so only one pair is in memory at a time. Per image it
-    records every detection's confidence and, for every ground-truth box, the best
-    IoU of any detection (class agnostic). Latency comes from the engine alone
-    (no pre/postprocessing); energy is measured with tegrastats on Jetson and is
-    0.0 elsewhere.
+    before the next one, so only one pair is in memory at a time. Every pair needs
+    every image, so images given as paths are streamed: each is decoded when a pair
+    reaches it and dropped after, so only one is held at a time, at the cost of one
+    decode per image per pair. Per image it records every detection's confidence
+    and, for every ground-truth box, the best IoU of any detection (class
+    agnostic). Latency comes from the engine alone (no pre/postprocessing); energy
+    is measured with tegrastats on Jetson and is 0.0 elsewhere.
 
     Parameters
     ----------
     models : Mapping[str, Callable[[], DetectorInterface]]
         A factory per pair name that builds the detector, e.g.
         ``{"yolov10n_dla": lambda: Detector("yolov10n_dla.engine", dla_core=0, cuda_graph=False)}``.
-    images : Sequence[np.ndarray | Path | str]
-        The labeled images, as BGR arrays or paths.
-    ground_truth : Sequence[Sequence[Bbox]]
-        Per image, the ground-truth boxes as (x1, y1, x2, y2) pixels.
+    images : Iterable[np.ndarray | Path | str]
+        The labeled images, as BGR arrays or paths. Any iterable works, a generator
+        included: it is read once and its items kept, which is cheap for paths
+        (decoded per pair, as above) while arrays stay in memory throughout.
+    ground_truth : Iterable[Sequence[Bbox]]
+        Per image, the ground-truth boxes as (x1, y1, x2, y2) pixels. Any iterable
+        works and is read once.
     iterations : int, optional
         Benchmark iterations per pair. Default is 1000.
     warmup_iterations : int, optional
@@ -133,18 +138,24 @@ def characterize(
     Raises
     ------
     ValueError
-        If no models are given, or images and ground truth differ in length.
+        If no models or no images are given, or images and ground truth differ
+        in length.
     FileNotFoundError
-        If an image path cannot be read.
+        If an image path cannot be read; raised while the first pair runs.
 
     """
     if len(models) == 0:
         err_msg = "characterize needs at least one model"
         raise ValueError(err_msg)
+    # every pair walks the images again, so keep the items (paths, not decoded frames)
+    images = list(images)
+    ground_truth = list(ground_truth)
+    if len(images) == 0:
+        err_msg = "characterize needs at least one image"
+        raise ValueError(err_msg)
     if len(images) != len(ground_truth):
         err_msg = f"got {len(images)} images but {len(ground_truth)} ground-truth entries"
         raise ValueError(err_msg)
-    frames = [_read_image(image) if isinstance(image, (Path, str)) else image for image in images]
 
     # one throwaway build so one-time cuda/tensorrt setup is not billed to the first pair
     next(iter(models.values()))()
@@ -162,7 +173,8 @@ def characterize(
 
         confidences: list[list[float]] = []
         ious: list[list[float]] = []
-        for frame, boxes in zip(frames, ground_truth):
+        for image, boxes in zip(images, ground_truth):
+            frame = _read_image(image) if isinstance(image, (Path, str)) else image
             detections = detector.end2end(frame)
             confidences.append([float(d[1]) for d in detections])
             ious.append([max((_iou(box, d[0]) for d in detections), default=0.0) for box in boxes])

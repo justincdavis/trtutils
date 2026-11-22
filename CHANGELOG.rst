@@ -103,7 +103,8 @@ Added
   path a size takes. The CPU's center crop is bilinear and the DLA's antialiased, so ``True``
   changes a DLA center crop's pixels slightly
 * ``trtutils.research.shift``: the SHIFT paper (context-aware multi-model object detection,
-  DATE 2024). ``characterize`` measures (model, accelerator) pairs; ``Shift`` runs the pair
+  DATE 2024). ``characterize`` measures (model, accelerator) pairs one at a time, streaming
+  labeled images given as paths (decoded per pair, never all held); ``Shift`` runs the pair
   ``ShiftScheduler`` picks per frame and loads pairs in the background under a memory budget;
   ``ConfidenceGraph`` predicts every model's accuracy from one model's confidence and works on
   its own. ``ShiftConfig`` holds the paper's hyperparameters, with

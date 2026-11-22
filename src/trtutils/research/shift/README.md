@@ -75,7 +75,8 @@ models = {
     "yolov11m_gpu": lambda: Detector("yolov11m.engine"),
 }
 
-# images: BGR arrays or paths; ground_truth: per image, a list of (x1, y1, x2, y2) boxes
+# images: BGR arrays or paths (any iterable); ground_truth: per image, a list of
+# (x1, y1, x2, y2) boxes. Paths are decoded one at a time as each pair runs.
 traits = characterize(models, images, ground_truth)
 save_characterization(traits, "traits.json")
 
@@ -89,6 +90,13 @@ for frame in frames:
 Pairs are built by the factories you pass, so anything a `Detector` accepts
 (preprocessor, thresholds, schemas) is per pair. Engines with DLA layers need
 `dla_core` and `cuda_graph=False`.
+
+`characterize` builds, runs, benchmarks and frees one pair at a time, and every
+pair runs over every labeled image. Pass paths for large datasets: each image is
+then decoded when a pair reaches it and dropped after, so memory holds one image
+instead of the whole set, for one decode per image per pair (about 3 ms for a
+640x480 JPEG and 16 ms for a 1080p one on an Orin CPU). Arrays are used as given
+and stay in memory. The CLI passes paths.
 
 ### Using the confidence graph on its own
 

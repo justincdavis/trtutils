@@ -178,17 +178,16 @@ def _characterize(args: SimpleNamespace) -> None:
     if len(image_paths) == 0:
         err_msg = f"No images found in {args.images}"
         raise FileNotFoundError(err_msg)
-    images: list[np.ndarray] = []
+    # labels are normalized, so each image is decoded once for its size and dropped;
+    # characterize streams the images from their paths
     ground_truth: list[list[Bbox]] = []
     for path in image_paths:
-        image = _read_image(path)
-        images.append(image)
-        height, width = image.shape[:2]
+        height, width = _read_image(path).shape[:2]
         ground_truth.append(_read_labels(Path(args.labels) / f"{path.stem}.txt", width, height))
 
     traits = characterize(
         models,
-        images,
+        image_paths,
         ground_truth,
         iterations=args.iterations,
         warmup_iterations=args.warmup_iterations,
@@ -201,7 +200,7 @@ def _characterize(args: SimpleNamespace) -> None:
     for name, trait in traits.items():
         LOG.info(
             f"{name:<24} {trait.latency_ms:8.2f} ms {trait.energy_mj:9.2f} mJ "
-            f"mean IoU {sum(trait.frame_accuracies()) / len(images):.3f}"
+            f"mean IoU {sum(trait.frame_accuracies()) / len(image_paths):.3f}"
         )
     LOG.info(f"Saved to: {args.output}")
     LOG.info("=" * 60)
