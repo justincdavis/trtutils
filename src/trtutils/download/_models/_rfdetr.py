@@ -36,12 +36,16 @@ def export_rfdetr(
         "rfdetr_n": 384,
         "rfdetr_s": 512,
         "rfdetr_m": 576,
+        "rfdetr_l": 704,
+        "rfdetr_b": 560,
+        "rfdetr_l_legacy": 560,
     }
     required_imgsz = rfdetr_imgszs.get(model)
     if required_imgsz is None:
         err_msg = f"RF-DETR does not support model {model}"
         raise ValueError(err_msg)
-    imgsz = handle_imgsz(imgsz, required_imgsz, model, enforce=True, adjust_div=32)
+    # each variant has one size, a multiple of its patch size times its window count
+    imgsz = handle_imgsz(imgsz, required_imgsz, model, enforce=True)
 
     run_uv_pip_install(
         directory,

@@ -492,7 +492,7 @@ Supported Models
 * D-FINE: Multiple configurations
 * DEIM: Multiple configurations
 * DEIMv2: deimv2_atto, deimv2_femto, deimv2_pico, deimv2_n, deimv2_s, deimv2_m, deimv2_l, deimv2_x
-* RF-DETR: Multiple configurations
+* RF-DETR: rfdetr_n, rfdetr_s, rfdetr_m, rfdetr_l, rfdetr_b, rfdetr_l_legacy
 
 Notes
 ^^^^^
@@ -500,7 +500,8 @@ Notes
 * The download process will create a temporary virtual environment to handle dependencies
 * Each download logs the license of the model's weights; copyleft (GPL-3.0, AGPL-3.0) and
   non-commercial licenses get a louder notice. See :ref:`Supported Models <models>` for the per-family list
-* RT-DETRv3 is fixed at 640; RF-DETR is fixed per variant (rfdetr_n 384, rfdetr_s 512, rfdetr_m 576)
+* RT-DETRv3 is fixed at 640; RF-DETR is fixed per variant (rfdetr_n 384, rfdetr_s 512, rfdetr_m 576,
+  rfdetr_l 704, rfdetr_b 560, rfdetr_l_legacy 560)
 * DEIMv2 is fixed per variant (deimv2_atto 320, deimv2_femto 416, all others 640)
 
 Inspect
