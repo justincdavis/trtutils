@@ -23,35 +23,19 @@ jobs:
       - name: Install dependencies
         run: uv pip install -e ".[pytest]"
       - name: Run CPU tests
+        if: matrix.python-version != '3.12'
         run: ./ci/run_cpu_tests.sh
-
-  # Per-module coverage of the CPU suite may never go down: checked against
-  # the "cpu" section of .coverage-threshold.json. Each module's floor is the
-  # higher of the PR's thresholds and the base branch's, so a PR cannot pass
-  # by lowering them.
-  coverage:
-    runs-on: ubuntu-latest
-    name: Coverage check
-    env:
-      VIRTUAL_ENV: .venv-3.12
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - name: Set up Python 3.12
-        run: |
-          uv venv $VIRTUAL_ENV --python 3.12
-          echo "$PWD/$VIRTUAL_ENV/bin" >> $GITHUB_PATH
-      - name: Install dependencies
-        run: uv pip install -e ".[pytest]"
-      - name: Run CPU tests with coverage
-        run: ./ci/run_cpu_tests.sh --cov=src/trtutils --cov-branch --cov-report=term --cov-report=json:.coverage-cpu.json
-      - name: Fetch the base branch's thresholds
-        if: github.event_name == 'pull_request'
+      # Python 3.12 also checks per-module coverage against the "cpu" section of
+      # .coverage-threshold.json. Each module's floor is the higher of the PR's
+      # threshold and the base branch's, so a PR cannot pass by lowering them.
+      - name: Fetch the base branch's coverage thresholds
+        if: matrix.python-version == '3.12' && github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
           git fetch --no-tags --depth=1 origin "$BASE_REF"
           git show FETCH_HEAD:.coverage-threshold.json > "$RUNNER_TEMP/base-thresholds.json"
-          echo "BASE_ARGS=--base-thresholds $RUNNER_TEMP/base-thresholds.json" >> "$GITHUB_ENV"
-      - name: Check coverage did not decrease
-        run: python ci/check_coverage.py --platform cpu --report .coverage-cpu.json --tolerance 0 --verbose $BASE_ARGS
+          echo "COV_ARGS=--verbose --base-thresholds $RUNNER_TEMP/base-thresholds.json" >> "$GITHUB_ENV"
+      - name: Run CPU tests and check coverage
+        if: matrix.python-version == '3.12'
+        run: make test-cov-cpu COV_ARGS="${COV_ARGS:---verbose}"
