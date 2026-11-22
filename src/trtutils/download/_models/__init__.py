@@ -18,7 +18,7 @@ from ._ppocr import export_ppocr
 from ._rfdetr import export_rfdetr
 from ._rtdetr import export_rtdetrv1, export_rtdetrv2, export_rtdetrv3
 from ._timm import export_timm_classifier
-from ._torchvision import export_torchvision_classifier
+from ._torchvision import export_torchvision_classifier, export_torchvision_segmenter
 from ._ultralytics import export_ultralytics
 from ._yolo import (
     export_yolov7,
@@ -76,6 +76,9 @@ EXPORTERS: dict[str, Exporter] = {
     "rtdetrv3": Exporter(export_rtdetrv3),
     "timm": Exporter(export_timm_classifier, batch=True),
     "torchvision": Exporter(export_torchvision_classifier, batch=True, dynamic_default=True),
+    "torchvision_segmentation": Exporter(
+        export_torchvision_segmenter, batch=True, dynamic_default=True
+    ),
     "ultralytics": Exporter(export_ultralytics, batch=True),
     "yolov7": Exporter(export_yolov7),
     "yolov9": Exporter(export_yolov9),
@@ -103,6 +106,7 @@ __all__ = [
     "export_rtdetrv3",
     "export_timm_classifier",
     "export_torchvision_classifier",
+    "export_torchvision_segmenter",
     "export_ultralytics",
     "export_yolov7",
     "export_yolov9",

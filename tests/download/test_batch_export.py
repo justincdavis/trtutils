@@ -189,26 +189,40 @@ def test_yolo_cli_exporters_pass_batch_and_dynamic(
     ("batch", "dynamic"), [(1, False), (4, False), (1, True)], ids=["b1", "b4", "dynamic"]
 )
 @pytest.mark.parametrize(
-    ("func", "model", "script"),
+    ("func", "model", "script", "output"),
     [
         pytest.param(
             _torchvision.export_torchvision_classifier,
             "resnet18",
             "_export_torchvision_classifier.py",
+            "output",
             id="torchvision",
         ),
         pytest.param(
-            _timm.export_timm_classifier, "deit_tiny", "_export_timm_classifier.py", id="timm"
+            _torchvision.export_torchvision_segmenter,
+            "deeplabv3_resnet50",
+            "_export_torchvision_segmenter.py",
+            "logits",
+            id="torchvision-segmentation",
+        ),
+        pytest.param(
+            _timm.export_timm_classifier,
+            "deit_tiny",
+            "_export_timm_classifier.py",
+            "output",
+            id="timm",
         ),
     ],
 )
 @pytest.mark.usefixtures("run_cmd_calls")
-def test_classifier_export_script(tmp_path, func, model, script, batch, dynamic) -> None:
-    """The classifier exporters trace at the batch and leave it symbolic only when dynamic."""
+def test_torch_export_script(tmp_path, func, model, script, output, batch, dynamic) -> None:
+    """The torch exporters trace at the batch and leave it symbolic only when dynamic."""
     _export(func, model, tmp_path, batch=batch, dynamic=dynamic)
     content = (tmp_path / script).read_text()
     assert f"torch.randn({batch}, 3, imgsz, imgsz)" in content
-    axes = '{"input": {0: "batch_size"}, "output": {0: "batch_size"}}' if dynamic else "None"
+    axes = (
+        f'{{"input": {{0: "batch_size"}}, "{output}": {{0: "batch_size"}}}}' if dynamic else "None"
+    )
     assert f"dynamic_axes={axes}," in content
 
 

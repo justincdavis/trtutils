@@ -56,6 +56,7 @@ TASKS = {
     image.Detector: "detection",
     image.Classifier: "classification",
     image.Segmenter: "segmentation",
+    image.SemanticSegmenter: "semantic_segmentation",
     image.PoseEstimator: "pose",
     image.OBBDetector: "obb",
     image.DepthEstimator: "depth",

@@ -11,7 +11,7 @@ from trtutils._flags import FLAGS
 from trtutils._log import LOG
 from trtutils.builder._onnx import read_onnx
 from trtutils.compat._libs import trt
-from trtutils.image.hooks import yolo_efficient_nms_hook
+from trtutils.image.hooks import semantic_argmax_hook, yolo_efficient_nms_hook
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -313,3 +313,31 @@ def rfdetr_layernorm_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict
     if not layer_precision:
         return {}
     return {"layer_precision": layer_precision, "prefer_precision_constraints": True}
+
+
+def argmax_build_hook(*, imgsz: int, argmax: bool = True, **_: Any) -> dict[str, Any]:  # noqa: ANN401
+    """
+    Build hook that runs the argmax of a semantic segmentation network in the engine.
+
+    Appends a bilinear resize to the input size (when the logits are smaller) and a TopK
+    over the class axis, so the engine outputs a ``class_map`` of int32 class ids instead
+    of the logits (see :func:`trtutils.image.hooks.semantic_argmax_hook`). The ONNX keeps
+    its logits output.
+
+    Parameters
+    ----------
+    imgsz : int
+        Input image size, the height and width of the class map.
+    argmax : bool
+        Whether to add the argmax. False keeps the logits output, which
+        :class:`~trtutils.image.SemanticSegmenter` reduces on the CPU. Default is True.
+
+    Returns
+    -------
+    dict[str, Any]
+        Build engine overrides containing the network hook, or an empty dict.
+
+    """
+    if not argmax:
+        return {}
+    return {"hooks": [semantic_argmax_hook(imgsz, imgsz)]}

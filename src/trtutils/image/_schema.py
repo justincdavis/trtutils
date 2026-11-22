@@ -118,6 +118,15 @@ class SegmenterOutputSchema(Enum):
     YOLO = ("output0", "output1")
 
 
+class SemanticSegmenterOutputSchema(Enum):
+    # argmax in the engine (argmax_build_hook), int class ids (B, 1, H, W) or (B, H, W)
+    CLASS_MAP = ("class_map",)
+    # per-class scores (B, C, h, w), argmax on the cpu
+    LOGITS = ("logits",)
+    # any other engine, treated as logits
+    GENERIC = ("*",)
+
+
 class PoseEstimatorOutputSchema(Enum):
     # ultralytics pose heads
     YOLO = ("output0",)

@@ -19,6 +19,7 @@ Examples
     examples/classifier.rst
     examples/deit.rst
     examples/segmenter.rst
+    examples/semantic_segmenter.rst
     examples/pose_estimator.rst
     examples/obb_detector.rst
     examples/sahi.rst

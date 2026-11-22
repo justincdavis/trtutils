@@ -137,6 +137,23 @@ Instance Segmentation
    - GitHub: `ultralytics/ultralytics <https://github.com/ultralytics/ultralytics>`_
    - AGPL-3.0 and commercial licensed, be aware of license restrictions
 
+Semantic Segmentation
+----------------------
+
+:class:`~trtutils.image.SemanticSegmenter` returns one class map per image: an ``(H, W)``
+uint8 array of class ids at the original resolution (so at most 256 classes). For one mask
+per detected object, use the instance segmentation models above
+(:class:`~trtutils.image.Segmenter`).
+
+1. **DeepLabV3** (torchvision) - MobileNetV3-Large, ResNet50, and ResNet101 backbones
+
+   - ``deeplabv3_mobilenet_v3_large``, ``deeplabv3_resnet50``, ``deeplabv3_resnet101``
+   - 21 Pascal VOC classes (0 is background), trained on a COCO subset
+   - Default input 520x520 (torchvision evaluates at a 520 short side) with letterbox
+     resizing; ``DeepLabV3.build()`` runs the argmax in the engine (``argmax=False`` keeps
+     the logits)
+   - GitHub: `pytorch/vision <https://github.com/pytorch/vision>`_
+
 Pose Estimation
 ----------------
 
@@ -248,6 +265,11 @@ Instance Segmentation Models
 - **YOLOv11-seg**: ``yolov11n-seg``, ``yolov11s-seg``, ``yolov11m-seg``, ``yolov11l-seg``, ``yolov11x-seg`` (via Ultralytics)
 - **YOLOv26-seg**: ``yolov26n-seg``, ``yolov26s-seg``, ``yolov26m-seg``, ``yolov26l-seg``, ``yolov26x-seg`` (via Ultralytics)
 
+Semantic Segmentation Models
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **DeepLabV3**: ``deeplabv3_mobilenet_v3_large``, ``deeplabv3_resnet50``, ``deeplabv3_resnet101`` (via torchvision)
+
 Pose Estimation Models
 ~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -300,6 +322,8 @@ for the weights: check the source before using them.
    * - Torchvision classifiers
      - unknown (torchvision states no license for its weights), except ``regnet_y_128gf``
        and ``vit_h_14`` (SWAG weights): CC-BY-NC-4.0
+   * - DeepLabV3 (torchvision)
+     - unknown (torchvision states no license for its weights)
    * - DeiT, DeiT III (timm)
      - Apache-2.0
    * - Depth-Anything-V1

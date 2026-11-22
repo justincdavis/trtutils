@@ -95,6 +95,12 @@ EXPORT_CASES = [
         {"input": [2, 3, 224, 224]},
         id="torchvision-batch2",
     ),
+    pytest.param(
+        "deeplabv3_mobilenet_v3_large",
+        {},
+        {"input": [_BATCH, 3, 520, 520]},
+        id="torchvision-segmentation-default",
+    ),
     pytest.param("deit_tiny", {}, {"input": [1, 3, 224, 224]}, id="timm-deit-default-imgsz"),
     pytest.param(
         "deit_small_distilled", {"imgsz": 256}, {"input": [1, 3, 256, 256]}, id="timm-deit-custom"

@@ -116,6 +116,13 @@ Added
   center crops included, and the CPU the rest. ``DLAPreprocessor.resizes_on_cpu`` tells which
   path a size takes. The CPU's center crop is bilinear and the DLA's antialiased, so ``True``
   changes a DLA center crop's pixels slightly
+* ``image.SemanticSegmenter`` (semantic segmentation): one ``(H, W)`` uint8 class map per
+  image at its original resolution (``image.types.SemanticMask``, at most 256 classes), with
+  ``get_class_maps`` and ``SemanticSegmenterOutputSchema`` (``CLASS_MAP``, ``LOGITS``,
+  ``GENERIC``). ``models.DeepLabV3`` wraps torchvision DeepLabV3 (``deeplabv3_mobilenet_v3_large``,
+  ``deeplabv3_resnet50``, ``deeplabv3_resnet101``; 21 Pascal VOC classes); its ``build()``
+  appends the argmax to the engine (``image.hooks.semantic_argmax_hook``), so only the class
+  map is copied to the host. ``build(..., argmax=False)`` keeps the logits, argmaxed on the CPU
 
 Changed
 ^^^^^^^

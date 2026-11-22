@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
 
@@ -22,8 +22,9 @@ def build_model_engine() -> Callable[..., Path]:
     Build and cache an engine via model_cls.build(), skipping if the ONNX is missing.
 
     Factory: build_model_engine(model_cls, onnx_path, batch_size=1, opt_level=1, embed_sst=False,
-    tag=""). ONNX files are named <model>_<imgsz>.onnx or <model>_<height>x<width>.onnx; ``tag``
-    keeps engines of other build defaults (e.g. precision) apart in the shared cache.
+    tag="", **build_kwargs). ONNX files are named <model>_<imgsz>.onnx or
+    <model>_<height>x<width>.onnx; ``tag`` keeps engines of other build defaults (e.g. precision,
+    or ``build_kwargs`` such as ``argmax=False``) apart in the shared cache.
     """
 
     def _build(
@@ -34,6 +35,7 @@ def build_model_engine() -> Callable[..., Path]:
         *,
         embed_sst: bool = False,
         tag: str = "",
+        **build_kwargs: Any,  # noqa: ANN401
     ) -> Path:
         if not onnx_path.exists():
             pytest.skip(f"missing {onnx_path}")
@@ -53,6 +55,7 @@ def build_model_engine() -> Callable[..., Path]:
                 batch_size=batch_size,
                 opt_level=opt_level,
                 embed_sst=embed_sst,
+                **build_kwargs,
             )
         return engine_path
 

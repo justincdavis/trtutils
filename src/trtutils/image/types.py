@@ -18,6 +18,8 @@ Aliases
     A rotated box as (cx, cy, w, h, angle).
 :data:`Segmentation`
     One instance segmentation as (bbox, score, class_id, mask).
+:data:`SemanticMask`
+    One semantic segmentation class map as an (H, W) uint8 array.
 :data:`Pose`
     One pose as (bbox, score, keypoints).
 :data:`OBBDetection`
@@ -61,6 +63,10 @@ OBBDetection: TypeAlias = Tuple[RBox, float, int]
 #: segmentation as (bbox, score, class_id, mask), mask is uint8 at the original image resolution
 Segmentation: TypeAlias = Tuple[Bbox, float, int, np.ndarray]
 
+#: semantic class map, (H, W) uint8 class ids at the original image resolution; class ids
+#: are capped at 255, so models with more than 256 classes do not fit
+SemanticMask: TypeAlias = np.ndarray
+
 #: pose as (bbox, score, keypoints), keypoints is (K, 3) as x, y, visibility in image pixels
 Pose: TypeAlias = Tuple[Bbox, float, np.ndarray]
 
@@ -92,6 +98,7 @@ __all__ = [
     "Pose",
     "RBox",
     "Segmentation",
+    "SemanticMask",
     "Text",
     "TextBox",
     "TextLine",

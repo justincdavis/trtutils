@@ -47,6 +47,8 @@ Classes
     Wrapper around pose estimation models.
 :class:`Segmenter`
     Wrapper around instance segmentation models.
+:class:`SemanticSegmenter`
+    Wrapper around semantic segmentation models.
 :class:`ImageModel`
     Base class for models which process images.
 
@@ -86,6 +88,7 @@ from ._obb_detector import OBBDetector
 from ._ocr import OCR, TextDetector, TextRecognizer
 from ._pose_estimator import PoseEstimator
 from ._segmenter import Segmenter
+from ._semantic_segmenter import SemanticSegmenter
 from .sahi import SAHI
 
 __all__ = [
@@ -100,6 +103,7 @@ __all__ = [
     "OBBDetector",
     "PoseEstimator",
     "Segmenter",
+    "SemanticSegmenter",
     "TextDetector",
     "TextRecognizer",
     "draw_bboxes",
