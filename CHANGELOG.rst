@@ -122,7 +122,8 @@ Added
   ``GENERIC``). ``models.DeepLabV3`` wraps torchvision DeepLabV3 (``deeplabv3_mobilenet_v3_large``,
   ``deeplabv3_resnet50``, ``deeplabv3_resnet101``; 21 Pascal VOC classes); its ``build()``
   appends the argmax to the engine (``image.hooks.semantic_argmax_hook``), so only the class
-  map is copied to the host. ``build(..., argmax=False)`` keeps the logits, argmaxed on the CPU
+  map is copied to the host. ``build(..., argmax=False)`` keeps the logits, argmaxed on the CPU.
+  ``resize_method="pad"`` raises ``ValueError``: the class map cannot be mapped back from it
 
 Changed
 ^^^^^^^
