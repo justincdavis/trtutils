@@ -293,7 +293,8 @@ for the weights: check the source before using them.
    * - DEIM
      - Apache-2.0
    * - DEIMv2
-     - DEIMv2 License: weights for non-commercial use only
+     - DEIMv2 License: weights for non-commercial use only (upstream relicensed; it was
+       Apache-2.0 at the commit the exporter pins)
    * - RF-DETR (``rfdetr_n``, ``rfdetr_s``, ``rfdetr_m``)
      - Apache-2.0
    * - Torchvision classifiers
