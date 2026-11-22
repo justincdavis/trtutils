@@ -3,26 +3,31 @@
 # MIT License
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
+from urllib.parse import urlsplit
 
-from trtutils.download._tools import git_clone, handle_imgsz, run_cmd, run_uv_pip_install
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from trtutils.download._tools import (
+    git_clone,
+    handle_imgsz,
+    run_cmd,
+    run_download,
+    run_uv_pip_install,
+)
 
 # the checkpoint (weights/mobile_sam.pt) is part of the repository at this commit
 _MOBILE_SAM_COMMIT = "f706ad9c4eb7f219c00d9050e46328518ffb65d2"
+_SAM_COMMIT = "dca509fe793f601edb92606367a655c15ac00fdf"
 
-# shared by both parts: every LayerNorm2d exports as one LayerNormalization node, whose
-# hand-written (x - u) ** 2 otherwise overflows fp16 in the encoder neck
+# shared by both parts of every SAM-v1 style repo: each LayerNorm2d exports as one
+# LayerNormalization node, whose hand-written (x - u) ** 2 otherwise overflows fp16
 _SETUP = """
 import onnxslim
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-from mobile_sam import sam_model_registry
-from mobile_sam.modeling import common, tiny_vit_sam
+from {package} import sam_model_registry
+from {package}.modeling import {norm_modules}
 
 
 def _layer_norm_2d(self, x):
@@ -31,10 +36,10 @@ def _layer_norm_2d(self, x):
     return x.permute(0, 3, 1, 2)
 
 
-tiny_vit_sam.LayerNorm2d.forward = _layer_norm_2d
-common.LayerNorm2d.forward = _layer_norm_2d
+for module in ({norm_modules},):
+    module.LayerNorm2d.forward = _layer_norm_2d
 torch.set_grad_enabled(False)
-sam = sam_model_registry["vit_t"](checkpoint="weights/mobile_sam.pt").eval()
+sam = sam_model_registry["{variant}"](checkpoint="{checkpoint}").eval()
 """
 
 # normalized, padded (1, 3, S, S) image -> (1, 256, S / 16, S / 16) embeddings
@@ -134,6 +139,26 @@ onnxslim.slim("{output}", "{output}")
 """
 
 
+def _export_part(
+    repo_dir: Path,
+    config: dict[str, str],
+    python_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int,
+    setup: dict[str, str],
+    *,
+    verbose: bool | None = None,
+) -> Path:
+    # the encoder or the decoder, see the config's "part"
+    part = _ENCODER if config["part"] == "encoder" else _DECODER
+    output = repo_dir.parent / f"{model}.onnx"
+    program = _SETUP.format(**setup) + part.format(imgsz=imgsz)
+    program += _EXPORT.format(output=output, opset=opset)
+    run_cmd([python_path, "-c", program], cwd=repo_dir, verbose=verbose)
+    return output
+
+
 def export_mobile_sam(
     directory: Path,
     config: dict[str, str],
@@ -160,10 +185,46 @@ def export_mobile_sam(
     run_uv_pip_install(
         repo_dir, bin_path.parent, "mobile_sam", no_cache=no_uv_cache, verbose=verbose
     )
+    # the TinyViT encoder has its own LayerNorm2d class
+    setup = {
+        "package": "mobile_sam",
+        "norm_modules": "common, tiny_vit_sam",
+        "variant": "vit_t",
+        "checkpoint": "weights/mobile_sam.pt",
+    }
+    return _export_part(repo_dir, config, python_path, model, opset, imgsz, setup, verbose=verbose)
 
-    # the encoder or the decoder, see the config's "part"
-    part = _ENCODER if config["part"] == "encoder" else _DECODER
-    output = directory / f"{model}.onnx"
-    program = _SETUP + part.format(imgsz=imgsz) + _EXPORT.format(output=output, opset=opset)
-    run_cmd([python_path, "-c", program], cwd=repo_dir, verbose=verbose)
-    return output
+
+def export_sam(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    bin_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int | None = None,
+    *,
+    no_cache: bool | None = None,
+    no_uv_cache: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
+    verbose: bool | None = None,
+) -> Path:
+    imgsz = handle_imgsz(imgsz, 1024, "SAM", enforce=True)
+    git_clone(
+        "https://github.com/facebookresearch/segment-anything",
+        directory,
+        _SAM_COMMIT,
+        no_cache=no_cache,
+        verbose=verbose,
+    )
+    repo_dir = directory / "segment-anything"
+    run_uv_pip_install(repo_dir, bin_path.parent, "sam", no_cache=no_uv_cache, verbose=verbose)
+    # the checkpoint of the config's "variant" (vit_b, vit_l)
+    run_download(repo_dir, config, python_path, no_cache=no_cache, verbose=verbose)
+    setup = {
+        "package": "segment_anything",
+        "norm_modules": "common",
+        "variant": config["variant"],
+        "checkpoint": Path(urlsplit(config["url"]).path).name,
+    }
+    return _export_part(repo_dir, config, python_path, model, opset, imgsz, setup, verbose=verbose)

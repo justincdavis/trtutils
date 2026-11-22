@@ -136,6 +136,19 @@ EXPORT_CASES = [
         },
         id="mobile-sam-decoder",
     ),
+    pytest.param("sam_vit_b_encoder", {}, {"images": [1, 3, 1024, 1024]}, id="sam-vit-b-encoder"),
+    pytest.param(
+        "sam_vit_b_decoder",
+        {},
+        {
+            "image_embeddings": [1, 256, 64, 64],
+            "point_coords": [None, None, 2],
+            "point_labels": [None, None],
+            "mask_input": [1, 1, 256, 256],
+            "has_mask_input": [1],
+        },
+        id="sam-vit-b-decoder",
+    ),
 ]
 
 

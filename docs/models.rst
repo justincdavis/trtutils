@@ -203,6 +203,13 @@ Promptable Segmentation
 
    - GitHub: `ChaoningZhang/MobileSAM <https://github.com/ChaoningZhang/MobileSAM>`_
 
+2. **SAM** - the original Segment Anything ViT-B and ViT-L models, with the same two-engine
+   layout, prompts and decoder profile as MobileSAM (``models.SAMEncoder``,
+   ``models.SAMDecoder``, ``models.SAM``). Each checkpoint has its own decoder, so the encoder
+   and decoder must come from the same model. ViT-H is not supported.
+
+   - GitHub: `facebookresearch/segment-anything <https://github.com/facebookresearch/segment-anything>`_
+
 Model Download Support
 ----------------------
 
@@ -256,6 +263,8 @@ Promptable Segmentation Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - **MobileSAM**: ``mobile_sam_encoder``, ``mobile_sam_decoder`` (download both)
+- **SAM**: ``sam_vit_b_encoder``, ``sam_vit_b_decoder``, ``sam_vit_l_encoder``,
+  ``sam_vit_l_decoder`` (download the encoder and decoder of one size)
 
 Instance Segmentation Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -331,6 +340,8 @@ for the weights: check the source before using them.
    * - PP-OCR
      - Apache-2.0
    * - MobileSAM
+     - Apache-2.0
+   * - SAM (ViT-B, ViT-L)
      - Apache-2.0
 
 Example Usage
