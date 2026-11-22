@@ -157,7 +157,7 @@ def _build(
 ) -> None:
     dla = dla_core is not None
     # timing only: int8 kernels run as fast with nominal scales as with calibrated ones
-    hooks = [*(hooks or []), nominal_ranges_hook] if int8 else hooks
+    hooks = [*(hooks if hooks is not None else []), nominal_ranges_hook] if int8 else hooks
     with LOG.with_level("ERROR"):
         build_engine(
             onnx,
@@ -321,7 +321,7 @@ def characterize(
         _build(onnx, full_path, dla_core=None, hooks=None, **settings)
         full = _measure_group(full_path, None, iterations, warmup_iterations, None)
         names = [layer.name for layer in full.layers]
-        matches = match_engine_layers(names, layers)
+        matches = _fill_unmatched(match_engine_layers(names, layers))
         weights = [0.0] * len(layers)
         for layer, matched in zip(full.layers, matches):
             for index in matched:
@@ -384,6 +384,19 @@ def characterize(
     return ModelTraits(groups=traits, dla_launch_ms=launch, precision="int8" if int8 else "fp16")
 
 
+def _fill_unmatched(matches: Sequence[Sequence[int]]) -> list[list[int]]:
+    # an engine layer naming no network layer (an auto-named fusion) runs next to its
+    # neighbours: its time goes to the layer before it, or after it at the start
+    filled: list[list[int]] = []
+    previous: int | None = None
+    for matched in matches:
+        if matched:
+            previous = max(matched)
+        filled.append(list(matched) if matched or previous is None else [previous])
+    first = next((min(m) for m in matches if m), None)
+    return [m if m or first is None else [first] for m in filled]
+
+
 def _split_times(
     full: _Measured,
     matches: Sequence[Sequence[int]],
@@ -423,6 +436,8 @@ def _dla_launch(
     hooks = [slice_hook(groups[best[0]].first, groups[best[-1]].last)]
     _build(onnx, path, dla_core=dla_core, hooks=hooks, **settings)
     span = _measure_group(path, dla_core, iterations, warmup_iterations, None)
+    if not span.on_dla:
+        return 0.0
     parts = sum(float(np.mean(measured[k]["dla"].time_ms)) for k in best)
     return max((parts - float(np.mean(span.time_ms))) / (len(best) - 1), 0.0)
 
@@ -503,7 +518,8 @@ def calibrate(
     Raises
     ------
     RuntimeError
-        If tegrastats cannot report memory throughput.
+        If tegrastats cannot report memory throughput, or a DLA probe does not run
+        fully on the DLA.
 
     """
     _check_tegrastats()
@@ -528,6 +544,12 @@ def calibrate(
                     verbose=verbose,
                 )
                 engine = _load(path, core)
+                if core is not None and not inspect_placement(engine.engine, core).fully_on_dla:
+                    err_msg = (
+                        f"DLA probe {size}x{size} kernel {kernel} falls back to the GPU, "
+                        "choose other sizes or kernels"
+                    )
+                    raise RuntimeError(err_msg)
                 step = _busy_step(engine)
                 step()
                 solo[acc].append(float(np.median(_per_execute_ms(_free_run(step, seconds)))))

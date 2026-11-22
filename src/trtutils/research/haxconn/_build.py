@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -14,6 +15,7 @@ from trtutils.builder._utils import needs_dynamic_range
 from trtutils.compat._libs import trt
 
 from ._groups import constant_layers
+from ._simulate import encode_assignment
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -208,7 +210,8 @@ def build_engines(
     Raises
     ------
     ValueError
-        If ``models``, ``traits`` and the schedule do not name the same DNNs.
+        If ``models``, ``traits`` and the schedule do not name the same DNNs, or an
+        assignment does not fit its DNN's layer groups.
 
     """
     if not set(models) == set(traits) == set(schedule.assignments):
@@ -223,10 +226,19 @@ def build_engines(
     engines: dict[str, Path] = {}
     for name, onnx in models.items():
         accs = schedule.assignments[name]
+        encode_assignment(traits[name], accs)
         int8 = traits[name].precision == "int8"
         batcher = batchers.get(name) if int8 else None
         suffix = ("int8" if batcher is not None else "int8nominal") if int8 else "fp16"
-        path = directory / f"{name}_{assignment_code(accs)}_{suffix}.engine"
+        # the same letters mean another engine for another model or other group bounds
+        source = Path(onnx).resolve()
+        key = (
+            str(source),
+            source.stat().st_mtime_ns,
+            [(g.first, g.last) for g in traits[name].groups],
+        )
+        digest = hashlib.sha256(repr(key).encode()).hexdigest()[:10]
+        path = directory / f"{name}_{assignment_code(accs)}_{suffix}_{digest}.engine"
         engines[name] = path
         if path.exists():
             continue

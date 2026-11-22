@@ -121,7 +121,8 @@ class HaxConn:
         ------
         ValueError
             If ``models`` and ``traits`` name different DNNs, the traits differ in
-            precision, or a schedule is given together with ``dynamic``.
+            precision, a schedule does not fit the traits' layer groups, or a schedule
+            is given together with ``dynamic``.
 
         """
         if set(models) != set(traits):
@@ -155,6 +156,9 @@ class HaxConn:
         if schedule is None:
             iterator = self._scheduler.solve_iter()
             schedule = next(iterator) if dynamic else list(iterator)[-1]
+        else:
+            # a schedule from another characterization must not build silently
+            self._scheduler.evaluate(schedule.assignments)
         self._schedule = schedule
         self._engines = self._load(schedule)
         if dynamic and iterator is not None:
@@ -231,10 +235,16 @@ class HaxConn:
         return self.execute({name: e.get_random_input() for name, e in self._engines.items()})
 
     def close(self: Self) -> None:
-        """Stop background solving and release every engine and worker."""
+        """
+        Stop background solving and release every engine and worker.
+
+        A running Z3 check is interrupted; an engine build in progress is waited for,
+        since TensorRT cannot stop one.
+        """
         self._stop.set()
         if self._background is not None:
-            self._background.shutdown(wait=False)
+            self._scheduler.interrupt()
+            self._background.shutdown(wait=True)
             self._background = None
         for executor in self._executors.values():
             executor.shutdown(wait=True)
@@ -283,6 +293,8 @@ class HaxConn:
                         self._schedule = schedule
                 continue
             engines = self._load(schedule)
+            if self._stop.is_set():
+                return
             loaded = schedule.assignments
             with self._lock:
                 self._pending = (schedule, engines)

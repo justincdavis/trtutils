@@ -103,7 +103,7 @@ class PCCSModel:
         if x <= self.normal_bw:
             return _clamp(minor)
         rate = self.rate
-        if x > self.intensive_bw and self.cbp > 0.0:
+        if x >= self.intensive_bw and self.cbp > 0.0:
             # eq. 4: the intensive rate grows with the demand
             rate = self.rate * max(x + self.cbp - self.tbwdc, 0.0) / self.cbp
         if y >= self.cbp:
@@ -216,7 +216,7 @@ def fit_pccs(
     rx = x[first_normal:][:, None]
     ry = y[None, :]
     observed = drop[first_normal:]
-    intensive = rx > intensive_bw
+    intensive = rx >= intensive_bw
     best: tuple[float, float, float, float] | None = None
     for cbp in np.linspace(0.0, peak, _FIT_STEPS + 1):
         for tbwdc in np.linspace(0.0, 2.0 * peak, 2 * _FIT_STEPS + 1):

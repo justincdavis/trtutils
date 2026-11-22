@@ -185,7 +185,7 @@ def _measure(runtime: HaxConn, iterations: int, warmup_iterations: int) -> dict[
     samples: dict[str, list[float]] = {}
     for _ in range(iterations):
         runtime.mock_execute()
-        for name, ms in (runtime.last or {}).items():
+        for name, ms in (runtime.last if runtime.last is not None else {}).items():
             samples.setdefault(name, []).append(ms)
     return {name: statistics.mean(values) for name, values in samples.items()}
 

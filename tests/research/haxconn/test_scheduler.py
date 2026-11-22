@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import threading
+import time
+
 import pytest
 
 from tests.research.haxconn.conftest import XAVIER, make_traits
@@ -83,6 +86,41 @@ def test_paper_pair_beats_the_baselines(paper_traits) -> None:
     assert scheduler.evaluate(best.assignments) == best._replace(optimal=False)
     predicted = simulate(list(paper_traits.values()), list(best.assignments.values()), XAVIER)
     assert predicted == pytest.approx(list(best.latency_ms.values()))
+
+
+@pytest.mark.parametrize("solver", ["z3", "exhaustive"])
+def test_budget_starts_with_the_search(solver) -> None:
+    """Time spent using the first schedule (e.g. building its engines) does not eat the budget."""
+    config = HaxConnConfig(solver=solver, time_budget=0.5)
+    iterator = HaxConnScheduler(_small(), XAVIER, config).solve_iter()
+    next(iterator)
+    time.sleep(0.6)
+    assert list(iterator)[-1].optimal is True
+
+
+def test_interrupt_stops_a_running_search(paper_traits) -> None:
+    """interrupt() ends an unbounded Z3 search from another thread with the best so far."""
+    config = HaxConnConfig(max_transitions=None, time_budget=None)
+    scheduler = HaxConnScheduler(paper_traits, XAVIER, config)
+    found = []
+    thread = threading.Thread(target=lambda: found.extend(scheduler.solve_iter()))
+    thread.start()
+    time.sleep(1.0)
+    scheduler.interrupt()
+    thread.join(timeout=10.0)
+    assert not thread.is_alive()
+    assert found[-1].optimal is False
+
+
+def test_first_schedule_is_the_best_naive_within_the_limit() -> None:
+    """A DNN whose DLA option breaks the transition limit stays on the GPU; the others may not."""
+    alternating = make_traits([2.0, 2.0, 2.0, 2.0], [None, 0.1, None, 0.1])
+    whole = make_traits([2.0, 2.0], [1.0, 1.0])
+    scheduler = HaxConnScheduler(
+        {"a": alternating, "b": whole}, config=HaxConnConfig(contention="none")
+    )
+    first = next(scheduler.solve_iter())
+    assert first.assignments == {"a": ("gpu",) * 4, "b": ("dla", "dla")}
 
 
 def test_time_budget_returns_the_best_so_far(paper_traits) -> None:

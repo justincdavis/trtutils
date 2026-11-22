@@ -9,7 +9,21 @@ import itertools
 import time
 from typing import TYPE_CHECKING
 
-from z3 import And, ArithRef, Bool, BoolRef, If, Not, Or, Real, RealVal, Solver, Sum, is_true
+from z3 import (
+    And,
+    ArithRef,
+    Bool,
+    BoolRef,
+    Context,
+    If,
+    Not,
+    Or,
+    Real,
+    RealVal,
+    Solver,
+    Sum,
+    is_true,
+)
 from z3 import sat as z3_sat
 from z3 import unsat as z3_unsat
 
@@ -27,8 +41,8 @@ if TYPE_CHECKING:
 _THROUGHPUT_SEGMENTS = 16
 
 
-def _real(value: float) -> ArithRef:
-    return RealVal(f"{value:.9f}")
+def _real(value: float, ctx: Context) -> ArithRef:
+    return RealVal(f"{value:.9f}", ctx)
 
 
 class HaxConnScheduler:
@@ -98,6 +112,7 @@ class HaxConnScheduler:
         self._timing = make_timing(self._traits, contention, self._config)
         self._overlap = contention if self._config.contention == "overlap" else None
         self._finished = False
+        self._context: Context | None = None
 
     @property
     def config(self: Self) -> HaxConnConfig:
@@ -152,13 +167,24 @@ class HaxConnScheduler:
             transition limit.
 
         """
+        gpu_only = self._schedule([[0] * len(t.groups) for t in self._traits])
+        return {"gpu_only": gpu_only, "naive": min(self._naive(None), key=self._key)}
+
+    def interrupt(self: Self) -> None:
+        """Stop a running Z3 check from another thread; the search then ends as out of time."""
+        if self._context is not None:
+            self._context.interrupt()
+
+    def _naive(self: Self, limit: int | None) -> list[Schedule]:
+        # each DNN wholly on the GPU, or on the DLA wherever its groups can
         whole: list[list[list[int]]] = []
         for trait in self._traits:
             on_dla = [1 if group.dla else 0 for group in trait.groups]
-            whole.append([[0] * len(on_dla), on_dla] if any(on_dla) else [[0] * len(on_dla)])
-        candidates = [self._schedule(list(combo)) for combo in itertools.product(*whole)]
-        gpu_only = self._schedule([[0] * len(t.groups) for t in self._traits])
-        return {"gpu_only": gpu_only, "naive": min(candidates, key=self._key)}
+            options = [[0] * len(on_dla)]
+            if any(on_dla) and (limit is None or self._transitions(on_dla) <= limit):
+                options.append(on_dla)
+            whole.append(options)
+        return [self._schedule(list(combo)) for combo in itertools.product(*whole)]
 
     def solve(self: Self, time_budget: float | None = None) -> Schedule:
         """
@@ -198,16 +224,10 @@ class HaxConnScheduler:
 
         """
         budget = time_budget if time_budget is not None else self._config.time_budget
-        deadline = None if budget is None else time.monotonic() + budget
-        limit = self._config.max_transitions
-        baselines = self.baselines()
-        valid = [
-            s
-            for s in baselines.values()
-            if limit is None or all(self._transitions(a) <= limit for a in s.assignments.values())
-        ]
-        best = min(valid, key=self._key) if valid else baselines["gpu_only"]
+        best = min(self._naive(self._config.max_transitions), key=self._key)
         yield best
+        # the budget starts when the search does, not while the caller uses the first one
+        deadline = None if budget is None else time.monotonic() + budget
         self._finished = False
         search = self._exhaustive if self._config.solver == "exhaustive" else self._z3
         for schedule in search(best, deadline):
@@ -229,9 +249,14 @@ class HaxConnScheduler:
         self._finished = True
 
     def _z3(self: Self, best: Schedule, deadline: float | None) -> Iterator[Schedule]:
-        solver = Solver()
-        on_gpu, ends = self._formulate(solver)
-        rates = self._rate_bounds(solver, ends) if self._config.objective == "throughput" else []
+        # an own context, so interrupt() stops only this search
+        ctx = Context()
+        self._context = ctx
+        solver = Solver(ctx=ctx)
+        on_gpu, ends = self._formulate(solver, ctx)
+        rates = (
+            self._rate_bounds(solver, ends, ctx) if self._config.objective == "throughput" else []
+        )
         self._exclude(solver, on_gpu, best)
         while True:
             remaining = None if deadline is None else deadline - time.monotonic()
@@ -241,9 +266,9 @@ class HaxConnScheduler:
                 solver.set("timeout", max(int(remaining * 1000), 1))
             solver.push()
             if self._config.objective == "latency":
-                solver.add(And([end < _real(best.objective) for end in ends]))
+                solver.add(And([end < _real(best.objective, ctx) for end in ends]))
             else:
-                solver.add(Sum(rates) > _real(best.objective))
+                solver.add(Sum(rates) > _real(best.objective, ctx))
             result = solver.check()
             if result != z3_sat:
                 solver.pop()
@@ -262,7 +287,9 @@ class HaxConnScheduler:
                 best = schedule
                 yield schedule
 
-    def _formulate(self: Self, solver: Solver) -> tuple[list[list[BoolRef]], list[ArithRef]]:
+    def _formulate(
+        self: Self, solver: Solver, ctx: Context
+    ) -> tuple[list[list[BoolRef]], list[ArithRef]]:
         # the paper's constraints without contention: a lower bound on every schedule
         timing = self._timing
         on_gpu: list[list[BoolRef]] = []
@@ -271,26 +298,28 @@ class HaxConnScheduler:
         ends: list[ArithRef] = []
         for n, trait in enumerate(self._traits):
             count = len(trait.groups)
-            gpu = [Bool(f"gpu_{n}_{i}") for i in range(count)]
-            start = [Real(f"start_{n}_{i}") for i in range(count)]
-            end = [Real(f"end_{n}_{i}") for i in range(count)]
+            gpu = [Bool(f"gpu_{n}_{i}", ctx) for i in range(count)]
+            start = [Real(f"start_{n}_{i}", ctx) for i in range(count)]
+            end = [Real(f"end_{n}_{i}", ctx) for i in range(count)]
             t_in, t_out = timing.transition_in[n], timing.transition_out[n]
             for i in range(count):
                 dur_g, dur_d = timing.duration[n][i]
                 if dur_d is None:
                     solver.add(gpu[i])
-                    solver.add(end[i] == start[i] + _real(dur_g or 0.0))
+                    solver.add(end[i] == start[i] + _real(dur_g or 0.0, ctx))
                 else:
-                    solver.add(end[i] == start[i] + If(gpu[i], _real(dur_g or 0.0), _real(dur_d)))
-            solver.add(start[0] >= If(gpu[0], _real(t_in[0][0]), _real(t_in[0][1])))
+                    solver.add(
+                        end[i] == start[i] + If(gpu[i], _real(dur_g or 0.0, ctx), _real(dur_d, ctx))
+                    )
+            solver.add(start[0] >= If(gpu[0], _real(t_in[0][0], ctx), _real(t_in[0][1], ctx)))
             for i in range(count - 1):
                 hop = If(
                     gpu[i] == gpu[i + 1],
-                    _real(0.0),
+                    _real(0.0, ctx),
                     If(
                         gpu[i],
-                        _real(t_out[i][0] + t_in[i + 1][1]),
-                        _real(t_out[i][1] + t_in[i + 1][0]),
+                        _real(t_out[i][0] + t_in[i + 1][1], ctx),
+                        _real(t_out[i][1] + t_in[i + 1][0], ctx),
                     ),
                 )
                 solver.add(start[i + 1] >= end[i] + hop)
@@ -310,13 +339,17 @@ class HaxConnScheduler:
                             )
                         )
             last = count - 1
-            ends.append(end[last] + If(gpu[last], _real(t_out[last][0]), _real(t_out[last][1])))
+            ends.append(
+                end[last] + If(gpu[last], _real(t_out[last][0], ctx), _real(t_out[last][1], ctx))
+            )
             on_gpu.append(gpu)
             starts.append(start)
             group_ends.append(end)
         return on_gpu, ends
 
-    def _rate_bounds(self: Self, solver: Solver, ends: list[ArithRef]) -> list[ArithRef]:
+    def _rate_bounds(
+        self: Self, solver: Solver, ends: list[ArithRef], ctx: Context
+    ) -> list[ArithRef]:
         # 1000 / T is convex, so the max of its chords bounds it from above on [lo, hi];
         # hi is every group of every DNN in series with every transition
         timing = self._timing
@@ -335,13 +368,15 @@ class HaxConnScheduler:
                 lo * (top / lo) ** (k / _THROUGHPUT_SEGMENTS)
                 for k in range(_THROUGHPUT_SEGMENTS + 1)
             ]
-            rate = Real(f"rate_{n}")
+            rate = Real(f"rate_{n}", ctx)
             chords = []
             for a, b in zip(points, points[1:]):
                 slope = (1000.0 / b - 1000.0 / a) / (b - a)
-                chords.append(rate <= _real(1000.0 / a) + _real(slope) * (end - _real(a)))
+                chords.append(
+                    rate <= _real(1000.0 / a, ctx) + _real(slope, ctx) * (end - _real(a, ctx))
+                )
             solver.add(Or(chords))
-            solver.add(rate <= _real(1000.0 / lo))
+            solver.add(rate <= _real(1000.0 / lo, ctx))
             rates.append(rate)
         return rates
 
@@ -370,7 +405,7 @@ class HaxConnScheduler:
         return options
 
     @staticmethod
-    def _transitions(accelerators: Sequence[str]) -> int:
+    def _transitions(accelerators: Sequence[int]) -> int:
         return sum(a != b for a, b in zip(accelerators, accelerators[1:]))
 
     def _key(self: Self, schedule: Schedule) -> float:
