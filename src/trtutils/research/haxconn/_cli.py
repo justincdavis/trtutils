@@ -8,15 +8,20 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import statistics
+import tempfile
 from typing import TYPE_CHECKING
 
 from trtutils._log import LOG
 
+from ._build import assignment_code
 from ._characterize import calibrate, characterize
 from ._haxconn import HaxConn
 from ._pccs import PCCSModel
 from ._scheduler import HaxConnScheduler
 from ._types import (
+    _CONTENTIONS,
+    _OBJECTIVES,
+    _SOLVERS,
     HaxConnConfig,
     Schedule,
     load_calibration,
@@ -32,11 +37,11 @@ if TYPE_CHECKING:
 
     from ._types import ModelTraits
 
-_METRICS = ["mean", "median", "min", "max"]
+_METRICS = ("mean", "median", "min", "max")
 _CONFIG_CHOICES = {
-    "objective": ["latency", "throughput"],
-    "contention": ["overlap", "static", "none"],
-    "solver": ["z3", "exhaustive"],
+    "objective": _OBJECTIVES,
+    "contention": _CONTENTIONS,
+    "solver": _SOLVERS,
     "latency_metric": _METRICS,
     "memory_metric": _METRICS,
 }
@@ -52,10 +57,6 @@ def _optional_float(value: str) -> float | None:
 
 def _dla_core(args: SimpleNamespace) -> int:
     return args.dla_core if args.dla_core is not None else 0
-
-
-def _code(accelerators: tuple[str, ...]) -> str:
-    return "".join("D" if acc == "dla" else "G" for acc in accelerators)
 
 
 def _make_config(args: SimpleNamespace) -> HaxConnConfig:
@@ -92,7 +93,7 @@ def _contention(path: str | None) -> dict[str, PCCSModel] | None:
 def _log_schedule(label: str, schedule: Schedule) -> None:
     LOG.info(f"{label}: objective {schedule.objective:.3f}, optimal={schedule.optimal}")
     for name, accs in schedule.assignments.items():
-        LOG.info(f"  {name:<20} {_code(accs)}  {schedule.latency_ms[name]:8.3f} ms")
+        LOG.info(f"  {name:<20} {assignment_code(accs)}  {schedule.latency_ms[name]:8.3f} ms")
 
 
 def _characterize(args: SimpleNamespace) -> None:
@@ -214,29 +215,33 @@ def _run(args: SimpleNamespace) -> None:
 
     LOG.info("HaX-CoNN Run")
     LOG.info("=" * 60)
-    for label, given in schedules.items():
-        runtime = HaxConn(
-            models,
-            traits,
-            contention,
-            config,
-            schedule=given,
-            engine_dir=args.engine_dir,
-            dla_core=_dla_core(args),
-            dynamic=args.dynamic and given is None,
-            verbose=args.verbose,
-        )
-        measured = _measure(runtime, args.iterations, args.warmup_iterations)
-        schedule = runtime.schedule
-        runtime.close()
-        LOG.info(f"{label}: predicted max {max(schedule.latency_ms.values()):.3f} ms")
-        for name, accs in schedule.assignments.items():
-            LOG.info(
-                f"  {name:<20} {_code(accs)}  predicted {schedule.latency_ms[name]:8.3f} ms  "
-                f"measured {measured[name]:8.3f} ms"
+    # one engine directory for every schedule, so a DNN assignment shared by two is built once
+    with tempfile.TemporaryDirectory() as tmp:
+        engine_dir = args.engine_dir if args.engine_dir is not None else tmp
+        for label, given in schedules.items():
+            runtime = HaxConn(
+                models,
+                traits,
+                contention,
+                config,
+                schedule=given,
+                engine_dir=engine_dir,
+                dla_core=_dla_core(args),
+                dynamic=args.dynamic and given is None,
+                verbose=args.verbose,
             )
-        slowest = max(measured.values())
-        LOG.info(f"  measured max {slowest:.3f} ms ({1000.0 / slowest:.1f} rounds/s)")
+            measured = _measure(runtime, args.iterations, args.warmup_iterations)
+            schedule = runtime.schedule
+            runtime.close()
+            LOG.info(f"{label}: predicted max {max(schedule.latency_ms.values()):.3f} ms")
+            for name, accs in schedule.assignments.items():
+                LOG.info(
+                    f"  {name:<20} {assignment_code(accs)}  "
+                    f"predicted {schedule.latency_ms[name]:8.3f} ms  "
+                    f"measured {measured[name]:8.3f} ms"
+                )
+            slowest = max(measured.values())
+            LOG.info(f"  measured max {slowest:.3f} ms ({1000.0 / slowest:.1f} rounds/s)")
     LOG.info("=" * 60)
 
 

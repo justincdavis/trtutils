@@ -133,11 +133,20 @@ def fused_spans(engine_layers: Sequence[str], layers: Sequence[LayerInfo]) -> li
         names more than one network layer.
 
     """
-    return [
-        (min(matched), max(matched))
-        for matched in match_engine_layers(engine_layers, layers)
-        if len(matched) > 1
-    ]
+    return _spans(match_engine_layers(engine_layers, layers))
+
+
+def _spans(matches: Sequence[Sequence[int]]) -> list[tuple[int, int]]:
+    # the fused ranges in the output of match_engine_layers
+    return [(min(matched), max(matched)) for matched in matches if len(matched) > 1]
+
+
+def _constants(layers: Sequence[LayerInfo]) -> set[int]:
+    return constant_layers(
+        [layer.layer_type for layer in layers],
+        [layer.inputs for layer in layers],
+        [layer.outputs for layer in layers],
+    )
 
 
 def transition_points(
@@ -164,11 +173,12 @@ def transition_points(
         The transition points, ascending.
 
     """
-    constant = constant_layers(
-        [layer.layer_type for layer in layers],
-        [layer.inputs for layer in layers],
-        [layer.outputs for layer in layers],
-    )
+    return _points(layers, spans, _constants(layers))
+
+
+def _points(
+    layers: Sequence[LayerInfo], spans: Sequence[tuple[int, int]], constant: set[int]
+) -> list[int]:
     producer = {name: layer.index for layer in layers for name in layer.outputs}
     # every data edge as (producer, consumer, tensor); network inputs come from -1
     edges = [
@@ -231,12 +241,8 @@ def group_layers(
         err_msg = f"max_groups must be at least 1, got {max_groups}"
         raise ValueError(err_msg)
     weight = list(weights) if weights is not None else [1.0] * len(layers)
-    constant = constant_layers(
-        [layer.layer_type for layer in layers],
-        [layer.inputs for layer in layers],
-        [layer.outputs for layer in layers],
-    )
-    bounds = [0, *transition_points(layers, spans), len(layers)]
+    constant = _constants(layers)
+    bounds = [0, *_points(layers, spans, constant), len(layers)]
     ranges = [(a, b - 1) for a, b in zip(bounds, bounds[1:])]
 
     # groups of constants only join the next group (the last joins the previous one)

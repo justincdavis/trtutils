@@ -152,16 +152,17 @@ class HaxConn:
         self._pending: tuple[Schedule, dict[str, TRTEngine]] | None = None
         self._search: Future[None] | None = None
         self._background: ThreadPoolExecutor | None = None
-        iterator: Iterator[Schedule] | None = None
-        if schedule is None:
-            iterator = self._scheduler.solve_iter()
-            schedule = next(iterator) if dynamic else list(iterator)[-1]
+        iterator = self._scheduler.solve_iter() if dynamic else None
+        if iterator is not None:
+            schedule = next(iterator)
+        elif schedule is None:
+            schedule = self._scheduler.solve()
         else:
             # a schedule from another characterization must not build silently
             self._scheduler.evaluate(schedule.assignments)
         self._schedule = schedule
         self._engines = self._load(schedule)
-        if dynamic and iterator is not None:
+        if iterator is not None:
             self._background = ThreadPoolExecutor(max_workers=1)
             self._search = self._background.submit(self._keep_solving, iterator)
 

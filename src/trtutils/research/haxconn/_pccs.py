@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -217,20 +218,25 @@ def fit_pccs(
     ry = y[None, :]
     observed = drop[first_normal:]
     intensive = rx >= intensive_bw
-    best: tuple[float, float, float, float] | None = None
+    background = mrmc * rx / peak
+    # every TBWDC at once along the first axis; argmin keeps the first best, like a scan
+    tbwdcs = np.linspace(0.0, 2.0 * peak, 2 * _FIT_STEPS + 1)
+    t = tbwdcs[:, None, None]
+    best = (math.inf, peak, 2.0 * peak, 0.0)
     for cbp in np.linspace(0.0, peak, _FIT_STEPS + 1):
-        for tbwdc in np.linspace(0.0, 2.0 * peak, 2 * _FIT_STEPS + 1):
-            flat = ry >= cbp
-            dropping = ~flat & (rx + ry >= tbwdc)
-            slope = np.where(flat, np.maximum(rx + cbp - tbwdc, 0.0), 0.0)
-            slope = np.where(dropping, rx + ry - tbwdc, slope)
-            if cbp > 0.0:
-                slope = slope * np.where(intensive, np.maximum(rx + cbp - tbwdc, 0.0) / cbp, 1.0)
-            minor = np.where(flat | dropping, 0.0, mrmc * rx / peak) * np.ones_like(observed)
-            norm = float(np.sum(slope * slope))
-            rate = max(float(np.sum(slope * (observed - minor))) / norm, 0.0) if norm > 0 else 0.0
-            error = float(np.sum((observed - minor - rate * slope) ** 2))
-            if best is None or error < best[0]:
-                best = (error, float(cbp), float(tbwdc), rate)
-    _, cbp, tbwdc, rate = best if best is not None else (0.0, peak, 2.0 * peak, 0.0)
+        flat = ry >= cbp
+        dropping = ~flat & (rx + ry >= t)
+        slope = np.where(flat, np.maximum(rx + cbp - t, 0.0), 0.0)
+        slope = np.where(dropping, rx + ry - t, slope)
+        if cbp > 0.0:
+            slope = slope * np.where(intensive, np.maximum(rx + cbp - t, 0.0) / cbp, 1.0)
+        residual = observed - np.where(flat | dropping, 0.0, background)
+        norm = np.sum(slope * slope, axis=(1, 2))
+        fit = np.sum(slope * residual, axis=(1, 2))
+        rate = np.maximum(np.divide(fit, norm, out=np.zeros_like(fit), where=norm > 0), 0.0)
+        error = np.sum((residual - rate[:, None, None] * slope) ** 2, axis=(1, 2))
+        k = int(np.argmin(error))
+        if error[k] < best[0]:
+            best = (float(error[k]), float(cbp), float(tbwdcs[k]), float(rate[k]))
+    _, cbp, tbwdc, rate = best
     return PCCSModel(normal_bw, intensive_bw, mrmc, cbp, tbwdc, rate, peak)

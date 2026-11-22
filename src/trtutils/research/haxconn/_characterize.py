@@ -28,7 +28,7 @@ from trtutils.inspect._placement import inspect_placement
 from trtutils.profiling._profiler import profile_engine
 
 from ._build import nominal_ranges_hook, slice_hook
-from ._groups import LayerGroup, fused_spans, group_layers, match_engine_layers
+from ._groups import _FOREIGN_NODE, LayerGroup, _spans, group_layers, match_engine_layers
 from ._types import Calibration, GroupTraits, ModelTraits
 
 if TYPE_CHECKING:
@@ -41,7 +41,6 @@ _SETTLE_S = 0.3
 _CORUN_TRIM_S = (0.2, 0.1)
 _REPEATS = 4
 _REFORMAT = "Reformatting CopyNode"
-_FOREIGN_NODE = "{ForeignNode["
 _EMC_KEY = "EMC_FREQ"
 
 
@@ -74,13 +73,17 @@ def _busy_step(engine: TRTEngine) -> Callable[[], None]:
     return _step
 
 
+def _timed(step: Callable[[], None]) -> tuple[float, float]:
+    t0 = time.perf_counter()
+    step()
+    return t0, time.perf_counter()
+
+
 def _free_run(step: Callable[[], None], seconds: float) -> list[tuple[float, float]]:
     stamps: list[tuple[float, float]] = []
     end = time.perf_counter() + seconds
     while time.perf_counter() < end:
-        t0 = time.perf_counter()
-        step()
-        stamps.append((t0, time.perf_counter()))
+        stamps.append(_timed(step))
     return stamps
 
 
@@ -187,11 +190,7 @@ def _measure_group(
     step = _busy_step(engine)
     for _ in range(warmup_iterations):
         step()
-    stamps: list[tuple[float, float]] = []
-    for _ in range(iterations):
-        t0 = time.perf_counter()
-        step()
-        stamps.append((t0, time.perf_counter()))
+    stamps = [_timed(step) for _ in range(iterations)]
     wall = float(np.median(_per_execute_ms(stamps)))
     memory = measure_memory(step, memory_seconds) if memory_seconds is not None else []
     # the profiler stays attached, so it runs last on this engine
@@ -321,12 +320,13 @@ def characterize(
         _build(onnx, full_path, dla_core=None, hooks=None, **settings)
         full = _measure_group(full_path, None, iterations, warmup_iterations, None)
         names = [layer.name for layer in full.layers]
-        matches = _fill_unmatched(match_engine_layers(names, layers))
+        raw_matches = match_engine_layers(names, layers)
+        matches = _fill_unmatched(raw_matches)
         weights = [0.0] * len(layers)
         for layer, matched in zip(full.layers, matches):
             for index in matched:
                 weights[index] += layer.mean / len(matched)
-        groups = group_layers(layers, weights, fused_spans(names, layers), max_groups)
+        groups = group_layers(layers, weights, _spans(raw_matches), max_groups)
         gpu_times = _split_times(full, matches, groups)
         if verbose:
             LOG.info(f"HaX-CoNN characterize {onnx}: {len(layers)} layers, {len(groups)} groups")

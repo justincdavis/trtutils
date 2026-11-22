@@ -111,7 +111,6 @@ class HaxConnScheduler:
         self._traits = [traits[name] for name in self._names]
         self._timing = make_timing(self._traits, contention, self._config)
         self._overlap = contention if self._config.contention == "overlap" else None
-        self._finished = False
         self._context: Context | None = None
 
     @property
@@ -228,13 +227,8 @@ class HaxConnScheduler:
         yield best
         # the budget starts when the search does, not while the caller uses the first one
         deadline = None if budget is None else time.monotonic() + budget
-        self._finished = False
         search = self._exhaustive if self._config.solver == "exhaustive" else self._z3
-        for schedule in search(best, deadline):
-            best = schedule
-            yield schedule
-        if self._finished:
-            yield best._replace(optimal=True)
+        yield from search(best, deadline)
 
     def _exhaustive(self: Self, best: Schedule, deadline: float | None) -> Iterator[Schedule]:
         limit = self._config.max_transitions if self._config.max_transitions is not None else 0
@@ -246,7 +240,7 @@ class HaxConnScheduler:
             if self._key(schedule) < self._key(best):
                 best = schedule
                 yield schedule
-        self._finished = True
+        yield best._replace(optimal=True)
 
     def _z3(self: Self, best: Schedule, deadline: float | None) -> Iterator[Schedule]:
         # an own context, so interrupt() stops only this search
@@ -273,7 +267,8 @@ class HaxConnScheduler:
             if result != z3_sat:
                 solver.pop()
                 # unsat: nothing can beat the best; unknown: out of time
-                self._finished = result == z3_unsat
+                if result == z3_unsat:
+                    yield best._replace(optimal=True)
                 return
             model = solver.model()
             indices = [
