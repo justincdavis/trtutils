@@ -12,6 +12,10 @@ Aliases
     One detection as (bbox, score, class_id).
 :data:`Classification`
     One classification as (class_id, confidence).
+:data:`Embedding`
+    One image embedding as a (C,) float32 vector.
+:data:`FeatureMap`
+    One dense feature map as a (C, h, w) float32 array.
 :data:`HandInteraction`
     One hand-object interaction as (hand, first, second, side, contact).
 :data:`RBox`
@@ -52,6 +56,12 @@ Detection: TypeAlias = Tuple[Bbox, float, int]
 #: classification as (class_id, confidence)
 Classification: TypeAlias = Tuple[int, float]
 
+#: image embedding, a (C,) float32 vector
+Embedding: TypeAlias = np.ndarray
+
+#: dense feature map, a (C, h, w) float32 array on the model's patch grid
+FeatureMap: TypeAlias = np.ndarray
+
 #: rotated box as (cx, cy, w, h, angle), angle in radians
 RBox: TypeAlias = Tuple[float, float, float, float, float]
 
@@ -87,6 +97,8 @@ __all__ = [
     "Bbox",
     "Classification",
     "Detection",
+    "Embedding",
+    "FeatureMap",
     "HandInteraction",
     "OBBDetection",
     "Pose",

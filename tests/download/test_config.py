@@ -37,6 +37,7 @@ _EXPECTED_FAMILIES = [
     "depth_anything_v1",
     "depth_anything_v2",
     "depth_anything_v3",
+    "dinov3",
     "hoi_detr",
     "hands23",
     "ppocr_det",
@@ -91,6 +92,9 @@ _EXPECTED_MODELS = [
     "depth_anything_v1_small",
     "depth_anything_v2_small",
     "depth_anything_v3_mono_large",
+    "dinov3_vits16",
+    "dinov3_vits16plus",
+    "dinov3_vitb16",
     "hoi_detr_vitl",
     "hands23_x101",
     "ppocrv4_det",
@@ -167,6 +171,15 @@ def test_timm_configs(model_configs, family) -> None:
         assert config["name"].split(".")[0].endswith(f"_{trained}")
         assert config["patch"] == ("14" if "huge" in model else "16")
         assert ("in22k" in config["name"]) == ("_in22k" in model)
+
+
+def test_dinov3_configs(model_configs) -> None:
+    """DINOv3 configs name a timm LVD-1689M ViT/16, the timm default size and the DINOv3 License."""
+    for model, config in model_configs["dinov3"].items():
+        assert config["exporter"] == "timm_features"
+        assert config["license"] == "DINOv3 License"
+        assert config["name"].endswith("_patch16_dinov3.lvd1689m"), model
+        assert (config["imgsz"], config["patch"]) == ("256", "16")
 
 
 def test_dfine_obj2coco_configs_in_objects365_dir(model_configs) -> None:

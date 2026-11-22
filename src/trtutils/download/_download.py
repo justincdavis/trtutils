@@ -129,7 +129,8 @@ def download_model(  # noqa: C901, PLR0912
     dynamic : bool, optional
         Leave the batch dimension symbolic (ultralytics and YOLOv10/12/13 also
         leave height and width symbolic). Same exporters as batch. By default
-        only torchvision classifiers export dynamic, unless a batch is given.
+        torchvision classifiers and timm feature extractors (DINOv3) export
+        dynamic, unless a batch is given.
     simplify : Sequence[str] or bool, optional
         Whether and how to simplify the model after exporting.
         If True, uses default tools (polygraphy, onnxslim).
@@ -286,7 +287,8 @@ def download(
     dynamic : bool, optional
         Leave the batch dimension symbolic (ultralytics and YOLOv10/12/13 also
         leave height and width symbolic). Same exporters as batch. By default
-        only torchvision classifiers export dynamic, unless a batch is given.
+        torchvision classifiers and timm feature extractors (DINOv3) export
+        dynamic, unless a batch is given.
     simplify : Sequence[str] or bool, optional
         Whether and how to simplify the model after exporting.
         If True, uses default tools (polygraphy, onnxslim).
