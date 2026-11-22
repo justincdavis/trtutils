@@ -1198,7 +1198,7 @@ class ImageModel:
                 raise RuntimeError(err_msg)
             result = post(post_outputs, batch_ratios or [], batch_padding or [], no_copy)
             # unwrap for single-image input
-            return result[0] if is_single else result
+            return result[0] if is_single and len(result) == 1 else result
         finally:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # run
@@ -1253,7 +1253,7 @@ class ImageModel:
             )
             result = get(post(outputs, ratios or [], padding or [], no_copy))
             # unwrap for single-image input
-            return result[0] if is_single else result
+            return result[0] if is_single and len(result) == 1 else result
         finally:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # end2end

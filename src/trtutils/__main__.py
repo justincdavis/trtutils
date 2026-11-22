@@ -1408,7 +1408,7 @@ def _main() -> None:
         default=None,
         help=(
             "Fix input binding shapes. Format NAME:dim1,dim2[,dim3...]. "
-            "Repeat --shapes for multiple inputs."
+            "Repeat --shape for multiple inputs."
         ),
     )
     build_common_parser.add_argument(
@@ -2133,6 +2133,11 @@ def _main() -> None:
     # parse args and call the function
     args, unknown = parser.parse_known_args()
 
+    # only trtexec forwards unknown args
+    is_trtexec = args.command == "trtexec"
+    if unknown and not is_trtexec:
+        parser.error(f"unrecognized arguments: {' '.join(unknown)}")
+
     # set log level
     trtutils.set_log_level(args.log_level)
 
@@ -2142,7 +2147,7 @@ def _main() -> None:
 
     # call function with args
     if hasattr(args, "func"):
-        if args.command == "trtexec":
+        if is_trtexec:
             args.func(unknown)
         else:
             args.func(args)

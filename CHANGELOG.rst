@@ -163,8 +163,19 @@ Fixed
   profiler. Graph replays never call the profiler, so per-layer results could be empty
 * ``profile_engine(jetson=True)`` and ``trtutils profile --jetson`` use the Jetson default of 10000 iterations
   unless ``iterations`` is given. The dispatcher always forwarded 100
+* The CLI now errors on unrecognized arguments instead of silently ignoring them (only
+  ``trtexec`` forwards unknown arguments). Fixed the ``--shape`` help text typo
+* ``RFDETR.build()`` FP16 engines detect again on TensorRT 8.6 (Jetson). The transformer
+  LayerNorms now build in FP32; before, rfdetr_s and rfdetr_m found nothing and rfdetr_n only
+  low-confidence noise. The rest of the model stays FP16, about 2x faster than an FP32 build
+* ``run(..., preprocessed=True)`` on a batch tensor of N>1 images returns all N results instead of
+  only the first
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
   swapped, which misplaced boxes, keypoints, and masks on non-square model inputs
+* ``JIT``, ``NVTX`` and ``LOG.with_level``/``LOG.suppress`` restore the prior state when nested
+  or reused. The library stream handler no longer filters by level, so the logger level alone
+  decides what is emitted: ``LOG.with_level`` can raise verbosity and ``LOG.level`` tracks
+  ``set_log_level``
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
 * Float16-input image models use the ``cuda`` preprocessor (with or without ``cpu_resize``) instead of
   the CPU one
@@ -172,6 +183,16 @@ Fixed
   OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see
   a half-written engine
+* ``can_run_on_dla`` and ``inspect_onnx_layers`` restore the passed ``config``'s default
+  device and DLA core. They left it targeting DLA core 0, so a later build reusing the same
+  config targeted the DLA
+* ``trtexec.build_engine`` passes every requested precision flag for ``fp16``/``int8``,
+  ``fp16``/``fp8`` and ``int8``/``fp8`` combinations. It dropped one of them, so layers without
+  support for the remaining precision fell back to fp32
+* ``build_dla_engine`` builds models that run fully on the DLA. It did not allow GPU fallback,
+  so TensorRT rejected the I/O reformats and the build failed
+* ``build_dla_engine`` passes ``optimization_level`` on when the model runs fully on the DLA
+  or has no DLA layers. Those builds used the default level 3
 * ``build_engine(default_device="dla")`` without ``dla_core`` uses DLA core 0. TensorRT had
   selected no core, so the build failed
 * ``read_onnx`` raises ``RuntimeError`` on a file TensorRT 8.6 "parses" into an empty network
@@ -258,6 +279,9 @@ Removed
   (``draw_bboxes``, ``draw_text``) and the CPU preprocessing/postprocessing modules
 * ``direct_io`` (``build_engine``, ``build_dla_engine``, AxoNN ``build_engine``) and the CLI
   ``--direct_io`` flag. TRT preprocessors with float16 output now build
+* ``update_mean_std`` and ``update_output_range`` on the image preprocessors. The CUDA and TRT
+  preprocessors ignored them. Create a new preprocessor instead; ``ImageModel.update_mean_std``
+  and ``ImageModel.update_input_range`` already do
 
 0.6.1 (2025-06-17)
 ------------------
