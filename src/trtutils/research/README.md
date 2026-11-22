@@ -48,7 +48,7 @@ Four changes:
 ### 3. Add optional dependency extra in `pyproject.toml`
 
 Only when the submodule needs packages beyond trtutils' own dependencies
-(`shift` and `drift` need none, so they have no extra).
+(`shift` and `drift` need none, so they have no extra; `axonn` and `haxconn` need Z3).
 
 ```toml
 [project.optional-dependencies]

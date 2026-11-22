@@ -120,6 +120,20 @@ Added
   ``FramePacker``, ``LinearEstimator`` and ``DriftScheduler`` work on their own. ``DriftConfig``
   holds the paper's hyperparameters, with ``DriftConfig.upstream()`` for the reference
   implementation's. CLI: ``trtutils research drift characterize`` / ``run``
+* ``trtutils.research.haxconn``: the HaX-CoNN paper (shared memory-contention-aware
+  concurrent DNN execution on GPU + DLA, PPoPP 2024). ``characterize`` splits a DNN into layer
+  groups at its transition points and times each group on the GPU and the DLA (FP16 or INT8)
+  on engines sliced out of the network with ``slice_hook``, plus transition costs, the DLA
+  launch cost and memory throughput from tegrastats; ``calibrate`` measures GPU/DLA
+  contention for ``PCCSModel``. ``HaxConnScheduler`` lets Z3 propose mappings that
+  ``simulate`` scores with overlap-aware contention until none can be better (or tries every
+  mapping with ``solver="exhaustive"``); ``HaxConn`` runs the DNNs concurrently on one mixed
+  GPU/DLA engine each, and with ``dynamic=True`` starts on a naive schedule and switches to
+  better ones as they are found (D-HaX-CoNN). ``HaxConnConfig`` holds the paper's choices,
+  with ``HaxConnConfig.upstream()`` for the reference implementation's. Install with the
+  ``haxconn`` extra. CLI: ``trtutils research haxconn characterize`` / ``calibrate`` /
+  ``solve`` / ``run``
+* ``LayerInfo.inputs``: the input tensor names of each layer from ``inspect_onnx_layers``
 
 Changed
 ^^^^^^^

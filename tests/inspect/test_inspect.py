@@ -110,6 +110,11 @@ def test_inspect_onnx_layers(onnx_fixture, request) -> None:
         assert isinstance(layer.input_tensor_size, int)
         assert isinstance(layer.output_tensor_size, int)
         assert isinstance(layer.dla_compatible, bool)
+    # every tensor a layer reads is a network input or another layer's output
+    produced = {name for layer in layers for name in layer.outputs}
+    consumed = {name for layer in layers for name in layer.inputs}
+    assert len(consumed) > 0
+    assert len(consumed - produced) >= 1
 
 
 def test_inspect_engine_nonexistent_raises() -> None:

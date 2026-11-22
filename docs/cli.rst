@@ -726,6 +726,77 @@ repeated once per model; give ``DLA_CORE`` for DLA engines (CUDA graphs are then
   ``--lp_accuracy_goal``, ``--dense_groups``, ...; booleans as ``--hp_square`` /
   ``--no_hp_square``) overrides that field of the preset
 
+HaX-CoNN
+^^^^^^^^
+
+:mod:`trtutils.research.haxconn` schedules several DNNs that run concurrently on the GPU
+and a DLA: each DNN is split into layer groups, and every group is mapped to an
+accelerator so that the slowest DNN finishes first, accounting for GPU/DLA transition
+costs and the memory contention between the two accelerators. Memory throughput is read
+from tegrastats, which needs root or passwordless sudo; lock the clocks
+(``sudo jetson_clocks``) before characterizing.
+
+.. code-block:: console
+
+    # characterize each DNN (INT8, as in the paper's Orin experiments)
+    python3 -m trtutils research haxconn characterize \
+        --onnx resnet34.onnx --output resnet34.json --int8 --memory --max_groups 12
+    python3 -m trtutils research haxconn characterize \
+        --onnx vgg16.onnx --output vgg16.json --int8 --memory --max_groups 12
+
+    # calibrate the GPU/DLA contention model once per board
+    python3 -m trtutils research haxconn calibrate --output calibration.json --int8
+
+    # solve, then run the schedule next to the naive baselines
+    python3 -m trtutils research haxconn solve \
+        --model resnet34 resnet34.json --model vgg16 vgg16.json \
+        --calibration calibration.json --output schedule.json
+    python3 -m trtutils research haxconn run \
+        --model resnet34 resnet34.onnx resnet34.json \
+        --model vgg16 vgg16.onnx vgg16.json \
+        --calibration calibration.json --schedule schedule.json --baselines
+
+``characterize`` options (plus ``--dla_core``):
+
+* ``--onnx``: The ONNX model, with static shapes (required)
+* ``--output``: JSON file for the traits (required)
+* ``--max_groups``: Most layer groups to keep (default: every transition point)
+* ``--iterations`` / ``--warmup_iterations``: Timed and untimed runs per group engine
+  (default: 200 / 20)
+* ``--workspace``: TensorRT workspace in GiB (default: 4.0)
+* ``--timing_cache``: Timing cache shared by the builds
+* ``--int8``: Measure INT8 instead of FP16 engines
+* ``--memory``: Measure memory throughput, needed for contention-aware scheduling
+* ``--memory_seconds``: Memory sampling per group engine (default: 1.5)
+
+``calibrate`` options (plus ``--dla_core``):
+
+* ``--output``: JSON file for the calibration (required)
+* ``--sizes`` / ``--kernels``: Probe input and kernel sizes (default: 64 128 192 256 / 1 3)
+* ``--seconds``: Seconds per measurement (default: 1.5)
+* ``--int8``: Run the probes in INT8
+
+``solve`` options:
+
+* ``--model``: A DNN as ``NAME TRAITS``, repeated (required)
+* ``--calibration``: JSON file from ``calibrate``; needed unless ``--contention none``
+* ``--output``: JSON file for the schedule
+* ``--preset``: ``paper`` (default) or ``upstream`` hyperparameters
+* one flag per ``HaxConnConfig`` field (``--objective``, ``--contention``,
+  ``--max_transitions``, ``--solver``, ``--time_budget``, ``--latency_metric``,
+  ``--memory_metric``) overrides that field of the preset; ``none`` lifts the
+  transition limit or the time budget
+
+``run`` options (plus ``--dla_core``):
+
+* ``--model``: A DNN as ``NAME ONNX TRAITS``, repeated (required)
+* ``--calibration``, ``--preset`` and the config flags: as for ``solve``
+* ``--schedule``: JSON file from ``solve`` (default: solve first)
+* ``--engine_dir``: Directory that keeps the built engines (default: temporary)
+* ``--iterations`` / ``--warmup_iterations``: Timed and untimed rounds (default: 200 / 20)
+* ``--baselines``: Also run the GPU-only and naive GPU/DLA schedules
+* ``--dynamic``: D-HaX-CoNN, start on a naive schedule and switch as better ones are found
+
 TRTExec
 ~~~~~~~
 

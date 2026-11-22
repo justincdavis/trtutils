@@ -35,6 +35,8 @@ class LayerInfo:
         Whether the layer can run on a DLA accelerator.
     outputs : tuple[str, ...]
         The names of the output tensors.
+    inputs : tuple[str, ...]
+        The names of the input tensors.
 
     """
 
@@ -46,6 +48,7 @@ class LayerInfo:
     output_tensor_size: int
     dla_compatible: bool
     outputs: tuple[str, ...] = ()
+    inputs: tuple[str, ...] = ()
 
     def __str__(self: Self) -> str:
         dla_str = "DLA-compatible" if self.dla_compatible else "GPU-only"
@@ -59,5 +62,6 @@ class LayerInfo:
             f"layer_type={self.layer_type!r}, precision={self.precision!r}, "
             f"input_tensor_size={self.input_tensor_size}, "
             f"output_tensor_size={self.output_tensor_size}, "
-            f"dla_compatible={self.dla_compatible}, outputs={self.outputs!r})"
+            f"dla_compatible={self.dla_compatible}, outputs={self.outputs!r}, "
+            f"inputs={self.inputs!r})"
         )

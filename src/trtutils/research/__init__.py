@@ -12,6 +12,9 @@ Submodules
 :mod:`drift`
     Implementation of the DRIFT paper for intra-frame parallel object
     detection across a GPU and a DLA.
+:mod:`haxconn`
+    Implementation of the HaX-CoNN paper for contention-aware scheduling
+    of concurrent DNNs across a GPU and a DLA.
 :mod:`shift`
     Implementation of the SHIFT paper for context-aware scheduling of
     multiple object detectors across accelerators.
@@ -29,16 +32,19 @@ if TYPE_CHECKING:
 
     from . import axonn as axonn
     from . import drift as drift
+    from . import haxconn as haxconn
     from . import shift as shift
 
 _SUBMODULES = [
     "axonn",
     "drift",
+    "haxconn",
     "shift",
 ]
 _LAZY_SUBMODULES = {
     "axonn",
     "drift",
+    "haxconn",
     "shift",
 }
 
@@ -46,6 +52,7 @@ __all__ = [
     "axonn",
     "discover_submodules",
     "drift",
+    "haxconn",
     "register_cli",
     "shift",
 ]
