@@ -140,8 +140,9 @@ detections of a frame, and a tracker matches them across frames by cosine simila
    - Upstream resizes crops with bicubic interpolation (BoT-SORT uses bilinear, like
      trtutils' ``linear``); embeddings of small, heavily upscaled crops depend on the filter
    - Engines are built with a dynamic batch (1 to ``batch_size``), as for OSNet
-   - FP16 builds need no precision pins: unlike OSNet, 60 fixed-batch FP16 builds (12 per
-     process; ResNet, ResNet-IBN and ResNeSt backbones) all matched onnxruntime on TensorRT 10.15
+   - FP16 builds need no precision pins: unlike OSNet, 48 fixed-batch FP16 builds without a
+     hook (12 per process; ResNet, ResNet-IBN and ResNeSt backbones) all matched onnxruntime on
+     TensorRT 10.15
 
 Classification
 --------------
