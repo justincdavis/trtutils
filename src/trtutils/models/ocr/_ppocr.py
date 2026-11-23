@@ -92,7 +92,7 @@ class PPOCRDetector(TextDetector, Model):
         cls,
         onnx: Path | str,
         output: Path | str,
-        imgsz: int | None = None,
+        imgsz: int | tuple[int, int] | None = None,
         batch_size: int = 1,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -102,6 +102,7 @@ class PPOCRDetector(TextDetector, Model):
         fp16: bool = True,
         verbose: bool | None = None,
         embed_sst: bool = False,
+        dynamic_batch: bool | None = None,  # noqa: ARG003
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """
@@ -137,6 +138,9 @@ class PPOCRDetector(TextDetector, Model):
             Enable verbose builder output.
         embed_sst : bool
             Not supported for PP-OCR; must be False. Normalization stays in the preprocessor.
+        dynamic_batch : bool, optional
+            Accepted for parity with ``Model.build`` and ignored: the profile built
+            here is always dynamic.
         **kwargs : Any
             Additional keyword arguments forwarded to ``build_engine()``.
 
@@ -144,12 +148,17 @@ class PPOCRDetector(TextDetector, Model):
         ------
         ValueError
             If ``embed_sst`` is True.
+        TypeError
+            If ``imgsz`` is a (height, width) tuple.
 
         """
         if embed_sst:
             err_msg = "embed_sst is not supported for PP-OCR models."
             raise ValueError(err_msg)
-        imgsz = imgsz if imgsz is not None else cls._default_imgsz
+        size = imgsz if imgsz is not None else cls._default_imgsz
+        if not isinstance(size, int):
+            err_msg = f"PP-OCR detectors take a single imgsz, got {size}"
+            raise TypeError(err_msg)
         build_engine(
             onnx=onnx,
             output=output,
@@ -158,7 +167,7 @@ class PPOCRDetector(TextDetector, Model):
                     cls._input_tensors[0][0],
                     (
                         (1, 3, min_imgsz, min_imgsz),
-                        (1, 3, imgsz, imgsz),
+                        (1, 3, size, size),
                         (batch_size, 3, max_imgsz, max_imgsz),
                     ),
                 ),
@@ -235,7 +244,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         cls,
         onnx: Path | str,
         output: Path | str,
-        imgsz: int | None = None,
+        imgsz: int | tuple[int, int] | None = None,
         batch_size: int = 6,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -245,6 +254,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         fp16: bool = True,
         verbose: bool | None = None,
         embed_sst: bool = False,
+        dynamic_batch: bool | None = None,  # noqa: ARG003
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """
@@ -278,6 +288,9 @@ class PPOCRRecognizer(TextRecognizer, Model):
             Enable verbose builder output.
         embed_sst : bool
             Not supported for PP-OCR; must be False. Normalization stays in the preprocessor.
+        dynamic_batch : bool, optional
+            Accepted for parity with ``Model.build`` and ignored: the profile built
+            here is always dynamic.
         **kwargs : Any
             Additional keyword arguments forwarded to ``build_engine()``.
 
@@ -285,12 +298,17 @@ class PPOCRRecognizer(TextRecognizer, Model):
         ------
         ValueError
             If ``embed_sst`` is True.
+        TypeError
+            If ``imgsz`` is a (height, width) tuple.
 
         """
         if embed_sst:
             err_msg = "embed_sst is not supported for PP-OCR models."
             raise ValueError(err_msg)
         height = imgsz if imgsz is not None else cls._default_imgsz
+        if not isinstance(height, int):
+            err_msg = f"PP-OCR recognizers take a single imgsz (the input height), got {height}"
+            raise TypeError(err_msg)
         build_engine(
             onnx=onnx,
             output=output,

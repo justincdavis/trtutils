@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from trtutils.download._models import EXPORTERS
+from trtutils.download._tools import normalize_imgsz
 
 pytestmark = pytest.mark.cpu
 
@@ -211,3 +212,13 @@ def test_defaults_merge(model_configs, family, model, exporter, license_name) ->
     config = model_configs[family][model]
     assert (config["exporter"], config["license"]) == (exporter, license_name)
     assert "name" in config
+
+
+def test_config_imgsz_parses_and_matches_exporter(model_configs) -> None:
+    """Every config imgsz is one size or (height, width), non-square only for hw exporters."""
+    for family in model_configs.values():
+        for model_name, config in family.items():
+            if "imgsz" not in config:
+                continue
+            imgsz = normalize_imgsz(config["imgsz"])
+            assert isinstance(imgsz, int) or EXPORTERS[config["exporter"]].hw, model_name

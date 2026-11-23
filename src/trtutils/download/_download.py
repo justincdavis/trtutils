@@ -19,6 +19,7 @@ from ._tools import (
     export_requirements,
     handle_batch,
     make_venv,
+    normalize_imgsz,
 )
 
 # copyleft or non-commercial licenses get a louder notice
@@ -93,7 +94,7 @@ def download_model(  # noqa: C901, PLR0912
     model: str,
     directory: Path,
     opset: int = 17,
-    imgsz: int | None = None,
+    imgsz: int | tuple[int, int] | None = None,
     requirements_export: Path | None = None,
     *,
     batch: int | None = None,
@@ -116,9 +117,10 @@ def download_model(  # noqa: C901, PLR0912
         The directory to save the model and working files.
     opset : int, optional
         The ONNX opset version to use.
-    imgsz : int, optional
-        The image size to use for the model.
-        By default, the model will use the default image size for the model.
+    imgsz : int | tuple[int, int], optional
+        The image size to use for the model: one int for a square image, or
+        ``(height, width)``. Only exporters registered with ``hw=True`` accept a
+        non-square size. By default, the model will use the default image size for the model.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
     batch : int, optional
@@ -155,8 +157,9 @@ def download_model(  # noqa: C901, PLR0912
     Raises
     ------
     ValueError
-        If the model is not supported, the batch is not positive, or dynamic is
-        combined with a batch above 1 or make_static.
+        If the model is not supported, the batch is not positive, dynamic is
+        combined with a batch above 1 or make_static, or imgsz is non-square and the
+        model's exporter only takes square sizes.
     NotImplementedError
         If batch > 1 or dynamic is requested from an exporter that cannot honor it.
 
@@ -178,6 +181,14 @@ def download_model(  # noqa: C901, PLR0912
         raise ValueError(err_msg)
 
     exporter = EXPORTERS[config["exporter"]]
+    if imgsz is not None:
+        imgsz = normalize_imgsz(imgsz)
+        if isinstance(imgsz, tuple) and not exporter.hw:
+            err_msg = (
+                f"{model} exports only square images, got imgsz (height, width) of {imgsz}; "
+                "pass a single size"
+            )
+            raise ValueError(err_msg)
 
     if dynamic is None:
         dynamic = exporter.dynamic_default and batch is None
@@ -240,7 +251,7 @@ def download(
     model: str,
     output: Path,
     opset: int = 17,
-    imgsz: int | None = None,
+    imgsz: int | tuple[int, int] | None = None,
     requirements_export: Path | None = None,
     *,
     batch: int | None = None,
@@ -263,9 +274,10 @@ def download(
         The path to save the model.
     opset : int, optional
         The ONNX opset version to use.
-    imgsz : int, optional
-        The image size to use for the model.
-        By default, the model will use the default image size for the model.
+    imgsz : int | tuple[int, int], optional
+        The image size to use for the model: one int for a square image, or
+        ``(height, width)``. Only exporters registered with ``hw=True`` accept a
+        non-square size. By default, the model will use the default image size for the model.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
     batch : int, optional

@@ -459,7 +459,9 @@ Options
 
 * ``--list_models``: Print the model names ``--model`` accepts and exit
 * ``--opset``: ONNX opset version to use (default: 17)
-* ``--imgsz``: Image size to use for the model (default: the model's own size, usually 640)
+* ``--imgsz``: Image size to use for the model: one value for a square image, or two values
+  ``HEIGHT WIDTH`` (for example ``--imgsz 256 128``). Only exporters that support it accept a
+  non-square size; the others raise an error (default: the model's own size, usually 640)
 * ``--batch``: Export at a fixed batch size (default: 1). Supported by the Ultralytics
   models, YOLOv10/12/13, and torchvision classifiers; other families raise an error
 * ``--dynamic``: Export with a symbolic batch dimension so one ONNX builds engines for a
