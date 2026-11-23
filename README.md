@@ -167,7 +167,7 @@ describes each family.
 - **Depth estimation**: Depth-Anything V1, V2, and V3
 - **Hand-object interaction**: HOI-DETR and Hands23
 - **OCR**: PP-OCR text detection and recognition
-- **Promptable segmentation**: MobileSAM
+- **Promptable segmentation**: MobileSAM; SAM ViT-B and ViT-L
 
 ## Documentation
 

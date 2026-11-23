@@ -22,6 +22,7 @@ from trtutils.models import (
     PPOCRDetector,
     PPOCRRecognizer,
     RTDETRv1,
+    SAMDecoder,
     YOLOv8,
     YOLOv10,
 )
@@ -445,6 +446,13 @@ def test_download_simplify_defaults_to_true(tmp_path) -> None:
     assert mock_dl.call_args.kwargs["simplify"] is True
 
 
+SAM_DECODERS = [
+    pytest.param(MobileSAMDecoder, id="mobile-sam"),
+    pytest.param(SAMDecoder, id="sam"),
+]
+
+
+@pytest.mark.parametrize("decoder_cls", SAM_DECODERS)
 @pytest.mark.parametrize(
     ("kwargs", "max_shape", "fp16"),
     [
@@ -453,10 +461,10 @@ def test_download_simplify_defaults_to_true(tmp_path) -> None:
         pytest.param({"fp16": True}, (4, 8), FLAGS.WEAK_TYPING, id="fp16-on"),
     ],
 )
-def test_mobile_sam_decoder_build(tmp_path, kwargs, max_shape, fp16) -> None:
+def test_sam_decoder_build(tmp_path, decoder_cls, kwargs, max_shape, fp16) -> None:
     """The decoder builds fp32 by default with a (prompt sets, points) profile from 1 x 1."""
-    with patch("trtutils.models.promptable_segmenters._mobile_sam.build_engine") as mock_build:
-        MobileSAMDecoder.build(tmp_path / "fake.onnx", tmp_path / "out.engine", **kwargs)
+    with patch("trtutils.models.promptable_segmenters._sam.build_engine") as mock_build:
+        decoder_cls.build(tmp_path / "fake.onnx", tmp_path / "out.engine", **kwargs)
     call = mock_build.call_args.kwargs
     assert call["fp16"] is fp16
     prompts, points = max_shape
@@ -466,6 +474,7 @@ def test_mobile_sam_decoder_build(tmp_path, kwargs, max_shape, fp16) -> None:
     }
 
 
+@pytest.mark.parametrize("decoder_cls", SAM_DECODERS)
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
@@ -473,17 +482,18 @@ def test_mobile_sam_decoder_build(tmp_path, kwargs, max_shape, fp16) -> None:
         pytest.param({"imgsz": 512}, "supports only imgsz", id="imgsz"),
     ],
 )
-def test_mobile_sam_decoder_build_rejects(kwargs, match) -> None:
+def test_sam_decoder_build_rejects(decoder_cls, kwargs, match) -> None:
     """The decoder has no image to embed and its point coordinates are in 1024 pixels."""
-    with patch("trtutils.models.promptable_segmenters._mobile_sam.build_engine") as build:
+    with patch("trtutils.models.promptable_segmenters._sam.build_engine") as build:
         with pytest.raises(ValueError, match=match):
-            MobileSAMDecoder.build("model.onnx", "model.engine", **kwargs)
+            decoder_cls.build("model.onnx", "model.engine", **kwargs)
     build.assert_not_called()
 
 
+@pytest.mark.parametrize("decoder_cls", SAM_DECODERS)
 @pytest.mark.parametrize("dynamic_batch", [True, False, None])
-def test_mobile_sam_decoder_build_takes_dynamic_batch(dynamic_batch) -> None:
+def test_sam_decoder_build_takes_dynamic_batch(decoder_cls, dynamic_batch) -> None:
     """The decoder profile is always dynamic: dynamic_batch is accepted, not sent to build_engine."""
-    with patch("trtutils.models.promptable_segmenters._mobile_sam.build_engine") as build:
-        MobileSAMDecoder.build("model.onnx", "model.engine", dynamic_batch=dynamic_batch)
+    with patch("trtutils.models.promptable_segmenters._sam.build_engine") as build:
+        decoder_cls.build("model.onnx", "model.engine", dynamic_batch=dynamic_batch)
     assert "dynamic_batch" not in build.call_args.kwargs

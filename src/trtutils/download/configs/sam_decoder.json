@@ -1,0 +1,13 @@
+{
+    "_defaults": {"exporter": "sam", "license": "Apache-2.0", "part": "decoder"},
+    "sam_vit_b_decoder": {
+        "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+        "variant": "vit_b",
+        "name": "sam_vit_b_decoder"
+    },
+    "sam_vit_l_decoder": {
+        "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_l_0b3195.pth",
+        "variant": "vit_l",
+        "name": "sam_vit_l_decoder"
+    }
+}

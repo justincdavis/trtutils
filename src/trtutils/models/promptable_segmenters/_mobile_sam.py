@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from trtutils._flags import FLAGS
-from trtutils.builder._build import build_engine
 from trtutils.image._promptable_segmenter import ImageEncoder, MaskDecoder, PromptableSegmenter
 from trtutils.models._model import Model
+
+from ._sam import build_sam_decoder
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -202,17 +202,14 @@ class MobileSAMDecoder(MaskDecoder, Model):
             err_msg = f"{cls._friendly_name} takes a single imgsz, got {size}"
             raise TypeError(err_msg)
         cls._validate_imgsz(size)
-        build_engine(
-            onnx=onnx,
-            output=output,
-            shapes=[
-                ("point_coords", ((1, 1, 2), (1, 2, 2), (batch_size, max_points, 2))),
-                ("point_labels", ((1, 1), (1, 2), (batch_size, max_points))),
-            ],
-            # trt 11 has no fp16 flag, precision comes from the onnx
-            fp16=fp16 and FLAGS.WEAK_TYPING,
-            dla_core=dla_core,
-            optimization_level=opt_level,
+        build_sam_decoder(
+            onnx,
+            output,
+            batch_size,
+            dla_core,
+            opt_level,
+            max_points=max_points,
+            fp16=fp16,
             verbose=verbose,
             **kwargs,
         )

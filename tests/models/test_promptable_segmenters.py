@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Engine-level tests for src/trtutils/models/promptable_segmenters/ -- MobileSAM end to end."""
+"""Engine-level tests for src/trtutils/models/promptable_segmenters/ -- MobileSAM and SAM."""
 
 from __future__ import annotations
 
@@ -11,31 +11,57 @@ import pytest
 from tests.conftest import DATA_DIR
 from trtutils.image import ImageEncoder, MaskDecoder
 from trtutils.image._schema import ImageEncoderOutputSchema, MaskDecoderOutputSchema
-from trtutils.models import MobileSAM, MobileSAMDecoder, MobileSAMEncoder
+from trtutils.models import (
+    SAM,
+    MobileSAM,
+    MobileSAMDecoder,
+    MobileSAMEncoder,
+    SAMDecoder,
+    SAMEncoder,
+)
 
-ENCODER_ONNX = DATA_DIR / "mobile_sam" / "mobile_sam_encoder_1024.onnx"
-DECODER_ONNX = DATA_DIR / "mobile_sam" / "mobile_sam_decoder_1024.onnx"
+# (composite, encoder, decoder, ONNX path with {} for the part)
+FAMILIES = [
+    pytest.param(
+        (MobileSAM, MobileSAMEncoder, MobileSAMDecoder, "mobile_sam/mobile_sam_{}_1024.onnx"),
+        id="mobile-sam",
+    ),
+    pytest.param((SAM, SAMEncoder, SAMDecoder, "sam/sam_vit_b_{}_1024.onnx"), id="sam-vit-b"),
+    pytest.param(
+        (SAM, SAMEncoder, SAMDecoder, "sam/sam_vit_l_{}_1024.onnx"),
+        id="sam-vit-l",
+        marks=pytest.mark.slow,
+    ),
+]
 # the horse in data/horse.jpg, (x1, y1, x2, y2), and a point on its body
 HORSE_BOX = np.array([65, 45, 392, 272], np.float32)
 HORSE_POINT = np.array([[230, 110]], np.float32)
 
 
-@pytest.fixture(scope="module")
-def encoder_engine(build_model_engine):
-    """MobileSAM image encoder engine, FP16 as the build default."""
-    return build_model_engine(MobileSAMEncoder, ENCODER_ONNX, tag="fp16")
+@pytest.fixture(scope="module", params=FAMILIES)
+def family(request):
+    """The wrapper classes and ONNX path pattern of one model."""
+    return request.param
 
 
 @pytest.fixture(scope="module")
-def decoder_engine(build_model_engine):
-    """MobileSAM mask decoder engine, at most 4 prompt sets of 8 points."""
-    return build_model_engine(MobileSAMDecoder, DECODER_ONNX, batch_size=4)
+def encoder_engine(build_model_engine, family):
+    """Image encoder engine, FP16 as the build default."""
+    _, encoder_cls, _, onnx = family
+    return build_model_engine(encoder_cls, DATA_DIR / onnx.format("encoder"), tag="fp16")
 
 
 @pytest.fixture(scope="module")
-def sam(encoder_engine, decoder_engine):
-    """MobileSAM on the CUDA preprocessor."""
-    return MobileSAM(encoder_engine, decoder_engine, warmup=False)
+def decoder_engine(build_model_engine, family):
+    """Mask decoder engine, at most 4 prompt sets of 8 points."""
+    _, _, decoder_cls, onnx = family
+    return build_model_engine(decoder_cls, DATA_DIR / onnx.format("decoder"), batch_size=4)
+
+
+@pytest.fixture(scope="module")
+def sam(family, encoder_engine, decoder_engine):
+    """The composite on the CUDA preprocessor."""
+    return family[0](encoder_engine, decoder_engine, warmup=False)
 
 
 def _iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -80,10 +106,10 @@ def test_predict_matches_end2end(sam, images, prompt, count) -> None:
 @pytest.mark.parametrize("preprocessor", ["cpu", "cuda"])
 @pytest.mark.parametrize("multimask", [True, False])
 def test_box_mask_covers_horse(
-    encoder_engine, decoder_engine, images, preprocessor, multimask
+    family, encoder_engine, decoder_engine, images, preprocessor, multimask
 ) -> None:
     """A box around the horse gives a confident mask that fills much of the box and stays in it."""
-    sam = MobileSAM(encoder_engine, decoder_engine, preprocessor=preprocessor, warmup=False)
+    sam = family[0](encoder_engine, decoder_engine, preprocessor=preprocessor, warmup=False)
     ((mask, score),) = sam.end2end(images["horse"].array, boxes=HORSE_BOX, multimask=multimask)
     x1, y1, x2, y2 = HORSE_BOX.astype(int)
     inside = mask[y1:y2, x1:x2].sum()
@@ -137,9 +163,9 @@ def test_more_boxes_than_profile(sam, images) -> None:
         assert score == pytest.approx(ref_score, abs=1e-3)
 
 
-def test_prompt_errors(sam, encoder_engine, decoder_engine, images) -> None:
+def test_prompt_errors(family, sam, encoder_engine, decoder_engine, images) -> None:
     """Predicting without an image, or with more points than the profile, raises."""
-    fresh = MobileSAM(encoder_engine, decoder_engine, warmup=False)
+    fresh = family[0](encoder_engine, decoder_engine, warmup=False)
     with pytest.raises(RuntimeError, match="set_image"):
         fresh.predict(boxes=HORSE_BOX)
     sam.set_image(images["horse"].array)
@@ -148,10 +174,11 @@ def test_prompt_errors(sam, encoder_engine, decoder_engine, images) -> None:
         sam.predict(points=points)
 
 
-def test_schemas_and_wrong_engines(encoder_engine, decoder_engine) -> None:
+def test_schemas_and_wrong_engines(family, encoder_engine, decoder_engine) -> None:
     """Each part resolves its schema and rejects the other part's engine."""
-    encoder = MobileSAMEncoder(encoder_engine, warmup=False)
-    decoder = MobileSAMDecoder(decoder_engine, warmup=False)
+    _, encoder_cls, decoder_cls, _ = family
+    encoder = encoder_cls(encoder_engine, warmup=False)
+    decoder = decoder_cls(decoder_engine, warmup=False)
     assert encoder.output_schema is ImageEncoderOutputSchema.SAM
     assert decoder.output_schema is MaskDecoderOutputSchema.SAM
     assert (decoder.max_prompts, decoder.max_points) == (4, 8)

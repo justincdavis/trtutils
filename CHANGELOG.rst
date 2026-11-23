@@ -48,6 +48,10 @@ Added
   ``LayerNorm2d`` as ``LayerNormalization``, which keeps the default FP16 encoder accurate;
   ``MobileSAMDecoder.build`` builds FP32 with a dynamic profile of up to ``batch_size``
   (default 4) prompt sets of ``max_points`` (default 8) points
+* ``models.SAMEncoder`` / ``SAMDecoder`` / ``SAM`` and the downloadable ``sam_vit_b_encoder`` /
+  ``sam_vit_b_decoder`` / ``sam_vit_l_encoder`` / ``sam_vit_l_decoder`` (Segment Anything,
+  Apache-2.0), exported like MobileSAM: FP16 encoder and FP32 decoder by default, same prompts
+  and decoder profile. ViT-H is not included
 * ``Model._input_tensors`` kinds may be a tuple of trailing dims, ``(batch, *dims)``
 * Image models accept ``Buffer`` inputs (device, mapped or host), alone or mixed with arrays.
   ``Buffer.wrap`` views CuPy and PyTorch tensors without copying

@@ -6,9 +6,13 @@
 from __future__ import annotations
 
 from ._mobile_sam import MobileSAM, MobileSAMDecoder, MobileSAMEncoder
+from ._sam import SAM, SAMDecoder, SAMEncoder
 
 __all__ = [
+    "SAM",
     "MobileSAM",
     "MobileSAMDecoder",
     "MobileSAMEncoder",
+    "SAMDecoder",
+    "SAMEncoder",
 ]

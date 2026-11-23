@@ -101,6 +101,9 @@ def build_task_models() -> list[TaskModel]:
     # a box around the bus in street.jpg
     bus = {"boxes": np.array([383, 393, 648, 822], np.float32)}
     specs.append(TaskModel("promptable", "mobile_sam", models.MobileSAM, parts=sam, inputs=bus))
+    sam = {"encoder": models.SAMEncoder, "decoder": models.SAMDecoder}
+    for name in ("sam_vit_b", "sam_vit_l"):
+        specs.append(TaskModel("promptable", name, models.SAM, parts=sam, inputs=bus))
     return specs
 
 
@@ -207,7 +210,7 @@ def load_model(spec: TaskModel, preprocessor: str, postprocessor: str = "cpu") -
 def _has_cuda_post(spec: TaskModel) -> bool:
     """Whether the task has a CUDA postprocessor (OCR: both of its parts)."""
     classes = spec.parts.values() if spec.parts else [spec.cls]
-    return all(getattr(c, "_CUDA_POSTPROCESSOR", None) is not None for c in classes)  # noqa: SLF001
+    return all(getattr(c, "_CUDA_POSTPROCESSOR", None) is not None for c in classes)
 
 
 def _sync() -> None:
