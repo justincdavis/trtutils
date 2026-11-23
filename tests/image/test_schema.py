@@ -128,6 +128,13 @@ _SEM = SemanticSegmenterOutputSchema
         pytest.param(
             PoseEstimatorOutputSchema, ("keypoints", "dets"), None, "RTMO", id="pose-rtmo-swapped"
         ),
+        pytest.param(
+            PoseEstimatorOutputSchema,
+            PoseEstimatorOutputSchema.YUNET.value[::-1],
+            None,
+            "YUNET",
+            id="pose-yunet-reversed",
+        ),
         pytest.param(OBBDetectorOutputSchema, ("output0",), None, "YOLO", id="obb-auto"),
         pytest.param(
             PoseEstimatorOutputSchema,
@@ -168,6 +175,13 @@ def test_resolve_schema(schema_cls, outputs, override, expected) -> None:
         ),
         pytest.param(
             PoseEstimatorOutputSchema, ("dets",), None, "match no", id="pose-rtmo-missing-kpts"
+        ),
+        pytest.param(
+            PoseEstimatorOutputSchema,
+            PoseEstimatorOutputSchema.YUNET.value[:-1],
+            None,
+            "match no",
+            id="pose-yunet-missing-kps",
         ),
         pytest.param(SegmenterOutputSchema, ("output0",), None, "match no", id="seg-on-pose"),
         pytest.param(

@@ -44,6 +44,7 @@ ROUTING_CASES = [
     pytest.param("ppocrv4_det", "ppocr", id="ppocr_det"),
     pytest.param("ppocrv4_rec", "ppocr", id="ppocr_rec"),
     pytest.param("rtmo_s", "rtmo", id="rtmo"),
+    pytest.param("yunet", "yunet", id="yunet"),
     pytest.param("yolov8n-seg", "ultralytics", id="ultralytics-yolov8-seg"),
     pytest.param("yolov8n-cls", "ultralytics", id="ultralytics-yolov8-cls"),
     pytest.param("yolov8n-pose", "ultralytics", id="ultralytics-yolov8-pose"),

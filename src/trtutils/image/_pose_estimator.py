@@ -14,7 +14,12 @@ from trtutils._log import LOG
 from ._image_model import ImageModel
 from ._schema import PoseEstimatorOutputSchema
 from .interfaces import PoseEstimatorInterface
-from .postprocessors import get_poses, postprocess_rtmo_pose, postprocess_yolo_pose
+from .postprocessors import (
+    get_poses,
+    postprocess_rtmo_pose,
+    postprocess_yolo_pose,
+    postprocess_yunet_pose,
+)
 from .postprocessors._cuda_pose import CUDAPosePostprocessor
 
 if TYPE_CHECKING:
@@ -33,11 +38,12 @@ if TYPE_CHECKING:
 _POSTPROCESSORS = {
     PoseEstimatorOutputSchema.YOLO: postprocess_yolo_pose,
     PoseEstimatorOutputSchema.RTMO: postprocess_rtmo_pose,
+    PoseEstimatorOutputSchema.YUNET: postprocess_yunet_pose,
 }
 
 
 class PoseEstimator(ImageModel, PoseEstimatorInterface):
-    """Implementation of one-stage pose estimation models (YOLO-pose, RTMO)."""
+    """One-stage pose estimation models (YOLO-pose, RTMO) and face detectors (YuNet)."""
 
     _OUTPUT_SCHEMA = PoseEstimatorOutputSchema
     _supports_pad = False
@@ -199,7 +205,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         return self._output_schema
 
     def _cuda_unsupported(self: Self) -> str | None:
-        """CUDA decodes the YOLO pose head; RTMO engines already ran NMS and keep a few rows."""
+        """CUDA decodes the YOLO pose head; RTMO and YuNet decode on the CPU."""
         if self._output_schema != PoseEstimatorOutputSchema.YOLO:
             return f"supports YOLO, not {self._output_schema.name}"
         return super()._cuda_unsupported()

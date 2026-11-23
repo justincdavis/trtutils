@@ -7,10 +7,12 @@ from __future__ import annotations
 
 from ._rtmo import RTMO
 from ._yolo import YOLOv8Pose, YOLOv11Pose, YOLOv26Pose
+from ._yunet import YuNet
 
 __all__ = [
     "RTMO",
     "YOLOv8Pose",
     "YOLOv11Pose",
     "YOLOv26Pose",
+    "YuNet",
 ]

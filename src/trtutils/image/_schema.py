@@ -141,6 +141,22 @@ class PoseEstimatorOutputSchema(Enum):
     YOLO = ("output0",)
     # RTMO, in-graph NMS: boxes + scores (B, N, 5) and keypoints (B, N, K, 3)
     RTMO = ("dets", "keypoints")
+    # YuNet face detector, raw heads per stride (8, 16, 32): class and objectness (B, N, 1),
+    # box (B, N, 4) and 5 landmarks (B, N, 10), in opencv's FaceDetectorYN order
+    YUNET = (
+        "cls_8",
+        "cls_16",
+        "cls_32",
+        "obj_8",
+        "obj_16",
+        "obj_32",
+        "bbox_8",
+        "bbox_16",
+        "bbox_32",
+        "kps_8",
+        "kps_16",
+        "kps_32",
+    )
 
 
 class OBBDetectorOutputSchema(Enum):

@@ -108,6 +108,13 @@ Added
   to RGB and the in-graph NMS padded to a static 50 rows; its score floor is 0.1 (mmpose's,
   was 0.15) and it always keeps one row, so TensorRT 8.6 runs images without people. CPU
   postprocessing only
+* ``models.YuNet`` (``yunet``): OpenCV Zoo's face detector, a ``PoseEstimator`` whose results
+  are face boxes with five landmarks (eyes, nose tip, mouth corners; their score is the face
+  score). ``PoseEstimatorOutputSchema.YUNET`` (the twelve ``cls`` / ``obj`` / ``bbox`` / ``kps``
+  heads) and ``postprocessors.postprocess_yunet_pose`` reproduce OpenCV's ``FaceDetectorYN``
+  decoding. Downloads are the zoo's ONNX, checked against a pinned sha256, with the channels
+  flipped to RGB and the input fixed to ``--imgsz`` (default 640, divisible by 32). CPU
+  postprocessing only
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)

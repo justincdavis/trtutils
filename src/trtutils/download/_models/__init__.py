@@ -29,6 +29,7 @@ from ._yolo import (
     export_yolov13,
 )
 from ._yolox import export_yolox
+from ._yunet import export_yunet
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -90,6 +91,7 @@ EXPORTERS: dict[str, Exporter] = {
     "yolov12": Exporter(export_yolov12, batch=True),
     "yolov13": Exporter(export_yolov13, batch=True),
     "yolox": Exporter(export_yolox),
+    "yunet": Exporter(export_yunet),
 }
 
 __all__ = [
@@ -121,4 +123,5 @@ __all__ = [
     "export_yolov12",
     "export_yolov13",
     "export_yolox",
+    "export_yunet",
 ]

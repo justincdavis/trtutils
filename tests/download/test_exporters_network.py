@@ -147,6 +147,8 @@ EXPORT_CASES = [
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),
     pytest.param("rtmo_s", {}, {"input": [None, 3, 640, 640]}, id="rtmo"),
+    pytest.param("yunet", {}, {"input": [1, 3, 640, 640]}, id="yunet"),
+    pytest.param("yunet", {"imgsz": 330}, {"input": [1, 3, 320, 320]}, id="yunet-adjusted"),
 ]
 
 
