@@ -155,6 +155,7 @@ class SAM2Decoder(MaskDecoder, Model):
         fp16: bool = False,
         verbose: bool | None = None,
         embed_sst: bool = False,
+        dynamic_batch: bool | None = None,  # noqa: ARG003
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """
@@ -185,6 +186,9 @@ class SAM2Decoder(MaskDecoder, Model):
             Enable verbose builder output.
         embed_sst : bool
             Not supported, the decoder has no image input; must be False.
+        dynamic_batch : bool, optional
+            Accepted for parity with ``Model.build`` and ignored: the number of
+            prompt sets is always dynamic.
         **kwargs : Any
             Additional keyword arguments forwarded to ``build_engine()``.
 
