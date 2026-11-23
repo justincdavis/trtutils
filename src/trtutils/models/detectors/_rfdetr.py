@@ -29,13 +29,10 @@ class RFDETR(Detector, Model):
     _model_type = "rfdetr"
     _friendly_name = "RF-DETR"
     _default_imgsz = 576
-    # one fixed size per variant (no shared divisor: base sizes use patch 14, the rest 16);
-    # matched by substring in order, so rfdetr_l_legacy must come before rfdetr_l
+    _imgsz_divisor = 32
     _model_imgszs: ClassVar[dict[str, int] | None] = {
         "rfdetr_n": 384,
         "rfdetr_s": 512,
-        "rfdetr_b": 560,
-        "rfdetr_l_legacy": 560,
         "rfdetr_l": 704,
     }
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("input", "image")]

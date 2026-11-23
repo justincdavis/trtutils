@@ -65,8 +65,6 @@ DETECTORS = [
     pytest.param(DEIMv2, DATA_DIR / "deimv2" / "deimv2_atto_320.onnx", id="deimv2"),
     pytest.param(RFDETR, DATA_DIR / "rfdetr" / "rfdetr_n_384.onnx", id="rfdetr"),
     pytest.param(RFDETR, DATA_DIR / "rfdetr" / "rfdetr_l_704.onnx", id="rfdetr_l"),
-    pytest.param(RFDETR, DATA_DIR / "rfdetr" / "rfdetr_b_560.onnx", id="rfdetr_b"),
-    pytest.param(RFDETR, DATA_DIR / "rfdetr" / "rfdetr_l_legacy_560.onnx", id="rfdetr_l_legacy"),
 ]
 
 # models that return their own class index instead of the 80-class COCO index

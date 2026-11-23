@@ -15,13 +15,5 @@
   "rfdetr_l": {
     "class": "RFDETRLarge",
     "weights": "rf-detr-large-2026.pth"
-  },
-  "rfdetr_b": {
-    "class": "RFDETRBase",
-    "weights": "rf-detr-base.pth"
-  },
-  "rfdetr_l_legacy": {
-    "class": "RFDETRLargeDeprecated",
-    "weights": "rf-detr-large.pth"
   }
 }

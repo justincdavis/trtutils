@@ -18,7 +18,6 @@ from trtutils.models import (
     DEIMv2,
     DeiT,
     DeiT3,
-    Hands23,
     PPOCRDetector,
     PPOCRRecognizer,
     RTDETRv1,
@@ -76,7 +75,7 @@ def test_make_shapes_unknown_kind_raises() -> None:
     ("model_cls", "imgsz"),
     [
         pytest.param(RTDETRv1, 640, id="valid-list"),
-        pytest.param(Hands23, 800, id="divisor"),
+        pytest.param(RFDETR, 576, id="divisor"),
         pytest.param(YOLOv10, 123, id="unrestricted"),
     ],
 )
@@ -89,7 +88,7 @@ def test_validate_imgsz_accepts(model_cls, imgsz) -> None:
     ("model_cls", "imgsz", "match"),
     [
         pytest.param(RTDETRv1, 320, "supports only imgsz", id="valid-list"),
-        pytest.param(Hands23, 801, "divisible by", id="divisor"),
+        pytest.param(RFDETR, 577, "divisible by", id="divisor"),
     ],
 )
 def test_validate_imgsz_rejects(model_cls, imgsz, match) -> None:
@@ -106,8 +105,6 @@ def test_validate_imgsz_rejects(model_cls, imgsz, match) -> None:
         pytest.param(RFDETR, "rfdetr_s", None, 512, id="rfdetr-small"),
         pytest.param(RFDETR, "rfdetr_m", None, 576, id="rfdetr-medium"),
         pytest.param(RFDETR, "rfdetr_l", None, 704, id="rfdetr-large"),
-        pytest.param(RFDETR, "rfdetr_b", None, 560, id="rfdetr-base"),
-        pytest.param(RFDETR, "rfdetr_l_legacy", None, 560, id="rfdetr-large-legacy"),
         pytest.param(DEIMv2, "deimv2_atto", None, 320, id="variant-atto"),
         pytest.param(DEIMv2, "deimv2_femto", None, 416, id="variant-femto"),
         pytest.param(DEIMv2, "deimv2_s", None, 640, id="variant-fallback"),
@@ -132,9 +129,6 @@ def test_download_resolves_imgsz(tmp_path, model_cls, model, imgsz, expected) ->
         pytest.param(YOLOv10, "fake_model_xyz", None, "not supported", id="unknown-model"),
         pytest.param(DEIMv2, "deimv2_atto", 640, "requires imgsz of 320", id="variant-mismatch"),
         pytest.param(RFDETR, "rfdetr_n", 576, "requires imgsz of 384", id="rfdetr-mismatch"),
-        pytest.param(
-            RFDETR, "rfdetr_l_legacy", 704, "requires imgsz of 560", id="rfdetr-legacy-mismatch"
-        ),
         pytest.param(DeiT, "deit3_small", None, "not supported", id="deit-other-family"),
         pytest.param(DeiT, "deit_tiny", 250, "divisible by 16", id="deit-patch"),
         pytest.param(DeiT3, "deit3_huge", 256, "divisible by 14", id="deit3-huge-patch"),
@@ -265,8 +259,6 @@ def test_build_explicit_imgsz_contradicting_onnx_raises(tmp_path) -> None:
         pytest.param(RFDETR, "rfdetr/rfdetr_n_384.onnx", 384, id="rfdetr_n"),
         pytest.param(RFDETR, "rfdetr/rfdetr_s_512.onnx", 512, id="rfdetr_s"),
         pytest.param(RFDETR, "rfdetr/rfdetr_l_704.onnx", 704, id="rfdetr_l"),
-        pytest.param(RFDETR, "rfdetr/rfdetr_b_560.onnx", 560, id="rfdetr_b"),
-        pytest.param(RFDETR, "rfdetr/rfdetr_l_legacy_560.onnx", 560, id="rfdetr_l_legacy"),
         pytest.param(DEIMv2, "deimv2/deimv2_atto_320.onnx", 320, id="deimv2_atto"),
         pytest.param(DEIMv2, "deimv2/deimv2_femto_416.onnx", 416, id="deimv2_femto"),
     ],

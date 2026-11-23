@@ -75,8 +75,6 @@ _EXPECTED_MODELS = [
     "rfdetr_s",
     "rfdetr_m",
     "rfdetr_l",
-    "rfdetr_b",
-    "rfdetr_l_legacy",
     "yoloxn",
     "yolov3tu",
     "alexnet",

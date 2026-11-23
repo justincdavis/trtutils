@@ -140,7 +140,7 @@ def test_simplify_unknown_tool_raises(tmp_path) -> None:
         pytest.param("yolov8", 5, id="yolov8"),
         pytest.param("yolov10", 11, id="yolov10"),
         pytest.param("rtdetrv1", 7, id="rtdetrv1"),
-        pytest.param("rfdetr", 6, id="rfdetr"),
+        pytest.param("rfdetr", 4, id="rfdetr"),
         pytest.param("deimv2", 8, id="deimv2"),
         pytest.param("yolox", 7, id="yolox"),
         pytest.param("dfine", 5, id="dfine"),

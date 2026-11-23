@@ -73,7 +73,7 @@ DETR Models
 14. **RF-DETR**
     
     - GitHub: `roboflow/rf-detr <https://github.com/roboflow/rf-detr>`_
-    - Sizes: Nano, Small, Medium, Large, and the legacy Base / Large
+    - Sizes: Nano, Small, Medium, Large
 
 Depth Estimation
 ----------------
@@ -222,10 +222,9 @@ DETR Models
 - **D-FINE**: Multiple configurations available
 - **DEIM**: Multiple configurations available
 - **DEIMv2**: ``deimv2_atto``, ``deimv2_femto``, ``deimv2_pico``, ``deimv2_n``, ``deimv2_s``, ``deimv2_m``, ``deimv2_l``, ``deimv2_x``
-- **RF-DETR**: ``rfdetr_n``, ``rfdetr_s``, ``rfdetr_m``, ``rfdetr_l``; legacy ``rfdetr_b`` and
-  ``rfdetr_l_legacy`` (the original Base / Large, deprecated upstream in ``rfdetr`` 1.7.0).
-  The XL and 2XL sizes are not offered: their weights are under Roboflow's Platform Model
-  License 1.0, which requires a Roboflow platform plan
+- **RF-DETR**: ``rfdetr_n``, ``rfdetr_s``, ``rfdetr_m``, ``rfdetr_l``. The XL and 2XL sizes
+  are not offered: their weights are under Roboflow's Platform Model License 1.0, which
+  requires an active Roboflow platform plan
 
 Depth Estimation Models
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -299,8 +298,7 @@ for the weights: check the source before using them.
    * - DEIMv2
      - DEIMv2 License: weights for non-commercial use only (upstream relicensed; it was
        Apache-2.0 at the commit the exporter pins)
-   * - RF-DETR (``rfdetr_n``, ``rfdetr_s``, ``rfdetr_m``, ``rfdetr_l``, ``rfdetr_b``,
-       ``rfdetr_l_legacy``)
+   * - RF-DETR (``rfdetr_n``, ``rfdetr_s``, ``rfdetr_m``, ``rfdetr_l``)
      - Apache-2.0 (RF-DETR XL / 2XL are PML-1.0 upstream and not offered)
    * - Torchvision classifiers
      - unknown (torchvision states no license for its weights), except ``regnet_y_128gf``
