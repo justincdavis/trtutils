@@ -293,8 +293,8 @@ for the weights: check the source before using them.
    * - RT-DETRv1, RT-DETRv2, RT-DETRv3
      - Apache-2.0
    * - RT-DETRv4
-     - unknown (the code is Apache-2.0; upstream states no license for the checkpoints,
-       which are hosted on Google Drive)
+     - Apache-2.0 (RT-DETRv4's license; the checkpoints, hosted on Google Drive, have no
+       separate statement)
    * - D-FINE
      - Apache-2.0 (upstream notes that Objects365-pretrained checkpoints such as
        ``*_obj2coco`` may carry the dataset's terms)

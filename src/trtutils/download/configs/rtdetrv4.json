@@ -1,5 +1,5 @@
 {
-  "_defaults": {"exporter": "rtdetrv4", "license": "unknown", "extension": "pth"},
+  "_defaults": {"exporter": "rtdetrv4", "license": "Apache-2.0", "extension": "pth"},
   "rtdetrv4_s": {
     "id": "1jDAVxblqRPEWed7Hxm6GwcEl7zn72U6z",
     "config": "rtv4_hgnetv2_s_coco.yml",
