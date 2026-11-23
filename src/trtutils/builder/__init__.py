@@ -18,9 +18,11 @@ Classes
 :class:`AbstractBatcher`
     Abstract base class for data batching classes.
 :class:`EngineCalibrator`
-    Calibrates an engine during quantization. Not available on TensorRT 11+.
+    Calibrates an engine during quantization (entropy). Not available on TensorRT 11+.
 :class:`ImageBatcher`
     Batches images for calibration during engine building.
+:class:`MinMaxCalibrator`
+    Calibrates an engine during quantization (min-max). Not available on TensorRT 11+.
 :class:`SyntheticBatcher`
     Generates synthetic data batches for calibration during engine building.
 :class:`ProgressBar`
@@ -71,9 +73,9 @@ __all__ = [
 
 # trt 11 removed the implicit calibrators
 if FLAGS.INT8_CALIBRATION:
-    from ._calibrator import EngineCalibrator
+    from ._calibrator import EngineCalibrator, MinMaxCalibrator
 
-    __all__ += ["EngineCalibrator"]
+    __all__ += ["EngineCalibrator", "MinMaxCalibrator"]
 
 with contextlib.suppress(AttributeError):
     from ._progress import ProgressBar

@@ -25,15 +25,15 @@ if TYPE_CHECKING:
     from ._batcher import AbstractBatcher
 
 
-class EngineCalibrator(trt.IInt8EntropyCalibrator2):
-    """Implements the trt.IInt8EntropyCalibrator2."""
+class _Calibrator:
+    """Feeds calibration batches to TensorRT and keeps the calibration cache."""
 
     def __init__(
         self: Self,
         calibration_cache: Path | str | None = None,
     ) -> None:
         """
-        Create an EngineCalibrator.
+        Create a calibrator.
 
         Parameters
         ----------
@@ -128,7 +128,7 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         """
         Get the batch size.
 
-        Overrides from trt.IInt8EntropyCalibrator2.
+        Overrides from the TensorRT calibrator.
 
         Returns
         -------
@@ -144,7 +144,7 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         """
         Get the next batch of data.
 
-        Overrides from trt.IInt8EntropyCalibrator2. The batcher may return one
+        Overrides from the TensorRT calibrator. The batcher may return one
         array for a single-input network, a list or tuple of arrays in network
         input order, or a dict of arrays keyed by input name. Each array is
         copied to its own reused device buffer in the dtype TensorRT reads that
@@ -243,7 +243,7 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         """
         Read the calibration cache file if it exists.
 
-        Overrides from trt.IInt8EntropyCalibrator2.
+        Overrides from the TensorRT calibrator.
 
         Returns
         -------
@@ -265,7 +265,7 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         """
         Write the calibration date to the calibration cache file.
 
-        Overrides from trt.IInt8EntropyCalibrator2.
+        Overrides from the TensorRT calibrator.
 
         Parameters
         ----------
@@ -279,6 +279,26 @@ class EngineCalibrator(trt.IInt8EntropyCalibrator2):
         with self._cache_path.open("wb") as f:
             LOG.debug(f"Writing calibration cache file: {self._cache_path}")
             f.write(cache)
+
+
+class EngineCalibrator(_Calibrator, trt.IInt8EntropyCalibrator2):
+    """
+    Entropy calibration (``trt.IInt8EntropyCalibrator2``), TensorRT's default.
+
+    Each tensor's range minimizes the information lost to quantization, so rare large
+    values may be clipped. The cache starts with ``EntropyCalibration2``.
+    """
+
+
+class MinMaxCalibrator(_Calibrator, trt.IInt8MinMaxCalibrator):
+    """
+    Min-max calibration (``trt.IInt8MinMaxCalibrator``).
+
+    Each tensor's range covers every value seen while calibrating, so nothing is
+    clipped. Suits tensors whose large values matter, such as a detection head that
+    concatenates box regression with scores in [0, 1], or a 0-255 image input.
+    The cache starts with ``MinMaxCalibration``.
+    """
 
 
 def _match_inputs(

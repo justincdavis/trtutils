@@ -85,6 +85,11 @@ Added
   name; a single array still feeds a single-input network. ``EngineCalibrator`` copies each
   input to its own device buffer, cast to the dtype TensorRT reads that input as. A batch
   without one array per input raises ``ValueError``
+* ``build_engine(calibration_algorithm="minmax")`` and ``builder.MinMaxCalibrator``: INT8
+  ranges that cover every calibration value. The default entropy calibration may clip rare
+  large values, which breaks detection heads that concatenate box regression with [0, 1]
+  scores (YOLOX). ``Model.build`` forwards it. TensorRT allows only entropy calibration for
+  networks with DLA layers, so min-max raises ``ValueError`` there
 * ``inspect.inspect_placement`` / ``PlacementReport``: where each engine layer runs, DLA or GPU
 * ``builder.hooks.fp16_io_hook`` / ``int8_input_hook``: float16 network I/O, int8 inputs at scale 1
 * ``builder.hooks.int8_ranges_hook``: INT8 without calibration data, ranges by interval arithmetic
