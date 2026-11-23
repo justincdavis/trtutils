@@ -85,6 +85,9 @@ Added
 * ``models.PPOCRDetector`` / ``PPOCRRecognizer`` / ``PPOCR`` (bundled PP-OCR dictionary) and
   OCR pre/postprocessing functions in ``preprocessors`` and ``postprocessors``
 * ``models.DeiT`` / ``models.DeiT3`` and a timm exporter for DeiT and DeiT III
+* ``models.RTDETRv4`` and downloads of the RT-DETRv4 COCO detectors (``rtdetrv4_s``,
+  ``rtdetrv4_m``, ``rtdetrv4_l``, ``rtdetrv4_x``, 640). Upstream states no license for the
+  checkpoints, so they are listed as ``unknown``
 * ``models.DepthAnythingV1`` / ``V3`` aliases (``DepthAnythingV2`` also present)
 * ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,

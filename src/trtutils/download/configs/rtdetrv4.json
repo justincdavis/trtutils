@@ -1,0 +1,23 @@
+{
+  "_defaults": {"exporter": "rtdetrv4", "license": "unknown", "extension": "pth"},
+  "rtdetrv4_s": {
+    "id": "1jDAVxblqRPEWed7Hxm6GwcEl7zn72U6z",
+    "config": "rtv4_hgnetv2_s_coco.yml",
+    "name": "rtv4_hgnetv2_s_coco"
+  },
+  "rtdetrv4_m": {
+    "id": "1O-YpP4X-quuOXbi96y2TKkztbjroP5mX",
+    "config": "rtv4_hgnetv2_m_coco.yml",
+    "name": "rtv4_hgnetv2_m_coco"
+  },
+  "rtdetrv4_l": {
+    "id": "1shO9EzZvXZyKedE2urLsN4dwEv8Jqa_8",
+    "config": "rtv4_hgnetv2_l_coco.yml",
+    "name": "rtv4_hgnetv2_l_coco"
+  },
+  "rtdetrv4_x": {
+    "id": "19gnkMTgFveJsrOvSmEPQXCTG6v9oQHN3",
+    "config": "rtv4_hgnetv2_x_coco.yml",
+    "name": "rtv4_hgnetv2_x_coco"
+  }
+}

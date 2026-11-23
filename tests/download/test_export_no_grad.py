@@ -27,6 +27,7 @@ _PATCHES = [
     "dfine_export_onnx.patch",
     "rtdetrv1_export_onnx.patch",
     "rtdetrv2_export_onnx.patch",
+    "rtdetrv4_export_onnx.patch",
     "yolov7_export.patch",
     "yolox_export_onnx.patch",
 ]

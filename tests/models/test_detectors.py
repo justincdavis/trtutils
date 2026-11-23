@@ -25,6 +25,7 @@ from trtutils.models import (
     RTDETRv1,
     RTDETRv2,
     RTDETRv3,
+    RTDETRv4,
     YOLOv3,
     YOLOv5,
     YOLOv7,
@@ -60,6 +61,7 @@ DETECTORS = [
     pytest.param(RTDETRv1, DATA_DIR / "rtdetrv1" / "rtdetrv1_r18_640.onnx", id="rtdetrv1"),
     pytest.param(RTDETRv2, DATA_DIR / "rtdetrv2" / "rtdetrv2_r18_640.onnx", id="rtdetrv2"),
     pytest.param(RTDETRv3, DATA_DIR / "rtdetrv3" / "rtdetrv3_r18_640.onnx", id="rtdetrv3"),
+    pytest.param(RTDETRv4, DATA_DIR / "rtdetrv4" / "rtdetrv4_s_640.onnx", id="rtdetrv4"),
     pytest.param(DFINE, DATA_DIR / "dfine" / "dfine_n_640.onnx", id="dfine"),
     pytest.param(DEIM, DATA_DIR / "deim" / "deim_dfine_n_640.onnx", id="deim"),
     pytest.param(DEIMv2, DATA_DIR / "deimv2" / "deimv2_atto_320.onnx", id="deimv2"),
@@ -132,6 +134,7 @@ def test_detector_end2end(
     [
         pytest.param(YOLOv10, DATA_DIR / "yolov10" / "yolov10n_640.onnx", 13, id="yolov10"),
         pytest.param(YOLOv13, DATA_DIR / "yolov13" / "yolov13n_640.onnx", 42, id="yolov13"),
+        pytest.param(RTDETRv4, DATA_DIR / "rtdetrv4" / "rtdetrv4_s_640.onnx", 14, id="rtdetrv4"),
     ],
 )
 @pytest.mark.skipif(not FLAGS.WEAK_TYPING, reason="per-layer precision was removed in TensorRT 11")
@@ -206,6 +209,49 @@ def test_deim_boxes_non_square_match_onnxruntime(build_model_engine, model_cls, 
     detections = model.end2end(image)
     assert detections
     assert max(_iou(bbox, reference[0]) for bbox, _score, _cls in detections) > 0.85
+
+
+def test_rtdetrv4_matches_onnxruntime(build_model_engine) -> None:
+    """RT-DETRv4 finds every confident onnxruntime detection, fed the upstream unnormalized input."""
+    onnx_path = DATA_DIR / "rtdetrv4" / "rtdetrv4_s_640.onnx"
+    engine = build_model_engine(RTDETRv4, onnx_path, opt_level=3)
+    model = RTDETRv4(engine, warmup=False, conf_thres=0.4)
+    image = cv2.imread(str(DATA_DIR / "street.jpg"))
+    height, width = image.shape[:2]
+
+    # upstream scales to [0, 1] and does not normalize
+    resized = cv2.resize(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), (640, 640))
+    blob = (resized.astype(np.float32) / 255).transpose(2, 0, 1)[None]
+    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    labels, boxes, scores = session.run(
+        None, {"images": blob, "orig_target_sizes": np.array([[width, height]], np.int64)}
+    )
+    keep = scores[0] > 0.6
+    assert keep.sum() >= 10
+
+    detections = model.end2end(image)
+    for ref_box, ref_cls in zip(boxes[0][keep], labels[0][keep]):
+        ious = [_iou(bbox, ref_box) for bbox, _score, cls_id in detections if cls_id == ref_cls]
+        assert max(ious, default=0.0) > 0.85
+
+
+@pytest.mark.skipif(FLAGS.TRT_VERSION < (10, 0), reason="mark_debug arrived in TensorRT 10")
+def test_rtdetrv4_gridsample_hook_marks_decoder_samples() -> None:
+    """The GridSample hook RT-DETRv4 builds with marks the value input of all 9 decoder samples."""
+    onnx_path = DATA_DIR / "rtdetrv4" / "rtdetrv4_s_640.onnx"
+    if not onnx_path.exists():
+        pytest.skip(f"missing {onnx_path}")
+    assert gridsample_debug_build_hook in RTDETRv4._build_hooks
+    network, _, _, _ = read_onnx(onnx_path)
+    (hook,) = gridsample_debug_build_hook()["hooks"]
+    hook(network)
+    samples = [
+        network.get_layer(i)
+        for i in range(network.num_layers)
+        if network.get_layer(i).type == trt.LayerType.GRID_SAMPLE
+    ]
+    assert len(samples) == 9
+    assert all(network.is_debug_tensor(sample.get_input(0)) for sample in samples)
 
 
 def test_non_square_build_matches_square(build_model_engine, tmp_path, images) -> None:

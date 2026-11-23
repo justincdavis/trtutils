@@ -1,0 +1,10 @@
+{
+    "rtdetrv4_s": {
+        "coco_map_50": 49.8,
+        "imgsz": 640
+    },
+    "rtdetrv4_m": {
+        "coco_map_50": 53.7,
+        "imgsz": 640
+    }
+}

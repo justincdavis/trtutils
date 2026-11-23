@@ -209,8 +209,8 @@ def gridsample_debug_build_hook(**_: Any) -> dict[str, Any]:  # noqa: ANN401
     Build hook that keeps the value input of every GridSample out of fused kernels.
 
     TensorRT 10.15 (RTX 5080) miscompiles the deformable cross attention of the larger D-FINE
-    and DEIMv2 models (dfine_l/x, deimv2_l): the decoder reads wrong values and the engine
-    returns junk in FP16 and FP32 while onnxruntime is right. Marking the GridSample value
+    and DEIMv2 models (dfine_l/x, deimv2_l) and of every RT-DETRv4 size: the decoder reads
+    wrong values and the engine returns junk in FP16 and FP32 while onnxruntime is right. Marking the GridSample value
     tensors as debug tensors forces TensorRT to materialize them, which avoids the bad
     fusion at the cost of a few small copies.
 

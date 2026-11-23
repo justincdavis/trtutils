@@ -26,6 +26,7 @@ ROUTING_CASES = [
     pytest.param("rtdetrv1_r18", "rtdetrv1", id="rtdetrv1"),
     pytest.param("rtdetrv2_r18", "rtdetrv2", id="rtdetrv2"),
     pytest.param("rtdetrv3_r18", "rtdetrv3", id="rtdetrv3"),
+    pytest.param("rtdetrv4_s", "rtdetrv4", id="rtdetrv4"),
     pytest.param("dfine_n", "dfine", id="dfine"),
     pytest.param("deim_dfine_n", "deim", id="deim"),
     pytest.param("deimv2_atto", "deimv2", id="deimv2"),
