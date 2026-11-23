@@ -14,7 +14,7 @@ from ._googlenet import GoogLeNet
 from ._inception import Inception
 from ._maxvit import MaxViT
 from ._mnasnet import MNASNet
-from ._mobilenet import MobileNetV2, MobileNetV3
+from ._mobilenet import MobileNetV2, MobileNetV3, MobileNetV4
 from ._regnet import RegNet
 from ._resnet import ResNet, ResNeXt, WideResNet
 from ._shufflenet import ShuffleNetV2
@@ -39,6 +39,7 @@ __all__ = [
     "MaxViT",
     "MobileNetV2",
     "MobileNetV3",
+    "MobileNetV4",
     "RegNet",
     "ResNeXt",
     "ResNet",

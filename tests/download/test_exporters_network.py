@@ -103,6 +103,15 @@ EXPORT_CASES = [
         "deit3_small_hr", {"dynamic": True}, {"input": [_BATCH, 3, 384, 384]}, id="timm-deit3-hr"
     ),
     pytest.param(
+        "mobilenetv4_conv_small", {}, {"input": [1, 3, 224, 224]}, id="timm-mobilenetv4-conv"
+    ),
+    pytest.param(
+        "mobilenetv4_hybrid_medium",
+        {"imgsz": 320, "dynamic": True},
+        {"input": [_BATCH, 3, 320, 320]},
+        id="timm-mobilenetv4-hybrid-custom",
+    ),
+    pytest.param(
         "depth_anything_v1_small",
         {},
         {"input": [_BATCH, 3, 518, 518]},

@@ -118,7 +118,22 @@ Classification
    384 and default to it, the others to 224. Both wrappers preprocess with ``center_crop`` and
    ``crop_pct=0.9``; the ``_hr`` and ``_in22k`` weights were evaluated with ``crop_pct=1.0``.
 
-4. **Ultralytics YOLO** - YOLOv8, YOLOv11, and YOLOv26 classification heads
+4. **MobileNetV4** (``MobileNetV4``) - ImageNet-1k classifiers, exported through timm
+
+   - ``mobilenetv4_conv_small`` (224), ``mobilenetv4_conv_medium`` (256),
+     ``mobilenetv4_conv_large`` (384), ``mobilenetv4_hybrid_medium`` (256),
+     ``mobilenetv4_hybrid_large`` (384); the hybrid models add attention blocks
+   - GitHub: `huggingface/pytorch-image-models <https://github.com/huggingface/pytorch-image-models>`_
+   - Apache-2.0 licensed
+
+   Each model defaults to its timm train size (in brackets) and downloads at any ``imgsz``
+   divisible by 32. The wrapper preprocesses with ``center_crop`` and ``crop_pct=0.95``, the
+   timm value at the train size; pass ``crop_pct=0.875`` for ``mobilenetv4_conv_small``.
+   timm also evaluates at a larger test size (``conv_small`` 256, the 256 models 320, the
+   384 models 448) with ``crop_pct=1.0`` (0.95 for ``conv_small``): download at that
+   ``imgsz`` and pass that ``crop_pct``. timm resizes bicubic, trtutils bilinear.
+
+5. **Ultralytics YOLO** - YOLOv8, YOLOv11, and YOLOv26 classification heads
 
    - YOLOv8: ``yolov8n-cls``, ``yolov8s-cls``, ``yolov8m-cls``, ``yolov8l-cls``, ``yolov8x-cls``
    - YOLOv11: ``yolov11n-cls``, ``yolov11s-cls``, ``yolov11m-cls``, ``yolov11l-cls``, ``yolov11x-cls``
@@ -301,6 +316,8 @@ for the weights: check the source before using them.
      - unknown (torchvision states no license for its weights), except ``regnet_y_128gf``
        and ``vit_h_14`` (SWAG weights): CC-BY-NC-4.0
    * - DeiT, DeiT III (timm)
+     - Apache-2.0
+   * - MobileNetV4 (timm)
      - Apache-2.0
    * - Depth-Anything-V1
      - Apache-2.0

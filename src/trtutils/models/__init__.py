@@ -72,6 +72,8 @@ Classes
     Alias for the Classifier class with args preset for MobileNet V2.
 :class:`MobileNetV3`
     Alias for the Classifier class with args preset for MobileNet V3.
+:class:`MobileNetV4`
+    Alias for the Classifier class with args preset for MobileNetV4.
 :class:`RegNet`
     Alias for the Classifier class with args preset for RegNet.
 :class:`ResNet`
@@ -152,6 +154,7 @@ from .classifiers import (
     MNASNet,
     MobileNetV2,
     MobileNetV3,
+    MobileNetV4,
     RegNet,
     ResNet,
     ResNeXt,
@@ -222,6 +225,7 @@ __all__ = [
     "MaxViT",
     "MobileNetV2",
     "MobileNetV3",
+    "MobileNetV4",
     "PPOCRDetector",
     "PPOCRRecognizer",
     "RTDETRv1",

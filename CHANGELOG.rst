@@ -85,6 +85,11 @@ Added
 * ``models.PPOCRDetector`` / ``PPOCRRecognizer`` / ``PPOCR`` (bundled PP-OCR dictionary) and
   OCR pre/postprocessing functions in ``preprocessors`` and ``postprocessors``
 * ``models.DeiT`` / ``models.DeiT3`` and a timm exporter for DeiT and DeiT III
+* ``models.MobileNetV4`` with the timm ImageNet-1k MobileNetV4 checkpoints
+  (``mobilenetv4_conv_small`` / ``_medium`` / ``_large``, ``mobilenetv4_hybrid_medium`` /
+  ``_large``). The timm exporter also takes convolutional models: a config ``stride`` entry
+  sets the size divisor where ViTs give a ``patch``, and re-parameterisable models are
+  exported in their fused deploy form
 * ``models.DepthAnythingV1`` / ``V3`` aliases (``DepthAnythingV2`` also present)
 * ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,

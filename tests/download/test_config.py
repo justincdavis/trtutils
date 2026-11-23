@@ -34,6 +34,7 @@ _EXPECTED_FAMILIES = [
     "torchvision_classifier",
     "deit",
     "deit3",
+    "mobilenetv4",
     "depth_anything_v1",
     "depth_anything_v2",
     "depth_anything_v3",
@@ -88,6 +89,8 @@ _EXPECTED_MODELS = [
     "deit3_huge",
     "deit3_large_in22k_hr",
     "deit3_huge_in22k",
+    "mobilenetv4_conv_small",
+    "mobilenetv4_hybrid_large",
     "depth_anything_v1_small",
     "depth_anything_v2_small",
     "depth_anything_v3_mono_large",
@@ -167,6 +170,17 @@ def test_timm_configs(model_configs, family) -> None:
         assert config["name"].split(".")[0].endswith(f"_{trained}")
         assert config["patch"] == ("14" if "huge" in model else "16")
         assert ("in22k" in config["name"]) == ("_in22k" in model)
+
+
+def test_mobilenetv4_configs(model_configs) -> None:
+    """MobileNetV4 configs name an ImageNet-1k timm checkpoint, its train size and stride 32."""
+    for model, config in model_configs["mobilenetv4"].items():
+        assert config["url"] == "timm"
+        timm_name, tag = config["name"].split(".")
+        assert timm_name == model
+        assert tag.endswith(f"_r{config['imgsz']}_in1k")
+        assert config["stride"] == "32"
+        assert "patch" not in config
 
 
 def test_dfine_obj2coco_configs_in_objects365_dir(model_configs) -> None:

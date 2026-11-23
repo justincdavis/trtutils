@@ -33,6 +33,7 @@ ROUTING_CASES = [
     pytest.param("alexnet", "torchvision", id="torchvision"),
     pytest.param("deit_tiny", "timm", id="timm-deit"),
     pytest.param("deit3_small", "timm", id="timm-deit3"),
+    pytest.param("mobilenetv4_conv_small", "timm", id="timm-mobilenetv4"),
     pytest.param("depth_anything_v1_small", "depth_anything_v1", id="depth_anything_v1"),
     pytest.param("depth_anything_v2_small", "depth_anything_v2", id="depth_anything"),
     pytest.param("depth_anything_v3_mono_large", "depth_anything_v3", id="depth_anything_v3"),

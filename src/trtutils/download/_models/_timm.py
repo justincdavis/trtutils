@@ -27,9 +27,13 @@ def export_timm_classifier(
     no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    # vision transformers take any multiple of the patch size, timm resamples
-    # the position embeddings of the pretrained weights to the requested size
-    imgsz = handle_imgsz(imgsz, int(config["imgsz"]), model, adjust_div=int(config["patch"]))
+    # vision transformers (a "patch" entry) take any multiple of the patch size, timm
+    # resamples the position embeddings of the pretrained weights to the requested size;
+    # convnets (a "stride" entry) take any multiple of their output stride as they are
+    patch = config.get("patch")
+    divisor = int(patch if patch is not None else config["stride"])
+    imgsz = handle_imgsz(imgsz, int(config["imgsz"]), model, adjust_div=divisor)
+    img_size_arg = ", img_size=imgsz" if patch is not None else ""
     dynamic_axes = '{"input": {0: "batch_size"}, "output": {0: "batch_size"}}' if dynamic else "None"
     run_uv_pip_install(
         directory,
@@ -49,8 +53,10 @@ imgsz = {imgsz}
 output_path = "{output_name}"
 
 # distilled models average their class and distillation heads in eval mode
-model = timm.create_model("{config["name"]}", pretrained=True, img_size=imgsz)
+model = timm.create_model("{config["name"]}", pretrained=True{img_size_arg})
 model.eval()
+# fuse re-parameterisable branches into their deploy form, a no-op for other models
+model = timm.models.reparameterize_model(model)
 # exports never need gradients
 torch.set_grad_enabled(False)
 dummy_input = torch.randn({batch}, 3, imgsz, imgsz)

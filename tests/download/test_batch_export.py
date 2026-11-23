@@ -220,11 +220,31 @@ def test_classifier_export_script(tmp_path, func, model, script, batch, dynamic)
         pytest.param("deit_tiny", 448, 448, id="custom"),
         pytest.param("deit_tiny", 250, 240, id="rounded-to-patch"),
         pytest.param("deit3_huge", 256, 252, id="huge-patch14"),
+        pytest.param("mobilenetv4_conv_small", None, 224, id="conv-default"),
+        pytest.param("mobilenetv4_hybrid_large", None, 384, id="hybrid-default"),
+        pytest.param("mobilenetv4_conv_medium", 320, 320, id="conv-custom"),
+        pytest.param("mobilenetv4_conv_small", 250, 224, id="rounded-to-stride"),
     ],
 )
 @pytest.mark.usefixtures("run_cmd_calls")
 def test_timm_export_imgsz(tmp_path, model, imgsz, expected) -> None:
-    """The timm exporter defaults to the trained size and rounds down to the patch size."""
+    """The timm exporter defaults to the trained size and rounds down to the patch or stride."""
     _export(_timm.export_timm_classifier, model, tmp_path, imgsz=imgsz)
     script = (tmp_path / "_export_timm_classifier.py").read_text()
     assert f"imgsz = {expected}\n" in script
+
+
+@pytest.mark.parametrize(
+    ("model", "resamples"),
+    [
+        pytest.param("deit_tiny", True, id="vit-patch"),
+        pytest.param("mobilenetv4_conv_small", False, id="conv-stride"),
+    ],
+)
+@pytest.mark.usefixtures("run_cmd_calls")
+def test_timm_export_img_size_arg(tmp_path, model, resamples) -> None:
+    """Only ViTs (a patch entry) get img_size; every model is re-parameterised for deploy."""
+    _export(_timm.export_timm_classifier, model, tmp_path)
+    script = (tmp_path / "_export_timm_classifier.py").read_text()
+    assert ("pretrained=True, img_size=imgsz)" in script) is resamples
+    assert "model = timm.models.reparameterize_model(model)" in script
