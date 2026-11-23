@@ -102,6 +102,8 @@ Classes
     Alias for the HandInteractionDetector class with args preset for Hands23.
 :class:`DepthAnythingV3`
     Alias for the DepthEstimator class with args preset for Depth-Anything-V3.
+:class:`DINOv2`
+    Alias for the FeatureExtractor class with args preset for DINOv2.
 :class:`DINOv3`
     Alias for the FeatureExtractor class with args preset for DINOv3.
 :class:`DINOv3ConvNeXt`
@@ -192,7 +194,7 @@ from .detectors import (
     YOLOv13,
     YOLOv26,
 )
-from .feature_extractors import DINOv3, DINOv3ConvNeXt
+from .feature_extractors import DINOv2, DINOv3, DINOv3ConvNeXt
 from .hand_interaction import HOIDETR, Hands23
 from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
@@ -212,6 +214,7 @@ __all__ = [
     "AlexNet",
     "ConvNeXt",
     "DEIMv2",
+    "DINOv2",
     "DINOv3",
     "DINOv3ConvNeXt",
     "DeiT",

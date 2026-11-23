@@ -39,6 +39,7 @@ ROUTING_CASES = [
     pytest.param("dinov3_vits16", "timm_features", id="timm-features-dinov3"),
     pytest.param("dinov3_vith16plus", "timm_features", id="timm-features-dinov3-vith16plus"),
     pytest.param("dinov3_convnext_tiny", "timm_features", id="timm-features-dinov3-convnext"),
+    pytest.param("dinov2_vits14_reg", "timm_features", id="timm-features-dinov2"),
     pytest.param("hoi_detr_vitl", "hoi_detr", id="hoi_detr"),
     pytest.param("hands23_x101", "hands23", id="hands23"),
     pytest.param("ppocrv4_det", "ppocr", id="ppocr_det"),

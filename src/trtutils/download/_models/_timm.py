@@ -96,6 +96,9 @@ def export_timm_features(
     # convnext downsamples by 32 in total and takes any multiple of it, vision transformers
     # take any multiple of the patch size (the timm dinov3 vits resample their rope)
     convnext = config.get("arch") == "convnext"
+    # a timm VisionTransformer (dinov2) has a fixed-size position embedding: it is made at
+    # the requested size and timm resamples the pretrained embedding when loading it
+    fixed_vit = config.get("arch") == "vit"
     divisor = 32 if convnext else int(config["patch"])
     imgsz = handle_imgsz(imgsz, int(config["imgsz"]), model, adjust_div=divisor)
     dynamic_axes = (
@@ -185,14 +188,17 @@ def rescale_residual_stream(model, wrapper):
 
 # exports never need gradients (the in-place rescale also requires it)
 torch.set_grad_enabled(False)
-# the input size is not passed, timm builds dinov3 with a dynamic image size
-model = timm.create_model("{config["name"]}", pretrained=True)
+# timm builds dinov3 with a dynamic image size, convnext rejects an img_size argument
+create_kwargs = {{"img_size": imgsz}} if {fixed_vit} else {{}}
+model = timm.create_model("{config["name"]}", pretrained=True, **create_kwargs)
 model.eval()
 if {convnext}:
     wrapper = ConvNeXtFeatures(model).eval()
 else:
     wrapper = ViTFeatures(model).eval()
-    rescale_residual_stream(model, wrapper)
+    # the dinov2 residual stream stays far below the fp16 maximum (under 700 for vit-l)
+    if not {fixed_vit}:
+        rescale_residual_stream(model, wrapper)
 
 dummy_input = torch.randn({batch}, 3, imgsz, imgsz)
 # models over 2 GB spill their weights into one file per tensor: keep those apart
