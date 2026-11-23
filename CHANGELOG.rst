@@ -93,9 +93,12 @@ Added
   ``end2end``). ``FeatureExtractorOutputSchema`` (``EMBEDDING``, ``EMBEDDING_MAP``,
   ``GENERIC``), ``image.types.Embedding`` / ``FeatureMap``, and ``postprocess_features`` /
   ``get_embeddings`` / ``get_feature_maps`` in ``postprocessors``. CPU postprocessing only
-* ``models.DINOv3`` and the ``dinov3_vits16``, ``dinov3_vits16plus`` and ``dinov3_vitb16``
-  downloads (timm, DINOv3 License, default size
-  256, batch-dynamic by default). FP16 builds keep the attention matmul and softmax in FP32
+* ``models.DINOv3`` and the ``dinov3_vits16``, ``dinov3_vits16plus``, ``dinov3_vitb16``,
+  ``dinov3_vitl16`` and ``dinov3_vith16plus`` downloads (timm, DINOv3 License, default size
+  256, batch-dynamic by default). FP16 builds keep the attention matmul and softmax in FP32.
+  The export scales the residual stream by 1/16 (outputs unchanged) so ViT-L and ViT-H+ stay
+  inside the FP16 range; ``dinov3_vith16plus`` is over 2GB and keeps its weights in a
+  ``.data`` file beside the ONNX
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)
@@ -194,6 +197,9 @@ Fixed
   (Jetson). They failed with ``Assertion mOptimizationProfile >= 0 failed`` at the second
   input shape, because contexts cannot share an optimization profile before TensorRT 10.
   There one context now serves every shape
+* ``download(..., make_static=True)`` works on models over 2GB: only the graph is rewritten, the
+  external ``.data`` weights stay as they are. ``simplify`` is skipped for such models (with a
+  warning), since the tools cannot write a model over 2GB
 * The CLI now errors on unrecognized arguments instead of silently ignoring them (only
   ``trtexec`` forwards unknown arguments). Fixed the ``--shape`` help text typo
 * ``RFDETR.build()`` FP16 engines detect again on TensorRT 8.6 (Jetson). The transformer

@@ -95,6 +95,8 @@ _EXPECTED_MODELS = [
     "dinov3_vits16",
     "dinov3_vits16plus",
     "dinov3_vitb16",
+    "dinov3_vitl16",
+    "dinov3_vith16plus",
     "hoi_detr_vitl",
     "hands23_x101",
     "ppocrv4_det",

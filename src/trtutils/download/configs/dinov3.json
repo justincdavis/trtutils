@@ -2,5 +2,7 @@
     "_defaults": {"exporter": "timm_features", "license": "DINOv3 License", "url": "timm", "imgsz": "256", "patch": "16"},
     "dinov3_vits16": {"name": "vit_small_patch16_dinov3.lvd1689m"},
     "dinov3_vits16plus": {"name": "vit_small_plus_patch16_dinov3.lvd1689m"},
-    "dinov3_vitb16": {"name": "vit_base_patch16_dinov3.lvd1689m"}
+    "dinov3_vitb16": {"name": "vit_base_patch16_dinov3.lvd1689m"},
+    "dinov3_vitl16": {"name": "vit_large_patch16_dinov3.lvd1689m"},
+    "dinov3_vith16plus": {"name": "vit_huge_plus_patch16_dinov3.lvd1689m"}
 }

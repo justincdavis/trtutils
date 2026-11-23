@@ -165,7 +165,7 @@ describes each family.
 - **Pose estimation**: YOLOv8, v11, and v26 (`-pose`)
 - **Oriented bounding boxes**: YOLOv8, v11, and v26 (`-obb`)
 - **Depth estimation**: Depth-Anything V1, V2, and V3
-- **Feature extraction** (image embeddings and dense feature maps): DINOv3 ViT-S, S+, and B
+- **Feature extraction** (image embeddings and dense feature maps): DINOv3 ViT-S, S+, B, L, and H+
 - **Hand-object interaction**: HOI-DETR and Hands23
 - **OCR**: PP-OCR text detection and recognition
 
