@@ -54,6 +54,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         cpu_resize: bool | None = None,
+        normalize: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -122,6 +123,10 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             Whether to resize images on the CPU and leave the rest of the
             preprocessing to the preprocessor. Default is None, which resizes on
             the CPU only what the preprocessor cannot resize, see :class:`ImageModel`.
+        normalize : bool
+            Whether to min-max normalize each depth map to [0, 1]. Set False to get
+            the raw network output, e.g. metres from a metric depth model.
+            Default is True.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -157,6 +162,7 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             verbose=verbose,
             output_schema=output_schema,
         )
+        self._normalize = normalize
 
         # prepend with 'depth_' to avoid conflicts with ImageModel._nvtx_tags
         self._nvtx_tags.update(
@@ -205,7 +211,12 @@ class DepthEstimator(ImageModel, DepthEstimatorInterface):
             LOG.debug(f"{self._tag}: postprocess")
 
         t0 = time.perf_counter()
-        data = postprocess_depth(self._host_outputs(outputs), no_copy=no_copy, verbose=verbose)
+        data = postprocess_depth(
+            self._host_outputs(outputs),
+            normalize=self._normalize,
+            no_copy=no_copy,
+            verbose=verbose,
+        )
         t1 = time.perf_counter()
         self._post_profile = (t0, t1)
 

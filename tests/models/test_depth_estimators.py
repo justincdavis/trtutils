@@ -11,7 +11,12 @@ import pytest
 from tests.conftest import DATA_DIR, PREPROCESSORS
 from trtutils._flags import FLAGS
 from trtutils.image._schema import DepthEstimatorOutputSchema
-from trtutils.models import DepthAnythingV1, DepthAnythingV2, DepthAnythingV3
+from trtutils.models import (
+    DepthAnythingV1,
+    DepthAnythingV2,
+    DepthAnythingV2Metric,
+    DepthAnythingV3,
+)
 
 _trt86_v1 = pytest.mark.skipif(
     FLAGS.TRT_VERSION < (10, 0), reason="TensorRT 8.6 cannot build the /If conditional shapes"
@@ -20,33 +25,86 @@ _trt86_v3 = pytest.mark.skipif(
     FLAGS.TRT_VERSION < (10, 0), reason="TensorRT 8.6 has no Gelu plugin for the v3 ONNX"
 )
 
+_V2 = DATA_DIR / "depth_anything_v2"
+_V2_METRIC = DATA_DIR / "depth_anything_v2_metric"
+_V3 = DATA_DIR / "depth_anything_v3"
+
+# (wrapper, onnx, max depth in metres for metric models, None for relative ones)
 DEPTH_ESTIMATORS = [
     pytest.param(
         DepthAnythingV1,
         DATA_DIR / "depth_anything_v1" / "depth_anything_v1_small_518.onnx",
+        None,
         id="depth-anything-v1-small",
         marks=_trt86_v1,
     ),
     pytest.param(
         DepthAnythingV2,
-        DATA_DIR / "depth_anything_v2" / "depth_anything_v2_small_518.onnx",
+        _V2 / "depth_anything_v2_small_518.onnx",
+        None,
         id="depth-anything-v2-small",
     ),
     pytest.param(
+        DepthAnythingV2Metric,
+        _V2_METRIC / "depth_anything_v2_metric_indoor_small_518.onnx",
+        20.0,
+        id="depth-anything-v2-metric-indoor-small",
+    ),
+    pytest.param(
+        DepthAnythingV2Metric,
+        _V2_METRIC / "depth_anything_v2_metric_outdoor_small_518.onnx",
+        80.0,
+        id="depth-anything-v2-metric-outdoor-small",
+    ),
+    pytest.param(
+        DepthAnythingV2Metric,
+        _V2_METRIC / "depth_anything_v2_metric_indoor_base_518.onnx",
+        20.0,
+        id="depth-anything-v2-metric-indoor-base",
+    ),
+    pytest.param(
+        DepthAnythingV2Metric,
+        _V2_METRIC / "depth_anything_v2_metric_outdoor_large_518.onnx",
+        80.0,
+        id="depth-anything-v2-metric-outdoor-large",
+    ),
+    pytest.param(
         DepthAnythingV3,
-        DATA_DIR / "depth_anything_v3" / "depth_anything_v3_mono_large_518.onnx",
+        _V3 / "depth_anything_v3_small_518.onnx",
+        None,
+        id="depth-anything-v3-small",
+        marks=_trt86_v3,
+    ),
+    pytest.param(
+        DepthAnythingV3,
+        _V3 / "depth_anything_v3_base_518.onnx",
+        None,
+        id="depth-anything-v3-base",
+        marks=_trt86_v3,
+    ),
+    pytest.param(
+        DepthAnythingV3,
+        _V3 / "depth_anything_v3_large_518.onnx",
+        None,
+        id="depth-anything-v3-large",
+        marks=_trt86_v3,
+    ),
+    pytest.param(
+        DepthAnythingV3,
+        _V3 / "depth_anything_v3_mono_large_518.onnx",
+        None,
         id="depth-anything-v3-mono-large",
         marks=_trt86_v3,
     ),
 ]
 
 
-@pytest.mark.parametrize(("model_cls", "onnx_path"), DEPTH_ESTIMATORS)
+@pytest.mark.parametrize(("model_cls", "onnx_path", "max_depth"), DEPTH_ESTIMATORS)
 @pytest.mark.parametrize(("preprocessor", "cpu_resize"), PREPROCESSORS)
 def test_depth_estimator_end2end(
-    build_model_engine, images, model_cls, onnx_path, preprocessor, cpu_resize
+    build_model_engine, images, model_cls, onnx_path, max_depth, preprocessor, cpu_resize
 ) -> None:
-    """run(), get_depth_maps(), and end2end() agree and yield a finite depth map normalized to [0, 1]."""
+    """run(), get_depth_maps() and end2end() agree: relative maps in [0, 1], metric ones in metres."""
     engine = build_model_engine(model_cls, onnx_path)
     model = model_cls(engine, preprocessor=preprocessor, cpu_resize=cpu_resize, warmup=False)
     assert model.output_schema is DepthEstimatorOutputSchema.DEPTH_ANYTHING
@@ -60,5 +118,12 @@ def test_depth_estimator_end2end(
     assert via_run.ndim == 3
     assert via_run.shape[0] == 1
     assert np.all(np.isfinite(via_run))
-    assert via_run.min() == 0.0
-    assert via_run.max() == pytest.approx(1.0)
+    if max_depth is None:
+        assert via_run.min() == 0.0
+        assert via_run.max() == pytest.approx(1.0)
+    else:
+        # metric heads end in sigmoid * max_depth: the wrapper returns the engine's metres
+        raw = model.run(image.array, postprocess=False)[0]
+        np.testing.assert_array_equal(via_run, raw.reshape(via_run.shape))
+        assert via_run.min() > 0.0
+        assert via_run.max() <= max_depth

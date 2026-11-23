@@ -84,10 +84,25 @@ Depth Estimation
 2. **Depth-Anything-V2**
 
    - GitHub: `DepthAnything/Depth-Anything-V2 <https://github.com/DepthAnything/Depth-Anything-V2>`_
+   - Metric models (``DepthAnythingV2Metric``): the indoor (Hypersim, up to 20 m) and outdoor
+     (Virtual KITTI 2, up to 80 m) checkpoints from upstream's ``metric_depth``. They output
+     depth in metres, so the wrapper returns the maps as is (``normalize=False``); the maps
+     have the engine's input size, resize them to the image for per-pixel metres.
 
 3. **Depth-Anything-V3**
 
    - GitHub: `ByteDance-Seed/depth-anything-3 <https://github.com/ByteDance-Seed/depth-anything-3>`_
+   - ``small``, ``base`` and ``large`` are the any-view main series (``large`` is the
+     ``DA3-LARGE-1.1`` checkpoint) run on a single image; ``mono_large`` and
+     ``metric_large`` are the monocular models.
+   - ``metric_large`` is not in metres by itself: upstream gives
+     ``metric_depth = focal * output / 300`` with ``focal`` in pixels. Pass
+     ``normalize=False`` to ``DepthAnythingV3`` to get the raw output for that.
+
+Relative-depth models return each depth map min-max normalized to [0, 1]
+(``DepthEstimator(normalize=True)``, the default). Upstream resizes with a bicubic filter
+that keeps the aspect ratio; trtutils resizes linearly to the square engine input, so
+expect small differences against upstream's own ``infer_image``.
 
 Classification
 --------------
@@ -228,7 +243,8 @@ Depth Estimation Models
 
 - **Depth-Anything-V1**: ``depth_anything_v1_small``, ``depth_anything_v1_base``, ``depth_anything_v1_large``
 - **Depth-Anything-V2**: ``depth_anything_v2_small``, ``depth_anything_v2_base``, ``depth_anything_v2_large``
-- **Depth-Anything-V3**: ``depth_anything_v3_mono_large``, ``depth_anything_v3_metric_large``
+- **Depth-Anything-V2 metric**: ``depth_anything_v2_metric_indoor_small``, ``depth_anything_v2_metric_indoor_base``, ``depth_anything_v2_metric_indoor_large``, ``depth_anything_v2_metric_outdoor_small``, ``depth_anything_v2_metric_outdoor_base``, ``depth_anything_v2_metric_outdoor_large``
+- **Depth-Anything-V3**: ``depth_anything_v3_small``, ``depth_anything_v3_base``, ``depth_anything_v3_large``, ``depth_anything_v3_mono_large``, ``depth_anything_v3_metric_large``
 
 Hand-Object Interaction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -306,8 +322,13 @@ for the weights: check the source before using them.
      - Apache-2.0
    * - Depth-Anything-V2
      - ``small``: Apache-2.0; ``base``, ``large``: CC-BY-NC-4.0
-   * - Depth-Anything-V3 (``mono_large``, ``metric_large``)
-     - Apache-2.0
+   * - Depth-Anything-V2 metric
+     - ``small``: Apache-2.0; ``base``, ``large``: CC-BY-NC-4.0 (the Hugging Face model
+       cards say Apache-2.0, but upstream's README puts the Base / Large models under
+       CC-BY-NC-4.0, and the metric models are fine-tuned from them)
+   * - Depth-Anything-V3
+     - ``small``, ``base``, ``mono_large``, ``metric_large``: Apache-2.0; ``large``:
+       CC-BY-NC-4.0 (upstream's README; the ``DA3-LARGE-1.1`` model card says Apache-2.0)
    * - HOI-DETR
      - MIT
    * - Hands23

@@ -431,6 +431,20 @@ def test_postprocess_depth_shape_and_dtype(shape) -> None:
         assert result[0].max() == pytest.approx(1, abs=1e-6)
 
 
+@pytest.mark.parametrize(
+    "dtype", [pytest.param(np.float32, id="fp32"), pytest.param(np.float16, id="fp16")]
+)
+def test_postprocess_depth_unnormalized_keeps_values(dtype) -> None:
+    """normalize=False returns new float32 maps with the raw values, e.g. metres."""
+    out = (np.random.default_rng(5).random((2, 1, 8, 8)) * 80).astype(dtype)
+    results = postprocess_depth([out], normalize=False)
+    assert len(results) == 2
+    for i, result in enumerate(results):
+        assert result[0].dtype == np.float32
+        np.testing.assert_array_equal(result[0], out[i : i + 1, 0].astype(np.float32))
+        assert not np.shares_memory(result[0], out)
+
+
 @pytest.mark.parametrize("conf_thres", [None, 0.0, 0.5, 1.1])
 def test_get_detections_core_matches_scalar_loop(conf_thres) -> None:
     """The vectorized conversion equals per-element int()/float() casts, negatives included."""

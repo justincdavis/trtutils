@@ -41,6 +41,7 @@ class DepthAnythingV1(DepthEstimator, Model):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         cpu_resize: bool | None = None,
+        normalize: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -62,6 +63,7 @@ class DepthAnythingV1(DepthEstimator, Model):
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
             cpu_resize=cpu_resize,
+            normalize=normalize,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -94,6 +96,7 @@ class DepthAnythingV2(DepthEstimator, Model):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         cpu_resize: bool | None = None,
+        normalize: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -115,6 +118,69 @@ class DepthAnythingV2(DepthEstimator, Model):
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
             cpu_resize=cpu_resize,
+            normalize=normalize,
+            no_warn=no_warn,
+            verbose=verbose,
+        )
+
+
+class DepthAnythingV2Metric(DepthEstimator, Model):
+    """
+    Alias of DepthEstimator with default args for the Depth-Anything-V2 metric models.
+
+    The metric models output depth in metres (up to 20 m for the indoor models and
+    80 m for the outdoor models), so the depth maps are returned as is: ``normalize``
+    defaults to False. The maps have the engine's input size; resize them to the
+    image size for per-pixel metres.
+    """
+
+    _model_type = "depth_anything_v2_metric"
+    _friendly_name = "Depth-Anything-V2-Metric"
+    _default_imgsz = 518
+    _input_tensors: ClassVar[list[tuple[str, str]]] = [("input", "image")]
+
+    def __init__(
+        self: Self,
+        engine_path: Path | str,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0, 1),
+        preprocessor: str = "cuda",
+        resize_method: str = "linear",
+        mean: tuple[float, float, float] | None = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] | None = (0.229, 0.224, 0.225),
+        dla_core: int | None = None,
+        device: int | None = None,
+        backend: str = "auto",
+        *,
+        warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
+        cpu_resize: bool | None = None,
+        normalize: bool = False,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
+    ) -> None:
+        DepthEstimator.__init__(
+            self,
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            input_range=input_range,
+            preprocessor=preprocessor,
+            resize_method=resize_method,
+            mean=mean,
+            std=std,
+            dla_core=dla_core,
+            device=device,
+            backend=backend,
+            warmup=warmup,
+            pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
+            cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
+            cpu_resize=cpu_resize,
+            normalize=normalize,
             no_warn=no_warn,
             verbose=verbose,
         )
@@ -147,6 +213,7 @@ class DepthAnythingV3(DepthEstimator, Model):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         cpu_resize: bool | None = None,
+        normalize: bool = True,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -168,6 +235,7 @@ class DepthAnythingV3(DepthEstimator, Model):
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
             cpu_resize=cpu_resize,
+            normalize=normalize,
             no_warn=no_warn,
             verbose=verbose,
         )

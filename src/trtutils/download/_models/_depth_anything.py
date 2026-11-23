@@ -146,14 +146,15 @@ def export_depth_anything_v2(
         LOG.info(f"Using cached depth_anything_v2 weights: {config['weights']}")
         shutil.copy(cached_pth_file, target_pth_file)
 
-    # get the encoder from the model name
-    encoders = {
-        "depth_anything_v2_small": "vits",
-        "depth_anything_v2_base": "vitb",
-        "depth_anything_v2_large": "vitl",
-        "depth_anything_v2_giant": "vitg",
-    }
-    encoder = encoders[model]
+    encoder = config["encoder"]
+    # metric checkpoints live in metric_depth/, whose DepthAnythingV2 takes a max_depth
+    # and ends in sigmoid * max_depth, so the output is in metres
+    max_depth = config.get("max_depth")
+    src_dir = da_v2_dir if max_depth is None else da_v2_dir / "metric_depth"
+    weights = config["weights"] if max_depth is None else f"../{config['weights']}"
+    model_args = "**model_configs[encoder]"
+    if max_depth is not None:
+        model_args += f", max_depth={max_depth}"
 
     program = f"""
 import torch
@@ -169,8 +170,8 @@ model_configs = {{
     'vitg': {{'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}},
 }}
 
-depth_anything = DepthAnythingV2(**model_configs[encoder])
-depth_anything.load_state_dict(torch.load('depth_anything_v2_{encoder}.pth', map_location='cpu'))
+depth_anything = DepthAnythingV2({model_args})
+depth_anything.load_state_dict(torch.load('{weights}', map_location='cpu'))
 depth_anything = depth_anything.to('cpu').eval()
 # exports never need gradients
 torch.set_grad_enabled(False)
@@ -197,7 +198,7 @@ torch.onnx.export(
             "-c",
             program,
         ],
-        cwd=da_v2_dir,
+        cwd=src_dir,
         verbose=verbose,
     )
 
@@ -206,7 +207,7 @@ torch.onnx.export(
         shutil.copy(target_pth_file, cached_pth_file)
         LOG.info(f"Cached DepthAnythingV2 weights: {config['weights']}")
 
-    model_path = da_v2_dir / f"depth_anything_v2_{encoder}.onnx"
+    model_path = src_dir / f"depth_anything_v2_{encoder}.onnx"
     new_model_path = model_path.with_name(model + model_path.suffix)
     shutil.move(model_path, new_model_path)
     return new_model_path
@@ -267,6 +268,42 @@ def export_depth_anything_v3(
     api_src = api_src.replace(bf16_line, fp16_line)
     api_src = api_src.replace(export_import_line, f"# patched out: {export_import_line}")
     api_path.write_text(api_src, encoding="utf-8")
+
+    # Two patches for the any-view models (small / base / large); mono / metric use neither:
+    #   3. rope.py builds the patch grid with torch.cartesian_prod, which has no ONNX export;
+    #      meshgrid gives the same (y, x) rows.
+    #   4. attention.py's q / k LayerNorm gets fp16 inputs under autocast and exports as a
+    #      LayerNormalization with fp16 input and fp32 weights, which onnxruntime rejects;
+    #      autocast runs layer_norm in fp32 anyway, so cast the inputs explicitly.
+    layers_dir = da_v3_dir / "src" / "depth_anything_3" / "model" / "dinov2" / "layers"
+    qk_line = "        q, k = self.q_norm(q), self.k_norm(k)"
+    patches = [
+        (
+            layers_dir / "rope.py",
+            "torch.cartesian_prod(y_coords, x_coords)",
+            'torch.stack(torch.meshgrid(y_coords, x_coords, indexing="ij"), dim=-1).reshape(-1, 2)',
+        ),
+        (
+            layers_dir / "attention.py",
+            qk_line,
+            (
+                "        if isinstance(self.q_norm, nn.Identity):\n"
+                f"    {qk_line}\n"
+                "        else:\n"
+                "            q, k = self.q_norm(q.float()), self.k_norm(k.float())"
+            ),
+        ),
+    ]
+    for path, old, new in patches:
+        src = path.read_text(encoding="utf-8")
+        if old not in src:
+            err_msg = (
+                f"Failed to apply DepthAnythingV3 ONNX patch: expected line not found "
+                f"in {path}: {old!r}. The pinned commit ({_DA_V3_COMMIT}) may "
+                f"need to be updated."
+            )
+            raise RuntimeError(err_msg)
+        path.write_text(src.replace(old, new), encoding="utf-8")
 
     run_uv_pip_install(
         da_v3_dir,
