@@ -61,14 +61,19 @@ DETR Models
 11. **D-FINE**
     
     - GitHub: `Peterande/D-FINE <https://github.com/Peterande/D-FINE>`_
+    - Input: stretched resize, scaled to 0-1, no mean/std (the default)
 
 12. **DEIM**
-    
+
     - GitHub: `Intellindust-AI-Lab/DEIM <https://github.com/Intellindust-AI-Lab/DEIM>`_
+    - Input: stretched resize, scaled to 0-1, no mean/std (the default)
 
 13. **DEIMv2**
-    
+
     - GitHub: `Intellindust-AI-Lab/DEIMv2 <https://github.com/Intellindust-AI-Lab/DEIMv2>`_
+    - Input: stretched resize, scaled to 0-1. The DINOv3 sizes (s, m, l, x) then apply ImageNet
+      mean/std (the default); the HGNetv2 sizes (atto, femto, pico, n) do not, so pass
+      ``mean=None, std=None`` for them
 
 14. **RF-DETR**
     

@@ -181,6 +181,14 @@ Performance
 
 Fixed
 ^^^^^
+* ``DFINE`` and ``DEIM`` default to ``mean=None, std=None`` (plain 0-1 input), as upstream
+  D-FINE and DEIM evaluate. They applied ImageNet mean/std, which changes their outputs: on the
+  five test images, 21 of the 54 upstream detections above 0.5 survived for dfine_n and 31 of 40
+  for deim_dfine_s, with 18 and 2 spurious ones added. Detections now match upstream PyTorch.
+  Pass the old ``mean`` / ``std`` to keep the previous behavior. ``DEIMv2`` keeps its ImageNet
+  default, which only its DINOv3 sizes (s, m, l, x) use; pass ``mean=None, std=None`` for the
+  HGNetv2 sizes (atto, femto, pico, n)
+* The DEIM export runs with autograd off, like the other exporters
 * ``TRTEngine(shape_contexts=N)`` and the OCR ``width_bucket`` option work on TensorRT 8.6
   (Jetson). They failed with ``Assertion mOptimizationProfile >= 0 failed`` at the second
   input shape, because contexts cannot share an optimization profile before TensorRT 10.

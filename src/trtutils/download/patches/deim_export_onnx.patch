@@ -1,9 +1,10 @@
 --- DEIM/tools/deployment/export_onnx.py	2025-09-26 23:10:44.914356862 -0700
 +++ DEIM/tools/deployment/export_onnx_fix.py	2025-09-26 23:11:15.474274826 -0700
-@@ -51,8 +51,8 @@
- 
+@@ -51,8 +51,9 @@
+
      model = Model()
- 
++    torch.set_grad_enabled(False)
+
 -    data = torch.rand(32, 3, 640, 640)
 -    size = torch.tensor([[640, 640]])
 +    data = torch.rand(1, 3, args.imgsz, args.imgsz)
@@ -11,7 +12,7 @@
      _ = model(data, size)
  
      dynamic_axes = {
-@@ -69,7 +69,7 @@
+@@ -69,7 +70,7 @@
          input_names=['images', 'orig_target_sizes'],
          output_names=['labels', 'boxes', 'scores'],
          dynamic_axes=dynamic_axes,
@@ -20,7 +21,7 @@
          verbose=False,
          do_constant_folding=True,
      )
-@@ -99,5 +99,7 @@
+@@ -99,5 +100,7 @@
      parser.add_argument('--resume', '-r', type=str, )
      parser.add_argument('--check',  action='store_true', default=True,)
      parser.add_argument('--simplify',  action='store_true', default=True,)
