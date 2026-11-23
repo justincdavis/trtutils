@@ -59,6 +59,11 @@ def main() -> None:
     feature_map = extractor.get_feature_maps(outputs)
     print(f"Feature map shape: {feature_map.shape}")
 
+    # one embedding per box, e.g. the detections of a frame for tracking or re-ID
+    boxes = [(0, 0, 400, 300), (500, 200, 900, 700), (1200, 400, 1600, 1000)]
+    box_embeddings = extractor.end2end_boxes(images["street.jpg"], boxes)
+    print(f"Box embeddings shape: {box_embeddings.shape}")
+
 
 if __name__ == "__main__":
     set_log_level("ERROR")

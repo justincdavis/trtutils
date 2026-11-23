@@ -96,6 +96,10 @@ Added
 * ``models.DINOv3`` and the ``dinov3_vits16``, ``dinov3_vits16plus`` and ``dinov3_vitb16``
   downloads (timm, DINOv3 License, default size
   256, batch-dynamic by default). FP16 builds keep the attention matmul and softmax in FP32
+* ``FeatureExtractor.end2end_boxes(image, boxes)``: one embedding per (x1, y1, x2, y2) box of
+  a frame as an ``(N, D)`` array, e.g. detections for tracking or re-ID. Any number of boxes,
+  run in chunks of the engine batch (padded on static-batch engines). Crops come from
+  ``preprocessors.crop_boxes``, which clips the boxes to the image and returns views
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)

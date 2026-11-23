@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from trtutils.core._buffer import Buffer
     from trtutils.image._schema import InputSchema, OutputSchema
     from trtutils.image.types import (
+        Bbox,
         Classification,
         Detection,
         Embedding,
@@ -845,6 +846,17 @@ class FeatureExtractorInterface(ABC):
         verbose: bool | None = None,
     ) -> Embedding | list[Embedding]:
         """Perform end to end inference for a batch of images."""
+
+    @abstractmethod
+    def end2end_boxes(
+        self: Self,
+        image: np.ndarray | Buffer,
+        boxes: np.ndarray | Sequence[Bbox],
+        *,
+        normalize: bool | None = None,
+        verbose: bool | None = None,
+    ) -> np.ndarray:
+        """Embed the crop of each box in an image, as an (N, D) matrix."""
 
 
 class HandInteractionDetectorInterface(ABC):

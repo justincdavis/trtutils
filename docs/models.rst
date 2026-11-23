@@ -92,6 +92,9 @@ Depth Estimation
 Feature Extraction
 ------------------
 
+Every feature extractor also embeds the boxes of a frame with ``end2end_boxes(image, boxes)``,
+one ``(N, D)`` row per box (e.g. detections for tracking or re-ID), whatever the engine batch.
+
 1. **DINOv3** (``DINOv3``) - self-supervised ViT backbones (LVD-1689M weights), exported
    through timm with a class-token embedding and a dense patch feature map
 

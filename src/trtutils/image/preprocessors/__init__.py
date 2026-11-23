@@ -31,6 +31,8 @@ Functions
     Resize an image to a valid DB text detection input size.
 :func:`crop_text_region`
     Crop and rectify a detected text region.
+:func:`crop_boxes`
+    Crop (x1, y1, x2, y2) boxes out of an image as views.
 
 """
 
@@ -44,6 +46,7 @@ from ._cpu_ocr import (
     preprocess_text_recognition,
     resize_text_detection,
 )
+from ._crops import crop_boxes
 from ._cuda import CUDAPreprocessor, GPUImagePreprocessor
 from ._dla import DLAPreprocessor
 from ._trt import TRTPreprocessor
@@ -55,6 +58,7 @@ __all__ = [
     "GPUImagePreprocessor",
     "ImagePreprocessor",
     "TRTPreprocessor",
+    "crop_boxes",
     "crop_text_region",
     "preprocess",
     "preprocess_text_detection",
