@@ -657,7 +657,8 @@ class MaskDecoder:
         shape_contexts : int, optional
             The most per-shape execution contexts the engine keeps, see
             :class:`~trtutils.TRTEngine`. The number of points changes from prompt
-            to prompt, which a context per shape keeps cheap. Default is 4.
+            to prompt, which a context per shape keeps cheap. Before TensorRT 10
+            a single context serves every shape. Default is 4.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
