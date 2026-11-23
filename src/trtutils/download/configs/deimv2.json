@@ -1,4 +1,5 @@
 {
+    "_defaults": {"exporter": "deimv2", "license": "DEIMv2 License (non-commercial)"},
     "deimv2_atto": {
         "id": "18sRJXX3FBUigmGJ1y5Oo_DPC5C3JCgYc",
         "config": "deimv2_hgnetv2_atto_coco.yml",

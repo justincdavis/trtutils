@@ -10,25 +10,17 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.download.conftest import ROUTING_CASES
+from tests.download.conftest import ROUTING_CASES, patch_exporter
 from trtutils.download import download, download_model, load_model_configs
-from trtutils.download._models import _timm, _torchvision, _ultralytics, _yolo
+from trtutils.download._models import EXPORTERS, _timm, _torchvision, _ultralytics, _yolo
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 pytestmark = pytest.mark.cpu
 
-_BATCH_EXPORTERS = {
-    "export_ultralytics",
-    "export_yolov10",
-    "export_yolov12",
-    "export_yolov13",
-    "export_torchvision_classifier",
-    "export_timm_classifier",
-}
-_SUPPORTED = [p for p in ROUTING_CASES if p.values[1] in _BATCH_EXPORTERS]
-_UNSUPPORTED = [p for p in ROUTING_CASES if p.values[1] not in _BATCH_EXPORTERS]
+_SUPPORTED = [p for p in ROUTING_CASES if EXPORTERS[p.values[1]].batch]
+_UNSUPPORTED = [p for p in ROUTING_CASES if not EXPORTERS[p.values[1]].batch]
 
 
 @pytest.fixture
@@ -39,10 +31,8 @@ def route(fake_venv):
         "trtutils.download._download.make_venv", return_value=(fake_python, fake_bin)
     ) as mock_venv:
 
-        def _call(model, export_func_name, tmp_path, **kwargs: object):
-            with patch(
-                f"trtutils.download._download.{export_func_name}", return_value=fake_output
-            ) as mock_export:
+        def _call(model, exporter, tmp_path, **kwargs: object):
+            with patch_exporter(exporter, fake_output) as mock_export:
                 download_model(model, tmp_path, **kwargs)
             return mock_export
 
@@ -60,14 +50,14 @@ def route(fake_venv):
         pytest.param({"batch": 1, "dynamic": True}, (1, True), (1, True), id="dynamic-b1"),
     ],
 )
-@pytest.mark.parametrize(("model", "export_func_name"), _SUPPORTED)
+@pytest.mark.parametrize(("model", "exporter"), _SUPPORTED)
 def test_batch_exporters_get_resolved_options(
-    route, tmp_path, model, export_func_name, kwargs, expected, expected_torchvision
+    route, tmp_path, model, exporter, kwargs, expected, expected_torchvision
 ) -> None:
     """Batch-capable exporters receive a concrete batch and dynamic; torchvision defaults dynamic."""
     call, _ = route
-    mock_export = call(model, export_func_name, tmp_path, **kwargs)
-    if export_func_name == "export_torchvision_classifier":
+    mock_export = call(model, exporter, tmp_path, **kwargs)
+    if EXPORTERS[exporter].dynamic_default:
         expected = expected_torchvision
     got = mock_export.call_args.kwargs
     assert (got["batch"], got["dynamic"]) == expected
@@ -81,13 +71,11 @@ def test_batch_exporters_get_resolved_options(
         pytest.param({"dynamic": False}, id="static"),
     ],
 )
-@pytest.mark.parametrize(("model", "export_func_name"), _UNSUPPORTED)
-def test_other_exporters_never_see_batch_options(
-    route, tmp_path, model, export_func_name, kwargs
-) -> None:
+@pytest.mark.parametrize(("model", "exporter"), _UNSUPPORTED)
+def test_other_exporters_never_see_batch_options(route, tmp_path, model, exporter, kwargs) -> None:
     """Exporters that cannot batch export as before, without batch or dynamic arguments."""
     call, _ = route
-    mock_export = call(model, export_func_name, tmp_path, **kwargs)
+    mock_export = call(model, exporter, tmp_path, **kwargs)
     assert {"batch", "dynamic"}.isdisjoint(mock_export.call_args.kwargs)
 
 
@@ -100,14 +88,14 @@ def test_other_exporters_never_see_batch_options(
         pytest.param({"batch": 0}, ValueError, id="zero-batch"),
     ],
 )
-@pytest.mark.parametrize(("model", "export_func_name"), _UNSUPPORTED)
+@pytest.mark.parametrize(("model", "exporter"), _UNSUPPORTED)
 def test_other_exporters_refuse_before_any_work(
-    route, tmp_path, model, export_func_name, kwargs, error
+    route, tmp_path, model, exporter, kwargs, error
 ) -> None:
     """Families that cannot batch refuse up front instead of silently exporting at batch 1."""
     call, mock_venv = route
     with pytest.raises(error):
-        call(model, export_func_name, tmp_path, **kwargs)
+        call(model, exporter, tmp_path, **kwargs)
     mock_venv.assert_not_called()
 
 
@@ -120,14 +108,12 @@ def test_other_exporters_refuse_before_any_work(
         pytest.param({"dynamic": True, "make_static": True}, id="dynamic-and-make-static"),
     ],
 )
-@pytest.mark.parametrize(("model", "export_func_name"), _SUPPORTED)
-def test_invalid_options_rejected_before_any_work(
-    route, tmp_path, model, export_func_name, kwargs
-) -> None:
+@pytest.mark.parametrize(("model", "exporter"), _SUPPORTED)
+def test_invalid_options_rejected_before_any_work(route, tmp_path, model, exporter, kwargs) -> None:
     """Contradictory or non-positive options raise ValueError before the venv is built."""
     call, mock_venv = route
     with pytest.raises(ValueError, match=r"batch|make_static|positive"):
-        call(model, export_func_name, tmp_path, **kwargs)
+        call(model, exporter, tmp_path, **kwargs)
     mock_venv.assert_not_called()
 
 

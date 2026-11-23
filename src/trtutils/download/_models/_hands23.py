@@ -40,7 +40,6 @@ def export_hands23(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning("Hands23 uses detectron2, an Apache-2.0 licensed dependency")
         LOG.warning(
             "Hands23 export installs detectron2 from source (git+commit), which compiles "
             "C++/CUDA extensions and takes roughly 5-10 minutes; a C++ compiler is required"

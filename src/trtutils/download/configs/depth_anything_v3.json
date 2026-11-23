@@ -1,4 +1,5 @@
 {
+    "_defaults": {"exporter": "depth_anything_v3", "license": "Apache-2.0"},
     "depth_anything_v3_mono_large": {
         "url": "huggingface_hub",
         "name": "depth_anything_v3_mono_large",

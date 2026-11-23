@@ -40,7 +40,6 @@ def export_hoi_detr(
     verbose: bool | None = None,
 ) -> Path:
     if not no_warn:
-        LOG.warning("HOI-DETR is a MIT licensed model, be aware of license restrictions")
         LOG.warning(
             "HOI-DETR checkpoint is ~5.86 GB, export needs roughly 16 GB of RAM to load "
             "and trace the ViT-L backbone"

@@ -29,11 +29,9 @@ def export_rfdetr(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("RF-DETR is a Apache-2.0 licensed model, be aware of license restrictions")
     rfdetr_imgszs = {
         "rfdetr_n": 384,
         "rfdetr_s": 512,

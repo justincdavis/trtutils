@@ -1,4 +1,5 @@
 {
+    "_defaults": {"exporter": "ppocr", "license": "Apache-2.0"},
     "ppocrv4_det": {
         "url": "https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv4/ch_PP-OCRv4_det_infer.onnx",
         "name": "ppocrv4_det"

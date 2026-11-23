@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "yolov10", "license": "AGPL-3.0"},
   "yolov10n": {
     "url": "https://github.com/THU-MIG/yolov10/releases/download/v1.1/yolov10n.pt",
     "name": "yolov10n"
@@ -24,22 +25,32 @@
     "name": "yolov10x"
   },
   "yolov10nu": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "yolov10n"
   },
   "yolov10su": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "yolov10s"
   },
   "yolov10mu": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "yolov10m"
   },
   "yolov10lu": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "yolov10l"
   },
   "yolov10xu": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "yolov10x"
   }

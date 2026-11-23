@@ -498,7 +498,8 @@ Notes
 ^^^^^
 
 * The download process will create a temporary virtual environment to handle dependencies
-* Some models may have license restrictions (GPL-3.0, AGPL-3.0, Apache-2.0)
+* Each download logs the license of the model's weights; copyleft (GPL-3.0, AGPL-3.0) and
+  non-commercial licenses get a louder notice. See :ref:`Supported Models <models>` for the per-family list
 * RT-DETRv3 is fixed at 640; RF-DETR is fixed per variant (rfdetr_n 384, rfdetr_s 512, rfdetr_m 576)
 * DEIMv2 is fixed per variant (deimv2_atto 320, deimv2_femto 416, all others 640)
 

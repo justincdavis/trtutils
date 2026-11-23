@@ -6,7 +6,6 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from trtutils._log import LOG
 from trtutils.download._tools import (
     _640,
     get_patches_dir,
@@ -30,11 +29,9 @@ def export_dfine(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("D-FINE is a Apache-2.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "D-FINE", enforce=True)
     git_clone(
         "https://github.com/Peterande/D-FINE",

@@ -37,13 +37,9 @@ def export_depth_anything_v1(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning(
-            "DepthAnythingV1 is a Apache-2.0 licensed model, be aware of license restrictions"
-        )
     imgsz = handle_imgsz(imgsz, 518, "DepthAnythingV1", enforce=True)
     git_clone(
         "https://github.com/LiheYoung/Depth-Anything",
@@ -119,13 +115,9 @@ def export_depth_anything_v2(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning(
-            "DepthAnythingV2 is a Apache-2.0 licensed model, be aware of license restrictions"
-        )
     imgsz = handle_imgsz(imgsz, 518, "DepthAnythingV2", enforce=True)
     git_clone(
         "https://github.com/DepthAnything/Depth-Anything-V2",
@@ -236,8 +228,7 @@ def export_depth_anything_v3(
 ) -> Path:
     if not no_warn:
         LOG.warning(
-            "DepthAnythingV3 monocular variants are Apache-2.0 licensed, be aware of license "
-            "restrictions. ONNX export uses CUDA when available and falls back to CPU; the CPU "
+            "DepthAnythingV3 ONNX export uses CUDA when available and falls back to CPU; the CPU "
             "path works but is significantly slower for the LARGE checkpoints."
         )
     # ros2-depth-anything-v3-trt pins opset 20 for V3.

@@ -6,7 +6,6 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from trtutils._log import LOG
 from trtutils.download._tools import (
     _640,
     get_patches_dir,
@@ -30,11 +29,9 @@ def export_deim(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("DEIM is a Apache-2.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "DEIM", enforce=True)
     git_clone(
         "https://github.com/Intellindust-AI-Lab/DEIM",
@@ -95,11 +92,9 @@ def export_deimv2(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("DEIMv2 is a Apache-2.0 licensed model, be aware of license restrictions")
     deimv2_imgszs = {
         "deimv2_atto": 320,
         "deimv2_femto": 416,

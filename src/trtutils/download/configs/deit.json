@@ -1,4 +1,5 @@
 {
+    "_defaults": {"exporter": "timm", "license": "Apache-2.0"},
     "deit_tiny": {"url": "timm", "name": "deit_tiny_patch16_224.fb_in1k", "imgsz": "224", "patch": "16"},
     "deit_small": {"url": "timm", "name": "deit_small_patch16_224.fb_in1k", "imgsz": "224", "patch": "16"},
     "deit_base": {"url": "timm", "name": "deit_base_patch16_224.fb_in1k", "imgsz": "224", "patch": "16"},

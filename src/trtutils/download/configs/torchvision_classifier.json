@@ -1,4 +1,5 @@
 {
+    "_defaults": {"exporter": "torchvision", "license": "unknown"},
     "alexnet": {"url": "torchvision_classifier", "name": "alexnet"},
     "convnext_tiny": {"url": "torchvision_classifier", "name": "convnext_tiny"},
     "convnext_small": {"url": "torchvision_classifier", "name": "convnext_small"},
@@ -36,7 +37,7 @@
     "regnet_y_8gf": {"url": "torchvision_classifier", "name": "regnet_y_8gf"},
     "regnet_y_16gf": {"url": "torchvision_classifier", "name": "regnet_y_16gf"},
     "regnet_y_32gf": {"url": "torchvision_classifier", "name": "regnet_y_32gf"},
-    "regnet_y_128gf": {"url": "torchvision_classifier", "name": "regnet_y_128gf"},
+    "regnet_y_128gf": {"license": "CC-BY-NC-4.0", "url": "torchvision_classifier", "name": "regnet_y_128gf"},
     "regnet_x_400mf": {"url": "torchvision_classifier", "name": "regnet_x_400mf"},
     "regnet_x_800mf": {"url": "torchvision_classifier", "name": "regnet_x_800mf"},
     "regnet_x_1_6gf": {"url": "torchvision_classifier", "name": "regnet_x_1_6gf"},
@@ -76,7 +77,7 @@
     "vit_b_32": {"url": "torchvision_classifier", "name": "vit_b_32"},
     "vit_l_16": {"url": "torchvision_classifier", "name": "vit_l_16"},
     "vit_l_32": {"url": "torchvision_classifier", "name": "vit_l_32"},
-    "vit_h_14": {"url": "torchvision_classifier", "name": "vit_h_14"},
+    "vit_h_14": {"license": "CC-BY-NC-4.0", "url": "torchvision_classifier", "name": "vit_h_14"},
     "wide_resnet50_2": {"url": "torchvision_classifier", "name": "wide_resnet50_2"},
     "wide_resnet101_2": {"url": "torchvision_classifier", "name": "wide_resnet101_2"}
 }
