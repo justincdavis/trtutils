@@ -253,6 +253,15 @@ def test_ppocr_build_rejects_height_width(model_cls: type[Model]) -> None:
     build.assert_not_called()
 
 
+@pytest.mark.parametrize("model_cls", [PPOCRDetector, PPOCRRecognizer])
+@pytest.mark.parametrize("dynamic_batch", [True, False, None])
+def test_ppocr_build_takes_dynamic_batch(model_cls: type[Model], dynamic_batch) -> None:
+    """PP-OCR profiles are always dynamic: dynamic_batch is accepted and not sent to build_engine."""
+    with patch("trtutils.models.ocr._ppocr.build_engine") as build:
+        model_cls.build("model.onnx", "model.engine", dynamic_batch=dynamic_batch)
+    assert "dynamic_batch" not in build.call_args.kwargs
+
+
 @pytest.mark.parametrize("model_cls", MODEL_CLASSES)
 def test_input_tensor_names_match_onnx(model_cls) -> None:
     """_input_tensors names are the graph inputs of the exported ONNX."""

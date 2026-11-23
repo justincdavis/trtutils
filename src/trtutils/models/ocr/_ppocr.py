@@ -102,6 +102,7 @@ class PPOCRDetector(TextDetector, Model):
         fp16: bool = True,
         verbose: bool | None = None,
         embed_sst: bool = False,
+        dynamic_batch: bool | None = None,  # noqa: ARG003
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """
@@ -137,6 +138,9 @@ class PPOCRDetector(TextDetector, Model):
             Enable verbose builder output.
         embed_sst : bool
             Not supported for PP-OCR; must be False. Normalization stays in the preprocessor.
+        dynamic_batch : bool, optional
+            Accepted for parity with ``Model.build`` and ignored: the profile built
+            here is always dynamic.
         **kwargs : Any
             Additional keyword arguments forwarded to ``build_engine()``.
 
@@ -250,6 +254,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         fp16: bool = True,
         verbose: bool | None = None,
         embed_sst: bool = False,
+        dynamic_batch: bool | None = None,  # noqa: ARG003
         **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """
@@ -283,6 +288,9 @@ class PPOCRRecognizer(TextRecognizer, Model):
             Enable verbose builder output.
         embed_sst : bool
             Not supported for PP-OCR; must be False. Normalization stays in the preprocessor.
+        dynamic_batch : bool, optional
+            Accepted for parity with ``Model.build`` and ignored: the profile built
+            here is always dynamic.
         **kwargs : Any
             Additional keyword arguments forwarded to ``build_engine()``.
 
