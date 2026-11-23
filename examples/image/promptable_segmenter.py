@@ -29,7 +29,8 @@ def _engine(cls: type[MobileSAMEncoder | MobileSAMDecoder | YOLOv8], model: str)
 
 def main() -> None:
     # the image encoder runs once per image, the small decoder once per prompt; the larger
-    # SAM models work the same way: SAM, SAMEncoder and SAMDecoder on "sam_vit_b_*"
+    # SAM models work the same way: SAM, SAMEncoder and SAMDecoder on "sam_vit_b_*", and
+    # SAM2, SAM2Encoder and SAM2Decoder on "sam2_1_hiera_tiny_*"
     sam = MobileSAM(
         _engine(MobileSAMEncoder, "mobile_sam_encoder"),
         _engine(MobileSAMDecoder, "mobile_sam_decoder"),

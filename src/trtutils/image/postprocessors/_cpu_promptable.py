@@ -21,12 +21,13 @@ def postprocess_image_embeddings(
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
     """
-    Split the output of an image encoder into per-image embeddings.
+    Split the outputs of an image encoder into per-image outputs.
 
     Parameters
     ----------
     outputs : list[np.ndarray]
-        The image embeddings (B, C, H, W).
+        The image embeddings (B, C, H, W), then any other (B, ...) features of the
+        encoder's schema (e.g. SAM 2's high-res features).
     no_copy : bool, optional
         If True, return views of the outputs instead of copies. Views are
         overwritten by the next inference when the outputs are engine memory.
@@ -36,15 +37,14 @@ def postprocess_image_embeddings(
     Returns
     -------
     list[list[np.ndarray]]
-        Per image, its (1, C, H, W) embeddings.
+        Per image, its (1, ...) outputs, the (1, C, H, W) embeddings first.
 
     """
     if verbose:
-        LOG.debug(f"Image embedding postprocess, output shape: {outputs[0].shape}")
-    embeddings = outputs[0]
+        LOG.debug(f"Image embedding postprocess, output shapes: {[o.shape for o in outputs]}")
     return [
-        [embeddings[i : i + 1] if no_copy else embeddings[i : i + 1].copy()]
-        for i in range(embeddings.shape[0])
+        [out[i : i + 1] if no_copy else out[i : i + 1].copy() for out in outputs]
+        for i in range(outputs[0].shape[0])
     ]
 
 

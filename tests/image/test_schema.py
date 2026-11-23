@@ -121,6 +121,7 @@ _DEC = MaskDecoderOutputSchema
         pytest.param(OBBDetectorOutputSchema, ("output0",), "YOLO", "YOLO", id="obb-str-override"),
         pytest.param(_ENC, ("image_embeddings",), None, "SAM", id="sam-encoder-auto"),
         pytest.param(_DEC, _DEC.SAM.value[::-1], None, "SAM", id="sam-decoder-order-swapped"),
+        pytest.param(_ENC, _ENC.SAM2.value[::-1], None, "SAM2", id="sam2-encoder-swapped"),
     ],
 )
 def test_resolve_schema(schema_cls, outputs, override, expected) -> None:
@@ -238,6 +239,7 @@ def test_resolve_input_schema_rejects_unknown_names() -> None:
         pytest.param(MaskDecoderInputSchema.SAM.value[::-1], None, id="sam-order-swapped"),
         pytest.param(("images",), "match no", id="image-model"),
         pytest.param(MaskDecoderInputSchema.SAM.value[:4], "match no", id="missing-has-mask"),
+        pytest.param(MaskDecoderInputSchema.SAM2.value[:3], "match no", id="sam2-features-only"),
     ],
 )
 def test_resolve_mask_decoder_input_schema(inputs, match) -> None:

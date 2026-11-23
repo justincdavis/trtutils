@@ -210,6 +210,17 @@ Promptable Segmentation
 
    - GitHub: `facebookresearch/segment-anything <https://github.com/facebookresearch/segment-anything>`_
 
+3. **SAM 2.1** - Segment Anything 2.1 in image mode (Hiera tiny, small, base+ and large;
+   ``models.SAM2Encoder``, ``models.SAM2Decoder``, ``models.SAM2``), with the same prompts
+   and decoder profile. The image is stretched to 1024 x 1024 instead of padded, the encoder
+   also hands the decoder two high-resolution feature maps, and the single-mask output falls
+   back to the best multimask output when it is unstable, as ``SAM2ImagePredictor`` does.
+   Keep the encoder's FP16 default: an FP32 build (``fp16=False``) runs in TF32, which
+   TensorRT enables by default, and loses accuracy. Video and memory tracking are not
+   supported.
+
+   - GitHub: `facebookresearch/sam2 <https://github.com/facebookresearch/sam2>`_
+
 Model Download Support
 ----------------------
 
@@ -265,6 +276,11 @@ Promptable Segmentation Models
 - **MobileSAM**: ``mobile_sam_encoder``, ``mobile_sam_decoder`` (download both)
 - **SAM**: ``sam_vit_b_encoder``, ``sam_vit_b_decoder``, ``sam_vit_l_encoder``,
   ``sam_vit_l_decoder`` (download the encoder and decoder of one size)
+- **SAM 2.1**: ``sam2_1_hiera_tiny_encoder``, ``sam2_1_hiera_tiny_decoder``,
+  ``sam2_1_hiera_small_encoder``, ``sam2_1_hiera_small_decoder``,
+  ``sam2_1_hiera_base_plus_encoder``, ``sam2_1_hiera_base_plus_decoder``,
+  ``sam2_1_hiera_large_encoder``, ``sam2_1_hiera_large_decoder`` (download the encoder and
+  decoder of one size)
 
 Instance Segmentation Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -342,6 +358,8 @@ for the weights: check the source before using them.
    * - MobileSAM
      - Apache-2.0
    * - SAM (ViT-B, ViT-L)
+     - Apache-2.0
+   * - SAM 2.1 (Hiera tiny, small, base+, large)
      - Apache-2.0
 
 Example Usage

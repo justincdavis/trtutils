@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Engine-level tests for src/trtutils/models/promptable_segmenters/ -- MobileSAM and SAM."""
+"""Engine-level tests for src/trtutils/models/promptable_segmenters/ -- MobileSAM, SAM and SAM 2.1."""
 
 from __future__ import annotations
 
@@ -10,12 +10,15 @@ import pytest
 
 from tests.conftest import DATA_DIR
 from trtutils.image import ImageEncoder, MaskDecoder
-from trtutils.image._schema import ImageEncoderOutputSchema, MaskDecoderOutputSchema
+from trtutils.image._schema import MaskDecoderOutputSchema
 from trtutils.models import (
     SAM,
+    SAM2,
     MobileSAM,
     MobileSAMDecoder,
     MobileSAMEncoder,
+    SAM2Decoder,
+    SAM2Encoder,
     SAMDecoder,
     SAMEncoder,
 )
@@ -32,6 +35,19 @@ FAMILIES = [
         id="sam-vit-l",
         marks=pytest.mark.slow,
     ),
+    *[
+        pytest.param(
+            (SAM2, SAM2Encoder, SAM2Decoder, f"sam2/sam2_1_hiera_{size}_{{}}_1024.onnx"),
+            id=f"sam2.1-{size}",
+            marks=marks,
+        )
+        for size, marks in (
+            ("tiny", ()),
+            ("small", ()),
+            ("base_plus", ()),
+            ("large", pytest.mark.slow),
+        )
+    ],
 ]
 # the horse in data/horse.jpg, (x1, y1, x2, y2), and a point on its body
 HORSE_BOX = np.array([65, 45, 392, 272], np.float32)
@@ -175,11 +191,12 @@ def test_prompt_errors(family, sam, encoder_engine, decoder_engine, images) -> N
 
 
 def test_schemas_and_wrong_engines(family, encoder_engine, decoder_engine) -> None:
-    """Each part resolves its schema and rejects the other part's engine."""
+    """Each part resolves its schema, the decoder reads the encoder outputs first, wrong parts raise."""
     _, encoder_cls, decoder_cls, _ = family
     encoder = encoder_cls(encoder_engine, warmup=False)
     decoder = decoder_cls(decoder_engine, warmup=False)
-    assert encoder.output_schema is ImageEncoderOutputSchema.SAM
+    features = encoder.output_schema.value
+    assert decoder.input_schema.value[: len(features)] == features
     assert decoder.output_schema is MaskDecoderOutputSchema.SAM
     assert (decoder.max_prompts, decoder.max_points) == (4, 8)
     with pytest.raises(ValueError, match="match no"):

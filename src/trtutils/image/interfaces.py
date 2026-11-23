@@ -818,8 +818,8 @@ class ImageEncoderInterface(ABC):
         image: np.ndarray | Buffer,
         *,
         verbose: bool | None = None,
-    ) -> tuple[Buffer, tuple[float, float], tuple[float, float]]:
-        """Encode one image, leaving its embeddings on the device."""
+    ) -> tuple[list[Buffer], tuple[float, float], tuple[float, float]]:
+        """Encode one image, leaving its outputs (the embeddings first) on the device."""
 
 
 class HandInteractionDetectorInterface(ABC):

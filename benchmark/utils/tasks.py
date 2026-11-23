@@ -104,6 +104,10 @@ def build_task_models() -> list[TaskModel]:
     sam = {"encoder": models.SAMEncoder, "decoder": models.SAMDecoder}
     for name in ("sam_vit_b", "sam_vit_l"):
         specs.append(TaskModel("promptable", name, models.SAM, parts=sam, inputs=bus))
+    sam = {"encoder": models.SAM2Encoder, "decoder": models.SAM2Decoder}
+    for size in ("tiny", "small", "base_plus", "large"):
+        name = f"sam2_1_hiera_{size}"
+        specs.append(TaskModel("promptable", name, models.SAM2, parts=sam, inputs=bus))
     return specs
 
 

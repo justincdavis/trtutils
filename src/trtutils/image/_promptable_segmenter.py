@@ -43,6 +43,10 @@ if TYPE_CHECKING:
     from ._image_model import _PostFn
     from .types import PromptMask
 
+# whether prompt sets with a box get the padding point too: SAM's predictor adds it only
+# without a box, SAM2ImagePredictor always does (box masks lose up to 0.1 IoU without it)
+_PAD_BOXES = {MaskDecoderInputSchema.SAM: False, MaskDecoderInputSchema.SAM2: True}
+
 
 class ImageEncoder(ImageModel, ImageEncoderInterface):
     """Implementation of image encoders, the first stage of a promptable segmenter."""
@@ -211,7 +215,8 @@ class ImageEncoder(ImageModel, ImageEncoderInterface):
         Returns
         -------
         list[list[np.ndarray]]
-            The (1, C, H, W) embeddings per image.
+            Per image, its (1, ...) outputs in the order of :attr:`output_schema`, the
+            (1, C, H, W) embeddings first.
 
         """
         if FLAGS.NVTX_ENABLED:
@@ -544,12 +549,12 @@ class ImageEncoder(ImageModel, ImageEncoderInterface):
         image: np.ndarray | Buffer,
         *,
         verbose: bool | None = None,
-    ) -> tuple[Buffer, tuple[float, float], tuple[float, float]]:
+    ) -> tuple[list[Buffer], tuple[float, float], tuple[float, float]]:
         """
-        Preprocess one image and run the engine, leaving the embeddings on the device.
+        Preprocess one image and run the engine, leaving its outputs on the device.
 
         The engine work is only enqueued on the stream of :attr:`engine`: synchronize it
-        (or keep reading on that stream) before using the embeddings.
+        (or keep reading on that stream) before using the outputs.
 
         Parameters
         ----------
@@ -560,9 +565,10 @@ class ImageEncoder(ImageModel, ImageEncoderInterface):
 
         Returns
         -------
-        tuple[Buffer, tuple[float, float], tuple[float, float]]
-            The device embeddings (1, C, H, W), a view of the engine output that the next
-            run overwrites, and the image's (x, y) ratios and padding, which map image
+        tuple[list[Buffer], tuple[float, float], tuple[float, float]]
+            The device outputs in the order of :attr:`output_schema`, the (1, C, H, W)
+            embeddings first, as views of the engine outputs that the next run
+            overwrites; and the image's (x, y) ratios and padding, which map image
             pixels to the model input as ``p * ratio + padding``.
 
         """
@@ -574,14 +580,14 @@ class ImageEncoder(ImageModel, ImageEncoderInterface):
 
         inputs, ratios, padding = self.prepare_inputs([image], verbose=verbose)
         t0 = time.perf_counter()
-        (embeddings,) = self._engine.raw_exec(inputs, graph=True)
+        outputs = self._order_outputs(self._engine.raw_exec(inputs, graph=True))
         self._infer_profile = (t0, time.perf_counter())
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # encode
 
         # images that are not preprocessed always come back with their ratios and padding
-        return embeddings, cast("list", ratios)[0], cast("list", padding)[0]
+        return outputs, cast("list", ratios)[0], cast("list", padding)[0]
 
 
 class MaskDecoder:
@@ -696,7 +702,8 @@ class MaskDecoder:
             self._engine, MaskDecoderOutputSchema, output_schema
         )
         spec = dict(zip(self._engine.input_names, self._engine.input_spec))
-        _, coords_name, _, mask_name, has_mask_name = self._input_schema.value
+        # the image encoder outputs come first, the prompt inputs last
+        coords_name, _, mask_name, has_mask_name = self._input_schema.value[-4:]
         # the profile's largest (prompt sets, points per set)
         self._max_prompts: int = spec[coords_name][0][0]
         self._max_points: int = spec[coords_name][0][1]
@@ -759,7 +766,7 @@ class MaskDecoder:
 
     def infer(
         self: Self,
-        embeddings: Buffer,
+        features: Sequence[Buffer],
         point_coords: np.ndarray,
         point_labels: np.ndarray,
         *,
@@ -771,9 +778,11 @@ class MaskDecoder:
 
         Parameters
         ----------
-        embeddings : Buffer
-            The image embeddings (1, C, H, W), usually on the device. If they were
-            produced on another stream, that stream must be synchronized first.
+        features : Sequence[Buffer]
+            The image encoder outputs of one image, as :meth:`ImageEncoder.encode` returns
+            them: the (1, C, H, W) embeddings, then any other features of the input schema.
+            Usually on the device; if they were produced on another stream, that stream
+            must be synchronized first.
         point_coords : np.ndarray
             The (B, N, 2) float32 points in model input pixels.
         point_labels : np.ndarray
@@ -811,7 +820,7 @@ class MaskDecoder:
             LOG.debug(f"{self._tag}: infer {point_coords.shape}")
 
         inputs = (
-            embeddings,
+            *features,
             Buffer.wrap(np.ascontiguousarray(point_coords, np.float32)),
             Buffer.wrap(np.ascontiguousarray(point_labels, np.float32)),
             self._mask_input,
@@ -934,9 +943,9 @@ class PromptableSegmenter:
         self._decoder = decoder
         self._multimask = multimask
         self._mask_thres = mask_thres
-        # the embeddings of the current image, copied out of the encoder so a later
-        # encoder run cannot overwrite them and decoder CUDA graphs see a stable address
-        self._embeddings: Buffer | None = None
+        # the encoder outputs of the current image, copied out of the encoder so a later
+        # encoder run cannot overwrite them and decoder CUDA graphs see stable addresses
+        self._features: list[Buffer] | None = None
         self._image_shape: tuple[int, int] = (0, 0)
         self._ratios: tuple[float, float] = (1.0, 1.0)
         self._padding: tuple[float, float] = (0.0, 0.0)
@@ -971,11 +980,12 @@ class PromptableSegmenter:
         if verbose:
             LOG.debug(f"PromptableSegmenter: set_image {image.shape}")
 
-        embeddings, self._ratios, self._padding = self._encoder.encode(image, verbose=verbose)
+        features, self._ratios, self._padding = self._encoder.encode(image, verbose=verbose)
         stream = self._encoder.engine.stream
-        if self._embeddings is None:
-            self._embeddings = Buffer.device(embeddings.shape, embeddings.dtype)
-        self._embeddings.copy_from(embeddings, stream=stream)
+        if self._features is None:
+            self._features = [Buffer.device(f.shape, f.dtype) for f in features]
+        for buffer, feature in zip(self._features, features):
+            buffer.copy_from(feature, stream=stream)
         # the decoder may run on another stream
         stream_synchronize(stream)
         self._image_shape = (int(image.shape[0]), int(image.shape[1]))
@@ -1028,7 +1038,7 @@ class PromptableSegmenter:
             the decoder takes.
 
         """
-        if self._embeddings is None:
+        if self._features is None:
             err_msg = "PromptableSegmenter: call set_image before predict"
             raise RuntimeError(err_msg)
 
@@ -1038,7 +1048,13 @@ class PromptableSegmenter:
         multimask = multimask if multimask is not None else self._multimask
         mask_thres = mask_thres if mask_thres is not None else self._mask_thres
         coords, point_labels = encode_prompts(
-            points, labels, boxes, self._ratios, self._padding, verbose=verbose
+            points,
+            labels,
+            boxes,
+            self._ratios,
+            self._padding,
+            pad_boxes=_PAD_BOXES[self._decoder.input_schema],
+            verbose=verbose,
         )
         # every prompt set has the same number of points, so they batch in chunks of the
         # profile's max instead of being padded with extra points
@@ -1046,7 +1062,7 @@ class PromptableSegmenter:
         masks: list[PromptMask] = []
         for start in range(0, len(coords), step):
             outputs = self._decoder.infer(
-                self._embeddings,
+                self._features,
                 coords[start : start + step],
                 point_labels[start : start + step],
                 no_copy=True,

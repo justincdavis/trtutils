@@ -149,6 +149,23 @@ EXPORT_CASES = [
         },
         id="sam-vit-b-decoder",
     ),
+    pytest.param(
+        "sam2_1_hiera_tiny_encoder", {}, {"images": [1, 3, 1024, 1024]}, id="sam2-1-tiny-encoder"
+    ),
+    pytest.param(
+        "sam2_1_hiera_tiny_decoder",
+        {},
+        {
+            "image_embeddings": [1, 256, 64, 64],
+            "high_res_feats_0": [1, 32, 256, 256],
+            "high_res_feats_1": [1, 64, 128, 128],
+            "point_coords": [None, None, 2],
+            "point_labels": [None, None],
+            "mask_input": [1, 1, 256, 256],
+            "has_mask_input": [1],
+        },
+        id="sam2-1-tiny-decoder",
+    ),
 ]
 
 

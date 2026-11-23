@@ -52,6 +52,15 @@ Added
   ``sam_vit_b_decoder`` / ``sam_vit_l_encoder`` / ``sam_vit_l_decoder`` (Segment Anything,
   Apache-2.0), exported like MobileSAM: FP16 encoder and FP32 decoder by default, same prompts
   and decoder profile. ViT-H is not included
+* ``models.SAM2Encoder`` / ``SAM2Decoder`` / ``SAM2`` and the downloadable
+  ``sam2_1_hiera_{tiny,small,base_plus,large}_{encoder,decoder}`` (SAM 2.1 image mode,
+  Apache-2.0): a stretched (``"linear"``) 1024 input, FP16 encoder and FP32 decoder by default
+  (an FP32 encoder build runs in TF32 and loses accuracy), and ``SAM2ImagePredictor``'s
+  prompts and single-mask fallback. New schema members
+  ``ImageEncoderOutputSchema.SAM2`` / ``MaskDecoderInputSchema.SAM2`` (the embeddings plus two
+  high-resolution feature maps); ``ImageEncoder.encode`` returns every encoder output and
+  ``MaskDecoder.infer`` takes them as a list; ``encode_prompts(pad_boxes=)`` adds the padding
+  point to box prompts too, which SAM 2 decoders expect
 * ``Model._input_tensors`` kinds may be a tuple of trailing dims, ``(batch, *dims)``
 * Image models accept ``Buffer`` inputs (device, mapped or host), alone or mixed with arrays.
   ``Buffer.wrap`` views CuPy and PyTorch tensors without copying
