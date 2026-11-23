@@ -40,6 +40,7 @@ ROUTING_CASES = [
     pytest.param("hands23_x101", "hands23", id="hands23"),
     pytest.param("ppocrv4_det", "ppocr", id="ppocr_det"),
     pytest.param("ppocrv4_rec", "ppocr", id="ppocr_rec"),
+    pytest.param("realesrgan_x4plus", "realesrgan", id="realesrgan"),
     pytest.param("yolov8n-seg", "ultralytics", id="ultralytics-yolov8-seg"),
     pytest.param("yolov8n-cls", "ultralytics", id="ultralytics-yolov8-cls"),
     pytest.param("yolov8n-pose", "ultralytics", id="ultralytics-yolov8-pose"),

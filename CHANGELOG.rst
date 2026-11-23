@@ -87,6 +87,16 @@ Added
 * ``models.DeiT`` / ``models.DeiT3`` and a timm exporter for DeiT and DeiT III
 * ``models.DepthAnythingV1`` / ``V3`` aliases (``DepthAnythingV2`` also present)
 * ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``
+* ``image.ImageRestorer``: image restoration / super-resolution task (``get_restored_images``,
+  ``image.types.RestoredImage``, ``ImageRestorerOutputSchema``, ``ImageRestorerInterface``,
+  ``postprocessors.postprocess_restoration``). Returns ``(scale * height, scale * width, 3)``
+  uint8 BGR images; ``scale`` is read from the engine. Images are never rescaled: a smaller
+  image is padded at the bottom and right by reflection and its result cropped back, a larger
+  one raises ``ValueError``. The default ``postprocessor="cuda"`` converts to uint8 on the GPU
+  and copies back a quarter of the float32 output (``"cpu"`` gives the same images)
+* ``models.RealESRGAN`` and the ``realesrgan_x4plus``, ``realesrgan_x2plus`` and
+  ``realesrgan_general_x4v3`` downloads (BSD-3-Clause), at any ``(height, width)``
+  (default 480x640); the exporter checks the weights' sha256
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)

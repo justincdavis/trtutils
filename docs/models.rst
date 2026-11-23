@@ -89,6 +89,28 @@ Depth Estimation
 
    - GitHub: `ByteDance-Seed/depth-anything-3 <https://github.com/ByteDance-Seed/depth-anything-3>`_
 
+Image Restoration / Super-Resolution
+------------------------------------
+
+1. **Real-ESRGAN** (``RealESRGAN``) - ``realesrgan_x4plus`` (RRDBNet, 23 blocks),
+   ``realesrgan_x2plus`` (RRDBNet, 2x), ``realesrgan_general_x4v3`` (SRVGGNetCompact, small
+   and fast)
+
+   - GitHub: `xinntao/Real-ESRGAN <https://github.com/xinntao/Real-ESRGAN>`_
+   - BSD-3-Clause licensed
+   - The engine input is static and images are never rescaled: download and build at the
+     size of your images (``--imgsz 480 640`` is the default). Smaller images are padded at
+     the bottom and right by reflection and the result cropped back; larger images raise
+     ``ValueError`` (tiled inference is not supported yet). ``realesrgan_x2plus`` needs an even
+     height and width.
+   - ``realesrgan_general_x4v3`` is upstream's ``-dn 1`` (no blend with the denoise weights).
+   - Results are ``(scale * height, scale * width, 3)`` uint8 BGR images, see
+     :class:`~trtutils.image.ImageRestorer`. Memory grows with the output: on an RTX 5080
+     (TensorRT 10.15, FP16) ``realesrgan_x4plus`` needs 1.7 GB of device memory at 480x640,
+     2.6 GB at 600x800, 5.0 GB at 720x1280 and 11.2 GB at 1080x1920 (about 1 s per image).
+     Builds above about 600x800 fail with the default 4 GB builder workspace; pass a larger
+     one, e.g. ``RealESRGAN.build(onnx, engine, workspace=14)``.
+
 Classification
 --------------
 
@@ -230,6 +252,12 @@ Depth Estimation Models
 - **Depth-Anything-V2**: ``depth_anything_v2_small``, ``depth_anything_v2_base``, ``depth_anything_v2_large``
 - **Depth-Anything-V3**: ``depth_anything_v3_mono_large``, ``depth_anything_v3_metric_large``
 
+Image Restoration Models
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **Real-ESRGAN**: ``realesrgan_x4plus``, ``realesrgan_x2plus``, ``realesrgan_general_x4v3``
+  (``--imgsz HEIGHT WIDTH``, default 480 640)
+
 Hand-Object Interaction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -314,6 +342,9 @@ for the weights: check the source before using them.
      - unknown (the code is MIT; the weights state no license)
    * - PP-OCR
      - Apache-2.0
+   * - Real-ESRGAN
+     - BSD-3-Clause (the repository's license; the weights are its GitHub release assets and
+       state no other)
 
 Example Usage
 ~~~~~~~~~~~~~

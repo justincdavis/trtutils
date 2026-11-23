@@ -70,6 +70,13 @@ class DepthEstimatorOutputSchema(Enum):
     GENERIC = ("*",)
 
 
+class ImageRestorerOutputSchema(Enum):
+    # Real-ESRGAN, restored RGB image in [0, 1] (B, 3, scale * H, scale * W)
+    REAL_ESRGAN = ("output",)
+    # any other engine, the first output is the restored image
+    GENERIC = ("*",)
+
+
 class TextDetectorOutputSchema(Enum):
     # PP-OCRv4 DB detection, probability map (B, 1, H, W)
     PADDLE = ("sigmoid_0.tmp_0",)

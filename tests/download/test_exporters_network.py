@@ -123,6 +123,9 @@ EXPORT_CASES = [
     pytest.param("hands23_x101", {}, {"input": [1, 3, 800, 800]}, id="hands23"),
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),
+    pytest.param(
+        "realesrgan_general_x4v3", {"imgsz": (64, 96)}, {"input": [1, 3, 64, 96]}, id="realesrgan"
+    ),
 ]
 
 

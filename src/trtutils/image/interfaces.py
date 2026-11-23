@@ -14,6 +14,8 @@ DetectorInterface
     Interface for image detectors.
 HandInteractionDetectorInterface
     Interface for hand-object interaction detectors.
+ImageRestorerInterface
+    Interface for image restoration / super-resolution models.
 OBBDetectorInterface
     Interface for oriented bounding box detectors.
 PoseEstimatorInterface
@@ -49,6 +51,7 @@ if TYPE_CHECKING:
         HandInteraction,
         OBBDetection,
         Pose,
+        RestoredImage,
         Segmentation,
         Text,
         TextBox,
@@ -558,6 +561,272 @@ class DepthEstimatorInterface(ABC):
         *,
         verbose: bool | None = None,
     ) -> np.ndarray | list[np.ndarray]:
+        """Perform end to end inference for a batch of images."""
+
+
+class ImageRestorerInterface(ABC):
+    """Interface for image restoration / super-resolution models."""
+
+    @property
+    @abstractmethod
+    def engine(self: Self) -> TRTEngine:
+        """Get the underlying TRTEngine."""
+
+    @property
+    @abstractmethod
+    def name(self: Self) -> str:
+        """Get the name of the engine."""
+
+    @property
+    @abstractmethod
+    def input_shape(self: Self) -> tuple[int, int]:
+        """Get the input shape of the model."""
+
+    @property
+    @abstractmethod
+    def dtype(self: Self) -> np.dtype:
+        """Get the dtype required by the model."""
+
+    @property
+    @abstractmethod
+    def scale(self: Self) -> int:
+        """Get the upscale factor of the model."""
+
+    # preprocess overloads
+    @overload
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray | Buffer,
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @overload
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        resize: str | None = ...,
+        method: str | None = ...,
+        *,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
+
+    @abstractmethod
+    def preprocess(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        resize: str | None = None,
+        method: str | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
+        """Preprocess the input images."""
+
+    @abstractmethod
+    def postprocess(
+        self: Self,
+        outputs: list[np.ndarray],
+        sizes: list[tuple[int, int]] | None = None,
+        *,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[list[np.ndarray]]:
+        """Postprocess the outputs."""
+
+    # __call__ overloads
+    @overload
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer,
+        sizes: tuple[int, int] | list[tuple[int, int]] | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        sizes: tuple[int, int] | list[tuple[int, int]] | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    @abstractmethod
+    def __call__(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        sizes: tuple[int, int] | list[tuple[int, int]] | None = None,
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Run the model on input."""
+
+    # run overloads - batch input (3 overloads)
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        sizes: tuple[int, int] | list[tuple[int, int]] | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        sizes: tuple[int, int] | list[tuple[int, int]] | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[list[np.ndarray]]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        sizes: tuple[int, int] | list[tuple[int, int]] | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]: ...
+
+    # run overloads - single image input (3 overloads)
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        sizes: tuple[int, int] | list[tuple[int, int]] | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[False],
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        sizes: tuple[int, int] | list[tuple[int, int]] | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: Literal[True] | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @overload
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer,
+        sizes: tuple[int, int] | list[tuple[int, int]] | None = ...,
+        *,
+        preprocessed: bool | None = ...,
+        postprocess: bool | None = ...,
+        no_copy: bool | None = ...,
+        verbose: bool | None = ...,
+    ) -> list[np.ndarray]: ...
+
+    @abstractmethod
+    def run(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        sizes: tuple[int, int] | list[tuple[int, int]] | None = None,
+        *,
+        preprocessed: bool | None = None,
+        postprocess: bool | None = None,
+        no_copy: bool | None = None,
+        verbose: bool | None = None,
+    ) -> list[np.ndarray] | list[list[np.ndarray]]:
+        """Run the model on input."""
+
+    # get_restored_images overloads
+    @overload
+    @abstractmethod
+    def get_restored_images(
+        self: Self,
+        outputs: list[np.ndarray],
+        *,
+        verbose: bool | None = ...,
+    ) -> RestoredImage: ...
+
+    @overload
+    @abstractmethod
+    def get_restored_images(
+        self: Self,
+        outputs: list[list[np.ndarray]],
+        *,
+        verbose: bool | None = ...,
+    ) -> list[RestoredImage]: ...
+
+    @abstractmethod
+    def get_restored_images(
+        self: Self,
+        outputs: list[np.ndarray] | list[list[np.ndarray]],
+        *,
+        verbose: bool | None = None,
+    ) -> RestoredImage | list[RestoredImage]:
+        """Get the restored image for each image."""
+
+    # end2end overloads
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer,
+        *,
+        verbose: bool | None = ...,
+    ) -> RestoredImage: ...
+
+    @overload
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: Sequence[np.ndarray | Buffer],
+        *,
+        verbose: bool | None = ...,
+    ) -> list[RestoredImage]: ...
+
+    @abstractmethod
+    def end2end(
+        self: Self,
+        images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
+        *,
+        verbose: bool | None = None,
+    ) -> RestoredImage | list[RestoredImage]:
         """Perform end to end inference for a batch of images."""
 
 

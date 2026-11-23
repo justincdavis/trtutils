@@ -47,6 +47,8 @@ class TaskModel:
     name: str
     cls: Any
     image: str = "street.jpg"
+    # (width, height) the image is resized to
+    frame: tuple[int, int] = FRAME_SIZE
     # wrapper class per ONNX for multi-engine models (OCR det + rec)
     parts: dict[str, Any] = field(default_factory=dict)
 
@@ -60,9 +62,14 @@ TASKS = {
     image.OBBDetector: "obb",
     image.DepthEstimator: "depth",
     image.HandInteractionDetector: "hand_interaction",
+    image.ImageRestorer: "restoration",
 }
-# per-task overrides of TaskModel fields
-TASK_OVERRIDES: dict[str, dict[str, Any]] = {"obb": {"image": "aerial.jpg"}}
+# per-task overrides of TaskModel fields; restorers never rescale, so their frame is the
+# default engine size (480x640)
+TASK_OVERRIDES: dict[str, dict[str, Any]] = {
+    "obb": {"image": "aerial.jpg"},
+    "restoration": {"frame": (640, 480)},
+}
 
 
 def _norm(name: str) -> str:
@@ -138,16 +145,16 @@ def _text_frame() -> np.ndarray:
     return image
 
 
-def load_frame(name: str) -> np.ndarray:
-    """Read a data/ image and resize it to a 1080p frame ("text" renders a page of text)."""
+def load_frame(name: str, size: tuple[int, int] = FRAME_SIZE) -> np.ndarray:
+    """Read a data/ image and resize it to ``size`` (1080p); "text" renders a page of text."""
     if name == "text":
         return _text_frame()
     image = cv2.imread(str(REPO_DIR / "data" / name))
     if image is None:
         err_msg = f"Could not read data/{name}"
         raise FileNotFoundError(err_msg)
-    if image.shape[1::-1] != FRAME_SIZE:
-        image = cv2.resize(image, FRAME_SIZE, interpolation=cv2.INTER_LINEAR)
+    if image.shape[1::-1] != size:
+        image = cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
     return image
 
 
@@ -310,7 +317,7 @@ def bench_task(
     postprocessor: str = "cpu",
 ) -> dict[str, Any] | None:
     """Time ``iterations`` end2end calls, both plain and split into stages (None if skipped)."""
-    image = load_frame(spec.image)
+    image = load_frame(spec.image, spec.frame)
     key = _key(spec.name, preprocessor, postprocessor)
     try:
         model = load_model(spec, preprocessor, postprocessor)
@@ -348,7 +355,7 @@ def bench_task(
         "model": spec.name,
         "preprocessor": preprocessor,
         "postprocessor": postprocessor,
-        "frame": list(FRAME_SIZE),
+        "frame": list(spec.frame),
         "end2end": compute_results(totals),
         "stages": {s: compute_results(v) for s, v in stages.items()},
     }
