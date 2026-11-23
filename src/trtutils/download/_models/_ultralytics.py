@@ -43,11 +43,11 @@ def export_ultralytics(
         no_cache=no_uv_cache,
         verbose=verbose,
     )
-    modelname = f"model={config['name']}"
-
     # Handle caching of ultralytics downloaded .pt weights
     weights_cache_dir = get_weights_cache_dir()
     pt_filename = config["name"] + ".pt"
+    # name the .pt: ultralytics only adds the suffix for its own asset list (no yolov9c-seg)
+    modelname = f"model={pt_filename}"
     cache_key = f"ultralytics_{pt_filename}"
     cached_pt_file = weights_cache_dir / cache_key
     target_pt_file = directory / pt_filename
@@ -56,7 +56,6 @@ def export_ultralytics(
     if cached_pt_file.exists() and not no_cache:
         LOG.info(f"Using cached ultralytics weights: {pt_filename}")
         shutil.copy(cached_pt_file, target_pt_file)
-        modelname = f"model={pt_filename}"
 
     cmd = [
         str(bin_path / "yolo"),

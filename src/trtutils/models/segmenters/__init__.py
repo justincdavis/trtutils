@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
-from ._yolo import YOLOv8Seg, YOLOv11Seg, YOLOv26Seg
+from ._yolo import YOLOv8Seg, YOLOv9Seg, YOLOv11Seg, YOLOv26Seg
 
 __all__ = [
     "YOLOv8Seg",
+    "YOLOv9Seg",
     "YOLOv11Seg",
     "YOLOv26Seg",
 ]

@@ -146,9 +146,10 @@ Classification
 Instance Segmentation
 ----------------------
 
-1. **Ultralytics YOLO** - YOLOv8, YOLOv11, and YOLOv26 segmentation heads
+1. **Ultralytics YOLO** - YOLOv8, YOLOv9, YOLOv11, and YOLOv26 segmentation heads
 
    - YOLOv8: ``yolov8n-seg``, ``yolov8s-seg``, ``yolov8m-seg``, ``yolov8l-seg``, ``yolov8x-seg``
+   - YOLOv9: ``yolov9c-seg``, ``yolov9e-seg`` (the only sizes Ultralytics publishes)
    - YOLOv11: ``yolov11n-seg``, ``yolov11s-seg``, ``yolov11m-seg``, ``yolov11l-seg``, ``yolov11x-seg``
    - YOLOv26: ``yolov26n-seg``, ``yolov26s-seg``, ``yolov26m-seg``, ``yolov26l-seg``, ``yolov26x-seg``
    - GitHub: `ultralytics/ultralytics <https://github.com/ultralytics/ultralytics>`_
@@ -322,6 +323,7 @@ Instance Segmentation Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - **YOLOv8-seg**: ``yolov8n-seg``, ``yolov8s-seg``, ``yolov8m-seg``, ``yolov8l-seg``, ``yolov8x-seg`` (via Ultralytics)
+- **YOLOv9-seg**: ``yolov9c-seg``, ``yolov9e-seg`` (via Ultralytics)
 - **YOLOv11-seg**: ``yolov11n-seg``, ``yolov11s-seg``, ``yolov11m-seg``, ``yolov11l-seg``, ``yolov11x-seg`` (via Ultralytics)
 - **YOLOv26-seg**: ``yolov26n-seg``, ``yolov26s-seg``, ``yolov26m-seg``, ``yolov26l-seg``, ``yolov26x-seg`` (via Ultralytics)
 
@@ -361,7 +363,7 @@ for the weights: check the source before using them.
    * - Family
      - License
    * - Ultralytics YOLO (YOLOv3, v5, v8, v11, v26 and their seg / cls / pose / obb heads;
-       the ``u`` variants of YOLOv9, v10, v12; ``rtdetrv1_lu`` / ``rtdetrv1_xu``)
+       YOLOv9-seg; the ``u`` variants of YOLOv9, v10, v12; ``rtdetrv1_lu`` / ``rtdetrv1_xu``)
      - AGPL-3.0 (Ultralytics also sells an enterprise license)
    * - YOLOv7, YOLOv9
      - GPL-3.0

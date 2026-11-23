@@ -33,6 +33,7 @@ EXPORT_CASES = [
     pytest.param("yolov3tu", {"imgsz": 320}, _YOLO, id="ultralytics-yolov3"),
     pytest.param("yolov26n", {"imgsz": 320}, _YOLO, id="ultralytics-yolov26"),
     pytest.param("yolov11n-seg", {"imgsz": 320}, _YOLO, id="ultralytics-seg"),
+    pytest.param("yolov9c-seg", {"imgsz": 320}, _YOLO, id="ultralytics-yolov9-seg"),
     pytest.param("yolov8n-pose", {"imgsz": 320}, _YOLO, id="ultralytics-pose"),
     pytest.param(
         "yolov26n-obb", {}, {"images": [1, 3, 1024, 1024]}, id="ultralytics-obb-default-imgsz"

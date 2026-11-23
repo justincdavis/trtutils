@@ -114,6 +114,8 @@ Classes
     Alias for the OCR class combining PPOCRDetector and PPOCRRecognizer.
 :class:`YOLOv8Seg`
     Alias for the Segmenter class with args preset for YOLOv8-Seg.
+:class:`YOLOv9Seg`
+    Alias for the Segmenter class with args preset for YOLOv9-Seg.
 :class:`YOLOv11Seg`
     Alias for the Segmenter class with args preset for YOLOv11-Seg.
 :class:`YOLOv26Seg`
@@ -204,7 +206,7 @@ from .hand_interaction import HOIDETR, Hands23
 from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
 from .pose_estimators import RTMO, YOLOv8Pose, YOLOv11Pose, YOLOv26Pose, YuNet
-from .segmenters import YOLOv8Seg, YOLOv11Seg, YOLOv26Seg
+from .segmenters import YOLOv8Seg, YOLOv9Seg, YOLOv11Seg, YOLOv26Seg
 from .semantic_segmenters import DeepLabV3
 
 __all__ = [
@@ -262,6 +264,7 @@ __all__ = [
     "YOLOv8Pose",
     "YOLOv8Seg",
     "YOLOv9",
+    "YOLOv9Seg",
     "YOLOv10",
     "YOLOv11",
     "YOLOv11Cls",

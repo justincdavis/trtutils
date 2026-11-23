@@ -161,7 +161,7 @@ describes each family.
 
 - **Detection**: YOLOX; YOLOv3, v5, v7, v8, v9, v10, v11, v12, v13, and v26; RT-DETR v1, v2, v3, and v4; D-FINE; DEIM; DEIMv2; RF-DETR
 - **Classification**: torchvision classifiers (AlexNet, ConvNeXt, DenseNet, EfficientNet and EfficientNetV2, GoogLeNet, Inception v3, MaxViT, MNASNet, MobileNet, RegNet, ResNet and ResNeXt, ShuffleNet, SqueezeNet, Swin and Swin V2, VGG, ViT, Wide ResNet); DeiT and DeiT III; YOLOv8, v11, and v26 classifiers
-- **Segmentation**: YOLOv8, v11, and v26 (`-seg`)
+- **Segmentation**: YOLOv8, v9, v11, and v26 (`-seg`)
 - **Semantic segmentation**: DeepLabV3 (torchvision, MobileNetV3-Large, ResNet50, ResNet101)
 - **Pose estimation**: YOLOv8, v11, and v26 (`-pose`); RTMO (s, m, l)
 - **Face detection** (boxes + 5 landmarks, through `PoseEstimator`): YuNet
