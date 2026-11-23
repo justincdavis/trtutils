@@ -167,6 +167,10 @@ Performance
 
 Fixed
 ^^^^^
+* ``TRTEngine(shape_contexts=N)`` and the OCR ``width_bucket`` option work on TensorRT 8.6
+  (Jetson). They failed with ``Assertion mOptimizationProfile >= 0 failed`` at the second
+  input shape, because contexts cannot share an optimization profile before TensorRT 10.
+  There one context now serves every shape
 * The CLI now errors on unrecognized arguments instead of silently ignoring them (only
   ``trtexec`` forwards unknown arguments). Fixed the ``--shape`` help text typo
 * ``RFDETR.build()`` FP16 engines detect again on TensorRT 8.6 (Jetson). The transformer

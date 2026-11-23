@@ -925,6 +925,8 @@ class TextRecognizer(ImageModel, TextRecognizerInterface):
             streams of pages with varied lines. Costs: each new width pays ~65 ms for its
             context on first use (warmup), the extra padding changes outputs slightly
             (a larger bucket changes them more), and a few MiB of GPU memory per width.
+            Before TensorRT 10 one context serves every width, see
+            :class:`~trtutils.TRTEngine`.
             By default None, which pads to the widest line with one context.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
