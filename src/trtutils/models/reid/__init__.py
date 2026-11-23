@@ -5,8 +5,10 @@
 
 from __future__ import annotations
 
+from ._fastreid import FastReID
 from ._osnet import OSNet
 
 __all__ = [
+    "FastReID",
     "OSNet",
 ]

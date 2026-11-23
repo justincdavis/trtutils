@@ -138,6 +138,15 @@ EXPORT_CASES = [
         {"input": [2, 3, 320, 160]},
         id="osnet-hw-b2",
     ),
+    pytest.param(
+        "fastreid_bot_r50_market1501",
+        {},
+        {"input": [_BATCH, 3, 256, 128]},
+        id="fastreid-default-dynamic",
+    ),
+    pytest.param(
+        "fastreid_sbs_s50_msmt17", {"batch": 2}, {"input": [2, 3, 384, 128]}, id="fastreid-sbs-b2"
+    ),
     pytest.param("hands23_x101", {}, {"input": [1, 3, 800, 800]}, id="hands23"),
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),

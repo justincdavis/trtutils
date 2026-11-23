@@ -124,6 +124,26 @@ detections of a frame, and a tracker matches them across frames by cosine simila
    - Fully convolutional: other ``(height, width)`` sizes can be downloaded
      (``--imgsz 320 160``)
 
+2. **FastReID** (``FastReID``) - BoT, AGW and SBS person re-ID baselines from FastReID,
+   2048-d embeddings (the feature after the BN neck, as FastReID evaluates), L2 normalized by
+   default
+
+   - ``fastreid_<method>_<backbone>_<dataset>``: BoT (``bot_r50``, ``bot_r50_ibn``), AGW
+     (``agw_r50``) and SBS (``sbs_r50``, ``sbs_r50_ibn``, ``sbs_s50``, ``sbs_r101_ibn``),
+     each trained on Market-1501 (``_market1501``) or MSMT17 (``_msmt17``)
+   - BoT and AGW take ``(height, width) = (256, 128)`` crops, SBS ``(384, 128)``; ``build``
+     reads the size from the ONNX
+   - GitHub: `JDAI-CV/fast-reid <https://github.com/JDAI-CV/fast-reid>`_ (exported with the
+     v0.1.1 code the model zoo weights were released with)
+   - FastReID normalizes 0-255 RGB inside the network; the export starts after that step and
+     the wrapper applies the same ImageNet mean / std on a 0-1 range
+   - Upstream resizes crops with bicubic interpolation (BoT-SORT uses bilinear, like
+     trtutils' ``linear``); embeddings of small, heavily upscaled crops depend on the filter
+   - Engines are built with a dynamic batch (1 to ``batch_size``), as for OSNet
+   - FP16 builds need no precision pins: unlike OSNet, 48 fixed-batch FP16 builds without a
+     hook (12 per process; ResNet, ResNet-IBN and ResNeSt backbones) all matched onnxruntime on
+     TensorRT 10.15
+
 Classification
 --------------
 
@@ -278,6 +298,12 @@ Person Re-Identification Models
   ``osnet_x1_0_msmt17``, ``osnet_x0_25_market1501``, ``osnet_x0_5_market1501``,
   ``osnet_x0_75_market1501``, ``osnet_x1_0_market1501`` (torchreid model zoo; default size
   256x128 as ``(height, width)``; batch-dynamic by default)
+- **FastReID**: ``fastreid_bot_r50_market1501``, ``fastreid_bot_r50_ibn_market1501``,
+  ``fastreid_agw_r50_market1501``, ``fastreid_sbs_r50_market1501``,
+  ``fastreid_sbs_r50_ibn_market1501``, ``fastreid_sbs_s50_market1501``,
+  ``fastreid_sbs_r101_ibn_market1501``, and the same seven with ``_msmt17`` (FastReID v0.1.1
+  model zoo; default size 256x128 for BoT / AGW and 384x128 for SBS as ``(height, width)``;
+  batch-dynamic by default)
 
 Hand-Object Interaction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -363,6 +389,9 @@ for the weights: check the source before using them.
    * - OSNet (torchreid model zoo)
      - MIT (torchreid's license; the weights have no separate statement). They were trained
        on the MSMT17 and Market-1501 research datasets, whose own terms apply
+   * - FastReID (v0.1.1 model zoo)
+     - Apache-2.0 (FastReID's license; the release states nothing separate for the weights).
+       They were trained on the Market-1501 and MSMT17 research datasets, whose own terms apply
    * - HOI-DETR
      - MIT
    * - Hands23

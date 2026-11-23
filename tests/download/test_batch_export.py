@@ -14,6 +14,7 @@ from tests.download.conftest import ROUTING_CASES, patch_exporter
 from trtutils.download import download, download_model, load_model_configs
 from trtutils.download._models import (
     EXPORTERS,
+    _fastreid,
     _osnet,
     _timm,
     _torchvision,
@@ -145,7 +146,7 @@ def run_cmd_calls(monkeypatch, tmp_path):
         cwd.mkdir(parents=True, exist_ok=True)
         (cwd / "out.onnx").touch()
 
-    for module in (_osnet, _timm, _torchvision, _ultralytics, _yolo):
+    for module in (_fastreid, _osnet, _timm, _torchvision, _ultralytics, _yolo):
         monkeypatch.setattr(module, "run_cmd", _run_cmd)
         for name in ("git_clone", "run_uv_pip_install", "run_download"):
             monkeypatch.setattr(module, name, lambda *_, **__: None, raising=False)
@@ -259,5 +260,29 @@ def test_osnet_export_script(tmp_path, imgsz, batch, dynamic, shape) -> None:
     content = (tmp_path / "_export_osnet.py").read_text()
     assert f"torch.randn({shape})" in content
     assert '"osnet_x0_25"' in content
+    axes = '{"input": {0: "batch_size"}, "embedding": {0: "batch_size"}}' if dynamic else "None"
+    assert f"dynamic_axes={axes}," in content
+
+
+@pytest.mark.parametrize(
+    ("model", "imgsz", "batch", "dynamic", "shape"),
+    [
+        pytest.param("fastreid_bot_r50_market1501", None, 1, True, "1, 3, 256, 128", id="bot"),
+        pytest.param("fastreid_sbs_s50_msmt17", None, 1, True, "1, 3, 384, 128", id="sbs"),
+        pytest.param(
+            "fastreid_sbs_r50_market1501", (256, 128), 4, False, "4, 3, 256, 128", id="hw-b4"
+        ),
+    ],
+)
+@pytest.mark.usefixtures("run_cmd_calls")
+def test_fastreid_export_script(tmp_path, model, imgsz, batch, dynamic, shape) -> None:
+    """The FastReID exporter traces the config's (height, width) unless given one."""
+    _export(_fastreid.export_fastreid, model, tmp_path, imgsz=imgsz, batch=batch, dynamic=dynamic)
+    content = (tmp_path / "_export_fastreid.py").read_text()
+    config = next(c[model] for c in load_model_configs().values() if model in c)
+    assert f"torch.randn({shape})" in content
+    assert f'cfg.merge_from_file("fast-reid/configs/{config["config"]}")' in content
+    # _export renames the weights "out"
+    assert '"out.pth"' in content
     axes = '{"input": {0: "batch_size"}, "embedding": {0: "batch_size"}}' if dynamic else "None"
     assert f"dynamic_axes={axes}," in content

@@ -18,6 +18,7 @@ from trtutils.models import (
     DEIMv2,
     DeiT,
     DeiT3,
+    FastReID,
     OSNet,
     PPOCRDetector,
     PPOCRRecognizer,
@@ -48,7 +49,7 @@ def test_class_attributes_and_shapes(model_cls) -> None:
     assert height > 0
     assert width > 0
     # re-ID embeds a varying number of detections per frame
-    assert model_cls._dynamic_batch is (model_cls is OSNet)
+    assert model_cls._dynamic_batch is (model_cls in (OSNet, FastReID))
     assert len(model_cls._input_tensors) > 0
 
     shapes = model_cls._make_shapes(4, model_cls._default_imgsz)
@@ -150,6 +151,8 @@ def test_validate_imgsz_rejects(model_cls, imgsz, match) -> None:
         pytest.param(DeiT, "deit_tiny", (224, 112), (224, 112), id="deit-hw-patch"),
         pytest.param(OSNet, "osnet_x0_25_msmt17", None, (256, 128), id="osnet-default-hw"),
         pytest.param(OSNet, "osnet_x1_0_market1501", (320, 160), (320, 160), id="osnet-custom-hw"),
+        pytest.param(FastReID, "fastreid_bot_r50_msmt17", None, (256, 128), id="fastreid-bot"),
+        pytest.param(FastReID, "fastreid_sbs_s50_msmt17", None, (384, 128), id="fastreid-sbs"),
     ],
 )
 def test_download_resolves_imgsz(tmp_path, model_cls, model, imgsz, expected) -> None:
@@ -432,6 +435,16 @@ def test_osnet_build_real_onnx_dynamic_height_width(tmp_path) -> None:
     shape = (32, 3, 256, 128)
     expected = ((1, *shape[1:]), shape, shape)
     assert _built_shapes(OSNet, path, tmp_path, batch_size=32) == {"input": expected}
+
+
+def test_fastreid_build_real_onnx_reads_sbs_height_width(tmp_path) -> None:
+    """FastReID builds an SBS export at its (384, 128) with a 1..batch_size profile."""
+    path = DATA_DIR / "fastreid" / "fastreid_sbs_r50_market1501_384x128.onnx"
+    if not path.exists():
+        pytest.skip(f"{path} missing")
+    shape = (8, 3, 384, 128)
+    expected = ((1, *shape[1:]), shape, shape)
+    assert _built_shapes(FastReID, path, tmp_path, batch_size=8) == {"input": expected}
 
 
 @pytest.mark.parametrize(

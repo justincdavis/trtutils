@@ -39,6 +39,7 @@ _EXPECTED_FAMILIES = [
     "depth_anything_v3",
     "dinov3",
     "osnet",
+    "fastreid",
     "hoi_detr",
     "hands23",
     "ppocr_det",
@@ -104,6 +105,20 @@ _EXPECTED_MODELS = [
     "osnet_x0_5_market1501",
     "osnet_x0_75_market1501",
     "osnet_x1_0_market1501",
+    "fastreid_bot_r50_market1501",
+    "fastreid_bot_r50_ibn_market1501",
+    "fastreid_agw_r50_market1501",
+    "fastreid_sbs_r50_market1501",
+    "fastreid_sbs_r50_ibn_market1501",
+    "fastreid_sbs_s50_market1501",
+    "fastreid_sbs_r101_ibn_market1501",
+    "fastreid_bot_r50_msmt17",
+    "fastreid_bot_r50_ibn_msmt17",
+    "fastreid_agw_r50_msmt17",
+    "fastreid_sbs_r50_msmt17",
+    "fastreid_sbs_r50_ibn_msmt17",
+    "fastreid_sbs_s50_msmt17",
+    "fastreid_sbs_r101_ibn_msmt17",
     "hoi_detr_vitl",
     "hands23_x101",
     "ppocrv4_det",
@@ -201,6 +216,28 @@ def test_osnet_configs(model_configs) -> None:
         assert (config["arch"], config["name"]) == (arch, model)
         assert dataset in ("msmt17", "market1501"), model
         assert config["id"]
+
+
+def test_fastreid_configs(model_configs) -> None:
+    """FastReID configs pin a v0.1.1 release asset, its upstream yml, and the yml's test size."""
+    datasets = {"market1501": ("market", "Market1501"), "msmt17": ("msmt", "MSMT17")}
+    methods = {"bot": ("bot", "bagtricks"), "agw": ("agw", "AGW"), "sbs": ("sbs", "sbs")}
+    for model, config in model_configs["fastreid"].items():
+        assert config["exporter"] == "fastreid"
+        assert config["license"] == "Apache-2.0"
+        _, method, *backbone, dataset = model.split("_")
+        # no DukeMTMC weights: that dataset was withdrawn
+        prefix, config_dir = datasets[dataset]
+        name_prefix, yml_prefix = methods[method]
+        upstream = backbone[0].upper() + ("-ibn" if backbone[1:] == ["ibn"] else "")
+        assert config["name"] == f"{prefix}_{name_prefix}_{upstream}"
+        assert config["url"] == (
+            f"https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/{config['name']}.pth"
+        )
+        assert config["config"] == f"{config_dir}/{yml_prefix}_{upstream}.yml"
+        # the sbs ymls test at 384x128, bot and agw at 256x128
+        expected = (384, 128) if method == "sbs" else (256, 128)
+        assert normalize_imgsz(config["imgsz"]) == expected
 
 
 def test_dfine_obj2coco_configs_in_objects365_dir(model_configs) -> None:
