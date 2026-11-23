@@ -36,6 +36,7 @@ def export_rfdetr(
         "rfdetr_n": 384,
         "rfdetr_s": 512,
         "rfdetr_m": 576,
+        "rfdetr_l": 704,
     }
     required_imgsz = rfdetr_imgszs.get(model)
     if required_imgsz is None:

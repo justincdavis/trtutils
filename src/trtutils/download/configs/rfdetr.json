@@ -11,5 +11,9 @@
   "rfdetr_m": {
     "class": "RFDETRMedium",
     "weights": "rf-detr-medium.pth"
+  },
+  "rfdetr_l": {
+    "class": "RFDETRLarge",
+    "weights": "rf-detr-large-2026.pth"
   }
 }

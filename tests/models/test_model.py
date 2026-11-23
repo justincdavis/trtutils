@@ -104,6 +104,7 @@ def test_validate_imgsz_rejects(model_cls, imgsz, match) -> None:
         pytest.param(RFDETR, "rfdetr_n", None, 384, id="rfdetr-nano"),
         pytest.param(RFDETR, "rfdetr_s", None, 512, id="rfdetr-small"),
         pytest.param(RFDETR, "rfdetr_m", None, 576, id="rfdetr-medium"),
+        pytest.param(RFDETR, "rfdetr_l", None, 704, id="rfdetr-large"),
         pytest.param(DEIMv2, "deimv2_atto", None, 320, id="variant-atto"),
         pytest.param(DEIMv2, "deimv2_femto", None, 416, id="variant-femto"),
         pytest.param(DEIMv2, "deimv2_s", None, 640, id="variant-fallback"),
@@ -257,6 +258,7 @@ def test_build_explicit_imgsz_contradicting_onnx_raises(tmp_path) -> None:
     [
         pytest.param(RFDETR, "rfdetr/rfdetr_n_384.onnx", 384, id="rfdetr_n"),
         pytest.param(RFDETR, "rfdetr/rfdetr_s_512.onnx", 512, id="rfdetr_s"),
+        pytest.param(RFDETR, "rfdetr/rfdetr_l_704.onnx", 704, id="rfdetr_l"),
         pytest.param(DEIMv2, "deimv2/deimv2_atto_320.onnx", 320, id="deimv2_atto"),
         pytest.param(DEIMv2, "deimv2/deimv2_femto_416.onnx", 416, id="deimv2_femto"),
     ],

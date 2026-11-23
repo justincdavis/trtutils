@@ -19,10 +19,10 @@ RF-DETR models can be automatically downloaded and converted to ONNX format usin
 .. code-block:: bash
 
     # Download and convert RF-DETR models to ONNX
-    # Available models: rfdetr_n, rfdetr_s, rfdetr_m
+    # Available models: rfdetr_n, rfdetr_s, rfdetr_m, rfdetr_l
     $ python3 -m trtutils download --model rfdetr_n --output rfdetr_n.onnx --imgsz 384 --opset 17
 
-    # For other RF-DETR variants (rfdetr_m uses --imgsz 576); each variant
+    # For other RF-DETR variants (rfdetr_m uses --imgsz 576, rfdetr_l 704); each variant
     # only exports at its native size
     $ python3 -m trtutils download --model rfdetr_s --output rfdetr_s.onnx --imgsz 512 --opset 17
 

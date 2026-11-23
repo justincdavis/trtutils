@@ -102,6 +102,9 @@ Added
   center crops included, and the CPU the rest. ``DLAPreprocessor.resizes_on_cpu`` tells which
   path a size takes. The CPU's center crop is bilinear and the DLA's antialiased, so ``True``
   changes a DLA center crop's pixels slightly
+* RF-DETR Large (``rfdetr_l``, 704, Apache-2.0) in ``models.RFDETR`` and ``trtutils download``.
+  XL / 2XL are left out: their weights are under Roboflow's Platform Model License 1.0, which
+  requires an active Roboflow platform plan
 
 Changed
 ^^^^^^^
