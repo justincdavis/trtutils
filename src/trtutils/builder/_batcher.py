@@ -144,19 +144,29 @@ def _load_image(
     input_scale: tuple[float, float],
     order: str,
     dtype: np.dtype | type[np.generic],
+    mean: tuple[float, float, float] | None = None,
+    std: tuple[float, float, float] | None = None,
+    bgr: bool = False,
 ) -> np.ndarray:
     img = cv2.imread(str(image_path.resolve()))
     if img is None:
         err_msg = f"Failed to load image from {image_path}"
         raise FileNotFoundError(err_msg)
+    # the image models feed RGB, so calibration must too
+    if not bgr:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     # resize and rescale the image
     if resize_method == "letterbox":
         resized_img, _, _ = letterbox(img, (width, height))
     else:
         resized_img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LINEAR)
-    low, high = input_scale
-    rescaled_img = resized_img.astype(float) / 255.0 * (high - low) + low
+    if mean is not None and std is not None:
+        # as the cpu preprocessor: mean/std replace input_scale
+        rescaled_img = (resized_img.astype(float) / 255.0 - np.array(mean)) / np.array(std)
+    else:
+        low, high = input_scale
+        rescaled_img = resized_img.astype(float) / 255.0 * (high - low) + low
 
     # run the transpose operations and make contiguous
     new_img: np.ndarray = rescaled_img[np.newaxis, :]
@@ -179,11 +189,18 @@ class ImageBatcher(AbstractBatcher):
         max_images: int | None = None,
         resize_method: str = "letterbox",
         input_scale: tuple[float, float] = (0.0, 1.0),
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
         *,
+        bgr: bool = False,
         verbose: bool | None = None,
     ) -> None:
         """
         Create batches of images for TensorRT calibration.
+
+        Images are preprocessed as the image models preprocess them at inference:
+        converted to RGB, resized, then scaled to ``input_scale`` (or normalized
+        with ``mean`` and ``std``). Use the same values as the model.
 
         Parameters
         ----------
@@ -209,6 +226,17 @@ class ImageBatcher(AbstractBatcher):
             The range with which the image should have values in
             Examples are: (0.0, 255.0), (0.0, 1.0), (-1.0, 1.0)
             The default is (0.0, 1.0)
+        mean : tuple[float, float, float], optional
+            The per-channel (RGB) mean to subtract from the image scaled to [0, 1].
+            Given with ``std``, it replaces ``input_scale``, as in the image models.
+            Default is None.
+        std : tuple[float, float, float], optional
+            The per-channel (RGB) standard deviation to divide by, with ``mean``.
+            Default is None.
+        bgr : bool, optional
+            Keep OpenCV's BGR channel order instead of converting to RGB, for engines
+            that swap the channels themselves, such as ``Model.build(embed_sst=True)``.
+            Default is False.
         verbose : bool, optional
             Whether to print verbose output, by default None
 
@@ -224,9 +252,14 @@ class ImageBatcher(AbstractBatcher):
             If no images could be found in the input_dir
         ValueError
             If no valid batches could be formed
+        ValueError
+            If only one of mean and std is given
 
         """
         self._verbose = verbose
+        if (mean is None) != (std is None):
+            err_msg = "mean and std must be given together"
+            raise ValueError(err_msg)
 
         # verify resize method and input scale
         valid_resize_methods = ["letterbox", "linear"]
@@ -329,6 +362,9 @@ class ImageBatcher(AbstractBatcher):
             input_scale=self._input_scale,
             order=self._order,
             dtype=self._dtype,
+            mean=mean,
+            std=std,
+            bgr=bgr,
         )
         # the worker must not hold self, or an unclosed batcher is never collected
         self._thread: Thread = Thread(

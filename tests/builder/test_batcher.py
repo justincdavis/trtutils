@@ -17,6 +17,7 @@ import pytest
 
 from tests.builder.conftest import ListBatcher, drain_batches
 from trtutils.builder._batcher import ImageBatcher, SyntheticBatcher
+from trtutils.image.preprocessors._cpu import preprocess
 
 
 @pytest.mark.cpu
@@ -158,6 +159,60 @@ class TestImageBatcher:
         assert batch.shape == (1, 3, 8, 8)
         assert batch[0, :, :, :4] == pytest.approx(low)
         assert batch[0, :, :, 4:] == pytest.approx(high)
+
+    @pytest.mark.parametrize(
+        ("bgr", "first"),
+        [pytest.param(False, 0.0, id="rgb"), pytest.param(True, 1.0, id="bgr")],
+    )
+    def test_channel_order(self, tmp_path, close_batcher, bgr, first) -> None:
+        """Images are RGB like the image models' input; bgr=True keeps OpenCV's order."""
+        img = np.zeros((8, 8, 3), dtype=np.uint8)
+        img[..., 0] = 255  # blue in OpenCV's BGR
+        cv2.imwrite(str(tmp_path / "0.png"), img)
+        batcher = ImageBatcher(tmp_path, shape=(8, 8, 3), dtype=np.float32, batch_size=1, bgr=bgr)
+        close_batcher.append(batcher)
+        batch = batcher.get_next_batch()
+        assert batch[0, 0] == pytest.approx(first)
+        assert batch[0, 2] == pytest.approx(1.0 - first)
+
+    @pytest.mark.parametrize(
+        ("mean", "std"),
+        [
+            pytest.param(None, None, id="input-range"),
+            pytest.param((0.485, 0.456, 0.406), (0.229, 0.224, 0.225), id="mean-std"),
+        ],
+    )
+    @pytest.mark.parametrize("resize_method", ["letterbox", "linear"])
+    def test_matches_cpu_preprocessing(
+        self, tmp_path, close_batcher, mean, std, resize_method
+    ) -> None:
+        """A calibration batch equals the CPU preprocessor's output for the same image."""
+        img = np.random.default_rng(0).integers(0, 256, (48, 64, 3), dtype=np.uint8)
+        cv2.imwrite(str(tmp_path / "0.png"), img)
+        batcher = ImageBatcher(
+            tmp_path,
+            shape=(32, 32, 3),
+            dtype=np.float32,
+            batch_size=1,
+            resize_method=resize_method,
+            input_scale=(0.0, 255.0),
+            mean=mean,
+            std=std,
+        )
+        close_batcher.append(batcher)
+        expected, _, _ = preprocess(
+            [img], (32, 32), np.float32, (0.0, 255.0), resize_method, mean, std
+        )
+        assert batcher.get_next_batch() == pytest.approx(expected, abs=1e-4)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [pytest.param({"mean": (0.5,) * 3}, id="mean"), pytest.param({"std": (0.5,) * 3}, id="std")],
+    )
+    def test_mean_and_std_together(self, test_image_dir, kwargs) -> None:
+        """ValueError when only one of mean and std is given."""
+        with pytest.raises(ValueError, match="mean and std"):
+            ImageBatcher(test_image_dir, shape=(8, 8, 3), dtype=np.float32, **kwargs)
 
     def test_init_invalid_order(self, test_image_dir) -> None:
         """ValueError for invalid order."""

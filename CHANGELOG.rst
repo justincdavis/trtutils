@@ -167,6 +167,10 @@ Performance
 
 Fixed
 ^^^^^
+* ``ImageBatcher`` (and the CLI's INT8 calibration) feeds RGB images, as the image models do at
+  inference. It fed OpenCV's BGR, so INT8 engines were calibrated on swapped channels. New
+  ``mean`` / ``std`` normalize like the image models; ``bgr=True`` (``--bgr``) keeps BGR for
+  engines that swap channels themselves, such as ``Model.build(embed_sst=True)``
 * The CLI now errors on unrecognized arguments instead of silently ignoring them (only
   ``trtexec`` forwards unknown arguments). Fixed the ``--shape`` help text typo
 * ``RFDETR.build()`` FP16 engines detect again on TensorRT 8.6 (Jetson). The transformer
