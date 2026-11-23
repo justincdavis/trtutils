@@ -10,6 +10,7 @@ import onnxruntime as ort
 import pytest
 
 from tests.conftest import DATA_DIR, PREPROCESSORS
+from trtutils._flags import FLAGS
 from trtutils.image._schema import FeatureExtractorOutputSchema
 from trtutils.models import DINOv3
 from trtutils.models._hooks import vit_attention_fp32_build_hook
@@ -102,6 +103,7 @@ def test_feature_extractor_matches_onnxruntime(
     assert _cosine(model.end2end(image), reference) > 0.999
 
 
+@pytest.mark.skipif(FLAGS.TRT_VERSION < (10, 0), reason="the hook pins nothing before TensorRT 10")
 @pytest.mark.parametrize(("model_cls", "onnx_path", "width", "depth"), FEATURE_EXTRACTORS)
 def test_attention_hook_matches(model_cls, onnx_path, width, depth) -> None:
     """The fp16 build hook pins the QK matmul and softmax of every block, so it is not a no-op."""
