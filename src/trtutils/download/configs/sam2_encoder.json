@@ -1,0 +1,23 @@
+{
+    "_defaults": {"exporter": "sam2", "license": "Apache-2.0", "part": "encoder"},
+    "sam2_1_hiera_tiny_encoder": {
+        "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
+        "variant": "sam2.1_hiera_t",
+        "name": "sam2_1_hiera_tiny_encoder"
+    },
+    "sam2_1_hiera_small_encoder": {
+        "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt",
+        "variant": "sam2.1_hiera_s",
+        "name": "sam2_1_hiera_small_encoder"
+    },
+    "sam2_1_hiera_base_plus_encoder": {
+        "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_base_plus.pt",
+        "variant": "sam2.1_hiera_b+",
+        "name": "sam2_1_hiera_base_plus_encoder"
+    },
+    "sam2_1_hiera_large_encoder": {
+        "url": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
+        "variant": "sam2.1_hiera_l",
+        "name": "sam2_1_hiera_large_encoder"
+    }
+}

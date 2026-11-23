@@ -87,15 +87,29 @@ class TextRecognizerOutputSchema(Enum):
 class ImageEncoderOutputSchema(Enum):
     # SAM-v1 style image encoders (MobileSAM), embeddings (B, 256, 64, 64)
     SAM = ("image_embeddings",)
+    # SAM 2 image encoders, embeddings (B, 256, 64, 64) and the decoder's high-res features
+    # (B, 32, 256, 256) and (B, 64, 128, 128)
+    SAM2 = ("image_embeddings", "high_res_feats_0", "high_res_feats_1")
 
 
 class MaskDecoderInputSchema(Enum):
     # SAM-v1 style prompt + mask decoders (MobileSAM), B prompt sets of N points each
     SAM = ("image_embeddings", "point_coords", "point_labels", "mask_input", "has_mask_input")
+    # SAM 2 decoders: the SAM2 image encoder outputs, then the same prompt inputs
+    SAM2 = (
+        "image_embeddings",
+        "high_res_feats_0",
+        "high_res_feats_1",
+        "point_coords",
+        "point_labels",
+        "mask_input",
+        "has_mask_input",
+    )
 
 
 class MaskDecoderOutputSchema(Enum):
     # predicted IoU (B, 4) and low-res mask logits (B, 4, 256, 256), mask 0 is the single mask
+    # (SAM 2 exports fold its dynamic fallback to the best multimask output into mask 0)
     SAM = ("iou_predictions", "low_res_masks")
 
 

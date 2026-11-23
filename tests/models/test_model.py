@@ -22,6 +22,7 @@ from trtutils.models import (
     PPOCRDetector,
     PPOCRRecognizer,
     RTDETRv1,
+    SAM2Decoder,
     SAMDecoder,
     YOLOv8,
     YOLOv10,
@@ -449,6 +450,7 @@ def test_download_simplify_defaults_to_true(tmp_path) -> None:
 SAM_DECODERS = [
     pytest.param(MobileSAMDecoder, id="mobile-sam"),
     pytest.param(SAMDecoder, id="sam"),
+    pytest.param(SAM2Decoder, id="sam2"),
 ]
 
 

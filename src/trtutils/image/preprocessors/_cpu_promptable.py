@@ -20,6 +20,7 @@ def encode_prompts(
     ratios: tuple[float, float],
     padding: tuple[float, float],
     *,
+    pad_boxes: bool = False,
     verbose: bool | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
@@ -27,7 +28,8 @@ def encode_prompts(
 
     Each prompt set holds the points followed by the two corners of its box (labels 2 and
     3). A set without a box gets a ``(0, 0)`` padding point labelled -1, as SAM's own
-    predictor adds. Coordinates map to the model input as ``p * ratio + padding``.
+    predictor adds; with ``pad_boxes`` every set gets it, as SAM 2's predictor does.
+    Coordinates map to the model input as ``p * ratio + padding`` per axis.
 
     Parameters
     ----------
@@ -43,6 +45,9 @@ def encode_prompts(
         The (x, y) scale from the image to the model input.
     padding : tuple[float, float]
         The (x, y) offset of the image in the model input.
+    pad_boxes : bool
+        Whether prompt sets with a box get the padding point too, for SAM 2 decoders.
+        By default False.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -74,8 +79,7 @@ def encode_prompts(
             err_msg = f"Got {len(pts)} points but {len(lab)} labels"
             raise ValueError(err_msg)
     if boxes is None:
-        coords = np.concatenate([pts, np.zeros((1, 2), np.float32)])[None]
-        point_labels = np.append(lab, np.float32(_PAD_LABEL))[None]
+        coords, point_labels = pts[None], lab[None]
     else:
         corners = np.asarray(boxes, np.float32).reshape(-1, 2, 2) * scale + offset
         num_sets = len(corners)
@@ -86,6 +90,12 @@ def encode_prompts(
                 np.broadcast_to(np.array(_BOX_LABELS, np.float32), (num_sets, 2)),
             ],
             axis=1,
+        )
+    if boxes is None or pad_boxes:
+        num_sets = len(coords)
+        coords = np.concatenate([coords, np.zeros((num_sets, 1, 2), np.float32)], axis=1)
+        point_labels = np.concatenate(
+            [point_labels, np.full((num_sets, 1), _PAD_LABEL, np.float32)], axis=1
         )
     if verbose:
         LOG.debug(f"Encoded prompts: coords {coords.shape}, labels {point_labels.shape}")

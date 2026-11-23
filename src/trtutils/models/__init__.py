@@ -194,9 +194,12 @@ from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
 from .pose_estimators import YOLOv8Pose, YOLOv11Pose, YOLOv26Pose
 from .promptable_segmenters import (
     SAM,
+    SAM2,
     MobileSAM,
     MobileSAMDecoder,
     MobileSAMEncoder,
+    SAM2Decoder,
+    SAM2Encoder,
     SAMDecoder,
     SAMEncoder,
 )
@@ -210,6 +213,7 @@ __all__ = [
     "PPOCR",
     "RFDETR",
     "SAM",
+    "SAM2",
     "VGG",
     "YOLO",
     "YOLOX",
@@ -242,6 +246,8 @@ __all__ = [
     "RegNet",
     "ResNeXt",
     "ResNet",
+    "SAM2Decoder",
+    "SAM2Encoder",
     "SAMDecoder",
     "SAMEncoder",
     "ShuffleNetV2",
