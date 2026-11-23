@@ -25,6 +25,9 @@ _EXPECTED_UV_PARTS = 3
 _640 = 640
 _HW = 2
 
+# the class names file written next to an open-vocabulary ONNX, one name per line
+CLASSES_SUFFIX = ".classes.txt"
+
 
 def get_patches_dir() -> Path:
     return Path(__file__).parent / "patches"
@@ -58,6 +61,46 @@ def normalize_imgsz(imgsz: int | str | Sequence[int | str]) -> int | tuple[int, 
     if sizes[0] == sizes[-1]:
         return sizes[0]
     return sizes[0], sizes[1]
+
+
+def check_classes(classes: Sequence[str]) -> list[str]:
+    """
+    Validate the class names (text prompts) for an open-vocabulary export.
+
+    Parameters
+    ----------
+    classes : Sequence[str]
+        The class names, in the order of the class ids the model will return.
+
+    Returns
+    -------
+    list[str]
+        The class names as a list.
+
+    Raises
+    ------
+    TypeError
+        If ``classes`` is a single string instead of a sequence of names.
+    ValueError
+        If ``classes`` is empty, or a name is blank, spans lines, or repeats (the
+        names file holds one name per line).
+
+    """
+    if isinstance(classes, str):
+        err_msg = f"classes must be a sequence of names, not one string, got {classes!r}"
+        raise TypeError(err_msg)
+    names = list(classes)
+    if not names:
+        err_msg = "classes must hold at least one name"
+        raise ValueError(err_msg)
+    bad = [name for name in names if not name.strip() or name.splitlines()[0] != name]
+    if bad:
+        err_msg = f"class names must be non-blank and on one line, got {bad!r}"
+        raise ValueError(err_msg)
+    if len(set(names)) != len(names):
+        err_msg = f"class names must be unique, got {names!r}"
+        raise ValueError(err_msg)
+    return names
 
 
 def handle_imgsz(

@@ -15,6 +15,8 @@ from trtutils._log import LOG
 from . import _make_static, _simplify
 from ._models import EXPORTERS
 from ._tools import (
+    CLASSES_SUFFIX,
+    check_classes,
     check_uv_version,
     export_requirements,
     handle_batch,
@@ -97,6 +99,7 @@ def download_model(  # noqa: C901, PLR0912
     imgsz: int | tuple[int, int] | None = None,
     requirements_export: Path | None = None,
     *,
+    classes: Sequence[str] | None = None,
     batch: int | None = None,
     dynamic: bool | None = None,
     simplify: Sequence[str] | bool | None = None,
@@ -123,6 +126,10 @@ def download_model(  # noqa: C901, PLR0912
         non-square size. By default, the model will use the default image size for the model.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
+    classes : Sequence[str], optional
+        The class names (text prompts) to bake into an open-vocabulary model, in the
+        order of the class ids it returns. Only exporters registered with ``classes=True``
+        (the text-prompt YOLOE models) accept it; they default to the 80 COCO names.
     batch : int, optional
         The batch size to export at, by default 1. Only the ultralytics,
         YOLOv10/12/13, torchvision, and timm exporters accept a batch above 1.
@@ -158,8 +165,11 @@ def download_model(  # noqa: C901, PLR0912
     ------
     ValueError
         If the model is not supported, the batch is not positive, dynamic is
-        combined with a batch above 1 or make_static, or imgsz is non-square and the
-        model's exporter only takes square sizes.
+        combined with a batch above 1 or make_static, imgsz is non-square and the
+        model's exporter only takes square sizes, or classes are given to a model that
+        does not take them or are empty, blank, repeated, or span lines.
+    TypeError
+        If classes is a single string instead of a sequence of names.
     NotImplementedError
         If batch > 1 or dynamic is requested from an exporter that cannot honor it.
 
@@ -190,6 +200,16 @@ def download_model(  # noqa: C901, PLR0912
             )
             raise ValueError(err_msg)
 
+    class_kwargs: dict[str, Any] = {}
+    if classes is not None:
+        if not exporter.classes:
+            err_msg = (
+                f"{model} has a fixed vocabulary and does not take classes; only "
+                "text-prompt open-vocabulary models (e.g. yoloe-11s-seg) do"
+            )
+            raise ValueError(err_msg)
+        class_kwargs["classes"] = check_classes(classes)
+
     if dynamic is None:
         dynamic = exporter.dynamic_default and batch is None
     batch, dynamic = handle_batch(batch, model, dynamic=dynamic, supported=exporter.batch)
@@ -210,6 +230,7 @@ def download_model(  # noqa: C901, PLR0912
         opset,
         imgsz,
         **batch_kwargs,
+        **class_kwargs,
         no_cache=no_cache,
         no_uv_cache=no_uv_cache,
         no_warn=no_warn,
@@ -254,6 +275,7 @@ def download(
     imgsz: int | tuple[int, int] | None = None,
     requirements_export: Path | None = None,
     *,
+    classes: Sequence[str] | None = None,
     batch: int | None = None,
     dynamic: bool | None = None,
     simplify: Sequence[str] | bool | None = None,
@@ -280,6 +302,10 @@ def download(
         non-square size. By default, the model will use the default image size for the model.
     requirements_export : Path, optional
         Export the created virtual environment's requirements to this path using uv pip freeze.
+    classes : Sequence[str], optional
+        The class names (text prompts) to bake into an open-vocabulary model, in the
+        order of the class ids it returns. Only exporters registered with ``classes=True``
+        (the text-prompt YOLOE models) accept it; they default to the 80 COCO names.
     batch : int, optional
         The batch size to export at, by default 1. Only the ultralytics,
         YOLOv10/12/13, torchvision, and timm exporters accept a batch above 1.
@@ -306,6 +332,12 @@ def download(
     verbose : bool, optional
         Whether to print verbose output.
 
+    Notes
+    -----
+    Open-vocabulary models (YOLOE) also write their class names, one per line in class id
+    order, next to the ONNX as ``output.with_suffix(".classes.txt")``. The names are fixed
+    at export: other classes need a new export and a new engine.
+
     """
     check_uv_version()
     output = Path(output)
@@ -317,6 +349,7 @@ def download(
             opset,
             imgsz,
             requirements_export=requirements_export,
+            classes=classes,
             batch=batch,
             dynamic=dynamic,
             simplify=simplify,
@@ -331,6 +364,10 @@ def download(
         sidecar = model_path.with_name(model_path.name + ".data")
         if sidecar.exists():
             shutil.copy(sidecar, output.parent / sidecar.name)
+        # open-vocabulary exports name their classes, one per line in class id order
+        names = model_path.with_suffix(CLASSES_SUFFIX)
+        if names.exists():
+            shutil.copy(names, output.with_suffix(CLASSES_SUFFIX))
 
     if verbose is not None:
         LOG.info(f"Model {model} downloaded and converted to ONNX.")

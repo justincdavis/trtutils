@@ -39,3 +39,20 @@ class YOLOv26Seg(Segmenter, Model):
     _friendly_name = "YOLOv26-Seg"
     _default_imgsz = 640
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
+
+
+class YOLOE(Segmenter, Model):
+    """
+    Alias of Segmenter with default args for YOLOE (open-vocabulary YOLO).
+
+    The class names are fixed at export (``Model.download(..., classes=[...])``, by default
+    the 80 COCO names; prompt-free ``-pf`` models carry their own vocabulary) and written next
+    to the ONNX as ``<output stem>.classes.txt``, one name per line in class id order. Other
+    classes need a new export and a new engine. YOLOE-26 heads export raw (``end2end=False``)
+    and are decoded with NMS, as for YOLOv26-Seg.
+    """
+
+    _model_type = "yoloe"
+    _friendly_name = "YOLOE"
+    _default_imgsz = 640
+    _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
