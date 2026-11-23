@@ -1,0 +1,8 @@
+{
+    "_defaults": {"exporter": "timm", "license": "Apache-2.0", "url": "timm", "stride": "32"},
+    "mobilenetv4_conv_small": {"name": "mobilenetv4_conv_small.e2400_r224_in1k", "imgsz": "224"},
+    "mobilenetv4_conv_medium": {"name": "mobilenetv4_conv_medium.e500_r256_in1k", "imgsz": "256"},
+    "mobilenetv4_conv_large": {"name": "mobilenetv4_conv_large.e600_r384_in1k", "imgsz": "384"},
+    "mobilenetv4_hybrid_medium": {"name": "mobilenetv4_hybrid_medium.ix_e550_r256_in1k", "imgsz": "256"},
+    "mobilenetv4_hybrid_large": {"name": "mobilenetv4_hybrid_large.ix_e600_r384_in1k", "imgsz": "384"}
+}

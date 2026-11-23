@@ -18,6 +18,7 @@ from trtutils.models import (
     DEIMv2,
     DeiT,
     DeiT3,
+    MobileNetV4,
     PPOCRDetector,
     PPOCRRecognizer,
     RTDETRv1,
@@ -146,6 +147,9 @@ def test_validate_imgsz_rejects(model_cls, imgsz, match) -> None:
         pytest.param(YOLOv10, "yolov10n", (640, 640), 640, id="square-tuple"),
         pytest.param(YOLOv10, "yolov10n", (480, 640), (480, 640), id="height-width"),
         pytest.param(DeiT, "deit_tiny", (224, 112), (224, 112), id="deit-hw-patch"),
+        pytest.param(MobileNetV4, "mobilenetv4_conv_small", None, 224, id="mnv4-small-default"),
+        pytest.param(MobileNetV4, "mobilenetv4_hybrid_large", None, 384, id="mnv4-large-default"),
+        pytest.param(MobileNetV4, "mobilenetv4_conv_medium", 320, 320, id="mnv4-test-size"),
     ],
 )
 def test_download_resolves_imgsz(tmp_path, model_cls, model, imgsz, expected) -> None:
@@ -165,6 +169,9 @@ def test_download_resolves_imgsz(tmp_path, model_cls, model, imgsz, expected) ->
         pytest.param(DeiT, "deit_tiny", 250, "divisible by 16", id="deit-patch"),
         pytest.param(DeiT3, "deit3_huge", 256, "divisible by 14", id="deit3-huge-patch"),
         pytest.param(DeiT, "deit_tiny", (224, 120), "divisible by 16", id="deit-hw-patch"),
+        pytest.param(
+            MobileNetV4, "mobilenetv4_conv_small", 240, "divisible by 32", id="mnv4-stride"
+        ),
         pytest.param(YOLOv10, "yolov10n", (640, 480, 3), "height, width", id="three-sizes"),
     ],
 )

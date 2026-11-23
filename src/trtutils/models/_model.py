@@ -51,7 +51,8 @@ class Model:
     Mixin providing concrete build() and download() classmethods driven by class attributes.
 
     ``download()`` also reads the model's download config: an ``imgsz`` entry
-    is its default size and a ``patch`` entry the divisor its size must have.
+    is its default size and a ``patch`` (or ``stride``) entry the divisor its size
+    must have.
 
     Image sizes are an int for a square input or a ``(height, width)`` tuple, in the
     ONNX ``(batch, 3, height, width)`` order. Note that ``ImageModel.input_shape``
@@ -193,7 +194,8 @@ class Model:
         Raises
         ------
         ValueError
-            If imgsz is invalid for the model, not divisible by its patch size, or
+            If imgsz is invalid for the model, not divisible by its patch size or
+            output stride, or
             non-square for an exporter that only takes square sizes.
 
         Notes
@@ -216,10 +218,10 @@ class Model:
             raise ValueError(err_msg)
 
         cls._validate_imgsz(imgsz)
-        patch = config.get("patch")
-        if patch is not None and any(s % int(patch) for s in _hw(imgsz)):
+        divisor = config.get("patch", config.get("stride"))
+        if divisor is not None and any(s % int(divisor) for s in _hw(imgsz)):
             err_msg = (
-                f"{cls._friendly_name} {model} requires imgsz divisible by {patch}, got {imgsz}"
+                f"{cls._friendly_name} {model} requires imgsz divisible by {divisor}, got {imgsz}"
             )
             raise ValueError(err_msg)
 
