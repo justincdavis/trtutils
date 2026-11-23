@@ -99,6 +99,11 @@ Added
   The export scales the residual stream by 1/16 (outputs unchanged) so ViT-L and ViT-H+ stay
   inside the FP16 range; ``dinov3_vith16plus`` is over 2GB and keeps its weights in a
   ``.data`` file beside the ONNX
+* ``models.DINOv2`` and the ``dinov2_vits14``, ``dinov2_vitb14``, ``dinov2_vitl14``,
+  ``dinov2_vits14_reg``, ``dinov2_vitb14_reg`` and ``dinov2_vitl14_reg`` downloads (timm,
+  Apache-2.0, default size 224, any multiple of 14, batch-dynamic by default). The fixed-size
+  position embedding is resampled to the requested size at export; register tokens are
+  dropped from the feature map. FP16 builds pin no layers
 * ``models.DINOv3ConvNeXt`` and the ``dinov3_convnext_tiny``, ``dinov3_convnext_small``,
   ``dinov3_convnext_base`` and ``dinov3_convnext_large`` downloads (timm, DINOv3 License,
   default size 224, any multiple of 32, batch-dynamic by default): the same embedding and

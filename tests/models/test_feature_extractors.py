@@ -12,11 +12,12 @@ import pytest
 from tests.conftest import DATA_DIR, PREPROCESSORS
 from trtutils._flags import FLAGS
 from trtutils.image._schema import FeatureExtractorOutputSchema
-from trtutils.models import DINOv3, DINOv3ConvNeXt
+from trtutils.models import DINOv2, DINOv3, DINOv3ConvNeXt
 from trtutils.models._hooks import vit_attention_fp32_build_hook
 
 _DINOV3 = DATA_DIR / "dinov3"
 _CONVNEXT = DATA_DIR / "dinov3_convnext"
+_DINOV2 = DATA_DIR / "dinov2"
 
 # (wrapper, onnx, embedding width, feature map stride, transformer depth or None without hook)
 FEATURE_EXTRACTORS = [
@@ -60,6 +61,19 @@ FEATURE_EXTRACTORS = [
         32,
         None,
         id="dinov3-convnext-large",
+    ),
+    # dinov2 builds in plain fp16: the attention hook is not needed
+    *(
+        pytest.param(
+            DINOv2,
+            _DINOV2 / f"dinov2_vit{size}14{registers}_224.onnx",
+            width,
+            14,
+            None,
+            id=f"dinov2-vit{size}14{registers}",
+        )
+        for size, width in (("s", 384), ("b", 768), ("l", 1024))
+        for registers in ("", "_reg")
     ),
 ]
 _PARAMS = ("model_cls", "onnx_path", "width", "stride", "depth")
@@ -146,7 +160,7 @@ def test_feature_extractor_matches_onnxruntime(
 @pytest.mark.skipif(FLAGS.TRT_VERSION < (10, 0), reason="the hook pins nothing before TensorRT 10")
 @pytest.mark.parametrize(_PARAMS, FEATURE_EXTRACTORS)
 def test_attention_hook_matches(model_cls, onnx_path, width, stride, depth) -> None:
-    """The ViT fp16 hook pins the QK matmul and softmax of every block; ConvNeXt builds unhooked."""
+    """The ViT fp16 hook pins the QK matmul and softmax of every block; ConvNeXt, DINOv2 unhooked."""
     del width, stride
     if depth is None:
         assert model_cls._build_hooks == []

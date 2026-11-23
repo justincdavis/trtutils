@@ -39,6 +39,7 @@ _EXPECTED_FAMILIES = [
     "depth_anything_v3",
     "dinov3",
     "dinov3_convnext",
+    "dinov2",
     "hoi_detr",
     "hands23",
     "ppocr_det",
@@ -102,6 +103,12 @@ _EXPECTED_MODELS = [
     "dinov3_convnext_small",
     "dinov3_convnext_base",
     "dinov3_convnext_large",
+    "dinov2_vits14",
+    "dinov2_vitb14",
+    "dinov2_vitl14",
+    "dinov2_vits14_reg",
+    "dinov2_vitb14_reg",
+    "dinov2_vitl14_reg",
     "hoi_detr_vitl",
     "hands23_x101",
     "ppocrv4_det",
@@ -198,6 +205,17 @@ def test_dinov3_configs(model_configs) -> None:
         assert config["license"] == "DINOv3 License"
         assert config["name"].endswith("_patch16_dinov3.lvd1689m"), model
         assert (config["imgsz"], config["patch"]) == ("256", "16")
+
+
+def test_dinov2_configs(model_configs) -> None:
+    """DINOv2 configs name a timm LVD-142M ViT/14, Apache-2.0, and the fixed-size ViT arch."""
+    for model, config in model_configs["dinov2"].items():
+        assert config["exporter"] == "timm_features"
+        assert config["license"] == "Apache-2.0"
+        registers = "_reg4" if model.endswith("_reg") else ""
+        size = {"s": "small", "b": "base", "l": "large"}[model.split("_")[1][3]]
+        assert config["name"] == f"vit_{size}_patch14{registers}_dinov2.lvd142m", model
+        assert (config["imgsz"], config["patch"], config["arch"]) == ("224", "14", "vit")
 
 
 def test_dfine_obj2coco_configs_in_objects365_dir(model_configs) -> None:

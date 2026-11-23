@@ -115,6 +115,17 @@ Feature Extraction
      and DLA builds on Jetson; FP16 builds need no layers pinned to FP32
    - The same ``linear`` resize caveat as DINOv3 applies
 
+3. **DINOv2** (``DINOv2``) - self-supervised ViT-S, B and L /14 backbones (LVD-142M weights),
+   with and without registers, exported through timm with a class-token embedding and a
+   dense patch feature map (stride 14, register tokens dropped)
+
+   - GitHub: `facebookresearch/dinov2 <https://github.com/facebookresearch/dinov2>`_
+   - Apache-2.0 weights, ungated: the permissive choice among the feature extractors
+   - The position embedding has a fixed size: the download resamples the pretrained one
+     (trained at 518) to the requested size, so build each size from its own ONNX
+   - FP16 builds need no layers pinned to FP32
+   - The same ``linear`` resize caveat as DINOv3 applies
+
 Classification
 --------------
 
@@ -265,6 +276,9 @@ Feature Extraction Models
 - **DINOv3 ConvNeXt**: ``dinov3_convnext_tiny``, ``dinov3_convnext_small``,
   ``dinov3_convnext_base``, ``dinov3_convnext_large`` (via timm; default size 224, any
   multiple of 32; batch-dynamic by default)
+- **DINOv2**: ``dinov2_vits14``, ``dinov2_vitb14``, ``dinov2_vitl14`` and the register
+  variants ``dinov2_vits14_reg``, ``dinov2_vitb14_reg``, ``dinov2_vitl14_reg`` (via timm;
+  default size 224, any multiple of 14; batch-dynamic by default)
 
 Hand-Object Interaction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -349,6 +363,8 @@ for the weights: check the source before using them.
        (the upstream Meta repositories are gated, the timm mirrors are not)
    * - DINOv3 ConvNeXt (timm mirrors of the LVD-1689M ConvNeXt-T, S, B, L)
      - DINOv3 License: as above
+   * - DINOv2 (timm mirrors of the LVD-142M ViT-S, B, L /14, with and without registers)
+     - Apache-2.0 (code and weights, ungated)
    * - HOI-DETR
      - MIT
    * - Hands23

@@ -143,6 +143,13 @@ EXPORT_CASES = [
         {"input": [_BATCH, 3, 224, 224]},
         id="timm-features-convnext",
     ),
+    # dinov2 has a fixed-size position embedding, resampled to the size snapped to the patch (14)
+    pytest.param(
+        "dinov2_vits14_reg",
+        {"imgsz": 300},
+        {"input": [_BATCH, 3, 294, 294]},
+        id="timm-features-dinov2",
+    ),
     pytest.param("hands23_x101", {}, {"input": [1, 3, 800, 800]}, id="hands23"),
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),

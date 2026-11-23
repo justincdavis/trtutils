@@ -1,0 +1,9 @@
+{
+    "_defaults": {"exporter": "timm_features", "license": "Apache-2.0", "url": "timm", "imgsz": "224", "patch": "14", "arch": "vit"},
+    "dinov2_vits14": {"name": "vit_small_patch14_dinov2.lvd142m"},
+    "dinov2_vitb14": {"name": "vit_base_patch14_dinov2.lvd142m"},
+    "dinov2_vitl14": {"name": "vit_large_patch14_dinov2.lvd142m"},
+    "dinov2_vits14_reg": {"name": "vit_small_patch14_reg4_dinov2.lvd142m"},
+    "dinov2_vitb14_reg": {"name": "vit_base_patch14_reg4_dinov2.lvd142m"},
+    "dinov2_vitl14_reg": {"name": "vit_large_patch14_reg4_dinov2.lvd142m"}
+}
