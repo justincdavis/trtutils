@@ -24,6 +24,8 @@ _NO_GRAD = "torch.set_grad_enabled(False)"
 
 # patched upstream scripts; ultralytics, yolov9 and rfdetr already export under no_grad
 _PATCHES = [
+    "deim_export_onnx.patch",
+    "deimv2_export_onnx.patch",
     "dfine_export_onnx.patch",
     "rtdetrv1_export_onnx.patch",
     "rtdetrv2_export_onnx.patch",

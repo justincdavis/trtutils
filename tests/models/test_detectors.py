@@ -178,34 +178,48 @@ def test_rtdetrv3_large_image_boxes(build_model_engine, name) -> None:
 
 
 @pytest.mark.parametrize(
-    ("model_cls", "onnx_path"),
+    ("model_cls", "onnx_path", "kwargs"),
     [
-        pytest.param(DEIM, DATA_DIR / "deim" / "deim_dfine_n_640.onnx", id="deim"),
-        pytest.param(DEIMv2, DATA_DIR / "deimv2" / "deimv2_n_640.onnx", id="deimv2"),
+        pytest.param(DFINE, DATA_DIR / "dfine" / "dfine_n_640.onnx", {}, id="dfine"),
+        pytest.param(DEIM, DATA_DIR / "deim" / "deim_dfine_n_640.onnx", {}, id="deim"),
+        # upstream feeds the HGNetv2 sizes 0-1 input; the DEIMv2 default (ImageNet) is for DINOv3
+        pytest.param(
+            DEIMv2,
+            DATA_DIR / "deimv2" / "deimv2_n_640.onnx",
+            {"mean": None, "std": None},
+            id="deimv2",
+        ),
     ],
 )
-def test_deim_boxes_non_square_match_onnxruntime(build_model_engine, model_cls, onnx_path) -> None:
-    """DEIM boxes on a non-square image match onnxruntime fed the upstream stretched input."""
+@pytest.mark.parametrize("image_name", ["horse.jpg", "street.jpg"])
+def test_dfine_deim_match_onnxruntime_on_upstream_input(
+    build_model_engine, model_cls, onnx_path, kwargs, image_name
+) -> None:
+    """Detections match onnxruntime fed upstream's eval input: stretched, 0-1, no mean/std."""
     engine = build_model_engine(model_cls, onnx_path, opt_level=3)
-    model = model_cls(engine, warmup=False, conf_thres=0.5)
-    image = cv2.imread(str(DATA_DIR / "horse.jpg"))
+    model = model_cls(engine, warmup=False, conf_thres=0.4, **kwargs)
+    image = cv2.imread(str(DATA_DIR / image_name))
     height, width = image.shape[:2]
     assert height != width
 
     stretched = cv2.resize(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), (640, 640))
-    mean = np.array([0.485, 0.456, 0.406], np.float32)
-    std = np.array([0.229, 0.224, 0.225], np.float32)
-    blob = ((stretched.astype(np.float32) / 255 - mean) / std).transpose(2, 0, 1)[None]
+    blob = (stretched.astype(np.float32) / 255).transpose(2, 0, 1)[None]
     session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
-    _labels, boxes, scores = session.run(
+    labels, boxes, scores = session.run(
         None, {"images": blob, "orig_target_sizes": np.array([[width, height]], np.int64)}
     )
-    reference = boxes[0][scores[0] > 0.5]
-    assert len(reference) == 1
+    keep = scores[0] > 0.4
+    reference = list(zip(boxes[0][keep], scores[0][keep], labels[0][keep]))
+    assert any(score > 0.6 for _bbox, score, _cls in reference)
 
     detections = model.end2end(image)
-    assert detections
-    assert max(_iou(bbox, reference[0]) for bbox, _score, _cls in detections) > 0.85
+    # fp16 moves borderline scores, so only confident detections must appear on the other side
+    for left, right in ((reference, detections), (detections, reference)):
+        for bbox, score, cls_id in left:
+            if score > 0.6:
+                assert any(c == cls_id and _iou(bbox, b) >= 0.8 for b, _s, c in right), (
+                    f"no match for {cls_id} {bbox} {score}"
+                )
 
 
 def test_non_square_build_matches_square(build_model_engine, tmp_path, images) -> None:
