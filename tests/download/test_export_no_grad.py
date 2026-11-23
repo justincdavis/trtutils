@@ -13,6 +13,7 @@ from trtutils.download._models import (
     _depth_anything,
     _hands23,
     _hoi_detr,
+    _realesrgan,
     _timm,
     _torchvision,
 )
@@ -47,6 +48,7 @@ def test_patch_disables_grad(patch_name: str) -> None:
         pytest.param(_depth_anything, 2, id="depth_anything_v1_v2"),
         pytest.param(_hoi_detr, 1, id="hoi_detr"),
         pytest.param(_hands23, 1, id="hands23"),
+        pytest.param(_realesrgan, 1, id="realesrgan"),
     ],
 )
 def test_generated_script_disables_grad(module, count: int) -> None:

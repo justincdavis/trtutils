@@ -102,6 +102,8 @@ Classes
     Alias for the HandInteractionDetector class with args preset for Hands23.
 :class:`DepthAnythingV3`
     Alias for the DepthEstimator class with args preset for Depth-Anything-V3.
+:class:`RealESRGAN`
+    Alias for the ImageRestorer class with args preset for Real-ESRGAN.
 :class:`PPOCRDetector`
     Alias for the TextDetector class with args preset for PaddleOCR (PP-OCR) detection.
 :class:`PPOCRRecognizer`
@@ -189,6 +191,7 @@ from .detectors import (
     YOLOv26,
 )
 from .hand_interaction import HOIDETR, Hands23
+from .image_restorers import RealESRGAN
 from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
 from .pose_estimators import YOLOv8Pose, YOLOv11Pose, YOLOv26Pose
@@ -227,6 +230,7 @@ __all__ = [
     "RTDETRv1",
     "RTDETRv2",
     "RTDETRv3",
+    "RealESRGAN",
     "RegNet",
     "ResNeXt",
     "ResNet",

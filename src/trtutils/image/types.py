@@ -22,6 +22,8 @@ Aliases
     One pose as (bbox, score, keypoints).
 :data:`OBBDetection`
     One oriented detection as (rbox, score, class_id).
+:data:`RestoredImage`
+    One restored image, uint8 BGR at the model's scale.
 :data:`TextBox`
     One detected text region as (box, score).
 :data:`Text`
@@ -74,6 +76,9 @@ HandInteraction: TypeAlias = Tuple[
     Optional[int],
 ]
 
+#: restored image as a (scale * height, scale * width, 3) uint8 BGR array, like the input images
+RestoredImage: TypeAlias = np.ndarray
+
 #: text region as (box, score), box is the (4, 2) float32 corner points (TL, TR, BR, BL)
 TextBox: TypeAlias = Tuple[np.ndarray, float]
 
@@ -91,6 +96,7 @@ __all__ = [
     "OBBDetection",
     "Pose",
     "RBox",
+    "RestoredImage",
     "Segmentation",
     "Text",
     "TextBox",

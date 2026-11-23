@@ -30,6 +30,7 @@ _SCORED = Tuple[_BBOX, float]
             Tuple[_SCORED, Optional[_SCORED], Optional[_SCORED], Optional[int], Optional[int]],
             id="hand-interaction",
         ),
+        pytest.param("RestoredImage", np.ndarray, id="restored-image"),
         pytest.param("TextBox", Tuple[np.ndarray, float], id="text-box"),
         pytest.param("Text", Tuple[str, float], id="text"),
         pytest.param("TextLine", Tuple[np.ndarray, str, float], id="text-line"),

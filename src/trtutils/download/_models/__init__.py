@@ -15,6 +15,7 @@ from ._dfine import export_dfine
 from ._hands23 import export_hands23
 from ._hoi_detr import export_hoi_detr
 from ._ppocr import export_ppocr
+from ._realesrgan import export_realesrgan
 from ._rfdetr import export_rfdetr
 from ._rtdetr import export_rtdetrv1, export_rtdetrv2, export_rtdetrv3
 from ._timm import export_timm_classifier
@@ -70,6 +71,7 @@ EXPORTERS: dict[str, Exporter] = {
     "hands23": Exporter(export_hands23),
     "hoi_detr": Exporter(export_hoi_detr),
     "ppocr": Exporter(export_ppocr),
+    "realesrgan": Exporter(export_realesrgan, hw=True),
     "rfdetr": Exporter(export_rfdetr),
     "rtdetrv1": Exporter(export_rtdetrv1),
     "rtdetrv2": Exporter(export_rtdetrv2),
@@ -97,6 +99,7 @@ __all__ = [
     "export_hands23",
     "export_hoi_detr",
     "export_ppocr",
+    "export_realesrgan",
     "export_rfdetr",
     "export_rtdetrv1",
     "export_rtdetrv2",

@@ -14,6 +14,10 @@ Functions
     Postprocess the output of a classification model.
 :func:`postprocess_depth`
     Postprocess the output of a depth estimation model.
+:func:`get_restored_images`
+    Get the restored images from the output of an image restoration model.
+:func:`postprocess_restoration`
+    Postprocess the output of an image restoration model.
 :func:`get_detections`
     Get the detections from unified postprocessed outputs.
 :func:`get_text_boxes`
@@ -82,6 +86,7 @@ from ._cpu_ocr import (
     sort_text_boxes,
 )
 from ._cpu_pose import get_poses, postprocess_yolo_pose
+from ._cpu_restoration import get_restored_images, postprocess_restoration
 from ._cpu_segmentation import get_segmentations, postprocess_yolo_seg
 
 __all__ = [
@@ -95,6 +100,7 @@ __all__ = [
     "get_interactions",
     "get_obb_detections",
     "get_poses",
+    "get_restored_images",
     "get_segmentations",
     "get_text_boxes",
     "get_texts",
@@ -104,6 +110,7 @@ __all__ = [
     "postprocess_detr_lbs",
     "postprocess_efficient_nms",
     "postprocess_hand_interactions",
+    "postprocess_restoration",
     "postprocess_rfdetr",
     "postprocess_rtdetrv3",
     "postprocess_text_detection",

@@ -1,0 +1,24 @@
+{
+    "_defaults": {"exporter": "realesrgan", "license": "BSD-3-Clause", "imgsz": ["480", "640"]},
+    "realesrgan_x4plus": {
+        "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
+        "sha256": "4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1",
+        "arch": "rrdbnet",
+        "scale": "4",
+        "depth": "23"
+    },
+    "realesrgan_x2plus": {
+        "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth",
+        "sha256": "49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb",
+        "arch": "rrdbnet",
+        "scale": "2",
+        "depth": "23"
+    },
+    "realesrgan_general_x4v3": {
+        "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth",
+        "sha256": "8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292",
+        "arch": "srvgg",
+        "scale": "4",
+        "depth": "32"
+    }
+}

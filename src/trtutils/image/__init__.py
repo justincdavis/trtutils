@@ -33,6 +33,8 @@ Classes
     Wrapper around detection models.
 :class:`HandInteractionDetector`
     Wrapper around hand-object interaction models.
+:class:`ImageRestorer`
+    Wrapper around image restoration / super-resolution models.
 :class:`TextDetector`
     Wrapper around DB text detection models (e.g. PP-OCR).
 :class:`TextRecognizer`
@@ -82,6 +84,7 @@ from ._detector import Detector
 from ._draw import draw_bboxes, draw_text
 from ._hand_interaction import HandInteractionDetector
 from ._image_model import ImageModel
+from ._image_restorer import ImageRestorer
 from ._obb_detector import OBBDetector
 from ._ocr import OCR, TextDetector, TextRecognizer
 from ._pose_estimator import PoseEstimator
@@ -97,6 +100,7 @@ __all__ = [
     "Detector",
     "HandInteractionDetector",
     "ImageModel",
+    "ImageRestorer",
     "OBBDetector",
     "PoseEstimator",
     "Segmenter",
