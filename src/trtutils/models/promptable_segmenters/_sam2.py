@@ -146,7 +146,7 @@ class SAM2Decoder(MaskDecoder, Model):
         cls,
         onnx: Path | str,
         output: Path | str,
-        imgsz: int | None = None,
+        imgsz: int | tuple[int, int] | None = None,
         batch_size: int = 4,
         dla_core: int | None = None,
         opt_level: int = 3,
@@ -192,12 +192,18 @@ class SAM2Decoder(MaskDecoder, Model):
         ------
         ValueError
             If ``embed_sst`` is True or ``imgsz`` is not 1024.
+        TypeError
+            If ``imgsz`` is a (height, width) tuple.
 
         """
         if embed_sst:
             err_msg = "embed_sst is not supported for the SAM 2.1 decoder."
             raise ValueError(err_msg)
-        cls._validate_imgsz(imgsz if imgsz is not None else cls._default_imgsz)
+        size = imgsz if imgsz is not None else cls._default_imgsz
+        if not isinstance(size, int):
+            err_msg = f"{cls._friendly_name} takes a single imgsz, got {size}"
+            raise TypeError(err_msg)
+        cls._validate_imgsz(size)
         build_sam_decoder(
             onnx,
             output,
