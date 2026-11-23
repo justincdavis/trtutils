@@ -14,7 +14,7 @@ from trtutils._log import LOG
 from ._image_model import ImageModel
 from ._schema import PoseEstimatorOutputSchema
 from .interfaces import PoseEstimatorInterface
-from .postprocessors import get_poses, postprocess_yolo_pose
+from .postprocessors import get_poses, postprocess_rtmo_pose, postprocess_yolo_pose
 from .postprocessors._cuda_pose import CUDAPosePostprocessor
 
 if TYPE_CHECKING:
@@ -29,9 +29,15 @@ if TYPE_CHECKING:
 
     from ._image_model import _PostFn
 
+# the postprocess function of each output schema
+_POSTPROCESSORS = {
+    PoseEstimatorOutputSchema.YOLO: postprocess_yolo_pose,
+    PoseEstimatorOutputSchema.RTMO: postprocess_rtmo_pose,
+}
+
 
 class PoseEstimator(ImageModel, PoseEstimatorInterface):
-    """Implementation of pose estimation models (YOLO-style pose heads)."""
+    """Implementation of one-stage pose estimation models (YOLO-pose, RTMO)."""
 
     _OUTPUT_SCHEMA = PoseEstimatorOutputSchema
     _supports_pad = False
@@ -192,6 +198,12 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         """Get the output schema used by this model."""
         return self._output_schema
 
+    def _cuda_unsupported(self: Self) -> str | None:
+        """CUDA decodes the YOLO pose head; RTMO engines already ran NMS and keep a few rows."""
+        if self._output_schema != PoseEstimatorOutputSchema.YOLO:
+            return f"supports YOLO, not {self._output_schema.name}"
+        return super()._cuda_unsupported()
+
     def postprocess(
         self: Self,
         outputs: list[np.ndarray] | list[Buffer],
@@ -243,7 +255,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
         nms_iou_thres = nms_iou_thres if nms_iou_thres is not None else self._nms_iou
         t0 = time.perf_counter()
         data = self._postprocess_with(
-            postprocess_yolo_pose,
+            _POSTPROCESSORS[self._output_schema],
             outputs,
             ratios,
             padding,

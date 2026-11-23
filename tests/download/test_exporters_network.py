@@ -144,6 +144,7 @@ EXPORT_CASES = [
     pytest.param("hands23_x101", {}, {"input": [1, 3, 800, 800]}, id="hands23"),
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),
+    pytest.param("rtmo_s", {}, {"input": [None, 3, 640, 640]}, id="rtmo"),
 ]
 
 

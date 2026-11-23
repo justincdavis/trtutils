@@ -139,6 +139,8 @@ class SemanticSegmenterOutputSchema(Enum):
 class PoseEstimatorOutputSchema(Enum):
     # ultralytics pose heads
     YOLO = ("output0",)
+    # RTMO, in-graph NMS: boxes + scores (B, N, 5) and keypoints (B, N, K, 3)
+    RTMO = ("dets", "keypoints")
 
 
 class OBBDetectorOutputSchema(Enum):

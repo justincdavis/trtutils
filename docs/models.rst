@@ -182,6 +182,17 @@ Pose Estimation
    - GitHub: `ultralytics/ultralytics <https://github.com/ultralytics/ultralytics>`_
    - AGPL-3.0 and commercial licensed, be aware of license restrictions
 
+2. **RTMO** - one-stage COCO-17 body keypoints (``models.RTMO``): ``rtmo_s``, ``rtmo_m``,
+   ``rtmo_l`` (640x640, trained on body7)
+
+   - GitHub: `open-mmlab/mmpose (projects/rtmo) <https://github.com/open-mmlab/mmpose/tree/main/projects/rtmo>`_
+   - Downloads are OpenMMLab's ready ONNX (checked against a pinned sha256). The exporter flips
+     the BGR input to RGB in the graph and pads the in-graph NMS output (IoU 0.65, at most 50
+     people) to a static 50 rows, so engines allocate their outputs up front
+   - Preprocessing is mmpose's: a centred letterbox with gray (114) padding, 0-255 pixels,
+     no mean / std. Postprocessing runs on the CPU and CUDA graphs default to off (the NMS
+     inside the engine has data-dependent shapes)
+
 Oriented Bounding Boxes
 -------------------------
 
@@ -300,6 +311,7 @@ Pose Estimation Models
 - **YOLOv8-pose**: ``yolov8n-pose``, ``yolov8s-pose``, ``yolov8m-pose``, ``yolov8l-pose``, ``yolov8x-pose`` (via Ultralytics)
 - **YOLOv11-pose**: ``yolov11n-pose``, ``yolov11s-pose``, ``yolov11m-pose``, ``yolov11l-pose``, ``yolov11x-pose`` (via Ultralytics)
 - **YOLOv26-pose**: ``yolov26n-pose``, ``yolov26s-pose``, ``yolov26m-pose``, ``yolov26l-pose``, ``yolov26x-pose`` (via Ultralytics)
+- **RTMO**: ``rtmo_s``, ``rtmo_m``, ``rtmo_l`` (OpenMMLab's ONNX)
 
 Oriented Bounding Box Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -368,6 +380,9 @@ for the weights: check the source before using them.
      - unknown (the code is MIT; the weights state no license)
    * - PP-OCR
      - Apache-2.0
+   * - RTMO
+     - Apache-2.0 (mmpose's license; upstream states no separate license for the weights,
+       which are trained on body7, seven public datasets with their own terms)
 
 Example Usage
 ~~~~~~~~~~~~~

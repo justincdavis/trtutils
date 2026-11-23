@@ -44,6 +44,8 @@ Functions
     Get the class maps from postprocessed semantic segmentation outputs.
 :func:`postprocess_yolo_pose`
     Postprocess the output of a YOLO pose estimation model.
+:func:`postprocess_rtmo_pose`
+    Postprocess the output of an RTMO pose estimation model.
 :func:`get_poses`
     Get the poses from postprocessed pose estimation outputs.
 :func:`postprocess_yolo_obb`
@@ -94,7 +96,7 @@ from ._cpu_ocr import (
     postprocess_text_recognition,
     sort_text_boxes,
 )
-from ._cpu_pose import get_poses, postprocess_yolo_pose
+from ._cpu_pose import get_poses, postprocess_rtmo_pose, postprocess_yolo_pose
 from ._cpu_segmentation import get_segmentations, postprocess_yolo_seg
 from ._cpu_semantic import get_class_maps, postprocess_class_map, postprocess_semantic_logits
 
@@ -125,6 +127,7 @@ __all__ = [
     "postprocess_hand_interactions",
     "postprocess_rfdetr",
     "postprocess_rtdetrv3",
+    "postprocess_rtmo_pose",
     "postprocess_semantic_logits",
     "postprocess_text_detection",
     "postprocess_text_recognition",

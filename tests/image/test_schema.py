@@ -125,6 +125,9 @@ _SEM = SemanticSegmenterOutputSchema
             SegmenterOutputSchema, ("output1", "output0"), None, "YOLO", id="seg-order-swapped"
         ),
         pytest.param(PoseEstimatorOutputSchema, ("output0",), None, "YOLO", id="pose-auto"),
+        pytest.param(
+            PoseEstimatorOutputSchema, ("keypoints", "dets"), None, "RTMO", id="pose-rtmo-swapped"
+        ),
         pytest.param(OBBDetectorOutputSchema, ("output0",), None, "YOLO", id="obb-auto"),
         pytest.param(
             PoseEstimatorOutputSchema,
@@ -162,6 +165,9 @@ def test_resolve_schema(schema_cls, outputs, override, expected) -> None:
         pytest.param(_TREC, ("logits",), _TREC.PADDLE, "match no", id="text-rec-named-override"),
         pytest.param(
             PoseEstimatorOutputSchema, ("output0", "output1"), None, "match no", id="pose-on-seg"
+        ),
+        pytest.param(
+            PoseEstimatorOutputSchema, ("dets",), None, "match no", id="pose-rtmo-missing-kpts"
         ),
         pytest.param(SegmenterOutputSchema, ("output0",), None, "match no", id="seg-on-pose"),
         pytest.param(
