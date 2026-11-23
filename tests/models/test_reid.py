@@ -8,13 +8,16 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import numpy as np
+import onnx
 import onnxruntime as ort
 import pytest
 
 from tests.conftest import DATA_DIR, PREPROCESSORS
+from trtutils._flags import FLAGS
 from trtutils.image._schema import FeatureExtractorOutputSchema
 from trtutils.image.preprocessors import crop_boxes
 from trtutils.models import OSNet
+from trtutils.models._hooks import depthwise_fp32_build_hook
 
 _OSNET = DATA_DIR / "osnet"
 _WIDTH = 512
@@ -126,3 +129,68 @@ def test_osnet_matches_onnxruntime(build_model_engine, images, onnx_path) -> Non
 
     for row, ref in zip(model.end2end(crops), reference):
         assert float(np.dot(row, ref)) > 0.999
+
+
+def _grouped_convs(onnx_path) -> int:
+    graph = onnx.load(str(onnx_path), load_external_data=False).graph
+    return sum(
+        1
+        for node in graph.node
+        if node.op_type == "Conv" and any(a.name == "group" and a.i > 1 for a in node.attribute)
+    )
+
+
+@pytest.mark.parametrize("onnx_path", OSNETS)
+def test_osnet_depthwise_hook_pins_every_grouped_conv(onnx_path) -> None:
+    """FP16 builds keep every depthwise convolution in FP32, so the hook is not a no-op."""
+    if not onnx_path.exists():
+        pytest.skip(f"missing {onnx_path}")
+    assert depthwise_fp32_build_hook in OSNet._build_hooks
+    overrides = depthwise_fp32_build_hook(onnx=onnx_path)
+    if not FLAGS.WEAK_TYPING:
+        assert overrides == {}
+        return
+    count = _grouped_convs(onnx_path)
+    assert count > 0
+    assert len(overrides["layer_precision"]) == count
+
+
+@pytest.mark.correctness
+@pytest.mark.parametrize(
+    ("batch_size", "dynamic_batch"),
+    [
+        # the default build: a 1..1 profile, which is a fixed batch
+        pytest.param(1, True, id="default-b1"),
+        pytest.param(4, False, id="static-b4"),
+        pytest.param(4, True, id="dynamic-1-4"),
+    ],
+)
+def test_osnet_fresh_builds_match_onnxruntime(tmp_path, images, batch_size, dynamic_batch) -> None:
+    """Freshly built default engines embed like onnxruntime, fixed and dynamic batch alike."""
+    # without the depthwise hook about half of the fixed-batch FP16 builds are wrong on every
+    # row (TRT 10.15): build in tmp_path, never through the shared engine cache, and twice
+    onnx_path = _OSNET / "osnet_x0_25_msmt17_256x128.onnx"
+    if not onnx_path.exists():
+        pytest.skip(f"missing {onnx_path}")
+    image = images["people"].array
+    boxes = [*_PEOPLE, (0, 0, 60, 120)]
+    crops = [np.ascontiguousarray(c) for c in crop_boxes(image, boxes)]
+    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+
+    for i in range(2):
+        engine_path = tmp_path / f"osnet_{i}.engine"
+        OSNet.build(
+            onnx_path,
+            engine_path,
+            batch_size=batch_size,
+            dynamic_batch=dynamic_batch,
+            opt_level=1,
+        )
+        model = OSNet(engine_path, preprocessor="cpu", warmup=False)
+        assert model.is_dynamic_batch is (dynamic_batch and batch_size > 1)
+        tensor, _ratios, _padding = model.preprocess(crops, method="cpu")
+        reference = session.run(["embedding"], {"input": tensor})[0]
+        reference /= np.linalg.norm(reference, axis=1, keepdims=True)
+        rows = model.end2end_boxes(image, boxes)
+        assert float((rows * reference).sum(axis=1).min()) > 0.999
+        del model

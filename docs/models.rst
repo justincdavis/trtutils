@@ -117,6 +117,8 @@ detections of a frame, and a tracker matches them across frames by cosine simila
    - Widths ``x0_25``, ``x0_5``, ``x0_75``, ``x1_0``, trained on MSMT17 (``osnet_<width>_msmt17``)
      or Market-1501 (``osnet_<width>_market1501``)
    - GitHub: `KaiyangZhou/deep-person-reid <https://github.com/KaiyangZhou/deep-person-reid>`_
+   - FP16 builds keep the depthwise convolutions in FP32: on TensorRT 10.15 many FP16 builds
+     with a fixed batch otherwise pick depthwise kernels that make every embedding wrong
    - Engines are built with a dynamic batch (1 to ``batch_size``); build with a batch that
      fits your detections per frame, e.g. ``OSNet.build(onnx, engine, batch_size=32)``
    - Fully convolutional: other ``(height, width)`` sizes can be downloaded

@@ -3,12 +3,14 @@
 # MIT License
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from trtutils.image._feature_extractor import FeatureExtractor
+from trtutils.models._hooks import depthwise_fp32_build_hook
 from trtutils.models._model import Model
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from typing_extensions import Self
@@ -23,12 +25,15 @@ class OSNet(FeatureExtractor, Model):
     ``(height, width) = (256, 128)``; the network is fully convolutional, so other
     sizes can be downloaded. Engines are built with a dynamic batch (1 to
     ``batch_size``) so ``end2end_boxes`` can embed any number of detections.
+    FP16 builds keep the depthwise convolutions in FP32: without that, some
+    builds pick FP16 depthwise kernels that make every embedding wrong.
     """
 
     _model_type = "osnet"
     _friendly_name = "OSNet"
     _default_imgsz = (256, 128)
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("input", "image")]
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [depthwise_fp32_build_hook]
     _dynamic_batch = True
 
     def __init__(
