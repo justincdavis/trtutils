@@ -21,6 +21,7 @@ ROUTING_CASES = [
     pytest.param("yolov9t", "yolov9", id="yolov9"),
     pytest.param("yolov10n", "yolov10", id="yolov10"),
     pytest.param("yolov12n", "yolov12", id="yolov12"),
+    pytest.param("yolov12n-seg", "yolov12", id="yolov12-seg"),
     pytest.param("yolov13n", "yolov13", id="yolov13"),
     pytest.param("yoloxn", "yolox", id="yolox"),
     pytest.param("rtdetrv1_r18", "rtdetrv1", id="rtdetrv1"),

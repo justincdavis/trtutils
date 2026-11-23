@@ -1,0 +1,23 @@
+{
+  "_defaults": {"exporter": "yolov12", "license": "AGPL-3.0"},
+  "yolov12n-seg": {
+    "url": "https://github.com/sunsmarterjie/yolov12/releases/download/seg/yolov12n-seg.pt",
+    "name": "yolov12n-seg"
+  },
+  "yolov12s-seg": {
+    "url": "https://github.com/sunsmarterjie/yolov12/releases/download/seg/yolov12s-seg.pt",
+    "name": "yolov12s-seg"
+  },
+  "yolov12m-seg": {
+    "url": "https://github.com/sunsmarterjie/yolov12/releases/download/seg/yolov12m-seg.pt",
+    "name": "yolov12m-seg"
+  },
+  "yolov12l-seg": {
+    "url": "https://github.com/sunsmarterjie/yolov12/releases/download/seg/yolov12l-seg.pt",
+    "name": "yolov12l-seg"
+  },
+  "yolov12x-seg": {
+    "url": "https://github.com/sunsmarterjie/yolov12/releases/download/seg/yolov12x-seg.pt",
+    "name": "yolov12x-seg"
+  }
+}
