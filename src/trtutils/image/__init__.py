@@ -39,6 +39,12 @@ Classes
     Wrapper around CTC text recognition models (e.g. PP-OCR).
 :class:`OCR`
     Two-stage OCR pipeline of a TextDetector and a TextRecognizer.
+:class:`ImageEncoder`
+    Wrapper around image encoders (e.g. the SAM image encoder).
+:class:`MaskDecoder`
+    Wrapper around SAM-style prompt and mask decoders.
+:class:`PromptableSegmenter`
+    Promptable segmentation pipeline of an ImageEncoder and a MaskDecoder.
 :class:`SAHI`
     SAHI wrapper for slicing aided inference.
 :class:`OBBDetector`
@@ -85,6 +91,7 @@ from ._image_model import ImageModel
 from ._obb_detector import OBBDetector
 from ._ocr import OCR, TextDetector, TextRecognizer
 from ._pose_estimator import PoseEstimator
+from ._promptable_segmenter import ImageEncoder, MaskDecoder, PromptableSegmenter
 from ._segmenter import Segmenter
 from .sahi import SAHI
 
@@ -96,9 +103,12 @@ __all__ = [
     "DepthEstimator",
     "Detector",
     "HandInteractionDetector",
+    "ImageEncoder",
     "ImageModel",
+    "MaskDecoder",
     "OBBDetector",
     "PoseEstimator",
+    "PromptableSegmenter",
     "Segmenter",
     "TextDetector",
     "TextRecognizer",

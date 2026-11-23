@@ -25,5 +25,6 @@ Examples
     examples/depth_estimator.rst
     examples/hand_interaction.rst
     examples/ocr.rst
+    examples/promptable_segmenter.rst
     examples/dla.rst
     examples/jetson.rst

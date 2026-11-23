@@ -84,6 +84,21 @@ class TextRecognizerOutputSchema(Enum):
     GENERIC = ("*",)
 
 
+class ImageEncoderOutputSchema(Enum):
+    # SAM-v1 style image encoders (MobileSAM), embeddings (B, 256, 64, 64)
+    SAM = ("image_embeddings",)
+
+
+class MaskDecoderInputSchema(Enum):
+    # SAM-v1 style prompt + mask decoders (MobileSAM), B prompt sets of N points each
+    SAM = ("image_embeddings", "point_coords", "point_labels", "mask_input", "has_mask_input")
+
+
+class MaskDecoderOutputSchema(Enum):
+    # predicted IoU (B, 4) and low-res mask logits (B, 4, 256, 256), mask 0 is the single mask
+    SAM = ("iou_predictions", "low_res_masks")
+
+
 class OutputSchema(Enum):
     # YOLO-X, v7, v8, v9, v11, v12, v13
     EFFICIENT_NMS = ("num_dets", "det_boxes", "det_scores", "det_classes")

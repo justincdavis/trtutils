@@ -68,11 +68,13 @@ class Model:
     _default_imgsz : int | tuple[int, int]
         Default input image size: an int for square (e.g. ``640``, ``224``, ``518``),
         or ``(height, width)`` for non-square (e.g. ``(256, 128)``).
-    _input_tensors : list[tuple[str, str]]
+    _input_tensors : list[tuple[str, str | tuple[int, ...]]]
         Input tensor definitions as ``(name, kind)`` pairs. ``kind`` is one of:
 
         - ``"image"`` — shape ``(batch, 3, height, width)``
         - ``"size"``  — shape ``(batch, 2)``
+        - a tuple of the trailing dims — shape ``(batch, *dims)``, e.g. the image
+          embeddings ``(256, 64, 64)`` of a mask decoder
 
     _build_hooks : list[Callable[..., dict[str, Any]]]
         Optional. List of callables invoked during ``build()``. Each receives
@@ -101,7 +103,8 @@ class Model:
     _model_type: ClassVar[str]
     _friendly_name: ClassVar[str]
     _default_imgsz: ClassVar[int | tuple[int, int]]
-    _input_tensors: ClassVar[list[tuple[str, str]]]
+    # kinds are str or tuple[int, ...]; Any keeps the str-only lists of the subclasses valid
+    _input_tensors: ClassVar[list[tuple[str, Any]]]
     _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = []
     _valid_imgszs: ClassVar[list[int] | None] = None
     _imgsz_divisor: ClassVar[int | None] = None
@@ -150,6 +153,8 @@ class Model:
                 shapes.append((name, (batch_size, 3, height, width)))
             elif kind == "size":
                 shapes.append((name, (batch_size, 2)))
+            elif isinstance(kind, tuple):
+                shapes.append((name, (batch_size, *kind)))
             else:
                 err_msg = f"Unknown input tensor kind: {kind!r}"
                 raise ValueError(err_msg)

@@ -1,0 +1,6 @@
+torch==2.8.*
+torchvision==0.23.*
+timm==1.0.31
+onnx>=1.17.0
+onnxscript>=0.6.0
+onnxslim>=0.1.98

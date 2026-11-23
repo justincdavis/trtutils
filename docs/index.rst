@@ -8,7 +8,7 @@ Features
 
 - ``TRTEngine`` runs any TensorRT engine, with async_v2 and async_v3 backends, CUDA graphs, and pagelocked or unified memory
 - ``Buffer`` inputs on the host or the device; ``Buffer.wrap`` views NumPy, CuPy, and PyTorch arrays without copying
-- Image models in ``trtutils.image``: ``Detector``, ``Classifier``, ``Segmenter``, ``PoseEstimator``, ``OBBDetector``, ``DepthEstimator``, ``HandInteractionDetector``, and ``OCR`` (text detection plus recognition)
+- Image models in ``trtutils.image``: ``Detector``, ``Classifier``, ``Segmenter``, ``PoseEstimator``, ``OBBDetector``, ``DepthEstimator``, ``HandInteractionDetector``, ``OCR`` (text detection plus recognition), and ``PromptableSegmenter`` (SAM-style masks from point and box prompts)
 - SAHI (sliced inference) for any detector, with ``SAHI``
 - Preprocessing on the CPU, CUDA, TensorRT or a DLA (``preprocessor="cpu" | "cuda" | "trt" | "dla0" | "dla1"``), optionally resizing on the CPU first (``cpu_resize=True``), and CPU or CUDA postprocessing (``postprocessor="cpu" | "cuda"``)
 - Pre-configured ``trtutils.models`` wrappers with ``download()`` and ``build()``

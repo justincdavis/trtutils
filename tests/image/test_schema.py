@@ -15,7 +15,10 @@ from trtutils.image._schema import (
     ClassifierOutputSchema,
     DepthEstimatorOutputSchema,
     HandInteractionOutputSchema,
+    ImageEncoderOutputSchema,
     InputSchema,
+    MaskDecoderInputSchema,
+    MaskDecoderOutputSchema,
     OBBDetectorOutputSchema,
     OutputSchema,
     PoseEstimatorOutputSchema,
@@ -71,6 +74,8 @@ _CLS = ClassifierOutputSchema
 _DEPTH = DepthEstimatorOutputSchema
 _TDET = TextDetectorOutputSchema
 _TREC = TextRecognizerOutputSchema
+_ENC = ImageEncoderOutputSchema
+_DEC = MaskDecoderOutputSchema
 
 
 @pytest.mark.cpu
@@ -114,6 +119,8 @@ _TREC = TextRecognizerOutputSchema
             id="pose-enum-override",
         ),
         pytest.param(OBBDetectorOutputSchema, ("output0",), "YOLO", "YOLO", id="obb-str-override"),
+        pytest.param(_ENC, ("image_embeddings",), None, "SAM", id="sam-encoder-auto"),
+        pytest.param(_DEC, _DEC.SAM.value[::-1], None, "SAM", id="sam-decoder-order-swapped"),
     ],
 )
 def test_resolve_schema(schema_cls, outputs, override, expected) -> None:
@@ -141,6 +148,8 @@ def test_resolve_schema(schema_cls, outputs, override, expected) -> None:
             SegmenterOutputSchema, ("output0",), SegmenterOutputSchema.YOLO, "match no", id="enum"
         ),
         pytest.param(SegmenterOutputSchema, ("output0", "output1"), "NOPE", "NOPE", id="bad-str"),
+        pytest.param(_ENC, ("output",), None, "match no", id="sam-encoder-on-depth"),
+        pytest.param(_DEC, ("iou_predictions",), None, "match no", id="sam-decoder-missing-masks"),
     ],
 )
 def test_resolve_schema_rejects(schema_cls, outputs, override, match) -> None:
@@ -220,3 +229,24 @@ def test_resolve_input_schema_rejects_unknown_names() -> None:
         resolve_schema(engine, InputSchema, inputs=True)
     with pytest.raises(ValueError, match="Invalid input_schema"):
         resolve_schema(engine, InputSchema, "NOPE", inputs=True)
+
+
+@pytest.mark.cpu
+@pytest.mark.parametrize(
+    ("inputs", "match"),
+    [
+        pytest.param(MaskDecoderInputSchema.SAM.value[::-1], None, id="sam-order-swapped"),
+        pytest.param(("images",), "match no", id="image-model"),
+        pytest.param(MaskDecoderInputSchema.SAM.value[:4], "match no", id="missing-has-mask"),
+    ],
+)
+def test_resolve_mask_decoder_input_schema(inputs, match) -> None:
+    """The mask decoder schema matches the engine input names in any order, else raises."""
+    engine = SimpleNamespace(input_names=list(inputs), output_names=[])
+    if match is None:
+        assert (
+            resolve_schema(engine, MaskDecoderInputSchema, inputs=True) is MaskDecoderInputSchema.SAM
+        )
+    else:
+        with pytest.raises(ValueError, match=match):
+            resolve_schema(engine, MaskDecoderInputSchema, inputs=True)

@@ -47,8 +47,10 @@ class TaskModel:
     name: str
     cls: Any
     image: str = "street.jpg"
-    # wrapper class per ONNX for multi-engine models (OCR det + rec)
+    # wrapper class per ONNX for multi-engine models (OCR det + rec, SAM encoder + decoder)
     parts: dict[str, Any] = field(default_factory=dict)
+    # extra end2end arguments (e.g. the prompt of a promptable segmenter)
+    inputs: dict[str, Any] = field(default_factory=dict)
 
 
 # image-model base class -> task
@@ -95,6 +97,10 @@ def build_task_models() -> list[TaskModel]:
             specs.append(TaskModel(task, name, cls, **TASK_OVERRIDES.get(task, {})))
     ocr = {"det": models.PPOCRDetector, "rec": models.PPOCRRecognizer}
     specs.append(TaskModel("ocr", "ppocrv4", models.PPOCR, image="text", parts=ocr))
+    sam = {"encoder": models.MobileSAMEncoder, "decoder": models.MobileSAMDecoder}
+    # a box around the bus in street.jpg
+    bus = {"boxes": np.array([383, 393, 648, 822], np.float32)}
+    specs.append(TaskModel("promptable", "mobile_sam", models.MobileSAM, parts=sam, inputs=bus))
     return specs
 
 
@@ -176,19 +182,23 @@ def _engine(cls: Any, name: str) -> Path:  # noqa: ANN401
 
 def load_model(spec: TaskModel, preprocessor: str, postprocessor: str = "cpu") -> Any:  # noqa: ANN401
     """Build (if needed) and load the model of ``spec``, ``+cpu_resize`` setting ``cpu_resize=True``."""
-    if spec.parts:
-        det = _engine(spec.parts["det"], f"{spec.name}_det")
-        rec = _engine(spec.parts["rec"], f"{spec.name}_rec")
-        return spec.cls(det, rec, postprocessor=postprocessor, warmup=True)
-    engine = _engine(spec.cls, spec.name)
+    if spec.task == "ocr":
+        engines = [_engine(cls, f"{spec.name}_{part}") for part, cls in spec.parts.items()]
+        return spec.cls(*engines, postprocessor=postprocessor, warmup=True)
     name, _, suffix = preprocessor.partition("+")
     if suffix not in ("", "cpu_resize"):
         err_msg = f"Unknown preprocessor suffix '+{suffix}', the only one is '+cpu_resize'"
         raise ValueError(err_msg)
+    cpu_resize = True if suffix else None
+    if spec.parts:
+        # other composites take one engine per part and their image model's preprocessing
+        engines = [_engine(cls, f"{spec.name}_{part}") for part, cls in spec.parts.items()]
+        return spec.cls(*engines, preprocessor=name, cpu_resize=cpu_resize, warmup=True)
+    engine = _engine(spec.cls, spec.name)
     return spec.cls(
         engine,
         preprocessor=name,
-        cpu_resize=True if suffix else None,
+        cpu_resize=cpu_resize,
         postprocessor=postprocessor,
         warmup=True,
     )
@@ -197,7 +207,7 @@ def load_model(spec: TaskModel, preprocessor: str, postprocessor: str = "cpu") -
 def _has_cuda_post(spec: TaskModel) -> bool:
     """Whether the task has a CUDA postprocessor (OCR: both of its parts)."""
     classes = spec.parts.values() if spec.parts else [spec.cls]
-    return all(c._CUDA_POSTPROCESSOR is not None for c in classes)  # noqa: SLF001
+    return all(getattr(c, "_CUDA_POSTPROCESSOR", None) is not None for c in classes)  # noqa: SLF001
 
 
 def _sync() -> None:
@@ -222,6 +232,7 @@ class StageTimer:
         ("prepare_inputs", "preprocess"),
         ("prepare_regions", "preprocess"),
         ("infer", "infer"),
+        ("encode", "infer"),
         ("_infer_post", "infer"),
         ("_infer_regions", "infer"),
         ("postprocess", "postprocess"),
@@ -282,10 +293,10 @@ class StageTimer:
 
 
 def _image_models(model: Any) -> list[Any]:  # noqa: ANN401
-    """The ImageModels inside ``model`` (OCR holds a detector and a recognizer)."""
+    """The models inside ``model`` (OCR: detector + recognizer, SAM: encoder + decoder)."""
     if hasattr(model, "prepare_inputs"):
         return [model]
-    return [model._detector, model._recognizer]  # noqa: SLF001
+    return [m for m in vars(model).values() if hasattr(m, "infer")]
 
 
 def _resolved(model: Any) -> str:  # noqa: ANN401
@@ -324,13 +335,13 @@ def bench_task(
         print(f"\tSkipping {key}: ran as {_resolved(model)}")
         return None
     for _ in range(warmup):
-        model.end2end(image)
+        model.end2end(image, **spec.inputs)
 
     # plain end2end latency, no extra syncs
     totals = []
     for _ in tqdm(range(iterations), desc=f"{key} e2e"):
         t0 = time.perf_counter()
-        model.end2end(image)
+        model.end2end(image, **spec.inputs)
         totals.append(time.perf_counter() - t0)
 
     timer = StageTimer(model)
@@ -338,7 +349,7 @@ def bench_task(
     for _ in tqdm(range(iterations), desc=f"{key} stages"):
         timer.reset()
         t0 = time.perf_counter()
-        model.end2end(image)
+        model.end2end(image, **spec.inputs)
         for stage, sec in timer.split(time.perf_counter() - t0).items():
             stages[stage].append(sec)
 
@@ -388,7 +399,7 @@ def run_tasks(
         # OCR preprocesses on the CPU, or on the GPU with its CUDA postprocessor
         runs = (
             [("cuda" if post == "cuda" else "cpu", post) for post in postprocessors]
-            if spec.parts
+            if spec.task == "ocr"
             else list(itertools.product(preprocessors, postprocessors))
         )
         for prep, post in runs:
