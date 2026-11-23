@@ -46,6 +46,19 @@ def _hw(imgsz: int | tuple[int, int]) -> tuple[int, int]:
     return (imgsz, imgsz) if isinstance(imgsz, int) else imgsz
 
 
+def _dla_defaults(dla_core: int | None, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """
+    Default a build with a DLA core to the DLA, with GPU fallback.
+
+    A DLA core alone used to leave every layer on the GPU. An explicit
+    ``default_device`` or ``gpu_fallback`` wins, and ``layer_device`` leaves the
+    placement to the caller.
+    """
+    if dla_core is None or "layer_device" in kwargs:
+        return kwargs
+    return {"default_device": "dla", "gpu_fallback": True, **kwargs}
+
+
 class Model:
     """
     Mixin providing concrete build() and download() classmethods driven by class attributes.
@@ -268,7 +281,10 @@ class Model:
             Batch size for the engine, the maximum batch when ``dynamic_batch`` is on.
             Default is 1.
         dla_core : int | None
-            The DLA core to build the engine for.
+            The DLA core to build the engine for. The network then defaults to the DLA
+            (``default_device="dla"``) with the layers it cannot run, such as NMS, falling
+            back to the GPU (``gpu_fallback=True``); pass either explicitly to override,
+            or ``layer_device`` to place layers yourself. Default is None, a GPU engine.
         opt_level : int
             TensorRT builder optimization level (0-5). Default is 3.
         verbose : bool | None
@@ -342,7 +358,9 @@ class Model:
                         build_overrides[key] = val
 
             # Forward unconsumed kwargs to build_engine for validation
-            remaining_kwargs = {k: v for k, v in kwargs.items() if k not in consumed_keys}
+            remaining_kwargs = _dla_defaults(
+                dla_core, {k: v for k, v in kwargs.items() if k not in consumed_keys}
+            )
             # an explicit fp16 wins; a strongly typed network (always, on trt 11) takes
             # its precision from the onnx
             fp16 = remaining_kwargs.pop(

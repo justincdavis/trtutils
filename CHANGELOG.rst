@@ -233,6 +233,9 @@ Fixed
   (Jetson). They failed with ``Assertion mOptimizationProfile >= 0 failed`` at the second
   input shape, because contexts cannot share an optimization profile before TensorRT 10.
   There one context now serves every shape
+* ``Model.build(..., dla_core=N)`` (and the PP-OCR builds) put the network on the DLA, with
+  GPU fallback for the layers it cannot run. Before, a DLA core alone built a GPU-only engine.
+  An explicit ``default_device`` / ``gpu_fallback`` or a ``layer_device`` placement wins
 * The CLI now errors on unrecognized arguments instead of silently ignoring them (only
   ``trtexec`` forwards unknown arguments). Fixed the ``--shape`` help text typo
 * ``RFDETR.build()`` FP16 engines detect again on TensorRT 8.6 (Jetson). The transformer
