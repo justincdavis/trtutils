@@ -479,3 +479,11 @@ def test_mobile_sam_decoder_build_rejects(kwargs, match) -> None:
         with pytest.raises(ValueError, match=match):
             MobileSAMDecoder.build("model.onnx", "model.engine", **kwargs)
     build.assert_not_called()
+
+
+@pytest.mark.parametrize("dynamic_batch", [True, False, None])
+def test_mobile_sam_decoder_build_takes_dynamic_batch(dynamic_batch) -> None:
+    """The decoder profile is always dynamic: dynamic_batch is accepted, not sent to build_engine."""
+    with patch("trtutils.models.promptable_segmenters._mobile_sam.build_engine") as build:
+        MobileSAMDecoder.build("model.onnx", "model.engine", dynamic_batch=dynamic_batch)
+    assert "dynamic_batch" not in build.call_args.kwargs
