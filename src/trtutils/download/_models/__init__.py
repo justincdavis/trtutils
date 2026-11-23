@@ -12,6 +12,7 @@ from ._depth_anything import (
     export_depth_anything_v3,
 )
 from ._dfine import export_dfine
+from ._fastreid import export_fastreid
 from ._hands23 import export_hands23
 from ._hoi_detr import export_hoi_detr
 from ._osnet import export_osnet
@@ -68,6 +69,7 @@ EXPORTERS: dict[str, Exporter] = {
     "depth_anything_v2": Exporter(export_depth_anything_v2),
     "depth_anything_v3": Exporter(export_depth_anything_v3),
     "dfine": Exporter(export_dfine),
+    "fastreid": Exporter(export_fastreid, batch=True, dynamic_default=True, hw=True),
     "hands23": Exporter(export_hands23),
     "hoi_detr": Exporter(export_hoi_detr),
     "osnet": Exporter(export_osnet, batch=True, dynamic_default=True, hw=True),
@@ -97,6 +99,7 @@ __all__ = [
     "export_depth_anything_v2",
     "export_depth_anything_v3",
     "export_dfine",
+    "export_fastreid",
     "export_hands23",
     "export_hoi_detr",
     "export_osnet",

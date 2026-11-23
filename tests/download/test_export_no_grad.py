@@ -11,6 +11,7 @@ import pytest
 
 from trtutils.download._models import (
     _depth_anything,
+    _fastreid,
     _hands23,
     _hoi_detr,
     _osnet,
@@ -49,6 +50,7 @@ def test_patch_disables_grad(patch_name: str) -> None:
         pytest.param(_hoi_detr, 1, id="hoi_detr"),
         pytest.param(_hands23, 1, id="hands23"),
         pytest.param(_osnet, 1, id="osnet"),
+        pytest.param(_fastreid, 1, id="fastreid"),
     ],
 )
 def test_generated_script_disables_grad(module, count: int) -> None:

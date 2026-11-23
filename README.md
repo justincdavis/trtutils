@@ -166,7 +166,7 @@ describes each family.
 - **Oriented bounding boxes**: YOLOv8, v11, and v26 (`-obb`)
 - **Depth estimation**: Depth-Anything V1, V2, and V3
 - **Feature extraction** (image embeddings and dense feature maps): DINOv3 ViT-S, S+, and B
-- **Person re-identification** (feature extractors for tracking): OSNet x0.25, x0.5, x0.75, and x1.0 (MSMT17 and Market-1501 weights)
+- **Person re-identification** (feature extractors for tracking): OSNet x0.25, x0.5, x0.75, and x1.0 (MSMT17 and Market-1501 weights); FastReID BoT, AGW, and SBS (ResNet-50, ResNet-50-IBN, ResNeSt-50, ResNet-101-IBN; Market-1501 and MSMT17 weights)
 - **Hand-object interaction**: HOI-DETR and Hands23
 - **OCR**: PP-OCR text detection and recognition
 

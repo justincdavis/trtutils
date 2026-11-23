@@ -1,0 +1,17 @@
+{
+    "_defaults": {"exporter": "fastreid", "license": "Apache-2.0", "imgsz": ["256", "128"], "extension": "pth"},
+    "fastreid_bot_r50_market1501": {"name": "market_bot_R50", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/market_bot_R50.pth", "config": "Market1501/bagtricks_R50.yml"},
+    "fastreid_bot_r50_ibn_market1501": {"name": "market_bot_R50-ibn", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/market_bot_R50-ibn.pth", "config": "Market1501/bagtricks_R50-ibn.yml"},
+    "fastreid_agw_r50_market1501": {"name": "market_agw_R50", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/market_agw_R50.pth", "config": "Market1501/AGW_R50.yml"},
+    "fastreid_sbs_r50_market1501": {"name": "market_sbs_R50", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/market_sbs_R50.pth", "config": "Market1501/sbs_R50.yml", "imgsz": ["384", "128"]},
+    "fastreid_sbs_r50_ibn_market1501": {"name": "market_sbs_R50-ibn", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/market_sbs_R50-ibn.pth", "config": "Market1501/sbs_R50-ibn.yml", "imgsz": ["384", "128"]},
+    "fastreid_sbs_s50_market1501": {"name": "market_sbs_S50", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/market_sbs_S50.pth", "config": "Market1501/sbs_S50.yml", "imgsz": ["384", "128"]},
+    "fastreid_sbs_r101_ibn_market1501": {"name": "market_sbs_R101-ibn", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/market_sbs_R101-ibn.pth", "config": "Market1501/sbs_R101-ibn.yml", "imgsz": ["384", "128"]},
+    "fastreid_bot_r50_msmt17": {"name": "msmt_bot_R50", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/msmt_bot_R50.pth", "config": "MSMT17/bagtricks_R50.yml"},
+    "fastreid_bot_r50_ibn_msmt17": {"name": "msmt_bot_R50-ibn", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/msmt_bot_R50-ibn.pth", "config": "MSMT17/bagtricks_R50-ibn.yml"},
+    "fastreid_agw_r50_msmt17": {"name": "msmt_agw_R50", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/msmt_agw_R50.pth", "config": "MSMT17/AGW_R50.yml"},
+    "fastreid_sbs_r50_msmt17": {"name": "msmt_sbs_R50", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/msmt_sbs_R50.pth", "config": "MSMT17/sbs_R50.yml", "imgsz": ["384", "128"]},
+    "fastreid_sbs_r50_ibn_msmt17": {"name": "msmt_sbs_R50-ibn", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/msmt_sbs_R50-ibn.pth", "config": "MSMT17/sbs_R50-ibn.yml", "imgsz": ["384", "128"]},
+    "fastreid_sbs_s50_msmt17": {"name": "msmt_sbs_S50", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/msmt_sbs_S50.pth", "config": "MSMT17/sbs_S50.yml", "imgsz": ["384", "128"]},
+    "fastreid_sbs_r101_ibn_msmt17": {"name": "msmt_sbs_R101-ibn", "url": "https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/msmt_sbs_R101-ibn.pth", "config": "MSMT17/sbs_R101-ibn.yml", "imgsz": ["384", "128"]}
+}

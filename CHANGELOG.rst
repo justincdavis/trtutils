@@ -107,6 +107,13 @@ Added
   keep the depthwise convolutions in FP32: on TensorRT 10.15 about half of the FP16 builds with
   a fixed batch otherwise pick FP16 depthwise kernels that break every embedding. Example
   ``examples/image/reid.py`` embeds detected people with ``end2end_boxes``
+* ``models.FastReID`` person re-ID (a ``FeatureExtractor``: 2048-d embeddings, L2 normalized by
+  default) and 14 downloads from the FastReID v0.1.1 model zoo (Apache-2.0):
+  ``fastreid_{bot_r50,bot_r50_ibn,agw_r50,sbs_r50,sbs_r50_ibn,sbs_s50,sbs_r101_ibn}`` with
+  ``_market1501`` or ``_msmt17``. BoT / AGW default to ``(256, 128)`` and SBS to ``(384, 128)``
+  as ``(height, width)``; batch-dynamic by default, and ``FastReID.build`` builds a dynamic
+  batch. The export takes ImageNet-normalized input, like OSNet's
+  (FastReID normalizes 0-255 RGB in the network with the same mean / std times 255)
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)

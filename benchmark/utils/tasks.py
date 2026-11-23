@@ -70,7 +70,10 @@ TASK_OVERRIDES: dict[str, dict[str, Any]] = {"obb": {"image": "aerial.jpg"}}
 _PERSON_BOXES = [
     (100 + 360 * i, 120 + 230 * j, 180 + 360 * i, 300 + 230 * j) for j in range(4) for i in range(5)
 ]
-MODEL_OVERRIDES: dict[str, dict[str, Any]] = {"osnet": {"boxes": _PERSON_BOXES}}
+MODEL_OVERRIDES: dict[str, dict[str, Any]] = {
+    "osnet": {"boxes": _PERSON_BOXES},
+    "fastreid": {"boxes": _PERSON_BOXES},
+}
 
 
 def _norm(name: str) -> str:
