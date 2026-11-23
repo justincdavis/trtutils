@@ -57,6 +57,11 @@ Added
   (Depth-Anything v1, v2, v3), segmenters, pose estimators and OBB detectors (YOLOv8, v11,
   v26), hand interaction (``Hands23``, ``HOIDETR``), and OCR (``PPOCRDetector``,
   ``PPOCRRecognizer``, ``PPOCR``)
+* Depth-Anything-V2 metric models (``models.DepthAnythingV2Metric``; ``indoor`` / ``outdoor``,
+  ``small`` / ``base`` / ``large``), which return depth in metres, and Depth-Anything-V3
+  ``small``, ``base`` and ``large`` (``DA3-LARGE-1.1``). ``DepthEstimator(normalize=False)`` and
+  ``postprocess_depth(normalize=False)`` keep the raw depth values instead of the [0, 1]
+  min-max normalization, which stays the default
 * ``download`` / ``download_model`` and ``trtutils download``, with keyword-only ``batch`` and
   ``dynamic`` (CLI ``--batch`` / ``--dynamic``) for static-batch or symbolic-batch exports
 * ``trtutils.Buffer`` / ``MemoryLocation`` (also ``core.Buffer``): one typed allocation on the

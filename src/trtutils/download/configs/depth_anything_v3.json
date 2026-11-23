@@ -1,5 +1,21 @@
 {
     "_defaults": {"exporter": "depth_anything_v3", "license": "Apache-2.0"},
+    "depth_anything_v3_small": {
+        "url": "huggingface_hub",
+        "name": "depth_anything_v3_small",
+        "repo_id": "depth-anything/DA3-SMALL"
+    },
+    "depth_anything_v3_base": {
+        "url": "huggingface_hub",
+        "name": "depth_anything_v3_base",
+        "repo_id": "depth-anything/DA3-BASE"
+    },
+    "depth_anything_v3_large": {
+        "license": "CC-BY-NC-4.0",
+        "url": "huggingface_hub",
+        "name": "depth_anything_v3_large",
+        "repo_id": "depth-anything/DA3-LARGE-1.1"
+    },
     "depth_anything_v3_mono_large": {
         "url": "huggingface_hub",
         "name": "depth_anything_v3_mono_large",

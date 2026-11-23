@@ -5,10 +5,16 @@
 
 from __future__ import annotations
 
-from ._depth_anything import DepthAnythingV1, DepthAnythingV2, DepthAnythingV3
+from ._depth_anything import (
+    DepthAnythingV1,
+    DepthAnythingV2,
+    DepthAnythingV2Metric,
+    DepthAnythingV3,
+)
 
 __all__ = [
     "DepthAnythingV1",
     "DepthAnythingV2",
+    "DepthAnythingV2Metric",
     "DepthAnythingV3",
 ]

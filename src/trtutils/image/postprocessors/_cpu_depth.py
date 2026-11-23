@@ -11,6 +11,7 @@ from trtutils._log import LOG
 def postprocess_depth(
     outputs: list[np.ndarray],
     *,
+    normalize: bool = True,
     no_copy: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> list[list[np.ndarray]]:
@@ -22,6 +23,10 @@ def postprocess_depth(
     outputs : list[np.ndarray]
         The outputs from a depth estimation network with batch dimension.
         Expected shape is (B, 1, H, W) or (B, H, W).
+    normalize : bool
+        Whether to min-max normalize each depth map to [0, 1]. If False, the
+        depth maps keep the network's values (e.g. metres for a metric model).
+        Default is True.
     no_copy : bool, optional
         Kept for interface symmetry with the other postprocessors. The depth maps are
         always new arrays, so this has no effect.
@@ -32,8 +37,8 @@ def postprocess_depth(
     -------
     list[list[np.ndarray]]
         The postprocessed depth maps per image.
-        Each image has a single depth map of shape (1, H, W)
-        with values normalized to [0, 1].
+        Each image has a single depth map of shape (1, H, W) as float32,
+        with values normalized to [0, 1] when ``normalize`` is True.
 
     """
     if verbose:
@@ -45,7 +50,10 @@ def postprocess_depth(
     results = []
     for i in range(batch_size):
         batch_outputs = [out[i : i + 1] for out in outputs]
-        result = _postprocess_depth_core(batch_outputs)
+        if normalize:
+            result = _postprocess_depth_core(batch_outputs)
+        else:
+            result = [out.astype(np.float32) for out in batch_outputs]
         results.append(result)
     return results
 
@@ -80,7 +88,7 @@ def get_depth_maps(
     Returns
     -------
     list[np.ndarray]
-        The depth map per image, each of shape (1, H, W) with values in [0, 1].
+        The depth map per image, each of shape (1, H, W).
 
     """
     if verbose:

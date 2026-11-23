@@ -115,6 +115,18 @@ EXPORT_CASES = [
         id="depth_anything_v2",
     ),
     pytest.param(
+        "depth_anything_v2_metric_outdoor_small",
+        {},
+        {"input": [_BATCH, 3, 518, 518]},
+        id="depth_anything_v2_metric",
+    ),
+    pytest.param(
+        "depth_anything_v3_small",
+        {"imgsz": 252},
+        {"input": [_BATCH, 3, 252, 252]},
+        id="depth_anything_v3_small",
+    ),
+    pytest.param(
         "depth_anything_v3_mono_large",
         {"imgsz": 252},
         {"input": [_BATCH, 3, 252, 252]},

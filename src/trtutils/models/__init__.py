@@ -96,6 +96,8 @@ Classes
     Alias for the DepthEstimator class with args preset for Depth-Anything-V1.
 :class:`DepthAnythingV2`
     Alias for the DepthEstimator class with args preset for Depth-Anything-V2.
+:class:`DepthAnythingV2Metric`
+    Alias for the DepthEstimator class with args preset for the Depth-Anything-V2 metric models.
 :class:`HOIDETR`
     Alias for the HandInteractionDetector class with args preset for HOI-DETR.
 :class:`Hands23`
@@ -165,7 +167,12 @@ from .classifiers import (
     YOLOv11Cls,
     YOLOv26Cls,
 )
-from .depth_estimators import DepthAnythingV1, DepthAnythingV2, DepthAnythingV3
+from .depth_estimators import (
+    DepthAnythingV1,
+    DepthAnythingV2,
+    DepthAnythingV2Metric,
+    DepthAnythingV3,
+)
 from .detectors import (
     DEIM,
     DETR,
@@ -212,6 +219,7 @@ __all__ = [
     "DenseNet",
     "DepthAnythingV1",
     "DepthAnythingV2",
+    "DepthAnythingV2Metric",
     "DepthAnythingV3",
     "EfficientNet",
     "EfficientNetV2",

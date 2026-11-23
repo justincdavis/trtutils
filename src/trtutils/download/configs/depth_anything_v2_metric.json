@@ -1,0 +1,49 @@
+{
+    "_defaults": {"exporter": "depth_anything_v2", "license": "Apache-2.0"},
+    "depth_anything_v2_metric_indoor_small": {
+        "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Hypersim-Small/resolve/main/depth_anything_v2_metric_hypersim_vits.pth?download=true",
+        "weights": "depth_anything_v2_metric_hypersim_vits.pth",
+        "name": "depth_anything_v2_metric_indoor_small",
+        "encoder": "vits",
+        "max_depth": "20"
+    },
+    "depth_anything_v2_metric_indoor_base": {
+        "license": "CC-BY-NC-4.0",
+        "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Hypersim-Base/resolve/main/depth_anything_v2_metric_hypersim_vitb.pth?download=true",
+        "weights": "depth_anything_v2_metric_hypersim_vitb.pth",
+        "name": "depth_anything_v2_metric_indoor_base",
+        "encoder": "vitb",
+        "max_depth": "20"
+    },
+    "depth_anything_v2_metric_indoor_large": {
+        "license": "CC-BY-NC-4.0",
+        "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-Hypersim-Large/resolve/main/depth_anything_v2_metric_hypersim_vitl.pth?download=true",
+        "weights": "depth_anything_v2_metric_hypersim_vitl.pth",
+        "name": "depth_anything_v2_metric_indoor_large",
+        "encoder": "vitl",
+        "max_depth": "20"
+    },
+    "depth_anything_v2_metric_outdoor_small": {
+        "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Small/resolve/main/depth_anything_v2_metric_vkitti_vits.pth?download=true",
+        "weights": "depth_anything_v2_metric_vkitti_vits.pth",
+        "name": "depth_anything_v2_metric_outdoor_small",
+        "encoder": "vits",
+        "max_depth": "80"
+    },
+    "depth_anything_v2_metric_outdoor_base": {
+        "license": "CC-BY-NC-4.0",
+        "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Base/resolve/main/depth_anything_v2_metric_vkitti_vitb.pth?download=true",
+        "weights": "depth_anything_v2_metric_vkitti_vitb.pth",
+        "name": "depth_anything_v2_metric_outdoor_base",
+        "encoder": "vitb",
+        "max_depth": "80"
+    },
+    "depth_anything_v2_metric_outdoor_large": {
+        "license": "CC-BY-NC-4.0",
+        "url": "https://huggingface.co/depth-anything/Depth-Anything-V2-Metric-VKITTI-Large/resolve/main/depth_anything_v2_metric_vkitti_vitl.pth?download=true",
+        "weights": "depth_anything_v2_metric_vkitti_vitl.pth",
+        "name": "depth_anything_v2_metric_outdoor_large",
+        "encoder": "vitl",
+        "max_depth": "80"
+    }
+}
