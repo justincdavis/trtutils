@@ -38,6 +38,7 @@ _EXPECTED_FAMILIES = [
     "depth_anything_v2",
     "depth_anything_v3",
     "dinov3",
+    "osnet",
     "hoi_detr",
     "hands23",
     "ppocr_det",
@@ -95,6 +96,14 @@ _EXPECTED_MODELS = [
     "dinov3_vits16",
     "dinov3_vits16plus",
     "dinov3_vitb16",
+    "osnet_x0_25_msmt17",
+    "osnet_x0_5_msmt17",
+    "osnet_x0_75_msmt17",
+    "osnet_x1_0_msmt17",
+    "osnet_x0_25_market1501",
+    "osnet_x0_5_market1501",
+    "osnet_x0_75_market1501",
+    "osnet_x1_0_market1501",
     "hoi_detr_vitl",
     "hands23_x101",
     "ppocrv4_det",
@@ -180,6 +189,18 @@ def test_dinov3_configs(model_configs) -> None:
         assert config["license"] == "DINOv3 License"
         assert config["name"].endswith("_patch16_dinov3.lvd1689m"), model
         assert (config["imgsz"], config["patch"]) == ("256", "16")
+
+
+def test_osnet_configs(model_configs) -> None:
+    """OSNet configs pin a torchreid width, a (256, 128) size, MSMT17 or Market-1501 weights only."""
+    for model, config in model_configs["osnet"].items():
+        assert config["exporter"] == "osnet"
+        assert config["license"] == "MIT"
+        assert normalize_imgsz(config["imgsz"]) == (256, 128)
+        arch, dataset = model.rsplit("_", 1)
+        assert (config["arch"], config["name"]) == (arch, model)
+        assert dataset in ("msmt17", "market1501"), model
+        assert config["id"]
 
 
 def test_dfine_obj2coco_configs_in_objects365_dir(model_configs) -> None:

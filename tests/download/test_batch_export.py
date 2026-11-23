@@ -12,7 +12,14 @@ import pytest
 
 from tests.download.conftest import ROUTING_CASES, patch_exporter
 from trtutils.download import download, download_model, load_model_configs
-from trtutils.download._models import EXPORTERS, _timm, _torchvision, _ultralytics, _yolo
+from trtutils.download._models import (
+    EXPORTERS,
+    _osnet,
+    _timm,
+    _torchvision,
+    _ultralytics,
+    _yolo,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -138,7 +145,7 @@ def run_cmd_calls(monkeypatch, tmp_path):
         cwd.mkdir(parents=True, exist_ok=True)
         (cwd / "out.onnx").touch()
 
-    for module in (_timm, _torchvision, _ultralytics, _yolo):
+    for module in (_osnet, _timm, _torchvision, _ultralytics, _yolo):
         monkeypatch.setattr(module, "run_cmd", _run_cmd)
         for name in ("git_clone", "run_uv_pip_install", "run_download"):
             monkeypatch.setattr(module, name, lambda *_, **__: None, raising=False)
@@ -228,3 +235,29 @@ def test_timm_export_imgsz(tmp_path, model, imgsz, expected) -> None:
     _export(_timm.export_timm_classifier, model, tmp_path, imgsz=imgsz)
     script = (tmp_path / "_export_timm_classifier.py").read_text()
     assert f"imgsz = {expected}\n" in script
+
+
+@pytest.mark.parametrize(
+    ("imgsz", "batch", "dynamic", "shape"),
+    [
+        pytest.param(None, 1, True, "1, 3, 256, 128", id="default-dynamic"),
+        pytest.param((320, 160), 4, False, "4, 3, 320, 160", id="height-width-b4"),
+        pytest.param(192, 1, False, "1, 3, 192, 192", id="square"),
+    ],
+)
+@pytest.mark.usefixtures("run_cmd_calls")
+def test_osnet_export_script(tmp_path, imgsz, batch, dynamic, shape) -> None:
+    """The OSNet exporter traces at (height, width) and the batch, symbolic only when dynamic."""
+    _export(
+        _osnet.export_osnet,
+        "osnet_x0_25_msmt17",
+        tmp_path,
+        imgsz=imgsz,
+        batch=batch,
+        dynamic=dynamic,
+    )
+    content = (tmp_path / "_export_osnet.py").read_text()
+    assert f"torch.randn({shape})" in content
+    assert '"osnet_x0_25"' in content
+    axes = '{"input": {0: "batch_size"}, "embedding": {0: "batch_size"}}' if dynamic else "None"
+    assert f"dynamic_axes={axes}," in content

@@ -24,6 +24,7 @@ Examples
     examples/sahi.rst
     examples/depth_estimator.rst
     examples/feature_extractor.rst
+    examples/reid.rst
     examples/hand_interaction.rst
     examples/ocr.rst
     examples/dla.rst

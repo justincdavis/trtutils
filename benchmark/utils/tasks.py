@@ -49,6 +49,8 @@ class TaskModel:
     image: str = "street.jpg"
     # wrapper class per ONNX for multi-engine models (OCR det + rec)
     parts: dict[str, Any] = field(default_factory=dict)
+    # time end2end_boxes on these (x1, y1, x2, y2) boxes, batched in one engine call
+    boxes: list[tuple[int, int, int, int]] | None = None
 
 
 # image-model base class -> task
@@ -64,6 +66,11 @@ TASKS = {
 }
 # per-task overrides of TaskModel fields
 TASK_OVERRIDES: dict[str, dict[str, Any]] = {"obb": {"image": "aerial.jpg"}}
+# per-model-type overrides: re-ID embeds 20 person-sized detections, not the whole frame
+_PERSON_BOXES = [
+    (100 + 360 * i, 120 + 230 * j, 180 + 360 * i, 300 + 230 * j) for j in range(4) for i in range(5)
+]
+MODEL_OVERRIDES: dict[str, dict[str, Any]] = {"osnet": {"boxes": _PERSON_BOXES}}
 
 
 def _norm(name: str) -> str:
@@ -93,7 +100,8 @@ def build_task_models() -> list[TaskModel]:
             if cls is None:
                 continue
             task = next(t for base, t in TASKS.items() if issubclass(cls, base))
-            specs.append(TaskModel(task, name, cls, **TASK_OVERRIDES.get(task, {})))
+            overrides = {**TASK_OVERRIDES.get(task, {}), **MODEL_OVERRIDES.get(model_type, {})}
+            specs.append(TaskModel(task, name, cls, **overrides))
     ocr = {"det": models.PPOCRDetector, "rec": models.PPOCRRecognizer}
     specs.append(TaskModel("ocr", "ppocrv4", models.PPOCR, image="text", parts=ocr))
     return specs
@@ -159,7 +167,7 @@ def _cache_dir() -> Path:
     return TASK_DIR / f"{str(prov['trtutils_sha'])[:10]}{'-dirty' if prov['dirty'] else ''}"
 
 
-def _engine(cls: Any, name: str) -> Path:  # noqa: ANN401
+def _engine(cls: Any, name: str, batch_size: int = 1) -> Path:  # noqa: ANN401
     """Download the ONNX and build the engine for one model, once, at its default precision."""
     cache = _cache_dir()
     onnx = cache / f"{name}.onnx"
@@ -171,7 +179,7 @@ def _engine(cls: Any, name: str) -> Path:  # noqa: ANN401
     if not engine.exists():
         print(f"\tBuilding {engine.name}")
         engine.parent.mkdir(parents=True, exist_ok=True)
-        cls.build(onnx, engine)
+        cls.build(onnx, engine, batch_size=batch_size)
     return engine
 
 
@@ -181,7 +189,7 @@ def load_model(spec: TaskModel, preprocessor: str, postprocessor: str = "cpu") -
         det = _engine(spec.parts["det"], f"{spec.name}_det")
         rec = _engine(spec.parts["rec"], f"{spec.name}_rec")
         return spec.cls(det, rec, postprocessor=postprocessor, warmup=True)
-    engine = _engine(spec.cls, spec.name)
+    engine = _engine(spec.cls, spec.name, len(spec.boxes) if spec.boxes else 1)
     name, _, suffix = preprocessor.partition("+")
     if suffix not in ("", "cpu_resize"):
         err_msg = f"Unknown preprocessor suffix '+{suffix}', the only one is '+cpu_resize'"
@@ -324,14 +332,19 @@ def bench_task(
     if _resolved(model) != preprocessor:
         print(f"\tSkipping {key}: ran as {_resolved(model)}")
         return None
+    run = (
+        functools.partial(model.end2end_boxes, image, spec.boxes)
+        if spec.boxes
+        else functools.partial(model.end2end, image)
+    )
     for _ in range(warmup):
-        model.end2end(image)
+        run()
 
     # plain end2end latency, no extra syncs
     totals = []
     for _ in tqdm(range(iterations), desc=f"{key} e2e"):
         t0 = time.perf_counter()
-        model.end2end(image)
+        run()
         totals.append(time.perf_counter() - t0)
 
     timer = StageTimer(model)
@@ -339,11 +352,11 @@ def bench_task(
     for _ in tqdm(range(iterations), desc=f"{key} stages"):
         timer.reset()
         t0 = time.perf_counter()
-        model.end2end(image)
+        run()
         for stage, sec in timer.split(time.perf_counter() - t0).items():
             stages[stage].append(sec)
 
-    del model
+    del model, run
     return {
         "task": spec.task,
         "model": spec.name,

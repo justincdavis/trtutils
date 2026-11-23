@@ -1,0 +1,11 @@
+{
+    "_defaults": {"exporter": "osnet", "license": "MIT", "imgsz": ["256", "128"], "extension": "pth"},
+    "osnet_x0_25_msmt17": {"arch": "osnet_x0_25", "name": "osnet_x0_25_msmt17", "id": "1sSwXSUlj4_tHZequ_iZ8w_Jh0VaRQMqF"},
+    "osnet_x0_5_msmt17": {"arch": "osnet_x0_5", "name": "osnet_x0_5_msmt17", "id": "1UT3AxIaDvS2PdxzZmbkLmjtiqq7AIKCv"},
+    "osnet_x0_75_msmt17": {"arch": "osnet_x0_75", "name": "osnet_x0_75_msmt17", "id": "1QEGO6WnJ-BmUzVPd3q9NoaO_GsPNlmWc"},
+    "osnet_x1_0_msmt17": {"arch": "osnet_x1_0", "name": "osnet_x1_0_msmt17", "id": "112EMUfBPYeYg70w-syK6V6Mx8-Qb9Q1M"},
+    "osnet_x0_25_market1501": {"arch": "osnet_x0_25", "name": "osnet_x0_25_market1501", "id": "1z1UghYvOTtjx7kEoRfmqSMu-z62J6MAj"},
+    "osnet_x0_5_market1501": {"arch": "osnet_x0_5", "name": "osnet_x0_5_market1501", "id": "1PLB9rgqrUM7blWrg4QlprCuPT7ILYGKT"},
+    "osnet_x0_75_market1501": {"arch": "osnet_x0_75", "name": "osnet_x0_75_market1501", "id": "1ozRaDSQw_EQ8_93OUmjDbvLXw9TnfPer"},
+    "osnet_x1_0_market1501": {"arch": "osnet_x1_0", "name": "osnet_x1_0_market1501", "id": "1vduhq5DpN2q1g4fYEZfPI17MJeh9qyrA"}
+}
