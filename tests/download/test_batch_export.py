@@ -12,7 +12,14 @@ import pytest
 
 from tests.download.conftest import ROUTING_CASES, patch_exporter
 from trtutils.download import download, download_model, load_model_configs
-from trtutils.download._models import EXPORTERS, _timm, _torchvision, _ultralytics, _yolo
+from trtutils.download._models import (
+    EXPORTERS,
+    _segformer,
+    _timm,
+    _torchvision,
+    _ultralytics,
+    _yolo,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -138,7 +145,7 @@ def run_cmd_calls(monkeypatch, tmp_path):
         cwd.mkdir(parents=True, exist_ok=True)
         (cwd / "out.onnx").touch()
 
-    for module in (_timm, _torchvision, _ultralytics, _yolo):
+    for module in (_segformer, _timm, _torchvision, _ultralytics, _yolo):
         monkeypatch.setattr(module, "run_cmd", _run_cmd)
         for name in ("git_clone", "run_uv_pip_install", "run_download"):
             monkeypatch.setattr(module, name, lambda *_, **__: None, raising=False)
@@ -206,6 +213,13 @@ def test_yolo_cli_exporters_pass_batch_and_dynamic(
             id="torchvision-segmentation",
         ),
         pytest.param(
+            _segformer.export_segformer,
+            "segformer_b0_ade",
+            "_export_segformer.py",
+            "logits",
+            id="segformer",
+        ),
+        pytest.param(
             _timm.export_timm_classifier,
             "deit_tiny",
             "_export_timm_classifier.py",
@@ -241,4 +255,21 @@ def test_timm_export_imgsz(tmp_path, model, imgsz, expected) -> None:
     """The timm exporter defaults to the trained size and rounds down to the patch size."""
     _export(_timm.export_timm_classifier, model, tmp_path, imgsz=imgsz)
     script = (tmp_path / "_export_timm_classifier.py").read_text()
+    assert f"imgsz = {expected}\n" in script
+
+
+@pytest.mark.parametrize(
+    ("model", "imgsz", "expected"),
+    [
+        pytest.param("segformer_b0_ade", None, 512, id="ade-default"),
+        pytest.param("segformer_b5_ade", None, 640, id="ade-b5-default"),
+        pytest.param("segformer_b0_cityscapes", None, 1024, id="cityscapes-default"),
+        pytest.param("segformer_b0_ade", 700, 672, id="rounded-to-stride"),
+    ],
+)
+@pytest.mark.usefixtures("run_cmd_calls")
+def test_segformer_export_imgsz(tmp_path, model, imgsz, expected) -> None:
+    """The SegFormer exporter defaults to the checkpoint's size and rounds down to the stride."""
+    _export(_segformer.export_segformer, model, tmp_path, imgsz=imgsz)
+    script = (tmp_path / "_export_segformer.py").read_text()
     assert f"imgsz = {expected}\n" in script

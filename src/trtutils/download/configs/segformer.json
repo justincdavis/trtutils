@@ -1,0 +1,15 @@
+{
+    "_defaults": {"exporter": "segformer", "license": "NVIDIA Source Code License for SegFormer (non-commercial)"},
+    "segformer_b0_ade": {"name": "nvidia/segformer-b0-finetuned-ade-512-512", "imgsz": "512"},
+    "segformer_b1_ade": {"name": "nvidia/segformer-b1-finetuned-ade-512-512", "imgsz": "512"},
+    "segformer_b2_ade": {"name": "nvidia/segformer-b2-finetuned-ade-512-512", "imgsz": "512"},
+    "segformer_b3_ade": {"name": "nvidia/segformer-b3-finetuned-ade-512-512", "imgsz": "512"},
+    "segformer_b4_ade": {"name": "nvidia/segformer-b4-finetuned-ade-512-512", "imgsz": "512"},
+    "segformer_b5_ade": {"name": "nvidia/segformer-b5-finetuned-ade-640-640", "imgsz": "640"},
+    "segformer_b0_cityscapes": {"name": "nvidia/segformer-b0-finetuned-cityscapes-1024-1024", "imgsz": "1024"},
+    "segformer_b1_cityscapes": {"name": "nvidia/segformer-b1-finetuned-cityscapes-1024-1024", "imgsz": "1024"},
+    "segformer_b2_cityscapes": {"name": "nvidia/segformer-b2-finetuned-cityscapes-1024-1024", "imgsz": "1024"},
+    "segformer_b3_cityscapes": {"name": "nvidia/segformer-b3-finetuned-cityscapes-1024-1024", "imgsz": "1024"},
+    "segformer_b4_cityscapes": {"name": "nvidia/segformer-b4-finetuned-cityscapes-1024-1024", "imgsz": "1024"},
+    "segformer_b5_cityscapes": {"name": "nvidia/segformer-b5-finetuned-cityscapes-1024-1024", "imgsz": "1024"}
+}

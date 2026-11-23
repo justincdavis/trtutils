@@ -17,6 +17,7 @@ from ._hoi_detr import export_hoi_detr
 from ._ppocr import export_ppocr
 from ._rfdetr import export_rfdetr
 from ._rtdetr import export_rtdetrv1, export_rtdetrv2, export_rtdetrv3
+from ._segformer import export_segformer
 from ._timm import export_timm_classifier
 from ._torchvision import export_torchvision_classifier, export_torchvision_segmenter
 from ._ultralytics import export_ultralytics
@@ -74,6 +75,7 @@ EXPORTERS: dict[str, Exporter] = {
     "rtdetrv1": Exporter(export_rtdetrv1),
     "rtdetrv2": Exporter(export_rtdetrv2),
     "rtdetrv3": Exporter(export_rtdetrv3),
+    "segformer": Exporter(export_segformer, batch=True, dynamic_default=True),
     "timm": Exporter(export_timm_classifier, batch=True),
     "torchvision": Exporter(export_torchvision_classifier, batch=True, dynamic_default=True),
     "torchvision_segmentation": Exporter(
@@ -104,6 +106,7 @@ __all__ = [
     "export_rtdetrv1",
     "export_rtdetrv2",
     "export_rtdetrv3",
+    "export_segformer",
     "export_timm_classifier",
     "export_torchvision_classifier",
     "export_torchvision_segmenter",

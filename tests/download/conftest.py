@@ -32,6 +32,7 @@ ROUTING_CASES = [
     pytest.param("rfdetr_n", "rfdetr", id="rfdetr"),
     pytest.param("alexnet", "torchvision", id="torchvision"),
     pytest.param("deeplabv3_resnet50", "torchvision_segmentation", id="torchvision-segmentation"),
+    pytest.param("segformer_b0_ade", "segformer", id="segformer"),
     pytest.param("deit_tiny", "timm", id="timm-deit"),
     pytest.param("deit3_small", "timm", id="timm-deit3"),
     pytest.param("depth_anything_v1_small", "depth_anything_v1", id="depth_anything_v1"),

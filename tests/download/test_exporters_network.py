@@ -101,6 +101,13 @@ EXPORT_CASES = [
         {"input": [_BATCH, 3, 520, 520]},
         id="torchvision-segmentation-default",
     ),
+    pytest.param("segformer_b0_ade", {}, {"input": [_BATCH, 3, 512, 512]}, id="segformer-default"),
+    pytest.param(
+        "segformer_b0_cityscapes",
+        {"imgsz": 512, "batch": 2},
+        {"input": [2, 3, 512, 512]},
+        id="segformer-custom-imgsz-batch2",
+    ),
     pytest.param("deit_tiny", {}, {"input": [1, 3, 224, 224]}, id="timm-deit-default-imgsz"),
     pytest.param(
         "deit_small_distilled", {"imgsz": 256}, {"input": [1, 3, 256, 256]}, id="timm-deit-custom"
