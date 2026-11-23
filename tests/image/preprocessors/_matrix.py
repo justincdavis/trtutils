@@ -68,6 +68,7 @@ ID_ORDER = (
     "backend",
     "geometry",
     "resize",
+    "antialias",
     "size",
     "dtype",
     "norm",
@@ -128,6 +129,7 @@ class Case:
     kind: str = "numpy"
     batch: str = "single"
     cpu_resize: bool | None = None
+    antialias: bool = False
     geometry: Geometry | None = None
     bad: str | None = None
     position: str | None = None
@@ -151,9 +153,16 @@ def dla_plan(case: Case, height: int, width: int) -> ResizePlan | None:
         return None
 
 
+def dla_antialias_on_cpu(case: Case) -> bool:
+    """Whether the DLA leaves an antialiased resize to the CPU: all but its own center crop."""
+    return case.antialias and case.resize != "center_crop"
+
+
 def _label(name: str, value: object) -> str:
     if name == "cpu_resize":
         return f"cpu_resize={value}"
+    if name == "antialias":
+        return "antialias" if value else "bilinear"
     if isinstance(value, tuple):
         return "x".join(str(side) for side in value)
     if isinstance(value, Geometry):
@@ -181,6 +190,12 @@ def impossible(case: Case) -> str | None:
         return "device Buffers are always resized on the DLA, which cannot resize 1000x750"
     if case.dla and case.resize == "pad" and (case.cpu_resize is False or case.kind == "device"):
         return "the DLA cannot pad resize, only the CPU does it for host images"
+    if (
+        case.dla
+        and dla_antialias_on_cpu(case)
+        and (case.cpu_resize is False or case.kind == "device")
+    ):
+        return "the DLA cannot antialias but its center crop, only the CPU does it for host images"
     return None
 
 

@@ -49,6 +49,7 @@ class HOIDETR(HandInteractionDetector, Model):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         cpu_resize: bool | None = None,
+        antialias: bool = False,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -75,6 +76,7 @@ class HOIDETR(HandInteractionDetector, Model):
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
             cpu_resize=cpu_resize,
+            antialias=antialias,
             no_warn=no_warn,
             verbose=verbose,
         )

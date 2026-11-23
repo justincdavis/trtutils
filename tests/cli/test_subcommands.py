@@ -78,6 +78,7 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "input_range": [0.0, 1.0],
         "preprocessor": "trt",
         "cpu_resize": None,
+        "antialias": False,
         "resize_method": "letterbox",
         "conf_thres": 0.1,
         "nms_iou_thres": 0.5,
@@ -98,6 +99,7 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "input_range": [0.0, 1.0],
         "preprocessor": "trt",
         "cpu_resize": None,
+        "antialias": False,
         "resize_method": "letterbox",
         "crop_pct": 0.875,
         "dla_core": None,
@@ -197,6 +199,7 @@ def test_classify_runs_and_forwards_resize_method(mock_cls) -> None:
     assert mock_cls.call_args.kwargs["resize_method"] == "center_crop"
     assert mock_cls.call_args.kwargs["crop_pct"] == 0.9
     assert mock_cls.call_args.kwargs["cpu_resize"] is True
+    assert mock_cls.call_args.kwargs["antialias"] is False
 
 
 @patch("trtutils.__main__.trtutils.image.Detector", side_effect=RuntimeError("created"))

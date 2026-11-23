@@ -139,6 +139,7 @@ class ImageModel:
         verbose: bool | None = None,
         output_schema: Enum | str | None = None,
         crop_pct: float = DEFAULT_CROP_PCT,
+        antialias: bool = False,
     ) -> None:
         """
         Create an ImageModel object.
@@ -223,6 +224,11 @@ class ImageModel:
         crop_pct : float
             The fraction of the resized image kept by center_crop resizing.
             By default 0.875 (resize 256, crop 224). Ignored by other methods.
+        antialias : bool
+            Whether downscales filter with a tent as wide as the scale factor, per axis,
+            as PIL's BILINEAR and torchvision's ``antialias=True`` do, instead of only
+            interpolating bilinearly. Applies to every resize method; images that are not
+            downscaled resize exactly as without it. By default False.
 
         Raises
         ------
@@ -278,6 +284,7 @@ class ImageModel:
             self._unified_mem = self._engine.unified_mem
             self._resize_method: str = resize_method
             self._crop_pct: float = crop_pct
+            self._antialias: bool = antialias
             self._cpu_resize: bool | None = cpu_resize
             # Float NCHW is (batch, 3, H, W). uint8 NHWC is a letterboxed image whose
             # scale, channel swap, and transpose already live in the network.
@@ -356,6 +363,7 @@ class ImageModel:
             std=self._std,
             tag=self._tag,
             crop_pct=self._crop_pct,
+            antialias=self._antialias,
         )
 
         if FLAGS.NVTX_ENABLED:
@@ -380,6 +388,7 @@ class ImageModel:
             unified_mem=self._unified_mem,
             tag=self._tag,
             crop_pct=self._crop_pct,
+            antialias=self._antialias,
             normalize=not self._sst_in_graph,
             cpu_resize=self._cpu_resize,
         )
@@ -406,6 +415,7 @@ class ImageModel:
             unified_mem=self._unified_mem,
             tag=self._tag,
             crop_pct=self._crop_pct,
+            antialias=self._antialias,
             cpu_resize=self._cpu_resize,
         )
 
@@ -432,6 +442,7 @@ class ImageModel:
             pagelocked_mem=self._pagelocked_mem,
             unified_mem=self._unified_mem,
             crop_pct=self._crop_pct,
+            antialias=self._antialias,
             cpu_resize=self._cpu_resize,
         )
 
@@ -791,6 +802,7 @@ class ImageModel:
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -802,6 +814,7 @@ class ImageModel:
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -812,6 +825,7 @@ class ImageModel:
         resize: str | None = None,
         method: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -830,6 +844,9 @@ class ImageModel:
         method : str, optional
             The underlying preprocessor to use, as in :meth:`get_preprocessor`.
             By default None, which will use the preprocessor stated in the constructor.
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, which will use the value
+            passed during initialization.
         no_copy : bool, optional
             If True and using CUDA, do not copy the
             data from the allocated memory. If the data
@@ -867,7 +884,9 @@ class ImageModel:
             )
             LOG.debug(f"{self._tag}: Using device: {method}")
         t0 = time.perf_counter()
-        data = preprocessor(batch_images, resize=resize, no_copy=no_copy, verbose=verbose)
+        data = preprocessor(
+            batch_images, resize=resize, antialias=antialias, no_copy=no_copy, verbose=verbose
+        )
         self._pre_profile = (t0, time.perf_counter())
 
         if FLAGS.NVTX_ENABLED:

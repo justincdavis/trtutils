@@ -247,6 +247,7 @@ def test_resizes_on_cpu_decides_once_from_plan_and_build(
     dla._o_shape = size
     dla._resize = method
     dla._crop_pct = 0.875
+    dla._antialias = False
     dla._norm = normalization(RANGE, None, None)
     dla._dla_core = 0
     dla._cpu_resize = cpu_resize

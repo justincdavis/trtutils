@@ -84,7 +84,8 @@ class DLAPreprocessor(ImagePreprocessor):
     of 16, and resizes like torchvision's antialiased ``Resize`` (box then
     triangle filters), not bilinearly like the CPU and CUDA preprocessors' center
     crop, which differ from it by a few levels on average. The DLA does not pad
-    resize. Host images of the sizes or methods the DLA cannot resize can be
+    resize, nor antialias the other methods (``antialias``; its center crop already
+    is). Host images of the sizes or methods the DLA cannot resize can be
     resized on the CPU instead (``cpu_resize``), with the DLA doing the rest at
     the output size. Images go
     to the DLA as int8 BGRx, converted on the CPU for numpy arrays and by a small
@@ -108,6 +109,7 @@ class DLAPreprocessor(ImagePreprocessor):
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         crop_pct: float = DEFAULT_CROP_PCT,
+        antialias: bool = False,
         cpu_resize: bool | None = None,
     ) -> None:
         """
@@ -155,6 +157,11 @@ class DLAPreprocessor(ImagePreprocessor):
         crop_pct : float
             The fraction of the resized image kept by center_crop resizing.
             By default 0.875 (resize 256, crop 224). Ignored by other methods.
+        antialias : bool
+            Whether downscales filter with a tent as wide as the scale factor, as the
+            other preprocessors do. The DLA's own center crop is already antialiased and
+            keeps running on the DLA; for the other methods host images are resized on the
+            CPU, and device Buffers or ``cpu_resize=False`` raise. By default False.
         cpu_resize : bool, optional
             Whether to resize host images on the CPU, as :class:`CPUPreprocessor`
             does, and only normalize on the DLA. True always does (its center crop is
@@ -197,7 +204,15 @@ class DLAPreprocessor(ImagePreprocessor):
         self._cpu_resize = cpu_resize
         self._on_cpu: dict[tuple[int, int, str], bool] = {}
         super().__init__(
-            output_shape, output_range, dtype, resize, mean, std, tag, crop_pct=crop_pct
+            output_shape,
+            output_range,
+            dtype,
+            resize,
+            mean,
+            std,
+            tag,
+            crop_pct=crop_pct,
+            antialias=antialias,
         )
 
         self._nvtx_tags.update(
@@ -291,13 +306,20 @@ class DLAPreprocessor(ImagePreprocessor):
             self._runners[key] = runner
         return runner
 
-    def resizes_on_cpu(self: Self, height: int, width: int, resize: str | None = None) -> bool:
+    def resizes_on_cpu(
+        self: Self,
+        height: int,
+        width: int,
+        resize: str | None = None,
+        *,
+        antialias: bool | None = None,
+    ) -> bool:
         """
         Whether host images of a size are resized on the CPU before the DLA.
 
         With ``cpu_resize=None`` the first call for a size and method decides: the
-        CPU resizes when the DLA plan or engine build fails. Device Buffers are
-        always resized on the DLA.
+        CPU resizes when the DLA plan or engine build fails, and always antialiased
+        resizes other than a center crop. Device Buffers are always resized on the DLA.
 
         Parameters
         ----------
@@ -307,6 +329,9 @@ class DLAPreprocessor(ImagePreprocessor):
             The image width.
         resize : str, optional
             The resize method. By default None, the method given in the constructor.
+        antialias : bool, optional
+            Whether the resize is antialiased. By default None, the value given in the
+            constructor.
 
         Returns
         -------
@@ -317,6 +342,8 @@ class DLAPreprocessor(ImagePreprocessor):
         if self._cpu_resize is not None:
             return self._cpu_resize
         method = resize if resize is not None else self._resize
+        if self._antialias_on_cpu(method, antialias=antialias):
+            return True
         key = (height, width, method)
         if key not in self._on_cpu:
             try:
@@ -329,8 +356,18 @@ class DLAPreprocessor(ImagePreprocessor):
                 self._on_cpu[key] = False
         return self._on_cpu[key]
 
+    def _antialias_on_cpu(self: Self, method: str, *, antialias: bool | None) -> bool:
+        """Whether a resize is antialiased in a way only the CPU does: not the DLA's center crop."""
+        antialias = antialias if antialias is not None else self._antialias
+        return antialias and method != "center_crop"
+
     def _prepare(
-        self: Self, image: np.ndarray | Buffer, method: str, *, verbose: bool | None
+        self: Self,
+        image: np.ndarray | Buffer,
+        method: str,
+        *,
+        antialias: bool,
+        verbose: bool | None,
     ) -> _Job:
         """Get the engine, the image it reads, and the ratios and padding of one image."""
         if (
@@ -342,12 +379,21 @@ class DLAPreprocessor(ImagePreprocessor):
             raise ValueError(err_msg)
         height, width = image.shape[:2]
         on_device = isinstance(image, Buffer) and image.is_device
-        if not on_device and self.resizes_on_cpu(height, width, method):
+        if not on_device and self.resizes_on_cpu(height, width, method, antialias=antialias):
             host = image.array if isinstance(image, Buffer) else image
-            resized, ratios, padding = resize_image(host, self._o_shape, method, self._crop_pct)
+            resized, ratios, padding = resize_image(
+                host, self._o_shape, method, self._crop_pct, antialias=antialias
+            )
             out_width, out_height = self._o_shape
             runner = self._runner(out_height, out_width, "linear", verbose=verbose)
             return _Job(runner, resized, ratios, padding)
+        if self._antialias_on_cpu(method, antialias=antialias):
+            err_msg = (
+                f"{self._tag}: the DLA cannot antialias a {method} resize, only the CPU does "
+                "it for host images. Pass antialias=False, resize host images on the CPU "
+                "(cpu_resize), or use the 'cuda' or 'trt' preprocessor."
+            )
+            raise ValueError(err_msg)
         runner = self._runner(height, width, method, verbose=verbose)
         # the DLA reads device and mapped buffers through their device address
         if isinstance(image, Buffer) and not image.device_visible:
@@ -403,6 +449,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -416,6 +463,9 @@ class DLAPreprocessor(ImagePreprocessor):
         resize : str, optional
             The method to resize the images with, 'letterbox', 'linear', 'center_crop' or 'pad'.
             By default None, which uses the method given in the constructor.
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, which uses the value given
+            in the constructor.
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional
@@ -434,7 +484,7 @@ class DLAPreprocessor(ImagePreprocessor):
         ValueError
             If there are more images than the batch size, the resize method is
             unknown, an image is not a uint8 color image, or the DLA cannot resize
-            an image the CPU does not (see the class docstring).
+            (or antialias) an image the CPU does not (see the class docstring).
         RuntimeError
             If TensorRT cannot build the DLA engine for an image the CPU does not
             resize (some inputs wider than 4K UHD), or fails to enqueue it.
@@ -450,7 +500,10 @@ class DLAPreprocessor(ImagePreprocessor):
             err_msg = f"{self._tag}: Batch size {len(images)} exceeds configured batch size {self._batch_size}"
             raise ValueError(err_msg)
         method = resize if resize is not None else self._resize
-        jobs = [self._prepare(image, method, verbose=verbose) for image in images]
+        antialias = antialias if antialias is not None else self._antialias
+        jobs = [
+            self._prepare(image, method, antialias=antialias, verbose=verbose) for image in images
+        ]
 
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["dla_direct_preproc"])
@@ -480,6 +533,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -490,6 +544,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -499,6 +554,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -512,6 +568,9 @@ class DLAPreprocessor(ImagePreprocessor):
         resize : str, optional
             The method to resize the images with, 'letterbox', 'linear', 'center_crop' or 'pad'.
             By default None, which uses the method given in the constructor.
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, which uses the value given
+            in the constructor.
         no_copy : bool, optional
             If True, return the host output memory without a copy. It WILL BE
             OVERWRITTEN INPLACE by future preprocessing calls.
@@ -524,7 +583,9 @@ class DLAPreprocessor(ImagePreprocessor):
             The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
-        return self.preprocess(images, resize=resize, no_copy=no_copy, verbose=verbose)
+        return self.preprocess(
+            images, resize=resize, antialias=antialias, no_copy=no_copy, verbose=verbose
+        )
 
     # preprocess overloads
     @overload
@@ -533,6 +594,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -543,6 +605,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -552,6 +615,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -565,6 +629,9 @@ class DLAPreprocessor(ImagePreprocessor):
         resize : str, optional
             The method to resize the images with, 'letterbox', 'linear', 'center_crop' or 'pad'.
             By default None, which uses the method given in the constructor.
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, which uses the value given
+            in the constructor.
         no_copy : bool, optional
             If True, return the host output memory without a copy. It WILL BE
             OVERWRITTEN INPLACE by future preprocessing calls.
@@ -581,7 +648,7 @@ class DLAPreprocessor(ImagePreprocessor):
             nvtx.push_range(self._nvtx_tags["dla_preprocess"])
         batch = [images] if isinstance(images, (np.ndarray, Buffer)) else images
         output, ratios, padding = self.direct_preproc(
-            batch, resize=resize, no_warn=True, verbose=verbose
+            batch, resize=resize, antialias=antialias, no_warn=True, verbose=verbose
         )
         host = self._output.fetch(output.shape, self._stream)
         stream_synchronize(self._stream)

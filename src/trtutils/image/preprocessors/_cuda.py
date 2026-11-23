@@ -7,6 +7,7 @@ from __future__ import annotations
 import contextlib
 import math
 from abc import abstractmethod
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, overload
 
 import numpy as np
@@ -29,6 +30,7 @@ from trtutils.image.kernels import (
     LINEAR_RESIZE,
     SST_FAST,
     SST_FAST_F16,
+    TENT_RESIZE,
 )
 
 from ._base import DEFAULT_CROP_PCT, RESIZE_METHODS, ImagePreprocessor, crop_geometry
@@ -66,6 +68,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         tag: str | None = None,
         *,
         crop_pct: float = DEFAULT_CROP_PCT,
+        antialias: bool = False,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cpu_resize: bool | None = None,
@@ -107,6 +110,11 @@ class GPUImagePreprocessor(ImagePreprocessor):
         crop_pct : float
             The fraction of the resized image kept by center_crop resizing.
             By default 0.875 (resize 256, crop 224). Ignored by other methods.
+        antialias : bool
+            Whether downscales filter with a tent as wide as the scale factor, per axis,
+            as PIL's BILINEAR and torchvision's ``antialias=True`` do, on the GPU and in
+            ``cpu_resize`` alike. Images that are not downscaled resize exactly as
+            without it. By default False.
         pagelocked_mem : bool, optional
             Whether or not to allocate output memory as pagelocked.
             By default, pagelocked memory will be used.
@@ -129,6 +137,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             std=std,
             tag=tag,
             crop_pct=crop_pct,
+            antialias=antialias,
         )
 
         self._nvtx_tags.update(
@@ -199,7 +208,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             self._allocate_imagenet_buffers()
 
         # Cache for _create_resize_args: avoid repacking kernel args for same resolution
-        self._cached_resize_key: tuple[int, int, str] | None = None
+        self._cached_resize_key: tuple[int, int, str, bool] | None = None
         self._cached_resize_result: (
             tuple[Kernel, tuple[float, float], tuple[float, float], tuple[int, ...]] | None
         ) = None
@@ -214,6 +223,11 @@ class GPUImagePreprocessor(ImagePreprocessor):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # gpu_init
+
+    @cached_property
+    def _tent_kernel(self: Self) -> Kernel:
+        # compiled on first use, so preprocessors that never antialias skip the NVRTC compile
+        return Kernel(TENT_RESIZE[0], TENT_RESIZE[1])
 
     def __del__(self: Self) -> None:
         with contextlib.suppress(AttributeError):
@@ -253,6 +267,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -263,6 +278,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -272,6 +288,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -286,6 +303,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The method to resize the image with.
             Options are [letterbox, linear, center_crop, pad], will use method
             provided in constructor by default.
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, which uses the value
+            given in the constructor.
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -303,7 +323,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
-        return self.preprocess(images, resize=resize, no_copy=no_copy, verbose=verbose)
+        return self.preprocess(
+            images, resize=resize, antialias=antialias, no_copy=no_copy, verbose=verbose
+        )
 
     def _allocate_imagenet_buffers(self: Self) -> None:
         if FLAGS.NVTX_ENABLED:
@@ -428,6 +450,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -446,6 +469,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
         resize : str, optional
             The resize method. Options are ['letterbox', 'linear', 'center_crop', 'pad'].
             If None, uses the configured default.
+        antialias : bool, optional
+            Whether to antialias downscales. If None, uses the configured default.
         no_warn : bool, optional
             If True, suppress warnings about usage.
         verbose : bool, optional
@@ -483,6 +508,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -493,6 +519,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -502,6 +529,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -516,6 +544,9 @@ class GPUImagePreprocessor(ImagePreprocessor):
             The method to resize the image with.
             Options are [letterbox, linear, center_crop, pad], will use method
             provided in constructor by default.
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, which uses the value
+            given in the constructor.
         no_copy : bool, optional
             If True, the outputs will not be copied out
             from the cuda allocated host memory. Instead,
@@ -545,6 +576,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         output, ratios_list, padding_list = self.direct_preproc(
             batch_images,
             resize=resize,
+            antialias=antialias,
             no_warn=True,
             verbose=verbose,
         )
@@ -581,6 +613,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         input_ptr: int,
         output_ptr: int,
         *,
+        antialias: bool = False,
         input_stride: int = 0,
         output_stride: int = 0,
         verbose: bool | None = None,
@@ -600,6 +633,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Device pointer to source image data.
         output_ptr : int
             Device pointer to destination image data.
+        antialias : bool, optional
+            Whether to resize a downscale with the tent kernel. By default False.
         input_stride : int, optional
             Bytes between batch elements in source buffer. 0 means single image.
         output_stride : int, optional
@@ -617,66 +652,20 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.push_range(self._nvtx_tags["create_resize_args"])
 
         # Check cache: for constant-resolution input, geometry is identical every frame.
-        cache_key = (height, width, method)
+        cache_key = (height, width, method, antialias)
         if cache_key == self._cached_resize_key and self._cached_resize_result is not None:
             resize_kernel, ratios, padding, geometry_args = self._cached_resize_result
         else:
             if verbose:
-                LOG.debug(f"{self._tag}: create_resize_args")
-
+                LOG.debug(f"{self._tag}: create_resize_args ({method})")
+            resize_kernel, ratios, padding, region = self._resize_geometry(height, width, method)
             o_width, o_height = self._o_shape
-            scale_x = o_width / width
-            scale_y = o_height / height
-
-            if method in ("letterbox", "pad"):
-                if verbose:
-                    LOG.debug(f"{self._tag}: Making {method} args")
-
-                scale = min(scale_x, scale_y)
-                new_width = round(width * scale)
-                new_height = round(height * scale)
-                # pad puts the image at the top-left, letterbox centres it
-                centred = method == "letterbox"
-                pad_w = (o_width - new_width) / 2 if centred else 0.0
-                pad_h = (o_height - new_height) / 2 if centred else 0.0
-                padding_x = round(pad_w - 0.1)
-                padding_y = round(pad_h - 0.1)
-                ratios = (scale, scale)
-                padding = (pad_w, pad_h)
-                resize_kernel = self._letterbox_kernel
-                geometry_args = (
-                    width,
-                    height,
-                    o_width,
-                    o_height,
-                    padding_x,
-                    padding_y,
-                    new_width,
-                    new_height,
-                )
-            elif method == "center_crop":
-                if verbose:
-                    LOG.debug(f"{self._tag}: Making center crop args")
-
-                (resized_w, resized_h, left, top), ratios, padding = crop_geometry(
-                    width, height, self._o_shape, self._crop_pct
-                )
-                # a letterbox whose resized image overhangs the output on every side
-                resize_kernel = self._letterbox_kernel
-                geometry_args = (width, height, o_width, o_height, -left, -top, resized_w, resized_h)
-            else:
-                if verbose:
-                    LOG.debug(f"{self._tag}: Making linear args")
-
-                ratios = (scale_x, scale_y)
-                padding = (0, 0)
-                resize_kernel = self._linear_kernel
-                geometry_args = (
-                    width,
-                    height,
-                    o_width,
-                    o_height,
-                )
+            geometry_args: tuple[int, ...] = (width, height, o_width, o_height, *region)
+            if antialias and (region[2] < width or region[3] < height):
+                # a downscale: the tent kernel takes letterbox's arguments
+                resize_kernel = self._tent_kernel
+            elif resize_kernel is self._linear_kernel:
+                geometry_args = geometry_args[:4]
 
             self._cached_resize_key = cache_key
             self._cached_resize_result = (resize_kernel, ratios, padding, geometry_args)
@@ -690,6 +679,35 @@ class GPUImagePreprocessor(ImagePreprocessor):
             nvtx.pop_range()  # create_resize_args
 
         return resize_kernel, resize_args, ratios, padding
+
+    def _resize_geometry(
+        self: Self, height: int, width: int, method: str
+    ) -> tuple[Kernel, tuple[float, float], tuple[float, float], tuple[int, int, int, int]]:
+        """
+        Get the bilinear kernel, ratios, padding and output region of a resize.
+
+        The region is the (left, top, width, height) of the resized image on the output.
+        """
+        o_width, o_height = self._o_shape
+        if method in ("letterbox", "pad"):
+            scale = min(o_width / width, o_height / height)
+            new_width = round(width * scale)
+            new_height = round(height * scale)
+            # pad puts the image at the top-left, letterbox centres it
+            centred = method == "letterbox"
+            pad_w = (o_width - new_width) / 2 if centred else 0.0
+            pad_h = (o_height - new_height) / 2 if centred else 0.0
+            region = (round(pad_w - 0.1), round(pad_h - 0.1), new_width, new_height)
+            return self._letterbox_kernel, (scale, scale), (pad_w, pad_h), region
+        if method == "center_crop":
+            (resized_w, resized_h, left, top), ratios, padding = crop_geometry(
+                width, height, self._o_shape, self._crop_pct
+            )
+            # a letterbox whose resized image overhangs the output on every side
+            region = (-left, -top, resized_w, resized_h)
+            return self._letterbox_kernel, ratios, padding, region
+        ratios = (o_width / width, o_height / height)
+        return self._linear_kernel, ratios, (0, 0), (0, 0, o_width, o_height)
 
     def _stage_image(self: Self, image: np.ndarray | Buffer, *, verbose: bool | None) -> int:
         """Get a device pointer to one image, staging host images in the input binding."""
@@ -717,6 +735,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         batch_buffer_ptr: int,
         resize_method: str,
         *,
+        antialias: bool = False,
         verbose: bool | None = None,
     ) -> tuple[tuple[float, float], tuple[float, float]]:
         """Resize a single image directly into the batch destination."""
@@ -730,6 +749,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             resize_method,
             self._stage_image(image, verbose=verbose),
             batch_buffer_ptr,
+            antialias=antialias,
             verbose=verbose,
         )
         resize_kernel.call(
@@ -750,6 +770,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         batch_buffer_ptr: int,
         resize_method: str,
         *,
+        antialias: bool = False,
         verbose: bool | None = None,
     ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
         """Resize same-sized images with one H2D copy and one kernel launch."""
@@ -793,6 +814,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
             resize_method,
             self._batch_input_binding.allocation,
             batch_buffer_ptr,
+            antialias=antialias,
             input_stride=in_stride,
             output_stride=out_stride,
             verbose=verbose,
@@ -815,6 +837,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         batch_buffer_ptr: int,
         resize_method: str,
         *,
+        antialias: bool = False,
         verbose: bool | None = None,
     ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
         """Resize mixed-size images with direct writes to batch output."""
@@ -835,6 +858,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 resize_method,
                 self._stage_image(image, verbose=verbose),
                 batch_buffer_ptr + (i * single_image_bytes),
+                antialias=antialias,
                 verbose=verbose,
             )
             resize_kernel.call(
@@ -857,6 +881,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         batch_buffer_ptr: int,
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
         """
@@ -870,6 +895,8 @@ class GPUImagePreprocessor(ImagePreprocessor):
             GPU pointer to batch buffer to copy resized images to.
         resize : str, optional
             Resize method.
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, the configured default.
         verbose : bool, optional
             Enable verbose logging.
 
@@ -879,9 +906,14 @@ class GPUImagePreprocessor(ImagePreprocessor):
             Lists of ratios and padding per image.
 
         """
+        antialias = antialias if antialias is not None else self._antialias
         if self._cpu_resize:
-            return self._cpu_resize_to_batch(images, batch_buffer_ptr, resize, verbose=verbose)
-        return self._gpu_resize_to_batch(images, batch_buffer_ptr, resize, verbose=verbose)
+            return self._cpu_resize_to_batch(
+                images, batch_buffer_ptr, resize, antialias=antialias, verbose=verbose
+            )
+        return self._gpu_resize_to_batch(
+            images, batch_buffer_ptr, resize, antialias=antialias, verbose=verbose
+        )
 
     def _gpu_resize_to_batch(  # noqa: C901
         self: Self,
@@ -889,6 +921,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         batch_buffer_ptr: int,
         resize: str | None,
         *,
+        antialias: bool,
         verbose: bool | None,
     ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
         """Resize images on the GPU into the batch buffer."""
@@ -911,6 +944,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 images[0],
                 batch_buffer_ptr,
                 resize_method,
+                antialias=antialias,
                 verbose=verbose,
             )
             if FLAGS.NVTX_ENABLED:
@@ -938,12 +972,14 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 images,
                 batch_buffer_ptr,
                 resize_method,
+                antialias=antialias,
             )
         else:
             ratios_list, padding_list = self._resize_heterogeneous_batch(
                 images,
                 batch_buffer_ptr,
                 resize_method,
+                antialias=antialias,
                 verbose=verbose,
             )
 
@@ -958,6 +994,7 @@ class GPUImagePreprocessor(ImagePreprocessor):
         batch_buffer_ptr: int,
         resize: str | None,
         *,
+        antialias: bool,
         verbose: bool | None,
     ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
         """Resize host images on the CPU and upload them, and device Buffers on the GPU."""
@@ -978,12 +1015,12 @@ class GPUImagePreprocessor(ImagePreprocessor):
                 slot = batch_buffer_ptr + i * image_bytes
                 if isinstance(image, Buffer) and image.is_device:
                     ratios, padding = self._resize_single_image_to_batch(
-                        image, slot, method, verbose=verbose
+                        image, slot, method, antialias=antialias, verbose=verbose
                     )
                 else:
                     host = image.array if isinstance(image, Buffer) else image
                     resized, ratios, padding = resize_image(
-                        host, self._o_shape, method, self._crop_pct
+                        host, self._o_shape, method, self._crop_pct, antialias=antialias
                     )
                     if staging is not None:
                         np.copyto(staging[i], resized)
@@ -1014,6 +1051,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         tag: str | None = None,
         *,
         crop_pct: float = DEFAULT_CROP_PCT,
+        antialias: bool = False,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         normalize: bool = True,
@@ -1055,6 +1093,11 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         crop_pct : float
             The fraction of the resized image kept by center_crop resizing.
             By default 0.875 (resize 256, crop 224). Ignored by other methods.
+        antialias : bool
+            Whether downscales filter with a tent as wide as the scale factor, per axis,
+            as PIL's BILINEAR and torchvision's ``antialias=True`` do, on the GPU and in
+            ``cpu_resize`` alike. Images that are not downscaled resize exactly as
+            without it. By default False.
         pagelocked_mem : bool, optional
             Whether or not to allocate output memory as pagelocked.
             By default, pagelocked memory will be used.
@@ -1093,6 +1136,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             threads,
             tag,
             crop_pct=crop_pct,
+            antialias=antialias,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cpu_resize=cpu_resize,
@@ -1265,6 +1309,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -1278,6 +1323,9 @@ class CUDAPreprocessor(GPUImagePreprocessor):
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear, center_crop, pad]
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, which uses the value
+            given in the constructor.
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional
@@ -1311,6 +1359,7 @@ class CUDAPreprocessor(GPUImagePreprocessor):
             images,
             self._sst_input_binding.allocation,
             resize=resize,
+            antialias=antialias,
             verbose=verbose,
         )
         if not self._normalize:

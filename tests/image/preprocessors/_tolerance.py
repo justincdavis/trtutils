@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from tests.image.preprocessors._matrix import NORMS, Case, dla_plan
+from tests.image.preprocessors._matrix import NORMS, Case, dla_antialias_on_cpu, dla_plan
 from trtutils.image.preprocessors._cpu import resize_image
 
 if TYPE_CHECKING:
@@ -45,7 +45,7 @@ def path(case: Case, height: int, width: int) -> str:
     if case.backend in ("cuda", "trt"):
         return "cpu-resize" if case.cpu_resize and not on_device else "gpu-resize"
     plan = dla_plan(case, height, width)
-    if not on_device and (case.cpu_resize or plan is None):
+    if not on_device and (case.cpu_resize or plan is None or dla_antialias_on_cpu(case)):
         return "dla-normalize"
     if case.resize == "center_crop":
         return "dla-crop"
@@ -69,7 +69,9 @@ def reference(
     (low, high), mean, std = NORMS[case.norm]
     tensors, ratios, padding = [], [], []
     for image in images:
-        resized, ratio, pad = resize_image(image, case.output_shape, case.resize)
+        resized, ratio, pad = resize_image(
+            image, case.output_shape, case.resize, antialias=case.antialias
+        )
         rgb = resized[..., ::-1].transpose(2, 0, 1).astype(np.float64)
         if mean is None or std is None:
             tensors.append(rgb / 255.0 * (high - low) + low)

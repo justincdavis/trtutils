@@ -22,8 +22,8 @@ class RFDETR(Detector, Model):
     """
     Alias of Detector with default args for RF-DETR.
 
-    Resizes with a plain square resize (``resize_method="linear"``) like upstream RF-DETR, and
-    returns the model's own class index (stock COCO weights use COCO category ids, horse is 19).
+    Resizes with an antialiased square resize (``resize_method="linear"``,
+    ``antialias=True``) like upstream RF-DETR, and returns the model's own class index (stock COCO weights use COCO category ids, horse is 19).
     """
 
     _model_type = "rfdetr"
@@ -58,6 +58,7 @@ class RFDETR(Detector, Model):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         cpu_resize: bool | None = None,
+        antialias: bool = True,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         class_map: Mapping[int, int] | None = None,
@@ -86,6 +87,7 @@ class RFDETR(Detector, Model):
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
             cpu_resize=cpu_resize,
+            antialias=antialias,
             extra_nms=extra_nms,
             agnostic_nms=agnostic_nms,
             class_map=class_map,

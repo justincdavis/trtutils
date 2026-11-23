@@ -376,6 +376,7 @@ class ParallelDetector:
         resize: str = "letterbox",
         method: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[
@@ -397,6 +398,9 @@ class ParallelDetector:
             The underlying preprocessor to use.
             Options are 'cpu' and 'cuda'. By default None, which
             will use the preprocessor stated in the constructor.
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, which uses each
+            model's setting.
         no_copy : bool, optional
             If True and using CUDA, do not copy the
             data from the allocated memory. If the data
@@ -433,6 +437,7 @@ class ParallelDetector:
                 modelid,
                 resize=resize,
                 method=method,
+                antialias=antialias,
                 no_copy=no_copy,
                 verbose=verbose,
             )
@@ -450,6 +455,7 @@ class ParallelDetector:
         resize: str = "letterbox",
         method: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -469,6 +475,9 @@ class ParallelDetector:
             The underlying preprocessor to use.
             Options are 'cpu' and 'cuda'. By default None, which
             will use the preprocessor stated in the constructor.
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, which uses each
+            model's setting.
         no_copy : bool, optional
             If True and using CUDA, do not copy the
             data from the allocated memory. If the data
@@ -491,6 +500,7 @@ class ParallelDetector:
             images,
             resize=resize,
             method=method,
+            antialias=antialias,
             no_copy=no_copy,
             verbose=verbose,
         )

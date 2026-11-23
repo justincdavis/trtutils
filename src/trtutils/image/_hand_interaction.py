@@ -78,6 +78,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         cpu_resize: bool | None = None,
+        antialias: bool = False,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> None:
@@ -156,6 +157,10 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             Whether to resize images on the CPU and leave the rest of the
             preprocessing to the preprocessor. Default is None, which resizes on
             the CPU only what the preprocessor cannot resize, see :class:`ImageModel`.
+        antialias : bool, optional
+            Whether downscales are antialiased: filtered with a tent as wide as the scale
+            factor, per axis, as PIL's BILINEAR and torchvision's ``antialias=True`` do.
+            Default is False, see :class:`ImageModel`.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -187,6 +192,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
             cpu_resize=cpu_resize,
+            antialias=antialias,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,

@@ -109,6 +109,27 @@ class TestPreprocessor:
         inputs = [_as_kind(image, case.kind) for image in images]
         _check(case, preprocessors(case), _submit(inputs, case.batch), images, preprocessors)
 
+    @pytest.mark.parametrize(
+        "case",
+        matrix(
+            resize=RESIZES,
+            antialias=(True,),
+            cpu_resize=CPU_RESIZE,
+            kind=KINDS,
+            batch=tuple(BATCHES),
+        )
+        + matrix(geometry=GEOMETRIES, antialias=(True,)),
+    )
+    def test_antialias_matches_cpu(self, case, frames, preprocessors) -> None:
+        """Antialiased resizes match CPUPreprocessor's for every input kind, batch and geometry."""
+        if case.geometry is not None:
+            geometry = case.geometry
+            images = [frames(geometry.photo, geometry.height, geometry.width)]
+        else:
+            images = _images(frames, BATCHES[case.batch])
+        inputs = [_as_kind(image, case.kind) for image in images]
+        _check(case, preprocessors(case), _submit(inputs, case.batch), images, preprocessors)
+
     @pytest.mark.parametrize("case", matrix(geometry=GEOMETRIES, dtype=FLOATS, norm=NORMALIZATIONS))
     def test_geometry_matches_cpu(self, case, frames, preprocessors) -> None:
         """Other scales, aspect ratios and DLA factors match CPUPreprocessor within tolerance."""
@@ -130,7 +151,9 @@ class TestPreprocessor:
         result = preprocessor.preprocess(_submit(inputs, case.batch))
         _assert_same(result, preprocessor.preprocess(images))
 
-    @pytest.mark.parametrize("case", matrix(resize=RESIZES, cpu_resize=CPU_RESIZE))
+    @pytest.mark.parametrize(
+        "case", matrix(resize=RESIZES, antialias=(False, True), cpu_resize=CPU_RESIZE)
+    )
     def test_batch_matches_singles(self, case, frames, preprocessors) -> None:
         """Growing, shrinking and mixed-size batches reproduce each image's single result exactly."""
         preprocessor = preprocessors(case)
@@ -173,6 +196,14 @@ class TestPreprocessor:
         _assert_same(letterbox(images, case.resize), expected)
         _assert_same(letterbox(images, resize=case.resize), expected)
         _assert_same(letterbox.preprocess(images, case.resize), expected)
+        smooth = preprocessors(replace(case, antialias=True))
+        antialiased = smooth.preprocess(images)
+        _assert_same(own(images, antialias=True), antialiased)
+        _assert_same(own.preprocess(images, antialias=True), antialiased)
+        _assert_same(smooth(images, antialias=False), expected)
+        _assert_same(letterbox(images, case.resize, antialias=True), antialiased)
+        assert antialiased[1:] == expected[1:]
+        assert not np.array_equal(antialiased[0], expected[0])
 
     @pytest.mark.parametrize(
         "case",
@@ -283,6 +314,34 @@ class TestPreprocessor:
         elif case.resize == "center_crop":
             bilinear = on_cpu.preprocess(aligned)[0]
             assert np.abs(bilinear - on_device.preprocess(aligned)[0]).max() > 1e-3
+
+    @pytest.mark.parametrize(
+        "case",
+        matrix(
+            resize=RESIZES,
+            antialias=(True,),
+            cpu_resize=(None, True),
+            skip=lambda case: None if case.dla else "only the DLA leaves antialiasing to the CPU",
+        ),
+    )
+    def test_dla_antialias_routing(self, case, frames, preprocessors, build_preprocessor) -> None:
+        """The DLA center crops itself; other antialiased resizes go to the CPU or raise."""
+        aligned = frames(*FRAMES["people-1920x1080"])
+        device = Buffer.from_array(aligned, MemoryLocation.DEVICE)
+        preprocessor = preprocessors(case)
+        never_cpu = build_preprocessor(case, cpu_resize=False)
+        if case.resize == "center_crop":
+            assert preprocessor.resizes_on_cpu(*aligned.shape[:2]) is bool(case.cpu_resize)
+            _check(case, preprocessor, device, [aligned], preprocessors)
+            return
+        assert preprocessor.resizes_on_cpu(*aligned.shape[:2]) is True
+        assert preprocessor.resizes_on_cpu(*aligned.shape[:2], antialias=False) is bool(
+            case.cpu_resize
+        )
+        _check(case, preprocessor, aligned, [aligned], preprocessors)
+        for bad, owner in ((device, preprocessor), (aligned, never_cpu), (device, never_cpu)):
+            with pytest.raises(ValueError, match="cannot antialias"):
+                owner.preprocess(bad)
 
     @pytest.mark.parametrize("case", matrix(cpu_resize=CPU_RESIZE))
     def test_rejects_unknown_resize(self, case, frames, preprocessors, build_preprocessor) -> None:

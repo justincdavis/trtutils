@@ -22,6 +22,7 @@ from ._base import (
     crop_geometry,
     validate_crop_pct,
 )
+from ._tent import tent_resize
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -36,9 +37,38 @@ _FILL = (114, 114, 114)
 PreprocessFn = Callable[..., Tuple[np.ndarray, List[Tuple[float, float]], List[Tuple[float, float]]]]
 
 
+def resize(image: np.ndarray, size: tuple[int, int], *, antialias: bool = False) -> np.ndarray:
+    """
+    Resize an HWC image to size (width, height) bilinearly, antialiased if asked.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        The HWC uint8 image.
+    size : tuple[int, int]
+        The (width, height) to resize to.
+    antialias : bool
+        Whether to filter a downscale with a tent as wide as the scale factor, per axis, as
+        PIL's BILINEAR and torchvision's ``antialias=True`` do. An axis that is not
+        downscaled is interpolated bilinearly, and an image that is not downscaled on
+        either axis resizes exactly as without it. By default False.
+
+    Returns
+    -------
+    np.ndarray
+        The resized image.
+
+    """
+    if antialias and (size[0] < image.shape[1] or size[1] < image.shape[0]):
+        return tent_resize(image, size)
+    return cv2.resize(image, size, interpolation=cv2.INTER_LINEAR)
+
+
 def letterbox(
     image: np.ndarray,
     new_shape: tuple[int, int],
+    *,
+    antialias: bool = False,
 ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
     """Resize keeping aspect ratio and pad with gray, returns (image, ratios, padding)."""
     h, w = image.shape[:2]
@@ -47,7 +77,7 @@ def letterbox(
     dw = (new_shape[0] - new_unpad[0]) / 2
     dh = (new_shape[1] - new_unpad[1]) / 2
     if (w, h) != new_unpad:
-        image = cv2.resize(image, new_unpad, interpolation=cv2.INTER_LINEAR)
+        image = resize(image, new_unpad, antialias=antialias)
     image = cv2.copyMakeBorder(
         image,
         round(dh - 0.1),
@@ -63,6 +93,8 @@ def letterbox(
 def pad_resize(
     image: np.ndarray,
     new_shape: tuple[int, int],
+    *,
+    antialias: bool = False,
 ) -> tuple[np.ndarray, tuple[float, float]]:
     """
     Resize keeping aspect ratio to the top-left corner and fill the bottom and right with gray.
@@ -76,6 +108,8 @@ def pad_resize(
         The HWC image to resize.
     new_shape : tuple[int, int]
         The (width, height) to resize to.
+    antialias : bool
+        Whether to antialias a downscale, see :func:`resize`. By default False.
 
     Returns
     -------
@@ -87,7 +121,7 @@ def pad_resize(
     r = min(new_shape[1] / h, new_shape[0] / w)
     new_unpad = (round(w * r), round(h * r))
     if (w, h) != new_unpad:
-        image = cv2.resize(image, new_unpad, interpolation=cv2.INTER_LINEAR)
+        image = resize(image, new_unpad, antialias=antialias)
     image = cv2.copyMakeBorder(
         image,
         0,
@@ -103,11 +137,13 @@ def pad_resize(
 def resize_linear(
     image: np.ndarray,
     new_shape: tuple[int, int],
+    *,
+    antialias: bool = False,
 ) -> tuple[np.ndarray, tuple[float, float]]:
     """Resize to new_shape (width, height), returns (image, ratios)."""
     h, w = image.shape[:2]
     new_w, new_h = new_shape
-    resized = cv2.resize(image, new_shape, interpolation=cv2.INTER_LINEAR)
+    resized = resize(image, new_shape, antialias=antialias)
     return resized, (new_w / w, new_h / h)
 
 
@@ -116,6 +152,8 @@ def resize_image(
     input_shape: tuple[int, int],
     method: str,
     crop_pct: float = DEFAULT_CROP_PCT,
+    *,
+    antialias: bool = False,
 ) -> tuple[np.ndarray, tuple[float, float], tuple[float, float]]:
     """
     Resize one HWC image to ``input_shape`` (width, height) as :func:`preprocess` does.
@@ -130,6 +168,8 @@ def resize_image(
         The resize method, one of [letterbox, linear, center_crop, pad].
     crop_pct : float
         The fraction of the resized image kept by center_crop resizing.
+    antialias : bool
+        Whether to antialias a downscale, see :func:`resize`. By default False.
 
     Returns
     -------
@@ -143,20 +183,20 @@ def resize_image(
 
     """
     if method == "letterbox":
-        return letterbox(image, new_shape=input_shape)
+        return letterbox(image, new_shape=input_shape, antialias=antialias)
     if method == "center_crop":
         img_height, img_width = image.shape[:2]
         (resized_w, resized_h, left, top), ratios, padding = crop_geometry(
             img_width, img_height, input_shape, crop_pct
         )
-        resized = cv2.resize(image, (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
+        resized = resize(image, (resized_w, resized_h), antialias=antialias)
         out_width, out_height = input_shape
         return resized[top : top + out_height, left : left + out_width], ratios, padding
     if method == "linear":
-        tensor, ratios = resize_linear(image, new_shape=input_shape)
+        tensor, ratios = resize_linear(image, new_shape=input_shape, antialias=antialias)
         return tensor, ratios, (0.0, 0.0)
     if method == "pad":
-        tensor, ratios = pad_resize(image, new_shape=input_shape)
+        tensor, ratios = pad_resize(image, new_shape=input_shape, antialias=antialias)
         return tensor, ratios, (0.0, 0.0)
     err_msg = f"Unknown method for image resizing. Options are {list(RESIZE_METHODS)}"
     raise ValueError(err_msg)
@@ -173,6 +213,7 @@ def preprocess(
     out: np.ndarray | None = None,
     *,
     crop_pct: float = DEFAULT_CROP_PCT,
+    antialias: bool = False,
     verbose: bool | None = None,
 ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
     """
@@ -205,6 +246,8 @@ def preprocess(
     crop_pct : float
         The fraction of the resized image kept by center_crop resizing.
         By default 0.875 (resize 256, crop 224). Ignored by other methods.
+    antialias : bool
+        Whether to antialias a downscale, see :func:`resize`. By default False.
     verbose : bool, optional
         Whether or not to log additional information.
 
@@ -256,7 +299,9 @@ def preprocess(
     ratios_list: list[tuple[float, float]] = []
     padding_list: list[tuple[float, float]] = []
     for i, image in enumerate(images):
-        tensor, ratios, padding = resize_image(image, input_shape, method, crop_pct)
+        tensor, ratios, padding = resize_image(
+            image, input_shape, method, crop_pct, antialias=antialias
+        )
         tensor = cv2.cvtColor(tensor, cv2.COLOR_BGR2RGB)
 
         # writing the transposed view straight into the slot does HWC->CHW,
@@ -291,6 +336,7 @@ class CPUPreprocessor(ImagePreprocessor):
         tag: str | None = None,
         *,
         crop_pct: float = DEFAULT_CROP_PCT,
+        antialias: bool = False,
     ) -> None:
         """
         Create a CPUPreprocessor for image processing models.
@@ -328,6 +374,8 @@ class CPUPreprocessor(ImagePreprocessor):
         crop_pct : float
             The fraction of the resized image kept by center_crop resizing.
             By default 0.875 (resize 256, crop 224). Ignored by other methods.
+        antialias : bool
+            Whether to antialias downscales, see :func:`resize`. By default False.
 
         """
         tag = "CPUPreprocessor" if tag is None else f"{tag}.CPUPreprocessor"
@@ -342,6 +390,7 @@ class CPUPreprocessor(ImagePreprocessor):
             std=std,
             tag=tag,
             crop_pct=crop_pct,
+            antialias=antialias,
         )
 
         self._nvtx_tags.update(
@@ -382,6 +431,7 @@ class CPUPreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -392,6 +442,7 @@ class CPUPreprocessor(ImagePreprocessor):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -401,6 +452,7 @@ class CPUPreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -414,6 +466,10 @@ class CPUPreprocessor(ImagePreprocessor):
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear, center_crop, pad]
+            Not supported when the preprocessor was built with a function.
+        antialias : bool, optional
+            Whether to antialias downscales, see :func:`resize`. By default None,
+            which uses the value given in the constructor.
             Not supported when the preprocessor was built with a function.
         no_copy : bool, optional
             If True, write into a reused buffer and return a view of it,
@@ -430,7 +486,9 @@ class CPUPreprocessor(ImagePreprocessor):
             The preprocessed batch tensor, list of ratios, and list of padding per image.
 
         """
-        return self.preprocess(images, resize=resize, no_copy=no_copy, verbose=verbose)
+        return self.preprocess(
+            images, resize=resize, antialias=antialias, no_copy=no_copy, verbose=verbose
+        )
 
     # preprocess overloads
     @overload
@@ -439,6 +497,7 @@ class CPUPreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -449,6 +508,7 @@ class CPUPreprocessor(ImagePreprocessor):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -458,6 +518,7 @@ class CPUPreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -471,6 +532,10 @@ class CPUPreprocessor(ImagePreprocessor):
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear, center_crop, pad]
+            Not supported when the preprocessor was built with a function.
+        antialias : bool, optional
+            Whether to antialias downscales, see :func:`resize`. By default None,
+            which uses the value given in the constructor.
             Not supported when the preprocessor was built with a function.
         no_copy : bool, optional
             If True, write into a reused buffer and return a view of it,
@@ -489,12 +554,17 @@ class CPUPreprocessor(ImagePreprocessor):
         Raises
         ------
         ValueError
-            If resize or no_copy is given while a preprocessing function is set.
+            If resize, antialias or no_copy is given while a preprocessing function is set.
 
         """
         if self._preprocess_fn is not None:
             return self._preprocess_with_fn(
-                self._preprocess_fn, images, resize, no_copy=no_copy, verbose=verbose
+                self._preprocess_fn,
+                images,
+                resize,
+                antialias=antialias,
+                no_copy=no_copy,
+                verbose=verbose,
             )
 
         if FLAGS.NVTX_ENABLED:
@@ -538,6 +608,7 @@ class CPUPreprocessor(ImagePreprocessor):
             std_tuple,
             out,
             crop_pct=self._crop_pct,
+            antialias=antialias if antialias is not None else self._antialias,
             verbose=verbose,
         )
 
@@ -552,12 +623,14 @@ class CPUPreprocessor(ImagePreprocessor):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None,
         *,
+        antialias: bool | None,
         no_copy: bool | None,
         verbose: bool | None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
-        if resize is not None or no_copy:
+        if resize is not None or antialias is not None or no_copy:
             err_msg = (
-                f"{self._tag}: resize and no_copy are not supported with a preprocessing function"
+                f"{self._tag}: resize, antialias and no_copy are not supported with a "
+                "preprocessing function"
             )
             raise ValueError(err_msg)
         if FLAGS.NVTX_ENABLED:

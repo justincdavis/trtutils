@@ -61,6 +61,7 @@ class Classifier(ImageModel, ClassifierInterface):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         cpu_resize: bool | None = None,
+        antialias: bool = False,
         softmax: bool = True,
         crop_pct: float = DEFAULT_CROP_PCT,
         no_warn: bool | None = None,
@@ -138,6 +139,10 @@ class Classifier(ImageModel, ClassifierInterface):
         crop_pct : float, optional
             The fraction of the resized image kept by center_crop resizing.
             By default 0.875 (resize 256, crop 224). Ignored by other methods.
+        antialias : bool, optional
+            Whether downscales are antialiased: filtered with a tent as wide as the scale
+            factor, per axis, as PIL's BILINEAR and torchvision's ``antialias=True`` do.
+            Default is False, see :class:`ImageModel`.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -169,6 +174,7 @@ class Classifier(ImageModel, ClassifierInterface):
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
             cpu_resize=cpu_resize,
+            antialias=antialias,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,
