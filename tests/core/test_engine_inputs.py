@@ -21,6 +21,7 @@ import pytest
 
 from trtutils import _engine
 from trtutils._engine import TRTEngine
+from trtutils._flags import FLAGS
 from trtutils.core import _bindings, _device
 from trtutils.core._buffer import Buffer, MemoryLocation
 from trtutils.core._interface import TRTEngineInterface
@@ -451,6 +452,7 @@ class _NoContextEngine:
         return None
 
 
+@pytest.mark.skipif(not FLAGS.PROFILE_SHARING, reason="no context pool before TensorRT 10")
 def test_failed_pool_construction_frees_workspace(monkeypatch, fake_cuda) -> None:
     """Construction that dies after allocating the shared workspace still frees it."""
 
