@@ -23,6 +23,7 @@ from tests.image.preprocessors._matrix import (
     KINDS,
     RESIZES,
     Case,
+    dla_plan,
     matrix,
 )
 from tests.image.preprocessors._tolerance import assert_close, reference
@@ -203,7 +204,11 @@ class TestPreprocessor:
         _assert_same(smooth(images, antialias=False), expected)
         _assert_same(letterbox(images, case.resize, antialias=True), antialiased)
         assert antialiased[1:] == expected[1:]
-        assert not np.array_equal(antialiased[0], expected[0])
+        if case.dla and case.resize == "center_crop":
+            # the DLA's own center crop is always antialiased
+            np.testing.assert_array_equal(antialiased[0], expected[0])
+        else:
+            assert not np.array_equal(antialiased[0], expected[0])
 
     @pytest.mark.parametrize(
         "case",
@@ -329,15 +334,15 @@ class TestPreprocessor:
         aligned = frames(*FRAMES["people-1920x1080"])
         device = Buffer.from_array(aligned, MemoryLocation.DEVICE)
         preprocessor = preprocessors(case)
-        never_cpu = build_preprocessor(case, cpu_resize=False)
         if case.resize == "center_crop":
             assert preprocessor.resizes_on_cpu(*aligned.shape[:2]) is bool(case.cpu_resize)
-            _check(case, preprocessor, device, [aligned], preprocessors)
+            _check(case, preprocessor, aligned, [aligned], preprocessors)
+            _check(replace(case, kind="device"), preprocessor, device, [aligned], preprocessors)
             return
+        never_cpu = build_preprocessor(case, cpu_resize=False)
+        bilinear_on_cpu = case.cpu_resize or dla_plan(case, *aligned.shape[:2]) is None
         assert preprocessor.resizes_on_cpu(*aligned.shape[:2]) is True
-        assert preprocessor.resizes_on_cpu(*aligned.shape[:2], antialias=False) is bool(
-            case.cpu_resize
-        )
+        assert preprocessor.resizes_on_cpu(*aligned.shape[:2], antialias=False) is bilinear_on_cpu
         _check(case, preprocessor, aligned, [aligned], preprocessors)
         for bad, owner in ((device, preprocessor), (aligned, never_cpu), (device, never_cpu)):
             with pytest.raises(ValueError, match="cannot antialias"):
