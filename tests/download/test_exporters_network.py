@@ -151,6 +151,10 @@ EXPORT_CASES = [
     pytest.param("rtmo_s", {}, {"input": [None, 3, 640, 640]}, id="rtmo"),
     pytest.param("yunet", {}, {"input": [1, 3, 640, 640]}, id="yunet"),
     pytest.param("yunet", {"imgsz": 330}, {"input": [1, 3, 320, 320]}, id="yunet-adjusted"),
+    pytest.param("ppocrv5_mobile_det", {}, {"x": [None, 3, None, None]}, id="ppocrv5-mobile-det"),
+    pytest.param("ppocrv5_server_det", {}, {"x": [None, 3, None, None]}, id="ppocrv5-server-det"),
+    pytest.param("ppocrv5_mobile_rec", {}, {"x": [None, 3, 48, None]}, id="ppocrv5-mobile-rec"),
+    pytest.param("ppocrv5_server_rec", {}, {"x": [None, 3, 48, None]}, id="ppocrv5-server-rec"),
 ]
 
 

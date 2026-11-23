@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from trtutils.image._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
 
 PPOCR_KEYS_V1 = Path(__file__).parent / "ppocr_keys_v1.txt"
+# PP-OCRv5 recognizers (mobile and server), 18383 characters
+PPOCR_KEYS_V5 = Path(__file__).parent / "ppocrv5_dict.txt"
 
 
 class PPOCRDetector(TextDetector, Model):
@@ -182,7 +184,12 @@ class PPOCRDetector(TextDetector, Model):
 
 
 class PPOCRRecognizer(TextRecognizer, Model):
-    """Alias of TextRecognizer with default args for PP-OCR recognition."""
+    """
+    Alias of TextRecognizer with default args for PP-OCR recognition.
+
+    The default ``character_dict`` is ``PPOCR_KEYS_V1`` (PP-OCRv4); PP-OCRv5 engines
+    need ``character_dict=PPOCR_KEYS_V5``.
+    """
 
     _model_type = "ppocr_rec"
     _friendly_name = "PP-OCR recognition"
@@ -388,7 +395,8 @@ class PPOCR(OCR):
             The number of warmup iterations to perform.
             The default is 10.
         character_dict : Path, str, Sequence[str]
-            The recognizer's character dictionary. By default ``ppocr_keys_v1.txt``.
+            The recognizer's character dictionary. By default ``PPOCR_KEYS_V1``
+            (``ppocr_keys_v1.txt``, PP-OCRv4); pass ``PPOCR_KEYS_V5`` for PP-OCRv5 engines.
         dla_core : int, optional
             The DLA core to assign DLA layers of the engines to. Default is None.
             If None, any DLA layers will be assigned to DLA core 0.

@@ -18,6 +18,7 @@ from trtutils.download import download, download_model, load_model_configs
 from trtutils.download._models import (
     export_deimv2,
     export_dfine,
+    export_ppocr,
     export_rtdetrv4,
     export_rtmo,
     export_yolox,
@@ -291,6 +292,32 @@ def test_export_dfine_style_command(tmp_path, export_func, family, model, config
     assert cmd[cmd.index("-c") + 1] == config_path
     assert cmd[cmd.index("-r") + 1] == config["name"] + ".pth"
     assert cmd[cmd.index("--imgsz") + 1] == "640"
+
+
+@pytest.mark.parametrize(
+    ("data", "match"),
+    [
+        pytest.param(b"onnx", True, id="match"),
+        pytest.param(b"tampered", False, id="mismatch"),
+    ],
+)
+def test_export_ppocr_checks_sha256(tmp_path, data, match) -> None:
+    """The PP-OCR exporter renames a download whose sha256 matches the config and rejects others."""
+    config = {
+        "url": "https://example.com/files/model.onnx",
+        "sha256": hashlib.sha256(b"onnx").hexdigest(),
+    }
+    with patch(
+        "trtutils.download._models._ppocr.run_download",
+        side_effect=lambda directory, *_a, **_k: (directory / "model.onnx").write_bytes(data),
+    ):
+        if match:
+            path = export_ppocr(tmp_path, config, tmp_path / "py", tmp_path / "bin", "ppocr_x", 17)
+            assert path == tmp_path / "ppocr_x.onnx"
+            assert path.read_bytes() == data
+        else:
+            with pytest.raises(RuntimeError, match="sha256"):
+                export_ppocr(tmp_path, config, tmp_path / "py", tmp_path / "bin", "ppocr_x", 17)
 
 
 @pytest.mark.parametrize(

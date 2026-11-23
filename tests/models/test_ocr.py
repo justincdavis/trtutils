@@ -17,9 +17,11 @@ from trtutils.core import Buffer, MemoryLocation
 from trtutils.image._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
 from trtutils.image.preprocessors import crop_text_region
 from trtutils.models import PPOCR, PPOCRDetector, PPOCRRecognizer
+from trtutils.models.ocr import PPOCR_KEYS_V5
 
 DET_ONNX = DATA_DIR / "ppocr" / "ppocrv4_det_736.onnx"
 REC_ONNX = DATA_DIR / "ppocr" / "ppocrv4_rec_48.onnx"
+V5_SIZES = ["mobile", "server"]
 LINES = ["Hello World", "TensorRT inference 2026", "quick brown fox jumps"]
 # before TensorRT 10 contexts cannot share a profile, so the engine keeps a single context
 POOLED = FLAGS.PROFILE_SHARING
@@ -451,3 +453,71 @@ def test_ocr_bucketed_ignores_previous_shapes(det_engine, rec_engine, names) -> 
             _assert_lines(cuda(image), fresh[name])
     for name, results in zip(names, cuda(images)):
         _assert_lines(results, fresh[name])
+
+
+@pytest.fixture(scope="module", params=V5_SIZES)
+def v5_engines(request, build_model_engine):
+    """PP-OCRv5 detection and recognition engines of one size, FP16 as the build default."""
+    onnx_dir = DATA_DIR / "ppocr"
+    det = build_model_engine(
+        PPOCRDetector, onnx_dir / f"ppocrv5_{request.param}_det_736.onnx", tag="fp16"
+    )
+    rec = build_model_engine(
+        PPOCRRecognizer,
+        onnx_dir / f"ppocrv5_{request.param}_rec_48.onnx",
+        batch_size=len(LINES),
+        tag="fp16",
+    )
+    return det, rec
+
+
+def test_ppocrv5_recognizer(v5_engines) -> None:
+    """The v5 dictionary matches the engine's classes and reads every line; the v4 default raises."""
+    _, rec_engine = v5_engines
+    model = PPOCRRecognizer(rec_engine, character_dict=PPOCR_KEYS_V5)
+    assert model.output_schema is TextRecognizerOutputSchema.GENERIC
+    crops = [_line(t) for t in LINES]
+    raw = model.run(crops, postprocess=False)
+    assert raw[0].shape[2] == len(model.characters) == 18385
+    texts = model.end2end(crops)
+    assert [_words(t) for t, _ in texts] == [_words(t) for t in LINES]
+    assert all(0.9 < score <= 1.0 for _, score in texts)
+    with pytest.raises(ValueError, match="classes"):
+        PPOCRRecognizer(rec_engine, warmup=False)
+
+
+def test_ppocrv5_detector(v5_engines) -> None:
+    """The v5 detector boxes every rendered line inside the image."""
+    det_engine, _ = v5_engines
+    model = PPOCRDetector(det_engine)
+    assert model.output_schema is TextDetectorOutputSchema.GENERIC
+    image = _render(LINES)
+    boxes = model.end2end(image)
+    assert _rows(boxes) == len(LINES)
+    for box, score in boxes:
+        assert np.all(box >= 0)
+        assert np.all(box[:, 0] <= image.shape[1])
+        assert np.all(box[:, 1] <= image.shape[0])
+        assert 0.6 <= score <= 1.0
+    assert model.end2end(_blank(200, 300)) == []
+
+
+@pytest.mark.parametrize(
+    ("image", "expected"),
+    [
+        pytest.param(_render(LINES), "".join(LINES), id="lines"),
+        pytest.param(_page(), None, id="page"),
+        pytest.param(_page(rotate=True), None, id="page-rotated"),
+        pytest.param(_blank(200, 300), "", id="no-text"),
+    ],
+)
+def test_ppocrv5_pipeline(v5_engines, image, expected) -> None:
+    """PPOCR on v5 engines reads the lines in order, the same on the CPU and CUDA paths."""
+    det_engine, rec_engine = v5_engines
+    cpu = PPOCR(det_engine, rec_engine, character_dict=PPOCR_KEYS_V5, postprocessor="cpu")
+    cuda = PPOCR(det_engine, rec_engine, character_dict=PPOCR_KEYS_V5, postprocessor="cuda")
+    ref = cpu(image)
+    if expected is not None:
+        assert _words("".join(text for _, text, _ in ref)) == _words(expected)
+    for results in (cuda(image), cuda([image, image])[1]):
+        _assert_lines(results, ref)

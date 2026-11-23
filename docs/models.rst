@@ -265,8 +265,11 @@ Text Detection and Recognition (OCR)
 1. **PaddleOCR (PP-OCR)** - DB text detection, CTC text recognition, and the combined
    two-stage pipeline (``models.PPOCRDetector``, ``models.PPOCRRecognizer``, ``models.PPOCR``).
    Engines are built with dynamic input shapes, so any image size and text line width
-   can be processed without rebuilding. The bundled default character dictionary
-   (``ppocr_keys_v1.txt``) and the model weights are from PaddleOCR (Apache-2.0).
+   can be processed without rebuilding. PP-OCRv4 and PP-OCRv5 (mobile and server) are
+   supported. The bundled character dictionaries and the model weights are from PaddleOCR
+   (Apache-2.0): ``ppocr_keys_v1.txt`` is the default and fits PP-OCRv4; PP-OCRv5 recognizers
+   need ``character_dict=models.ocr.PPOCR_KEYS_V5`` (``ppocrv5_dict.txt``) on
+   ``PPOCRRecognizer`` and ``PPOCR``.
 
    - GitHub: `PaddlePaddle/PaddleOCR <https://github.com/PaddlePaddle/PaddleOCR>`_
 
@@ -324,7 +327,12 @@ Hand-Object Interaction Models
 OCR Models
 ~~~~~~~~~~
 
-- **PP-OCR**: ``ppocrv4_det``, ``ppocrv4_rec`` (PP-OCRv4 Chinese/English, ready-made ONNX)
+- **PP-OCR**: ``ppocrv4_det``, ``ppocrv4_rec`` (PP-OCRv4 Chinese/English, ready-made ONNX);
+  ``ppocrv5_mobile_det``, ``ppocrv5_server_det``, ``ppocrv5_mobile_rec``,
+  ``ppocrv5_server_rec`` (PP-OCRv5 simplified/traditional Chinese, English and
+  Japanese; RapidOCR's ONNX conversions, checked against a pinned sha256). The server
+  detector's neck is rescaled at download so it fits FP16, which needs ``onnx``
+  (``trtutils[onnx]``)
 
 Instance Segmentation Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -414,7 +422,7 @@ for the weights: check the source before using them.
      - MIT
    * - Hands23
      - unknown (the code is MIT; the weights state no license)
-   * - PP-OCR
+   * - PP-OCR (v4, v5)
      - Apache-2.0
    * - RTMO
      - Apache-2.0 (mmpose's license; upstream states no separate license for the weights,
