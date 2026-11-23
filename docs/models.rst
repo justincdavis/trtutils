@@ -154,6 +154,26 @@ per detected object, use the instance segmentation models above
      the logits)
    - GitHub: `pytorch/vision <https://github.com/pytorch/vision>`_
 
+2. **SegFormer** (Hugging Face transformers) - MiT-B0 to MiT-B5 encoders
+
+   - ``segformer_b0_ade`` ... ``segformer_b5_ade``: 150 ADE20K classes (no background
+     class), default input 512x512 (640x640 for ``b5``)
+   - ``segformer_b0_cityscapes`` ... ``segformer_b5_cityscapes``: 19 Cityscapes classes,
+     default input 1024x1024 (the training crop size)
+   - Linear (stretch) resizing to the square input by default, as the Hugging Face image
+     processor does; sizes must be divisible by 32
+   - The logits are at 1/4 of the input size. ``SegFormer.build()`` upsamples them
+     bilinearly and runs the argmax in the engine; with ``argmax=False`` the CPU argmaxes
+     the 1/4-size logits without upsampling, which moves 1-3% of the pixels along class
+     borders
+   - The exporter rewrites the Mix-FFN and decode-head projections with 4D permutes (same
+     math), because TensorRT 10.15 miscomputes the upstream transposes for batches above 1
+   - **Non-commercial license**: the weights are under the NVIDIA Source Code License for
+     SegFormer, research or evaluation use only
+   - Hugging Face: `nvidia/segformer-b0-finetuned-ade-512-512
+     <https://huggingface.co/nvidia/segformer-b0-finetuned-ade-512-512>`_ and siblings;
+     GitHub: `NVlabs/SegFormer <https://github.com/NVlabs/SegFormer>`_
+
 Pose Estimation
 ----------------
 
@@ -269,6 +289,7 @@ Semantic Segmentation Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - **DeepLabV3**: ``deeplabv3_mobilenet_v3_large``, ``deeplabv3_resnet50``, ``deeplabv3_resnet101`` (via torchvision)
+- **SegFormer**: ``segformer_b0_ade``, ``segformer_b1_ade``, ``segformer_b2_ade``, ``segformer_b3_ade``, ``segformer_b4_ade``, ``segformer_b5_ade``, ``segformer_b0_cityscapes``, ``segformer_b1_cityscapes``, ``segformer_b2_cityscapes``, ``segformer_b3_cityscapes``, ``segformer_b4_cityscapes``, ``segformer_b5_cityscapes`` (via Hugging Face transformers)
 
 Pose Estimation Models
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -324,6 +345,9 @@ for the weights: check the source before using them.
        and ``vit_h_14`` (SWAG weights): CC-BY-NC-4.0
    * - DeepLabV3 (torchvision)
      - unknown (torchvision states no license for its weights)
+   * - SegFormer (Hugging Face ``nvidia/segformer-*``)
+     - NVIDIA Source Code License for SegFormer: non-commercial, "for research or
+       evaluation purposes only"
    * - DeiT, DeiT III (timm)
      - Apache-2.0
    * - Depth-Anything-V1

@@ -6,5 +6,6 @@
 from __future__ import annotations
 
 from ._deeplabv3 import DeepLabV3
+from ._segformer import SegFormer
 
-__all__ = ["DeepLabV3"]
+__all__ = ["DeepLabV3", "SegFormer"]

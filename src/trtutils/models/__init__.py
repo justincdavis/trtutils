@@ -116,6 +116,8 @@ Classes
     Alias for the Segmenter class with args preset for YOLOv26-Seg.
 :class:`DeepLabV3`
     Alias for the SemanticSegmenter class with args preset for torchvision DeepLabV3.
+:class:`SegFormer`
+    Alias for the SemanticSegmenter class with args preset for Hugging Face SegFormer.
 :class:`YOLOv8Pose`
     Alias for the PoseEstimator class with args preset for YOLOv8-Pose.
 :class:`YOLOv11Pose`
@@ -195,7 +197,7 @@ from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
 from .pose_estimators import YOLOv8Pose, YOLOv11Pose, YOLOv26Pose
 from .segmenters import YOLOv8Seg, YOLOv11Seg, YOLOv26Seg
-from .semantic_segmenters import DeepLabV3
+from .semantic_segmenters import DeepLabV3, SegFormer
 
 __all__ = [
     "DEIM",
@@ -234,6 +236,7 @@ __all__ = [
     "RegNet",
     "ResNeXt",
     "ResNet",
+    "SegFormer",
     "ShuffleNetV2",
     "SqueezeNet",
     "SwinTransformer",

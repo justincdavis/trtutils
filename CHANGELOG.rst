@@ -124,6 +124,11 @@ Added
   appends the argmax to the engine (``image.hooks.semantic_argmax_hook``), so only the class
   map is copied to the host. ``build(..., argmax=False)`` keeps the logits, argmaxed on the CPU.
   ``resize_method="pad"`` raises ``ValueError``: the class map cannot be mapped back from it
+* ``models.SegFormer``: Hugging Face SegFormer MiT-B0 to B5 semantic segmenters,
+  ``segformer_b{0..5}_ade`` (150 ADE20K classes, 512x512, 640x640 for ``b5``) and
+  ``segformer_b{0..5}_cityscapes`` (19 Cityscapes classes, 1024x1024), downloaded through
+  the new ``segformer`` exporter. Its ``build()`` upsamples the 1/4-size logits and runs
+  the argmax in the engine. The weights are under NVIDIA's non-commercial SegFormer license
 
 Changed
 ^^^^^^^
