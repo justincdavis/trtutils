@@ -29,6 +29,8 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 _COLOR_CHANNELS = 3
+# the border of letterbox and pad resizing
+_FILL = (114, 114, 114)
 
 # (images, *, verbose) -> (batch tensor, ratios, padding)
 PreprocessFn = Callable[..., Tuple[np.ndarray, List[Tuple[float, float]], List[Tuple[float, float]]]]
@@ -53,9 +55,49 @@ def letterbox(
         round(dw - 0.1),
         round(dw + 0.1),
         cv2.BORDER_CONSTANT,
-        value=(114, 114, 114),
+        value=_FILL,
     )
     return image, (r, r), (dw, dh)
+
+
+def pad_resize(
+    image: np.ndarray,
+    new_shape: tuple[int, int],
+) -> tuple[np.ndarray, tuple[float, float]]:
+    """
+    Resize keeping aspect ratio to the top-left corner and fill the bottom and right with gray.
+
+    The fill is letterbox's gray (114). Coordinates map back as ``x / ratio``, the padding
+    is zero.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        The HWC image to resize.
+    new_shape : tuple[int, int]
+        The (width, height) to resize to.
+
+    Returns
+    -------
+    tuple[np.ndarray, tuple[float, float]]
+        The resized image and its ratios.
+
+    """
+    h, w = image.shape[:2]
+    r = min(new_shape[1] / h, new_shape[0] / w)
+    new_unpad = (round(w * r), round(h * r))
+    if (w, h) != new_unpad:
+        image = cv2.resize(image, new_unpad, interpolation=cv2.INTER_LINEAR)
+    image = cv2.copyMakeBorder(
+        image,
+        0,
+        new_shape[1] - new_unpad[1],
+        0,
+        new_shape[0] - new_unpad[0],
+        cv2.BORDER_CONSTANT,
+        value=_FILL,
+    )
+    return image, (r, r)
 
 
 def resize_linear(
@@ -85,7 +127,7 @@ def resize_image(
     input_shape : tuple[int, int]
         The (width, height) to resize to.
     method : str
-        The resize method, one of [letterbox, linear, center_crop].
+        The resize method, one of [letterbox, linear, center_crop, pad].
     crop_pct : float
         The fraction of the resized image kept by center_crop resizing.
 
@@ -112,6 +154,9 @@ def resize_image(
         return resized[top : top + out_height, left : left + out_width], ratios, padding
     if method == "linear":
         tensor, ratios = resize_linear(image, new_shape=input_shape)
+        return tensor, ratios, (0.0, 0.0)
+    if method == "pad":
+        tensor, ratios = pad_resize(image, new_shape=input_shape)
         return tensor, ratios, (0.0, 0.0)
     err_msg = f"Unknown method for image resizing. Options are {list(RESIZE_METHODS)}"
     raise ValueError(err_msg)
@@ -147,7 +192,7 @@ def preprocess(
     method : str
         The method by which to resize the image.
         By default letterbox will be used.
-        Options are [letterbox, linear, center_crop]
+        Options are [letterbox, linear, center_crop, pad]
     mean : tuple[float, float, float], optional
         The mean to subtract from the image.
         By default, None, which will not subtract any mean.
@@ -171,7 +216,7 @@ def preprocess(
     Raises
     ------
     ValueError
-        If the method for resizing is not 'letterbox', 'linear', or 'center_crop'
+        If the method for resizing is not 'letterbox', 'linear', 'center_crop' or 'pad'
     ValueError
         If only one of mean or std is provided
     ValueError
@@ -263,7 +308,7 @@ class CPUPreprocessor(ImagePreprocessor):
             Examples: np.float32, np.float16, np.uint8
         resize : str | Callable, optional
             The method to resize the image with.
-            Options are [letterbox, linear, center_crop], will use method
+            Options are [letterbox, linear, center_crop, pad], will use method
             provided in constructor by default.
             Can also be a function doing the whole preprocessing,
             (images, *, verbose) -> (batch tensor, ratios, padding), for models whose
@@ -368,7 +413,7 @@ class CPUPreprocessor(ImagePreprocessor):
             A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the image with.
-            By default letterbox, options are [letterbox, linear, center_crop]
+            By default letterbox, options are [letterbox, linear, center_crop, pad]
             Not supported when the preprocessor was built with a function.
         no_copy : bool, optional
             If True, write into a reused buffer and return a view of it,
@@ -425,7 +470,7 @@ class CPUPreprocessor(ImagePreprocessor):
             A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the image with.
-            By default letterbox, options are [letterbox, linear, center_crop]
+            By default letterbox, options are [letterbox, linear, center_crop, pad]
             Not supported when the preprocessor was built with a function.
         no_copy : bool, optional
             If True, write into a reused buffer and return a view of it,

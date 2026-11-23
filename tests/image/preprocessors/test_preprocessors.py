@@ -242,6 +242,8 @@ class TestPreprocessor:
             skip=lambda case: (
                 "CPUPreprocessor always resizes with cv2: there is nothing to route"
                 if case.backend == "cpu"
+                else "the DLA cannot pad resize: host images always go to the CPU"
+                if case.dla and case.resize == "pad"
                 else None
             ),
         ),

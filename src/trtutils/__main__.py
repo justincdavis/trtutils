@@ -863,7 +863,7 @@ def _classify(args: SimpleNamespace) -> None:
         - cpu_resize : bool or None
             Resize on the CPU, None to resize there only what the preprocessor cannot.
         - resize_method : str
-            Image resize method ('letterbox', 'linear', or 'center_crop').
+            Image resize method ('letterbox', 'linear', 'center_crop' or 'pad').
         - crop_pct : float
             Fraction of the resized image kept by center_crop.
         - dla_core : int or None

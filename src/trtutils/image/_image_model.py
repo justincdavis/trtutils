@@ -111,6 +111,9 @@ class ImageModel:
     # run the engine on a non-blocking stream, for models that sync it explicitly: TensorRT's
     # own synchronous copies then don't wait on work queued on the stream
     _non_blocking_stream: ClassVar[bool] = False
+    # False for tasks that map boxes, masks or keypoints back to the image: they recover its
+    # size from the ratios and padding, which a 'pad' resize's (0, 0) padding does not give
+    _supports_pad: ClassVar[bool] = True
 
     def __init__(  # noqa: PLR0915
         self: Self,
@@ -156,7 +159,10 @@ class ImageModel:
             'dla0' and 'dla1' preprocess on that DLA core, see :class:`DLAPreprocessor`.
         resize_method : str
             The type of resize algorithm to use.
-            The options are ['letterbox', 'linear', 'center_crop'], default is 'linear'.
+            The options are ['letterbox', 'linear', 'center_crop', 'pad'], default is 'linear'.
+            'pad' resizes like 'letterbox' but places the image at the top-left, filling the
+            bottom and right with the same gray (114). Tasks that map boxes, masks or
+            keypoints back to the image reject it.
         mean : tuple[float, float, float] | None, optional
             The mean values to use for the imagenet normalization.
             By default, None, which means no normalization will be applied.
@@ -223,9 +229,11 @@ class ImageModel:
         ValueError
             If input size format is incorrect
             If model does not take 3 channel input
+            If the task does not support the resize method
 
         """
         self._tag: str = f"{Path(engine_path).stem}"
+        self._check_resize(resize_method)
         self._verbose: bool = verbose if verbose is not None else False
 
         self._nvtx_tags: dict[str, str] = {
@@ -325,6 +333,15 @@ class ImageModel:
         finally:
             if FLAGS.NVTX_ENABLED:
                 nvtx.pop_range()  # init
+
+    def _check_resize(self: Self, method: str) -> None:
+        """Raise if the task cannot map its results back from a resize method."""
+        if method == "pad" and not self._supports_pad:
+            err_msg = (
+                f"{self._tag}: {type(self).__name__} does not support resize_method='pad', "
+                "its results cannot be mapped back to the image; use 'letterbox'"
+            )
+            raise ValueError(err_msg)
 
     def _setup_cpu_preproc(self: Self) -> CPUPreprocessor:
         if FLAGS.NVTX_ENABLED:
@@ -807,7 +824,7 @@ class ImageModel:
             A single image (HWC format) or list of images to preprocess.
         resize : str
             The method to resize the images with.
-            Options are [letterbox, linear, center_crop].
+            Options are [letterbox, linear, center_crop, pad].
             By default None, which will use the value passed
             during initialization.
         method : str, optional
@@ -829,9 +846,11 @@ class ImageModel:
         Raises
         ------
         ValueError
-            If the method is not one of the options of :meth:`get_preprocessor`.
+            If the method is not one of the options of :meth:`get_preprocessor`,
+            or the task does not support the resize method.
 
         """
+        self._check_resize(resize if resize is not None else self._resize_method)
         preprocessor = self.get_preprocessor(method)
         if FLAGS.NVTX_ENABLED:
             nvtx.push_range(self._nvtx_tags["preprocess"])

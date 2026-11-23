@@ -49,6 +49,7 @@ class HandInteractionDetector(ImageModel, HandInteractionDetectorInterface):
     """
 
     _OUTPUT_SCHEMA = HandInteractionOutputSchema
+    _supports_pad = False
     _CUDA_POSTPROCESSOR = CUDAHoiPostprocessor
     # opt in: NMS of a fixed top-k (about 100) is not clearly faster than the host
     _cuda_post_default = False
