@@ -120,6 +120,15 @@ EXPORT_CASES = [
         {"input": [_BATCH, 3, 252, 252]},
         id="depth_anything_v3",
     ),
+    pytest.param(
+        "dinov3_vits16", {}, {"input": [_BATCH, 3, 256, 256]}, id="timm-features-default-dynamic"
+    ),
+    pytest.param(
+        "dinov3_vits16",
+        {"imgsz": 224, "batch": 2},
+        {"input": [2, 3, 224, 224]},
+        id="timm-features-b2",
+    ),
     pytest.param("hands23_x101", {}, {"input": [1, 3, 800, 800]}, id="hands23"),
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),

@@ -89,6 +89,19 @@ Depth Estimation
 
    - GitHub: `ByteDance-Seed/depth-anything-3 <https://github.com/ByteDance-Seed/depth-anything-3>`_
 
+Feature Extraction
+------------------
+
+1. **DINOv3** (``DINOv3``) - self-supervised ViT backbones (LVD-1689M weights), exported
+   through timm with a class-token embedding and a dense patch feature map
+
+   - GitHub: `facebookresearch/dinov3 <https://github.com/facebookresearch/dinov3>`_
+   - Images are resized with ``linear``, which does not antialias. Embeddings agree across the
+     trtutils preprocessors, but for heavily downscaled images they differ from embeddings
+     computed with an antialiased resize such as upstream's transform (cosine similarity
+     0.96 to 0.98 on average and as low as 0.90 on the test images). Embed queries and
+     galleries with the same pipeline
+
 Classification
 --------------
 
@@ -230,6 +243,12 @@ Depth Estimation Models
 - **Depth-Anything-V2**: ``depth_anything_v2_small``, ``depth_anything_v2_base``, ``depth_anything_v2_large``
 - **Depth-Anything-V3**: ``depth_anything_v3_mono_large``, ``depth_anything_v3_metric_large``
 
+Feature Extraction Models
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **DINOv3**: ``dinov3_vits16``, ``dinov3_vits16plus``, ``dinov3_vitb16`` (via timm; default size
+  256, any multiple of 16; batch-dynamic by default)
+
 Hand-Object Interaction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -308,6 +327,9 @@ for the weights: check the source before using them.
      - ``small``: Apache-2.0; ``base``, ``large``: CC-BY-NC-4.0
    * - Depth-Anything-V3 (``mono_large``, ``metric_large``)
      - Apache-2.0
+   * - DINOv3 (timm mirrors of the LVD-1689M ViT-S, S+, B)
+     - DINOv3 License: Meta's custom license, commercial use allowed; read its terms
+       (the upstream Meta repositories are gated, the timm mirrors are not)
    * - HOI-DETR
      - MIT
    * - Hands23

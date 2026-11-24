@@ -89,6 +89,15 @@ Added
 * ``models.DeiT`` / ``models.DeiT3`` and a timm exporter for DeiT and DeiT III
 * ``models.DepthAnythingV1`` / ``V3`` aliases (``DepthAnythingV2`` also present)
 * ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``
+* ``image.FeatureExtractor``: image -> embedding ``(C,)`` and dense feature map
+  ``(C, h, w)``, with ``get_embeddings`` / ``get_feature_maps``, ``end2end`` returning the
+  embeddings, and ``normalize`` (L2, off by default, per-call override on ``postprocess`` /
+  ``end2end``). ``FeatureExtractorOutputSchema`` (``EMBEDDING``, ``EMBEDDING_MAP``,
+  ``GENERIC``), ``image.types.Embedding`` / ``FeatureMap``, and ``postprocess_features`` /
+  ``get_embeddings`` / ``get_feature_maps`` in ``postprocessors``. CPU postprocessing only
+* ``models.DINOv3`` and the ``dinov3_vits16``, ``dinov3_vits16plus`` and ``dinov3_vitb16``
+  downloads (timm, DINOv3 License, default size
+  256, batch-dynamic by default). FP16 builds keep the attention matmul and softmax in FP32
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)

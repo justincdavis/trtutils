@@ -59,6 +59,7 @@ TASKS = {
     image.PoseEstimator: "pose",
     image.OBBDetector: "obb",
     image.DepthEstimator: "depth",
+    image.FeatureExtractor: "features",
     image.HandInteractionDetector: "hand_interaction",
 }
 # per-task overrides of TaskModel fields

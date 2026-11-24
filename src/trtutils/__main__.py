@@ -2071,7 +2071,7 @@ def _main() -> None:
         default=None,
         help="Export with a symbolic batch dimension so one ONNX can build "
         "engines for a range of batch sizes. Cannot be combined with --batch. "
-        "Torchvision classifiers export dynamic by default.",
+        "Torchvision classifiers and DINOv3 export dynamic by default.",
     )
     download_parser.add_argument(
         "--requirements_export",

@@ -309,6 +309,7 @@ def _write_attention_onnx(path):
 
 
 @pytest.mark.cpu
+@pytest.mark.skipif(FLAGS.TRT_VERSION < (10, 0), reason="the hook pins nothing before TensorRT 10")
 def test_vit_attention_hook_pins_only_qk_matmul_and_softmax(tmp_path) -> None:
     """Only the attention logits (QK matmul and softmax) are pinned, not the AV or MLP matmuls."""
     assert vit_attention_fp32_build_hook in DEIMv2._build_hooks

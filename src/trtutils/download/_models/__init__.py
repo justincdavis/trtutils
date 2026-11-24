@@ -17,7 +17,7 @@ from ._hoi_detr import export_hoi_detr
 from ._ppocr import export_ppocr
 from ._rfdetr import export_rfdetr
 from ._rtdetr import export_rtdetrv1, export_rtdetrv2, export_rtdetrv3
-from ._timm import export_timm_classifier
+from ._timm import export_timm_classifier, export_timm_features
 from ._torchvision import export_torchvision_classifier
 from ._ultralytics import export_ultralytics
 from ._yolo import (
@@ -75,6 +75,7 @@ EXPORTERS: dict[str, Exporter] = {
     "rtdetrv2": Exporter(export_rtdetrv2),
     "rtdetrv3": Exporter(export_rtdetrv3),
     "timm": Exporter(export_timm_classifier, batch=True),
+    "timm_features": Exporter(export_timm_features, batch=True, dynamic_default=True),
     "torchvision": Exporter(export_torchvision_classifier, batch=True, dynamic_default=True),
     "ultralytics": Exporter(export_ultralytics, batch=True),
     "yolov7": Exporter(export_yolov7),
@@ -102,6 +103,7 @@ __all__ = [
     "export_rtdetrv2",
     "export_rtdetrv3",
     "export_timm_classifier",
+    "export_timm_features",
     "export_torchvision_classifier",
     "export_ultralytics",
     "export_yolov7",

@@ -7,13 +7,22 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import numpy as np
 import onnx
 import pytest
 
-from trtutils.image import Classifier, DepthEstimator, ImageModel, TextDetector, TextRecognizer
+from trtutils.image import (
+    Classifier,
+    DepthEstimator,
+    FeatureExtractor,
+    ImageModel,
+    TextDetector,
+    TextRecognizer,
+)
 from trtutils.image._schema import (
     ClassifierOutputSchema,
     DepthEstimatorOutputSchema,
+    FeatureExtractorOutputSchema,
     HandInteractionOutputSchema,
     InputSchema,
     OBBDetectorOutputSchema,
@@ -69,6 +78,7 @@ def _engine(*output_names: str) -> SimpleNamespace:
 _HOI = HandInteractionOutputSchema
 _CLS = ClassifierOutputSchema
 _DEPTH = DepthEstimatorOutputSchema
+_FEAT = FeatureExtractorOutputSchema
 _TDET = TextDetectorOutputSchema
 _TREC = TextRecognizerOutputSchema
 
@@ -94,6 +104,13 @@ _TREC = TextRecognizerOutputSchema
         pytest.param(_DEPTH, ("depth",), None, "GENERIC", id="depth-generic-fallback"),
         pytest.param(_DEPTH, ("depth",), _DEPTH.GENERIC, "GENERIC", id="depth-generic-enum"),
         pytest.param(_DEPTH, ("depth", "conf"), None, "GENERIC", id="depth-generic-two-outputs"),
+        pytest.param(_FEAT, ("embedding",), None, "EMBEDDING", id="feat-embedding-auto"),
+        pytest.param(
+            _FEAT, ("feature_map", "embedding"), None, "EMBEDDING_MAP", id="feat-map-order-swapped"
+        ),
+        pytest.param(_FEAT, ("pooled",), None, "GENERIC", id="feat-generic-fallback"),
+        pytest.param(_FEAT, ("embedding", "extra"), None, "GENERIC", id="feat-generic-extra-output"),
+        pytest.param(_FEAT, _FEAT.EMBEDDING_MAP.value, "GENERIC", "GENERIC", id="feat-generic-str"),
         pytest.param(_TDET, ("sigmoid_0.tmp_0",), None, "PADDLE", id="text-det-paddle-auto"),
         pytest.param(_TDET, ("maps",), None, "GENERIC", id="text-det-generic-fallback"),
         pytest.param(_TDET, ("sigmoid_0.tmp_0",), "GENERIC", "GENERIC", id="text-det-generic-str"),
@@ -131,6 +148,9 @@ def test_resolve_schema(schema_cls, outputs, override, expected) -> None:
         pytest.param(_HOI, _HOI.HOI_DETR.value, "NOPE", "NOPE", id="bad-str"),
         pytest.param(_CLS, ("logits",), _CLS.TORCHVISION, "match no", id="cls-named-override"),
         pytest.param(_DEPTH, ("depth",), "DEPTH_ANYTHING", "match no", id="depth-named-override"),
+        pytest.param(
+            _FEAT, ("embedding",), _FEAT.EMBEDDING_MAP, "match no", id="feat-map-on-embedding"
+        ),
         pytest.param(_TDET, ("maps",), "PADDLE", "match no", id="text-det-named-override"),
         pytest.param(_TREC, ("logits",), _TREC.PADDLE, "match no", id="text-rec-named-override"),
         pytest.param(
@@ -179,6 +199,7 @@ _REC_KWARGS = {"character_dict": [str(i) for i in range(158)]}
     [
         pytest.param(Classifier, {}, _CLS.GENERIC, id="classifier"),
         pytest.param(DepthEstimator, {}, _DEPTH.GENERIC, id="depth-estimator"),
+        pytest.param(FeatureExtractor, {}, _FEAT.GENERIC, id="feature-extractor"),
         pytest.param(TextDetector, {}, _TDET.GENERIC, id="text-detector"),
         pytest.param(TextRecognizer, _REC_KWARGS, _TREC.GENERIC, id="text-recognizer"),
     ],
@@ -192,6 +213,19 @@ def test_generic_fallback_engine(renamed_simple_engine, model_cls, kwargs, expec
         model_cls(
             renamed_simple_engine, preprocessor="cpu", warmup=False, output_schema=named, **kwargs
         )
+
+
+def test_feature_extractor_generic_engine(renamed_simple_engine) -> None:
+    """A GENERIC engine flattens its first output into the embedding and has no feature map."""
+    model = FeatureExtractor(renamed_simple_engine, preprocessor="cpu", warmup=False)
+    image = np.random.default_rng(0).integers(0, 256, (160, 160, 3), dtype=np.uint8)
+    outputs = model.run(image)
+    embedding = model.end2end(image, normalize=True)
+    assert embedding.shape == (3 * 160 * 160,)
+    assert embedding.dtype == np.float32
+    np.testing.assert_allclose(np.linalg.norm(embedding), 1.0, rtol=1e-5)
+    with pytest.raises(ValueError, match="GENERIC has no feature map"):
+        model.get_feature_maps(outputs)
 
 
 @pytest.mark.cpu

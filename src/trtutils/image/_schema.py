@@ -70,6 +70,15 @@ class DepthEstimatorOutputSchema(Enum):
     GENERIC = ("*",)
 
 
+class FeatureExtractorOutputSchema(Enum):
+    # pooled embedding (B, C)
+    EMBEDDING = ("embedding",)
+    # pooled embedding (B, C) and dense feature map (B, C, h, w), e.g. DINOv3
+    EMBEDDING_MAP = ("embedding", "feature_map")
+    # any other engine, the first output is the embedding
+    GENERIC = ("*",)
+
+
 class TextDetectorOutputSchema(Enum):
     # PP-OCRv4 DB detection, probability map (B, 1, H, W)
     PADDLE = ("sigmoid_0.tmp_0",)
