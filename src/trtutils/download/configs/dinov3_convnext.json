@@ -1,0 +1,7 @@
+{
+    "_defaults": {"exporter": "timm_features", "license": "DINOv3 License", "url": "timm", "imgsz": "224", "arch": "convnext"},
+    "dinov3_convnext_tiny": {"name": "convnext_tiny.dinov3_lvd1689m"},
+    "dinov3_convnext_small": {"name": "convnext_small.dinov3_lvd1689m"},
+    "dinov3_convnext_base": {"name": "convnext_base.dinov3_lvd1689m"},
+    "dinov3_convnext_large": {"name": "convnext_large.dinov3_lvd1689m"}
+}

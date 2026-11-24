@@ -136,6 +136,13 @@ EXPORT_CASES = [
         {"input": [_BATCH, 3, 256, 256]},
         id="timm-features-external-data",
     ),
+    # convnext snaps to its total stride (32), not a patch size
+    pytest.param(
+        "dinov3_convnext_tiny",
+        {"imgsz": 250},
+        {"input": [_BATCH, 3, 224, 224]},
+        id="timm-features-convnext",
+    ),
     pytest.param("hands23_x101", {}, {"input": [1, 3, 800, 800]}, id="hands23"),
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),

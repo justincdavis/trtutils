@@ -106,6 +106,15 @@ Feature Extraction
    - ``dinov3_vith16plus`` is over 2GB: its weights are written to ``dinov3_vith16plus.onnx.data``
      beside the ONNX (keep the two together) and it is not simplified
 
+2. **DINOv3 ConvNeXt** (``DINOv3ConvNeXt``) - the ConvNeXt distillations of DINOv3 (tiny,
+   small, base, large), exported through timm with a pooled embedding and the last-stage
+   feature map (stride 32)
+
+   - GitHub: `facebookresearch/dinov3 <https://github.com/facebookresearch/dinov3>`_
+   - Convolutional throughout (no attention), so a better candidate than the ViTs for INT8
+     and DLA builds on Jetson; FP16 builds need no layers pinned to FP32
+   - The same ``linear`` resize caveat as DINOv3 applies
+
 Classification
 --------------
 
@@ -253,6 +262,9 @@ Feature Extraction Models
 - **DINOv3**: ``dinov3_vits16``, ``dinov3_vits16plus``, ``dinov3_vitb16``, ``dinov3_vitl16``,
   ``dinov3_vith16plus`` (via timm; default size
   256, any multiple of 16; batch-dynamic by default)
+- **DINOv3 ConvNeXt**: ``dinov3_convnext_tiny``, ``dinov3_convnext_small``,
+  ``dinov3_convnext_base``, ``dinov3_convnext_large`` (via timm; default size 224, any
+  multiple of 32; batch-dynamic by default)
 
 Hand-Object Interaction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -335,6 +347,8 @@ for the weights: check the source before using them.
    * - DINOv3 (timm mirrors of the LVD-1689M ViT-S, S+, B, L, H+)
      - DINOv3 License: Meta's custom license, commercial use allowed; read its terms
        (the upstream Meta repositories are gated, the timm mirrors are not)
+   * - DINOv3 ConvNeXt (timm mirrors of the LVD-1689M ConvNeXt-T, S, B, L)
+     - DINOv3 License: as above
    * - HOI-DETR
      - MIT
    * - Hands23

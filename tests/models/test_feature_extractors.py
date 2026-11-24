@@ -12,37 +12,75 @@ import pytest
 from tests.conftest import DATA_DIR, PREPROCESSORS
 from trtutils._flags import FLAGS
 from trtutils.image._schema import FeatureExtractorOutputSchema
-from trtutils.models import DINOv3
+from trtutils.models import DINOv3, DINOv3ConvNeXt
 from trtutils.models._hooks import vit_attention_fp32_build_hook
 
 _DINOV3 = DATA_DIR / "dinov3"
+_CONVNEXT = DATA_DIR / "dinov3_convnext"
 
-# (wrapper, onnx, embedding width, transformer depth)
+# (wrapper, onnx, embedding width, feature map stride, transformer depth or None without hook)
 FEATURE_EXTRACTORS = [
-    pytest.param(DINOv3, _DINOV3 / "dinov3_vits16_256.onnx", 384, 12, id="dinov3-vits16"),
-    pytest.param(DINOv3, _DINOV3 / "dinov3_vits16plus_256.onnx", 384, 12, id="dinov3-vits16plus"),
-    pytest.param(DINOv3, _DINOV3 / "dinov3_vitb16_256.onnx", 768, 12, id="dinov3-vitb16"),
-    pytest.param(DINOv3, _DINOV3 / "dinov3_vitl16_256.onnx", 1024, 24, id="dinov3-vitl16"),
-    pytest.param(DINOv3, _DINOV3 / "dinov3_vith16plus_256.onnx", 1280, 32, id="dinov3-vith16plus"),
+    pytest.param(DINOv3, _DINOV3 / "dinov3_vits16_256.onnx", 384, 16, 12, id="dinov3-vits16"),
+    pytest.param(
+        DINOv3, _DINOV3 / "dinov3_vits16plus_256.onnx", 384, 16, 12, id="dinov3-vits16plus"
+    ),
+    pytest.param(DINOv3, _DINOV3 / "dinov3_vitb16_256.onnx", 768, 16, 12, id="dinov3-vitb16"),
+    pytest.param(DINOv3, _DINOV3 / "dinov3_vitl16_256.onnx", 1024, 16, 24, id="dinov3-vitl16"),
+    pytest.param(
+        DINOv3, _DINOV3 / "dinov3_vith16plus_256.onnx", 1280, 16, 32, id="dinov3-vith16plus"
+    ),
+    pytest.param(
+        DINOv3ConvNeXt,
+        _CONVNEXT / "dinov3_convnext_tiny_224.onnx",
+        768,
+        32,
+        None,
+        id="dinov3-convnext-tiny",
+    ),
+    pytest.param(
+        DINOv3ConvNeXt,
+        _CONVNEXT / "dinov3_convnext_small_224.onnx",
+        768,
+        32,
+        None,
+        id="dinov3-convnext-small",
+    ),
+    pytest.param(
+        DINOv3ConvNeXt,
+        _CONVNEXT / "dinov3_convnext_base_224.onnx",
+        1024,
+        32,
+        None,
+        id="dinov3-convnext-base",
+    ),
+    pytest.param(
+        DINOv3ConvNeXt,
+        _CONVNEXT / "dinov3_convnext_large_224.onnx",
+        1536,
+        32,
+        None,
+        id="dinov3-convnext-large",
+    ),
 ]
+_PARAMS = ("model_cls", "onnx_path", "width", "stride", "depth")
 
 
 def _cosine(a, b) -> float:
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
 
-@pytest.mark.parametrize(("model_cls", "onnx_path", "width", "depth"), FEATURE_EXTRACTORS)
+@pytest.mark.parametrize(_PARAMS, FEATURE_EXTRACTORS)
 @pytest.mark.parametrize(("preprocessor", "cpu_resize"), PREPROCESSORS)
 def test_feature_extractor_end2end(
-    build_model_engine, images, model_cls, onnx_path, width, depth, preprocessor, cpu_resize
+    build_model_engine, images, model_cls, onnx_path, width, stride, depth, preprocessor, cpu_resize
 ) -> None:
-    """run() + get_*() match end2end(), shapes follow the patch grid, and normalize gives unit norm."""
+    """run() + get_*() match end2end(), shapes follow the stride, and normalize gives unit norm."""
     del depth
     engine = build_model_engine(model_cls, onnx_path)
     model = model_cls(engine, preprocessor=preprocessor, cpu_resize=cpu_resize, warmup=False)
     assert model.output_schema is FeatureExtractorOutputSchema.EMBEDDING_MAP
     image = images["horse"].array
-    grid = model.input_shape[0] // 16
+    grid = model.input_shape[0] // stride
 
     postprocessed = model.run(image)
     embedding = model.get_embeddings(postprocessed)
@@ -68,12 +106,12 @@ def test_feature_extractor_end2end(
 
 
 @pytest.mark.correctness
-@pytest.mark.parametrize(("model_cls", "onnx_path", "width", "depth"), FEATURE_EXTRACTORS)
+@pytest.mark.parametrize(_PARAMS, FEATURE_EXTRACTORS)
 def test_feature_extractor_similarity(
-    build_model_engine, images, model_cls, onnx_path, width, depth
+    build_model_engine, images, model_cls, onnx_path, width, stride, depth
 ) -> None:
     """The same image embeds to the same vector, different images to clearly different ones."""
-    del width, depth
+    del width, stride, depth
     engine = build_model_engine(model_cls, onnx_path)
     model = model_cls(engine, warmup=False)
     horse, people = images["horse"].array, images["people"].array
@@ -88,12 +126,12 @@ def test_feature_extractor_similarity(
 
 
 @pytest.mark.correctness
-@pytest.mark.parametrize(("model_cls", "onnx_path", "width", "depth"), FEATURE_EXTRACTORS)
+@pytest.mark.parametrize(_PARAMS, FEATURE_EXTRACTORS)
 def test_feature_extractor_matches_onnxruntime(
-    build_model_engine, images, model_cls, onnx_path, width, depth
+    build_model_engine, images, model_cls, onnx_path, width, stride, depth
 ) -> None:
     """The default build (FP16 where the platform has it) embeds like onnxruntime on the same input."""
-    del width, depth
+    del width, stride, depth
     engine = build_model_engine(model_cls, onnx_path)
     model = model_cls(engine, preprocessor="cpu", warmup=False)
     image = images["horse"].array
@@ -106,10 +144,13 @@ def test_feature_extractor_matches_onnxruntime(
 
 
 @pytest.mark.skipif(FLAGS.TRT_VERSION < (10, 0), reason="the hook pins nothing before TensorRT 10")
-@pytest.mark.parametrize(("model_cls", "onnx_path", "width", "depth"), FEATURE_EXTRACTORS)
-def test_attention_hook_matches(model_cls, onnx_path, width, depth) -> None:
-    """The fp16 build hook pins the QK matmul and softmax of every block, so it is not a no-op."""
-    del width
+@pytest.mark.parametrize(_PARAMS, FEATURE_EXTRACTORS)
+def test_attention_hook_matches(model_cls, onnx_path, width, stride, depth) -> None:
+    """The ViT fp16 hook pins the QK matmul and softmax of every block; ConvNeXt builds unhooked."""
+    del width, stride
+    if depth is None:
+        assert model_cls._build_hooks == []
+        return
     if not onnx_path.exists():
         pytest.skip(f"missing {onnx_path}")
     assert vit_attention_fp32_build_hook in model_cls._build_hooks

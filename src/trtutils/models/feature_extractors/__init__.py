@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 from ._dinov3 import DINOv3
+from ._dinov3_convnext import DINOv3ConvNeXt
 
 __all__ = [
     "DINOv3",
+    "DINOv3ConvNeXt",
 ]
