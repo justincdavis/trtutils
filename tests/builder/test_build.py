@@ -260,6 +260,47 @@ def test_int8_calibration_casts_batches_to_input_dtype(
     reason="Runtime INT8/FP8 calibration is a weakly-typed concept; see test_build_strongly_typed_from_qdq.",
 )
 @pytest.mark.parametrize(
+    ("algorithm", "header"),
+    [
+        pytest.param("entropy", "EntropyCalibration2", id="entropy"),
+        pytest.param("minmax", "MinMaxCalibration", id="minmax"),
+    ],
+)
+@_needs_weak_typing
+def test_int8_calibration_algorithm(
+    onnx_path,
+    output_engine_path,
+    calibration_cache_path,
+    algorithm,
+    header,
+) -> None:
+    """calibration_algorithm picks the calibrator; min-max covers a rare large value."""
+    rng = np.random.default_rng(0)
+    batches = []
+    for _ in range(4):
+        batch = rng.random((1, 3, 160, 160), dtype=np.float32)
+        batch[0, 0, 0, 0] = 100.0
+        batches.append(batch)
+    build_engine(
+        onnx_path,
+        output_engine_path,
+        int8=True,
+        data_batcher=ListBatcher(batches),
+        calibration_cache=calibration_cache_path,
+        calibration_algorithm=algorithm,
+        optimization_level=1,
+    )
+    assert header in calibration_cache_path.read_text().splitlines()[0]
+    if algorithm == "minmax":
+        scale = _calibration_scales(calibration_cache_path)["input"]
+        assert scale == pytest.approx(100.0 / 127.0, rel=0.01)
+
+
+@pytest.mark.skipif(
+    REAL_FLAGS.IS_BLACKWELL,
+    reason="Runtime INT8/FP8 calibration is a weakly-typed concept; see test_build_strongly_typed_from_qdq.",
+)
+@pytest.mark.parametrize(
     "batch_dtype",
     [
         pytest.param(np.float32, id="float32-batches"),
@@ -847,6 +888,27 @@ def test_build_strongly_typed_rejects_weak_args(
             optimization_level=1,
             **kwargs,
         )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        pytest.param({"calibration_algorithm": "percentile"}, "calibration_algorithm", id="unknown"),
+        pytest.param(
+            {"calibration_algorithm": "minmax", "default_device": "dla"}, "entropy", id="minmax-dla"
+        ),
+        pytest.param(
+            {"calibration_algorithm": "minmax", "layer_device": [(0, trt.DeviceType.DLA)]},
+            "entropy",
+            id="minmax-dla-layer",
+        ),
+    ],
+)
+def test_build_rejects_calibration_algorithm(onnx_path, output_engine_path, kwargs, match) -> None:
+    """An unknown algorithm, or min-max with DLA layers, raises ValueError before building."""
+    with pytest.raises(ValueError, match=match):
+        build_engine(onnx_path, output_engine_path, int8=True, **kwargs)
+    assert not output_engine_path.exists()
 
 
 def test_build_strongly_typed_rejects_calibration_args(

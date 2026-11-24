@@ -23,7 +23,7 @@ from ._utils import check_implicit_calibration, get_check_dla, needs_dynamic_ran
 
 # trt 11 removed the implicit calibrators
 if FLAGS.INT8_CALIBRATION:
-    from ._calibrator import EngineCalibrator
+    from ._calibrator import EngineCalibrator, MinMaxCalibrator
 
 ProgressBar = None
 if FLAGS.BUILD_PROGRESS:
@@ -31,6 +31,8 @@ if FLAGS.BUILD_PROGRESS:
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
+
+    from ._calibrator import _Calibrator
 
     # A binding shape is either one static shape, or a (min, opt, max) triple
     # that builds a dynamic optimization profile for that input.
@@ -75,6 +77,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
     fp16: bool | None = None,
     fp8: bool | None = None,
     int8: bool | None = None,
+    calibration_algorithm: str = "entropy",
     strongly_typed: bool = False,
     cache: bool | None = None,
     verbose: bool | None = None,
@@ -138,6 +141,15 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         dict of arrays keyed by input name for a network with several inputs.
         Each array holds a whole input: its static shape, or the opt shape given
         in ``shapes`` for an input with dynamic dimensions.
+    calibration_algorithm : str, optional
+        How INT8 calibration picks each tensor's range: ``"entropy"`` (default,
+        TensorRT's entropy calibrator) minimizes the information lost and may clip
+        rare large values; ``"minmax"`` covers every value seen, so nothing is
+        clipped. Prefer ``"minmax"`` when large values matter, such as a 0-255
+        image input or a detection head that concatenates box regression with
+        scores in [0, 1]. TensorRT calibrates networks with DLA layers only with
+        ``"entropy"``. A calibration cache only applies to the algorithm that wrote
+        it; TensorRT recalibrates otherwise.
     dla_core : int, optional
         The DLA core to build the engine for.
         By default, None: core 0 when ``default_device`` is DLA, otherwise the GPU.
@@ -246,6 +258,9 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
 
     Raises
     ------
+    ValueError
+        If ``calibration_algorithm`` is not "entropy" or "minmax", or is "minmax"
+        for a network with DLA layers.
     RuntimeError
         If the ONNX model cannot be parsed. The message lists the TensorRT
         ONNX parser errors.
@@ -263,6 +278,12 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         network (``strongly_typed=True``, or any network on TensorRT 11).
 
     """
+    if calibration_algorithm not in ("entropy", "minmax"):
+        err_msg = (
+            f"calibration_algorithm must be 'entropy' or 'minmax', got {calibration_algorithm!r}"
+        )
+        raise ValueError(err_msg)
+
     # strongly typed builds report these through their own checks below
     check_implicit_calibration(
         requested=not strongly_typed
@@ -329,6 +350,17 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
         default_device = (
             trt.DeviceType.GPU if default_device == trt.DeviceType.GPU else trt.DeviceType.DLA
         )
+
+    # tensorrt only says "DLA validation failed"
+    uses_dla = default_device == trt.DeviceType.DLA or any(
+        dev == trt.DeviceType.DLA for _, dev in layer_device or []
+    )
+    if calibration_algorithm == "minmax" and uses_dla:
+        err_msg = (
+            "TensorRT calibrates networks with DLA layers only with entropy calibration;"
+            " use calibration_algorithm='entropy'"
+        )
+        raise ValueError(err_msg)
 
     # validate strongly_typed vs. incompatible args
     if strongly_typed:
@@ -451,7 +483,7 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
 
     # setup the precision sets -- skipped under strongly_typed since the
     # precision is carried by the ONNX graph itself
-    calibrator: EngineCalibrator | None = None
+    calibrator: _Calibrator | None = None
     if FLAGS.WEAK_TYPING and not strongly_typed:
         if fp16 or fp8 or int8:
             # want to enable fp16 for int8, fp8, and fp16 since fp16 may be faster
@@ -475,7 +507,10 @@ def build_engine(  # noqa: C901, PLR0912, PLR0915
                         " calibration_cache, or set the ranges with a hook."
                     )
             else:
-                calibrator = EngineCalibrator(calibration_cache=calibration_cache)
+                calibrator_type = (
+                    MinMaxCalibrator if calibration_algorithm == "minmax" else EngineCalibrator
+                )
+                calibrator = calibrator_type(calibration_cache=calibration_cache)
                 calibrator.set_input_dtypes(_input_dtypes(network))
                 calibrator.set_input_shapes(_calibration_shapes(network, opt_shapes))
                 if data_batcher is not None:

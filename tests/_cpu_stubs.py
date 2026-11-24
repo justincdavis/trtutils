@@ -40,6 +40,7 @@ def inject() -> None:
         trt.IProgressMonitor = type("IProgressMonitor", (), {})
         trt.IProfiler = type("IProfiler", (), {})
         trt.IInt8EntropyCalibrator2 = type("IInt8EntropyCalibrator2", (), {})
+        trt.IInt8MinMaxCalibrator = type("IInt8MinMaxCalibrator", (), {})
         # classes accessed via hasattr in _flags.py
         trt.ICudaEngine = type("ICudaEngine", (), {})
         trt.DataType = type("DataType", (), {})

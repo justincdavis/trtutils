@@ -16,7 +16,8 @@ from trtutils._flags import FLAGS
 if not FLAGS.INT8_CALIBRATION:
     pytest.skip("implicit INT8 calibration removed in TensorRT 11", allow_module_level=True)
 
-from trtutils.builder._calibrator import EngineCalibrator
+from trtutils.builder._calibrator import EngineCalibrator, MinMaxCalibrator
+from trtutils.compat._libs import trt
 from trtutils.core._memory import memcpy_device_to_host
 
 _A = np.linspace(-2.0, 2.0, 48, dtype=np.float32).reshape(1, 3, 4, 4)
@@ -92,10 +93,18 @@ def test_get_batch_returns_gpu_ptr() -> None:
     assert result[0] > 0
 
 
-def test_write_then_read_cache(tmp_path) -> None:
-    """write_calibration_cache then read_calibration_cache roundtrip works."""
+@pytest.mark.parametrize(
+    ("calibrator", "base"),
+    [
+        pytest.param(EngineCalibrator, "IInt8EntropyCalibrator2", id="entropy"),
+        pytest.param(MinMaxCalibrator, "IInt8MinMaxCalibrator", id="minmax"),
+    ],
+)
+def test_write_then_read_cache(tmp_path, calibrator, base) -> None:
+    """Both calibrators are their TensorRT calibrator and round-trip the cache."""
     cache_path = tmp_path / "test.cache"
-    cal = EngineCalibrator(calibration_cache=cache_path)
+    cal = calibrator(calibration_cache=cache_path)
+    assert isinstance(cal, getattr(trt, base))
 
     test_data = b"calibration_data_bytes_here"
     cal.write_calibration_cache(test_data)
