@@ -9,7 +9,13 @@ import onnx
 import pytest
 from onnx import TensorProto, helper
 
-from trtutils.builder.onnx._shapes import get_onnx_input, get_onnx_output, make_onnx_static
+from trtutils.builder.onnx._shapes import (
+    get_onnx_input,
+    get_onnx_output,
+    get_static_hw,
+    get_static_imgsz,
+    make_onnx_static,
+)
 
 pytestmark = pytest.mark.cpu
 
@@ -79,3 +85,23 @@ def test_make_onnx_static_static_unchanged(tmp_path, dims) -> None:
     before = path.read_bytes()
     make_onnx_static(path)
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("dims", "name", "hw", "imgsz"),
+    [
+        pytest.param([1, 3, 384, 384], "x", (384, 384), 384, id="square"),
+        pytest.param(["N", 3, 256, 128], "x", (256, 128), None, id="height-width"),
+        pytest.param([1, 3, "h", "w"], "x", None, None, id="symbolic-hw"),
+        pytest.param([1, 3, 256, "w"], "x", None, None, id="symbolic-width"),
+        pytest.param([1, 384, 384, 3], "x", None, None, id="nhwc"),
+        pytest.param([1, 3, 384], "x", None, None, id="rank-3"),
+        pytest.param([1, 3, 384, 384], "other", None, None, id="other-name"),
+    ],
+)
+def test_get_static_hw_and_imgsz(tmp_path, dims, name, hw, imgsz) -> None:
+    """get_static_hw reads a static NCHW (H, W); get_static_imgsz keeps only square sizes."""
+    path = tmp_path / "model.onnx"
+    _write_relu_model(path, dims)
+    assert get_static_hw(path, name) == hw
+    assert get_static_imgsz(path, name) == imgsz

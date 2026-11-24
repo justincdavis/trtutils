@@ -142,6 +142,8 @@ class TRTEngine(TRTEngineInterface):
             first) when more shapes than this are in use: size it above the
             number of shapes in use, or the engine thrashes. Outputs are shared
             and valid until the next execution, as without the pool.
+            Before TensorRT 10 contexts cannot share an optimization profile, so
+            there the pool is not used and a single context serves every shape.
             By default None, which uses a single context.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
@@ -158,6 +160,9 @@ class TRTEngine(TRTEngineInterface):
         if shape_contexts is not None and shape_contexts < 1:
             err_msg = f"shape_contexts must be at least 1, got {shape_contexts}."
             raise ValueError(err_msg)
+        # without profile sharing every context needs an optimization profile of its
+        # own, so an engine built with one profile cannot run a second context
+        shape_contexts = shape_contexts if FLAGS.PROFILE_SHARING else None
         self._name = Path(engine_path).stem
         # the device memory the pool's contexts share, allocated with the first
         self._shared_memory: _DeviceAllocation | None = None
@@ -330,6 +335,23 @@ class TRTEngine(TRTEngineInterface):
     def active_output_shapes(self: Self) -> list[tuple[int, ...]]:
         """The output shapes of the most recent execution."""
         return list(self._output_shapes)
+
+    @property
+    def cuda_graph_enabled(self: Self) -> bool:
+        """
+        Whether executions capture and replay CUDA graphs.
+
+        Set to False to run every execution uncaptured, for example while a
+        TensorRT profiler is attached (graph replays do not report per-layer
+        timings). Graphs already captured are kept and replay again once set
+        back to True. Setting True has no effect on engines that cannot use
+        CUDA graphs (the async_v2 backend), which always read False.
+        """
+        return self._cuda_graph_enabled
+
+    @cuda_graph_enabled.setter
+    def cuda_graph_enabled(self: Self, value: bool) -> None:
+        self._cuda_graph_enabled = bool(value) and self._async_v3
 
     def _set_context_shape(self: Self, index: int, shape: tuple[int, ...]) -> None:
         binding = self._inputs[index]

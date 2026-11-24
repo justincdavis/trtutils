@@ -58,19 +58,23 @@ DETR Models
     
     - GitHub: `clxia12/RT-DETRv3 <https://github.com/clxia12/RT-DETRv3>`_
 
-11. **D-FINE**
-    
+11. **RT-DETRv4**
+
+    - GitHub: `RT-DETRs/RT-DETRv4 <https://github.com/RT-DETRs/RT-DETRv4>`_
+
+12. **D-FINE**
+
     - GitHub: `Peterande/D-FINE <https://github.com/Peterande/D-FINE>`_
 
-12. **DEIM**
-    
+13. **DEIM**
+
     - GitHub: `Intellindust-AI-Lab/DEIM <https://github.com/Intellindust-AI-Lab/DEIM>`_
 
-13. **DEIMv2**
-    
+14. **DEIMv2**
+
     - GitHub: `Intellindust-AI-Lab/DEIMv2 <https://github.com/Intellindust-AI-Lab/DEIMv2>`_
 
-14. **RF-DETR**
+15. **RF-DETR**
     
     - GitHub: `roboflow/rf-detr <https://github.com/roboflow/rf-detr>`_
 
@@ -88,6 +92,19 @@ Depth Estimation
 3. **Depth-Anything-V3**
 
    - GitHub: `ByteDance-Seed/depth-anything-3 <https://github.com/ByteDance-Seed/depth-anything-3>`_
+
+Feature Extraction
+------------------
+
+1. **DINOv3** (``DINOv3``) - self-supervised ViT backbones (LVD-1689M weights), exported
+   through timm with a class-token embedding and a dense patch feature map
+
+   - GitHub: `facebookresearch/dinov3 <https://github.com/facebookresearch/dinov3>`_
+   - Images are resized with ``linear``, which does not antialias. Embeddings agree across the
+     trtutils preprocessors, but for heavily downscaled images they differ from embeddings
+     computed with an antialiased resize such as upstream's transform (cosine similarity
+     0.96 to 0.98 on average and as low as 0.90 on the test images). Embed queries and
+     galleries with the same pipeline
 
 Classification
 --------------
@@ -218,6 +235,7 @@ DETR Models
 - **RT-DETRv1**: Multiple configurations available
 - **RT-DETRv2**: Multiple configurations available
 - **RT-DETRv3**: Multiple configurations available
+- **RT-DETRv4**: ``rtdetrv4_s``, ``rtdetrv4_m``, ``rtdetrv4_l``, ``rtdetrv4_x``
 - **D-FINE**: Multiple configurations available
 - **DEIM**: Multiple configurations available
 - **DEIMv2**: ``deimv2_atto``, ``deimv2_femto``, ``deimv2_pico``, ``deimv2_n``, ``deimv2_s``, ``deimv2_m``, ``deimv2_l``, ``deimv2_x``
@@ -229,6 +247,12 @@ Depth Estimation Models
 - **Depth-Anything-V1**: ``depth_anything_v1_small``, ``depth_anything_v1_base``, ``depth_anything_v1_large``
 - **Depth-Anything-V2**: ``depth_anything_v2_small``, ``depth_anything_v2_base``, ``depth_anything_v2_large``
 - **Depth-Anything-V3**: ``depth_anything_v3_mono_large``, ``depth_anything_v3_metric_large``
+
+Feature Extraction Models
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **DINOv3**: ``dinov3_vits16``, ``dinov3_vits16plus``, ``dinov3_vitb16`` (via timm; default size
+  256, any multiple of 16; batch-dynamic by default)
 
 Hand-Object Interaction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -287,6 +311,9 @@ for the weights: check the source before using them.
      - Apache-2.0
    * - RT-DETRv1, RT-DETRv2, RT-DETRv3
      - Apache-2.0
+   * - RT-DETRv4
+     - Apache-2.0 (RT-DETRv4's license; the checkpoints, hosted on Google Drive, have no
+       separate statement)
    * - D-FINE
      - Apache-2.0 (upstream notes that Objects365-pretrained checkpoints such as
        ``*_obj2coco`` may carry the dataset's terms)
@@ -308,6 +335,9 @@ for the weights: check the source before using them.
      - ``small``: Apache-2.0; ``base``, ``large``: CC-BY-NC-4.0
    * - Depth-Anything-V3 (``mono_large``, ``metric_large``)
      - Apache-2.0
+   * - DINOv3 (timm mirrors of the LVD-1689M ViT-S, S+, B)
+     - DINOv3 License: Meta's custom license, commercial use allowed; read its terms
+       (the upstream Meta repositories are gated, the timm mirrors are not)
    * - HOI-DETR
      - MIT
    * - Hands23

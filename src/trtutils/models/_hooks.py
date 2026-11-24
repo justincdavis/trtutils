@@ -209,8 +209,8 @@ def gridsample_debug_build_hook(**_: Any) -> dict[str, Any]:  # noqa: ANN401
     Build hook that keeps the value input of every GridSample out of fused kernels.
 
     TensorRT 10.15 (RTX 5080) miscompiles the deformable cross attention of the larger D-FINE
-    and DEIMv2 models (dfine_l/x, deimv2_l): the decoder reads wrong values and the engine
-    returns junk in FP16 and FP32 while onnxruntime is right. Marking the GridSample value
+    and DEIMv2 models (dfine_l/x, deimv2_l) and of every RT-DETRv4 size: the decoder reads
+    wrong values and the engine returns junk in FP16 and FP32 while onnxruntime is right. Marking the GridSample value
     tensors as debug tensors forces TensorRT to materialize them, which avoids the bad
     fusion at the cost of a few small copies.
 
@@ -234,7 +234,9 @@ def vit_attention_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict[st
     millions (2.6e6 in deimv2_l), which overflow FP16 to inf and then NaN. The ``attn/MatMul``
     and ``attn/Softmax`` layers are pinned to FP32; the rest of the backbone stays FP16. A
     strongly typed build returns no overrides, because ``build_engine`` rejects layer
-    precision in that mode.
+    precision in that mode. Neither does a build before TensorRT 10: TensorRT 8.6 (Jetson
+    AGX Orin) turns the outputs of the timm DINOv3 exports to NaN when these layers are
+    pinned, and matches onnxruntime in plain FP16 (embedding cosine 0.99998).
 
     Parameters
     ----------
@@ -250,7 +252,7 @@ def vit_attention_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict[st
 
     """
     # unnamed so Model.build does not consume strongly_typed before build_engine sees it
-    if kwargs.get("strongly_typed") or not FLAGS.WEAK_TYPING:
+    if kwargs.get("strongly_typed") or not FLAGS.WEAK_TYPING or FLAGS.TRT_VERSION < (10, 0):
         return {}
     network, _, _, _ = read_onnx(onnx)
     layer_precision = []

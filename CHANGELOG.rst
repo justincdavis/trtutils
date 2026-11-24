@@ -28,6 +28,12 @@ Added
 * ``resize_method="center_crop"`` with ``crop_pct`` (default 0.875, the torchvision/timm
   ImageNet eval transform). ``CPUPreprocessor(resize=fn)`` takes a whole-batch preprocess
   function for models whose input shape changes per batch
+* ``resize_method="pad"``: aspect-preserving resize to the top-left corner, filling the bottom
+  and right with letterbox's gray (114), as SAM-style image encoders expect. Ratios are
+  ``(r, r)`` and padding ``(0, 0)``. CPU, CUDA, TensorRT and ``cpu_resize`` resize it; the DLA
+  preprocessor resizes it on the CPU. ``Classifier`` and ``DepthEstimator`` accept it;
+  ``Detector``, ``Segmenter``, ``PoseEstimator``, ``OBBDetector`` and
+  ``HandInteractionDetector`` raise ``ValueError``, since they cannot map results back from it
 * Image models accept ``Buffer`` inputs (device, mapped or host), alone or mixed with arrays.
   ``Buffer.wrap`` views CuPy and PyTorch tensors without copying
 * ``Detector(class_map=...)`` and ``image.COCO91_TO_COCO80`` for mapping model class ids to
@@ -36,6 +42,14 @@ Added
 * ``Model.build(..., embed_sst=True)`` and ``builder.onnx.embed_sst``: move BGR-to-RGB, normalize
   and HWC-to-CHW into the ONNX graph, so the engine takes uint8 ``(batch, imgsz, imgsz, 3)``.
   ``input_range`` / ``mean`` / ``std`` are fixed at build time
+* Non-square image sizes and dynamic batch in ``trtutils.models``: ``Model.build`` /
+  ``Model.download`` take ``imgsz`` as an int (square) or ``(height, width)``, and
+  ``_default_imgsz`` may be either. ``Model.build(..., dynamic_batch=True)`` (or the class
+  attribute ``_dynamic_batch``) builds engines that run any batch from 1 to ``batch_size``.
+  ``trtutils download --imgsz`` takes ``HEIGHT WIDTH``, and download configs may give
+  ``"imgsz": [height, width]``; only exporters registered with ``hw=True`` accept a
+  non-square size. ``builder.onnx.get_static_hw`` reads the static ``(height, width)`` of an
+  ONNX image input
 * ``trtutils.models``: pre-configured wrappers with ``download()`` / ``build()``. Families:
   detectors (YOLOX, YOLOv3-v13, YOLOv26, RT-DETR / RT-DETRv3, D-FINE, DEIM, RF-DETR),
   classifiers (ResNet, AlexNet, VGG, DenseNet, Inception, GoogLeNet, EfficientNet, MobileNet,
@@ -56,6 +70,8 @@ Added
 * ``TRTEngine`` CUDA graphs (``cuda_graph``): one graph per input configuration (shapes and
   device addresses), captured on the second run at unchanged shapes. The 8 most recent are kept
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
+* ``TRTEngine.cuda_graph_enabled``: read or toggle CUDA graph capture/replay after construction.
+  Captured graphs are kept while disabled
 * ``TRTEngine.execute`` / ``raw_exec`` / ``__call__`` / ``mock_execute`` take a mapping of input
   name to ``Buffer`` as well as a sequence in ``input_names`` order. Outputs come back in
   ``output_names`` order, which is not necessarily the ONNX order: TensorRT 8.6 can order
@@ -71,8 +87,20 @@ Added
 * ``models.PPOCRDetector`` / ``PPOCRRecognizer`` / ``PPOCR`` (bundled PP-OCR dictionary) and
   OCR pre/postprocessing functions in ``preprocessors`` and ``postprocessors``
 * ``models.DeiT`` / ``models.DeiT3`` and a timm exporter for DeiT and DeiT III
+* ``models.RTDETRv4`` and downloads of the RT-DETRv4 COCO detectors (``rtdetrv4_s``,
+  ``rtdetrv4_m``, ``rtdetrv4_l``, ``rtdetrv4_x``, 640), listed under the repository's
+  Apache-2.0 license (upstream states nothing separate for the checkpoints)
 * ``models.DepthAnythingV1`` / ``V3`` aliases (``DepthAnythingV2`` also present)
 * ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``
+* ``image.FeatureExtractor``: image -> embedding ``(C,)`` and dense feature map
+  ``(C, h, w)``, with ``get_embeddings`` / ``get_feature_maps``, ``end2end`` returning the
+  embeddings, and ``normalize`` (L2, off by default, per-call override on ``postprocess`` /
+  ``end2end``). ``FeatureExtractorOutputSchema`` (``EMBEDDING``, ``EMBEDDING_MAP``,
+  ``GENERIC``), ``image.types.Embedding`` / ``FeatureMap``, and ``postprocess_features`` /
+  ``get_embeddings`` / ``get_feature_maps`` in ``postprocessors``. CPU postprocessing only
+* ``models.DINOv3`` and the ``dinov3_vits16``, ``dinov3_vits16plus`` and ``dinov3_vitb16``
+  downloads (timm, DINOv3 License, default size
+  256, batch-dynamic by default). FP16 builds keep the attention matmul and softmax in FP32
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)
@@ -85,6 +113,11 @@ Added
   name; a single array still feeds a single-input network. ``EngineCalibrator`` copies each
   input to its own device buffer, cast to the dtype TensorRT reads that input as. A batch
   without one array per input raises ``ValueError``
+* ``build_engine(calibration_algorithm="minmax")`` and ``builder.MinMaxCalibrator``: INT8
+  ranges that cover every calibration value. The default entropy calibration may clip rare
+  large values, which breaks detection heads that concatenate box regression with [0, 1]
+  scores (YOLOX). ``Model.build`` forwards it. TensorRT allows only entropy calibration for
+  networks with DLA layers, so min-max raises ``ValueError`` there
 * ``inspect.inspect_placement`` / ``PlacementReport``: where each engine layer runs, DLA or GPU
 * ``builder.hooks.fp16_io_hook`` / ``int8_input_hook``: float16 network I/O, int8 inputs at scale 1
 * ``builder.hooks.int8_ranges_hook``: INT8 without calibration data, ranges by interval arithmetic
@@ -171,6 +204,20 @@ Fixed
   inference. It fed OpenCV's BGR, so INT8 engines were calibrated on swapped channels. New
   ``mean`` / ``std`` normalize like the image models; ``bgr=True`` (``--bgr``) keeps BGR for
   engines that swap channels themselves, such as ``Model.build(embed_sst=True)``
+* ``jetson.benchmark_engine`` / ``benchmark_engines`` raise a ``RuntimeError`` naming
+  ``tegra_interval`` and ``iterations`` when no tegrastats sample lands inside an inference
+  (previously an opaque ``ValueError``), and warn when only some inferences have a sample
+* ``benchmark_engine`` / ``benchmark_engines`` and their ``jetson`` versions raise
+  ``ValueError`` for ``iterations < 1`` before building engines. ``iterations=0`` used to fail
+  after the run with "Raw data cannot be empty"
+* ``jetson.profile_engine`` runs without CUDA graphs, then restores the engine's graph flag and
+  profiler. Graph replays never call the profiler, so per-layer results could be empty
+* ``profile_engine(jetson=True)`` and ``trtutils profile --jetson`` use the Jetson default of 10000 iterations
+  unless ``iterations`` is given. The dispatcher always forwarded 100
+* ``TRTEngine(shape_contexts=N)`` and the OCR ``width_bucket`` option work on TensorRT 8.6
+  (Jetson). They failed with ``Assertion mOptimizationProfile >= 0 failed`` at the second
+  input shape, because contexts cannot share an optimization profile before TensorRT 10.
+  There one context now serves every shape
 * The CLI now errors on unrecognized arguments instead of silently ignoring them (only
   ``trtexec`` forwards unknown arguments). Fixed the ``--shape`` help text typo
 * ``RFDETR.build()`` FP16 engines detect again on TensorRT 8.6 (Jetson). The transformer
@@ -184,6 +231,8 @@ Fixed
   or reused. The library stream handler no longer filters by level, so the logger level alone
   decides what is emitted: ``LOG.with_level`` can raise verbosity and ``LOG.level`` tracks
   ``set_log_level``
+* ``CUDAPreprocessor`` with integer ``output_range`` bounds, such as ``(-1, 1)``, matches the
+  float bounds. The offset reached the kernel as an integer argument, which it read as a float
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
 * Float16-input image models use the ``cuda`` preprocessor (with or without ``cpu_resize``) instead of
   the CPU one

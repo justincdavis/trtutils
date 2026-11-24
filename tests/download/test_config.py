@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from trtutils.download._models import EXPORTERS
+from trtutils.download._tools import normalize_imgsz
 
 pytestmark = pytest.mark.cpu
 
@@ -26,6 +27,7 @@ _EXPECTED_FAMILIES = [
     "rtdetrv1",
     "rtdetrv2",
     "rtdetrv3",
+    "rtdetrv4",
     "dfine",
     "deim",
     "deimv2",
@@ -36,6 +38,7 @@ _EXPECTED_FAMILIES = [
     "depth_anything_v1",
     "depth_anything_v2",
     "depth_anything_v3",
+    "dinov3",
     "hoi_detr",
     "hands23",
     "ppocr_det",
@@ -68,6 +71,7 @@ _EXPECTED_MODELS = [
     "rtdetrv1_r18",
     "rtdetrv2_r18",
     "rtdetrv3_r18",
+    "rtdetrv4_s",
     "dfine_n",
     "deim_dfine_n",
     "deimv2_atto",
@@ -90,6 +94,9 @@ _EXPECTED_MODELS = [
     "depth_anything_v1_small",
     "depth_anything_v2_small",
     "depth_anything_v3_mono_large",
+    "dinov3_vits16",
+    "dinov3_vits16plus",
+    "dinov3_vitb16",
     "hoi_detr_vitl",
     "hands23_x101",
     "ppocrv4_det",
@@ -168,6 +175,15 @@ def test_timm_configs(model_configs, family) -> None:
         assert ("in22k" in config["name"]) == ("_in22k" in model)
 
 
+def test_dinov3_configs(model_configs) -> None:
+    """DINOv3 configs name a timm LVD-1689M ViT/16, the timm default size and the DINOv3 License."""
+    for model, config in model_configs["dinov3"].items():
+        assert config["exporter"] == "timm_features"
+        assert config["license"] == "DINOv3 License"
+        assert config["name"].endswith("_patch16_dinov3.lvd1689m"), model
+        assert (config["imgsz"], config["patch"]) == ("256", "16")
+
+
 def test_dfine_obj2coco_configs_in_objects365_dir(model_configs) -> None:
     """Upstream keeps the obj2coco yml files in configs/dfine/objects365/, the coco ones at top."""
     for config in model_configs["dfine"].values():
@@ -211,3 +227,13 @@ def test_defaults_merge(model_configs, family, model, exporter, license_name) ->
     config = model_configs[family][model]
     assert (config["exporter"], config["license"]) == (exporter, license_name)
     assert "name" in config
+
+
+def test_config_imgsz_parses_and_matches_exporter(model_configs) -> None:
+    """Every config imgsz is one size or (height, width), non-square only for hw exporters."""
+    for family in model_configs.values():
+        for model_name, config in family.items():
+            if "imgsz" not in config:
+                continue
+            imgsz = normalize_imgsz(config["imgsz"])
+            assert isinstance(imgsz, int) or EXPORTERS[config["exporter"]].hw, model_name

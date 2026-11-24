@@ -31,6 +31,8 @@ Classes
     Wrapper around depth estimation models.
 :class:`Detector`
     Wrapper around detection models.
+:class:`FeatureExtractor`
+    Wrapper around feature extraction models (image embeddings and feature maps).
 :class:`HandInteractionDetector`
     Wrapper around hand-object interaction models.
 :class:`TextDetector`
@@ -80,6 +82,7 @@ from ._classifier import Classifier
 from ._depth_estimator import DepthEstimator
 from ._detector import Detector
 from ._draw import draw_bboxes, draw_text
+from ._feature_extractor import FeatureExtractor
 from ._hand_interaction import HandInteractionDetector
 from ._image_model import ImageModel
 from ._obb_detector import OBBDetector
@@ -95,6 +98,7 @@ __all__ = [
     "Classifier",
     "DepthEstimator",
     "Detector",
+    "FeatureExtractor",
     "HandInteractionDetector",
     "ImageModel",
     "OBBDetector",

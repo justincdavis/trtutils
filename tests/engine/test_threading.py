@@ -195,7 +195,7 @@ def test_lazy_graph_capture_in_thread(engine_path) -> None:
                 cuda_graph=True,
             )
 
-            if not engine._cuda_graph_enabled:
+            if not engine.cuda_graph_enabled:
                 res["success"] = False
                 res["error"] = "no graph"
                 del engine

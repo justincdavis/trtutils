@@ -38,6 +38,8 @@ Classes
     Alias for the DETR class with args preset for RT-DETRv2.
 :class:`RTDETRv3`
     Alias for the DETR class with args preset for RT-DETRv3.
+:class:`RTDETRv4`
+    Alias for the DETR class with args preset for RT-DETRv4.
 :class:`DFINE`
     Alias for the DETR class with args preset for D-FINE.
 :class:`DEIM`
@@ -102,6 +104,8 @@ Classes
     Alias for the HandInteractionDetector class with args preset for Hands23.
 :class:`DepthAnythingV3`
     Alias for the DepthEstimator class with args preset for Depth-Anything-V3.
+:class:`DINOv3`
+    Alias for the FeatureExtractor class with args preset for DINOv3.
 :class:`PPOCRDetector`
     Alias for the TextDetector class with args preset for PaddleOCR (PP-OCR) detection.
 :class:`PPOCRRecognizer`
@@ -177,6 +181,7 @@ from .detectors import (
     RTDETRv1,
     RTDETRv2,
     RTDETRv3,
+    RTDETRv4,
     YOLOv3,
     YOLOv5,
     YOLOv7,
@@ -188,6 +193,7 @@ from .detectors import (
     YOLOv13,
     YOLOv26,
 )
+from .feature_extractors import DINOv3
 from .hand_interaction import HOIDETR, Hands23
 from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
@@ -207,6 +213,7 @@ __all__ = [
     "AlexNet",
     "ConvNeXt",
     "DEIMv2",
+    "DINOv3",
     "DeiT",
     "DeiT3",
     "DenseNet",
@@ -227,6 +234,7 @@ __all__ = [
     "RTDETRv1",
     "RTDETRv2",
     "RTDETRv3",
+    "RTDETRv4",
     "RegNet",
     "ResNeXt",
     "ResNet",

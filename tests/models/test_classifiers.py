@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import cv2
 import pytest
 
 from tests.conftest import DATA_DIR, PREPROCESSORS
@@ -50,3 +51,31 @@ def test_classifier_end2end(
     assert scores == sorted(scores, reverse=True)
     assert all(0.0 <= score <= 1.0 for score in scores)
     assert image.gt_cls_id in [cls_id for cls_id, _score in via_run]
+
+
+@pytest.mark.parametrize(
+    "embed_sst", [pytest.param(False, id="float"), pytest.param(True, id="sst")]
+)
+def test_dynamic_batch_matches_static(build_model_engine, tmp_path, images, embed_sst) -> None:
+    """A dynamic-batch build runs batch 1 and 3 of a max 4 and matches the static batch-1 engine."""
+    onnx_path = DATA_DIR / "resnet" / "resnet18_224.onnx"
+    static = ResNet(build_model_engine(ResNet, onnx_path, embed_sst=embed_sst), warmup=False)
+    engine_path = tmp_path / "dynamic.engine"
+    ResNet.build(
+        onnx_path, engine_path, batch_size=4, opt_level=1, embed_sst=embed_sst, dynamic_batch=True
+    )
+    dynamic = ResNet(engine_path, warmup=False)
+    assert dynamic.engine.is_dynamic_batch is True
+    assert dynamic.engine.batch_size == 4
+
+    frames = [
+        images["horse"].array,
+        images["people"].array,
+        cv2.imread(str(DATA_DIR / "street.jpg")),
+    ]
+    expected = [static.end2end(frame, top_k=1)[0] for frame in frames]
+    got = [dynamic.end2end(frames[0], top_k=1)[0]]
+    got += [result[0] for result in dynamic.end2end(frames, top_k=1)]
+    for (cls_id, score), (ref_id, ref_score) in zip(got, [expected[0], *expected]):
+        assert cls_id == ref_id
+        assert score == pytest.approx(ref_score, abs=1e-2)

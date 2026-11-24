@@ -212,7 +212,8 @@ def plan_resize(
         )
     else:
         err_msg = (
-            f"The DLA preprocessor supports letterbox, linear and center_crop resizing, not {method}"
+            f"The DLA preprocessor supports letterbox, linear and center_crop resizing, "
+            f"not {method}. {_ADVICE}"
         )
         raise ValueError(err_msg)
     for factor in plan.factors:

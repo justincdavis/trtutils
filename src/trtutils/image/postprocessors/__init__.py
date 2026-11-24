@@ -16,6 +16,12 @@ Functions
     Postprocess the output of a depth estimation model.
 :func:`get_detections`
     Get the detections from unified postprocessed outputs.
+:func:`get_embeddings`
+    Get the embeddings from the output of a feature extraction model.
+:func:`get_feature_maps`
+    Get the dense feature maps from the output of a feature extraction model.
+:func:`postprocess_features`
+    Postprocess the output of a feature extraction model.
 :func:`get_text_boxes`
     Get the text boxes from the output of a text detection model.
 :func:`get_texts`
@@ -72,6 +78,7 @@ from ._cpu_detection import (
     postprocess_rtdetrv3,
     postprocess_yolov10,
 )
+from ._cpu_features import get_embeddings, get_feature_maps, postprocess_features
 from ._cpu_hand_interaction import get_interactions, postprocess_hand_interactions
 from ._cpu_obb import get_obb_detections, postprocess_yolo_obb
 from ._cpu_ocr import (
@@ -92,6 +99,8 @@ __all__ = [
     "get_classifications",
     "get_depth_maps",
     "get_detections",
+    "get_embeddings",
+    "get_feature_maps",
     "get_interactions",
     "get_obb_detections",
     "get_poses",
@@ -103,6 +112,7 @@ __all__ = [
     "postprocess_detr",
     "postprocess_detr_lbs",
     "postprocess_efficient_nms",
+    "postprocess_features",
     "postprocess_hand_interactions",
     "postprocess_rfdetr",
     "postprocess_rtdetrv3",

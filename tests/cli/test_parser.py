@@ -162,7 +162,7 @@ def test_trtexec_passthrough_args() -> None:
             ["trtutils", "profile", "--engine", _ENGINE, "--output", _JSON],
             "trtutils.__main__._profile",
             {
-                "iterations": 100,
+                "iterations": None,
                 "warmup_iterations": 10,
                 "save_raw": False,
                 "jetson": False,
@@ -188,6 +188,24 @@ def test_trtexec_passthrough_args() -> None:
             "trtutils.__main__._classify",
             {"cpu_resize": False},
             id="classify-no-cpu-resize-flag",
+        ),
+        pytest.param(
+            ["trtutils", "download", "--model", "m", "--output", _ONNX],
+            "trtutils.__main__._download",
+            {"imgsz": None},
+            id="download-imgsz-unset",
+        ),
+        pytest.param(
+            ["trtutils", "download", "--model", "m", "--output", _ONNX, "--imgsz", "640"],
+            "trtutils.__main__._download",
+            {"imgsz": [640]},
+            id="download-imgsz-square",
+        ),
+        pytest.param(
+            ["trtutils", "download", "--model", "m", "--output", _ONNX, "--imgsz", "256", "128"],
+            "trtutils.__main__._download",
+            {"imgsz": [256, 128]},
+            id="download-imgsz-height-width",
         ),
     ],
 )

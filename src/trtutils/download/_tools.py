@@ -23,10 +23,41 @@ _MIN_UV_VERSION = (0, 9, 0)
 _MIN_UV_VERSION_PARTS = 2
 _EXPECTED_UV_PARTS = 3
 _640 = 640
+_HW = 2
 
 
 def get_patches_dir() -> Path:
     return Path(__file__).parent / "patches"
+
+
+def normalize_imgsz(imgsz: int | str | Sequence[int | str]) -> int | tuple[int, int]:
+    """
+    Turn an image size into an int (square) or a ``(height, width)`` tuple (non-square).
+
+    Parameters
+    ----------
+    imgsz : int | str | Sequence[int | str]
+        One size for a square image, or ``(height, width)``. Config files may give the
+        sizes as strings.
+
+    Returns
+    -------
+    int | tuple[int, int]
+        The size as an int when height equals width, else ``(height, width)``.
+
+    Raises
+    ------
+    ValueError
+        If there are not one or two sizes, or a size is not positive.
+
+    """
+    sizes = [int(s) for s in ([imgsz] if isinstance(imgsz, (int, str)) else imgsz)]
+    if len(sizes) not in (1, _HW) or min(sizes) < 1:
+        err_msg = f"imgsz must be one positive size or (height, width), got {imgsz!r}"
+        raise ValueError(err_msg)
+    if sizes[0] == sizes[-1]:
+        return sizes[0]
+    return sizes[0], sizes[1]
 
 
 def handle_imgsz(

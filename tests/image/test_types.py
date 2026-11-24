@@ -25,6 +25,8 @@ _SCORED = Tuple[_BBOX, float]
         pytest.param("Bbox", _BBOX, id="bbox"),
         pytest.param("Detection", Tuple[_BBOX, float, int], id="detection"),
         pytest.param("Classification", Tuple[int, float], id="classification"),
+        pytest.param("Embedding", np.ndarray, id="embedding"),
+        pytest.param("FeatureMap", np.ndarray, id="feature-map"),
         pytest.param(
             "HandInteraction",
             Tuple[_SCORED, Optional[_SCORED], Optional[_SCORED], Optional[int], Optional[int]],

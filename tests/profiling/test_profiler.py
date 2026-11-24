@@ -12,7 +12,7 @@ from trtutils import TRTEngine
 from trtutils._log import LOG
 from trtutils.compat._libs import trt
 from trtutils.profiling import profile_engine
-from trtutils.profiling._profiler import LayerProfiler
+from trtutils.profiling._profiler import LayerProfiler, _NoOpProfiler, attached_profiler
 
 pytestmark = pytest.mark.gpu
 
@@ -69,3 +69,36 @@ def test_profile_engine_hands_back_engine(engine_path, own_profiler) -> None:
         calls = previous.calls
         engine.execute(inputs)
         assert previous.calls > calls
+
+
+def test_attached_profiler_restores_engine_on_error(engine_path) -> None:
+    """An exception inside the block still restores the graph flag and previous profiler."""
+    engine = TRTEngine(engine_path, cuda_graph=True, warmup=False)
+    graph_enabled = engine.cuda_graph_enabled
+    previous = _CountingProfiler()
+    engine.context.profiler = previous
+    attached = _CountingProfiler()
+
+    def interrupted() -> None:
+        with attached_profiler(engine, attached):
+            assert engine.cuda_graph_enabled is False
+            assert engine.context.profiler is attached
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        interrupted()
+
+    assert engine.cuda_graph_enabled == graph_enabled
+    assert engine.context.profiler is previous
+
+
+def test_attached_profiler_without_previous_leaves_noop(engine_path) -> None:
+    """TensorRT rejects a None profiler, so a no-op profiler replaces the attached one."""
+    engine = TRTEngine(engine_path, warmup=False)
+    attached = _CountingProfiler()
+
+    with attached_profiler(engine, attached):
+        pass
+
+    assert engine.context.profiler is not attached
+    assert isinstance(engine.context.profiler, _NoOpProfiler)

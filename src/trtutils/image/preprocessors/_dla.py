@@ -83,9 +83,10 @@ class DLAPreprocessor(ImagePreprocessor):
     or so. A center crop takes inputs up to 3840 wide whose width is a multiple
     of 16, and resizes like torchvision's antialiased ``Resize`` (box then
     triangle filters), not bilinearly like the CPU and CUDA preprocessors' center
-    crop, which differ from it by a few levels on average. Host images of the
-    sizes the DLA cannot resize can be resized on the CPU instead
-    (``cpu_resize``), with the DLA doing the rest at the output size. Images go
+    crop, which differ from it by a few levels on average. The DLA does not pad
+    resize. Host images of the sizes or methods the DLA cannot resize can be
+    resized on the CPU instead (``cpu_resize``), with the DLA doing the rest at
+    the output size. Images go
     to the DLA as int8 BGRx, converted on the CPU for numpy arrays and by a small
     kernel for device Buffers; the GPU otherwise only casts the float16 output
     for float32 models.
@@ -126,8 +127,9 @@ class DLAPreprocessor(ImagePreprocessor):
         batch_size : int
             The most images per call. Default is 1.
         resize : str, optional
-            The default resize method, 'letterbox', 'linear' or 'center_crop'.
-            By default, letterbox resizing will be used.
+            The default resize method, 'letterbox', 'linear', 'center_crop' or 'pad'.
+            By default, letterbox resizing will be used. 'pad' always resizes host
+            images on the CPU and raises for device Buffers or with ``cpu_resize=False``.
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -412,7 +414,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images : Sequence[np.ndarray | Buffer]
             The images to preprocess (HWC format, uint8, BGR).
         resize : str, optional
-            The method to resize the images with, 'letterbox', 'linear' or 'center_crop'.
+            The method to resize the images with, 'letterbox', 'linear', 'center_crop' or 'pad'.
             By default None, which uses the method given in the constructor.
         no_warn : bool, optional
             If True, do not warn about usage.
@@ -508,7 +510,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
-            The method to resize the images with, 'letterbox', 'linear' or 'center_crop'.
+            The method to resize the images with, 'letterbox', 'linear', 'center_crop' or 'pad'.
             By default None, which uses the method given in the constructor.
         no_copy : bool, optional
             If True, return the host output memory without a copy. It WILL BE
@@ -561,7 +563,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
-            The method to resize the images with, 'letterbox', 'linear' or 'center_crop'.
+            The method to resize the images with, 'letterbox', 'linear', 'center_crop' or 'pad'.
             By default None, which uses the method given in the constructor.
         no_copy : bool, optional
             If True, return the host output memory without a copy. It WILL BE

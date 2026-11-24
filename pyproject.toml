@@ -138,8 +138,8 @@ benchmark = [
     "trtutils[sahi]",
 ]
 ci = [
-    "ruff==0.17.5",
-    "ty==0.0.105",
+    "ruff==0.17.6",
+    "ty==0.0.107",
 ]
 docs = [
     "sphinx>=7.0.0",

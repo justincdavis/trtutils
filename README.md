@@ -14,7 +14,7 @@ A high-level Python interface for TensorRT inference, providing a simple and uni
 
 - `TRTEngine` runs any TensorRT engine, with async_v2 and async_v3 backends, CUDA graphs, and pagelocked or unified memory
 - `Buffer` inputs on the host or the device; `Buffer.wrap` views NumPy, CuPy, and PyTorch arrays without copying
-- Image models in `trtutils.image`: `Detector`, `Classifier`, `Segmenter`, `PoseEstimator`, `OBBDetector`, `DepthEstimator`, `HandInteractionDetector`, and `OCR` (text detection plus recognition)
+- Image models in `trtutils.image`: `Detector`, `Classifier`, `Segmenter`, `PoseEstimator`, `OBBDetector`, `DepthEstimator`, `FeatureExtractor`, `HandInteractionDetector`, and `OCR` (text detection plus recognition)
 - SAHI (sliced inference) for any detector, with `SAHI`
 - Preprocessing on the CPU, CUDA, TensorRT or a DLA (`preprocessor="cpu" | "cuda" | "trt" | "dla0" | "dla1"`), optionally resizing on the CPU first (`cpu_resize=True`), and CPU or CUDA postprocessing (`postprocessor="cpu" | "cuda"`)
 - Pre-configured `trtutils.models` wrappers with `download()` and `build()`
@@ -107,8 +107,8 @@ shape of the Buffers it is given and returns outputs of the matching shape.
 ### End-to-End Image Models
 
 The task models in `trtutils.image` (`Detector`, `Classifier`, `Segmenter`,
-`PoseEstimator`, `OBBDetector`, `DepthEstimator`, `HandInteractionDetector`, and
-`OCR`) bundle preprocessing and postprocessing around an engine:
+`PoseEstimator`, `OBBDetector`, `DepthEstimator`, `FeatureExtractor`,
+`HandInteractionDetector`, and `OCR`) bundle preprocessing and postprocessing around an engine:
 
 ```python
 import cv2
@@ -159,12 +159,13 @@ Every family below has a download config. `python3 -m trtutils download --list_m
 the exact names accepted by `--model`, and the [documentation](https://justincdavis.github.io/trtutils/models.html)
 describes each family.
 
-- **Detection**: YOLOX; YOLOv3, v5, v7, v8, v9, v10, v11, v12, v13, and v26; RT-DETR v1, v2, and v3; D-FINE; DEIM; DEIMv2; RF-DETR
+- **Detection**: YOLOX; YOLOv3, v5, v7, v8, v9, v10, v11, v12, v13, and v26; RT-DETR v1, v2, v3, and v4; D-FINE; DEIM; DEIMv2; RF-DETR
 - **Classification**: torchvision classifiers (AlexNet, ConvNeXt, DenseNet, EfficientNet and EfficientNetV2, GoogLeNet, Inception v3, MaxViT, MNASNet, MobileNet, RegNet, ResNet and ResNeXt, ShuffleNet, SqueezeNet, Swin and Swin V2, VGG, ViT, Wide ResNet); DeiT and DeiT III; YOLOv8, v11, and v26 classifiers
 - **Segmentation**: YOLOv8, v11, and v26 (`-seg`)
 - **Pose estimation**: YOLOv8, v11, and v26 (`-pose`)
 - **Oriented bounding boxes**: YOLOv8, v11, and v26 (`-obb`)
 - **Depth estimation**: Depth-Anything V1, V2, and V3
+- **Feature extraction** (image embeddings and dense feature maps): DINOv3 ViT-S, S+, and B
 - **Hand-object interaction**: HOI-DETR and Hands23
 - **OCR**: PP-OCR text detection and recognition
 
@@ -176,7 +177,7 @@ For detailed documentation, including advanced usage, examples, and API referenc
 
 Check out our [examples directory](examples/) for more detailed usage examples, including:
 - Basic engine usage (`engine.py`) and the Jetson helpers (`jetson.py`)
-- End-to-end image models (`image/`: detection, classification, segmentation, pose, OBB, depth, OCR, hand-object interaction, SAHI)
+- End-to-end image models (`image/`: detection, classification, segmentation, pose, OBB, depth, feature extraction, OCR, hand-object interaction, SAHI)
 - Engine building (`build.py`, `builder/dla.py`)
 - Benchmarking and profiling utilities (`benchmark.py`, `profile_engine.py`)
 

@@ -34,6 +34,7 @@ class PoseEstimator(ImageModel, PoseEstimatorInterface):
     """Implementation of pose estimation models (YOLO-style pose heads)."""
 
     _OUTPUT_SCHEMA = PoseEstimatorOutputSchema
+    _supports_pad = False
     _CUDA_POSTPROCESSOR = CUDAPosePostprocessor
     _cuda_post_default = True
 
