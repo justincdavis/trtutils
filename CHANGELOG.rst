@@ -198,6 +198,8 @@ Fixed
   or reused. The library stream handler no longer filters by level, so the logger level alone
   decides what is emitted: ``LOG.with_level`` can raise verbosity and ``LOG.level`` tracks
   ``set_log_level``
+* ``CUDAPreprocessor`` with integer ``output_range`` bounds, such as ``(-1, 1)``, matches the
+  float bounds. The offset reached the kernel as an integer argument, which it read as a float
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
 * Float16-input image models use the ``cuda`` preprocessor (with or without ``cpu_resize``) instead of
   the CPU one

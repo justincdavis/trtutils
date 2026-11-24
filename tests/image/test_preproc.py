@@ -67,6 +67,32 @@ def test_preprocess_without_normalize_returns_uint8_hwc(images, resize) -> None:
 SHAPES = [(1080, 1920), (480, 640), (2160, 3840), (720, 1280), (512, 512)]
 
 
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "preproc_cls",
+    [
+        pytest.param(CPUPreprocessor, id="cpu"),
+        pytest.param(CUDAPreprocessor, id="cuda"),
+        pytest.param(TRTPreprocessor, id="trt"),
+    ],
+)
+@pytest.mark.parametrize(
+    "output_range",
+    [
+        pytest.param((-1, 1), id="neg1-1"),
+        pytest.param((1, 2), id="1-2"),
+        pytest.param((2, 3), id="2-3"),
+    ],
+)
+def test_int_output_range_matches_float(images, preproc_cls, output_range) -> None:
+    """Integer output_range bounds give the same output as the equal float bounds."""
+    float_range = (float(output_range[0]), float(output_range[1]))
+    image = images["horse"].array
+    expected, _, _ = CPUPreprocessor(SIZE, float_range, DTYPE).preprocess([image])
+    result, _, _ = preproc_cls(SIZE, output_range, DTYPE).preprocess([image])
+    assert np.abs(result - expected).max() < 0.02 * (float_range[1] - float_range[0])
+
+
 @pytest.mark.parametrize(
     "gpu_cls",
     [

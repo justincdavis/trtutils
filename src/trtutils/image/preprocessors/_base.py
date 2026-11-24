@@ -145,12 +145,13 @@ class ImagePreprocessor(ABC):
         """
         # output info
         self._o_shape: tuple[int, int] = output_shape
-        self._o_range: tuple[float, float] = output_range
+        # floats: an integer bound would reach the CUDA kernels as an integer argument
+        self._o_range: tuple[float, float] = (float(output_range[0]), float(output_range[1]))
         self._o_dtype: np.dtype = dtype
 
         # preprocessing info
-        self._scale: float = (output_range[1] - output_range[0]) / 255.0
-        self._offset: float = output_range[0]
+        self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
+        self._offset: float = self._o_range[0]
         self._mean: np.ndarray | None = None
         self._std: np.ndarray | None = None
 
