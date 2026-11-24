@@ -44,7 +44,7 @@ def test_patch_disables_grad(patch_name: str) -> None:
     ("module", "count"),
     [
         pytest.param(_timm, 2, id="timm-classifier-features"),
-        pytest.param(_torchvision, 1, id="torchvision"),
+        pytest.param(_torchvision, 2, id="torchvision"),
         pytest.param(_depth_anything, 2, id="depth_anything_v1_v2"),
         pytest.param(_hoi_detr, 1, id="hoi_detr"),
         pytest.param(_hands23, 1, id="hands23"),

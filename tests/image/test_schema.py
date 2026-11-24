@@ -16,6 +16,7 @@ from trtutils.image import (
     DepthEstimator,
     FeatureExtractor,
     ImageModel,
+    SemanticSegmenter,
     TextDetector,
     TextRecognizer,
 )
@@ -29,6 +30,7 @@ from trtutils.image._schema import (
     OutputSchema,
     PoseEstimatorOutputSchema,
     SegmenterOutputSchema,
+    SemanticSegmenterOutputSchema,
     TextDetectorOutputSchema,
     TextRecognizerOutputSchema,
     resolve_schema,
@@ -81,6 +83,7 @@ _DEPTH = DepthEstimatorOutputSchema
 _FEAT = FeatureExtractorOutputSchema
 _TDET = TextDetectorOutputSchema
 _TREC = TextRecognizerOutputSchema
+_SEM = SemanticSegmenterOutputSchema
 
 
 @pytest.mark.cpu
@@ -131,6 +134,10 @@ _TREC = TextRecognizerOutputSchema
             id="pose-enum-override",
         ),
         pytest.param(OBBDetectorOutputSchema, ("output0",), "YOLO", "YOLO", id="obb-str-override"),
+        pytest.param(_SEM, ("class_map",), None, "CLASS_MAP", id="semantic-class-map-auto"),
+        pytest.param(_SEM, ("logits",), None, "LOGITS", id="semantic-logits-auto"),
+        pytest.param(_SEM, ("out",), None, "GENERIC", id="semantic-generic-fallback"),
+        pytest.param(_SEM, ("logits",), "GENERIC", "GENERIC", id="semantic-generic-str"),
     ],
 )
 def test_resolve_schema(schema_cls, outputs, override, expected) -> None:
@@ -161,6 +168,7 @@ def test_resolve_schema(schema_cls, outputs, override, expected) -> None:
             SegmenterOutputSchema, ("output0",), SegmenterOutputSchema.YOLO, "match no", id="enum"
         ),
         pytest.param(SegmenterOutputSchema, ("output0", "output1"), "NOPE", "NOPE", id="bad-str"),
+        pytest.param(_SEM, ("logits",), _SEM.CLASS_MAP, "match no", id="semantic-named-override"),
     ],
 )
 def test_resolve_schema_rejects(schema_cls, outputs, override, match) -> None:
@@ -200,6 +208,7 @@ _REC_KWARGS = {"character_dict": [str(i) for i in range(158)]}
         pytest.param(Classifier, {}, _CLS.GENERIC, id="classifier"),
         pytest.param(DepthEstimator, {}, _DEPTH.GENERIC, id="depth-estimator"),
         pytest.param(FeatureExtractor, {}, _FEAT.GENERIC, id="feature-extractor"),
+        pytest.param(SemanticSegmenter, {}, _SEM.GENERIC, id="semantic-segmenter"),
         pytest.param(TextDetector, {}, _TDET.GENERIC, id="text-detector"),
         pytest.param(TextRecognizer, _REC_KWARGS, _TREC.GENERIC, id="text-recognizer"),
     ],

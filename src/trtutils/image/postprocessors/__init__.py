@@ -36,6 +36,12 @@ Functions
     Postprocess the output of a YOLO segmentation model.
 :func:`get_segmentations`
     Get the segmentations from postprocessed segmentation outputs.
+:func:`postprocess_class_map`
+    Postprocess the class map of a semantic segmentation model.
+:func:`postprocess_semantic_logits`
+    Postprocess the logits of a semantic segmentation model.
+:func:`get_class_maps`
+    Get the class maps from postprocessed semantic segmentation outputs.
 :func:`postprocess_yolo_pose`
     Postprocess the output of a YOLO pose estimation model.
 :func:`get_poses`
@@ -90,12 +96,14 @@ from ._cpu_ocr import (
 )
 from ._cpu_pose import get_poses, postprocess_yolo_pose
 from ._cpu_segmentation import get_segmentations, postprocess_yolo_seg
+from ._cpu_semantic import get_class_maps, postprocess_class_map, postprocess_semantic_logits
 
 __all__ = [
     "HandInteraction",
     "OBBDetection",
     "Pose",
     "Segmentation",
+    "get_class_maps",
     "get_classifications",
     "get_depth_maps",
     "get_detections",
@@ -107,6 +115,7 @@ __all__ = [
     "get_segmentations",
     "get_text_boxes",
     "get_texts",
+    "postprocess_class_map",
     "postprocess_classifications",
     "postprocess_depth",
     "postprocess_detr",
@@ -116,6 +125,7 @@ __all__ = [
     "postprocess_hand_interactions",
     "postprocess_rfdetr",
     "postprocess_rtdetrv3",
+    "postprocess_semantic_logits",
     "postprocess_text_detection",
     "postprocess_text_recognition",
     "postprocess_yolo_obb",
