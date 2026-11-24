@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from trtutils.download._tools import (
     git_clone,
+    handle_imgsz,
     run_cmd,
     run_download,
     run_uv_pip_install,
@@ -16,6 +17,9 @@ from trtutils.download._tools import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+_DP_COMMIT = "9e65e4dbe9568d23c546fcec53302b10445e109e"
+# a 1536 image as a pyramid of 384-pixel patches: the size is fixed
+_DP_IMGSZ = 1536
 _DP2_COMMIT = "aa389cbb0b74341664ed663a0966c859905cd6c0"
 # the encoder and decoder work on multiples of 32 (patch 16, a stride 2 level below it)
 _DP2_DIVISOR = 32
@@ -302,6 +306,89 @@ for before, after in zip(expected, wrapper(example)):
 save_onnx(wrapper, torch.zeros(1, 3, height, width), output_path, {opset})
 """
     script_path = repo_dir / "_export_depth_pro_2.py"
+    script_path.write_text(script_content)
+    env = {**os.environ, "PYTHONPATH": str((repo_dir / "src").resolve())}
+    run_cmd([python_path, str(script_path)], cwd=repo_dir, env=env, verbose=verbose)
+    return repo_dir / output_name
+
+
+def export_depth_pro(
+    directory: Path,
+    config: dict[str, str],
+    python_path: Path,
+    bin_path: Path,
+    model: str,
+    opset: int,
+    imgsz: int | None = None,
+    *,
+    no_cache: bool | None = None,
+    no_uv_cache: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
+    verbose: bool | None = None,
+) -> Path:
+    # the patch pyramid (384-pixel patches of a 1536 image) fixes the input size
+    handle_imgsz(imgsz, _DP_IMGSZ, "DepthPro", enforce=True)
+    git_clone(
+        "https://github.com/apple/ml-depth-pro",
+        directory,
+        _DP_COMMIT,
+        no_cache=no_cache,
+        verbose=verbose,
+    )
+    repo_dir = directory / "ml-depth-pro"
+    run_uv_pip_install(
+        repo_dir,
+        bin_path.parent,
+        "depth_pro",
+        no_cache=no_uv_cache,
+        verbose=verbose,
+    )
+    # upstream loads ./checkpoints/depth_pro.pt
+    checkpoints = repo_dir / "checkpoints"
+    checkpoints.mkdir(exist_ok=True)
+    run_download(checkpoints, config, python_path, no_cache=no_cache, verbose=verbose)
+
+    output_name = f"{model}.onnx"
+    script_content = f"""\
+import math
+import os
+import shutil
+
+import onnx
+import torch
+from torch import nn
+
+from depth_pro import create_model_and_transforms
+
+output_path = "{output_name}"
+# exports never need gradients
+torch.set_grad_enabled(False)
+RAD = math.pi / 180.0
+
+
+class DepthProImage(nn.Module):
+    # DepthPro.infer at the network size: metric depth and the focal length in pixels
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        self.size = model.img_size
+
+    def forward(self, x):
+        canonical_inverse_depth, fov_deg = self.model(x)
+        # deg2rad has no onnx export
+        focal_length = 0.5 * self.size / torch.tan(0.5 * fov_deg.view(-1, 1) * RAD)
+        inverse_depth = canonical_inverse_depth * (self.size / focal_length.view(-1, 1, 1, 1))
+        depth = 1.0 / torch.clamp(inverse_depth, min=1e-4, max=1e4)
+        return depth, focal_length
+
+
+model, _ = create_model_and_transforms()
+wrapper = DepthProImage(model.eval()).eval()
+{_SAVE_ONNX}
+# three vit-l encoders: over 2 GB, so the weights go to a sidecar
+save_onnx(wrapper, torch.zeros(1, 3, wrapper.size, wrapper.size), output_path, {opset})
+"""
+    script_path = repo_dir / "_export_depth_pro.py"
     script_path.write_text(script_content)
     env = {**os.environ, "PYTHONPATH": str((repo_dir / "src").resolve())}
     run_cmd([python_path, str(script_path)], cwd=repo_dir, env=env, verbose=verbose)

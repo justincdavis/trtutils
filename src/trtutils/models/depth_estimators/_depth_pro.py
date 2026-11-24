@@ -82,3 +82,70 @@ class DepthPro2(DepthEstimator, Model):
             no_warn=no_warn,
             verbose=verbose,
         )
+
+
+class DepthPro(DepthEstimator, Model):
+    """
+    Alias of DepthEstimator with default args for Apple's Depth Pro.
+
+    The engine outputs metric depth in metres, using the focal length that Depth Pro's
+    field-of-view head predicts from the image, so ``normalize`` defaults to False. As
+    upstream, depth is clamped to [1e-4, 1e4] metres. The maps have the engine's input
+    size (1536x1536, the only size the network takes); resize them to the image size for
+    per-pixel metres. The estimated focal length, in pixels of the engine input, is the
+    second output of each image from :meth:`run`: ``model.run(image)[1]`` for one image,
+    ``model.run(images)[i][1]`` for a list.
+    The weights are licensed for non-commercial research use only.
+    """
+
+    _model_type = "depth_pro"
+    _friendly_name = "Depth-Pro"
+    _default_imgsz = 1536
+    _valid_imgszs: ClassVar[list[int] | None] = [1536]
+    _input_tensors: ClassVar[list[tuple[str, str]]] = [("input", "image")]
+
+    def __init__(
+        self: Self,
+        engine_path: Path | str,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0, 1),
+        preprocessor: str = "cuda",
+        resize_method: str = "linear",
+        mean: tuple[float, float, float] | None = (0.5, 0.5, 0.5),
+        std: tuple[float, float, float] | None = (0.5, 0.5, 0.5),
+        dla_core: int | None = None,
+        device: int | None = None,
+        backend: str = "auto",
+        *,
+        warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
+        cpu_resize: bool | None = None,
+        normalize: bool = False,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
+    ) -> None:
+        DepthEstimator.__init__(
+            self,
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            input_range=input_range,
+            preprocessor=preprocessor,
+            resize_method=resize_method,
+            mean=mean,
+            std=std,
+            dla_core=dla_core,
+            device=device,
+            backend=backend,
+            warmup=warmup,
+            pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
+            cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
+            cpu_resize=cpu_resize,
+            normalize=normalize,
+            no_warn=no_warn,
+            verbose=verbose,
+        )

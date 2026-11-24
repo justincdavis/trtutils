@@ -117,6 +117,18 @@ Depth Estimation
      the camera's aspect ratio: a squashed image also changes the estimated focal length.
    - The weights are for non-commercial research use only, see the license table.
 
+5. **Depth Pro**
+
+   - GitHub: `apple/ml-depth-pro <https://github.com/apple/ml-depth-pro>`_
+   - ``DepthPro``, one model (``depth_pro``): DINOv2 ViT-L encoders over a pyramid of
+     384-pixel patches, an image encoder and a field-of-view head, at a fixed 1536x1536.
+     Depth Pro 2 is its successor; upstream does not mark Depth Pro deprecated.
+   - Same outputs as Depth Pro 2: ``depth`` in metres (clamped to [1e-4, 1e4] as upstream)
+     and ``focal_length`` in pixels of the 1536x1536 input, from the model's own
+     field-of-view estimate; ``normalize=False`` by default. The image is resized to a
+     square without padding, as upstream's ``infer`` does (bilinear, no antialiasing).
+   - The weights are for non-commercial research use only, see the license table.
+
 Relative-depth models return each depth map min-max normalized to [0, 1]
 (``DepthEstimator(normalize=True)``, the default). Upstream resizes with a bicubic filter
 that keeps the aspect ratio; trtutils resizes linearly to the square engine input, so
@@ -264,6 +276,7 @@ Depth Estimation Models
 - **Depth-Anything-V2 metric**: ``depth_anything_v2_metric_indoor_small``, ``depth_anything_v2_metric_indoor_base``, ``depth_anything_v2_metric_indoor_large``, ``depth_anything_v2_metric_outdoor_small``, ``depth_anything_v2_metric_outdoor_base``, ``depth_anything_v2_metric_outdoor_large``
 - **Depth-Anything-V3**: ``depth_anything_v3_small``, ``depth_anything_v3_base``, ``depth_anything_v3_large``, ``depth_anything_v3_mono_large``, ``depth_anything_v3_metric_large``
 - **Depth Pro 2**: ``depth_pro_2_small``, ``depth_pro_2_base``, ``depth_pro_2_large``, ``depth_pro_2_huge``
+- **Depth Pro**: ``depth_pro``
 
 Hand-Object Interaction Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -353,6 +366,11 @@ for the weights: check the source before using them.
        defined as "non-commercial scientific research and academic development activities"
        (no commercial use or product development). Upstream's code is under a separate,
        permissive Apple license
+   * - Depth Pro
+     - Apple Machine Learning Research Model License (non-commercial), the license file in
+       the Hugging Face repository that hosts ``depth_pro.pt`` (``apple/DepthPro``). The
+       GitHub README puts the weights under the repository's permissive sample-code LICENSE;
+       the more restrictive of the two is listed
    * - HOI-DETR
      - MIT
    * - Hands23
