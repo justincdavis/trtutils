@@ -72,6 +72,13 @@ class BenchmarkResult:
         return f"BenchmarkResult(latency={self.latency!r})"
 
 
+def _check_iterations(iterations: int) -> None:
+    """Raise before any engine work if the benchmark would record no samples."""
+    if iterations < 1:
+        err_msg = f"iterations must be at least 1, got {iterations}"
+        raise ValueError(err_msg)
+
+
 def benchmark_engine(
     engine: TRTEngine | Path | str,
     iterations: int = 1000,
@@ -117,7 +124,13 @@ def benchmark_engine(
     BenchmarkResult
         A dataclass containing the results of the benchmark.
 
+    Raises
+    ------
+    ValueError
+        If iterations is less than 1.
+
     """
+    _check_iterations(iterations)
     warmup = warmup if warmup is not None else True
     if verbose:
         LOG.debug("Running benchmark_engine")
@@ -216,7 +229,13 @@ def benchmark_engines(
         A list of dataclasses containing the results of the benchmark.
         If parallel was True, will only contain one item.
 
+    Raises
+    ------
+    ValueError
+        If iterations is less than 1.
+
     """
+    _check_iterations(iterations)
     warmup = warmup if warmup is not None else True
     temp_engines: list[Path | TRTEngine] = []
     dla_assignments: list[int | None] = []

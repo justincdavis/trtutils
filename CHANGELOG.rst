@@ -183,6 +183,12 @@ Performance
 
 Fixed
 ^^^^^
+* ``jetson.benchmark_engine`` / ``benchmark_engines`` raise a ``RuntimeError`` naming
+  ``tegra_interval`` and ``iterations`` when no tegrastats sample lands inside an inference
+  (previously an opaque ``ValueError``), and warn when only some inferences have a sample
+* ``benchmark_engine`` / ``benchmark_engines`` and their ``jetson`` versions raise
+  ``ValueError`` for ``iterations < 1`` before building engines. ``iterations=0`` used to fail
+  after the run with "Raw data cannot be empty"
 * ``jetson.profile_engine`` runs without CUDA graphs, then restores the engine's graph flag and
   profiler. Graph replays never call the profiler, so per-layer results could be empty
 * ``profile_engine(jetson=True)`` and ``trtutils profile --jetson`` use the Jetson default of 10000 iterations

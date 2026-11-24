@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from jetsontools import TegraStats, filter_data, get_powerdraw, parse_tegrastats
 
-from trtutils._benchmark import Metric
+from trtutils._benchmark import Metric, _check_iterations
 from trtutils._engine import TRTEngine
 from trtutils._log import LOG
 from trtutils.parallel._parallel_engines import ParallelTRTEngines
@@ -19,7 +19,6 @@ from trtutils.parallel._parallel_engines import ParallelTRTEngines
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from jetsontools._parsing import Metric as JMetric  # typing fix
     from typing_extensions import Self
 
 
@@ -34,6 +33,65 @@ class JetsonBenchmarkResult:
 
     def __repr__(self: Self) -> str:
         return f"JetsonBenchmarkResult(latency={self.latency!r}, power_draw={self.power_draw!r}, energy={self.energy!r})"
+
+
+def _collect_power_data(
+    temp_file: Path,
+    start_stop_times: list[tuple[float, float]],
+    tegra_interval: int,
+) -> tuple[list[float], list[float]]:
+    """
+    Parse tegrastats output and extract power draw and per-inference energy.
+
+    Parameters
+    ----------
+    temp_file : Path
+        The tegrastats output file. It is deleted after parsing.
+    start_stop_times : list[tuple[float, float]]
+        The (start, stop) time of each inference.
+    tegra_interval : int
+        The tegrastats sampling interval in milliseconds, used in error messages.
+
+    Returns
+    -------
+    tuple[list[float], list[float]]
+        The power draw samples and the energy of each inference with at least one sample.
+
+    Raises
+    ------
+    RuntimeError
+        If no tegrastats sample fell inside any inference window.
+
+    """
+    tegradata = parse_tegrastats(temp_file)
+    temp_file.unlink(missing_ok=True)
+
+    # filter the data by actual times during execution
+    filtered_data, per_inference = filter_data(tegradata, start_stop_times)
+    if len(filtered_data) == 0:
+        err_msg = (
+            "No tegrastats samples were captured during inference, so power draw and energy "
+            f"cannot be computed (tegra_interval={tegra_interval} ms, "
+            f"iterations={len(start_stop_times)}). "
+            "Lower tegra_interval or increase iterations."
+        )
+        raise RuntimeError(err_msg)
+
+    power_draw = get_powerdraw(filtered_data)["VDD_TOTAL"].raw
+
+    # for energy values need to compute powerdraw per inference, then compute energy
+    energy = [
+        get_powerdraw(inf_data)["VDD_TOTAL"].mean * (inf_stop - inf_start)
+        for (inf_start, inf_stop), inf_data in per_inference
+        if len(inf_data) > 0
+    ]
+    if len(energy) < len(start_stop_times):
+        LOG.warning(
+            f"Only {len(energy)} of {len(start_stop_times)} inferences had a tegrastats sample. "
+            "Energy is computed over fewer iterations than latency; "
+            "lower tegra_interval for full coverage."
+        )
+    return power_draw, energy
 
 
 def benchmark_engine(
@@ -82,7 +140,16 @@ def benchmark_engine(
     JetsonBenchmarkResult
         A dataclass containing the results of the benchmark.
 
+    Raises
+    ------
+    ValueError
+        If iterations is less than 1.
+    RuntimeError
+        If no tegrastats sample falls inside any inference, e.g. a fast engine with a large
+        tegra_interval. Lower tegra_interval or increase iterations.
+
     """
+    _check_iterations(iterations)
     warmup = warmup if warmup is not None else True
     loaded_engine: bool = False
     if isinstance(engine, (Path, str)):
@@ -119,29 +186,9 @@ def benchmark_engine(
             raw["latency"].append(t1 - t0)
             start_stop_times.append((t0, t1))
 
-    # parse the tegra data
-    tegradata = parse_tegrastats(temp_file)
-
-    # delete the temp file
-    if temp_file.exists():
-        temp_file.unlink()
-
-    # filter the data by actual times during execution
-    filtered_data, per_inference = filter_data(tegradata, start_stop_times)
-
-    # get the energy values
-    powerdraw_data: dict[str, JMetric] = get_powerdraw(filtered_data)
-    raw["power_draw"] = powerdraw_data["VDD_TOTAL"].raw
-
-    # compute energy values
-    # for energy values need to compute powerdraw per infernece
-    # then compute energy
-    energy_data = [
-        get_powerdraw(inf_data)["VDD_TOTAL"].mean * (inf_stop - inf_start)
-        for (inf_start, inf_stop), inf_data in per_inference
-        if len(inf_data) > 0
-    ]
-    raw["energy"] = energy_data
+    raw["power_draw"], raw["energy"] = _collect_power_data(
+        temp_file, start_stop_times, tegra_interval
+    )
 
     # calculate the metrics
     metrics: dict[str, Metric] = {}
@@ -210,7 +257,16 @@ def benchmark_engines(
         A list of dataclasses containing the results of the benchmark.
         If parallel was True, will only contain one item.
 
+    Raises
+    ------
+    ValueError
+        If iterations is less than 1.
+    RuntimeError
+        If no tegrastats sample falls inside any inference, e.g. a fast engine with a large
+        tegra_interval. Lower tegra_interval or increase iterations.
+
     """
+    _check_iterations(iterations)
     warmup = warmup if warmup is not None else True
     temp_engines: list[Path | TRTEngine] = []
     dla_assignments: list[int | None] = []
@@ -268,29 +324,9 @@ def benchmark_engines(
             raw["latency"].append(t1 - t0)
             start_stop_times.append((t0, t1))
 
-    # parse the tegra data
-    tegradata = parse_tegrastats(temp_file)
-
-    # delete the temp file
-    if temp_file.exists():
-        temp_file.unlink()
-
-    # filter the data by actual times during execution
-    filtered_data, per_inference = filter_data(tegradata, start_stop_times)
-
-    # get the energy values
-    powerdraw_data: dict[str, JMetric] = get_powerdraw(filtered_data)
-    raw["power_draw"] = powerdraw_data["VDD_TOTAL"].raw
-
-    # compute energy values
-    # for energy values need to compute powerdraw per infernece
-    # then compute energy
-    energy_data = [
-        get_powerdraw(inf_data)["VDD_TOTAL"].mean * (inf_stop - inf_start)
-        for (inf_start, inf_stop), inf_data in per_inference
-        if len(inf_data) > 0
-    ]
-    raw["energy"] = energy_data
+    raw["power_draw"], raw["energy"] = _collect_power_data(
+        temp_file, start_stop_times, tegra_interval
+    )
 
     # calculate the metrics
     metrics: dict[str, Metric] = {}
