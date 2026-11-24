@@ -102,6 +102,7 @@ def test_benchmark_engines_parallel_forwards_devices(entries, expected) -> None:
     assert mock_cls.call_args.args[0] == expected
 
 
+@pytest.mark.cpu
 @pytest.mark.parametrize("parallel", [False, True])
 def test_benchmark_engines_rejects_no_iterations(parallel) -> None:
     """Zero iterations raises before any engine is built, in both modes."""

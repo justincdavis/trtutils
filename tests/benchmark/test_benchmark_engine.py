@@ -65,6 +65,7 @@ def test_benchmark_engine_iterations(engine_path, iterations) -> None:
     assert len(result.latency.raw) == iterations
 
 
+@pytest.mark.cpu
 @pytest.mark.parametrize("iterations", [pytest.param(0, id="zero"), pytest.param(-1, id="negative")])
 def test_benchmark_engine_rejects_no_iterations(iterations) -> None:
     """Fewer than one iteration raises before the engine is touched."""
