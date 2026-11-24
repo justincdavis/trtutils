@@ -66,6 +66,8 @@ class ClassifierOutputSchema(Enum):
 class DepthEstimatorOutputSchema(Enum):
     # Depth-Anything v1/v2 (B, H, W) and v3 (B, 1, H, W)
     DEPTH_ANYTHING = ("output",)
+    # Depth Pro, metric depth (B, 1, H, W) and the estimated focal length (B, 1) in pixels
+    DEPTH_PRO = ("depth", "focal_length")
     # any other engine, e.g. custom exports
     GENERIC = ("*",)
 

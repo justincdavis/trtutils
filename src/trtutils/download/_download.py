@@ -72,6 +72,11 @@ def _license_notice(model: str, license_name: str) -> str:
     return f"{notice}, be aware of license restrictions"
 
 
+def _sidecar(model_path: Path) -> Path:
+    # onnx external weights (>2GB models) live in a sidecar referenced by filename
+    return model_path.with_name(model_path.name + ".data")
+
+
 @lru_cache(maxsize=1)
 def get_supported_models() -> list[str]:
     """
@@ -136,6 +141,7 @@ def download_model(  # noqa: C901, PLR0912
         If a sequence of tool names, runs those tools in the given order.
         Valid tool names: "polygraphy", "onnxslim", "onnxsim".
         If False or None, no simplification is performed.
+        Skipped for models over 2GB (weights in an external ``.data`` file).
     make_static : bool, optional
         Set any dynamic dimensions in the ONNX model to fixed values (e.g. batch size to 1).
         If True, all dynamic or symbolic dimensions are replaced with a static value of 1.
@@ -219,7 +225,10 @@ def download_model(  # noqa: C901, PLR0912
     if requirements_export_path is not None:
         export_requirements(bin_path.parent, requirements_export_path, verbose=verbose)
 
-    if simplify:
+    if simplify and _sidecar(model_path).exists():
+        # the tools cannot serialize a model over 2GB, and rename their output from the sidecar
+        LOG.warning(f"Skipping simplification of {model}: its weights exceed 2GB")
+    elif simplify:
         if isinstance(simplify, bool):
             tools = None
         elif isinstance(simplify, str):
@@ -293,6 +302,7 @@ def download(
         If a sequence of tool names, runs those tools in the given order.
         Valid tool names: "polygraphy", "onnxslim", "onnxsim".
         If False or None, no simplification is performed.
+        Skipped for models over 2GB (weights in an external ``.data`` file).
     make_static : bool, optional
         Set any dynamic dimensions in the ONNX model to fixed values (e.g. batch size to 1).
         If True, all dynamic or symbolic dimensions are replaced with a static value of 1.
@@ -327,8 +337,7 @@ def download(
             verbose=verbose,
         )
         shutil.copy(model_path, output)
-        # onnx external weights (>2GB models) live in a sidecar referenced by filename
-        sidecar = model_path.with_name(model_path.name + ".data")
+        sidecar = _sidecar(model_path)
         if sidecar.exists():
             shutil.copy(sidecar, output.parent / sidecar.name)
 

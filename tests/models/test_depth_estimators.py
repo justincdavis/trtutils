@@ -16,6 +16,7 @@ from trtutils.models import (
     DepthAnythingV2,
     DepthAnythingV2Metric,
     DepthAnythingV3,
+    DepthPro2,
 )
 
 _trt86_v1 = pytest.mark.skipif(
@@ -127,3 +128,54 @@ def test_depth_estimator_end2end(
         np.testing.assert_array_equal(via_run, raw.reshape(via_run.shape))
         assert via_run.min() > 0.0
         assert via_run.max() <= max_depth
+
+
+_DP2 = DATA_DIR / "depth_pro_2"
+
+# (wrapper, onnx): metric depth plus the estimated focal length
+DEPTH_PRO_ESTIMATORS = [
+    pytest.param(DepthPro2, _DP2 / "depth_pro_2_small_576x1024.onnx", id="depth-pro-2-small"),
+    pytest.param(DepthPro2, _DP2 / "depth_pro_2_large_576x1024.onnx", id="depth-pro-2-large"),
+    pytest.param(DepthPro2, _DP2 / "depth_pro_2_huge_576x1024.onnx", id="depth-pro-2-huge"),
+]
+
+
+@pytest.mark.parametrize(("model_cls", "onnx_path"), DEPTH_PRO_ESTIMATORS)
+@pytest.mark.parametrize(("preprocessor", "cpu_resize"), PREPROCESSORS)
+def test_depth_pro_end2end(
+    build_model_engine, images, model_cls, onnx_path, preprocessor, cpu_resize
+) -> None:
+    """Depth Pro returns metres; the focal length is each image's second output, in pixels."""
+    engine = build_model_engine(model_cls, onnx_path)
+    model = model_cls(engine, preprocessor=preprocessor, cpu_resize=cpu_resize, warmup=False)
+    assert model.output_schema is DepthEstimatorOutputSchema.DEPTH_PRO
+    image = images["horse"]
+
+    postprocessed = model.run(image.array)
+    via_run = model.get_depth_maps(postprocessed)
+    via_e2e = model.end2end(image.array)
+    np.testing.assert_array_equal(via_run, via_e2e)
+
+    height, width = (int(s) for s in onnx_path.stem.rsplit("_", 1)[1].split("x"))
+    assert via_run.shape == (1, height, width)
+    # the horse photo has no sky: every pixel has a finite distance
+    assert np.all(np.isfinite(via_run))
+    assert via_run.min() > 0.0
+    focal_length = postprocessed[1]
+    assert focal_length.shape == (1, 1)
+    # a field of view between 10 and 160 degrees
+    assert 0.09 * height < focal_length.item() < 5.7 * height
+
+
+@pytest.mark.parametrize(("model_cls", "onnx_path"), DEPTH_PRO_ESTIMATORS[:1])
+def test_depth_pro_normalize_keeps_focal_length(
+    build_model_engine, images, model_cls, onnx_path
+) -> None:
+    """normalize=True min-max scales the depth map only, not the focal length."""
+    engine = build_model_engine(model_cls, onnx_path)
+    image = images["horse"].array
+    metric = model_cls(engine, warmup=False).run(image)
+    normalized = model_cls(engine, warmup=False, normalize=True).run(image)
+    assert normalized[0].min() == 0.0
+    assert normalized[0].max() == pytest.approx(1.0)
+    np.testing.assert_array_equal(normalized[1], metric[1])

@@ -132,6 +132,13 @@ EXPORT_CASES = [
         {"input": [_BATCH, 3, 252, 252]},
         id="depth_anything_v3",
     ),
+    pytest.param("depth_pro_2_small", {}, {"input": [1, 3, 576, 1024]}, id="depth_pro_2_default_hw"),
+    pytest.param(
+        "depth_pro_2_small",
+        {"imgsz": (384, 512)},
+        {"input": [1, 3, 384, 512]},
+        id="depth_pro_2_custom_hw",
+    ),
     pytest.param("hands23_x101", {}, {"input": [1, 3, 800, 800]}, id="hands23"),
     pytest.param("ppocrv4_det", {}, {"x": [None, 3, None, None]}, id="ppocr-det"),
     pytest.param("ppocrv4_rec", {}, {"x": [None, 3, None, None]}, id="ppocr-rec"),

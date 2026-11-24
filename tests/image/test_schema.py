@@ -91,6 +91,9 @@ _TREC = TextRecognizerOutputSchema
         pytest.param(_CLS, ("output", "aux"), None, "GENERIC", id="cls-generic-two-outputs"),
         pytest.param(_CLS, _HOI.HOI_DETR.value, None, "GENERIC", id="cls-generic-detector"),
         pytest.param(_DEPTH, ("output",), None, "DEPTH_ANYTHING", id="depth-anything-auto"),
+        pytest.param(
+            _DEPTH, ("focal_length", "depth"), None, "DEPTH_PRO", id="depth-pro-auto-reordered"
+        ),
         pytest.param(_DEPTH, ("depth",), None, "GENERIC", id="depth-generic-fallback"),
         pytest.param(_DEPTH, ("depth",), _DEPTH.GENERIC, "GENERIC", id="depth-generic-enum"),
         pytest.param(_DEPTH, ("depth", "conf"), None, "GENERIC", id="depth-generic-two-outputs"),

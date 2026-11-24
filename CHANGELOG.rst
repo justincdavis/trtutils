@@ -62,6 +62,15 @@ Added
   ``small``, ``base`` and ``large`` (``DA3-LARGE-1.1``). ``DepthEstimator(normalize=False)`` and
   ``postprocess_depth(normalize=False)`` keep the raw depth values instead of the [0, 1]
   min-max normalization, which stays the default
+* Depth Pro 2 (``models.DepthPro2``; ``small`` / ``base`` / ``large`` / ``huge``, Apple's S, B,
+  L and H+, single images): metric depth in metres with the focal length from the model's own
+  estimator computed in the graph, at any ``(height, width)`` divisible by 32 (default
+  ``(576, 1024)``). The ``DEPTH_PRO`` output schema (``depth``, ``focal_length``) gives the
+  estimated focal length as each image's second output; ``postprocess_depth`` normalizes only
+  the first output. The exporter rescales the encoder's residual stream and the largest
+  attention logits (as upstream's Core ML export does) so FP16 engines do not overflow.
+  The weights are non-commercial (Apple Machine Learning Research Model License). Exports
+  whose weights exceed 2 GB skip simplification (weights in a ``.data`` sidecar)
 * ``download`` / ``download_model`` and ``trtutils download``, with keyword-only ``batch`` and
   ``dynamic`` (CLI ``--batch`` / ``--dynamic``) for static-batch or symbolic-batch exports
 * ``trtutils.Buffer`` / ``MemoryLocation`` (also ``core.Buffer``): one typed allocation on the
