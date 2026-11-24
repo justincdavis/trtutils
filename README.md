@@ -169,7 +169,7 @@ describes each family.
 - **Depth estimation**: Depth-Anything V1, V2, and V3
 - **Feature extraction** (image embeddings and dense feature maps): DINOv3 ViT-S, S+, and B
 - **Hand-object interaction**: HOI-DETR and Hands23
-- **OCR**: PP-OCR text detection and recognition
+- **OCR**: PP-OCRv4 and PP-OCRv5 (mobile and server) text detection and recognition
 
 ## Documentation
 

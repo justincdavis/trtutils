@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
-from ._ppocr import PPOCR, PPOCR_KEYS_V1, PPOCRDetector, PPOCRRecognizer
+from ._ppocr import PPOCR, PPOCR_KEYS_V1, PPOCR_KEYS_V5, PPOCRDetector, PPOCRRecognizer
 
 __all__ = [
     "PPOCR",
     "PPOCR_KEYS_V1",
+    "PPOCR_KEYS_V5",
     "PPOCRDetector",
     "PPOCRRecognizer",
 ]

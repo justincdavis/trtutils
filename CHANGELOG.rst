@@ -86,6 +86,14 @@ Added
   widths up to a multiple of N pixels
 * ``models.PPOCRDetector`` / ``PPOCRRecognizer`` / ``PPOCR`` (bundled PP-OCR dictionary) and
   OCR pre/postprocessing functions in ``preprocessors`` and ``postprocessors``
+* PP-OCRv5 text detection and recognition, mobile and server: download configs
+  ``ppocrv5_mobile_det``, ``ppocrv5_server_det``, ``ppocrv5_mobile_rec`` and
+  ``ppocrv5_server_rec``, and the bundled v5 dictionary ``models.ocr.PPOCR_KEYS_V5``, which v5
+  recognizers take as ``character_dict`` on ``PPOCRRecognizer`` / ``PPOCR``. The ``ppocr``
+  exporter checks a download against the config's ``sha256`` when one is given, and divides
+  the server detector's neck by 256 (the closing batch norm multiplies it back): its
+  activations reach about 1.5e6 and overflowed FP16, so FP16 engines of the upstream file
+  detected nothing
 * ``models.DeiT`` / ``models.DeiT3`` and a timm exporter for DeiT and DeiT III
 * ``models.RTDETRv4`` and downloads of the RT-DETRv4 COCO detectors (``rtdetrv4_s``,
   ``rtdetrv4_m``, ``rtdetrv4_l``, ``rtdetrv4_x``, 640), listed under the repository's
