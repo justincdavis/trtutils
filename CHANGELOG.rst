@@ -71,6 +71,10 @@ Added
   attention logits (as upstream's Core ML export does) so FP16 engines do not overflow.
   The weights are non-commercial (Apple Machine Learning Research Model License). Exports
   whose weights exceed 2 GB skip simplification (weights in a ``.data`` sidecar)
+* Depth Pro (``models.DepthPro``, ``depth_pro``): Apple's first Depth Pro at its fixed
+  1536x1536, with the same ``depth`` / ``focal_length`` outputs as Depth Pro 2 (metres, clamped
+  to [1e-4, 1e4] as upstream). The weights are non-commercial (Apple Machine Learning Research
+  Model License)
 * ``download`` / ``download_model`` and ``trtutils download``, with keyword-only ``batch`` and
   ``dynamic`` (CLI ``--batch`` / ``--dynamic``) for static-batch or symbolic-batch exports
 * ``trtutils.Buffer`` / ``MemoryLocation`` (also ``core.Buffer``): one typed allocation on the

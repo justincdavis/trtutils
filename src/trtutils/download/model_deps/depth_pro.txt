@@ -1,0 +1,9 @@
+huggingface-hub==2.4.0
+numpy==1.26.4
+onnx==1.19.1
+pillow==12.3.0
+pillow-heif==1.8.1
+safetensors==0.8.0
+timm==1.0.31
+torch==2.7.1
+torchvision==0.22.1

@@ -164,7 +164,7 @@ describes each family.
 - **Segmentation**: YOLOv8, v11, and v26 (`-seg`)
 - **Pose estimation**: YOLOv8, v11, and v26 (`-pose`)
 - **Oriented bounding boxes**: YOLOv8, v11, and v26 (`-obb`)
-- **Depth estimation**: Depth-Anything V1, V2 (relative and metric), and V3; Depth Pro 2 (metric, non-commercial weights)
+- **Depth estimation**: Depth-Anything V1, V2 (relative and metric), and V3; Depth Pro and Depth Pro 2 (metric, non-commercial weights)
 - **Hand-object interaction**: HOI-DETR and Hands23
 - **OCR**: PP-OCR text detection and recognition
 

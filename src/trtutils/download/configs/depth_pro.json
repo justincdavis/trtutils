@@ -1,0 +1,10 @@
+{
+    "_defaults": {
+        "exporter": "depth_pro",
+        "license": "Apple Machine Learning Research Model License (non-commercial)"
+    },
+    "depth_pro": {
+        "name": "depth_pro",
+        "url": "https://ml-site.cdn-apple.com/models/depth-pro/depth_pro.pt"
+    }
+}

@@ -16,6 +16,7 @@ from trtutils.models import (
     DepthAnythingV2,
     DepthAnythingV2Metric,
     DepthAnythingV3,
+    DepthPro,
     DepthPro2,
 )
 
@@ -137,6 +138,7 @@ DEPTH_PRO_ESTIMATORS = [
     pytest.param(DepthPro2, _DP2 / "depth_pro_2_small_576x1024.onnx", id="depth-pro-2-small"),
     pytest.param(DepthPro2, _DP2 / "depth_pro_2_large_576x1024.onnx", id="depth-pro-2-large"),
     pytest.param(DepthPro2, _DP2 / "depth_pro_2_huge_576x1024.onnx", id="depth-pro-2-huge"),
+    pytest.param(DepthPro, DATA_DIR / "depth_pro" / "depth_pro_1536.onnx", id="depth-pro"),
 ]
 
 
@@ -156,7 +158,8 @@ def test_depth_pro_end2end(
     via_e2e = model.end2end(image.array)
     np.testing.assert_array_equal(via_run, via_e2e)
 
-    height, width = (int(s) for s in onnx_path.stem.rsplit("_", 1)[1].split("x"))
+    sizes = [int(s) for s in onnx_path.stem.rsplit("_", 1)[1].split("x")]
+    height, width = sizes if len(sizes) == 2 else sizes * 2
     assert via_run.shape == (1, height, width)
     # the horse photo has no sky: every pixel has a finite distance
     assert np.all(np.isfinite(via_run))
