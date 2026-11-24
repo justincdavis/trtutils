@@ -4,6 +4,20 @@ Supported Models
 
 This page lists all models currently supported by trtutils.
 
+Antialiased resizing
+--------------------
+
+The wrappers resize like their upstream preprocessing. Where upstream resizes PIL images with
+PIL or torchvision (an antialiased resize), the wrapper defaults to ``antialias=True``: a
+downscale filters with a tent as wide as the scale factor, per axis, as PIL's ``BILINEAR`` and
+torchvision's ``antialias=True`` do. That is the torchvision classifiers and DeepLabV3,
+DeiT / DeiT III, DINOv3, and RT-DETRv1, RT-DETRv2, RT-DETRv4, D-FINE, DEIM, DEIMv2 and RF-DETR.
+The other wrappers (Ultralytics YOLO, YOLOv7/v9/v10/v12/v13, YOLOX, RT-DETRv3, RTMO, YuNet,
+Depth Anything, hand interaction) default to
+``antialias=False``, plain bilinear like their upstream ``cv2.resize``. Pass ``antialias`` to
+the constructor, or to ``preprocess``, to change it; images that are not downscaled resize the
+same either way.
+
 Object Detection
 -----------------
 
@@ -100,11 +114,10 @@ Feature Extraction
    through timm with a class-token embedding and a dense patch feature map
 
    - GitHub: `facebookresearch/dinov3 <https://github.com/facebookresearch/dinov3>`_
-   - Images are resized with ``linear``, which does not antialias. Embeddings agree across the
-     trtutils preprocessors, but for heavily downscaled images they differ from embeddings
-     computed with an antialiased resize such as upstream's transform (cosine similarity
-     0.96 to 0.98 on average and as low as 0.90 on the test images). Embed queries and
-     galleries with the same pipeline
+   - Images are resized with ``linear`` and antialiased (``antialias=True``, the default),
+     as upstream's timm transform resizes PIL images bicubic: embeddings of heavily
+     downscaled images match that resize to cosine similarity 0.997 or better (0.93 to
+     0.98 with ``antialias=False``). Embed queries and galleries with the same pipeline
 
 Classification
 --------------

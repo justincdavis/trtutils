@@ -94,6 +94,7 @@ class ClassifierInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -106,6 +107,7 @@ class ClassifierInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -117,6 +119,7 @@ class ClassifierInterface(ABC):
         resize: str | None = None,
         method: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -350,6 +353,7 @@ class DepthEstimatorInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -362,6 +366,7 @@ class DepthEstimatorInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -373,6 +378,7 @@ class DepthEstimatorInterface(ABC):
         resize: str | None = None,
         method: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -893,6 +899,7 @@ class HandInteractionDetectorInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -905,6 +912,7 @@ class HandInteractionDetectorInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -916,6 +924,7 @@ class HandInteractionDetectorInterface(ABC):
         resize: str | None = None,
         method: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -1205,6 +1214,7 @@ class DetectorInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -1217,6 +1227,7 @@ class DetectorInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -1228,6 +1239,7 @@ class DetectorInterface(ABC):
         resize: str | None = None,
         method: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -1512,6 +1524,7 @@ class TextDetectorInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -1524,6 +1537,7 @@ class TextDetectorInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -1535,6 +1549,7 @@ class TextDetectorInterface(ABC):
         resize: str | None = None,
         method: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -1798,6 +1813,7 @@ class TextRecognizerInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -1810,6 +1826,7 @@ class TextRecognizerInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -1821,6 +1838,7 @@ class TextRecognizerInterface(ABC):
         resize: str | None = None,
         method: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -2010,6 +2028,7 @@ class _TaskModelInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -2022,6 +2041,7 @@ class _TaskModelInterface(ABC):
         resize: str | None = ...,
         method: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -2033,6 +2053,7 @@ class _TaskModelInterface(ABC):
         resize: str | None = None,
         method: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]:

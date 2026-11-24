@@ -16,6 +16,9 @@ Attributes
     Resizes an image using the letterbox method.
 :attribute:`LINEAR_RESIZE` : tuple[Path, str]
     Resizes and image using bilinear interpolation.
+:attribute:`TENT_RESIZE` : tuple[Path, str]
+    Antialiased resize: a tent filter as wide as the downscale factor, per axis, with the
+    arguments and fill of ``LETTERBOX_RESIZE``.
 :attribute:`IMAGENET_SST` : tuple[Path, str]
     ImageNet normalization with scale/swap/transpose (float32 output)
 :attribute:`IMAGENET_SST_F16` : tuple[Path, str]
@@ -78,6 +81,11 @@ LETTERBOX_RESIZE: tuple[Path, str] = (
 LINEAR_RESIZE: tuple[Path, str] = (
     _LINEAR_FILE,
     "linearResize",
+)
+
+TENT_RESIZE: tuple[Path, str] = (
+    _KERNEL_DIR / "tent.cu",
+    "tentResize",
 )
 
 IMAGENET_SST: tuple[Path, str] = (

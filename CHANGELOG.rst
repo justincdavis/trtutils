@@ -34,6 +34,16 @@ Added
   preprocessor resizes it on the CPU. ``Classifier`` and ``DepthEstimator`` accept it;
   ``Detector``, ``Segmenter``, ``PoseEstimator``, ``OBBDetector`` and
   ``HandInteractionDetector`` raise ``ValueError``, since they cannot map results back from it
+* ``antialias`` on the preprocessors, ``ImageModel`` and every task model (constructor, and per
+  call on ``preprocess``), and ``trtutils detect`` / ``classify --antialias``: a downscale
+  filters with a tent as wide as the scale factor, per axis, as PIL's ``BILINEAR`` and
+  torchvision's ``antialias=True`` do, within a level of PIL. It applies to every resize method;
+  images that are not downscaled on either axis resize exactly as without it. CUDA, TensorRT,
+  ``cpu_resize`` and the CPU (Numba-compiled when Numba is installed, else numpy) agree within a
+  level. The DLA preprocessor keeps its own antialiased center crop and resizes the other
+  methods on the CPU (device ``Buffer`` inputs and ``cpu_resize=False`` raise ``ValueError``).
+  Off by default; on for the wrappers listed under Changed and for the new ``DINOv3``,
+  ``DeepLabV3`` and ``RTDETRv4`` wrappers, whose upstream resizes are antialiased
 * Image models accept ``Buffer`` inputs (device, mapped or host), alone or mixed with arrays.
   ``Buffer.wrap`` views CuPy and PyTorch tensors without copying
 * ``Detector(class_map=...)`` and ``image.COCO91_TO_COCO80`` for mapping model class ids to
@@ -165,6 +175,17 @@ Added
 
 Changed
 ^^^^^^^
+* The torchvision classifier wrappers (``ResNet``, ``ResNeXt``, ``WideResNet``, ``AlexNet``,
+  ``VGG``, ``DenseNet``, ``Inception``, ``GoogLeNet``, ``EfficientNet``, ``EfficientNetV2``,
+  ``MobileNetV2``, ``MobileNetV3``, ``RegNet``, ``ShuffleNetV2``, ``SqueezeNet``, ``ConvNeXt``,
+  ``MaxViT``, ``SwinTransformer``, ``SwinTransformerV2``, ``ViT``) and ``DeiT`` / ``DeiT3``
+  default to ``antialias=True``. Their outputs for downscaled images move toward the upstream
+  PIL / torchvision pipeline (ResNet18 logit cosine to upstream 0.965 -> 1.000 over 14 test
+  images). Pass ``antialias=False`` for the previous output
+* ``RTDETRv1``, ``RTDETRv2``, ``DFINE``, ``DEIM``, ``DEIMv2`` and ``RFDETR`` default to
+  ``antialias=True``, as their upstream resizes PIL images with torchvision. Their detections
+  for downscaled images move toward the upstream pipeline (RT-DETRv2-R18: 54 -> 3 detections
+  differ from upstream over 14 test images). Pass ``antialias=False`` for the previous output
 * **Breaking:** ``TRTEngine`` inputs are ``Buffer`` objects. ``execute``, ``__call__``,
   ``mock_execute``, ``raw_exec``, ``QueuedTRTEngine`` and ``ParallelTRTEngines.submit`` take a
   list of Buffers; wrap numpy arrays with ``Buffer.wrap(array)``. ``get_random_input`` returns

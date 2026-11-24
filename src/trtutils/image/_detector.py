@@ -75,6 +75,7 @@ class Detector(ImageModel, DetectorInterface):
         cuda_graph: bool | None = None,
         postprocessor: str | None = None,
         cpu_resize: bool | None = None,
+        antialias: bool = False,
         extra_nms: bool | None = None,
         agnostic_nms: bool | None = None,
         class_map: Mapping[int, int] | None = None,
@@ -165,6 +166,10 @@ class Detector(ImageModel, DetectorInterface):
         class_map : Mapping[int, int], optional
             Translates the model's class IDs to output class IDs after postprocessing.
             IDs not in the map pass through unchanged. By default no translation is done.
+        antialias : bool, optional
+            Whether downscales are antialiased: filtered with a tent as wide as the scale
+            factor, per axis, as PIL's BILINEAR and torchvision's ``antialias=True`` do.
+            Default is False, see :class:`ImageModel`.
         no_warn : bool, optional
             If True, suppresses warnings from TensorRT during engine deserialization.
             Default is None, which means warnings will be shown.
@@ -197,6 +202,7 @@ class Detector(ImageModel, DetectorInterface):
             cuda_graph=cuda_graph,
             postprocessor=postprocessor,
             cpu_resize=cpu_resize,
+            antialias=antialias,
             no_warn=no_warn,
             verbose=verbose,
             output_schema=output_schema,

@@ -98,6 +98,7 @@ class ImagePreprocessor(ABC):
         tag: str | None = None,
         *,
         crop_pct: float = DEFAULT_CROP_PCT,
+        antialias: bool = False,
     ) -> None:
         """
         Create an ImagePreprocessor.
@@ -132,6 +133,11 @@ class ImagePreprocessor(ABC):
         crop_pct : float
             The fraction of the resized image kept by center_crop resizing.
             By default 0.875 (resize 256, crop 224). Ignored by other methods.
+        antialias : bool
+            Whether downscales filter with a tent as wide as the scale factor, per axis,
+            as PIL's BILINEAR and torchvision's ``antialias=True`` do, instead of only
+            interpolating bilinearly. Applies to every resize method; images that are not
+            downscaled resize exactly as without it. By default False.
 
         Raises
         ------
@@ -191,6 +197,7 @@ class ImagePreprocessor(ABC):
             raise ValueError(err_msg)
         self._resize: str = resize
         self._crop_pct: float = crop_pct
+        self._antialias: bool = antialias
 
         # mark setup in logs
         LOG.debug(
@@ -210,6 +217,7 @@ class ImagePreprocessor(ABC):
         images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -220,6 +228,7 @@ class ImagePreprocessor(ABC):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -230,6 +239,7 @@ class ImagePreprocessor(ABC):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -241,6 +251,7 @@ class ImagePreprocessor(ABC):
         images: np.ndarray | Buffer,
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -251,6 +262,7 @@ class ImagePreprocessor(ABC):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = ...,
         *,
+        antialias: bool | None = ...,
         no_copy: bool | None = ...,
         verbose: bool | None = ...,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...
@@ -261,6 +273,7 @@ class ImagePreprocessor(ABC):
         images: np.ndarray | Buffer | Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_copy: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[np.ndarray, list[tuple[float, float]], list[tuple[float, float]]]: ...

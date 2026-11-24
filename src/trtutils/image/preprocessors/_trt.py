@@ -49,6 +49,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         tag: str | None = None,
         *,
         crop_pct: float = DEFAULT_CROP_PCT,
+        antialias: bool = False,
         pagelocked_mem: bool | None = None,
         unified_mem: bool | None = None,
         cpu_resize: bool | None = None,
@@ -93,6 +94,11 @@ class TRTPreprocessor(GPUImagePreprocessor):
         crop_pct : float
             The fraction of the resized image kept by center_crop resizing.
             By default 0.875 (resize 256, crop 224). Ignored by other methods.
+        antialias : bool
+            Whether downscales filter with a tent as wide as the scale factor, per axis,
+            as PIL's BILINEAR and torchvision's ``antialias=True`` do. The resize runs on
+            the GPU (or the CPU with ``cpu_resize``) before the engine. Images that are
+            not downscaled resize exactly as without it. By default False.
         pagelocked_mem : bool, optional
             Whether or not to allocate output memory as pagelocked.
             By default, pagelocked memory will be used.
@@ -123,6 +129,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
             threads,
             tag,
             crop_pct=crop_pct,
+            antialias=antialias,
             pagelocked_mem=pagelocked_mem,
             unified_mem=unified_mem,
             cpu_resize=cpu_resize,
@@ -222,6 +229,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
         images: Sequence[np.ndarray | Buffer],
         resize: str | None = None,
         *,
+        antialias: bool | None = None,
         no_warn: bool | None = None,
         verbose: bool | None = None,
     ) -> tuple[Buffer, list[tuple[float, float]], list[tuple[float, float]]]:
@@ -235,6 +243,9 @@ class TRTPreprocessor(GPUImagePreprocessor):
         resize : str
             The method to resize the image with.
             By default letterbox, options are [letterbox, linear, center_crop, pad]
+        antialias : bool, optional
+            Whether to antialias downscales. By default None, which uses the value
+            given in the constructor.
         no_warn : bool, optional
             If True, do not warn about usage.
         verbose : bool, optional
@@ -278,6 +289,7 @@ class TRTPreprocessor(GPUImagePreprocessor):
             images,
             self._intermediate_binding.allocation,
             resize=resize,
+            antialias=antialias,
             verbose=verbose,
         )
 

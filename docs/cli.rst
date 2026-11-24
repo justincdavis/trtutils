@@ -326,6 +326,8 @@ Options
   preprocessing to the preprocessor (default: only images the preprocessor cannot resize)
 * ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear, center_crop, pad; default: letterbox)
 * ``--crop_pct``: Fraction of the resized image kept by ``center_crop`` (default: 0.875)
+* ``--antialias``: Antialias downscales with a tent filter as wide as the scale factor, as PIL
+  ``BILINEAR`` and torchvision ``antialias=True`` do (default: off)
 
 **Memory and Performance:**
 
@@ -403,6 +405,8 @@ Options
 * ``--cpu_resize`` / ``--no_cpu_resize``: Always / never resize on the CPU, leaving the rest of the
   preprocessing to the preprocessor (default: only images the preprocessor cannot resize)
 * ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear; default: letterbox)
+* ``--antialias``: Antialias downscales with a tent filter as wide as the scale factor, as PIL
+  ``BILINEAR`` and torchvision ``antialias=True`` do (default: off)
 
 **Memory and Performance:**
 

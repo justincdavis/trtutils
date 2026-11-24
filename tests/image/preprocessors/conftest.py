@@ -53,7 +53,13 @@ def build_preprocessor() -> Callable[..., ImagePreprocessor]:
     def _build(case: Case, **overrides: object) -> ImagePreprocessor:
         output_range, mean, std = NORMS[case.norm]
         args = (case.output_shape, output_range, DTYPES[case.dtype])
-        kwargs: dict[str, Any] = {"resize": case.resize, "mean": mean, "std": std, **overrides}
+        kwargs: dict[str, Any] = {
+            "resize": case.resize,
+            "mean": mean,
+            "std": std,
+            "antialias": case.antialias,
+            **overrides,
+        }
         if case.backend == "cpu":
             return CPUPreprocessor(*args, **kwargs)
         kwargs = {"cpu_resize": case.cpu_resize, **kwargs}
@@ -84,6 +90,7 @@ def preprocessors(build_preprocessor) -> Iterator[Callable[[Case], ImagePreproce
             case.dtype,
             case.norm,
             case.cpu_resize,
+            case.antialias,
         )
         if key not in built:
             built[key] = build_preprocessor(case)

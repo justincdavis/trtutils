@@ -71,6 +71,7 @@ def _bare_model(
     model._batch_size = 1
     model._resize_method = "letterbox"
     model._crop_pct = 0.875
+    model._antialias = True
     model._mean = None
     model._std = None
     model._pagelocked_mem = True
@@ -104,6 +105,7 @@ def test_get_preprocessor_forwards_cpu_resize(monkeypatch, method, cls_name) -> 
     model = _bare_model(cpu_resize=False)
     assert model.get_preprocessor(method) is cls.return_value
     assert cls.call_args.kwargs["cpu_resize"] is False
+    assert cls.call_args.kwargs["antialias"] is True
 
 
 @pytest.mark.cpu

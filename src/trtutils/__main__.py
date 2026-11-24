@@ -656,6 +656,8 @@ def _detect(args: SimpleNamespace) -> None:
             Resize on the CPU, None to resize there only what the preprocessor cannot.
         - resize_method : str
             Image resize method ('letterbox' or 'linear').
+        - antialias : bool
+            Antialias downscales.
         - conf_thres : float
             Confidence threshold for detections.
         - nms_iou_thres : float
@@ -702,6 +704,7 @@ def _detect(args: SimpleNamespace) -> None:
         preprocessor=args.preprocessor,
         resize_method=args.resize_method,
         cpu_resize=args.cpu_resize,
+        antialias=args.antialias,
         conf_thres=args.conf_thres,
         nms_iou_thres=args.nms_iou_thres,
         dla_core=args.dla_core,
@@ -876,6 +879,8 @@ def _classify(args: SimpleNamespace) -> None:
             Image resize method ('letterbox', 'linear', 'center_crop' or 'pad').
         - crop_pct : float
             Fraction of the resized image kept by center_crop.
+        - antialias : bool
+            Antialias downscales.
         - dla_core : int or None
             DLA core to use.
         - warmup : bool
@@ -917,6 +922,7 @@ def _classify(args: SimpleNamespace) -> None:
         pagelocked_mem=args.pagelocked_mem,
         unified_mem=args.unified_mem,
         crop_pct=args.crop_pct,
+        antialias=args.antialias,
         no_warn=args.no_warn,
         verbose=args.verbose,
     )
@@ -1559,6 +1565,17 @@ def _main() -> None:
         ),
     )
 
+    # antialias arguments parser
+    antialias_parser = argparse.ArgumentParser(add_help=False)
+    antialias_parser.add_argument(
+        "--antialias",
+        action="store_true",
+        help=(
+            "Antialias downscales with a tent filter as wide as the scale factor, as PIL "
+            "BILINEAR and torchvision antialias=True do."
+        ),
+    )
+
     # build device/precision args (to be inherited by build and build_yolo)
     build_device_parser = argparse.ArgumentParser(add_help=False)
     build_device_parser.add_argument(
@@ -1849,6 +1866,7 @@ def _main() -> None:
             warmup_iterations_parser,
             memory_parser,
             cpu_resize_parser,
+            antialias_parser,
         ],
     )
     detect_parser.add_argument(
@@ -1926,6 +1944,7 @@ def _main() -> None:
             warmup_iterations_parser,
             memory_parser,
             cpu_resize_parser,
+            antialias_parser,
         ],
     )
     classify_parser.add_argument(
