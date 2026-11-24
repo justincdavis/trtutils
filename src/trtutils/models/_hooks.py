@@ -317,6 +317,55 @@ def rfdetr_layernorm_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict
     return {"layer_precision": layer_precision, "prefer_precision_constraints": True}
 
 
+def dfine_decoder_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
+    """
+    Build hook that forces FP32 for the decoder of D-FINE, DEIM and DEIMv2 before TensorRT 10.
+
+    On TensorRT 8.6 (Jetson AGX Orin) a full FP16 build of these models loses its detections:
+    deim_dfine_s, deim_rtdetrv2_r18, deimv2_n, deimv2_s and dfine_s match none of the
+    onnxruntime detections above 0.5, deim_dfine_n 2 of 39 and dfine_n 12 of 39. Pinning
+    every float layer from the first ``/model/decoder`` layer on to FP32 matches the FP32
+    engine; the backbone and encoder stay FP16, so the engine is about as fast as a full FP16
+    one. Pinning only the decoder LayerNorms fixes D-FINE and DEIM but not the RMSNorm
+    decoder of DEIMv2. TensorRT 10 builds are right in FP16 and get no overrides, nor does a
+    strongly typed build, because ``build_engine`` rejects layer precision in that mode.
+
+    Parameters
+    ----------
+    onnx : Path | str
+        Path to the ONNX model.
+    **kwargs : Any
+        Extra arguments from ``Model.build``. ``strongly_typed`` is read here.
+
+    Returns
+    -------
+    dict[str, Any]
+        Build engine overrides containing the layer_precision list, or an empty dict.
+
+    """
+    # unnamed so Model.build does not consume strongly_typed before build_engine sees it
+    if kwargs.get("strongly_typed") or not FLAGS.WEAK_TYPING or FLAGS.TRT_VERSION >= (10, 0):
+        return {}
+    network, _, _, _ = read_onnx(onnx)
+    start = next(
+        (
+            idx
+            for idx in range(network.num_layers)
+            if network.get_layer(idx).name.startswith("/model/decoder")
+        ),
+        None,
+    )
+    if start is None:
+        LOG.warning("D-FINE FP32 hook: decoder layers not found, building all in FP16")
+        return {}
+    layer_precision = []
+    for idx in range(start, network.num_layers):
+        layer = network.get_layer(idx)
+        if layer.num_outputs and layer.get_output(0).dtype == trt.DataType.FLOAT:
+            layer_precision.append((idx, trt.DataType.FLOAT))
+    return {"layer_precision": layer_precision, "prefer_precision_constraints": True}
+
+
 def argmax_build_hook(
     *,
     imgsz: int | tuple[int, int],

@@ -39,6 +39,7 @@ from trtutils.models import (
 )
 from trtutils.models._hooks import (
     depthwise_fp32_build_hook,
+    dfine_decoder_fp32_build_hook,
     gridsample_debug_build_hook,
     nms_build_hook,
     rfdetr_layernorm_fp32_build_hook,
@@ -185,6 +186,8 @@ def test_rtdetrv3_large_image_boxes(build_model_engine, name) -> None:
     [
         pytest.param(DEIM, DATA_DIR / "deim" / "deim_dfine_n_640.onnx", id="deim"),
         pytest.param(DEIMv2, DATA_DIR / "deimv2" / "deimv2_n_640.onnx", id="deimv2"),
+        # the dinov3 vit backbone
+        pytest.param(DEIMv2, DATA_DIR / "deimv2" / "deimv2_s_640.onnx", id="deimv2-vit"),
     ],
 )
 def test_deim_boxes_non_square_match_onnxruntime(build_model_engine, model_cls, onnx_path) -> None:
@@ -419,3 +422,41 @@ def test_rfdetr_hook_pins_only_transformer_layernorms(tmp_path) -> None:
     assert rfdetr_layernorm_fp32_build_hook(onnx=path, strongly_typed=True) == {}
     # graphs without the RF-DETR transformer build entirely in FP16
     assert rfdetr_layernorm_fp32_build_hook(onnx=DATA_DIR / "simple.onnx") == {}
+
+
+def _write_decoder_onnx(path):
+    # a backbone layer, then decoder float layers around an integer shape layer
+    shape = [1, 4, 8]
+    info = onnx.helper.make_tensor_value_info
+    nodes = [
+        onnx.helper.make_node("Relu", ["x"], ["b"], name="/model/backbone/Relu"),
+        onnx.helper.make_node("Relu", ["b"], ["d"], name="/model/decoder/Relu"),
+        onnx.helper.make_node("Shape", ["d"], ["size"], name="/model/decoder/Shape"),
+        onnx.helper.make_node("Sigmoid", ["d"], ["out"], name="/model/decoder/Sigmoid"),
+    ]
+    graph = onnx.helper.make_graph(
+        nodes,
+        "decoder",
+        [info("x", onnx.TensorProto.FLOAT, shape)],
+        [info("out", onnx.TensorProto.FLOAT, shape), info("size", onnx.TensorProto.INT64, [3])],
+    )
+    onnx.save(onnx.helper.make_model(graph), path)
+
+
+@pytest.mark.cpu
+@pytest.mark.skipif(FLAGS.TRT_VERSION >= (10, 0), reason="the hook pins nothing from TensorRT 10")
+def test_dfine_decoder_hook_pins_decoder_float_layers(tmp_path) -> None:
+    """Every float decoder layer is pinned to FP32, not the backbone or integer shape layers."""
+    for model_cls in (DFINE, DEIM, DEIMv2):
+        assert dfine_decoder_fp32_build_hook in model_cls._build_hooks
+    path = tmp_path / "decoder.onnx"
+    _write_decoder_onnx(path)
+    overrides = dfine_decoder_fp32_build_hook(onnx=path)
+    network, _, _, _ = read_onnx(path)
+    pinned = {network.get_layer(idx).name for idx, _dtype in overrides["layer_precision"]}
+    assert pinned == {"/model/decoder/Relu", "/model/decoder/Sigmoid"}
+    assert {dtype for _idx, dtype in overrides["layer_precision"]} == {trt.DataType.FLOAT}
+    assert overrides["prefer_precision_constraints"] is True
+    assert dfine_decoder_fp32_build_hook(onnx=path, strongly_typed=True) == {}
+    # graphs without the decoder build entirely in FP16
+    assert dfine_decoder_fp32_build_hook(onnx=DATA_DIR / "simple.onnx") == {}
