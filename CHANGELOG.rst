@@ -42,7 +42,8 @@ Added
   ``cpu_resize`` and the CPU (Numba-compiled when Numba is installed, else numpy) agree within a
   level. The DLA preprocessor keeps its own antialiased center crop and resizes the other
   methods on the CPU (device ``Buffer`` inputs and ``cpu_resize=False`` raise ``ValueError``).
-  Off by default
+  Off by default; on for the wrappers listed under Changed and for the new ``DINOv3``,
+  ``DeepLabV3`` and ``RTDETRv4`` wrappers, whose upstream resizes are antialiased
 * Image models accept ``Buffer`` inputs (device, mapped or host), alone or mixed with arrays.
   ``Buffer.wrap`` views CuPy and PyTorch tensors without copying
 * ``Detector(class_map=...)`` and ``image.COCO91_TO_COCO80`` for mapping model class ids to
