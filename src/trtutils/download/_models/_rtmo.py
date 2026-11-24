@@ -12,6 +12,8 @@ from trtutils.download._tools import _640, handle_imgsz, run_cmd, run_download, 
 
 # rows kept by the in-graph NMS (mmdeploy's keep_top_k)
 _RTMO_MAX_DET = 50
+# rows scoring under this are not decoded in the graph (mmpose's test_cfg score_thr)
+_RTMO_SCORE_FLOOR = 0.1
 
 
 def export_rtmo(
@@ -46,9 +48,10 @@ def export_rtmo(
     #    rgb like the other models
     # 2. the in-graph NMS drops boxes scoring under 0.15, so an image without people
     #    selects none and TensorRT 8.6 fails at run time (division by 0 in the shape
-    #    graph): a negative score threshold keeps the best rows of every image, and the
-    #    postprocessor's conf_thres filters them. lower scores never suppress higher ones,
-    #    so the rows that scored at least 0.15 are unchanged
+    #    graph): NMS runs without a score threshold, and the rows the keypoint head
+    #    decodes are those scoring at least _RTMO_SCORE_FLOOR plus one, never zero.
+    #    lower scores never suppress higher ones and NMS selects by descending score, so
+    #    capping it at K rows and lowering the floor leave every row >= 0.15 unchanged
     # 3. the in-graph NMS keeps a data-dependent number of rows (at most K), which the
     #    engine cannot allocate for: pad with K zero rows and keep the top K by score so
     #    both outputs have a static shape
@@ -74,9 +77,37 @@ for node in g.node:
 const("rgb_to_bgr", [2, 1, 0])
 g.node.insert(0, helper.make_node("Gather", ["input", "rgb_to_bgr"], ["input_bgr"], axis=1))
 
-(nms,) = [node for node in g.node if node.op_type == "NonMaxSuppression"]
+nodes = list(g.node)
+producer = {{out: node for node in nodes for out in node.output}}
+(nms,) = [node for node in nodes if node.op_type == "NonMaxSuppression"]
+const("nms_max_out", [K])
 g.initializer.append(numpy_helper.from_array(np.array([-1.0], np.float32), "nms_score_thres"))
+nms.input[2] = "nms_max_out"
 nms.input[4] = "nms_score_thres"
+# mmdeploy keeps the top min(K, rows + 1) of the NMS rows plus one zero row by score:
+# count only the rows scoring at least SCORE_FLOOR, so the keypoint head after it
+# decodes those (at least one row) instead of K
+keep = next(n for n in nodes[nodes.index(nms):] if n.op_type == "TopK")
+where = producer[producer[keep.input[1]].input[0]]
+count = producer[producer[where.input[0]].input[1]]
+assert (where.op_type, count.op_type) == ("Where", "Add")
+g.initializer.extend([
+    numpy_helper.from_array(np.array({_RTMO_SCORE_FLOOR}, np.float32), "keep_floor"),
+    numpy_helper.from_array(np.array(1.0, np.float32), "keep_one"),
+])
+count_nodes = [
+    helper.make_node("Less", [keep.input[0], "keep_floor"], ["keep_low"]),
+    helper.make_node("Not", ["keep_low"], ["keep_high"]),
+    helper.make_node("Cast", ["keep_high"], ["keep_high_f"], to=onnx.TensorProto.FLOAT),
+    helper.make_node("ReduceSum", ["keep_high_f"], ["keep_per_image"], axes=[1], keepdims=0),
+    helper.make_node("ReduceMax", ["keep_per_image"], ["keep_rows"], axes=[0], keepdims=0),
+    helper.make_node("Add", ["keep_rows", "keep_one"], ["keep_rows_1"]),
+    helper.make_node("Cast", ["keep_rows_1"], ["keep_count"], to=onnx.TensorProto.INT64),
+]
+at = nodes.index(count)
+for i, node in enumerate(count_nodes):
+    g.node.insert(at + i, node)
+count.input[1] = "keep_count"
 
 num_kpts = 17
 const("pad_dets", [0, 0, 0, 0, K, 0])

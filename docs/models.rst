@@ -188,9 +188,10 @@ Pose Estimation
    - GitHub: `open-mmlab/mmpose (projects/rtmo) <https://github.com/open-mmlab/mmpose/tree/main/projects/rtmo>`_
    - Downloads are OpenMMLab's ready ONNX (checked against a pinned sha256). The exporter flips
      the BGR input to RGB in the graph and pads the in-graph NMS output (IoU 0.65, at most 50
-     people) to a static 50 rows, so engines allocate their outputs up front. The in-graph NMS
-     has no score threshold (OpenMMLab's export drops rows under 0.15, which breaks TensorRT 8.6
-     on images without people); ``conf_thres`` filters instead, default 0.1 as in mmpose
+     people) to a static 50 rows, so engines allocate their outputs up front. The engine keeps
+     the people scoring at least 0.1 (mmpose's ``score_thr``; OpenMMLab's export used 0.15) plus
+     the next-best row: an NMS that selects nothing breaks TensorRT 8.6 on images without people.
+     ``conf_thres`` (default 0.1) filters the rows
    - Preprocessing is mmpose's: a centred letterbox with gray (114) padding, 0-255 pixels,
      no mean / std. Postprocessing runs on the CPU and CUDA graphs default to off (the NMS
      inside the engine has data-dependent shapes)

@@ -186,7 +186,7 @@ def test_export_family(tmp_path, model, kwargs, expected) -> None:
 
 
 def test_rtmo_export_keeps_rows_without_people(tmp_path) -> None:
-    """The RTMO export's NMS has no score floor: a blank image still fills all 50 rows."""
+    """A blank image still decodes one (low-scoring) row, so TensorRT never sees zero rows."""
     out = tmp_path / "rtmo_s.onnx"
     download("rtmo_s", out)
     session = ort.InferenceSession(str(out), providers=["CPUExecutionProvider"])
@@ -194,8 +194,8 @@ def test_rtmo_export_keeps_rows_without_people(tmp_path) -> None:
     dets, keypoints = session.run(None, {"input": blank})
     assert dets.shape == (1, 50, 5)
     assert keypoints.shape == (1, 50, 17, 3)
-    assert (dets[0, :, 4] > 0).all()
-    assert dets[0, 0, 4] < 0.1
+    assert 0 < dets[0, 0, 4] < 0.1
+    assert (dets[0, 1:, 4] == 0).all()
 
 
 @pytest.fixture(scope="module")
