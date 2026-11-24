@@ -115,6 +115,9 @@ Added
   decoding. Downloads are the zoo's ONNX, checked against a pinned sha256, with the channels
   flipped to RGB and the input fixed to ``--imgsz`` (default 640, divisible by 32). CPU
   postprocessing only
+* ``models.YOLOv9Seg``: Ultralytics YOLOv9-seg instance segmentation (``yolov9c-seg``,
+  ``yolov9e-seg``, the sizes Ultralytics publishes). The Ultralytics exporter now names the
+  ``.pt`` file, so weights missing from Ultralytics' built-in asset list download too
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)

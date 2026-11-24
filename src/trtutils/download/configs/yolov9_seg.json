@@ -1,0 +1,11 @@
+{
+  "_defaults": {"exporter": "ultralytics", "license": "AGPL-3.0"},
+  "yolov9c-seg": {
+    "url": "ultralytics",
+    "name": "yolov9c-seg"
+  },
+  "yolov9e-seg": {
+    "url": "ultralytics",
+    "name": "yolov9e-seg"
+  }
+}

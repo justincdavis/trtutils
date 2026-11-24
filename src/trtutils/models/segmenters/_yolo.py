@@ -18,6 +18,15 @@ class YOLOv8Seg(Segmenter, Model):
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
 
 
+class YOLOv9Seg(Segmenter, Model):
+    """Alias of Segmenter with default args for YOLOv9-Seg."""
+
+    _model_type = "yolov9_seg"
+    _friendly_name = "YOLOv9-Seg"
+    _default_imgsz = 640
+    _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
+
+
 class YOLOv11Seg(Segmenter, Model):
     """Alias of Segmenter with default args for YOLOv11-Seg."""
 
