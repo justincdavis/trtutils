@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from trtutils._flags import FLAGS
 from trtutils.builder._build import build_engine
 from trtutils.image._ocr import OCR, TextDetector, TextRecognizer
-from trtutils.models._model import Model
+from trtutils.models._model import Model, _dla_defaults
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -121,7 +121,7 @@ class PPOCRDetector(TextDetector, Model):
             Maximum batch size of the engine; the profile starts at batch 1, which
             is what TextDetector submits. Default is 1.
         dla_core : int | None
-            The DLA core to build the engine for.
+            The DLA core to build the engine for, see :meth:`Model.build`.
         opt_level : int
             TensorRT builder optimization level (0-5). Default is 3.
         min_imgsz : int
@@ -177,7 +177,7 @@ class PPOCRDetector(TextDetector, Model):
             dla_core=dla_core,
             optimization_level=opt_level,
             verbose=verbose,
-            **kwargs,
+            **_dla_defaults(dla_core, kwargs),
         )
 
 
@@ -271,7 +271,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
         batch_size : int
             Maximum number of text lines per inference. Default is 6.
         dla_core : int | None
-            The DLA core to build the engine for.
+            The DLA core to build the engine for, see :meth:`Model.build`.
         opt_level : int
             TensorRT builder optimization level (0-5). Default is 3.
         opt_width : int
@@ -327,7 +327,7 @@ class PPOCRRecognizer(TextRecognizer, Model):
             dla_core=dla_core,
             optimization_level=opt_level,
             verbose=verbose,
-            **kwargs,
+            **_dla_defaults(dla_core, kwargs),
         )
 
 

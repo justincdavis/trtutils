@@ -220,6 +220,42 @@ def test_build_fp16(tmp_path, kwargs, fp16) -> None:
             assert call[key] == value
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        pytest.param({}, {}, id="gpu"),
+        pytest.param({"dla_core": 1}, {"default_device": "dla", "gpu_fallback": True}, id="dla"),
+        pytest.param(
+            {"dla_core": 0, "gpu_fallback": False},
+            {"default_device": "dla", "gpu_fallback": False},
+            id="dla-no-fallback",
+        ),
+        pytest.param(
+            {"dla_core": 0, "default_device": "gpu", "layer_device": [(3, None)]},
+            {"default_device": "gpu"},
+            id="mixed",
+        ),
+        pytest.param({"dla_core": 0, "layer_device": [(3, None)]}, {}, id="layer-device"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("model_cls", "target"),
+    [
+        pytest.param(YOLOv8, "trtutils.models._model.build_engine", id="model"),
+        pytest.param(PPOCRDetector, "trtutils.models.ocr._ppocr.build_engine", id="ppocr-det"),
+        pytest.param(PPOCRRecognizer, "trtutils.models.ocr._ppocr.build_engine", id="ppocr-rec"),
+    ],
+)
+def test_build_dla_core_targets_the_dla(tmp_path, model_cls, target, kwargs, expected) -> None:
+    """A dla_core builds for the DLA with GPU fallback unless the device is given or placed."""
+    with patch(target) as mock_build:
+        model_cls.build(tmp_path / "fake.onnx", tmp_path / "out.engine", **kwargs)
+    call = mock_build.call_args.kwargs
+    assert call["dla_core"] == kwargs.get("dla_core")
+    for key in ("default_device", "gpu_fallback"):
+        assert call.get(key) == expected.get(key)
+
+
 @pytest.mark.parametrize("model_cls", [PPOCRDetector, PPOCRRecognizer])
 @pytest.mark.parametrize(
     ("kwargs", "fp16"),
