@@ -40,7 +40,9 @@ def test_segmenter_end2end(
     image = images[image_key]
     height, width = image.array.shape[:2]
     names = _names(onnx_path)
-    assert model.engine.output_spec[0][0][1] == 4 + len(names) + 32
+    # by name: TensorRT 8.6 lists the mask prototypes (output1) first
+    detections = model.engine.output_names.index("output0")
+    assert model.engine.output_spec[detections][0][1] == 4 + len(names) + 32
 
     segmentations = model.end2end(image.array, conf_thres=0.25)
     assert label in {names[cls_id] for _bbox, _score, cls_id, _mask in segmentations}
