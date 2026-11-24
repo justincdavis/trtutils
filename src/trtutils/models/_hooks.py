@@ -319,10 +319,11 @@ def rfdetr_layernorm_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict
 
 def dfine_decoder_fp32_build_hook(*, onnx: Path | str, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
     """
-    Build hook that forces FP32 for the decoder of D-FINE, DEIM and DEIMv2 before TensorRT 10.
+    Build hook that forces FP32 for the decoder of D-FINE-style DETRs before TensorRT 10.
 
-    On TensorRT 8.6 (Jetson AGX Orin) a full FP16 build of these models loses its detections:
-    deim_dfine_s, deim_rtdetrv2_r18, deimv2_n, deimv2_s and dfine_s match none of the
+    The D-FINE, DEIM, DEIMv2 and RT-DETRv4 wrappers attach it. On TensorRT 8.6 (Jetson AGX
+    Orin) a full FP16 build of these models loses its detections: deim_dfine_s,
+    deim_rtdetrv2_r18, deimv2_n, deimv2_s, dfine_s and rtdetrv4_s match none of the
     onnxruntime detections above 0.5, deim_dfine_n 2 of 39 and dfine_n 12 of 39. Pinning
     every float layer from the first ``/model/decoder`` layer on to FP32 matches the FP32
     engine; the backbone and encoder stay FP16, so the engine is about as fast as a full FP16

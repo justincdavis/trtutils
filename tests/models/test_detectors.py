@@ -447,7 +447,7 @@ def _write_decoder_onnx(path):
 @pytest.mark.skipif(FLAGS.TRT_VERSION >= (10, 0), reason="the hook pins nothing from TensorRT 10")
 def test_dfine_decoder_hook_pins_decoder_float_layers(tmp_path) -> None:
     """Every float decoder layer is pinned to FP32, not the backbone or integer shape layers."""
-    for model_cls in (DFINE, DEIM, DEIMv2):
+    for model_cls in (DFINE, DEIM, DEIMv2, RTDETRv4):
         assert dfine_decoder_fp32_build_hook in model_cls._build_hooks
     path = tmp_path / "decoder.onnx"
     _write_decoder_onnx(path)

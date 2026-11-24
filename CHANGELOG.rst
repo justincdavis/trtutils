@@ -256,7 +256,8 @@ Fixed
 * ``DEIM``, ``DEIMv2`` and ``DFINE`` ``build()`` FP16 engines detect again on TensorRT 8.6
   (Jetson). The decoder now builds in FP32 there; before, deimv2_n, deimv2_s, deim_dfine_s,
   deim_rtdetrv2_r18 and dfine_s found none of the onnxruntime detections and the n models only
-  a few. The backbone and encoder stay FP16. TensorRT 10 builds are unchanged
+  a few. The backbone and encoder stay FP16. TensorRT 10 builds are unchanged. The fix also
+  covers ``RTDETRv4``, whose FP16 rtdetrv4_s engine found nothing there
 * ``run(..., preprocessed=True)`` on a batch tensor of N>1 images returns all N results instead of
   only the first
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
