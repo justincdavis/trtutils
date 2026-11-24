@@ -1,0 +1,18 @@
+{
+    "_defaults": {"exporter": "rtmo", "license": "Apache-2.0"},
+    "rtmo_s": {
+        "url": "https://download.openmmlab.com/mmpose/v1/projects/rtmo/onnx_sdk/rtmo-s_8xb32-600e_body7-640x640-dac2bf74_20231211.zip",
+        "sha256": "3da7ad88b209f9da8be87ba5c325610639af04de3b5c8a96649b98cd9e2848a2",
+        "name": "rtmo_s"
+    },
+    "rtmo_m": {
+        "url": "https://download.openmmlab.com/mmpose/v1/projects/rtmo/onnx_sdk/rtmo-m_16xb16-600e_body7-640x640-39e78cc4_20231211.zip",
+        "sha256": "6b9d3be1323cc030444f731bbe593ea61f59b9481e23da2f8b60cb4b72136e16",
+        "name": "rtmo_m"
+    },
+    "rtmo_l": {
+        "url": "https://download.openmmlab.com/mmpose/v1/projects/rtmo/onnx_sdk/rtmo-l_16xb16-600e_body7-640x640-b37118ce_20231211.zip",
+        "sha256": "17b361174d759d974879f9fb46d564ae658d004bfa070e6f1c9ad275d3fd6b87",
+        "name": "rtmo_l"
+    }
+}

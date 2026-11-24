@@ -101,6 +101,13 @@ Added
 * ``models.DINOv3`` and the ``dinov3_vits16``, ``dinov3_vits16plus`` and ``dinov3_vitb16``
   downloads (timm, DINOv3 License, default size
   256, batch-dynamic by default). FP16 builds keep the attention matmul and softmax in FP32
+* ``models.RTMO`` (``rtmo_s``, ``rtmo_m``, ``rtmo_l``): OpenMMLab's one-stage pose estimator.
+  ``PoseEstimatorOutputSchema.RTMO`` (``dets``, ``keypoints``) and
+  ``postprocessors.postprocess_rtmo_pose`` decode its outputs into the same poses as YOLO-pose.
+  Downloads are OpenMMLab's ONNX, checked against a pinned sha256, with the channels flipped
+  to RGB and the in-graph NMS padded to a static 50 rows; its score floor is 0.1 (mmpose's,
+  was 0.15) and it always keeps one row, so TensorRT 8.6 runs images without people. CPU
+  postprocessing only
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)

@@ -1,0 +1,6 @@
+# the OpenMMLab RTMO ONNX is downloaded ready-made; onnx only patches its graph
+ml-dtypes==0.5.4
+numpy==1.26.4
+onnx==1.19.1
+protobuf==6.33.5
+typing-extensions==4.15.0

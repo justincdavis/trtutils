@@ -2,12 +2,14 @@
 #
 # MIT License
 """
-Postprocessor for YOLO-style pose estimation models.
+Postprocessors for pose estimation models.
 
 Functions
 ---------
 :func:`postprocess_yolo_pose`
     Postprocess the output of a YOLO-pose model.
+:func:`postprocess_rtmo_pose`
+    Postprocess the output of an RTMO model.
 :func:`get_poses`
     Get the poses from postprocessed pose estimation outputs.
 
@@ -95,16 +97,91 @@ def postprocess_yolo_pose(
         boxes = unletterbox_boxes(boxes[keep_idx], ratios[i], padding[i], input_size)
         scores = scores[keep_idx]
         kpts = pred[keep_idx, 5:].reshape(-1, num_kpts, 3)
-
-        ratio_width, ratio_height = ratios[i]
-        kpts[:, :, 0] = (kpts[:, :, 0] - padding[i][0]) / ratio_width
-        kpts[:, :, 1] = (kpts[:, :, 1] - padding[i][1]) / ratio_height
-        if input_size is not None:
-            # ultralytics clips keypoints to the image like boxes
-            xy = clip_boxes(kpts[:, :, [0, 1, 0, 1]], ratios[i], padding[i], input_size)
-            kpts[:, :, :2] = xy[:, :, :2]
+        kpts = _unletterbox_keypoints(kpts, ratios[i], padding[i], input_size)
         results.append([boxes, scores, labels[keep_idx], kpts])
     return results
+
+
+def postprocess_rtmo_pose(
+    outputs: list[np.ndarray],
+    ratios: list[tuple[float, float]],
+    padding: list[tuple[float, float]],
+    conf_thres: float | None = None,
+    nms_iou_thres: float = 0.5,
+    *,
+    max_det: int = 300,
+    input_size: tuple[int, int] | None = None,
+    verbose: bool | None = None,
+) -> list[list[np.ndarray]]:
+    """
+    Postprocess RTMO engine output.
+
+    Expects ``dets`` (batch, N, 5) as xyxy + score and ``keypoints`` (batch, N, K, 3) as
+    x, y, score, both in input pixels. The engine already ran NMS and pads unused rows
+    with zero scores; the NMS here only applies a stricter ``nms_iou_thres``.
+
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        Raw RTMO engine outputs, [dets, keypoints].
+    ratios : list[tuple[float, float]]
+        Preprocessing resize ratios per image.
+    padding : list[tuple[float, float]]
+        Preprocessing padding per image.
+    conf_thres : float, optional
+        Confidence threshold used to filter poses. If None, no filter is applied.
+    nms_iou_thres : float
+        IoU threshold for NMS.
+    max_det : int
+        Maximum number of poses kept per image, highest scores first.
+        By default 300.
+    input_size : tuple[int, int] | None
+        Model input (width, height), used with ratios/padding to clip boxes and keypoints to
+        the image. Without it boxes are only clipped at 0 and keypoints are not clipped.
+    verbose : bool, optional
+        Whether or not to log additional information.
+
+    Returns
+    -------
+    list[list[np.ndarray]]
+        One list per image: [bboxes (N,4), scores (N,), class_ids (N,) all zero,
+        keypoints (N,K,3)], all in original image coordinates. Keypoint scores
+        (channel 2) are passed through unchanged.
+
+    """
+    if verbose:
+        LOG.debug(f"RTMO postprocess, output shapes: {outputs[0].shape}, {outputs[1].shape}")
+
+    results = []
+    for i in range(outputs[0].shape[0]):
+        dets, kpts = outputs[0][i], outputs[1][i]
+        if conf_thres is not None:
+            mask = dets[:, 4] >= conf_thres
+            dets, kpts = dets[mask], kpts[mask]
+        scores = dets[:, 4]
+        labels = np.zeros(len(scores), dtype=int)
+        keep_idx = nms_indices(dets[:, :4], scores, labels, conf_thres, nms_iou_thres, max_det)
+        boxes = unletterbox_boxes(dets[keep_idx, :4], ratios[i], padding[i], input_size)
+        kpts = _unletterbox_keypoints(kpts[keep_idx], ratios[i], padding[i], input_size)
+        results.append([boxes, scores[keep_idx], labels[keep_idx], kpts])
+    return results
+
+
+def _unletterbox_keypoints(
+    kpts: np.ndarray,
+    ratios: tuple[float, float],
+    padding: tuple[float, float],
+    input_size: tuple[int, int] | None,
+) -> np.ndarray:
+    """Map (N, K, 3) keypoints out of letterboxed coordinates in place, clipped like boxes."""
+    ratio_width, ratio_height = ratios
+    kpts[:, :, 0] = (kpts[:, :, 0] - padding[0]) / ratio_width
+    kpts[:, :, 1] = (kpts[:, :, 1] - padding[1]) / ratio_height
+    if input_size is not None:
+        # ultralytics clips keypoints to the image like boxes
+        xy = clip_boxes(kpts[:, :, [0, 1, 0, 1]], ratios, padding, input_size)
+        kpts[:, :, :2] = xy[:, :, :2]
+    return kpts
 
 
 def get_poses(

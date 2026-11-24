@@ -1,14 +1,18 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/postprocessors/_cpu_pose.py -- YOLO-style keypoint decoding."""
+"""Tests for src/trtutils/image/postprocessors/_cpu_pose.py -- YOLO and RTMO keypoint decoding."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from trtutils.image.postprocessors._cpu_pose import get_poses, postprocess_yolo_pose
+from trtutils.image.postprocessors._cpu_pose import (
+    get_poses,
+    postprocess_rtmo_pose,
+    postprocess_yolo_pose,
+)
 
 pytestmark = pytest.mark.cpu
 
@@ -126,3 +130,68 @@ def test_input_size_clips_boxes_and_keypoints(ratio, padding, bbox, kpt_xy) -> N
     )[0]
     np.testing.assert_allclose(bboxes[0], bbox)
     np.testing.assert_allclose(out_kpts[0, 0], [*kpt_xy, 0.9], rtol=1e-6)
+
+
+def _rtmo_outputs(rows: list[tuple[list[float], float, list[float]]]) -> list[np.ndarray]:
+    """Build RTMO [dets (1, 50, 5), keypoints (1, 50, 1, 3)], unused rows zero like the engine."""
+    dets = np.zeros((1, 50, 5), dtype=np.float32)
+    kpts = np.zeros((1, 50, 1, 3), dtype=np.float32)
+    for i, (box, score, kpt) in enumerate(rows):
+        dets[0, i] = [*box, score]
+        kpts[0, i, 0] = kpt
+    return [dets, kpts]
+
+
+@pytest.mark.parametrize(
+    ("nms_iou_thres", "expected_scores"),
+    [
+        # the engine already ran NMS at 0.65, a stricter threshold drops the overlap
+        pytest.param(0.5, [0.9], id="strict-nms"),
+        pytest.param(0.65, [0.9, 0.8], id="engine-nms"),
+    ],
+)
+def test_rtmo_round_trip_postprocess_to_get_poses(nms_iou_thres, expected_scores) -> None:
+    """RTMO rows are filtered by score, NMS'd, unletterboxed and turned into poses."""
+    outputs = _rtmo_outputs(
+        [
+            ([90.0, 120.0, 190.0, 220.0], 0.9, [110.0, 140.0, 0.7]),
+            # IoU 0.6 with the first row
+            ([115.0, 120.0, 215.0, 220.0], 0.8, [130.0, 150.0, 0.6]),
+            ([300.0, 300.0, 400.0, 400.0], 0.05, [350.0, 350.0, 0.9]),
+        ]
+    )
+    postprocessed = postprocess_rtmo_pose(
+        outputs,
+        ratios=[(0.5, 0.5)],
+        padding=[(10.0, 20.0)],
+        conf_thres=0.1,
+        nms_iou_thres=nms_iou_thres,
+        input_size=(640, 640),
+    )
+    bboxes, scores, class_ids, kpts = postprocessed[0]
+    np.testing.assert_allclose(scores, expected_scores)
+    assert class_ids.tolist() == [0] * len(expected_scores)
+    np.testing.assert_allclose(bboxes[0], [160.0, 200.0, 360.0, 400.0])
+    np.testing.assert_allclose(kpts[0, 0], [200.0, 240.0, 0.7], rtol=1e-6)
+
+    poses = get_poses(postprocessed, conf_thres=0.1)[0]
+    assert len(poses) == len(expected_scores)
+    assert poses[0][0] == (160, 200, 360, 400)
+    np.testing.assert_allclose(poses[0][2], kpts[0])
+
+
+def test_rtmo_batch_of_two_images() -> None:
+    """Each image of an RTMO batch keeps its own rows."""
+    first = _rtmo_outputs([([10.0, 10.0, 50.0, 50.0], 0.9, [20.0, 20.0, 0.9])])
+    second = _rtmo_outputs(
+        [
+            ([10.0, 10.0, 50.0, 50.0], 0.8, [20.0, 20.0, 0.9]),
+            ([100.0, 100.0, 150.0, 150.0], 0.7, [120.0, 120.0, 0.9]),
+        ]
+    )
+    outputs = [np.concatenate([a, b]) for a, b in zip(first, second)]
+    postprocessed = postprocess_rtmo_pose(
+        outputs, ratios=[(1.0, 1.0)] * 2, padding=[(0.0, 0.0)] * 2, conf_thres=0.5
+    )
+    assert [len(result[1]) for result in postprocessed] == [1, 2]
+    np.testing.assert_allclose(postprocessed[1][3][1, 0], [120.0, 120.0, 0.9])

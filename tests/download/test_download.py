@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+import zipfile
 from contextlib import ExitStack
 from unittest.mock import patch
 
@@ -16,6 +19,7 @@ from trtutils.download._models import (
     export_deimv2,
     export_dfine,
     export_rtdetrv4,
+    export_rtmo,
     export_yolox,
 )
 from trtutils.download._simplify import simplify
@@ -192,6 +196,41 @@ def test_export_deimv2_skips_onnxsim(tmp_path) -> None:
     config = load_model_configs()["deimv2"]["deimv2_l"]
     cmd = _exported_cmd(export_deimv2, "_deim", config, tmp_path, "deimv2_l")
     assert "--simplify" not in cmd
+
+
+def _zip_bytes(member: str) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(member, b"onnx")
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("match", [True, False], ids=["match", "mismatch"])
+def test_export_rtmo_checks_sha256(tmp_path, match) -> None:
+    """The RTMO exporter unzips and patches an archive whose sha256 matches and rejects others."""
+    data = _zip_bytes("end2end.onnx")
+    config = {
+        "url": "https://example.com/files/rtmo.zip",
+        "sha256": hashlib.sha256(data if match else b"other").hexdigest(),
+    }
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch(
+                "trtutils.download._models._rtmo.run_download",
+                side_effect=lambda directory, *_a, **_k: (directory / "rtmo.zip").write_bytes(data),
+            )
+        )
+        install = stack.enter_context(patch("trtutils.download._models._rtmo.run_uv_pip_install"))
+        run = stack.enter_context(patch("trtutils.download._models._rtmo.run_cmd"))
+        args = (tmp_path, config, tmp_path / "py", tmp_path / "bin", "rtmo_x", 17)
+        if match:
+            assert export_rtmo(*args) == tmp_path / "rtmo_x.onnx"
+            assert (tmp_path / "end2end.onnx").read_bytes() == b"onnx"
+            assert run.call_count == 1
+        else:
+            with pytest.raises(RuntimeError, match="sha256"):
+                export_rtmo(*args)
+            assert install.call_count == 0
 
 
 @pytest.mark.parametrize(
