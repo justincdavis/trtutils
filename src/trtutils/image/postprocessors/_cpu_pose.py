@@ -118,7 +118,7 @@ def postprocess_rtmo_pose(
 
     Expects ``dets`` (batch, N, 5) as xyxy + score and ``keypoints`` (batch, N, K, 3) as
     x, y, score, both in input pixels. The engine already ran NMS and pads unused rows
-    with low scores; the NMS here only applies a stricter ``nms_iou_thres``.
+    with zero scores; the NMS here only applies a stricter ``nms_iou_thres``.
 
     Parameters
     ----------

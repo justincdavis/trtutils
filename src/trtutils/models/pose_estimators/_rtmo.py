@@ -23,8 +23,9 @@ class RTMO(PoseEstimator, Model):
     The OpenMMLab ONNX takes 0-255 pixels without mean / std after a centred letterbox
     with gray (114) padding, as mmpose's ``BottomupResize`` does. The exporter flips the
     channels in the graph, so the model takes RGB like the other models. The engine runs
-    NMS (IoU 0.65) and keeps at most 50 people; postprocessing filters by score and
-    applies ``nms_iou_thres`` when it is stricter. Postprocessing runs on the CPU: the
+    NMS (IoU 0.65) without a score threshold and returns its best 50 rows; postprocessing
+    filters them by ``conf_thres`` (0.1, mmpose's ``score_thr``) and applies
+    ``nms_iou_thres`` when it is stricter. Postprocessing runs on the CPU: the
     outputs are a few kilobytes. CUDA graphs default to off: the in-graph NMS yields
     data-dependent shapes inside the engine, which TensorRT cannot capture.
     """

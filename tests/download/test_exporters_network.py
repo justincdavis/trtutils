@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import shutil
 
+import numpy as np
 import onnx
+import onnxruntime as ort
 import pytest
 
 from trtutils.download import download
@@ -181,6 +183,19 @@ def test_export_family(tmp_path, model, kwargs, expected) -> None:
     out = tmp_path / f"{model}.onnx"
     download(model, out, **kwargs)
     _check_shapes(out, expected)
+
+
+def test_rtmo_export_keeps_rows_without_people(tmp_path) -> None:
+    """The RTMO export's NMS has no score floor: a blank image still fills all 50 rows."""
+    out = tmp_path / "rtmo_s.onnx"
+    download("rtmo_s", out)
+    session = ort.InferenceSession(str(out), providers=["CPUExecutionProvider"])
+    blank = np.full((1, 3, 640, 640), 114, dtype=np.float32)
+    dets, keypoints = session.run(None, {"input": blank})
+    assert dets.shape == (1, 50, 5)
+    assert keypoints.shape == (1, 50, 17, 3)
+    assert (dets[0, :, 4] > 0).all()
+    assert dets[0, 0, 4] < 0.1
 
 
 @pytest.fixture(scope="module")

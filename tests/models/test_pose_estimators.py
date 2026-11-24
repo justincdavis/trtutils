@@ -57,6 +57,20 @@ def test_rtmo_end2end(
         assert kpts.shape == (17, 3)
 
 
+@pytest.mark.parametrize(("model_cls", "onnx_path"), RTMO_MODELS)
+def test_rtmo_no_people_is_empty(build_model_engine, images, model_cls, onnx_path) -> None:
+    """Images without people give no poses: the engine never sees an empty NMS (TRT 8.6)."""
+    engine = build_model_engine(model_cls, onnx_path)
+    # 0.3 leaves fp16 margin over the best non-person rows (up to ~0.12)
+    model = model_cls(engine, conf_thres=0.3, warmup=False)
+    blank = np.full((480, 640, 3), 114, dtype=np.uint8)
+    for image in (images["horse"].array, blank):
+        dets, keypoints = model.run(image, postprocess=False)
+        assert np.asarray(dets).shape == (1, 50, 5)
+        assert np.asarray(keypoints).shape == (1, 50, 17, 3)
+        assert model.end2end(image) == []
+
+
 @pytest.mark.correctness
 @pytest.mark.parametrize(("model_cls", "onnx_path"), RTMO_MODELS)
 def test_rtmo_matches_onnxruntime(build_model_engine, images, model_cls, onnx_path) -> None:

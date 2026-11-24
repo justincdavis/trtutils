@@ -44,7 +44,12 @@ def export_rtmo(
     onnx_name = f"{model}.onnx"
     # 1. rtmo was trained on bgr images, a Gather flips the channels so the model takes
     #    rgb like the other models
-    # 2. the in-graph NMS keeps a data-dependent number of rows (at most K), which the
+    # 2. the in-graph NMS drops boxes scoring under 0.15, so an image without people
+    #    selects none and TensorRT 8.6 fails at run time (division by 0 in the shape
+    #    graph): a negative score threshold keeps the best rows of every image, and the
+    #    postprocessor's conf_thres filters them. lower scores never suppress higher ones,
+    #    so the rows that scored at least 0.15 are unchanged
+    # 3. the in-graph NMS keeps a data-dependent number of rows (at most K), which the
     #    engine cannot allocate for: pad with K zero rows and keep the top K by score so
     #    both outputs have a static shape
     program = f"""
@@ -68,6 +73,10 @@ for node in g.node:
                 names[i] = name + "_dyn"
 const("rgb_to_bgr", [2, 1, 0])
 g.node.insert(0, helper.make_node("Gather", ["input", "rgb_to_bgr"], ["input_bgr"], axis=1))
+
+(nms,) = [node for node in g.node if node.op_type == "NonMaxSuppression"]
+g.initializer.append(numpy_helper.from_array(np.array([-1.0], np.float32), "nms_score_thres"))
+nms.input[4] = "nms_score_thres"
 
 num_kpts = 17
 const("pad_dets", [0, 0, 0, 0, K, 0])

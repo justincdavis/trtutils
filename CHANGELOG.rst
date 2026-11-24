@@ -105,7 +105,9 @@ Added
   ``PoseEstimatorOutputSchema.RTMO`` (``dets``, ``keypoints``) and
   ``postprocessors.postprocess_rtmo_pose`` decode its outputs into the same poses as YOLO-pose.
   Downloads are OpenMMLab's ONNX, checked against a pinned sha256, with the channels flipped
-  to RGB and the in-graph NMS padded to a static 50 rows. CPU postprocessing only
+  to RGB and the in-graph NMS padded to a static 50 rows, without its 0.15 score floor so
+  TensorRT 8.6 runs images without people; ``conf_thres`` (default 0.1, as in mmpose) filters.
+  CPU postprocessing only
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)
