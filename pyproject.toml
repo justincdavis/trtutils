@@ -138,7 +138,7 @@ benchmark = [
     "trtutils[sahi]",
 ]
 ci = [
-    "ruff==0.17.5",
+    "ruff==0.17.6",
     "ty==0.0.107",
 ]
 docs = [
