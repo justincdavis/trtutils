@@ -19,6 +19,7 @@ from trtutils.image import (
     OBBDetector,
     PoseEstimator,
     Segmenter,
+    SemanticSegmenter,
 )
 from trtutils.image._image_model import ImageModel
 
@@ -27,6 +28,8 @@ pytestmark = pytest.mark.cpu
 # upstream preprocessing resizes these with PIL / torchvision antialiasing; changing this set
 # changes their default outputs, so it must be deliberate
 ANTIALIASED = {
+    # torchvision semantic segmenters
+    "DeepLabV3",
     # torchvision classifiers
     "AlexNet",
     "ConvNeXt",
@@ -92,6 +95,7 @@ def test_wrapper_antialias_default(name) -> None:
             Segmenter,
             PoseEstimator,
             OBBDetector,
+            SemanticSegmenter,
         )
     ],
 )
