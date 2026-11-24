@@ -128,6 +128,8 @@ Classes
     Alias for the PoseEstimator class with args preset for YOLOv26-Pose.
 :class:`RTMO`
     Alias for the PoseEstimator class with args preset for RTMO.
+:class:`YuNet`
+    Alias for the PoseEstimator class with args preset for the YuNet face detector.
 :class:`YOLOv8OBB`
     Alias for the OBBDetector class with args preset for YOLOv8-OBB.
 :class:`YOLOv11OBB`
@@ -201,7 +203,7 @@ from .feature_extractors import DINOv3
 from .hand_interaction import HOIDETR, Hands23
 from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
-from .pose_estimators import RTMO, YOLOv8Pose, YOLOv11Pose, YOLOv26Pose
+from .pose_estimators import RTMO, YOLOv8Pose, YOLOv11Pose, YOLOv26Pose, YuNet
 from .segmenters import YOLOv8Seg, YOLOv11Seg, YOLOv26Seg
 from .semantic_segmenters import DeepLabV3
 
@@ -273,4 +275,5 @@ __all__ = [
     "YOLOv26OBB",
     "YOLOv26Pose",
     "YOLOv26Seg",
+    "YuNet",
 ]

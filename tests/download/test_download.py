@@ -21,6 +21,7 @@ from trtutils.download._models import (
     export_rtdetrv4,
     export_rtmo,
     export_yolox,
+    export_yunet,
 )
 from trtutils.download._simplify import simplify
 from trtutils.download._tools import check_uv_available, handle_imgsz
@@ -230,6 +231,37 @@ def test_export_rtmo_checks_sha256(tmp_path, match) -> None:
         else:
             with pytest.raises(RuntimeError, match="sha256"):
                 export_rtmo(*args)
+            assert install.call_count == 0
+
+
+@pytest.mark.parametrize("match", [True, False], ids=["match", "mismatch"])
+def test_export_yunet_checks_sha256(tmp_path, match) -> None:
+    """The YuNet exporter patches a download whose sha256 matches, at a size divisible by 32."""
+    data = b"onnx"
+    config = {
+        "url": "https://example.com/files/yunet.onnx",
+        "sha256": hashlib.sha256(data if match else b"other").hexdigest(),
+    }
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch(
+                "trtutils.download._models._yunet.run_download",
+                side_effect=lambda directory, *_a, **_k: (directory / "yunet.onnx").write_bytes(
+                    data
+                ),
+            )
+        )
+        install = stack.enter_context(patch("trtutils.download._models._yunet.run_uv_pip_install"))
+        run = stack.enter_context(patch("trtutils.download._models._yunet.run_cmd"))
+        args = (tmp_path, config, tmp_path / "py", tmp_path / "bin", "yunet_x", 17, 330)
+        if match:
+            assert export_yunet(*args) == tmp_path / "yunet_x.onnx"
+            program = run.call_args.args[0][2]
+            assert "S = 320" in program
+            assert 'onnx.load("yunet.onnx")' in program
+        else:
+            with pytest.raises(RuntimeError, match="sha256"):
+                export_yunet(*args)
             assert install.call_count == 0
 
 

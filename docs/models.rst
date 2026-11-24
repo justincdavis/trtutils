@@ -196,6 +196,28 @@ Pose Estimation
      no mean / std. Postprocessing runs on the CPU and CUDA graphs default to off (the NMS
      inside the engine has data-dependent shapes)
 
+Face Detection
+~~~~~~~~~~~~~~
+
+Face detectors run through ``PoseEstimator``: each result is a face box, its score and five
+landmarks as ``(x, y, score)``, in the order right eye, left eye, nose tip, right mouth corner,
+left mouth corner. The landmarks have no scores of their own, so their third value repeats the
+face score.
+
+1. **YuNet** - OpenCV Zoo's face detector (``models.YuNet``): ``yunet`` (640x640 by default,
+   any size divisible by 32 through ``--imgsz``)
+
+   - GitHub: `opencv/opencv_zoo (models/face_detection_yunet) <https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet>`_,
+     trained with `ShiqiYu/libfacedetection.train <https://github.com/ShiqiYu/libfacedetection.train>`_
+   - Downloads are the zoo's ready ONNX (``face_detection_yunet_2026may.onnx``, checked against a
+     pinned sha256). The exporter flips the BGR input to RGB in the graph and fixes the input
+     size, batch 1
+   - Preprocessing is a centred letterbox to the engine size, 0-255 pixels, no mean / std.
+     OpenCV's ``FaceDetectorYN`` runs on the image at its own size; letterboxing keeps the
+     aspect ratio the faces were trained with. Postprocessing reproduces ``FaceDetectorYN``
+     (score ``sqrt(cls * obj)``, per-stride decode, NMS) on the CPU, with its default
+     thresholds: ``conf_thres=0.9``, ``nms_iou_thres=0.3``
+
 Oriented Bounding Boxes
 -------------------------
 
@@ -315,6 +337,7 @@ Pose Estimation Models
 - **YOLOv11-pose**: ``yolov11n-pose``, ``yolov11s-pose``, ``yolov11m-pose``, ``yolov11l-pose``, ``yolov11x-pose`` (via Ultralytics)
 - **YOLOv26-pose**: ``yolov26n-pose``, ``yolov26s-pose``, ``yolov26m-pose``, ``yolov26l-pose``, ``yolov26x-pose`` (via Ultralytics)
 - **RTMO**: ``rtmo_s``, ``rtmo_m``, ``rtmo_l`` (OpenMMLab's ONNX)
+- **YuNet** (face detection): ``yunet`` (OpenCV Zoo's ONNX)
 
 Oriented Bounding Box Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -386,6 +409,8 @@ for the weights: check the source before using them.
    * - RTMO
      - Apache-2.0 (mmpose's license; upstream states no separate license for the weights,
        which are trained on body7, seven public datasets with their own terms)
+   * - YuNet
+     - MIT (the license of the OpenCV Zoo model directory)
 
 Example Usage
 ~~~~~~~~~~~~~

@@ -10,6 +10,8 @@ Functions
     Postprocess the output of a YOLO-pose model.
 :func:`postprocess_rtmo_pose`
     Postprocess the output of an RTMO model.
+:func:`postprocess_yunet_pose`
+    Postprocess the output of a YuNet face detector.
 :func:`get_poses`
     Get the poses from postprocessed pose estimation outputs.
 
@@ -162,6 +164,108 @@ def postprocess_rtmo_pose(
         labels = np.zeros(len(scores), dtype=int)
         keep_idx = nms_indices(dets[:, :4], scores, labels, conf_thres, nms_iou_thres, max_det)
         boxes = unletterbox_boxes(dets[keep_idx, :4], ratios[i], padding[i], input_size)
+        kpts = _unletterbox_keypoints(kpts[keep_idx], ratios[i], padding[i], input_size)
+        results.append([boxes, scores[keep_idx], labels[keep_idx], kpts])
+    return results
+
+
+# the strides of YuNet's heads, in the order of its outputs
+_YUNET_STRIDES = (8, 16, 32)
+
+
+def postprocess_yunet_pose(
+    outputs: list[np.ndarray],
+    ratios: list[tuple[float, float]],
+    padding: list[tuple[float, float]],
+    conf_thres: float | None = None,
+    nms_iou_thres: float = 0.5,
+    *,
+    max_det: int = 300,
+    input_size: tuple[int, int] | None = None,
+    verbose: bool | None = None,
+) -> list[list[np.ndarray]]:
+    """
+    Postprocess YuNet face detector engine output, as OpenCV's ``FaceDetectorYN`` does.
+
+    Expects the twelve raw heads in :attr:`PoseEstimatorOutputSchema.YUNET` order:
+    ``cls`` and ``obj`` (batch, N, 1), ``bbox`` (batch, N, 4) and ``kps`` (batch, N, 10)
+    for the strides 8, 16 and 32, with N the cells of each stride's row-major grid. The
+    score is ``sqrt(cls * obj)`` with both clipped to [0, 1]; boxes and the five landmarks
+    are decoded from their grid cell, then single-class NMS keeps the best faces.
+
+    Parameters
+    ----------
+    outputs : list[np.ndarray]
+        Raw YuNet engine outputs, the twelve heads in schema order.
+    ratios : list[tuple[float, float]]
+        Preprocessing resize ratios per image.
+    padding : list[tuple[float, float]]
+        Preprocessing padding per image.
+    conf_thres : float, optional
+        Confidence threshold used to filter faces. If None, no filter is applied.
+    nms_iou_thres : float
+        IoU threshold for NMS.
+    max_det : int
+        Maximum number of faces kept per image, highest scores first.
+        By default 300.
+    input_size : tuple[int, int] | None
+        Model input (width, height), which sets the grid of each stride. Required.
+    verbose : bool, optional
+        Whether or not to log additional information.
+
+    Returns
+    -------
+    list[list[np.ndarray]]
+        One list per image: [bboxes (N,4), scores (N,), class_ids (N,) all zero,
+        keypoints (N,5,3)], all in original image coordinates. The keypoints are the right
+        eye, left eye, nose tip, right and left mouth corner; YuNet gives them no scores of
+        their own, so channel 2 repeats the face score.
+
+    Raises
+    ------
+    ValueError
+        If ``input_size`` is not given.
+
+    """
+    if input_size is None:
+        err_msg = "YuNet postprocessing needs input_size to rebuild the grid of each stride"
+        raise ValueError(err_msg)
+    if verbose:
+        LOG.debug(f"YuNet postprocess, input size: {input_size}")
+
+    # (column, row) of every cell and its stride, in the order of the concatenated heads
+    cells, strides = [], []
+    for stride in _YUNET_STRIDES:
+        cols, rows = input_size[0] // stride, input_size[1] // stride
+        row, col = np.divmod(np.arange(rows * cols), cols)
+        cells.append(np.stack([col, row], axis=1))
+        strides.append(np.full(rows * cols, stride))
+    all_cells = np.concatenate(cells).astype(np.float32)
+    all_strides = np.concatenate(strides).astype(np.float32)[:, None]
+
+    num = len(_YUNET_STRIDES)
+    results = []
+    for i in range(outputs[0].shape[0]):
+        cls, obj, bbox, kps = (
+            np.concatenate([out[i] for out in outputs[k * num : (k + 1) * num]]) for k in range(4)
+        )
+        scores = np.sqrt(np.clip(cls[:, 0], 0, 1) * np.clip(obj[:, 0], 0, 1))
+        cell, stride = all_cells, all_strides
+        if conf_thres is not None:
+            mask = scores >= conf_thres
+            scores, bbox, kps = scores[mask], bbox[mask], kps[mask]
+            cell, stride = cell[mask], stride[mask]
+
+        centers = (cell + bbox[:, :2]) * stride
+        half_wh = np.exp(bbox[:, 2:]) * stride / 2
+        boxes = np.concatenate([centers - half_wh, centers + half_wh], axis=1)
+        kpts = np.empty((len(scores), 5, 3), dtype=np.float32)
+        kpts[:, :, :2] = (kps.reshape(-1, 5, 2) + cell[:, None]) * stride[:, :, None]
+        kpts[:, :, 2] = scores[:, None]
+
+        labels = np.zeros(len(scores), dtype=int)
+        keep_idx = nms_indices(boxes, scores, labels, conf_thres, nms_iou_thres, max_det)
+        boxes = unletterbox_boxes(boxes[keep_idx], ratios[i], padding[i], input_size)
         kpts = _unletterbox_keypoints(kpts[keep_idx], ratios[i], padding[i], input_size)
         results.append([boxes, scores[keep_idx], labels[keep_idx], kpts])
     return results

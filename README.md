@@ -164,6 +164,7 @@ describes each family.
 - **Segmentation**: YOLOv8, v11, and v26 (`-seg`)
 - **Semantic segmentation**: DeepLabV3 (torchvision, MobileNetV3-Large, ResNet50, ResNet101)
 - **Pose estimation**: YOLOv8, v11, and v26 (`-pose`); RTMO (s, m, l)
+- **Face detection** (boxes + 5 landmarks, through `PoseEstimator`): YuNet
 - **Oriented bounding boxes**: YOLOv8, v11, and v26 (`-obb`)
 - **Depth estimation**: Depth-Anything V1, V2, and V3
 - **Feature extraction** (image embeddings and dense feature maps): DINOv3 ViT-S, S+, and B
