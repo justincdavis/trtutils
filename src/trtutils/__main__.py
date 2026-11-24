@@ -1997,8 +1997,8 @@ def _main() -> None:
         "--iterations",
         "-i",
         type=int,
-        default=100,
-        help="Number of profiling iterations to run. Default is 100.",
+        default=None,
+        help="Number of profiling iterations to run. Default is 100 (10000 with --jetson).",
     )
     profile_parser.add_argument(
         "--save_raw",

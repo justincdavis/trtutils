@@ -336,6 +336,23 @@ class TRTEngine(TRTEngineInterface):
         """The output shapes of the most recent execution."""
         return list(self._output_shapes)
 
+    @property
+    def cuda_graph_enabled(self: Self) -> bool:
+        """
+        Whether executions capture and replay CUDA graphs.
+
+        Set to False to run every execution uncaptured, for example while a
+        TensorRT profiler is attached (graph replays do not report per-layer
+        timings). Graphs already captured are kept and replay again once set
+        back to True. Setting True has no effect on engines that cannot use
+        CUDA graphs (the async_v2 backend), which always read False.
+        """
+        return self._cuda_graph_enabled
+
+    @cuda_graph_enabled.setter
+    def cuda_graph_enabled(self: Self, value: bool) -> None:
+        self._cuda_graph_enabled = bool(value) and self._async_v3
+
     def _set_context_shape(self: Self, index: int, shape: tuple[int, ...]) -> None:
         binding = self._inputs[index]
         if self._async_v3:

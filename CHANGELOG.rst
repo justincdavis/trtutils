@@ -70,6 +70,8 @@ Added
 * ``TRTEngine`` CUDA graphs (``cuda_graph``): one graph per input configuration (shapes and
   device addresses), captured on the second run at unchanged shapes. The 8 most recent are kept
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
+* ``TRTEngine.cuda_graph_enabled``: read or toggle CUDA graph capture/replay after construction.
+  Captured graphs are kept while disabled
 * ``TRTEngine.execute`` / ``raw_exec`` / ``__call__`` / ``mock_execute`` take a mapping of input
   name to ``Buffer`` as well as a sequence in ``input_names`` order. Outputs come back in
   ``output_names`` order, which is not necessarily the ONNX order: TensorRT 8.6 can order
@@ -181,6 +183,10 @@ Performance
 
 Fixed
 ^^^^^
+* ``jetson.profile_engine`` runs without CUDA graphs, then restores the engine's graph flag and
+  profiler. Graph replays never call the profiler, so per-layer results could be empty
+* ``profile_engine(jetson=True)`` and ``trtutils profile --jetson`` use the Jetson default of 10000 iterations
+  unless ``iterations`` is given. The dispatcher always forwarded 100
 * ``TRTEngine(shape_contexts=N)`` and the OCR ``width_bucket`` option work on TensorRT 8.6
   (Jetson). They failed with ``Assertion mOptimizationProfile >= 0 failed`` at the second
   input shape, because contexts cannot share an optimization profile before TensorRT 10.

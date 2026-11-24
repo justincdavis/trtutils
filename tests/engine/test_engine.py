@@ -32,7 +32,7 @@ def test_init_warmup(make_engine, warmup) -> None:
     """Warmup executes the engine only when requested (seen by the CUDA graph cache)."""
     eng = make_engine(warmup=warmup, warmup_iterations=3)
     executed = bool(eng._cuda_graphs or eng._seen_configs)
-    assert executed is (bool(warmup) and eng._cuda_graph_enabled)
+    assert executed is (bool(warmup) and eng.cuda_graph_enabled)
 
 
 @pytest.mark.cuda_graph
@@ -54,13 +54,47 @@ def test_cuda_graph_init(make_engine, backend, cuda_graph, expect_enabled) -> No
     eng = make_engine(backend=backend, cuda_graph=cuda_graph)
     if expect_enabled is None:
         if FLAGS.EXEC_ASYNC_V3:
-            assert eng._cuda_graph_enabled is True
+            assert eng.cuda_graph_enabled is True
         else:
-            assert eng._cuda_graph_enabled is False
+            assert eng.cuda_graph_enabled is False
     elif expect_enabled:
-        assert eng._cuda_graph_enabled is True
+        assert eng.cuda_graph_enabled is True
     else:
-        assert eng._cuda_graph_enabled is False
+        assert eng.cuda_graph_enabled is False
+
+
+@pytest.mark.cuda_graph
+def test_cuda_graph_enabled_toggle(make_engine) -> None:
+    """cuda_graph_enabled toggles replay at runtime and keeps captured graphs."""
+    if not FLAGS.EXEC_ASYNC_V3:
+        pytest.skip("async_v3 not available")
+    eng = make_engine(backend="async_v3", cuda_graph=True)
+    data = eng.get_random_input()
+    for _ in range(3):
+        eng.mock_execute(data)
+    if not eng.cuda_graph_enabled:
+        pytest.skip("CUDA graph capture failed on this platform")
+    graphs = dict(eng._cuda_graphs)
+    assert graphs
+
+    eng.cuda_graph_enabled = False
+    assert eng.cuda_graph_enabled is False
+    eng.mock_execute(data)
+    assert eng._cuda_graphs == graphs
+
+    eng.cuda_graph_enabled = True
+    assert eng.cuda_graph_enabled is True
+    eng.mock_execute(data)
+    assert eng._cuda_graphs == graphs
+
+
+def test_cuda_graph_enabled_v2_stays_false(make_engine) -> None:
+    """Enabling CUDA graphs on the async_v2 backend has no effect."""
+    if not FLAGS.EXEC_ASYNC_V2:
+        pytest.skip("async_v2 not available")
+    eng = make_engine(backend="async_v2", cuda_graph=False)
+    eng.cuda_graph_enabled = True
+    assert eng.cuda_graph_enabled is False
 
 
 @pytest.mark.parametrize(
@@ -164,7 +198,7 @@ def test_async_v2_backend_init(make_engine) -> None:
     """backend='async_v2' sets _async_v3=False and disables CUDA graph."""
     eng = make_engine(backend="async_v2")
     assert eng._async_v3 is False
-    assert eng._cuda_graph_enabled is False
+    assert eng.cuda_graph_enabled is False
 
 
 @pytest.mark.skipif(not FLAGS.EXEC_ASYNC_V2, reason="async_v2 not available")
@@ -206,7 +240,7 @@ def test_graph_capture_failure_falls_through(make_engine) -> None:
         outputs = eng.execute(data)
 
     # graphs are disabled after a failed capture; execution carries on without them
-    assert eng._cuda_graph_enabled is False
+    assert eng.cuda_graph_enabled is False
     for out, exp in zip(outputs, expected):
         np.testing.assert_array_equal(out, exp)
     assert isinstance(eng.execute(data), list)
