@@ -64,6 +64,7 @@ ANTIALIASED = {
     "RFDETR",
     "RTDETRv1",
     "RTDETRv2",
+    "RTDETRv4",
 }
 # OCR preprocesses with its own bit-exact OpenCV pipeline and has no antialias option
 NO_OPTION = {"PPOCR", "PPOCRDetector", "PPOCRRecognizer"}
