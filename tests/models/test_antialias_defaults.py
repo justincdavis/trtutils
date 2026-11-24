@@ -14,6 +14,7 @@ from trtutils.image import (
     Classifier,
     DepthEstimator,
     Detector,
+    FeatureExtractor,
     HandInteractionDetector,
     OBBDetector,
     PoseEstimator,
@@ -48,6 +49,8 @@ ANTIALIASED = {
     "VGG",
     "ViT",
     "WideResNet",
+    # feature extractors whose timm transform resizes PIL images bicubic
+    "DINOv3",
     # timm classifiers
     "DeiT",
     "DeiT3",
@@ -84,6 +87,7 @@ def test_wrapper_antialias_default(name) -> None:
             Detector,
             Classifier,
             DepthEstimator,
+            FeatureExtractor,
             HandInteractionDetector,
             Segmenter,
             PoseEstimator,

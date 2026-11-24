@@ -113,11 +113,10 @@ Feature Extraction
    through timm with a class-token embedding and a dense patch feature map
 
    - GitHub: `facebookresearch/dinov3 <https://github.com/facebookresearch/dinov3>`_
-   - Images are resized with ``linear``, which does not antialias. Embeddings agree across the
-     trtutils preprocessors, but for heavily downscaled images they differ from embeddings
-     computed with an antialiased resize such as upstream's transform (cosine similarity
-     0.96 to 0.98 on average and as low as 0.90 on the test images). Embed queries and
-     galleries with the same pipeline
+   - Images are resized with ``linear`` and antialiased (``antialias=True``, the default),
+     as upstream's timm transform resizes PIL images bicubic: embeddings of heavily
+     downscaled images match that resize to cosine similarity 0.997 or better (0.93 to
+     0.98 with ``antialias=False``). Embed queries and galleries with the same pipeline
 
 Classification
 --------------
