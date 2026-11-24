@@ -12,7 +12,12 @@ import pytest
 
 from tests.download.conftest import ROUTING_CASES, patch_exporter
 from trtutils.download import download, download_model, load_model_configs
-from trtutils.download._models import export_deimv2, export_yolox
+from trtutils.download._models import (
+    export_deimv2,
+    export_dfine,
+    export_rtdetrv4,
+    export_yolox,
+)
 from trtutils.download._simplify import simplify
 from trtutils.download._tools import check_uv_available, handle_imgsz
 from trtutils.models._utils import get_valid_models
@@ -144,6 +149,7 @@ def test_simplify_unknown_tool_raises(tmp_path) -> None:
         pytest.param("deimv2", 8, id="deimv2"),
         pytest.param("yolox", 7, id="yolox"),
         pytest.param("dfine", 5, id="dfine"),
+        pytest.param("rtdetrv4", 4, id="rtdetrv4"),
     ],
 )
 def test_get_valid_models_count_per_family(model_type, expected_count) -> None:
@@ -186,6 +192,34 @@ def test_export_deimv2_skips_onnxsim(tmp_path) -> None:
     config = load_model_configs()["deimv2"]["deimv2_l"]
     cmd = _exported_cmd(export_deimv2, "_deim", config, tmp_path, "deimv2_l")
     assert "--simplify" not in cmd
+
+
+@pytest.mark.parametrize(
+    ("export_func", "family", "model", "config_path"),
+    [
+        pytest.param(
+            export_dfine,
+            "dfine",
+            "dfine_s",
+            "configs/dfine/objects365/dfine_hgnetv2_s_obj2coco.yml",
+            id="dfine",
+        ),
+        pytest.param(
+            export_rtdetrv4,
+            "rtdetrv4",
+            "rtdetrv4_s",
+            "configs/rtv4/rtv4_hgnetv2_s_coco.yml",
+            id="rtdetrv4",
+        ),
+    ],
+)
+def test_export_dfine_style_command(tmp_path, export_func, family, model, config_path) -> None:
+    """D-FINE-style exporters run the upstream script on the family's config and checkpoint."""
+    config = load_model_configs()[family][model]
+    cmd = _exported_cmd(export_func, "_dfine", config, tmp_path, model)
+    assert cmd[cmd.index("-c") + 1] == config_path
+    assert cmd[cmd.index("-r") + 1] == config["name"] + ".pth"
+    assert cmd[cmd.index("--imgsz") + 1] == "640"
 
 
 @pytest.mark.parametrize(

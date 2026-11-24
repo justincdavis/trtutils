@@ -65,6 +65,12 @@ EXPORT_CASES = [
         id="rtdetrv3",
     ),
     pytest.param(
+        "rtdetrv4_s",
+        {"imgsz": 640},
+        {"images": [None, 3, 640, 640], "orig_target_sizes": [None, 2]},
+        id="rtdetrv4",
+    ),
+    pytest.param(
         "dfine_n",
         {"imgsz": 640},
         {"images": [None, 3, 640, 640], "orig_target_sizes": [None, 2]},

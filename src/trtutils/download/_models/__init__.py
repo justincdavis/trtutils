@@ -11,7 +11,7 @@ from ._depth_anything import (
     export_depth_anything_v2,
     export_depth_anything_v3,
 )
-from ._dfine import export_dfine
+from ._dfine import export_dfine, export_rtdetrv4
 from ._hands23 import export_hands23
 from ._hoi_detr import export_hoi_detr
 from ._ppocr import export_ppocr
@@ -74,6 +74,7 @@ EXPORTERS: dict[str, Exporter] = {
     "rtdetrv1": Exporter(export_rtdetrv1),
     "rtdetrv2": Exporter(export_rtdetrv2),
     "rtdetrv3": Exporter(export_rtdetrv3),
+    "rtdetrv4": Exporter(export_rtdetrv4),
     "timm": Exporter(export_timm_classifier, batch=True),
     "timm_features": Exporter(export_timm_features, batch=True, dynamic_default=True),
     "torchvision": Exporter(export_torchvision_classifier, batch=True, dynamic_default=True),
@@ -102,6 +103,7 @@ __all__ = [
     "export_rtdetrv1",
     "export_rtdetrv2",
     "export_rtdetrv3",
+    "export_rtdetrv4",
     "export_timm_classifier",
     "export_timm_features",
     "export_torchvision_classifier",

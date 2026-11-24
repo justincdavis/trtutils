@@ -58,19 +58,23 @@ DETR Models
     
     - GitHub: `clxia12/RT-DETRv3 <https://github.com/clxia12/RT-DETRv3>`_
 
-11. **D-FINE**
-    
+11. **RT-DETRv4**
+
+    - GitHub: `RT-DETRs/RT-DETRv4 <https://github.com/RT-DETRs/RT-DETRv4>`_
+
+12. **D-FINE**
+
     - GitHub: `Peterande/D-FINE <https://github.com/Peterande/D-FINE>`_
 
-12. **DEIM**
-    
+13. **DEIM**
+
     - GitHub: `Intellindust-AI-Lab/DEIM <https://github.com/Intellindust-AI-Lab/DEIM>`_
 
-13. **DEIMv2**
-    
+14. **DEIMv2**
+
     - GitHub: `Intellindust-AI-Lab/DEIMv2 <https://github.com/Intellindust-AI-Lab/DEIMv2>`_
 
-14. **RF-DETR**
+15. **RF-DETR**
     
     - GitHub: `roboflow/rf-detr <https://github.com/roboflow/rf-detr>`_
 
@@ -231,6 +235,7 @@ DETR Models
 - **RT-DETRv1**: Multiple configurations available
 - **RT-DETRv2**: Multiple configurations available
 - **RT-DETRv3**: Multiple configurations available
+- **RT-DETRv4**: ``rtdetrv4_s``, ``rtdetrv4_m``, ``rtdetrv4_l``, ``rtdetrv4_x``
 - **D-FINE**: Multiple configurations available
 - **DEIM**: Multiple configurations available
 - **DEIMv2**: ``deimv2_atto``, ``deimv2_femto``, ``deimv2_pico``, ``deimv2_n``, ``deimv2_s``, ``deimv2_m``, ``deimv2_l``, ``deimv2_x``
@@ -306,6 +311,9 @@ for the weights: check the source before using them.
      - Apache-2.0
    * - RT-DETRv1, RT-DETRv2, RT-DETRv3
      - Apache-2.0
+   * - RT-DETRv4
+     - Apache-2.0 (RT-DETRv4's license; the checkpoints, hosted on Google Drive, have no
+       separate statement)
    * - D-FINE
      - Apache-2.0 (upstream notes that Objects365-pretrained checkpoints such as
        ``*_obj2coco`` may carry the dataset's terms)

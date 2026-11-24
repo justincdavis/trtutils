@@ -38,6 +38,8 @@ Classes
     Alias for the DETR class with args preset for RT-DETRv2.
 :class:`RTDETRv3`
     Alias for the DETR class with args preset for RT-DETRv3.
+:class:`RTDETRv4`
+    Alias for the DETR class with args preset for RT-DETRv4.
 :class:`DFINE`
     Alias for the DETR class with args preset for D-FINE.
 :class:`DEIM`
@@ -179,6 +181,7 @@ from .detectors import (
     RTDETRv1,
     RTDETRv2,
     RTDETRv3,
+    RTDETRv4,
     YOLOv3,
     YOLOv5,
     YOLOv7,
@@ -231,6 +234,7 @@ __all__ = [
     "RTDETRv1",
     "RTDETRv2",
     "RTDETRv3",
+    "RTDETRv4",
     "RegNet",
     "ResNeXt",
     "ResNet",

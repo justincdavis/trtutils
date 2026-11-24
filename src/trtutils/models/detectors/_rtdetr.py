@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from trtutils._flags import FLAGS
 from trtutils.image._detector import Detector
 from trtutils.image._schema import InputSchema, OutputSchema
-from trtutils.models._hooks import depthwise_fp32_build_hook, rtdetr_build_hook
+from trtutils.models._hooks import (
+    depthwise_fp32_build_hook,
+    gridsample_debug_build_hook,
+    rtdetr_build_hook,
+)
 from trtutils.models._model import Model
 
 if TYPE_CHECKING:
@@ -216,6 +220,81 @@ class RTDETRv3(Detector, Model):
             std=std,
             input_schema=InputSchema.RT_DETR_V3,
             output_schema=OutputSchema.RT_DETR_V3,
+            dla_core=dla_core,
+            device=device,
+            backend=backend,
+            warmup=warmup,
+            pagelocked_mem=pagelocked_mem,
+            unified_mem=unified_mem,
+            cuda_graph=cuda_graph,
+            postprocessor=postprocessor,
+            cpu_resize=cpu_resize,
+            extra_nms=extra_nms,
+            agnostic_nms=agnostic_nms,
+            class_map=class_map,
+            no_warn=no_warn,
+            verbose=verbose,
+        )
+
+
+class RTDETRv4(Detector, Model):
+    """Alias of Detector with default args for RT-DETRv4."""
+
+    _model_type = "rtdetrv4"
+    _friendly_name = "RT-DETRv4"
+    _default_imgsz = 640
+    _valid_imgszs: ClassVar[list[int] | None] = [640]
+    # without the GridSample hook every engine is wrong, FP32 too; without the depthwise hook
+    # 2-5 of 8 FP16 builds in one process are (tensorrt 10.15), as for D-FINE
+    _build_hooks: ClassVar[list[Callable[..., dict[str, Any]]]] = [
+        gridsample_debug_build_hook,
+        depthwise_fp32_build_hook,
+    ]
+    _input_tensors: ClassVar[list[tuple[str, str]]] = [
+        ("images", "image"),
+        ("orig_target_sizes", "size"),
+    ]
+
+    def __init__(
+        self: Self,
+        engine_path: Path | str,
+        warmup_iterations: int = 10,
+        input_range: tuple[float, float] = (0, 1),
+        preprocessor: str = "cuda",
+        resize_method: str = "linear",
+        conf_thres: float = 0.1,
+        nms_iou_thres: float = 0.5,
+        mean: tuple[float, float, float] | None = None,
+        std: tuple[float, float, float] | None = None,
+        dla_core: int | None = None,
+        device: int | None = None,
+        backend: str = "auto",
+        *,
+        warmup: bool | None = None,
+        pagelocked_mem: bool | None = None,
+        unified_mem: bool | None = None,
+        cuda_graph: bool | None = None,
+        postprocessor: str | None = None,
+        cpu_resize: bool | None = None,
+        extra_nms: bool | None = None,
+        agnostic_nms: bool | None = None,
+        class_map: Mapping[int, int] | None = None,
+        no_warn: bool | None = None,
+        verbose: bool | None = None,
+    ) -> None:
+        Detector.__init__(
+            self,
+            engine_path=engine_path,
+            warmup_iterations=warmup_iterations,
+            input_range=input_range,
+            preprocessor=preprocessor,
+            resize_method=resize_method,
+            conf_thres=conf_thres,
+            nms_iou_thres=nms_iou_thres,
+            mean=mean,
+            std=std,
+            input_schema=InputSchema.RT_DETR,
+            output_schema=OutputSchema.DETR_LBS,
             dla_core=dla_core,
             device=device,
             backend=backend,

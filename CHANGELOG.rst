@@ -87,6 +87,9 @@ Added
 * ``models.PPOCRDetector`` / ``PPOCRRecognizer`` / ``PPOCR`` (bundled PP-OCR dictionary) and
   OCR pre/postprocessing functions in ``preprocessors`` and ``postprocessors``
 * ``models.DeiT`` / ``models.DeiT3`` and a timm exporter for DeiT and DeiT III
+* ``models.RTDETRv4`` and downloads of the RT-DETRv4 COCO detectors (``rtdetrv4_s``,
+  ``rtdetrv4_m``, ``rtdetrv4_l``, ``rtdetrv4_x``, 640), listed under the repository's
+  Apache-2.0 license (upstream states nothing separate for the checkpoints)
 * ``models.DepthAnythingV1`` / ``V3`` aliases (``DepthAnythingV2`` also present)
 * ``models.HOIDETR`` and ``models.Hands23`` aliases of ``HandInteractionDetector``
 * ``image.FeatureExtractor``: image -> embedding ``(C,)`` and dense feature map

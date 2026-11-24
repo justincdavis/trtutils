@@ -55,27 +55,43 @@ def test_handle_batch_rejects(batch, dynamic, supported, error, match) -> None:
         handle_batch(batch, "fam", dynamic=dynamic, supported=supported)
 
 
-_DEIMV2_PIN = "19d5b19a58c229dd7ad5f079947bbe398e005d01"
-
-
-def test_deimv2_patch_exports_small_batch_without_grad(tmp_path) -> None:
-    """The DEIMv2 patch applies to the pinned script, traces batch 2 and disables autograd."""
-    repo = get_repo_cache_dir() / "DEIMv2"
+@pytest.mark.parametrize(
+    ("repo_name", "pin", "family", "batch"),
+    [
+        pytest.param(
+            "DEIMv2",
+            "19d5b19a58c229dd7ad5f079947bbe398e005d01",
+            "deimv2",
+            "torch.rand(2, 3, *img_size)",
+            id="deimv2",
+        ),
+        pytest.param(
+            "RT-DETRv4",
+            "55fefaaed7efe2a5f72d0a18fd4e05965e35c292",
+            "rtdetrv4",
+            "torch.rand(1, 3, args.imgsz, args.imgsz)",
+            id="rtdetrv4",
+        ),
+    ],
+)
+def test_patch_exports_small_batch_without_grad(tmp_path, repo_name, pin, family, batch) -> None:
+    """The export patch applies to the pinned script, traces a small batch and disables autograd."""
+    repo = get_repo_cache_dir() / repo_name
     if not repo.exists():
-        pytest.skip("DEIMv2 repo is not cached")
+        pytest.skip(f"{repo_name} repo is not cached")
     script = tmp_path / "export_onnx.py"
     shown = subprocess.run(  # noqa: S603
-        ["git", "-C", str(repo), "show", f"{_DEIMV2_PIN}:tools/deployment/export_onnx.py"],  # noqa: S607
+        ["git", "-C", str(repo), "show", f"{pin}:tools/deployment/export_onnx.py"],  # noqa: S607
         capture_output=True,
         text=True,
         check=False,
     )
     if shown.returncode != 0:
-        pytest.skip("pinned DEIMv2 commit is not cached")
+        pytest.skip(f"pinned {repo_name} commit is not cached")
     script.write_text(shown.stdout)
-    run_patch(tmp_path, str(get_patches_dir() / "deimv2_export_onnx.patch"), script.name)
+    run_patch(tmp_path, str(get_patches_dir() / f"{family}_export_onnx.patch"), script.name)
     patched = script.read_text()
-    assert "torch.rand(2, 3, *img_size)" in patched
+    assert batch in patched
     assert "torch.rand(32" not in patched
     assert "torch.set_grad_enabled(False)" in patched
 

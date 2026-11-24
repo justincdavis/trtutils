@@ -111,6 +111,7 @@ These transformer-based models have fixed input size requirements.
 | RT-DETR v1 | rtdetrv1_r18, rtdetrv1_r34, rtdetrv1_r50m | 640 |
 | RT-DETR v2 | rtdetrv2_r18, rtdetrv2_r34, rtdetrv2_r50m | 640 |
 | RT-DETR v3 | rtdetrv3_r18, rtdetrv3_r34, rtdetrv3_r50 | 640 |
+| RT-DETR v4 | rtdetrv4_s, rtdetrv4_m | 640 |
 | D-FINE | dfine_n, dfine_s, dfine_m | 640 |
 | DEIM | deim_dfine_n, deim_dfine_s, deim_dfine_m | 640 |
 | DEIM | deim_rtdetrv2_r18, deim_rtdetrv2_r34, deim_rtdetrv2_r50m | 640 |
