@@ -141,6 +141,7 @@ Options
 * ``--max_images, -mi``: Maximum number of images to use for calibration
 * ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear; default: letterbox)
 * ``--input_scale, -sc``: Input value range (default: [0.0, 1.0])
+* ``--bgr``: Calibrate on BGR images instead of RGB, for engines that swap channels themselves
 
 .. note::
    When using INT8 quantization with calibration, you must provide:
@@ -603,6 +604,7 @@ Options
 * ``--max_images, -mi``: Maximum number of images to use
 * ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear; default: letterbox)
 * ``--input_scale, -sc``: Input value range (default: 0.0 1.0)
+* ``--bgr``: Calibrate on BGR images instead of RGB, for engines that swap channels themselves
 
 Clear Cache
 ~~~~~~~~~~~

@@ -56,6 +56,7 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "max_images": None,
         "resize_method": "letterbox",
         "input_scale": [0.0, 1.0],
+        "bgr": False,
         "shape": None,
         "timing_cache": None,
         "workspace": 4.0,

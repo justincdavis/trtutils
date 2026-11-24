@@ -200,6 +200,10 @@ Performance
 
 Fixed
 ^^^^^
+* ``ImageBatcher`` (and the CLI's INT8 calibration) feeds RGB images, as the image models do at
+  inference. It fed OpenCV's BGR, so INT8 engines were calibrated on swapped channels. New
+  ``mean`` / ``std`` normalize like the image models; ``bgr=True`` (``--bgr``) keeps BGR for
+  engines that swap channels themselves, such as ``Model.build(embed_sst=True)``
 * ``jetson.benchmark_engine`` / ``benchmark_engines`` raise a ``RuntimeError`` naming
   ``tegra_interval`` and ``iterations`` when no tegrastats sample lands inside an inference
   (previously an opaque ``ValueError``), and warn when only some inferences have a sample

@@ -242,6 +242,8 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
             Image resize method (letterbox or linear).
         - input_scale : list[float]
             Input value range scaling.
+        - bgr : bool
+            Calibrate on BGR images instead of RGB.
         - shape : list[str] or None
             Fixed input shapes specification.
         - timing_cache : str or None
@@ -298,6 +300,7 @@ def _build(args: SimpleNamespace, *, add_yolo_hook: bool = False) -> None:
             max_images=args.max_images,
             resize_method=args.resize_method,
             input_scale=_to_float_pair(args.input_scale),
+            bgr=args.bgr,
             verbose=args.verbose,
         )
 
@@ -430,6 +433,8 @@ def _generate_calibration(args: SimpleNamespace) -> None:
             Image resize method.
         - input_scale : list[float]
             Input value range scaling.
+        - bgr : bool
+            Calibrate on BGR images instead of RGB.
         - output : str
             Path to save the calibration .npy file.
         - verbose : bool
@@ -460,6 +465,7 @@ def _generate_calibration(args: SimpleNamespace) -> None:
         max_images=args.max_images,
         resize_method=args.resize_method,
         input_scale=_to_float_pair(args.input_scale),
+        bgr=args.bgr,
         verbose=args.verbose,
     )
     batcher.save_calibration_data(args.output, verbose=args.verbose)
@@ -534,6 +540,8 @@ def _build_dla(args: SimpleNamespace) -> None:
             Image resize method.
         - input_scale : list[float]
             Input value range scaling.
+        - bgr : bool
+            Calibrate on BGR images instead of RGB.
         - dla_core : int or None
             DLA core to use (defaults to 0 if not provided).
         - max_chunks : int
@@ -591,6 +599,7 @@ def _build_dla(args: SimpleNamespace) -> None:
             max_images=args.max_images,
             resize_method=args.resize_method,
             input_scale=_to_float_pair(args.input_scale),
+            bgr=args.bgr,
             verbose=args.verbose,
         )
 
@@ -1488,6 +1497,11 @@ def _main() -> None:
         nargs=2,
         default=[0.0, 1.0],
         help="Input value range. Default is [0.0, 1.0].",
+    )
+    calibration_parser.add_argument(
+        "--bgr",
+        action="store_true",
+        help="Calibrate on BGR images instead of RGB, for engines that swap channels themselves.",
     )
 
     # warmup arguments parser
