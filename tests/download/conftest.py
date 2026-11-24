@@ -52,6 +52,8 @@ ROUTING_CASES = [
     pytest.param("yolov26n-cls", "ultralytics", id="ultralytics-yolov26-cls"),
     pytest.param("yolov26n-pose", "ultralytics", id="ultralytics-yolov26-pose"),
     pytest.param("yolov26n-obb", "ultralytics", id="ultralytics-yolov26-obb"),
+    pytest.param("yoloe-11s-seg", "yoloe", id="yoloe"),
+    pytest.param("yoloe-11s-seg-pf", "yoloe_pf", id="yoloe-pf"),
 ]
 
 

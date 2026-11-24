@@ -53,6 +53,7 @@ _EXPECTED_FAMILIES = [
     "yolov26_cls",
     "yolov26_pose",
     "yolov26_obb",
+    "yoloe",
 ]
 
 _EXPECTED_MODELS = [
@@ -107,6 +108,11 @@ _EXPECTED_MODELS = [
     "yolov26n-cls",
     "yolov26n-pose",
     "yolov26n-obb",
+    "yoloe-v8s-seg",
+    "yoloe-11s-seg",
+    "yoloe-11s-seg-pf",
+    "yoloe-26n-seg",
+    "yoloe-26x-seg-pf",
 ]
 
 

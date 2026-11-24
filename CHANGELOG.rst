@@ -59,6 +59,12 @@ Added
   ``PPOCRRecognizer``, ``PPOCR``)
 * ``download`` / ``download_model`` and ``trtutils download``, with keyword-only ``batch`` and
   ``dynamic`` (CLI ``--batch`` / ``--dynamic``) for static-batch or symbolic-batch exports
+* ``models.YOLOE`` and downloads of the YOLOE open-vocabulary segmenters (``yoloe-v8{s,m,l}-seg``,
+  ``yoloe-11{s,m,l}-seg``, ``yoloe-26{n,s,m,l,x}-seg`` and their prompt-free ``-pf`` variants).
+  The class prompts are fixed at export: ``classes`` on ``download`` / ``download_model`` /
+  ``Model.download`` (CLI ``--classes``), default the 80 COCO names, accepted only by
+  exporters registered with ``classes=True``. The names are written next to the ONNX as
+  ``<output stem>.classes.txt``, one per line in class id order
 * ``trtutils.Buffer`` / ``MemoryLocation`` (also ``core.Buffer``): one typed allocation on the
   host (pageable, pinned, or pinned and mapped) or the device, reference counted so views never
   outlive it

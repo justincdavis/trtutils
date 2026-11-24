@@ -125,6 +125,7 @@ _DEFAULTS: dict[str, dict[str, object]] = {
         "list_models": False,
         "opset": 17,
         "imgsz": None,
+        "classes": None,
         "batch": None,
         "dynamic": None,
         "requirements_export": None,
@@ -253,6 +254,20 @@ def test_download_imgsz_forwarded(imgsz, expected) -> None:
     with patch("trtutils.__main__.trtutils.download.download") as mock_dl:
         _download(_args("download", imgsz=imgsz))
     assert mock_dl.call_args.args[3] == expected
+
+
+@pytest.mark.parametrize(
+    "classes",
+    [
+        pytest.param(None, id="unset"),
+        pytest.param(["person", "traffic light"], id="names"),
+    ],
+)
+def test_download_classes_forwarded(classes) -> None:
+    """The CLI's --classes reaches download() as the list of names, unset as None."""
+    with patch("trtutils.__main__.trtutils.download.download") as mock_dl:
+        _download(_args("download", classes=classes))
+    assert mock_dl.call_args.kwargs["classes"] == classes
 
 
 def test_download_list_models_skips_download() -> None:

@@ -19,7 +19,7 @@ from ._rfdetr import export_rfdetr
 from ._rtdetr import export_rtdetrv1, export_rtdetrv2, export_rtdetrv3
 from ._timm import export_timm_classifier
 from ._torchvision import export_torchvision_classifier
-from ._ultralytics import export_ultralytics
+from ._ultralytics import export_ultralytics, export_yoloe, export_yoloe_pf
 from ._yolo import (
     export_yolov7,
     export_yolov9,
@@ -50,6 +50,9 @@ class Exporter(NamedTuple):
     hw : bool
         Whether ``fn`` accepts a non-square ``imgsz`` as a ``(height, width)`` tuple. When
         False, ``fn`` only ever gets an int and a non-square size is rejected.
+    classes : bool
+        Whether ``fn`` accepts ``classes``, the class names (text prompts) baked into an
+        open-vocabulary export. When False, a ``classes`` request is rejected.
 
     """
 
@@ -57,6 +60,7 @@ class Exporter(NamedTuple):
     batch: bool = False
     dynamic_default: bool = False
     hw: bool = False
+    classes: bool = False
 
 
 # config entries name their exporter with the "exporter" key
@@ -82,6 +86,8 @@ EXPORTERS: dict[str, Exporter] = {
     "yolov10": Exporter(export_yolov10, batch=True),
     "yolov12": Exporter(export_yolov12, batch=True),
     "yolov13": Exporter(export_yolov13, batch=True),
+    "yoloe": Exporter(export_yoloe, batch=True, classes=True),
+    "yoloe_pf": Exporter(export_yoloe_pf, batch=True),
     "yolox": Exporter(export_yolox),
 }
 
@@ -104,6 +110,8 @@ __all__ = [
     "export_timm_classifier",
     "export_torchvision_classifier",
     "export_ultralytics",
+    "export_yoloe",
+    "export_yoloe_pf",
     "export_yolov7",
     "export_yolov9",
     "export_yolov10",

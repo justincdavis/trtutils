@@ -207,6 +207,28 @@ def test_trtexec_passthrough_args() -> None:
             {"imgsz": [256, 128]},
             id="download-imgsz-height-width",
         ),
+        pytest.param(
+            ["trtutils", "download", "--model", "m", "--output", _ONNX],
+            "trtutils.__main__._download",
+            {"classes": None},
+            id="download-classes-unset",
+        ),
+        pytest.param(
+            [
+                "trtutils",
+                "download",
+                "--model",
+                "m",
+                "--output",
+                _ONNX,
+                "--classes",
+                "person",
+                "traffic light",
+            ],
+            "trtutils.__main__._download",
+            {"classes": ["person", "traffic light"]},
+            id="download-classes",
+        ),
     ],
 )
 def test_subcommand_defaults(argv, mock_target, expected) -> None:

@@ -114,6 +114,8 @@ Classes
     Alias for the Segmenter class with args preset for YOLOv11-Seg.
 :class:`YOLOv26Seg`
     Alias for the Segmenter class with args preset for YOLOv26-Seg.
+:class:`YOLOE`
+    Alias for the Segmenter class with args preset for YOLOE (open-vocabulary).
 :class:`YOLOv8Pose`
     Alias for the PoseEstimator class with args preset for YOLOv8-Pose.
 :class:`YOLOv11Pose`
@@ -192,7 +194,7 @@ from .hand_interaction import HOIDETR, Hands23
 from .obb_detectors import YOLOv8OBB, YOLOv11OBB, YOLOv26OBB
 from .ocr import PPOCR, PPOCRDetector, PPOCRRecognizer
 from .pose_estimators import YOLOv8Pose, YOLOv11Pose, YOLOv26Pose
-from .segmenters import YOLOv8Seg, YOLOv11Seg, YOLOv26Seg
+from .segmenters import YOLOE, YOLOv8Seg, YOLOv11Seg, YOLOv26Seg
 
 __all__ = [
     "DEIM",
@@ -203,6 +205,7 @@ __all__ = [
     "RFDETR",
     "VGG",
     "YOLO",
+    "YOLOE",
     "YOLOX",
     "AlexNet",
     "ConvNeXt",

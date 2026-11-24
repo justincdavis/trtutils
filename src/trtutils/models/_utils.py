@@ -42,6 +42,7 @@ def download_model_internal(
     imgsz: int | tuple[int, int] = 640,
     opset: int = 17,
     *,
+    classes: Sequence[str] | None = None,
     simplify: Sequence[str] | bool | None = None,
     no_cache: bool | None = None,
     verbose: bool | None = None,
@@ -63,6 +64,8 @@ def download_model_internal(
         Image size to use during export: one int for square, else ``(height, width)``.
     opset : int, optional
         ONNX opset to use during export.
+    classes : Sequence[str], optional
+        Class names (text prompts) to bake into an open-vocabulary model.
     simplify : Sequence[str] or bool, optional
         Whether and how to simplify the ONNX model after export. True runs the default
         tools (polygraphy, onnxslim), a sequence of tool names runs those in order,
@@ -86,6 +89,7 @@ def download_model_internal(
         output=Path(output),
         imgsz=imgsz,
         opset=opset,
+        classes=classes,
         simplify=simplify,
         no_cache=no_cache,
         verbose=verbose,

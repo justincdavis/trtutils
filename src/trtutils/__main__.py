@@ -1215,6 +1215,8 @@ def _download(args: SimpleNamespace) -> None:
             ONNX opset version to use.
         - imgsz : list[int] | None
             Image size for the model: one size (square) or height and width.
+        - classes : list[str] | None
+            Class names (text prompts) to bake into an open-vocabulary model.
         - batch : int
             Batch size to export the model at.
         - dynamic : bool
@@ -1257,6 +1259,7 @@ def _download(args: SimpleNamespace) -> None:
         args.opset,
         None if args.imgsz is None else normalize_imgsz(args.imgsz),
         requirements_export=args.requirements_export,
+        classes=args.classes,
         batch=args.batch,
         dynamic=args.dynamic,
         simplify=simplify_value,
@@ -2057,6 +2060,17 @@ def _main() -> None:
         default=None,
         help="Image size to use for the model: one size for a square image, or HEIGHT WIDTH. "
         "Only some exporters accept a non-square size. If not specified, uses the model's default.",
+    )
+    download_parser.add_argument(
+        "--classes",
+        type=str,
+        nargs="+",
+        metavar="NAME",
+        default=None,
+        help="Class names (text prompts) to bake into an open-vocabulary model such as "
+        "yoloe-11s-seg, in class id order; quote names with spaces. They are also written "
+        "next to the ONNX as <output stem>.classes.txt. Defaults to the 80 COCO names. "
+        "Models with a fixed vocabulary reject it.",
     )
     download_parser.add_argument(
         "--batch",

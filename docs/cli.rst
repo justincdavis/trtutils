@@ -447,6 +447,9 @@ Download a model from remote source and convert to ONNX format. This command sup
     # Download RT-DETRv1 model
     python3 -m trtutils download --model rtdetrv1_r18 --output rtdetrv1.onnx
 
+    # Download YOLOE with its classes (text prompts) baked in; also writes yoloe.classes.txt
+    python3 -m trtutils download --model yoloe-11s-seg --output yoloe.onnx --classes person car "traffic light"
+
 Options
 ^^^^^^^
 
@@ -462,6 +465,10 @@ Options
 * ``--imgsz``: Image size to use for the model: one value for a square image, or two values
   ``HEIGHT WIDTH`` (for example ``--imgsz 256 128``). Only exporters that support it accept a
   non-square size; the others raise an error (default: the model's own size, usually 640)
+* ``--classes``: Class names (text prompts) to bake into an open-vocabulary model (YOLOE
+  text-prompt models), in class id order; quote names with spaces. The names are also
+  written next to the ONNX as ``<output stem>.classes.txt``. Defaults to the 80 COCO names;
+  other models raise an error. Changing the classes needs a new export and engine
 * ``--batch``: Export at a fixed batch size (default: 1). Supported by the Ultralytics
   models, YOLOv10/12/13, and torchvision classifiers; other families raise an error
 * ``--dynamic``: Export with a symbolic batch dimension so one ONNX builds engines for a
@@ -495,6 +502,12 @@ Supported Models
 * DEIM: Multiple configurations
 * DEIMv2: deimv2_atto, deimv2_femto, deimv2_pico, deimv2_n, deimv2_s, deimv2_m, deimv2_l, deimv2_x
 * RF-DETR: Multiple configurations
+
+**Open-vocabulary Models:**
+
+* YOLOE: yoloe-v8{s,m,l}-seg, yoloe-11{s,m,l}-seg, yoloe-26{n,s,m,l,x}-seg, each also as a
+  prompt-free ``-pf`` model (via Ultralytics). ``--classes`` sets the prompts of the
+  text-prompt models
 
 Notes
 ^^^^^

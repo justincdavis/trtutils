@@ -137,6 +137,16 @@ Instance Segmentation
    - GitHub: `ultralytics/ultralytics <https://github.com/ultralytics/ultralytics>`_
    - AGPL-3.0 and commercial licensed, be aware of license restrictions
 
+2. **YOLOE** (``models.YOLOE``) - open-vocabulary instance segmentation, see
+   :ref:`Open-Vocabulary Detection <open-vocabulary>`
+
+   - YOLOE-v8: ``yoloe-v8s-seg``, ``yoloe-v8m-seg``, ``yoloe-v8l-seg``
+   - YOLOE-11: ``yoloe-11s-seg``, ``yoloe-11m-seg``, ``yoloe-11l-seg``
+   - YOLOE-26: ``yoloe-26n-seg``, ``yoloe-26s-seg``, ``yoloe-26m-seg``, ``yoloe-26l-seg``, ``yoloe-26x-seg``
+   - Prompt-free: each of the above with ``-pf`` (e.g. ``yoloe-11s-seg-pf``)
+   - Docs: `docs.ultralytics.com/models/yoloe <https://docs.ultralytics.com/models/yoloe/>`_
+   - AGPL-3.0 and commercial licensed, be aware of license restrictions
+
 Pose Estimation
 ----------------
 
@@ -166,6 +176,46 @@ Note: YOLOv26 segmentation, pose, and OBB heads are exported raw (``end2end=Fals
 one-to-many head decoded with NMS in trtutils. Ultralytics' default ``.pt`` predict uses the
 NMS-free one-to-one head, so results can differ slightly from it (they match ultralytics run
 on the same raw export).
+
+.. _open-vocabulary:
+
+Open-Vocabulary Detection
+-------------------------
+
+YOLOE detects and segments objects named by text prompts. trtutils supports it in its
+fixed-prompt form: the class names are chosen when the model is downloaded, embedded by
+Ultralytics' text encoder (MobileCLIP) at export time and baked into the ONNX, so the engine is
+an ordinary closed-set segmentation model run by ``Segmenter`` (``models.YOLOE``). Changing
+the classes means exporting the ONNX again and rebuilding the engine. Text prompts at run time
+(a text encoder engine feeding the image engine) are not supported yet.
+
+- ``--classes`` (``download(..., classes=[...])``, ``YOLOE.download(..., classes=[...])``)
+  sets the prompts in class id order. Without it, text-prompt models get the 80 COCO class
+  names, so their class ids line up with the COCO-trained YOLO models. Models with a fixed
+  vocabulary (every other model, and the prompt-free ``-pf`` YOLOE models) reject it.
+- The download writes the class names next to the ONNX, one per line in class id order:
+  ``yoloe.onnx`` gets ``yoloe.classes.txt``. Results carry class ids; look the names up there:
+
+  .. code-block:: python
+
+      from pathlib import Path
+
+      from trtutils.models import YOLOE
+
+      YOLOE.download("yoloe-11s-seg", "yoloe.onnx", classes=["person", "forklift", "pallet"])
+      YOLOE.build("yoloe.onnx", "yoloe.engine")
+      names = Path("yoloe.classes.txt").read_text().splitlines()
+      model = YOLOE("yoloe.engine")
+      for bbox, score, class_id, mask in model.end2end(image):
+          print(names[class_id], score)
+
+- Prompt-free (``-pf``) models keep their built-in vocabulary of 4585 names (also written to
+  the ``.classes.txt`` file). Their head has one output row per name: on an RTX 5080 their
+  ``end2end`` takes about 1.1-2 ms longer than the same model with prompts. The number of
+  prompts itself (6 or 80) makes no measurable difference.
+- The released YOLOE weights are segmentation checkpoints only (no detection-only weights);
+  the boxes come with the segmentation results.
+- YOLOE-26 heads export raw (``end2end=False``) and are decoded with NMS, as for YOLOv26-seg.
 
 Hand-Object Interaction
 ------------------------
@@ -247,6 +297,7 @@ Instance Segmentation Models
 - **YOLOv8-seg**: ``yolov8n-seg``, ``yolov8s-seg``, ``yolov8m-seg``, ``yolov8l-seg``, ``yolov8x-seg`` (via Ultralytics)
 - **YOLOv11-seg**: ``yolov11n-seg``, ``yolov11s-seg``, ``yolov11m-seg``, ``yolov11l-seg``, ``yolov11x-seg`` (via Ultralytics)
 - **YOLOv26-seg**: ``yolov26n-seg``, ``yolov26s-seg``, ``yolov26m-seg``, ``yolov26l-seg``, ``yolov26x-seg`` (via Ultralytics)
+- **YOLOE** (open-vocabulary, ``--classes``): ``yoloe-v8s-seg``, ``yoloe-v8m-seg``, ``yoloe-v8l-seg``, ``yoloe-11s-seg``, ``yoloe-11m-seg``, ``yoloe-11l-seg``, ``yoloe-26n-seg``, ``yoloe-26s-seg``, ``yoloe-26m-seg``, ``yoloe-26l-seg``, ``yoloe-26x-seg``, and the prompt-free ``-pf`` variant of each (via Ultralytics)
 
 Pose Estimation Models
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -277,7 +328,7 @@ for the weights: check the source before using them.
    * - Family
      - License
    * - Ultralytics YOLO (YOLOv3, v5, v8, v11, v26 and their seg / cls / pose / obb heads;
-       the ``u`` variants of YOLOv9, v10, v12; ``rtdetrv1_lu`` / ``rtdetrv1_xu``)
+       the ``u`` variants of YOLOv9, v10, v12; ``rtdetrv1_lu`` / ``rtdetrv1_xu``; YOLOE)
      - AGPL-3.0 (Ultralytics also sells an enterprise license)
    * - YOLOv7, YOLOv9
      - GPL-3.0
@@ -325,5 +376,6 @@ Download models using the CLI:
     $ python -m trtutils download --model yolov8n --output yolov8n.onnx
     $ python -m trtutils download --model yolov11m --output yolov11m.onnx --imgsz 640 --opset 17
     $ python -m trtutils download --model yoloxs --output yoloxs.onnx --imgsz 640 --opset 17
+    $ python -m trtutils download --model yoloe-11s-seg --output yoloe.onnx --classes person car "traffic light"
 
 For more information on the download command, see the :ref:`CLI Reference <cli>`.

@@ -33,6 +33,11 @@ EXPORT_CASES = [
     pytest.param("yolov11n-seg", {"imgsz": 320}, _YOLO, id="ultralytics-seg"),
     pytest.param("yolov8n-pose", {"imgsz": 320}, _YOLO, id="ultralytics-pose"),
     pytest.param(
+        "yoloe-11s-seg", {"imgsz": 320, "classes": ["person", "car"]}, _YOLO, id="yoloe-classes"
+    ),
+    pytest.param("yoloe-26n-seg", {"imgsz": 320, "batch": 2}, _YOLO_B2, id="yoloe26-default"),
+    pytest.param("yoloe-v8s-seg-pf", {"imgsz": 320}, _YOLO, id="yoloe-prompt-free"),
+    pytest.param(
         "yolov26n-obb", {}, {"images": [1, 3, 1024, 1024]}, id="ultralytics-obb-default-imgsz"
     ),
     pytest.param(
@@ -159,6 +164,26 @@ def test_export_family(tmp_path, model, kwargs, expected) -> None:
     out = tmp_path / f"{model}.onnx"
     download(model, out, **kwargs)
     _check_shapes(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("model", "classes", "expected"),
+    [
+        pytest.param("yoloe-11s-seg", ["horse", "traffic light"], None, id="text-prompts"),
+        pytest.param("yoloe-26n-seg", None, 80, id="default-coco"),
+        pytest.param("yoloe-v8s-seg-pf", None, 4585, id="prompt-free"),
+    ],
+)
+def test_yoloe_export_writes_class_names(tmp_path, model, classes, expected) -> None:
+    """The names file holds one name per class of output0 (4 box + classes + 32 mask rows)."""
+    out = tmp_path / f"{model}.onnx"
+    download(model, out, imgsz=320, classes=classes)
+    names = out.with_suffix(".classes.txt").read_text().splitlines()
+    assert len(names) == (len(classes) if classes is not None else expected)
+    assert classes is None or names == classes
+    output0 = onnx.load(str(out), load_external_data=False).graph.output[0]
+    assert output0.name == "output0"
+    assert output0.type.tensor_type.shape.dim[1].dim_value == 4 + len(names) + 32
 
 
 @pytest.fixture(scope="module")

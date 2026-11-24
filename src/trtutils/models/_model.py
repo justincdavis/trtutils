@@ -163,6 +163,7 @@ class Model:
         imgsz: int | tuple[int, int] | None = None,
         opset: int = 17,
         *,
+        classes: Sequence[str] | None = None,
         simplify: Sequence[str] | bool | None = True,
         no_cache: bool | None = None,
         verbose: bool | None = None,
@@ -181,6 +182,10 @@ class Model:
             (the exporter must support non-square sizes). Defaults to the model's size.
         opset : int
             The ONNX opset to use for the model. Default is 17.
+        classes : Sequence[str], optional
+            The class names (text prompts) to bake into an open-vocabulary model, in class
+            id order. Only text-prompt models (YOLOE) take them; they default to the 80 COCO
+            names and write the names next to the ONNX as ``<output stem>.classes.txt``.
         simplify : Sequence[str] or bool, optional
             Whether and how to simplify the ONNX model after export. True (default) runs
             the default tools (polygraphy, onnxslim), a sequence of tool names runs those
@@ -194,7 +199,8 @@ class Model:
         ------
         ValueError
             If imgsz is invalid for the model, not divisible by its patch size, or
-            non-square for an exporter that only takes square sizes.
+            non-square for an exporter that only takes square sizes, or classes are given
+            to a model with a fixed vocabulary.
 
         Notes
         -----
@@ -230,6 +236,7 @@ class Model:
             output=output,
             imgsz=imgsz,
             opset=opset,
+            classes=classes,
             simplify=simplify,
             no_cache=no_cache,
             verbose=verbose,
