@@ -379,7 +379,8 @@ def f64(value: float) -> tuple[str, float]:
     return ("f64", value)
 
 
-@lru_cache(maxsize=1024)
+# typed: 1, 1.0 and True hash equal but pack as different kernel argument types
+@lru_cache(maxsize=1024, typed=True)
 def cached_args(kernel: Kernel, *values: float | tuple[str, float]) -> KernelArgs:
     """
     Memoized :meth:`Kernel.create_args` for scalar arguments.
