@@ -12,6 +12,7 @@ import pytest
 from tests._gpu_fixtures import engine_cache_path
 from tests.conftest import DATA_DIR
 from trtutils import TRTEngine
+from trtutils._flags import FLAGS
 from trtutils.core import Buffer, MemoryLocation
 from trtutils.image._schema import TextDetectorOutputSchema, TextRecognizerOutputSchema
 from trtutils.image.preprocessors import crop_text_region
@@ -20,6 +21,8 @@ from trtutils.models import PPOCR, PPOCRDetector, PPOCRRecognizer
 DET_ONNX = DATA_DIR / "ppocr" / "ppocrv4_det_736.onnx"
 REC_ONNX = DATA_DIR / "ppocr" / "ppocrv4_rec_48.onnx"
 LINES = ["Hello World", "TensorRT inference 2026", "quick brown fox jumps"]
+# before TensorRT 10 contexts cannot share a profile, so the engine keeps a single context
+POOLED = FLAGS.PROFILE_SHARING
 
 
 def _words(text: str) -> str:
@@ -386,8 +389,9 @@ def test_engine_shape_contexts_match_single_context(rec_engine, shape_contexts) 
                 np.testing.assert_array_equal(g, w)
     # the pool also holds the context made at the engine's max shape, which no input uses;
     # when every shape fits, the repeated cycle leaves each context a graph to replay
-    assert len(pooled._parked) + 1 == min(shape_contexts, len(inputs) + 1)
-    if shape_contexts > len(inputs):
+    contexts = min(shape_contexts, len(inputs) + 1) if POOLED else 1
+    assert len(pooled._parked) + 1 == contexts
+    if contexts > len(inputs):
         graphs = [pooled._cuda_graphs, *(state["_cuda_graphs"] for state in pooled._parked.values())]
         assert sum(len(g) for g in graphs) == len(inputs)
 
@@ -398,7 +402,7 @@ def test_ocr_without_width_bucket_has_no_pool(det_engine, rec_engine) -> None:
     assert recognizer._width_bucket is None
     assert recognizer._engine._shape_contexts is None
     bucketed = PPOCR(det_engine, rec_engine, width_bucket=32).recognizer
-    assert bucketed._engine._shape_contexts is not None
+    assert (bucketed._engine._shape_contexts is not None) is POOLED
 
 
 @pytest.mark.parametrize("width_bucket", [32, 100, 5000])

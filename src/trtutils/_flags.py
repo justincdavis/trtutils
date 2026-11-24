@@ -79,6 +79,10 @@ class Flags:
     PLUGIN_CREATOR_LOOKUP : bool
         Whether trt.IPluginRegistry.get_plugin_creator exists. Removed in
         TensorRT 11, use get_creator there.
+    PROFILE_SHARING : bool
+        Whether the execution contexts of an engine can share an optimization
+        profile, which TensorRT allows from version 10. Before that every
+        context needs a profile of its own.
     SM_ARCH : str
         The GPU architecture name. E.g. "turing", "blackwell".
     DEVICE_NAME : str
@@ -115,6 +119,7 @@ class Flags:
     DYNAMIC_RANGE: bool = False
     WEAK_TYPING: bool = False
     PLUGIN_CREATOR_LOOKUP: bool = False
+    PROFILE_SHARING: bool = False
     TRT_HAS_UINT8: bool = False
     TRT_HAS_INT64: bool = False
     NEW_CAN_RUN_ON_DLA: bool = False
@@ -216,6 +221,8 @@ FLAGS.INT8_CALIBRATION = hasattr(trt, "IInt8EntropyCalibrator2")
 FLAGS.DYNAMIC_RANGE = hasattr(getattr(trt, "ITensor", None), "set_dynamic_range")
 FLAGS.WEAK_TYPING = hasattr(getattr(trt, "BuilderFlag", None), "FP16")
 FLAGS.PLUGIN_CREATOR_LOOKUP = hasattr(getattr(trt, "IPluginRegistry", None), "get_plugin_creator")
+# the cpu stubs and the docs mock have no version, they stand in for a current TensorRT
+FLAGS.PROFILE_SHARING = not (0, 0) < FLAGS.TRT_VERSION < (10, 0)
 
 # Set system flags
 FLAGS.IS_JETSON = Path("/etc/nv_tegra_release").exists()

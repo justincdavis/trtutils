@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "deim", "license": "Apache-2.0"},
   "deim_dfine_n": {
     "id": "1ZPEhiU9nhW4M5jLnYOFwTSLQC1Ugf62e",
     "config": "deim_hgnetv2_n_coco.yml",

@@ -1,4 +1,4 @@
-.PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test test-cpu test-cov memcheck release \
+.PHONY: help clean benchmark-bootstrap docs fix ci ci_env typecheck test test-cpu test-cov test-cov-cpu test-cov-gpu test-cov-jetson memcheck release \
        test-cu11 test-cu12 test-cu13 ci-cu11 ci-cu12 ci-cu13 dockers
 
 help:
@@ -12,7 +12,11 @@ help:
 	@echo "  typecheck           to run the ty static type checker"
 	@echo "  test                to run the tests"
 	@echo "  test-cpu            to run CPU-only tests"
-	@echo "  test-cov            to run tests with coverage"
+	@echo "  test-cov            to run tests with coverage and check this platform's thresholds (gpu or jetson)"
+	@echo "  test-cov-cpu        to run CPU-only tests with coverage and check the cpu thresholds (the CI gate)"
+	@echo "  test-cov-gpu        to run tests with coverage and check the gpu thresholds"
+	@echo "  test-cov-jetson     to run tests with coverage and check the jetson thresholds"
+	@echo "                      (COV_ARGS=--update ratchets thresholds up)"
 	@echo "  memcheck            to run tests under compute-sanitizer (MEMCHECK_ARGS=<pytest args>)"
 	@echo "  release             to perform all actions required for a release"
 	@echo "  dockers             to build all project Docker images (see docker/build.sh --help)"
@@ -45,7 +49,17 @@ test-cpu:
 	python3 -m pytest -rP -v tests/ -m cpu
 
 test-cov:
-	python3 -m pytest --cov=src/trtutils --cov-branch --cov-report=term-missing --cov-report=json:.coverage.json tests/
+	./ci/run_coverage.sh $(COV_ARGS)
+
+test-cov-cpu:
+	./ci/run_cpu_tests.sh --cov=src/trtutils --cov-branch --cov-report=term --cov-report=json:.coverage.json
+	python3 ci/check_coverage.py --platform cpu --tolerance 0 $(COV_ARGS)
+
+test-cov-gpu:
+	TRTUTILS_COVERAGE_PLATFORM=gpu ./ci/run_coverage.sh $(COV_ARGS)
+
+test-cov-jetson:
+	TRTUTILS_COVERAGE_PLATFORM=jetson ./ci/run_coverage.sh $(COV_ARGS)
 
 fix:
 	./ci/run_ruff.sh --format

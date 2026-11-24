@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "rtdetrv1", "license": "Apache-2.0"},
   "rtdetrv1_r18": {
     "url": "https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r18vd_5x_coco_objects365_from_paddle.pth",
     "config": "rtdetr_r18vd_6x_coco.yml",
@@ -25,10 +26,14 @@
     "name": "rtdetr_r101vd_2x_coco_objects365_from_paddle"
   },
   "rtdetrv1_lu": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "rtdetr-l"
   },
   "rtdetrv1_xu": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "rtdetr-x"
   }

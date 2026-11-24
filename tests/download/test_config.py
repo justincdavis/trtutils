@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import pytest
 
+from trtutils.download._models import EXPORTERS
+from trtutils.download._tools import normalize_imgsz
+
 pytestmark = pytest.mark.cpu
 
 _EXPECTED_FAMILIES = [
@@ -177,3 +180,45 @@ def test_dfine_weight_names_match_urls(model_configs) -> None:
     """The exporter loads <name>.pth, which run_download saves under the URL's filename."""
     for config in model_configs["dfine"].values():
         assert config["url"].rsplit("/", 1)[1] == config["name"] + ".pth"
+
+
+def test_every_entry_names_exporter_and_license(model_configs) -> None:
+    """Every model names a registered exporter and a non-empty license, and no _defaults leaks."""
+    for family_name, family in model_configs.items():
+        assert "_defaults" not in family, family_name
+        for model_name, config in family.items():
+            assert config.get("exporter") in EXPORTERS, model_name
+            assert isinstance(config.get("license"), str), model_name
+            assert config["license"].strip(), model_name
+
+
+@pytest.mark.parametrize(
+    ("family", "model", "exporter", "license_name"),
+    [
+        pytest.param("yolov9", "yolov9t", "yolov9", "GPL-3.0", id="default"),
+        pytest.param("yolov9", "yolov9tu", "ultralytics", "AGPL-3.0", id="entry-overrides"),
+        pytest.param("rtdetrv1", "rtdetrv1_lu", "ultralytics", "AGPL-3.0", id="rtdetr-ultralytics"),
+        pytest.param(
+            "depth_anything_v2",
+            "depth_anything_v2_base",
+            "depth_anything_v2",
+            "CC-BY-NC-4.0",
+            id="license-only-override",
+        ),
+    ],
+)
+def test_defaults_merge(model_configs, family, model, exporter, license_name) -> None:
+    """A file's _defaults fill each entry, entry keys win, and the entry's own keys survive."""
+    config = model_configs[family][model]
+    assert (config["exporter"], config["license"]) == (exporter, license_name)
+    assert "name" in config
+
+
+def test_config_imgsz_parses_and_matches_exporter(model_configs) -> None:
+    """Every config imgsz is one size or (height, width), non-square only for hw exporters."""
+    for family in model_configs.values():
+        for model_name, config in family.items():
+            if "imgsz" not in config:
+                continue
+            imgsz = normalize_imgsz(config["imgsz"])
+            assert isinstance(imgsz, int) or EXPORTERS[config["exporter"]].hw, model_name

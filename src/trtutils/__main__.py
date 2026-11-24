@@ -18,6 +18,7 @@ from typing_extensions import TypeGuard
 import trtutils
 from trtutils._log import LOG
 from trtutils.core import cache as caching_tools
+from trtutils.download._tools import normalize_imgsz
 from trtutils.image import draw_bboxes, draw_text
 from trtutils.image._image_model import PREPROCESSOR_METHODS
 from trtutils.image.preprocessors._base import DEFAULT_CROP_PCT, RESIZE_METHODS
@@ -863,7 +864,7 @@ def _classify(args: SimpleNamespace) -> None:
         - cpu_resize : bool or None
             Resize on the CPU, None to resize there only what the preprocessor cannot.
         - resize_method : str
-            Image resize method ('letterbox', 'linear', or 'center_crop').
+            Image resize method ('letterbox', 'linear', 'center_crop' or 'pad').
         - crop_pct : float
             Fraction of the resized image kept by center_crop.
         - dla_core : int or None
@@ -1212,8 +1213,8 @@ def _download(args: SimpleNamespace) -> None:
             Path to save the ONNX model file.
         - opset : int
             ONNX opset version to use.
-        - imgsz : int
-            Image size for the model.
+        - imgsz : list[int] | None
+            Image size for the model: one size (square) or height and width.
         - batch : int
             Batch size to export the model at.
         - dynamic : bool
@@ -1254,7 +1255,7 @@ def _download(args: SimpleNamespace) -> None:
         args.model,
         args.output,
         args.opset,
-        args.imgsz,
+        None if args.imgsz is None else normalize_imgsz(args.imgsz),
         requirements_export=args.requirements_export,
         batch=args.batch,
         dynamic=args.dynamic,
@@ -2051,8 +2052,11 @@ def _main() -> None:
     download_parser.add_argument(
         "--imgsz",
         type=int,
+        nargs="+",
+        metavar="SIZE",
         default=None,
-        help="Image size to use for the model. If not specified, uses the model's default.",
+        help="Image size to use for the model: one size for a square image, or HEIGHT WIDTH. "
+        "Only some exporters accept a non-square size. If not specified, uses the model's default.",
     )
     download_parser.add_argument(
         "--batch",

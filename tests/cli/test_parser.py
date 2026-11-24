@@ -189,6 +189,24 @@ def test_trtexec_passthrough_args() -> None:
             {"cpu_resize": False},
             id="classify-no-cpu-resize-flag",
         ),
+        pytest.param(
+            ["trtutils", "download", "--model", "m", "--output", _ONNX],
+            "trtutils.__main__._download",
+            {"imgsz": None},
+            id="download-imgsz-unset",
+        ),
+        pytest.param(
+            ["trtutils", "download", "--model", "m", "--output", _ONNX, "--imgsz", "640"],
+            "trtutils.__main__._download",
+            {"imgsz": [640]},
+            id="download-imgsz-square",
+        ),
+        pytest.param(
+            ["trtutils", "download", "--model", "m", "--output", _ONNX, "--imgsz", "256", "128"],
+            "trtutils.__main__._download",
+            {"imgsz": [256, 128]},
+            id="download-imgsz-height-width",
+        ),
     ],
 )
 def test_subcommand_defaults(argv, mock_target, expected) -> None:

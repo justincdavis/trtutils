@@ -23,4 +23,19 @@ jobs:
       - name: Install dependencies
         run: uv pip install -e ".[pytest]"
       - name: Run CPU tests
+        if: matrix.python-version != '3.12'
         run: ./ci/run_cpu_tests.sh
+      # Python 3.12 also checks per-module coverage against the "cpu" section of
+      # .coverage-threshold.json. Each module's floor is the higher of the PR's
+      # threshold and the base branch's, so a PR cannot pass by lowering them.
+      - name: Fetch the base branch's coverage thresholds
+        if: matrix.python-version == '3.12' && github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          git show FETCH_HEAD:.coverage-threshold.json > "$RUNNER_TEMP/base-thresholds.json"
+          echo "COV_ARGS=--verbose --base-thresholds $RUNNER_TEMP/base-thresholds.json" >> "$GITHUB_ENV"
+      - name: Run CPU tests and check coverage
+        if: matrix.python-version == '3.12'
+        run: make test-cov-cpu COV_ARGS="${COV_ARGS:---verbose}"

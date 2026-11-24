@@ -44,6 +44,7 @@ class Detector(ImageModel, DetectorInterface):
     """Implementation of object detectors."""
 
     _OUTPUT_SCHEMA = OutputSchema
+    _supports_pad = False
     _CUDA_POSTPROCESSOR = CUDADetPostprocessor
     # opt in: unletterboxing a few hundred boxes does not always beat the host
     _cuda_post_default = False

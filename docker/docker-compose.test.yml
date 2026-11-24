@@ -21,7 +21,6 @@ x-service-common: &service-common
     - ../demos:/workspace/trtutils/demos
     - ../examples:/workspace/trtutils/examples
     - ../.coverage-threshold.json:/workspace/trtutils/.coverage-threshold.json
-    - ../.coverage-threshold.jetson.json:/workspace/trtutils/.coverage-threshold.jetson.json
     - ../.coverage.json:/workspace/trtutils/.coverage.json
   working_dir: /workspace/trtutils
 

@@ -34,7 +34,7 @@ for entry in "${MODELS[@]}"; do
 
   printf 'Downloading %s -> %s...\n' "$model" "$output_path"
 
-  python3 -m trtutils download --model "$model" --output "$output_path" --accept || true
+  python3 -m trtutils download --model "$model" --output "$output_path" || true
 
   if [[ -f "$output_path" ]]; then
     successes+=("$model:$output_path")
