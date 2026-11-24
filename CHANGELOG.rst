@@ -118,6 +118,8 @@ Added
 * ``models.YOLOv9Seg``: Ultralytics YOLOv9-seg instance segmentation (``yolov9c-seg``,
   ``yolov9e-seg``, the sizes Ultralytics publishes). The Ultralytics exporter now names the
   ``.pt`` file, so weights missing from Ultralytics' built-in asset list download too
+* ``models.YOLOv12Seg``: YOLOv12-seg instance segmentation (``yolov12n-seg`` to
+  ``yolov12x-seg``) from the YOLOv12 authors' release, exported with the YOLOv12 exporter
 * ``trtutils.profile_engine``, and the CLI commands ``detect``, ``classify``, ``download``,
   ``profile``, ``build_yolo``, ``quantize``, ``generate_calibration`` and ``clear_cache``
 * ``trtutils.Device``, ``get_device``, ``set_device`` (top-level exports)

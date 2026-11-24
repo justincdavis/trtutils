@@ -12,11 +12,13 @@ import pytest
 from tests.conftest import DATA_DIR, PREPROCESSORS
 from trtutils.image._schema import SegmenterOutputSchema
 from trtutils.image.postprocessors import postprocess_yolo_seg
-from trtutils.models import YOLOv9Seg
+from trtutils.models import YOLOv9Seg, YOLOv12Seg
 
 SEGMENTERS = [
     pytest.param(YOLOv9Seg, DATA_DIR / "yolov9_seg" / "yolov9c-seg_640.onnx", id="yolov9c-seg"),
     pytest.param(YOLOv9Seg, DATA_DIR / "yolov9_seg" / "yolov9e-seg_640.onnx", id="yolov9e-seg"),
+    pytest.param(YOLOv12Seg, DATA_DIR / "yolov12_seg" / "yolov12n-seg_640.onnx", id="yolov12n-seg"),
+    pytest.param(YOLOv12Seg, DATA_DIR / "yolov12_seg" / "yolov12x-seg_640.onnx", id="yolov12x-seg"),
 ]
 
 

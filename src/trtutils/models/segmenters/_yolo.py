@@ -36,6 +36,15 @@ class YOLOv11Seg(Segmenter, Model):
     _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
 
 
+class YOLOv12Seg(Segmenter, Model):
+    """Alias of Segmenter with default args for YOLOv12-Seg (the YOLOv12 authors' weights)."""
+
+    _model_type = "yolov12_seg"
+    _friendly_name = "YOLOv12-Seg"
+    _default_imgsz = 640
+    _input_tensors: ClassVar[list[tuple[str, str]]] = [("images", "image")]
+
+
 class YOLOv26Seg(Segmenter, Model):
     """
     Alias of Segmenter with default args for YOLOv26-Seg.

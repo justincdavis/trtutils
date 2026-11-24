@@ -155,6 +155,12 @@ Instance Segmentation
    - GitHub: `ultralytics/ultralytics <https://github.com/ultralytics/ultralytics>`_
    - AGPL-3.0 and commercial licensed, be aware of license restrictions
 
+2. **YOLOv12-seg** - the YOLOv12 authors' segmentation models (Ultralytics publishes none)
+
+   - ``yolov12n-seg``, ``yolov12s-seg``, ``yolov12m-seg``, ``yolov12l-seg``, ``yolov12x-seg``
+   - GitHub: `sunsmarterjie/yolov12 <https://github.com/sunsmarterjie/yolov12/tree/Seg>`_
+   - AGPL-3.0 licensed, be aware of license restrictions
+
 Semantic Segmentation
 ----------------------
 
@@ -230,8 +236,9 @@ Oriented Bounding Boxes
    - GitHub: `ultralytics/ultralytics <https://github.com/ultralytics/ultralytics>`_
    - AGPL-3.0 and commercial licensed, be aware of license restrictions
 
-Note: YOLOv12 does not publish segmentation, classification, pose, or OBB weights upstream
-(only detection), so it is absent from the three sections above and the classification list.
+Note: YOLOv12 has no pose or OBB weights upstream, and its classification weights (published
+by the YOLOv12 authors, not by Ultralytics) are not packaged yet, so it is absent from the pose,
+OBB, and classification lists.
 
 Note: YOLOv26 segmentation, pose, and OBB heads are exported raw (``end2end=False``): the
 one-to-many head decoded with NMS in trtutils. Ultralytics' default ``.pt`` predict uses the
@@ -324,6 +331,7 @@ Instance Segmentation Models
 
 - **YOLOv8-seg**: ``yolov8n-seg``, ``yolov8s-seg``, ``yolov8m-seg``, ``yolov8l-seg``, ``yolov8x-seg`` (via Ultralytics)
 - **YOLOv9-seg**: ``yolov9c-seg``, ``yolov9e-seg`` (via Ultralytics)
+- **YOLOv12-seg**: ``yolov12n-seg``, ``yolov12s-seg``, ``yolov12m-seg``, ``yolov12l-seg``, ``yolov12x-seg``
 - **YOLOv11-seg**: ``yolov11n-seg``, ``yolov11s-seg``, ``yolov11m-seg``, ``yolov11l-seg``, ``yolov11x-seg`` (via Ultralytics)
 - **YOLOv26-seg**: ``yolov26n-seg``, ``yolov26s-seg``, ``yolov26m-seg``, ``yolov26l-seg``, ``yolov26x-seg`` (via Ultralytics)
 
@@ -367,7 +375,7 @@ for the weights: check the source before using them.
      - AGPL-3.0 (Ultralytics also sells an enterprise license)
    * - YOLOv7, YOLOv9
      - GPL-3.0
-   * - YOLOv10, YOLOv12, YOLOv13
+   * - YOLOv10, YOLOv12 (detection and seg), YOLOv13
      - AGPL-3.0
    * - YOLOX
      - Apache-2.0

@@ -47,6 +47,7 @@ EXPORT_CASES = [
     pytest.param("yolov10n", {"imgsz": 320, "dynamic": True}, _YOLO_DYN, id="yolov10-dynamic"),
     pytest.param("yolov10n", {"imgsz": 320, "batch": 2}, _YOLO_B2, id="yolov10-batch2"),
     pytest.param("yolov12n", {"imgsz": 320, "dynamic": True}, _YOLO_DYN, id="yolov12-dynamic"),
+    pytest.param("yolov12n-seg", {"imgsz": 320}, _YOLO, id="yolov12-seg"),
     pytest.param("yolov13n", {"imgsz": 320, "batch": 2}, _YOLO_B2, id="yolov13-batch2"),
     pytest.param("yoloxn", {"imgsz": 320}, _YOLO, id="yolox"),
     pytest.param(
