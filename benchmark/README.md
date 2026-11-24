@@ -255,5 +255,4 @@ Output: `plots/patch_series_{device}.png`.
 
 - First-time download can take significant time (2-5 min per model)
 - Total disk space needed: ~5-10 GB for all models
-- Models require license acceptance (handled automatically)
 - Internet connection required for downloads

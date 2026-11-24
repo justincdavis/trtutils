@@ -40,6 +40,36 @@ def get_onnx_input(onnx_path: Path) -> tuple[str, tuple[int, ...]]:
     return name, dims
 
 
+def get_static_hw(onnx_path: Path, input_name: str) -> tuple[int, int] | None:
+    """
+    Read the static ``(height, width)`` of an NCHW ONNX image input without loading weights.
+
+    Parameters
+    ----------
+    onnx_path : Path
+        Path to the ONNX model file.
+    input_name : str
+        Name of the image input tensor.
+
+    Returns
+    -------
+    tuple[int, int] | None
+        ``(height, width)`` when the input is ``(N, 3, H, W)`` with static H and W, else None.
+
+    """
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    for inp in model.graph.input:
+        if inp.name != input_name:
+            continue
+        dims = [d.dim_value for d in inp.type.tensor_type.shape.dim]
+        if len(dims) != len(_NCHW):
+            continue
+        _, channels, height, width = dims
+        if channels == _NCHW[1] and height > 0 and width > 0:
+            return height, width
+    return None
+
+
 def get_static_imgsz(onnx_path: Path, input_name: str) -> int | None:
     """
     Read the static square image size of an NCHW ONNX input without loading weights.
@@ -57,17 +87,10 @@ def get_static_imgsz(onnx_path: Path, input_name: str) -> int | None:
         The size when the input is ``(N, 3, S, S)`` with static equal H and W, else None.
 
     """
-    model = onnx.load(str(onnx_path), load_external_data=False)
-    for inp in model.graph.input:
-        if inp.name != input_name:
-            continue
-        dims = [d.dim_value for d in inp.type.tensor_type.shape.dim]
-        if len(dims) != len(_NCHW):
-            continue
-        _, channels, height, width = dims
-        if channels == _NCHW[1] and height > 0 and height == width:
-            return height
-    return None
+    hw = get_static_hw(onnx_path, input_name)
+    if hw is None or hw[0] != hw[1]:
+        return None
+    return hw[0]
 
 
 def get_onnx_output(onnx_path: Path) -> tuple[str, tuple[int, ...]]:

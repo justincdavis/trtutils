@@ -22,8 +22,8 @@ def build_model_engine() -> Callable[..., Path]:
     Build and cache an engine via model_cls.build(), skipping if the ONNX is missing.
 
     Factory: build_model_engine(model_cls, onnx_path, batch_size=1, opt_level=1, embed_sst=False,
-    tag=""). ONNX files are named <model>_<imgsz>.onnx; ``tag`` keeps engines of other build
-    defaults (e.g. precision) apart in the shared cache.
+    tag=""). ONNX files are named <model>_<imgsz>.onnx or <model>_<height>x<width>.onnx; ``tag``
+    keeps engines of other build defaults (e.g. precision) apart in the shared cache.
     """
 
     def _build(
@@ -45,11 +45,11 @@ def build_model_engine() -> Callable[..., Path]:
             opt_level,
         )
         if not engine_path.exists():
-            imgsz = int(onnx_path.stem.rsplit("_", 1)[1])
+            sizes = [int(s) for s in onnx_path.stem.rsplit("_", 1)[1].split("x")]
             model_cls.build(
                 onnx_path,
                 engine_path,
-                imgsz=imgsz,
+                imgsz=sizes[0] if len(sizes) == 1 else (sizes[0], sizes[1]),
                 batch_size=batch_size,
                 opt_level=opt_level,
                 embed_sst=embed_sst,

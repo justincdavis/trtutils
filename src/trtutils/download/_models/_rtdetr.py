@@ -30,11 +30,9 @@ def export_rtdetrv1(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("RT-DETRv1 is a Apache-2.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "RT-DETRv1", enforce=True)
     git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
@@ -91,11 +89,9 @@ def export_rtdetrv2(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("RT-DETRv2 is a Apache-2.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "RT-DETRv2", enforce=True)
     git_clone(
         "https://github.com/lyuwenyu/RT-DETR",
@@ -153,11 +149,9 @@ def export_rtdetrv3(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("RT-DETRv3 is a Apache-2.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "RT-DETRv3", enforce=True)
     paddle2onnx_max_opset = 16
     if opset > paddle2onnx_max_opset:

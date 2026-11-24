@@ -40,6 +40,7 @@ from trtutils.models._hooks import (
     depthwise_fp32_build_hook,
     gridsample_debug_build_hook,
     nms_build_hook,
+    rfdetr_layernorm_fp32_build_hook,
     rtdetr_build_hook,
     vit_attention_fp32_build_hook,
 )
@@ -207,6 +208,28 @@ def test_deim_boxes_non_square_match_onnxruntime(build_model_engine, model_cls, 
     assert max(_iou(bbox, reference[0]) for bbox, _score, _cls in detections) > 0.85
 
 
+def test_non_square_build_matches_square(build_model_engine, tmp_path, images) -> None:
+    """A (height, width) build of a dynamic-shape export runs non-square and finds the square boxes."""
+    onnx_path = DATA_DIR / "yolov10" / "yolov10n_640_dyn.onnx"
+    if not onnx_path.exists():
+        pytest.skip(f"missing {onnx_path}")
+    square = YOLOv10(
+        build_model_engine(YOLOv10, DATA_DIR / "yolov10" / "yolov10n_640.onnx"), warmup=False
+    )
+    engine_path = tmp_path / "hw.engine"
+    YOLOv10.build(onnx_path, engine_path, imgsz=(480, 640), opt_level=1)
+    model = YOLOv10(engine_path, warmup=False)
+    assert model.engine.input_spec[0][0] == [1, 3, 480, 640]
+    assert model.input_shape == (640, 480)
+
+    image = images["horse"]
+    detections = model.end2end(image.array)
+    assert set(image.gt_det_classes) <= {cls_id for _bbox, _score, cls_id in detections}
+    for ref_bbox, _score, ref_cls in square.end2end(image.array):
+        ious = [_iou(bbox, ref_bbox) for bbox, _s, cls_id in detections if cls_id == ref_cls]
+        assert max(ious, default=0.0) > 0.9
+
+
 def _write_head_onnx(path, output_name):
     graph = onnx.helper.make_graph(
         [onnx.helper.make_node("Identity", ["images"], [output_name])],
@@ -298,3 +321,54 @@ def test_vit_attention_hook_pins_only_qk_matmul_and_softmax(tmp_path) -> None:
     assert {dtype for _idx, dtype in overrides["layer_precision"]} == {trt.DataType.FLOAT}
     assert overrides["prefer_precision_constraints"] is True
     assert vit_attention_fp32_build_hook(onnx=path, strongly_typed=True) == {}
+
+
+def _write_layernorm_onnx(path):
+    # a backbone LayerNorm, the first transformer layer, then a decoder LayerNorm
+    shape = [1, 4, 8]
+    info = onnx.helper.make_tensor_value_info
+    weights = [
+        onnx.helper.make_tensor(name, onnx.TensorProto.FLOAT, [8], [value] * 8)
+        for name, value in (("scale", 1.0), ("bias", 0.0))
+    ]
+    nodes = [
+        onnx.helper.make_node(
+            "LayerNormalization", ["x", "scale", "bias"], ["b"], name="/backbone/norm/LayerNorm"
+        ),
+        onnx.helper.make_node("Relu", ["b"], ["t"], name="/transformer/Relu"),
+        onnx.helper.make_node(
+            "LayerNormalization",
+            ["t", "scale", "bias"],
+            ["out"],
+            name="/transformer/decoder/norm/LayerNorm",
+        ),
+    ]
+    graph = onnx.helper.make_graph(
+        nodes,
+        "layernorm",
+        [info("x", onnx.TensorProto.FLOAT, shape)],
+        [info("out", onnx.TensorProto.FLOAT, shape)],
+        initializer=weights,
+    )
+    model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 17)])
+    onnx.save(model, path)
+
+
+@pytest.mark.skipif(not FLAGS.WEAK_TYPING, reason="per-layer precision was removed in TensorRT 11")
+def test_rfdetr_hook_pins_only_transformer_layernorms(tmp_path) -> None:
+    """Only the LayerNorms after the first transformer layer are pinned, not the backbone's."""
+    assert rfdetr_layernorm_fp32_build_hook in RFDETR._build_hooks
+    path = tmp_path / "layernorm.onnx"
+    _write_layernorm_onnx(path)
+    overrides = rfdetr_layernorm_fp32_build_hook(onnx=path)
+    network, _, _, _ = read_onnx(path)
+    layers = [network.get_layer(idx) for idx in range(network.num_layers)]
+    norms = [idx for idx, layer in enumerate(layers) if layer.type == trt.LayerType.NORMALIZATION]
+    start = next(idx for idx, layer in enumerate(layers) if layer.name == "/transformer/Relu")
+    assert len(norms) == 2
+    assert overrides["layer_precision"] == [(norms[1], trt.DataType.FLOAT)]
+    assert norms[0] < start < norms[1]
+    assert overrides["prefer_precision_constraints"] is True
+    assert rfdetr_layernorm_fp32_build_hook(onnx=path, strongly_typed=True) == {}
+    # graphs without the RF-DETR transformer build entirely in FP16
+    assert rfdetr_layernorm_fp32_build_hook(onnx=DATA_DIR / "simple.onnx") == {}

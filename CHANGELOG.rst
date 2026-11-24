@@ -28,6 +28,12 @@ Added
 * ``resize_method="center_crop"`` with ``crop_pct`` (default 0.875, the torchvision/timm
   ImageNet eval transform). ``CPUPreprocessor(resize=fn)`` takes a whole-batch preprocess
   function for models whose input shape changes per batch
+* ``resize_method="pad"``: aspect-preserving resize to the top-left corner, filling the bottom
+  and right with letterbox's gray (114), as SAM-style image encoders expect. Ratios are
+  ``(r, r)`` and padding ``(0, 0)``. CPU, CUDA, TensorRT and ``cpu_resize`` resize it; the DLA
+  preprocessor resizes it on the CPU. ``Classifier`` and ``DepthEstimator`` accept it;
+  ``Detector``, ``Segmenter``, ``PoseEstimator``, ``OBBDetector`` and
+  ``HandInteractionDetector`` raise ``ValueError``, since they cannot map results back from it
 * Image models accept ``Buffer`` inputs (device, mapped or host), alone or mixed with arrays.
   ``Buffer.wrap`` views CuPy and PyTorch tensors without copying
 * ``Detector(class_map=...)`` and ``image.COCO91_TO_COCO80`` for mapping model class ids to
@@ -36,6 +42,14 @@ Added
 * ``Model.build(..., embed_sst=True)`` and ``builder.onnx.embed_sst``: move BGR-to-RGB, normalize
   and HWC-to-CHW into the ONNX graph, so the engine takes uint8 ``(batch, imgsz, imgsz, 3)``.
   ``input_range`` / ``mean`` / ``std`` are fixed at build time
+* Non-square image sizes and dynamic batch in ``trtutils.models``: ``Model.build`` /
+  ``Model.download`` take ``imgsz`` as an int (square) or ``(height, width)``, and
+  ``_default_imgsz`` may be either. ``Model.build(..., dynamic_batch=True)`` (or the class
+  attribute ``_dynamic_batch``) builds engines that run any batch from 1 to ``batch_size``.
+  ``trtutils download --imgsz`` takes ``HEIGHT WIDTH``, and download configs may give
+  ``"imgsz": [height, width]``; only exporters registered with ``hw=True`` accept a
+  non-square size. ``builder.onnx.get_static_hw`` reads the static ``(height, width)`` of an
+  ONNX image input
 * ``trtutils.models``: pre-configured wrappers with ``download()`` / ``build()``. Families:
   detectors (YOLOX, YOLOv3-v13, YOLOv26, RT-DETR / RT-DETRv3, D-FINE, DEIM, RF-DETR),
   classifiers (ResNet, AlexNet, VGG, DenseNet, Inception, GoogLeNet, EfficientNet, MobileNet,
@@ -56,6 +70,8 @@ Added
 * ``TRTEngine`` CUDA graphs (``cuda_graph``): one graph per input configuration (shapes and
   device addresses), captured on the second run at unchanged shapes. The 8 most recent are kept
 * ``TRTEngine.active_input_shapes`` / ``active_output_shapes``
+* ``TRTEngine.cuda_graph_enabled``: read or toggle CUDA graph capture/replay after construction.
+  Captured graphs are kept while disabled
 * ``TRTEngine.execute`` / ``raw_exec`` / ``__call__`` / ``mock_execute`` take a mapping of input
   name to ``Buffer`` as well as a sequence in ``input_names`` order. Outputs come back in
   ``output_names`` order, which is not necessarily the ONNX order: TensorRT 8.6 can order
@@ -139,6 +155,16 @@ Changed
   ONNX parse failures with the reason: every TensorRT parser error (node, operator where
   TensorRT reports it, error code, description) and the errors TensorRT logged while parsing,
   such as an LRN bias below 1e-5. The message used to be only "Cannot parse ONNX file"
+* ``download_model`` logs one license notice per download, read from the model's new
+  ``license`` config field, louder for copyleft and non-commercial licenses (``no_warn`` hides
+  it). Depth-Anything-V2 ``base`` / ``large`` are CC-BY-NC-4.0 (were announced as Apache-2.0).
+  DEIMv2 is labeled with upstream's current non-commercial DEIMv2 License; upstream was
+  Apache-2.0 at the commit the exporter pins and has since relicensed. Torchvision
+  classifiers, DeiT / DeiT III and Hands23 now get a notice too; ``regnet_y_128gf`` and
+  ``vit_h_14`` (SWAG weights) are CC-BY-NC-4.0
+* Download configs name their exporter with an ``exporter`` key (looked up in the exporter
+  registry) instead of being routed by model-name substrings, and a ``"_defaults"`` object
+  fills keys shared by a config file's entries
 
 Performance
 ^^^^^^^^^^^
@@ -163,8 +189,29 @@ Fixed
 * ``benchmark_engine`` / ``benchmark_engines`` and their ``jetson`` versions raise
   ``ValueError`` for ``iterations < 1`` before building engines. ``iterations=0`` used to fail
   after the run with "Raw data cannot be empty"
+* ``jetson.profile_engine`` runs without CUDA graphs, then restores the engine's graph flag and
+  profiler. Graph replays never call the profiler, so per-layer results could be empty
+* ``profile_engine(jetson=True)`` and ``trtutils profile --jetson`` use the Jetson default of 10000 iterations
+  unless ``iterations`` is given. The dispatcher always forwarded 100
+* ``TRTEngine(shape_contexts=N)`` and the OCR ``width_bucket`` option work on TensorRT 8.6
+  (Jetson). They failed with ``Assertion mOptimizationProfile >= 0 failed`` at the second
+  input shape, because contexts cannot share an optimization profile before TensorRT 10.
+  There one context now serves every shape
+* The CLI now errors on unrecognized arguments instead of silently ignoring them (only
+  ``trtexec`` forwards unknown arguments). Fixed the ``--shape`` help text typo
+* ``RFDETR.build()`` FP16 engines detect again on TensorRT 8.6 (Jetson). The transformer
+  LayerNorms now build in FP32; before, rfdetr_s and rfdetr_m found nothing and rfdetr_n only
+  low-confidence noise. The rest of the model stays FP16, about 2x faster than an FP32 build
+* ``run(..., preprocessed=True)`` on a batch tensor of N>1 images returns all N results instead of
+  only the first
 * CPU ``linear`` resize (and ``cpu_resize=True``) returns (width, height) ratios. They were
   swapped, which misplaced boxes, keypoints, and masks on non-square model inputs
+* ``JIT``, ``NVTX`` and ``LOG.with_level``/``LOG.suppress`` restore the prior state when nested
+  or reused. The library stream handler no longer filters by level, so the logger level alone
+  decides what is emitted: ``LOG.with_level`` can raise verbosity and ``LOG.level`` tracks
+  ``set_log_level``
+* ``CUDAPreprocessor`` with integer ``output_range`` bounds, such as ``(-1, 1)``, matches the
+  float bounds. The offset reached the kernel as an integer argument, which it read as a float
 * ``CUDAPreprocessor`` float16 no longer overruns its output; other dtypes raise ``ValueError``
 * Float16-input image models use the ``cuda`` preprocessor (with or without ``cpu_resize``) instead of
   the CPU one
@@ -172,6 +219,16 @@ Fixed
   OCR failed to compile (``NVRTC_ERROR_COMPILATION``) in a pip install
 * ``build_engine`` writes engine files atomically (temp file, then replace), so readers never see
   a half-written engine
+* ``can_run_on_dla`` and ``inspect_onnx_layers`` restore the passed ``config``'s default
+  device and DLA core. They left it targeting DLA core 0, so a later build reusing the same
+  config targeted the DLA
+* ``trtexec.build_engine`` passes every requested precision flag for ``fp16``/``int8``,
+  ``fp16``/``fp8`` and ``int8``/``fp8`` combinations. It dropped one of them, so layers without
+  support for the remaining precision fell back to fp32
+* ``build_dla_engine`` builds models that run fully on the DLA. It did not allow GPU fallback,
+  so TensorRT rejected the I/O reformats and the build failed
+* ``build_dla_engine`` passes ``optimization_level`` on when the model runs fully on the DLA
+  or has no DLA layers. Those builds used the default level 3
 * ``build_engine(default_device="dla")`` without ``dla_core`` uses DLA core 0. TensorRT had
   selected no core, so the build failed
 * ``read_onnx`` raises ``RuntimeError`` on a file TensorRT 8.6 "parses" into an empty network
@@ -258,6 +315,9 @@ Removed
   (``draw_bboxes``, ``draw_text``) and the CPU preprocessing/postprocessing modules
 * ``direct_io`` (``build_engine``, ``build_dla_engine``, AxoNN ``build_engine``) and the CLI
   ``--direct_io`` flag. TRT preprocessors with float16 output now build
+* ``update_mean_std`` and ``update_output_range`` on the image preprocessors. The CUDA and TRT
+  preprocessors ignored them. Create a new preprocessor instead; ``ImageModel.update_mean_std``
+  and ``ImageModel.update_input_range`` already do
 
 0.6.1 (2025-06-17)
 ------------------

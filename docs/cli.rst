@@ -323,7 +323,7 @@ Options
 * ``--preprocessor, -p``: Preprocessor to use (choices: cpu, cuda, trt, dla0, dla1; default: cuda)
 * ``--cpu_resize`` / ``--no_cpu_resize``: Always / never resize on the CPU, leaving the rest of the
   preprocessing to the preprocessor (default: only images the preprocessor cannot resize)
-* ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear, center_crop; default: letterbox)
+* ``--resize_method, -rm``: Method to resize images (choices: letterbox, linear, center_crop, pad; default: letterbox)
 * ``--crop_pct``: Fraction of the resized image kept by ``center_crop`` (default: 0.875)
 
 **Memory and Performance:**
@@ -459,7 +459,9 @@ Options
 
 * ``--list_models``: Print the model names ``--model`` accepts and exit
 * ``--opset``: ONNX opset version to use (default: 17)
-* ``--imgsz``: Image size to use for the model (default: the model's own size, usually 640)
+* ``--imgsz``: Image size to use for the model: one value for a square image, or two values
+  ``HEIGHT WIDTH`` (for example ``--imgsz 256 128``). Only exporters that support it accept a
+  non-square size; the others raise an error (default: the model's own size, usually 640)
 * ``--batch``: Export at a fixed batch size (default: 1). Supported by the Ultralytics
   models, YOLOv10/12/13, and torchvision classifiers; other families raise an error
 * ``--dynamic``: Export with a symbolic batch dimension so one ONNX builds engines for a
@@ -498,7 +500,8 @@ Notes
 ^^^^^
 
 * The download process will create a temporary virtual environment to handle dependencies
-* Some models may have license restrictions (GPL-3.0, AGPL-3.0, Apache-2.0)
+* Each download logs the license of the model's weights; copyleft (GPL-3.0, AGPL-3.0) and
+  non-commercial licenses get a louder notice. See :ref:`Supported Models <models>` for the per-family list
 * RT-DETRv3 is fixed at 640; RF-DETR is fixed per variant (rfdetr_n 384, rfdetr_s 512, rfdetr_m 576)
 * DEIMv2 is fixed per variant (deimv2_atto 320, deimv2_femto 416, all others 640)
 

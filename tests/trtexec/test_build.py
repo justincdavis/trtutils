@@ -125,3 +125,26 @@ def test_build_engine_workspace_flag(monkeypatch, tmp_path: Path, version, expec
     argv = _captured_command(monkeypatch, weights, tmp_path / "o.engine", workspace=512)
     assert expected in argv
     assert sum(a.startswith(("--workspace", "--memPoolSize=workspace")) for a in argv) == 1
+
+
+@pytest.mark.cpu
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "flags",
+    [
+        pytest.param(("fp16", "int8"), id="fp16-int8"),
+        pytest.param(("fp16", "fp8"), id="fp16-fp8"),
+        pytest.param(("int8", "fp8"), id="int8-fp8"),
+    ],
+)
+def test_build_engine_precision_combos_keep_both(
+    monkeypatch, tmp_path: Path, flags: tuple[str, str]
+) -> None:
+    """Combined precisions pass both flags, so layers can fall back to the lower precision."""
+    weights = tmp_path / "model.onnx"
+    weights.write_text("fake onnx")
+    argv = _captured_command(
+        monkeypatch, weights, tmp_path / "o.engine", **dict.fromkeys(flags, True)
+    )
+    for flag in flags:
+        assert f"--{flag}" in argv

@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 _COLOR_CHANNELS = 3
 _IMAGE_DIMENSIONS = 3
 
-RESIZE_METHODS = ("letterbox", "linear", "center_crop")
+RESIZE_METHODS = ("letterbox", "linear", "center_crop", "pad")
 DEFAULT_CROP_PCT = 0.875
 
 
@@ -116,7 +116,9 @@ class ImagePreprocessor(ABC):
         resize : str, optional
             The default resize method to use.
             By default, letterbox resizing will be used.
-            Options are: ['letterbox', 'linear', 'center_crop']
+            Options are: ['letterbox', 'linear', 'center_crop', 'pad']. 'pad' resizes like
+            'letterbox' but places the image at the top-left and fills the bottom and
+            right with the same gray (114), with padding (0, 0).
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -137,16 +139,19 @@ class ImagePreprocessor(ABC):
             If the resize method is not valid
         ValueError
             If crop_pct is not in (0, 1]
+        ValueError
+            If the mean or std is not a tuple of 3 floats
 
         """
         # output info
         self._o_shape: tuple[int, int] = output_shape
-        self._o_range: tuple[float, float] = output_range
+        # floats: an integer bound would reach the CUDA kernels as an integer argument
+        self._o_range: tuple[float, float] = (float(output_range[0]), float(output_range[1]))
         self._o_dtype: np.dtype = dtype
 
         # preprocessing info
-        self._scale: float = 255.0
-        self._offset: float = 0.0
+        self._scale: float = (self._o_range[1] - self._o_range[0]) / 255.0
+        self._offset: float = self._o_range[0]
         self._mean: np.ndarray | None = None
         self._std: np.ndarray | None = None
 
@@ -162,14 +167,19 @@ class ImagePreprocessor(ABC):
 
         validate_crop_pct(crop_pct)
 
-        if FLAGS.NVTX_ENABLED:
-            nvtx.push_range(self._nvtx_tags["init"])
-
-        # compute scale, offset
-        self.update_output_range(output_range)
         # setup the mean and std arrays
         if mean is not None and std is not None:
-            self.update_mean_std(mean, std)
+            if len(mean) != _COLOR_CHANNELS:
+                err_msg = f"{self._tag}: Mean must be a tuple of 3 floats"
+                raise ValueError(err_msg)
+            if len(std) != _COLOR_CHANNELS:
+                err_msg = f"{self._tag}: Std must be a tuple of 3 floats"
+                raise ValueError(err_msg)
+            self._mean = np.array(mean, dtype=np.float32).reshape(1, 3, 1, 1)
+            self._std = np.array(std, dtype=np.float32).reshape(1, 3, 1, 1)
+
+        if FLAGS.NVTX_ENABLED:
+            nvtx.push_range(self._nvtx_tags["init"])
 
         # check resize method
         if resize not in RESIZE_METHODS:
@@ -189,48 +199,6 @@ class ImagePreprocessor(ABC):
 
         if FLAGS.NVTX_ENABLED:
             nvtx.pop_range()  # init
-
-    def update_output_range(self: Self, output_range: tuple[float, float]) -> None:
-        """
-        Update the output range of the preprocessor.
-
-        Parameters
-        ----------
-        output_range : tuple[float, float]
-            The new output range.
-
-        """
-        self._o_range = output_range
-        self._scale = (self._o_range[1] - self._o_range[0]) / 255.0
-        self._offset = self._o_range[0]
-
-    def update_mean_std(
-        self: Self, mean: tuple[float, float, float], std: tuple[float, float, float]
-    ) -> None:
-        """
-        Update the mean and standard deviation of the preprocessor.
-
-        Parameters
-        ----------
-        mean : tuple[float, float, float]
-            The new mean.
-        std : tuple[float, float, float]
-            The new standard deviation.
-
-        Raises
-        ------
-        ValueError
-            If the mean or std is not a tuple of 3 floats
-
-        """
-        if len(mean) != _COLOR_CHANNELS:
-            err_msg = f"{self._tag}: Mean must be a tuple of 3 floats"
-            raise ValueError(err_msg)
-        if len(std) != _COLOR_CHANNELS:
-            err_msg = f"{self._tag}: Std must be a tuple of 3 floats"
-            raise ValueError(err_msg)
-        self._mean = np.array(mean, dtype=np.float32).reshape(1, 3, 1, 1)
-        self._std = np.array(std, dtype=np.float32).reshape(1, 3, 1, 1)
 
     @abstractmethod
     def warmup(self: Self) -> None: ...

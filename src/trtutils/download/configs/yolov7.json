@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "yolov7", "license": "GPL-3.0"},
   "yolov7t": {
     "url": "https://github.com/WongKinYiu/yolov7/releases/download/v0.1/yolov7-tiny.pt",
     "name": "yolov7-tiny"

@@ -88,3 +88,14 @@ def test_jit_context_restores_state(start_on) -> None:
     with trtutils.JIT:
         assert FLAGS.JIT is True
     assert FLAGS.JIT is start_on
+
+
+def test_jit_context_nested_restores_state() -> None:
+    """Nested JIT contexts entered from an off state leave JIT off after the outer exit."""
+    trtutils.disable_jit()
+
+    with trtutils.JIT:
+        with trtutils.JIT:
+            assert FLAGS.JIT is True
+        assert FLAGS.JIT is True
+    assert FLAGS.JIT is False

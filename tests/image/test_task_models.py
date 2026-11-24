@@ -19,6 +19,7 @@ from trtutils.image._schema import (
     PoseEstimatorOutputSchema,
     SegmenterOutputSchema,
 )
+from trtutils.image.preprocessors._cpu import resize_image
 
 TASKS = [
     pytest.param(Segmenter, "seg", "people", id="seg"),
@@ -205,6 +206,38 @@ def test_obb_detector_rejects_linear_resize(task_engine) -> None:
     model = OBBDetector(task_engine("obb"), resize_method="linear", warmup=False)
     with pytest.raises(ValueError, match="uniform scaling"):
         model.end2end(image)
+
+
+@pytest.mark.parametrize(("model_cls", "task", "image_name"), TASKS)
+def test_task_model_rejects_pad_resize(task_engine, images, model_cls, task, image_name) -> None:
+    """'pad' padding does not give the image size results map back to, so it raises."""
+    with pytest.raises(ValueError, match="resize_method='pad'"):
+        model_cls(task_engine(task), resize_method="pad", warmup=False)
+    model = model_cls(task_engine(task), warmup=False)
+    with pytest.raises(ValueError, match="resize_method='pad'"):
+        model.preprocess(_load(images, image_name), resize="pad")
+
+
+@pytest.mark.parametrize(("preprocessor", "cpu_resize"), PREPROCESSORS)
+def test_classifier_pad_resize_matches_padded_image(
+    task_engine, images, preprocessor: str, cpu_resize: bool | None
+) -> None:
+    """A 'pad' Classifier classifies like a 'linear' one given the image padded by hand."""
+    image = images["horse"].array
+    model = Classifier(
+        task_engine("cls"),
+        preprocessor=preprocessor,
+        resize_method="pad",
+        cpu_resize=cpu_resize,
+        warmup=False,
+    )
+    padded, _, _ = resize_image(image, model.input_shape, "pad")
+    reference = Classifier(task_engine("cls"), preprocessor=preprocessor, warmup=False)
+
+    (cls_id, conf), *_ = model.end2end(image)
+    (ref_id, ref_conf), *_ = reference.end2end(padded)
+    assert cls_id == ref_id
+    assert conf == pytest.approx(ref_conf, abs=0.02)
 
 
 def test_obb_detector_cuda_postprocessor_is_default(task_engine) -> None:

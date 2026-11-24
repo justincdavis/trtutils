@@ -16,7 +16,9 @@ make fix             # ruff format + ruff lint with autofix (ci/run_ruff.sh)
 make typecheck       # ty static type checker (ci/run_ci.sh --typecheck)
 make test            # ci/run_tests.sh: python3 -m pytest -rP -v tests/
 make test-cpu        # pytest -m cpu
-make test-cov        # branch coverage report
+make test-cov        # full suite + coverage check against this platform's section (gpu or jetson) of .coverage-threshold.json
+make test-cov-cpu    # CPU suite + coverage check against the cpu section (the CI gate); also test-cov-gpu / test-cov-jetson
+                     # COV_ARGS=--update ratchets the thresholds up
 make memcheck        # ci/run_memcheck.sh: pytest under compute-sanitizer (MEMCHECK_ARGS=...)
 
 # single file / test
@@ -73,7 +75,7 @@ provides `download()` / `build()` from class attributes (`_model_type`, `_defaul
 ### Download / Export (`src/trtutils/download/`)
 `configs/*.json` list downloadable models; `_models/` holds the export functions dispatched in
 `_download.py`; `model_deps/*.txt` pin each exporter's venv requirements. CLI:
-`trtutils download --model <name> --output <path.onnx> [--imgsz N] [--dynamic]`.
+`trtutils download --model <name> --output <path.onnx> [--imgsz N | H W] [--dynamic]`.
 
 ### Engine Building (`src/trtutils/builder/`)
 - `build_engine()` (`_build.py`): build TensorRT engines from ONNX

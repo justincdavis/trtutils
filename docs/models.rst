@@ -262,6 +262,59 @@ Oriented Bounding Box Models
 - **YOLOv11-obb**: ``yolov11n-obb``, ``yolov11s-obb``, ``yolov11m-obb``, ``yolov11l-obb``, ``yolov11x-obb`` (via Ultralytics)
 - **YOLOv26-obb**: ``yolov26n-obb``, ``yolov26s-obb``, ``yolov26m-obb``, ``yolov26l-obb``, ``yolov26x-obb`` (via Ultralytics)
 
+Model Licenses
+~~~~~~~~~~~~~~
+
+Downloaded weights keep their upstream license; trtutils' MIT license does not cover them.
+Every download logs the model's license (``download(..., no_warn=True)`` hides it), with a louder
+notice for copyleft and non-commercial licenses. ``unknown`` means upstream states no license
+for the weights: check the source before using them.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Family
+     - License
+   * - Ultralytics YOLO (YOLOv3, v5, v8, v11, v26 and their seg / cls / pose / obb heads;
+       the ``u`` variants of YOLOv9, v10, v12; ``rtdetrv1_lu`` / ``rtdetrv1_xu``)
+     - AGPL-3.0 (Ultralytics also sells an enterprise license)
+   * - YOLOv7, YOLOv9
+     - GPL-3.0
+   * - YOLOv10, YOLOv12, YOLOv13
+     - AGPL-3.0
+   * - YOLOX
+     - Apache-2.0
+   * - RT-DETRv1, RT-DETRv2, RT-DETRv3
+     - Apache-2.0
+   * - D-FINE
+     - Apache-2.0 (upstream notes that Objects365-pretrained checkpoints such as
+       ``*_obj2coco`` may carry the dataset's terms)
+   * - DEIM
+     - Apache-2.0
+   * - DEIMv2
+     - DEIMv2 License: weights for non-commercial use only (upstream relicensed; it was
+       Apache-2.0 at the commit the exporter pins)
+   * - RF-DETR (``rfdetr_n``, ``rfdetr_s``, ``rfdetr_m``)
+     - Apache-2.0
+   * - Torchvision classifiers
+     - unknown (torchvision states no license for its weights), except ``regnet_y_128gf``
+       and ``vit_h_14`` (SWAG weights): CC-BY-NC-4.0
+   * - DeiT, DeiT III (timm)
+     - Apache-2.0
+   * - Depth-Anything-V1
+     - Apache-2.0
+   * - Depth-Anything-V2
+     - ``small``: Apache-2.0; ``base``, ``large``: CC-BY-NC-4.0
+   * - Depth-Anything-V3 (``mono_large``, ``metric_large``)
+     - Apache-2.0
+   * - HOI-DETR
+     - MIT
+   * - Hands23
+     - unknown (the code is MIT; the weights state no license)
+   * - PP-OCR
+     - Apache-2.0
+
 Example Usage
 ~~~~~~~~~~~~~
 

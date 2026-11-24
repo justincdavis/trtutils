@@ -446,7 +446,7 @@ class TestGraphExec:
     def test_cuda_graph_disabled(self, make_engine) -> None:
         """cuda_graph=False disables graph capture entirely."""
         eng = make_engine(cuda_graph=False)
-        assert not eng._cuda_graph_enabled
+        assert not eng.cuda_graph_enabled
         data = eng.get_random_input()
         for _ in range(2):
             assert isinstance(eng.execute(data), list)
@@ -455,7 +455,7 @@ class TestGraphExec:
     def test_raw_exec_bypasses_graph_capture(self, make_engine) -> None:
         """raw_exec() does not trigger CUDA graph capture."""
         eng = make_engine(cuda_graph=True)
-        if not eng._cuda_graph_enabled:
+        if not eng.cuda_graph_enabled:
             pytest.skip("CUDA graph not enabled")
         for _ in range(2):
             outputs = eng.raw_exec(eng.get_random_input())

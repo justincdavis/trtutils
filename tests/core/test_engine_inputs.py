@@ -21,6 +21,7 @@ import pytest
 
 from trtutils import _engine
 from trtutils._engine import TRTEngine
+from trtutils._flags import FLAGS
 from trtutils.core import _bindings, _device
 from trtutils.core._buffer import Buffer, MemoryLocation
 from trtutils.core._interface import TRTEngineInterface
@@ -332,7 +333,7 @@ def test_failed_capture_falls_back_without_graphs(fake_graphs) -> None:
     for _ in range(2):
         outputs = eng.execute([_host(_MAX_BATCH)])
     assert outputs[0].shape == (_MAX_BATCH, _OUT_FEATURES)
-    assert not eng._cuda_graph_enabled
+    assert not eng.cuda_graph_enabled
     assert len(eng._cuda_graphs) == 0
     eng.execute([_host(_MAX_BATCH)])
     assert len(fake_graphs) == 1  # no further capture attempts
@@ -345,7 +346,7 @@ def test_rejected_capture_enqueue_disables_graphs(fake_graphs) -> None:
     context.reject_enqueue_at = 3  # run, run, capture
     for _ in range(3):
         eng.execute([_host(_MAX_BATCH)])
-    assert not eng._cuda_graph_enabled
+    assert not eng.cuda_graph_enabled
     assert len(eng._cuda_graphs) == 0
     assert not fake_graphs[0].is_captured
     assert context.enqueues == 4  # the third execute ran for real
@@ -451,6 +452,7 @@ class _NoContextEngine:
         return None
 
 
+@pytest.mark.skipif(not FLAGS.PROFILE_SHARING, reason="no context pool before TensorRT 10")
 def test_failed_pool_construction_frees_workspace(monkeypatch, fake_cuda) -> None:
     """Construction that dies after allocating the shared workspace still frees it."""
 

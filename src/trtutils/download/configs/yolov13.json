@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "yolov13", "license": "AGPL-3.0"},
   "yolov13n": {
     "url": "https://github.com/iMoonLab/yolov13/releases/download/yolov13/yolov13n.pt",
     "name": "yolov13n"

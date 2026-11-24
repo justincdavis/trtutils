@@ -32,13 +32,9 @@ def export_ultralytics(
     dynamic: bool = False,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning(
-            "Ultralytics is a AGPL-3.0 and commercial licensed model, be aware of license restrictions"
-        )
     imgsz = handle_imgsz(imgsz, int(config.get("imgsz", _640)), "Ultralytics")
     run_uv_pip_install(
         directory,

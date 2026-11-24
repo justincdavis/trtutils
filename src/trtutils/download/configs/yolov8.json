@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "ultralytics", "license": "AGPL-3.0"},
   "yolov8n": {
     "url": "ultralytics",
     "name": "yolov8n"

@@ -35,6 +35,7 @@ class Segmenter(ImageModel, SegmenterInterface):
     """Implementation of instance segmentation models (YOLO-style ``output0`` + ``output1`` prototypes)."""
 
     _OUTPUT_SCHEMA = SegmenterOutputSchema
+    _supports_pad = False
     _CUDA_POSTPROCESSOR = CUDASegPostprocessor
     _cuda_post_default = True
 

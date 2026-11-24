@@ -18,6 +18,7 @@ from typing_extensions import TypeGuard
 import trtutils
 from trtutils._log import LOG
 from trtutils.core import cache as caching_tools
+from trtutils.download._tools import normalize_imgsz
 from trtutils.image import draw_bboxes, draw_text
 from trtutils.image._image_model import PREPROCESSOR_METHODS
 from trtutils.image.preprocessors._base import DEFAULT_CROP_PCT, RESIZE_METHODS
@@ -863,7 +864,7 @@ def _classify(args: SimpleNamespace) -> None:
         - cpu_resize : bool or None
             Resize on the CPU, None to resize there only what the preprocessor cannot.
         - resize_method : str
-            Image resize method ('letterbox', 'linear', or 'center_crop').
+            Image resize method ('letterbox', 'linear', 'center_crop' or 'pad').
         - crop_pct : float
             Fraction of the resized image kept by center_crop.
         - dla_core : int or None
@@ -1212,8 +1213,8 @@ def _download(args: SimpleNamespace) -> None:
             Path to save the ONNX model file.
         - opset : int
             ONNX opset version to use.
-        - imgsz : int
-            Image size for the model.
+        - imgsz : list[int] | None
+            Image size for the model: one size (square) or height and width.
         - batch : int
             Batch size to export the model at.
         - dynamic : bool
@@ -1254,7 +1255,7 @@ def _download(args: SimpleNamespace) -> None:
         args.model,
         args.output,
         args.opset,
-        args.imgsz,
+        None if args.imgsz is None else normalize_imgsz(args.imgsz),
         requirements_export=args.requirements_export,
         batch=args.batch,
         dynamic=args.dynamic,
@@ -1408,7 +1409,7 @@ def _main() -> None:
         default=None,
         help=(
             "Fix input binding shapes. Format NAME:dim1,dim2[,dim3...]. "
-            "Repeat --shapes for multiple inputs."
+            "Repeat --shape for multiple inputs."
         ),
     )
     build_common_parser.add_argument(
@@ -1996,8 +1997,8 @@ def _main() -> None:
         "--iterations",
         "-i",
         type=int,
-        default=100,
-        help="Number of profiling iterations to run. Default is 100.",
+        default=None,
+        help="Number of profiling iterations to run. Default is 100 (10000 with --jetson).",
     )
     profile_parser.add_argument(
         "--save_raw",
@@ -2051,8 +2052,11 @@ def _main() -> None:
     download_parser.add_argument(
         "--imgsz",
         type=int,
+        nargs="+",
+        metavar="SIZE",
         default=None,
-        help="Image size to use for the model. If not specified, uses the model's default.",
+        help="Image size to use for the model: one size for a square image, or HEIGHT WIDTH. "
+        "Only some exporters accept a non-square size. If not specified, uses the model's default.",
     )
     download_parser.add_argument(
         "--batch",
@@ -2133,6 +2137,11 @@ def _main() -> None:
     # parse args and call the function
     args, unknown = parser.parse_known_args()
 
+    # only trtexec forwards unknown args
+    is_trtexec = args.command == "trtexec"
+    if unknown and not is_trtexec:
+        parser.error(f"unrecognized arguments: {' '.join(unknown)}")
+
     # set log level
     trtutils.set_log_level(args.log_level)
 
@@ -2142,7 +2151,7 @@ def _main() -> None:
 
     # call function with args
     if hasattr(args, "func"):
-        if args.command == "trtexec":
+        if is_trtexec:
             args.func(unknown)
         else:
             args.func(args)

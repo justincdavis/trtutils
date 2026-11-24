@@ -83,9 +83,10 @@ class DLAPreprocessor(ImagePreprocessor):
     or so. A center crop takes inputs up to 3840 wide whose width is a multiple
     of 16, and resizes like torchvision's antialiased ``Resize`` (box then
     triangle filters), not bilinearly like the CPU and CUDA preprocessors' center
-    crop, which differ from it by a few levels on average. Host images of the
-    sizes the DLA cannot resize can be resized on the CPU instead
-    (``cpu_resize``), with the DLA doing the rest at the output size. Images go
+    crop, which differ from it by a few levels on average. The DLA does not pad
+    resize. Host images of the sizes or methods the DLA cannot resize can be
+    resized on the CPU instead (``cpu_resize``), with the DLA doing the rest at
+    the output size. Images go
     to the DLA as int8 BGRx, converted on the CPU for numpy arrays and by a small
     kernel for device Buffers; the GPU otherwise only casts the float16 output
     for float32 models.
@@ -126,8 +127,9 @@ class DLAPreprocessor(ImagePreprocessor):
         batch_size : int
             The most images per call. Default is 1.
         resize : str, optional
-            The default resize method, 'letterbox', 'linear' or 'center_crop'.
-            By default, letterbox resizing will be used.
+            The default resize method, 'letterbox', 'linear', 'center_crop' or 'pad'.
+            By default, letterbox resizing will be used. 'pad' always resizes host
+            images on the CPU and raises for device Buffers or with ``cpu_resize=False``.
         mean : tuple[float, float, float], optional
             The mean to subtract from the image.
             By default, None, which will not subtract any mean.
@@ -222,50 +224,13 @@ class DLAPreprocessor(ImagePreprocessor):
             self._half = Buffer.empty(shape, np.float16, MemoryLocation.DEVICE)
             self._cast = Kernel(*HALF_TO_FLOAT)
 
-    def update_output_range(self: Self, output_range: tuple[float, float]) -> None:
-        """
-        Update the output range, rebuilding the DLA engines on their next use.
-
-        Parameters
-        ----------
-        output_range : tuple[float, float]
-            The new output range.
-
-        """
-        super().update_output_range(output_range)
-        self._set_normalization()
-
-    def update_mean_std(
-        self: Self, mean: tuple[float, float, float], std: tuple[float, float, float]
-    ) -> None:
-        """
-        Update the mean and std, rebuilding the DLA engines on their next use.
-
-        Parameters
-        ----------
-        mean : tuple[float, float, float]
-            The new mean.
-        std : tuple[float, float, float]
-            The new standard deviation.
-
-        """
-        super().update_mean_std(mean, std)
-        self._set_normalization()
-
-    def _set_normalization(self: Self) -> None:
-        """Set the letterbox border and drop the engines, which bake in the normalization."""
-        if self._runners:
-            # the engines may still run
-            stream_synchronize(self._stream)
-        self._runners = {}
         self._norm = normalization(self._o_range, self._mean, self._std)
-        width, height = self._o_shape
         fill = (_LETTERBOX_FILL * self._norm[0] + self._norm[1]).astype(np.float16)
         self._border = np.ascontiguousarray(
             np.broadcast_to(fill.reshape(-1, 1, 1), (_COLOR_CHANNELS, height, width))
         )
         # the image rows each batch entry was last written with
-        self._slot_rows: list[int | None] = [None] * self._batch_size
+        self._slot_rows: list[int | None] = [None] * batch_size
 
     def __del__(self: Self) -> None:
         # a borrowed stream may be destroyed already
@@ -449,7 +414,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images : Sequence[np.ndarray | Buffer]
             The images to preprocess (HWC format, uint8, BGR).
         resize : str, optional
-            The method to resize the images with, 'letterbox', 'linear' or 'center_crop'.
+            The method to resize the images with, 'letterbox', 'linear', 'center_crop' or 'pad'.
             By default None, which uses the method given in the constructor.
         no_warn : bool, optional
             If True, do not warn about usage.
@@ -545,7 +510,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
-            The method to resize the images with, 'letterbox', 'linear' or 'center_crop'.
+            The method to resize the images with, 'letterbox', 'linear', 'center_crop' or 'pad'.
             By default None, which uses the method given in the constructor.
         no_copy : bool, optional
             If True, return the host output memory without a copy. It WILL BE
@@ -598,7 +563,7 @@ class DLAPreprocessor(ImagePreprocessor):
         images : np.ndarray | Buffer | Sequence[np.ndarray | Buffer]
             A single image (HWC format) or list of images to preprocess.
         resize : str, optional
-            The method to resize the images with, 'letterbox', 'linear' or 'center_crop'.
+            The method to resize the images with, 'letterbox', 'linear', 'center_crop' or 'pad'.
             By default None, which uses the method given in the constructor.
         no_copy : bool, optional
             If True, return the host output memory without a copy. It WILL BE

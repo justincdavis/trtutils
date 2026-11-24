@@ -44,21 +44,15 @@ def _setup_logger(level: str | None = None) -> None:
     logger = logging.getLogger(__package__)
     logger.setLevel(log_level)
 
-    has_handler = False
-    if len(logger.handlers) > 0:
-        has_handler = True
-
-    if not has_handler:
+    # the logger level is the single filter; the handler stays at NOTSET
+    if not logger.handlers:
         formatter = logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         )
         stream: TextIO = sys.stdout if sys.stdout is not None else sys.stderr
         stdout_handler = logging.StreamHandler(stream=stream)
-        stdout_handler.setLevel(log_level)
         stdout_handler.setFormatter(formatter)
         logger.addHandler(stdout_handler)
-    else:
-        logger.handlers[0].setLevel(log_level)
 
     logger.propagate = False
 
@@ -125,7 +119,6 @@ class TRTLogger(trt.ILogger):
         """
         super().__init__()
         self._logger = logging.getLogger("trtutils")
-        self._level = self._logger.getEffectiveLevel()
         # per-thread error list, set while capture_errors is active
         self._capture = threading.local()
 
@@ -153,20 +146,21 @@ class TRTLogger(trt.ILogger):
             The current log level of the logger.
 
         """
-        return self._level
+        return self._logger.getEffectiveLevel()
 
     class _LogLevelContext:
         def __init__(self: Self, logger: TRTLogger, level: str | None) -> None:
             self._logger = logger
             self._level = level
-            self._old_level = logger.logger.getEffectiveLevel()
+            self._old_levels: list[int] = []
 
         def __enter__(self: Self) -> TRTLogger:
+            logger = self._logger.logger
+            self._old_levels.append(logger.level)
             if self._level:
-                lvl = self._level.upper()
-                log_level = _LEVEL_MAP.get(lvl)
+                log_level = _LEVEL_MAP.get(self._level.upper())
                 if log_level is not None:
-                    self._logger.logger.setLevel(log_level)
+                    logger.setLevel(log_level)
             return self._logger
 
         def __exit__(
@@ -175,7 +169,7 @@ class TRTLogger(trt.ILogger):
             exc_val: BaseException | None,
             exc_tb: TracebackType | None,
         ) -> None:
-            self._logger.logger.setLevel(self._old_level)
+            self._logger.logger.setLevel(self._old_levels.pop())
 
     def with_level(self: Self, level: str | None) -> _LogLevelContext:
         """

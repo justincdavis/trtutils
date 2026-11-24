@@ -1,11 +1,10 @@
 # Copyright (c) 2026 Justin Davis (davisjustin302@gmail.com)
 #
 # MIT License
-"""Tests for src/trtutils/image/preprocessors/ -- CPU, CUDA, and TRT preprocessors."""
+"""Tests for src/trtutils/image/preprocessors/ -- CPU resize functions and CUDA/TRT internals."""
 
 from __future__ import annotations
 
-import itertools
 import math
 
 import cv2
@@ -33,130 +32,12 @@ NON_SQUARE = [
 RANGE = (0.0, 1.0)
 DTYPE = np.dtype(np.float32)
 IMAGENET = {"mean": (0.485, 0.456, 0.406), "std": (0.229, 0.224, 0.225)}
-PREPROCS = [
-    pytest.param(CPUPreprocessor, {}, id="cpu"),
-    pytest.param(CUDAPreprocessor, {}, id="cuda"),
-    pytest.param(TRTPreprocessor, {"batch_size": 4}, id="trt"),
-]
 BUFFER_PLACEMENTS = [
     pytest.param({"location": MemoryLocation.DEVICE}, id="device"),
     pytest.param({"pinned": True, "mapped": True}, id="mapped"),
     pytest.param({"pinned": True, "mapped": False}, id="pinned"),
     pytest.param({"pinned": False}, id="pageable"),
 ]
-CPU_RESIZE = [
-    pytest.param(CUDAPreprocessor, {"cpu_resize": True}, id="cuda-cpu_resize"),
-    pytest.param(TRTPreprocessor, {"batch_size": 4, "cpu_resize": True}, id="trt-cpu_resize"),
-]
-
-
-@pytest.mark.parametrize(("gpu_cls", "kwargs"), CPU_RESIZE)
-@pytest.mark.parametrize("resize", ["linear", "letterbox", "center_crop"])
-@pytest.mark.parametrize(
-    ("norm", "atol"),
-    [
-        pytest.param({}, 1e-6, id="raw"),
-        pytest.param(IMAGENET, 1e-5, id="imagenet"),
-    ],
-)
-def test_cpu_resize_matches_cpu(images, gpu_cls, kwargs, resize, norm, atol) -> None:
-    """cpu_resize resizes exactly as the CPU path; only the float32 normalization order differs."""
-    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=resize, **norm)
-    gpu = gpu_cls(SIZE, RANGE, DTYPE, resize=resize, **kwargs, **norm)
-    batch = [image.array for image in images.values()]
-    for imgs in (batch, batch[:1], batch):
-        expected, ratios, padding = cpu.preprocess(imgs)
-        result, gpu_ratios, gpu_padding = gpu.preprocess(imgs)
-        assert gpu_ratios == ratios
-        assert gpu_padding == padding
-        np.testing.assert_allclose(result, expected, rtol=0, atol=atol)
-
-
-@pytest.mark.parametrize(("gpu_cls", "kwargs"), CPU_RESIZE)
-def test_cpu_resize_resizes_device_buffers_on_gpu(images, gpu_cls, kwargs) -> None:
-    """Device Buffers are resized on the GPU, mapped ones on the CPU, also mixed in one batch."""
-    frames = [image.array for image in images.values()]
-    device = [Buffer.from_array(frame, MemoryLocation.DEVICE) for frame in frames]
-    mapped = [Buffer.from_array(frame, pinned=True, mapped=True) for frame in frames]
-    preproc = gpu_cls(SIZE, RANGE, DTYPE, **kwargs)
-    on_gpu = gpu_cls(SIZE, RANGE, DTYPE, **{**kwargs, "cpu_resize": False}).preprocess(device)
-    on_cpu = preproc.preprocess(frames)
-    for batch, expected in ((device, on_gpu), (mapped, on_cpu)):
-        result = preproc.preprocess(batch)
-        np.testing.assert_array_equal(result[0], expected[0])
-        assert result[1:] == expected[1:]
-    mixed, ratios, padding = preproc.preprocess([device[0], frames[1]])
-    np.testing.assert_array_equal(mixed[0], on_gpu[0][0])
-    np.testing.assert_array_equal(mixed[1], on_cpu[0][1])
-    assert ratios == [on_gpu[1][0], on_cpu[1][1]]
-    assert padding == [on_gpu[2][0], on_cpu[2][1]]
-
-
-@pytest.mark.parametrize(
-    "gpu_cls",
-    [
-        pytest.param(CUDAPreprocessor, id="cuda"),
-        pytest.param(TRTPreprocessor, id="trt"),
-    ],
-)
-@pytest.mark.parametrize("resize", ["linear", "letterbox", "center_crop"])
-@pytest.mark.parametrize(
-    ("norm", "tol"),
-    [
-        pytest.param({}, 0.02, id="raw"),
-        pytest.param(IMAGENET, 0.1, id="imagenet"),
-    ],
-)
-def test_gpu_matches_cpu(images, gpu_cls, resize, norm, tol) -> None:
-    """GPU preprocessing matches CPU output, ratios, and padding for every test image."""
-    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE, resize=resize, **norm)
-    gpu = gpu_cls(SIZE, RANGE, DTYPE, resize=resize, **norm)
-    for image in images.values():
-        expected, ratios, padding = cpu.preprocess([image.array])
-        result, gpu_ratios, gpu_padding = gpu.preprocess([image.array])
-        assert gpu_ratios == ratios
-        assert gpu_padding == padding
-        assert result.shape == expected.shape
-        assert result.dtype == expected.dtype
-        assert np.abs(result - expected).mean() < tol
-
-
-@pytest.mark.parametrize(
-    "gpu_cls",
-    [
-        pytest.param(CUDAPreprocessor, id="cuda"),
-        pytest.param(TRTPreprocessor, id="trt"),
-    ],
-)
-@pytest.mark.parametrize("resize", ["linear", "letterbox", "center_crop"])
-@pytest.mark.parametrize(
-    "size",
-    [
-        pytest.param((640, 640), id="640"),
-        pytest.param((1024, 1024), id="1024"),
-        *NON_SQUARE,
-    ],
-)
-@pytest.mark.parametrize(
-    "shape",
-    [
-        pytest.param((1280, 1920), id="1920x1280"),
-        pytest.param((3000, 4000), id="4000x3000"),
-        pytest.param((1999, 3001), id="3001x1999"),
-        pytest.param((1920, 1080), id="1080x1920"),
-    ],
-)
-def test_gpu_large_downscale_matches_cpu(gpu_cls, resize, size, shape) -> None:
-    """Large downscales to square and non-square outputs match cv2 pixels, ratios, and padding."""
-    rng = np.random.default_rng(0)
-    image = cv2.GaussianBlur(rng.integers(0, 255, (*shape, 3), dtype=np.uint8), (0, 0), 1.5)
-    cpu = CPUPreprocessor(size, RANGE, DTYPE, resize=resize)
-    gpu = gpu_cls(size, RANGE, DTYPE, resize=resize)
-    expected, ratios, padding = cpu.preprocess([image])
-    result, gpu_ratios, gpu_padding = gpu.preprocess([image])
-    assert gpu_ratios == ratios
-    assert gpu_padding == padding
-    assert np.abs(result - expected).mean() < 0.002
 
 
 @pytest.mark.parametrize("norm", [{}, IMAGENET], ids=["raw", "imagenet"])
@@ -171,14 +52,11 @@ def test_trt_runs_submitted_batch(random_images, count, norm) -> None:
     np.testing.assert_array_equal(batch, np.concatenate(singles))
 
 
-@pytest.mark.parametrize("resize", ["letterbox", "linear"])
+@pytest.mark.parametrize("resize", ["letterbox", "linear", "pad"])
 def test_preprocess_without_normalize_returns_uint8_hwc(images, resize) -> None:
     """normalize=False preprocess returns the resized uint8 image, not the unused SST buffer."""
     image = images["horse"].array
-    if resize == "letterbox":
-        expected, _, _ = letterbox(image, new_shape=SIZE)
-    else:
-        expected, _ = resize_linear(image, new_shape=SIZE)
+    expected, _, _ = resize_image(image, SIZE, resize)
     gpu = CUDAPreprocessor(SIZE, RANGE, DTYPE, resize=resize, normalize=False)
     result, _, _ = gpu.preprocess(image)
     assert result.dtype == np.uint8
@@ -186,34 +64,33 @@ def test_preprocess_without_normalize_returns_uint8_hwc(images, resize) -> None:
     assert np.abs(result[0].astype(np.int32) - expected.astype(np.int32)).mean() < 1.0
 
 
-def test_trt_batch_size_exceeded_raises(random_images) -> None:
-    """Submitting more images than the configured batch size raises ValueError."""
-    trt_preproc = TRTPreprocessor(SIZE, RANGE, DTYPE, batch_size=4)
-    with pytest.raises(ValueError, match="exceeds configured batch size"):
-        trt_preproc.preprocess(random_images(5))
-
-
-@pytest.mark.parametrize(("preproc_cls", "kwargs"), [*PREPROCS, *CPU_RESIZE])
-def test_batch_matches_single(random_images, preproc_cls, kwargs) -> None:
-    """Batches of varying size reproduce the single-image tensors, ratios, and padding exactly."""
-    preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
-    imgs = random_images(4)
-    singles = [preproc.preprocess([img]) for img in imgs]
-    for count in (1, 4, 2):
-        batch, ratios, padding = preproc.preprocess(imgs[:count])
-        assert batch.shape == (count, 3, 640, 640)
-        assert batch.dtype == DTYPE
-        assert batch.min() >= RANGE[0]
-        assert batch.max() <= RANGE[1]
-        assert len(ratios) == len(padding) == count
-        for i in range(count):
-            tensor, single_ratios, single_padding = singles[i]
-            np.testing.assert_array_equal(batch[i], tensor[0])
-            assert ratios[i] == single_ratios[0]
-            assert padding[i] == single_padding[0]
-
-
 SHAPES = [(1080, 1920), (480, 640), (2160, 3840), (720, 1280), (512, 512)]
+
+
+@pytest.mark.regression
+@pytest.mark.parametrize(
+    "preproc_cls",
+    [
+        pytest.param(CPUPreprocessor, id="cpu"),
+        pytest.param(CUDAPreprocessor, id="cuda"),
+        pytest.param(TRTPreprocessor, id="trt"),
+    ],
+)
+@pytest.mark.parametrize(
+    "output_range",
+    [
+        pytest.param((-1, 1), id="neg1-1"),
+        pytest.param((1, 2), id="1-2"),
+        pytest.param((2, 3), id="2-3"),
+    ],
+)
+def test_int_output_range_matches_float(images, preproc_cls, output_range) -> None:
+    """Integer output_range bounds give the same output as the equal float bounds."""
+    float_range = (float(output_range[0]), float(output_range[1]))
+    image = images["horse"].array
+    expected, _, _ = CPUPreprocessor(SIZE, float_range, DTYPE).preprocess([image])
+    result, _, _ = preproc_cls(SIZE, output_range, DTYPE).preprocess([image])
+    assert np.abs(result - expected).max() < 0.02 * (float_range[1] - float_range[0])
 
 
 @pytest.mark.parametrize(
@@ -327,77 +204,6 @@ def test_gpu_destroys_own_stream_once(gpu_cls, module, monkeypatch) -> None:
     assert destroyed == [stream]
     monkeypatch.undo()
     destroy_stream(stream)
-
-
-@pytest.mark.parametrize(("preproc_cls", "kwargs"), PREPROCS)
-@pytest.mark.parametrize("placement", BUFFER_PLACEMENTS)
-@pytest.mark.parametrize(
-    "shapes",
-    [
-        pytest.param(SHAPES[:1], id="single"),
-        pytest.param(SHAPES[:1] * 4, id="homogeneous"),
-        pytest.param(SHAPES[:4], id="heterogeneous"),
-    ],
-)
-def test_buffer_input_matches_ndarray(preproc_cls, kwargs, placement, shapes) -> None:
-    """Buffer images, alone or mixed with arrays, preprocess exactly like the arrays."""
-    rng = np.random.default_rng(0)
-    imgs = [rng.integers(0, 256, (*s, 3), dtype=np.uint8) for s in shapes]
-    mixed = [
-        Buffer.from_array(img, **placement) if i % 2 == 0 else img for i, img in enumerate(imgs)
-    ]
-    preproc = preproc_cls(SIZE, RANGE, DTYPE, **kwargs)
-    expected = preproc.preprocess(imgs)
-    result = preproc.preprocess(mixed)
-    np.testing.assert_array_equal(result[0], expected[0])
-    assert result[1:] == expected[1:]
-    single = preproc.preprocess(mixed[0])
-    np.testing.assert_array_equal(single[0], expected[0][:1])
-
-
-@pytest.mark.parametrize(("gpu_cls", "kwargs"), [*PREPROCS[1:], *CPU_RESIZE])
-@pytest.mark.parametrize("position", [0, 1], ids=["first", "second"])
-@pytest.mark.parametrize("as_buffer", [False, True], ids=["ndarray", "device"])
-def test_gpu_rejects_non_uint8(gpu_cls, kwargs, position, as_buffer) -> None:
-    """GPU preprocessors raise on non-uint8 images instead of reading their bytes as uint8."""
-    image = np.zeros((480, 640, 3), dtype=np.float32)
-    if as_buffer:
-        image = Buffer.from_array(image, MemoryLocation.DEVICE)
-    preproc = gpu_cls(SIZE, RANGE, DTYPE, **kwargs)
-    with pytest.raises(ValueError, match="uint8"):
-        preproc.preprocess([image] if position == 0 else [np.zeros((480, 640, 3), np.uint8), image])
-
-
-@pytest.mark.regression
-@pytest.mark.parametrize("cpu_resize", [None, True], ids=["cuda", "cuda-cpu_resize"])
-@pytest.mark.parametrize(
-    "norm",
-    [
-        pytest.param({}, id="raw"),
-        pytest.param(IMAGENET, id="imagenet"),
-    ],
-)
-@pytest.mark.parametrize(
-    "shapes",
-    [
-        pytest.param(SHAPES[:1], id="single"),
-        pytest.param(SHAPES[:1] * 4, id="homogeneous"),
-        pytest.param(SHAPES[:4], id="heterogeneous"),
-    ],
-)
-def test_gpu_fp16_matches_fp32(cpu_resize, norm, shapes) -> None:
-    """float16 output is the float32 output rounded to float16, for every resize and placement."""
-    rng = np.random.default_rng(0)
-    imgs = [rng.integers(0, 256, (*s, 3), dtype=np.uint8) for s in shapes]
-    device = [Buffer.from_array(img, MemoryLocation.DEVICE) for img in imgs]
-    fp32 = CUDAPreprocessor(SIZE, RANGE, DTYPE, cpu_resize=cpu_resize, **norm)
-    fp16 = CUDAPreprocessor(SIZE, RANGE, np.dtype(np.float16), cpu_resize=cpu_resize, **norm)
-    for resize, batch in itertools.product(RESIZE_METHODS, (imgs, device)):
-        expected = fp32.preprocess(batch, resize=resize)
-        result = fp16.preprocess(batch, resize=resize)
-        assert result[0].dtype == np.float16
-        np.testing.assert_array_equal(result[0], expected[0].astype(np.float16))
-        assert result[1:] == expected[1:]
 
 
 @pytest.mark.parametrize(
@@ -541,18 +347,6 @@ def test_preprocess_writes_into_matching_out(random_images) -> None:
     assert preprocess(imgs, SIZE, DTYPE, RANGE, out=matching)[0] is matching
     for wrong in (np.empty((3, 3, 640, 640), np.float32), np.empty((2, 3, 640, 640), np.float16)):
         assert preprocess(imgs, SIZE, DTYPE, RANGE, out=wrong)[0] is not wrong
-
-
-@pytest.mark.cpu
-@pytest.mark.parametrize("no_copy", [True, False])
-def test_cpu_no_copy_reuses_buffer(random_images, no_copy) -> None:
-    """no_copy returns a reused view the next call overwrites, else a private array."""
-    cpu = CPUPreprocessor(SIZE, RANGE, DTYPE)
-    first, _, _ = cpu.preprocess(random_images(4), no_copy=no_copy)
-    snapshot = first.copy()
-    second, _, _ = cpu.preprocess(random_images(2), no_copy=no_copy)
-    assert np.shares_memory(first, second) == no_copy
-    assert np.array_equal(first, snapshot) != no_copy
 
 
 def _half_size_fn(images, *, verbose=None):

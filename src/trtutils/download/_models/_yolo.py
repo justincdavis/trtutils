@@ -6,7 +6,6 @@ from __future__ import annotations
 import shutil
 from typing import TYPE_CHECKING
 
-from trtutils._log import LOG
 from trtutils.download._tools import (
     _640,
     get_patches_dir,
@@ -33,11 +32,9 @@ def export_yolov7(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("YOLOv7 is a GPL-3.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOv7")
     git_clone(
         "https://github.com/WongKinYiu/yolov7",
@@ -97,11 +94,9 @@ def export_yolov9(
     *,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("YOLOv9 is a GPL-3.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOv9")
     git_clone(
         "https://github.com/WongKinYiu/yolov9",
@@ -162,11 +157,9 @@ def export_yolov10(
     dynamic: bool = False,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("YOLOv10 is a AGPL-3.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOv10")
     git_clone(
         "https://github.com/THU-MIG/yolov10",
@@ -215,11 +208,9 @@ def export_yolov12(
     dynamic: bool = False,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("YOLOv12 is a AGPL-3.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOv12")
     git_clone(
         "https://github.com/sunsmarterjie/yolov12",
@@ -269,11 +260,9 @@ def export_yolov13(
     dynamic: bool = False,
     no_cache: bool | None = None,
     no_uv_cache: bool | None = None,
-    no_warn: bool | None = None,
+    no_warn: bool | None = None,  # noqa: ARG001
     verbose: bool | None = None,
 ) -> Path:
-    if not no_warn:
-        LOG.warning("YOLOv13 is a AGPL-3.0 licensed model, be aware of license restrictions")
     imgsz = handle_imgsz(imgsz, _640, "YOLOv13")
     git_clone(
         "https://github.com/iMoonLab/yolov13",

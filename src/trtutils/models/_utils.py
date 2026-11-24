@@ -39,7 +39,7 @@ def download_model_internal(
     friendly_name: str,
     model: str,
     output: Path | str,
-    imgsz: int = 640,
+    imgsz: int | tuple[int, int] = 640,
     opset: int = 17,
     *,
     simplify: Sequence[str] | bool | None = None,
@@ -59,8 +59,8 @@ def download_model_internal(
         Specific model identifier within the family.
     output : Path | str
         Output file path for the resulting ONNX model.
-    imgsz : int, optional
-        Image size to use during export.
+    imgsz : int | tuple[int, int], optional
+        Image size to use during export: one int for square, else ``(height, width)``.
     opset : int, optional
         ONNX opset to use during export.
     simplify : Sequence[str] or bool, optional

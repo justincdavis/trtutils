@@ -1,4 +1,5 @@
 {
+  "_defaults": {"exporter": "yolov9", "license": "GPL-3.0"},
   "yolov9t": {
     "url": "https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-t-converted.pt",
     "name": "yolov9-t-converted"
@@ -20,22 +21,32 @@
     "name": "yolov9-e-converted"
   },
   "yolov9tu": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "yolov9t"
   },
   "yolov9su": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "yolov9s"
   },
   "yolov9mu": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "yolov9m"
   },
   "yolov9cu": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "yolov9c"
   },
   "yolov9eu": {
+    "exporter": "ultralytics",
+    "license": "AGPL-3.0",
     "url": "ultralytics",
     "name": "yolov9e"
   }
